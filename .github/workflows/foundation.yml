@@ -1,0 +1,17 @@
+name: Alicorn foundation
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  headless:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Odin
+        uses: laytan/odin-action@v1
+      - name: Build and run foundation tests
+        shell: pwsh
+        run: ./tools/test.ps1 -Odin odin
+
