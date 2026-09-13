@@ -44,6 +44,9 @@ the repository contains a repeatable test or measurement for it.
 - Implementation: fixed-height `virtual_list` emits only the visible range.
 - Test/benchmark: `tests/main.odin` and `benchmarks/main.odin`.
 - Result: retained rows are viewport-scale, not logical-item-scale.
+- Known limitations: the current helper proves range virtualization and hit
+  testing is covered for ordinary controls, but virtual-row selection routing is
+  not yet implemented.
 - Verdict: proven for fixed-height rows.
 
 ## Claim: Runa-backed text rendering and editing works
