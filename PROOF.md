@@ -11,8 +11,8 @@ the repository contains a repeatable test or measurement for it.
   filter, wrapper/conditional changes and deterministic randomized sequences.
 - Benchmark: `benchmarks/main.odin` keyed reorder.
 - Result: the test checks `logical_key -> retained state` after each operation.
-- Known limitations: source sites are explicit values in this first API;
-  caller-location sugar is not yet generated.
+- Known limitations: tests use explicit sites for deterministic fixtures;
+  `caller_site` is available for Odin `#caller_location` source ingredients.
 - Verdict: proven for the tested identity contract.
 
 ## Claim: explicit invalidation enables retained regions
@@ -42,7 +42,7 @@ the repository contains a repeatable test or measurement for it.
 ## Claim: a million-row list has bounded retained state
 
 - Implementation: fixed-height `virtual_list` emits only the visible range.
-- Test/benchmark: `tests/scale_tests.odin` and `benchmarks/main.odin`.
+- Test/benchmark: `tests/main.odin` and `benchmarks/main.odin`.
 - Result: retained rows are viewport-scale, not logical-item-scale.
 - Verdict: proven for fixed-height rows.
 
@@ -66,10 +66,11 @@ the repository contains a repeatable test or measurement for it.
 ## Claim: idle UI performs effectively no unnecessary work
 
 - Implementation: invalidated-frame gate.
-- Measurement: benchmark records skipped frames, description execution,
-  allocations (as available from the host process), and GPU-submit count.
-- Verdict: proven for the headless scheduler; native OS/GPU wakeups remain
-  unverified.
+- Measurement: benchmark records skipped frames, description execution and
+  headless GPU-submit count. It does not yet capture allocator telemetry,
+  process CPU utilization or OS wakeups.
+- Verdict: partially proven for the headless scheduler; native OS/GPU wakeups
+  and allocation behavior remain unverified.
 
 ## Gate recommendation
 
