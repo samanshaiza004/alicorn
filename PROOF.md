@@ -49,7 +49,8 @@ the repository contains a repeatable test or measurement for it.
 ## Claim: Runa-backed text rendering and editing works
 
 - Implementation: text-node/editing abstraction exists, but the installed Odin
-  SDK has no Runa package.
+  SDK has no Runa package. Upstream Runa v1.2.3 exposes the expected facade and
+  segmentation/raster APIs, but has not been vendored or wired into this tree.
 - Result: basic retained text editing is headlessly testable; shaping, bidi,
   segmentation, rasterization and cluster mapping are not.
 - Verdict: not proven.
