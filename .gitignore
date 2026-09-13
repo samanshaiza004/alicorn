@@ -1,0 +1,9 @@
+out/
+*.exe
+*.obj
+*.pdb
+*.dll
+*.lib
+*.ilk
+*.log
+

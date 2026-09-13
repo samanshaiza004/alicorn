@@ -1,0 +1,32 @@
+# Roadmap
+
+## Foundation
+
+- identity, reconciliation, invalidation, layout, input/focus;
+- retained display products and headless proof tests;
+- SDL3/SDL_GPU integration and safe resource retirement;
+- Runa-backed text adapter once the dependency/version is available;
+- inspector, structural tracing, virtualized list and the eight-track Crucible.
+
+## Scale
+
+- variable-height virtualization and scroll anchoring;
+- broader native GPU coverage on Windows, macOS and Linux;
+- accessibility integration through a separate semantic adapter.
+
+## Observability
+
+- richer causality and performance timelines;
+- semantic inspector and AccessKit projection.
+
+## Experimental
+
+- semantic LOD policies, QoS scheduling and richer custom surfaces.
+
+## Research
+
+- domain transactions, persistence/history, collaboration, AI interfaces,
+  content-addressed runtime data and GPU-compute layout.
+
+Research items are not silently promoted into foundation scope.
+

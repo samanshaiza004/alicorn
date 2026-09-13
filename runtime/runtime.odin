@@ -1,0 +1,539 @@
+package alicorn
+
+import "core:fmt"
+import "core:strings"
+
+Node_ID :: distinct u64
+
+Node_Kind :: enum {
+	Root,
+	Container,
+	Button,
+	Text,
+	Text_Field,
+	Virtual_List,
+	Virtual_Row,
+	Custom_Surface,
+}
+
+Layout_Direction :: enum { Row, Column }
+Align :: enum { Start, Center, End, Stretch }
+
+Layout_Style :: struct {
+	direction: Layout_Direction,
+	width:     f32,
+	height:    f32,
+	min_width: f32,
+	max_width: f32,
+	min_height: f32,
+	max_height: f32,
+	grow:      f32,
+	padding:   f32,
+	gap:       f32,
+	align:     Align,
+	clip:      bool,
+}
+
+Rect :: struct {
+	x, y, w, h: f32,
+}
+
+Color :: struct {
+	r, g, b, a: f32,
+}
+
+Source_Site :: struct {
+	file:      string,
+	line:      int,
+	column:    int,
+	component: string,
+}
+
+Pointer_Kind :: enum { Move, Down, Up }
+
+Pointer_Event :: struct {
+	kind:   Pointer_Kind,
+	x, y:   f32,
+	button: int,
+}
+
+Text_Edit_Kind :: enum { Insert, Backspace, Delete }
+
+Text_Edit :: struct {
+	kind: Text_Edit_Kind,
+	text: string,
+}
+
+Text_Change :: struct {
+	node: Node_ID,
+	text: string,
+	changed: bool,
+}
+
+Display_Command :: struct {
+	kind: Node_Kind,
+	bounds: Rect,
+	text:   string,
+	color:  Color,
+}
+
+Dirty_Stages :: struct {
+	description: bool,
+	layout:      bool,
+	paint:       bool,
+	composite:   bool,
+}
+
+Description :: struct {
+	id:          Node_ID,
+	parent:      Node_ID,
+	site:        Source_Site,
+	key:         string,
+	explicit_key: bool,
+	kind:        Node_Kind,
+	label:       string,
+	text:        string,
+	style:       Layout_Style,
+	color:       Color,
+	paint_value: u64,
+	region_revision: u64,
+	region:      bool,
+	focusable:   bool,
+	identity_key: string,
+}
+
+Node :: struct {
+	id:          Node_ID,
+	parent:      Node_ID,
+	site:        Source_Site,
+	key:         string,
+	kind:        Node_Kind,
+	label:       string,
+	text:        string,
+	style:       Layout_Style,
+	color:       Color,
+	paint_value: u64,
+	region_revision: u64,
+	region:      bool,
+	region_cached: bool,
+	region_cache: []Description,
+	focusable:   bool,
+	active:      bool,
+	hovered:     bool,
+	pressed:     bool,
+	local_counter: int,
+	identity_key: string,
+	bounds:      Rect,
+	clip:        Rect,
+	dirty:       Dirty_Stages,
+	last_reason: string,
+	description_hash: u64,
+	layout_hash: u64,
+	paint_hash: u64,
+	paint:       [dynamic]Display_Command,
+}
+
+Trace_Kind :: enum {
+	Pointer,
+	Focus,
+	Invalidation,
+	Reconcile,
+	Layout,
+	Paint,
+	Composite,
+	Retire,
+}
+
+Trace_Event :: struct {
+	sequence: u64,
+	kind:     Trace_Kind,
+	node:     Node_ID,
+	reason:   string,
+}
+
+Trace_Ring :: struct {
+	events: [dynamic]Trace_Event,
+	next:   int,
+	count:  int,
+	sequence: u64,
+}
+
+Frame_Stats :: struct {
+	frame:             u64,
+	frames_built:      u64,
+	idle_frames:       u64,
+	descriptions_emitted: u64,
+	descriptions_reused:  u64,
+	regions_skipped:   u64,
+	nodes_created:     u64,
+	nodes_retired:     u64,
+	layout_updates:    u64,
+	paint_updates:     u64,
+	composite_updates:  u64,
+	pointer_events:    u64,
+	gpu_submits:       u64,
+}
+
+Runtime :: struct {
+	nodes:       map[Node_ID]^Node,
+	order:       [dynamic]Node_ID,
+	pending:     [dynamic]Description,
+	seen:        map[Node_ID]bool,
+	region_captures: map[Node_ID][]Description,
+	identity_scopes: map[Node_ID]bool,
+	stack:       [dynamic]Node_ID,
+	identity_stack: [dynamic]Node_ID,
+	identity_labels: [dynamic]string,
+	viewport:    Rect,
+	focused:     Node_ID,
+	last_hovered: Node_ID,
+	last_activated: Node_ID,
+	invalidated: bool,
+	frame_open:  bool,
+	hard_error:  bool,
+	diagnostic:  string,
+	last_invalidation_reason: string,
+	stats:       Frame_Stats,
+	trace:       Trace_Ring,
+	display:     [dynamic]Display_Command,
+}
+
+UI :: struct {
+	runtime: ^Runtime,
+}
+
+DEFAULT_STYLE :: Layout_Style{
+	direction = .Column,
+	width = -1,
+	height = -1,
+	min_width = 0,
+	max_width = -1,
+	min_height = 0,
+	max_height = -1,
+	grow = 0,
+	padding = 0,
+	gap = 0,
+	align = .Stretch,
+	clip = false,
+}
+
+DEFAULT_COLOR :: Color{0.78, 0.82, 0.90, 1.0}
+
+site :: proc(file: string, line, column: int, component: string) -> Source_Site {
+	return Source_Site{file, line, column, component}
+}
+
+caller_site :: proc(component: string, loc := #caller_location) -> Source_Site {
+	return Source_Site{loc.file_path, int(loc.line), int(loc.column), component}
+}
+
+new_runtime :: proc(viewport: Rect, trace_capacity := 256) -> Runtime {
+	capacity := trace_capacity
+	if capacity < 1 { capacity = 1 }
+	rt := Runtime{
+		nodes = make(map[Node_ID]^Node),
+		order = make([dynamic]Node_ID, 0),
+		pending = make([dynamic]Description, 0),
+		seen = make(map[Node_ID]bool),
+		region_captures = make(map[Node_ID][]Description),
+		identity_scopes = make(map[Node_ID]bool),
+		stack = make([dynamic]Node_ID, 0),
+		identity_stack = make([dynamic]Node_ID, 0),
+		identity_labels = make([dynamic]string, 0),
+		viewport = viewport,
+		invalidated = true,
+		trace = Trace_Ring{events = make([dynamic]Trace_Event, capacity)},
+	}
+	return rt
+}
+
+hash_mix :: proc(h, value: u64) -> u64 {
+	result := h ~ value
+	result *= 1099511628211
+	return result
+}
+
+hash_string :: proc(value: string) -> u64 {
+	h: u64 = 1469598103934665603
+	for i := 0; i < len(value); i += 1 {
+		h = hash_mix(h, u64(value[i]))
+	}
+	return h
+}
+
+identity_hash :: proc(parent: Node_ID, source: Source_Site, key: string, explicit_key: bool) -> Node_ID {
+	h := u64(1469598103934665603)
+	h = hash_mix(h, u64(parent))
+	h = hash_mix(h, hash_string(source.file))
+	h = hash_mix(h, u64(source.line))
+	h = hash_mix(h, u64(source.column))
+	h = hash_mix(h, hash_string(source.component))
+	if explicit_key {
+		h = hash_mix(h, hash_string(key))
+	}
+	if h == 0 {
+		h = 1
+	}
+	return Node_ID(h)
+}
+
+owned :: proc(value: string) -> string {
+	if value == "" {
+		return ""
+	}
+	copy, _ := strings.clone(value)
+	return copy
+}
+
+clone_site :: proc(value: Source_Site) -> Source_Site {
+	return Source_Site{owned(value.file), value.line, value.column, owned(value.component)}
+}
+
+clone_description :: proc(value: Description) -> Description {
+	copy := value
+	copy.site = clone_site(value.site)
+	copy.key = owned(value.key)
+	copy.label = owned(value.label)
+	copy.text = owned(value.text)
+	copy.identity_key = owned(value.identity_key)
+	return copy
+}
+
+clone_descriptions :: proc(source: []Description) -> [dynamic]Description {
+	result := make([dynamic]Description, 0, len(source))
+	for d in source {
+		append(&result, clone_description(d))
+	}
+	return result
+}
+
+record_trace :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reason: string) {
+	rt.trace.sequence += 1
+	entry := Trace_Event{rt.trace.sequence, kind, node, owned(reason)}
+	rt.trace.events[rt.trace.next] = entry
+	rt.trace.next = (rt.trace.next + 1) % len(rt.trace.events)
+	if rt.trace.count < len(rt.trace.events) {
+		rt.trace.count += 1
+	}
+}
+
+invalidate_root :: proc(rt: ^Runtime, reason := "explicit root invalidation") {
+	rt.invalidated = true
+	rt.last_invalidation_reason = owned(reason)
+	record_trace(rt, .Invalidation, 0, reason)
+}
+
+invalidate_region :: proc(rt: ^Runtime, key: string, revision: u64, reason := "explicit region invalidation") {
+	// Region revisions are carried by the next description. The key is included
+	// in the trace so the invalidation remains structurally inspectable.
+	rt.invalidated = true
+	rt.last_invalidation_reason = owned(fmt.tprintf("region %s revision %d: %s", key, revision, reason))
+	record_trace(rt, .Invalidation, 0, rt.last_invalidation_reason)
+}
+
+begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
+	ui = UI{runtime = rt}
+	if !rt.invalidated {
+		rt.stats.idle_frames += 1
+		return ui, false
+	}
+	rt.frame_open = true
+	clear(&rt.pending)
+	clear(&rt.seen)
+	clear(&rt.identity_scopes)
+	clear(&rt.region_captures)
+	clear(&rt.stack)
+	clear(&rt.identity_stack)
+	clear(&rt.identity_labels)
+	rt.stats.frames_built += 1
+	return ui, true
+}
+
+current_node_parent :: proc(ui: ^UI) -> Node_ID {
+	if len(ui.runtime.stack) == 0 {
+		return 0
+	}
+	return ui.runtime.stack[len(ui.runtime.stack)-1]
+}
+
+current_identity_parent :: proc(ui: ^UI) -> Node_ID {
+	if len(ui.runtime.identity_stack) == 0 {
+		return 0
+	}
+	return ui.runtime.identity_stack[len(ui.runtime.identity_stack)-1]
+}
+
+append_diagnostic :: proc(rt: ^Runtime, message: string) {
+	rt.hard_error = true
+	rt.diagnostic = owned(message)
+	record_trace(rt, .Reconcile, 0, message)
+}
+
+emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, region_revision: u64 = 0, is_region := false, focusable := false) -> Node_ID {
+	rt := ui.runtime
+	parent_node := current_node_parent(ui)
+	parent_identity := current_identity_parent(ui)
+	id := identity_hash(parent_identity, source, key, explicit_key)
+	if rt.seen[id] {
+		kind_text := explicit_key ? "duplicate key" : "repeated unkeyed sibling"
+		append_diagnostic(rt, fmt.tprintf("%s at %s:%d:%d component=%s key=%q; add a unique ui.key_scope or key", kind_text, source.file, source.line, source.column, source.component, key))
+		return 0
+	}
+	rt.seen[id] = true
+	identity_key := ""
+	if len(rt.identity_labels) > 0 { identity_key = rt.identity_labels[len(rt.identity_labels)-1] }
+	description := Description{id, parent_node, source, key, explicit_key, kind, label, text, style, color, paint_value, region_revision, is_region, focusable, identity_key}
+	append(&rt.pending, description)
+	rt.stats.descriptions_emitted += 1
+	return id
+}
+
+key_scope :: proc(ui: ^UI, key: string, source: Source_Site, body: proc()) {
+	if !key_scope_begin(ui, key, source) { return }
+	body()
+	key_scope_end(ui)
+}
+
+key_scope_begin :: proc(ui: ^UI, key: string, source: Source_Site) -> bool {
+	rt := ui.runtime
+	parent := current_identity_parent(ui)
+	id := identity_hash(parent, source, key, true)
+	if rt.identity_scopes[id] {
+		append_diagnostic(rt, fmt.tprintf("duplicate key scope at %s:%d:%d component=%s key=%q", source.file, source.line, source.column, source.component, key))
+		return false
+	}
+	rt.identity_scopes[id] = true
+	append(&rt.identity_stack, id)
+	append(&rt.identity_labels, key)
+	return true
+}
+
+key_scope_end :: proc(ui: ^UI) {
+	if len(ui.runtime.identity_stack) > 0 { pop(&ui.runtime.identity_stack) }
+	if len(ui.runtime.identity_labels) > 0 { pop(&ui.runtime.identity_labels) }
+}
+
+container_begin :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, focusable := false) -> Node_ID {
+	id := emit(ui, kind, source, label=label, key=key, explicit_key=explicit_key, style=style, color=color, paint_value=paint_value, focusable=focusable)
+	if id != 0 {
+		append(&ui.runtime.stack, id)
+		append(&ui.runtime.identity_stack, id)
+		append(&ui.runtime.identity_labels, "")
+	}
+	return id
+}
+
+container_end :: proc(ui: ^UI) {
+	if len(ui.runtime.stack) > 0 { pop(&ui.runtime.stack) }
+	if len(ui.runtime.identity_stack) > 0 { pop(&ui.runtime.identity_stack) }
+	if len(ui.runtime.identity_labels) > 0 { pop(&ui.runtime.identity_labels) }
+}
+
+// A structural wrapper can be made identity-transparent when a caller wants a
+// keyed item's descendants to survive that wrapper being introduced or
+// removed. The retained hierarchy still records the wrapper for layout.
+transparent_container_begin :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, focusable := false) -> Node_ID {
+	id := emit(ui, kind, source, label=label, key=key, explicit_key=explicit_key, style=style, color=color, paint_value=paint_value, focusable=focusable)
+	if id != 0 { append(&ui.runtime.stack, id) }
+	return id
+}
+
+transparent_container_end :: proc(ui: ^UI) {
+	if len(ui.runtime.stack) > 0 { pop(&ui.runtime.stack) }
+}
+
+container :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, body: proc(), label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, focusable := false) -> Node_ID {
+	id := container_begin(ui, kind, source, label, key, explicit_key, style, color, paint_value, focusable)
+	if id == 0 { return 0 }
+	body()
+	container_end(ui)
+	return id
+}
+
+root :: proc(ui: ^UI, source: Source_Site, body: proc(), style := DEFAULT_STYLE) -> Node_ID {
+	return container(ui, .Root, source, body, label="root", style=style)
+}
+
+button :: proc(ui: ^UI, label: string, source: Source_Site, key := "", explicit_key := false, style := DEFAULT_STYLE, paint_value: u64 = 0) -> (id: Node_ID, clicked: bool) {
+	id = emit(ui, .Button, source, label=label, key=key, explicit_key=explicit_key, style=style, paint_value=paint_value, focusable=true)
+	clicked = id != 0 && ui.runtime.last_activated == id
+	return
+}
+
+text :: proc(ui: ^UI, value: string, source: Source_Site, key := "", explicit_key := false, style := DEFAULT_STYLE, paint_value: u64 = 0) -> Node_ID {
+	return emit(ui, .Text, source, text=value, key=key, explicit_key=explicit_key, style=style, paint_value=paint_value)
+}
+
+text_field :: proc(ui: ^UI, value: string, source: Source_Site, key := "", explicit_key := false, style := DEFAULT_STYLE) -> Node_ID {
+	return emit(ui, .Text_Field, source, text=value, key=key, explicit_key=explicit_key, style=style, focusable=true)
+}
+
+region_begin :: proc(ui: ^UI, key: string, revision: u64, source: Source_Site, style := DEFAULT_STYLE) -> (id: Node_ID, reused: bool) {
+	rt := ui.runtime
+	id = emit(ui, .Container, source, label=key, key=key, explicit_key=true, style=style, region_revision=revision, is_region=true)
+	if id == 0 {
+		return 0, false
+	}
+	if old, ok := rt.nodes[id]; ok && old.region && old.region_cached && old.region_revision == revision {
+		rt.stats.regions_skipped += 1
+		rt.stats.descriptions_reused += u64(len(old.region_cache))
+		for cached in old.region_cache {
+			if rt.seen[cached.id] {
+				append_diagnostic(rt, fmt.tprintf("cached region identity collision for node %d", cached.id))
+				continue
+			}
+			rt.seen[cached.id] = true
+			append(&rt.pending, cached)
+		}
+		return id, true
+	}
+	append(&rt.stack, id)
+	append(&rt.identity_stack, id)
+	append(&rt.identity_labels, "")
+	return id, false
+}
+
+region_end :: proc(ui: ^UI, id: Node_ID, reused: bool, start: int) {
+	if reused || id == 0 { return }
+	pop(&ui.runtime.stack)
+	pop(&ui.runtime.identity_stack)
+	pop(&ui.runtime.identity_labels)
+	ui.runtime.region_captures[id] = clone_descriptions(ui.runtime.pending[start:])[:]
+}
+
+region :: proc(ui: ^UI, key: string, revision: u64, source: Source_Site, body: proc(), style := DEFAULT_STYLE) -> Node_ID {
+	id, reused := region_begin(ui, key, revision, source, style)
+	if !reused && id != 0 {
+		start := len(ui.runtime.pending)
+		body()
+		region_end(ui, id, false, start)
+	}
+	return id
+}
+
+virtual_list :: proc(ui: ^UI, item_count: int, scroll_y, viewport_height, row_height: f32, source: Source_Site, row: proc(ui: ^UI, index: int)) -> (first, last: int) {
+	if item_count <= 0 || row_height <= 0 || viewport_height <= 0 {
+		return 0, 0
+	}
+	first = int(scroll_y / row_height)
+	if first < 0 { first = 0 }
+	if first >= item_count { first = item_count - 1 }
+	last = int((scroll_y + viewport_height) / row_height) + 1
+	if last > item_count { last = item_count }
+	container_begin(ui, .Virtual_List, source, label="virtual-list", style=Layout_Style{.Column, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, true})
+	for i := first; i < last; i += 1 {
+		if key_scope_begin(ui, fmt.tprintf("%d", i), source) {
+			row(ui, i)
+			key_scope_end(ui)
+		}
+	}
+	container_end(ui)
+	return
+}
+
+custom_surface :: proc(ui: ^UI, surface_key: string, frame: u64, logical_bounds: Rect, pixel_width, pixel_height: int, dpi_scale: f32, source: Source_Site) -> Node_ID {
+	style := DEFAULT_STYLE
+	style.width = logical_bounds.w
+	style.height = logical_bounds.h
+	return emit(ui, .Custom_Surface, source, label=surface_key, key=surface_key, explicit_key=true, style=style, paint_value=frame, color=Color{0.15, 0.25, 0.42, 1})
+}
