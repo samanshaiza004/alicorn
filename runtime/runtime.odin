@@ -19,6 +19,22 @@ Node_Kind :: enum {
 	Custom_Surface,
 }
 
+GPU_Surface_Kind :: enum {
+	Waveform,
+}
+
+// GPU_Surface_Context is the backend-neutral placement contract. The runtime
+// owns these values; a backend must not infer them from the window or retain an
+// application pointer to obtain them later.
+GPU_Surface_Context :: struct {
+	logical_bounds: Rect,
+	pixel_width:    int,
+	pixel_height:   int,
+	dpi_scale:      f32,
+	clip:           Rect,
+	revision:       u64,
+}
+
 Layout_Direction :: enum { Row, Column }
 Align :: enum { Start, Center, End, Stretch }
 
@@ -121,6 +137,10 @@ Description :: struct {
 	identity_key: string,
 	identity_key_u64: u64,
 	identity_key_numeric: bool,
+	surface_kind: GPU_Surface_Kind,
+	surface_pixel_width: int,
+	surface_pixel_height: int,
+	surface_dpi_scale: f32,
 }
 
 Pending_Kind :: enum {
@@ -163,6 +183,12 @@ Node :: struct {
 	identity_key: string,
 	identity_key_u64: u64,
 	identity_key_numeric: bool,
+	surface_kind: GPU_Surface_Kind,
+	surface_pixel_width: int,
+	surface_pixel_height: int,
+	surface_dpi_scale: f32,
+	surface_revision: u64,
+	surface_samples: [dynamic]f32,
 	bounds:      Rect,
 	clip:        Rect,
 	dirty:       Dirty_Stages,
@@ -198,6 +224,7 @@ Trace_Event :: struct {
 	kind:     Trace_Kind,
 	node:     Node_ID,
 	reason:   string,
+	reason_owned: bool,
 }
 
 Trace_Ring :: struct {
@@ -227,6 +254,8 @@ Frame_Stats :: struct {
 	adjacency_rebuilds: u64,
 	pointer_events:    u64,
 	gpu_submits:       u64,
+	surface_updates:  u64,
+	surface_frames_consumed: u64,
 }
 
 Runtime :: struct {
@@ -260,6 +289,7 @@ Runtime :: struct {
 	display:     [dynamic]Display_Command,
 	text_engine: Text_Engine,
 	text_font_generation_seen: u64,
+	surface_frame_pending: bool,
 }
 
 UI :: struct {
@@ -372,14 +402,27 @@ owned :: proc(value: string) -> string {
 
 record_trace :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reason: string) {
 	rt.trace.sequence += 1
-	entry := Trace_Event{rt.trace.sequence, kind, node, owned(reason)}
+	entry := Trace_Event{sequence=rt.trace.sequence, kind=kind, node=node, reason=owned(reason), reason_owned=true}
 	old := &rt.trace.events[rt.trace.next]
-	if len(old.reason) > 0 { delete(old.reason) }
+	if old.reason_owned && len(old.reason) > 0 { delete(old.reason) }
 	rt.trace.events[rt.trace.next] = entry
 	rt.trace.next = (rt.trace.next + 1) % len(rt.trace.events)
 	if rt.trace.count < len(rt.trace.events) {
 		rt.trace.count += 1
 	}
+}
+
+// High-frequency retained products can use an immutable literal reason
+// without creating one heap string per update. The ring still bounds event
+// storage; only the ownership policy differs for this process-lifetime text.
+record_trace_literal :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reason: string) {
+	rt.trace.sequence += 1
+	entry := Trace_Event{sequence=rt.trace.sequence, kind=kind, node=node, reason=reason, reason_owned=false}
+	old := &rt.trace.events[rt.trace.next]
+	if old.reason_owned && len(old.reason) > 0 { delete(old.reason) }
+	rt.trace.events[rt.trace.next] = entry
+	rt.trace.next = (rt.trace.next + 1) % len(rt.trace.events)
+	if rt.trace.count < len(rt.trace.events) { rt.trace.count += 1 }
 }
 
 invalidate_root :: proc(rt: ^Runtime, reason := "explicit root invalidation") {
@@ -440,7 +483,7 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	record_trace(rt, .Reconcile, 0, message)
 }
 
-emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, region_revision: u64 = 0, is_region := false, focusable := false) -> Node_ID {
+emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, region_revision: u64 = 0, is_region := false, focusable := false, surface_kind := GPU_Surface_Kind.Waveform, surface_pixel_width: int = 0, surface_pixel_height: int = 0, surface_dpi_scale: f32 = 1) -> Node_ID {
 	rt := ui.runtime
 	parent_node := current_node_parent(ui)
 	parent_identity := current_identity_parent(ui)
@@ -459,7 +502,15 @@ emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text :=
 		identity_key_u64 = rt.identity_key_u64[len(rt.identity_key_u64)-1]
 		identity_key_numeric = rt.identity_key_numeric[len(rt.identity_key_numeric)-1]
 	}
-	description := Description{id, parent_node, source, key, explicit_key, kind, label, text, style, color, paint_value, region_revision, is_region, focusable, identity_key, identity_key_u64, identity_key_numeric}
+	description := Description{
+		id=id, parent=parent_node, site=source, key=key, explicit_key=explicit_key,
+		kind=kind, label=label, text=text, style=style, color=color,
+		paint_value=paint_value, region_revision=region_revision, region=is_region,
+		focusable=focusable, identity_key=identity_key,
+		identity_key_u64=identity_key_u64, identity_key_numeric=identity_key_numeric,
+		surface_kind=surface_kind, surface_pixel_width=surface_pixel_width,
+		surface_pixel_height=surface_pixel_height, surface_dpi_scale=surface_dpi_scale,
+	}
 	append(&rt.pending, Pending_Item{.Description, description, 0})
 	rt.stats.descriptions_emitted += 1
 	return id
@@ -673,5 +724,12 @@ custom_surface :: proc(ui: ^UI, surface_key: string, frame: u64, logical_bounds:
 	style := DEFAULT_STYLE
 	style.width = logical_bounds.w
 	style.height = logical_bounds.h
-	return emit(ui, .Custom_Surface, resolved_source, label=surface_key, key=surface_key, explicit_key=true, style=style, paint_value=frame, color=Color{0.15, 0.25, 0.42, 1})
+	return emit(ui, .Custom_Surface, resolved_source, label=surface_key, key=surface_key, explicit_key=true, style=style, paint_value=frame, color=Color{0.15, 0.25, 0.42, 1}, surface_pixel_width=pixel_width, surface_pixel_height=pixel_height, surface_dpi_scale=dpi_scale)
+}
+
+// gpu_surface is the explicit public name for the retained surface contract;
+// custom_surface remains as the compatibility spelling used by the first
+// native fixture.
+gpu_surface :: proc(ui: ^UI, surface_key: string, revision: u64, logical_bounds: Rect, pixel_width, pixel_height: int, dpi_scale: f32, source := Source_Site{}, loc := #caller_location) -> Node_ID {
+	return custom_surface(ui, surface_key, revision, logical_bounds, pixel_width, pixel_height, dpi_scale, source, loc)
 }

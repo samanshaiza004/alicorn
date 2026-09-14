@@ -14,6 +14,56 @@ GPU_Backend :: struct {
 	resource_retirements: u64,
 }
 
+// gpu_surface_update is the explicit high-frequency update path. The sample
+// slice is copied into runtime-owned storage before this procedure returns;
+// no application pointer is retained. It deliberately does not invalidate
+// the procedural root or queue ordinary layout/paint work.
+gpu_surface_update :: proc(rt: ^Runtime, id: Node_ID, revision: u64, samples: []f32) -> bool {
+	node, ok := rt.nodes[id]
+	if !ok || node == nil || !node.active || node.kind != .Custom_Surface {
+		return false
+	}
+	if node.surface_revision == revision {
+		return false
+	}
+	clear(&node.surface_samples)
+	for sample in samples {
+		append(&node.surface_samples, sample)
+	}
+	node.surface_revision = revision
+	rt.surface_frame_pending = true
+	rt.stats.surface_updates += 1
+	record_trace_literal(rt, .Invalidation, id, "explicit GPU surface revision update")
+	return true
+}
+
+gpu_surface_context :: proc(rt: ^Runtime, id: Node_ID) -> (ctx: GPU_Surface_Context, ok: bool) {
+	node, found := rt.nodes[id]
+	if !found || node == nil || !node.active || node.kind != .Custom_Surface {
+		return ctx, false
+	}
+	ctx = GPU_Surface_Context{
+		logical_bounds=node.bounds,
+		pixel_width=node.surface_pixel_width,
+		pixel_height=node.surface_pixel_height,
+		dpi_scale=node.surface_dpi_scale,
+		clip=rect_intersection(node.clip, node.bounds),
+		revision=node.surface_revision,
+	}
+	return ctx, true
+}
+
+gpu_surface_needs_frame :: proc(rt: ^Runtime) -> bool {
+	return rt.surface_frame_pending
+}
+
+gpu_surface_frame_consumed :: proc(rt: ^Runtime) {
+	if rt.surface_frame_pending {
+		rt.surface_frame_pending = false
+		rt.stats.surface_frames_consumed += 1
+	}
+}
+
 new_gpu_backend :: proc() -> GPU_Backend {
 	return GPU_Backend{submitted=make(map[GPU_Fence]bool), retirement_queue=make([dynamic]GPU_Fence, 0)}
 }

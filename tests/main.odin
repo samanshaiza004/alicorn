@@ -23,6 +23,7 @@ S_REGION_STRESS_SIBLING :: alicorn.Source_Site{"tests/region_stress.odin", 4, 1,
 S_REGION_STRESS_NESTED :: alicorn.Source_Site{"tests/region_stress.odin", 5, 1, "nested"}
 S_TEXT_A :: alicorn.Source_Site{"tests/text_input.odin", 1, 1, "field_a"}
 S_TEXT_B :: alicorn.Source_Site{"tests/text_input.odin", 2, 1, "field_b"}
+S_SURFACE :: alicorn.Source_Site{"tests/gpu_surface.odin", 1, 1, "surface"}
 
 virtual_keys: []string
 
@@ -969,6 +970,48 @@ test_runtime_edit_invalidates_text_product :: proc(state: ^Test_State) {
 	alicorn.destroy_runtime(&rt)
 }
 
+render_gpu_surface :: proc(rt: ^alicorn.Runtime, show: bool, revision: u64) -> alicorn.Node_ID {
+	alicorn.invalidate_root(rt, "test GPU surface description")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return 0 }
+	alicorn.container_begin(&ui, .Root, S_ROOT, label="surface-root")
+	id: alicorn.Node_ID = 0
+	if show {
+		id = alicorn.gpu_surface(&ui, "waveform", revision, alicorn.Rect{10, 12, 240, 80}, 480, 160, 2, S_SURFACE)
+	}
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return id
+}
+
+test_gpu_surface_contract :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 160})
+	id := render_gpu_surface(&rt, true, 0)
+	ctx, ok := alicorn.gpu_surface_context(&rt, id)
+	expect(state, ok, "GPU surface handle must resolve to an active retained node")
+	expect(state, ok && ctx.logical_bounds.w == 240 && ctx.logical_bounds.h == 80, "surface context must retain laid-out logical bounds")
+	expect(state, ok && ctx.pixel_width == 480 && ctx.pixel_height == 160 && ctx.dpi_scale == 2, "surface context must retain physical extent and DPI")
+	expect(state, ok && ctx.clip.w == 240 && ctx.clip.h == 80, "surface context must expose an effective clip bounded to the surface")
+	samples := []f32{0.1, 0.4, 0.8, 0.2}
+	before := rt.stats
+	expect(state, alicorn.gpu_surface_update(&rt, id, 1, samples[:]), "explicit surface revision update must succeed")
+	expect(state, !rt.invalidated && alicorn.gpu_surface_needs_frame(&rt), "surface update must wake composition without invalidating the procedural root")
+	expect(state, rt.nodes[id].surface_revision == 1 && len(rt.nodes[id].surface_samples) == 4 && rt.nodes[id].surface_samples[2] == 0.8, "surface samples must be copied into retained runtime storage")
+	_, build := alicorn.begin_frame(&rt)
+	expect(state, !build, "surface-only update must not execute the application description")
+	expect(state, rt.stats.frames_built == before.frames_built && rt.stats.reconcile_nodes_visited == before.reconcile_nodes_visited && rt.stats.layout_nodes_visited == before.layout_nodes_visited && rt.stats.paint_nodes_visited == before.paint_nodes_visited, "surface-only update must leave ordinary frame work untouched")
+	alicorn.gpu_surface_frame_consumed(&rt)
+	expect(state, !alicorn.gpu_surface_needs_frame(&rt), "successful surface submission must consume the pending frame")
+	// A later root wake with the same description must not roll back the
+	// independently updated retained surface revision or its copied samples.
+	render_gpu_surface(&rt, true, 0)
+	expect(state, rt.nodes[id].surface_revision == 1 && len(rt.nodes[id].surface_samples) == 4, "root wake must preserve a newer explicit surface update")
+	render_gpu_surface(&rt, false, 0)
+	expect(state, !alicorn.gpu_surface_update(&rt, id, 2, samples[:]), "retired surface handles must reject updates")
+	expect(state, rt.focused == 0 && len(rt.nodes) == 1, "surface removal must retire its retained node")
+	alicorn.destroy_runtime(&rt)
+}
+
 main :: proc() {
 	state: Test_State
 	test_identity_and_ambiguity(&state)
@@ -988,6 +1031,7 @@ main :: proc() {
 	test_gpu_text_resource_boundary(&state)
 	test_retained_text_product_lifetime(&state)
 	test_runtime_edit_invalidates_text_product(&state)
+	test_gpu_surface_contract(&state)
 	if state.failures == 0 {
 		fmt.println("Alicorn foundation tests: PASS")
 		return

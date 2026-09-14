@@ -14,6 +14,7 @@ REGION_NODE :: alicorn.Source_Site{"benchmarks/main.odin", 22, 1, "region_node"}
 LARGE_SCOPE :: alicorn.Source_Site{"benchmarks/main.odin", 30, 1, "large_scope"}
 LARGE_REGION :: alicorn.Source_Site{"benchmarks/main.odin", 31, 1, "large_region"}
 ROW :: alicorn.Source_Site{"benchmarks/main.odin", 40, 1, "virtual_row"}
+SURFACE :: alicorn.Source_Site{"benchmarks/main.odin", 50, 1, "surface"}
 
 Bench_Allocator_State :: struct {
 	backing: mem.Allocator,
@@ -82,6 +83,8 @@ Bench_Delta :: struct {
 	nodes_retired: u64,
 	paint_updates: u64,
 	composite_updates: u64,
+	surface_updates: u64,
+	surface_frames_consumed: u64,
 }
 
 delta :: proc(before, after: alicorn.Frame_Stats) -> Bench_Delta {
@@ -99,6 +102,8 @@ delta :: proc(before, after: alicorn.Frame_Stats) -> Bench_Delta {
 		after.nodes_retired-before.nodes_retired,
 		after.paint_updates-before.paint_updates,
 		after.composite_updates-before.composite_updates,
+		after.surface_updates-before.surface_updates,
+		after.surface_frames_consumed-before.surface_frames_consumed,
 	}
 }
 
@@ -241,6 +246,60 @@ render_virtual :: proc(rt: ^alicorn.Runtime, scroll: f32) {
 	alicorn.virtual_list(&ui, 1_000_000, scroll, 400, 20, ROW, render_virtual_key, render_virtual_row)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
+}
+
+render_surface :: proc(rt: ^alicorn.Runtime, revision: u64) -> alicorn.Node_ID {
+	alicorn.invalidate_root(rt, "benchmark surface description")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return 0 }
+	alicorn.container_begin(&ui, .Root, ROOT, label="surface-root")
+	id := alicorn.custom_surface(&ui, "waveform", revision, alicorn.Rect{0, 0, 640, 240}, 1280, 480, 2, SURFACE)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return id
+}
+
+measure_surface_locality :: proc(allocator_state: ^Bench_Allocator_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 300})
+	id := render_surface(&rt, 0)
+	samples := make([]f32, 512)
+	for i := 0; i < len(samples); i += 1 { samples[i] = f32(i) / f32(len(samples)-1) }
+	// Warm the retained sample capacity so the measured loop isolates the
+	// explicit update path rather than dynamic-array growth.
+	alicorn.gpu_surface_update(&rt, id, 1, samples)
+	alicorn.gpu_surface_frame_consumed(&rt)
+	before := rt.stats
+	alloc_before := allocation_snapshot(allocator_state)
+	start := time.now()
+	for i := 0; i < 1_200; i += 1 {
+		if !alicorn.gpu_surface_update(&rt, id, u64(i+2), samples) { benchmark_failure("surface update rejected during locality benchmark") }
+		_, build := alicorn.begin_frame(&rt)
+		if build { benchmark_failure("surface-only benchmark executed the application description") }
+		alicorn.gpu_surface_frame_consumed(&rt)
+	}
+	elapsed := time.duration_nanoseconds(time.since(start))
+	after := rt.stats
+	d := delta(before, after)
+	a := allocation_delta(alloc_before, allocation_snapshot(allocator_state))
+	if d.descriptions_emitted != 0 || d.reconcile_nodes_visited != 0 || d.layout_nodes_visited != 0 || d.paint_nodes_visited != 0 || d.composition_nodes_visited != 0 {
+		benchmark_failure("surface-only updates visited ordinary retained work")
+	}
+	fmt.println(
+		"surface_locality_1200_updates",
+		"wall_ns", elapsed,
+		"surface_updates", d.surface_updates,
+		"surface_frames_consumed", d.surface_frames_consumed,
+		"ordinary_emit", d.descriptions_emitted,
+		"ordinary_reconcile", d.reconcile_nodes_visited,
+		"ordinary_layout", d.layout_nodes_visited,
+		"ordinary_paint", d.paint_nodes_visited,
+		"ordinary_compose", d.composition_nodes_visited,
+		"alloc", a.allocations,
+		"alloc_bytes", a.allocated_bytes,
+		"retained", len(rt.nodes),
+	)
+	delete(samples)
+	alicorn.destroy_runtime(&rt)
 }
 
 measure_tree :: proc(count: int, allocator_state: ^Bench_Allocator_State) {
@@ -435,6 +494,7 @@ main :: proc() {
 	measure_regions(&allocator_state)
 	measure_key_paths(&allocator_state)
 	measure_churn(&allocator_state)
+	measure_surface_locality(&allocator_state)
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 1280, 900})
 	render_virtual(&rt, 0)
 	start := time.now()

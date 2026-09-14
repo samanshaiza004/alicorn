@@ -34,6 +34,10 @@ description_hash :: proc(d: Description) -> u64 {
 	h = hash_mix(h, d.paint_value)
 	h = hash_mix(h, hash_color(d.color))
 	h = hash_mix(h, d.region_revision)
+	h = hash_mix(h, u64(d.surface_kind))
+	h = hash_mix(h, u64(d.surface_pixel_width))
+	h = hash_mix(h, u64(d.surface_pixel_height))
+	h = hash_mix(h, u64(transmute(u32)d.surface_dpi_scale))
 	return h
 }
 
@@ -114,6 +118,20 @@ copy_node_description :: proc(node: ^Node, d: Description) {
 	node.region_revision = d.region_revision
 	node.region = d.region
 	node.focusable = d.focusable
+	surface_description_changed := node.paint_value != d.paint_value
+	node.surface_kind = d.surface_kind
+	node.surface_pixel_width = d.surface_pixel_width
+	node.surface_pixel_height = d.surface_pixel_height
+	node.surface_dpi_scale = d.surface_dpi_scale
+	// A direct surface update owns the high-frequency revision. A later root
+	// wake with the same description must not roll it back; a changed
+	// description revision is an explicit replacement and is authoritative.
+	if node.surface_revision == node.paint_value || surface_description_changed {
+		node.surface_revision = d.paint_value
+	}
+	if node.kind != .Custom_Surface {
+		clear(&node.surface_samples)
+	}
 	replace_owned(&node.identity_key, d.identity_key)
 	node.identity_key_u64 = d.identity_key_u64
 	node.identity_key_numeric = d.identity_key_numeric
@@ -189,6 +207,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	for command in node.paint { if len(command.text) > 0 { delete(command.text) } }
 	delete(node.paint)
 	delete(node.children)
+	delete(node.surface_samples)
 	text_run_destroy(&node.text_run)
 	clear_text_composition(node)
 	release_node_strings(node)
@@ -380,6 +399,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		for command in node.paint { if len(command.text) > 0 { delete(command.text) } }
 		delete(node.paint)
 		delete(node.children)
+		delete(node.surface_samples)
 		text_run_destroy(&node.text_run)
 		clear_text_composition(node)
 		release_node_strings(node)
@@ -397,7 +417,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.identity_key_u64)
 	delete(rt.identity_key_numeric)
 	delete(rt.paint_queue)
-	for entry in rt.trace.events { if len(entry.reason) > 0 { delete(entry.reason) } }
+	for entry in rt.trace.events { if entry.reason_owned && len(entry.reason) > 0 { delete(entry.reason) } }
 	delete(rt.trace.events)
 	delete(rt.display)
 	text_engine_destroy(&rt.text_engine)
