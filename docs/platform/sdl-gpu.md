@@ -57,7 +57,12 @@ post-wait query correctness.
 
 The text path currently proves monochrome alpha glyphs and keeps color glyph
 pages distinct at the CPU identity boundary; a production font fallback policy
-remains future work. The Windows proof prefers `NotoSansJP-VF.ttf` when it is
+remains future work. For monochrome glyphs, the native mesh resolver selects
+Runa's four quarter-pixel X raster buckets from the physical pen position,
+then places each atlas quad at an integer physical X/Y origin. This keeps the
+fractional phase in the rasterized coverage while avoiding fractional texture
+placement. The adapter diagnostic covers all four buckets, fourth-bucket
+carry, and Y snapping. The Windows proof prefers `NotoSansJP-VF.ttf` when it is
 installed so the native fixture can display Japanese glyphs; this is a fixture
 font choice, not Alicorn's final fallback policy. Build and run it from
 a normal GUI login session. On Windows, use the self-contained runner:

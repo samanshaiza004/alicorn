@@ -1,11 +1,13 @@
 package alicorn_sdl_gpu
 
 import "core:c"
+import "core:math"
 import alicorn "../../runtime"
 import runa "../../third_party/Runa"
 import "vendor:sdl3"
 
 MAX_TEXT_VERTICES :: 65536
+NATIVE_TEXT_SUBPIXEL_BUCKETS :: 4
 
 Native_Text_Vertex :: struct {
 	position: [3]f32,
@@ -223,6 +225,26 @@ native_text_hash_color :: proc(h: u64, color: alicorn.Color) -> u64 {
 	return result
 }
 
+// Runa's mono rasterizer stores the fractional X phase in four quarter-pixel
+// variants. Keep the sampled quad origin on an integer physical pixel so the
+// phase is supplied by the bitmap rather than by fractional texture
+// placement. Rounding to the nearest quarter keeps the positional error below
+// 1/8 physical pixel; a rounded fourth bucket carries into the next pixel.
+native_text_snap_x :: proc(physical_x: f32) -> (pixel_x: f32, subpixel_bucket: u8) {
+	pixel_x = math.floor(physical_x)
+	phase := physical_x - pixel_x
+	bucket := int(math.floor(phase * f32(NATIVE_TEXT_SUBPIXEL_BUCKETS) + 0.5))
+	if bucket >= NATIVE_TEXT_SUBPIXEL_BUCKETS {
+		pixel_x += 1
+		bucket = 0
+	}
+	return pixel_x, u8(bucket)
+}
+
+native_text_snap_y :: proc(physical_y: f32) -> f32 {
+	return math.floor(physical_y + 0.5)
+}
+
 // The mesh fingerprint includes the complete ordered display state that can
 // affect text pixels. This deliberately catches removal, reorder, color,
 // bounds, clip and DPI changes; a later compositor generation can replace the
@@ -275,13 +297,19 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 			if len(renderer.vertices) + 6 > MAX_TEXT_VERTICES { return false }
 			// Text_Run stores logical geometry only. Resolve the physical glyph
 			// resource at the current raster scale so moving a window to a Retina
-			// display does not stretch a low-resolution atlas slot.
+			// display does not stretch a low-resolution atlas slot. The raster
+			// phase is retained in the atlas variant while the quad origin is
+			// snapped to physical pixels for stable texture sampling.
 			raster_size := run.size * scale_y
-			slot, drawable, glyph_ok := alicorn.text_engine_glyph(&renderer.runtime.text_engine, glyph.glyph_id, raster_size)
+			physical_x := (command.bounds.x + glyph.x) * scale_x
+			physical_y := (command.bounds.y + glyph.y) * scale_y
+			snapped_x, subpixel_bucket := native_text_snap_x(physical_x)
+			snapped_y := native_text_snap_y(physical_y)
+			slot, drawable, glyph_ok := alicorn.text_engine_glyph(&renderer.runtime.text_engine, glyph.glyph_id, raster_size, subpixel_bucket)
 			if !glyph_ok || !drawable { continue }
 			slot_view := runa.atlas_slot_view(slot)
-			x0 := (command.bounds.x + glyph.x) * scale_x + slot_view.Bearing[0]
-			y0 := (command.bounds.y + glyph.y) * scale_y + slot_view.Bearing[1]
+			x0 := snapped_x + slot_view.Bearing[0]
+			y0 := snapped_y + slot_view.Bearing[1]
 			x1 := x0 + f32(slot_view.Px_Size[0])
 			y1 := y0 + f32(slot_view.Px_Size[1])
 			u0, v0, u1, v1 := slot_view.UV_Rect[0], slot_view.UV_Rect[1], slot_view.UV_Rect[2], slot_view.UV_Rect[3]

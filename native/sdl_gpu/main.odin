@@ -158,6 +158,26 @@ validate_pixel_transform :: proc() {
 	}
 }
 
+validate_text_pixel_snapping :: proc() {
+	// Keep the raster phase in the glyph bitmap while the sampled quad starts
+	// on an integer physical pixel. These boundaries also guard carry from the
+	// fourth quarter-pixel bucket into the next pixel.
+	fractions := [4]f32{0.12, 0.26, 0.51, 0.76}
+	for fractional, expected_bucket in fractions {
+		pixel_x, bucket := native_text_snap_x(10 + fractional)
+		if pixel_x != 10 || bucket != u8(expected_bucket) {
+			fail("text X phase was not quantized to the expected Runa bucket")
+		}
+	}
+	pixel_x, bucket := native_text_snap_x(10.90)
+	if pixel_x != 11 || bucket != 0 {
+		fail("text X phase did not carry the rounded fourth bucket")
+	}
+	if native_text_snap_y(20.49) != 20 || native_text_snap_y(20.50) != 21 {
+		fail("text Y origin was not snapped to physical pixels")
+	}
+}
+
 sync_text_input_focus :: proc(
 	window: ^sdl3.Window,
 	rt: ^alicorn.Runtime,
@@ -897,6 +917,7 @@ RunFoundation :: proc() {
 	}
 	validate_pointer_coordinates()
 	validate_pixel_transform()
+	validate_text_pixel_snapping()
 
 	formats := sdl3.GPUShaderFormat{.SPIRV, .DXIL, .MSL}
 	gpu_driver_name: cstring = nil

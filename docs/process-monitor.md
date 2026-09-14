@@ -75,10 +75,17 @@ These choices follow the Windows API contracts documented by Microsoft:
 
 ## Cadence and ownership
 
-Process enumeration runs at 4 Hz. The graph history is updated at roughly
-60 Hz through `gpu_surface_update`, using the latest sampled CPU value. A
-surface update copies its samples into runtime-owned storage and does not
-invalidate or rebuild the ordinary procedural description.
+Process enumeration runs at roughly 4 Hz. The graph history and
+`gpu_surface_update` advance only when a fresh sample arrives; the host may
+tick at display cadence, but the monitor does not submit duplicate graph
+points between samples. A surface update copies its samples into runtime-owned
+storage and does not invalidate or rebuild the ordinary procedural description.
+
+The table reports working set (`WS`) and private committed memory
+(`PRIVATE`) separately. Working set includes resident shared pages, while the
+private value comes from `PROCESS_MEMORY_COUNTERS_EX.PrivateUsage`. This makes
+the monitor's own footprint diagnosable instead of presenting working set as
+an unexplained generic memory number.
 
 The process monitor runs from its separate repository and calls the reusable
 `alicorn_sdl_gpu.Application` / `Run` host through the `vendor/alicorn`
