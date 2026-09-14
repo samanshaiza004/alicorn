@@ -498,8 +498,8 @@ texture, vertex buffer and transfer buffer are persistent.
   copies the required SDL3 DLL beside the executable, runs it for three
   seconds, and reports sampling, surface, submission, and retirement counters.
 - Result: the development Windows host completed the smoke run with 12
-  samples, 84 visible process rows, 171 graph updates, 171 submissions, 171
-  retirements, and a maximum of three frames in flight. It recorded 867 query
+  samples, 82 visible process rows, 167 graph updates, 167 submissions, 167
+  retirements, and a maximum of three frames in flight. It recorded 876 query
   failures without crashing.
 - Known limitations: this is an integration smoke test, not a full dogfood
   performance report or cross-platform monitor. The reusable host is still a

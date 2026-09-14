@@ -95,13 +95,13 @@ run reported:
 
 ```text
 samples 12
-rows 84
-surface_updates 171
-surface_frames 171
-submissions 171
-retired 171
+rows 82
+surface_updates 167
+surface_frames 167
+submissions 167
+retired 167
 max_frames_in_flight 3
-query_failures 867
+query_failures 876
 ```
 
 The query failures are expected on a live Windows machine because some
