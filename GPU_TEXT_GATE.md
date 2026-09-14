@@ -87,6 +87,26 @@ authoritative details: [Runa API](https://github.com/BuLEEto/Runa/blob/main/API.
 [Runa facade](https://github.com/BuLEEto/Runa/blob/main/runa.odin), and
 [Runa atlas implementation](https://github.com/BuLEEto/Runa/blob/main/raster/atlas.odin).
 
+Close these adapter hazards before relying on the API:
+
+- `atlas_flush_dirty` currently returns dirty rectangles and clears the page's
+  dirty bit in the same call. Prefer a peek/ack split, or retain a pending
+  upload until transfer encoding and submission have succeeded, so a failed
+  upload is retryable.
+- Empty glyphs such as spaces may have advances but no drawable bitmap. The
+  retained run must preserve their metrics without inventing a zero-size GPU
+  slot.
+- `Paragraph_Glyph.font` is a non-owning pointer into the caller's font stack.
+  Retained glyph runs must copy a stable Alicorn font/resource identity rather
+  than retain that pointer.
+- `text_engine_load_font` destroys the old parsed font and shape cache. A glyph
+  cache must be invalidated or generation-tagged at the same boundary.
+- The current GUI text path uses a fixed size of 16. Stage 1 must explicitly
+  choose logical-size versus physical-pixel rasterization and include the
+  resulting size/DPI policy in the resource key.
+- Verify language/script inputs against the exact vendored Runa cache behavior
+  before treating language-sensitive shaping as a cache-safe feature.
+
 ### SDL_GPU upload and lifetime
 
 SDL_GPU's intended upload path matches the required ownership model:
