@@ -42,22 +42,6 @@ intrinsic_main :: proc(node: ^Node, direction: Layout_Direction) -> f32 {
 	return 24
 }
 
-rebuild_adjacency :: proc(rt: ^Runtime) {
-	for _, node in rt.nodes {
-		// Retain dynamic-array capacity. The caller only invokes this when the
-		// parent/order structure hash changed, so unchanged invalidations avoid
-		// both the rebuild and this clear.
-		clear(&node.children)
-	}
-	for id in rt.order {
-		node, ok := rt.nodes[id]
-		if !ok || !node.active || node.parent == 0 { continue }
-		if parent, parent_ok := rt.nodes[node.parent]; parent_ok {
-			append(&parent.children, id)
-		}
-	}
-}
-
 layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	parent, ok := rt.nodes[parent_id]
 	if !ok { return }
@@ -74,6 +58,7 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	fixed: f32 = 0
 	grow: f32 = 0
 	for id in children {
+		rt.stats.layout_nodes_visited += 1
 		child := rt.nodes[id]
 		if child.style.grow > 0 {
 			grow += child.style.grow
@@ -113,6 +98,7 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 			child.dirty.layout = true
 			child.dirty.paint = true
 			child.dirty.composite = true
+			queue_paint(rt, id)
 			rt.stats.layout_updates += 1
 			record_trace(rt, .Layout, id, "layout hash or parent bounds changed")
 		} else if child.dirty.layout {
@@ -122,14 +108,16 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		if bounds_changed || clip_changed || child.dirty.layout {
 			layout_children(rt, id)
 		}
+		child.dirty.layout = false
 		main_offset += main + parent.style.gap
 	}
 }
 
 layout_tree :: proc(rt: ^Runtime) {
-	for id in rt.order {
+	for id in rt.top_level {
 		node, ok := rt.nodes[id]
 		if !ok || !node.active { continue }
+		rt.stats.layout_nodes_visited += 1
 		if node.parent == 0 {
 			old := node.bounds
 			node.bounds = rt.viewport
@@ -138,10 +126,12 @@ layout_tree :: proc(rt: ^Runtime) {
 				node.dirty.layout = true
 				node.dirty.paint = true
 				node.dirty.composite = true
+				queue_paint(rt, id)
 			}
 			if !same_rect(old, node.bounds) || node.dirty.layout {
 				layout_children(rt, id)
 			}
+			node.dirty.layout = false
 		}
 	}
 }

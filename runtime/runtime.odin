@@ -100,6 +100,19 @@ Description :: struct {
 	region:      bool,
 	focusable:   bool,
 	identity_key: string,
+	identity_key_u64: u64,
+	identity_key_numeric: bool,
+}
+
+Pending_Kind :: enum {
+	Description,
+	Reuse_Subtree,
+}
+
+Pending_Item :: struct {
+	kind:        Pending_Kind,
+	description: Description,
+	subtree:     Node_ID,
 }
 
 Node :: struct {
@@ -117,7 +130,6 @@ Node :: struct {
 	region_revision: u64,
 	region:      bool,
 	region_cached: bool,
-	region_cache: []Description,
 	focusable:   bool,
 	active:      bool,
 	present:     bool,
@@ -130,6 +142,8 @@ Node :: struct {
 	selection_end:   int,
 	local_counter: int,
 	identity_key: string,
+	identity_key_u64: u64,
+	identity_key_numeric: bool,
 	bounds:      Rect,
 	clip:        Rect,
 	dirty:       Dirty_Stages,
@@ -138,6 +152,8 @@ Node :: struct {
 	layout_hash: u64,
 	paint_hash: u64,
 	paint:       [dynamic]Display_Command,
+	display_index: int,
+	paint_queued: bool,
 }
 
 Trace_Kind :: enum {
@@ -172,8 +188,13 @@ Frame_Stats :: struct {
 	descriptions_emitted: u64,
 	descriptions_reused:  u64,
 	regions_skipped:   u64,
+	retained_subtrees_reused: u64,
 	nodes_created:     u64,
 	nodes_retired:     u64,
+	reconcile_nodes_visited: u64,
+	layout_nodes_visited: u64,
+	paint_nodes_visited: u64,
+	composition_nodes_visited: u64,
 	layout_updates:    u64,
 	paint_updates:     u64,
 	composite_updates:  u64,
@@ -185,13 +206,15 @@ Frame_Stats :: struct {
 Runtime :: struct {
 	nodes:       map[Node_ID]^Node,
 	order:       [dynamic]Node_ID,
-	pending:     [dynamic]Description,
+	top_level:   [dynamic]Node_ID,
+	pending:     [dynamic]Pending_Item,
 	seen:        map[Node_ID]bool,
-	region_captures: map[Node_ID][]Description,
 	identity_scopes: map[Node_ID]bool,
 	stack:       [dynamic]Node_ID,
 	identity_stack: [dynamic]Node_ID,
 	identity_labels: [dynamic]string,
+	identity_key_u64: [dynamic]u64,
+	identity_key_numeric: [dynamic]bool,
 	viewport:    Rect,
 	focused:     Node_ID,
 	selected:    Node_ID,
@@ -199,8 +222,8 @@ Runtime :: struct {
 	captured_node: Node_ID,
 	activation_node: Node_ID,
 	activation_sequence: u64,
-	adjacency_hash: u64,
-	adjacency_valid: bool,
+	paint_queue: [dynamic]Node_ID,
+	composition_rebuild: bool,
 	invalidated: bool,
 	frame_open:  bool,
 	hard_error:  bool,
@@ -251,13 +274,16 @@ new_runtime :: proc(viewport: Rect, trace_capacity := 256) -> Runtime {
 	rt := Runtime{
 		nodes = make(map[Node_ID]^Node),
 		order = make([dynamic]Node_ID, 0),
-		pending = make([dynamic]Description, 0),
+		top_level = make([dynamic]Node_ID, 0),
+		pending = make([dynamic]Pending_Item, 0),
 		seen = make(map[Node_ID]bool),
-		region_captures = make(map[Node_ID][]Description),
 		identity_scopes = make(map[Node_ID]bool),
 		stack = make([dynamic]Node_ID, 0),
 		identity_stack = make([dynamic]Node_ID, 0),
 		identity_labels = make([dynamic]string, 0),
+		identity_key_u64 = make([dynamic]u64, 0),
+		identity_key_numeric = make([dynamic]bool, 0),
+		paint_queue = make([dynamic]Node_ID, 0),
 		viewport = viewport,
 		invalidated = true,
 		trace = Trace_Ring{events = make([dynamic]Trace_Event, capacity)},
@@ -295,34 +321,24 @@ identity_hash :: proc(parent: Node_ID, source: Source_Site, key: string, explici
 	return Node_ID(h)
 }
 
+identity_hash_u64 :: proc(parent: Node_ID, source: Source_Site, key: u64) -> Node_ID {
+	h := u64(1469598103934665603)
+	h = hash_mix(h, u64(parent))
+	h = hash_mix(h, hash_string(source.file))
+	h = hash_mix(h, u64(source.line))
+	h = hash_mix(h, u64(source.column))
+	h = hash_mix(h, hash_string(source.component))
+	h = hash_mix(h, key)
+	if h == 0 { h = 1 }
+	return Node_ID(h)
+}
+
 owned :: proc(value: string) -> string {
 	if value == "" {
 		return ""
 	}
 	copy, _ := strings.clone(value)
 	return copy
-}
-
-clone_site :: proc(value: Source_Site) -> Source_Site {
-	return Source_Site{owned(value.file), value.line, value.column, owned(value.component)}
-}
-
-clone_description :: proc(value: Description) -> Description {
-	copy := value
-	copy.site = clone_site(value.site)
-	copy.key = owned(value.key)
-	copy.label = owned(value.label)
-	copy.text = owned(value.text)
-	copy.identity_key = owned(value.identity_key)
-	return copy
-}
-
-clone_descriptions :: proc(source: []Description) -> [dynamic]Description {
-	result := make([dynamic]Description, 0, len(source))
-	for d in source {
-		append(&result, clone_description(d))
-	}
-	return result
 }
 
 record_trace :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reason: string) {
@@ -363,10 +379,12 @@ begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
 	clear(&rt.pending)
 	clear(&rt.seen)
 	clear(&rt.identity_scopes)
-	clear(&rt.region_captures)
 	clear(&rt.stack)
 	clear(&rt.identity_stack)
 	clear(&rt.identity_labels)
+	clear(&rt.identity_key_u64)
+	clear(&rt.identity_key_numeric)
+	clear(&rt.paint_queue)
 	rt.stats.frames_built += 1
 	return ui, true
 }
@@ -404,8 +422,14 @@ emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text :=
 	rt.seen[id] = true
 	identity_key := ""
 	if len(rt.identity_labels) > 0 { identity_key = rt.identity_labels[len(rt.identity_labels)-1] }
-	description := Description{id, parent_node, source, key, explicit_key, kind, label, text, style, color, paint_value, region_revision, is_region, focusable, identity_key}
-	append(&rt.pending, description)
+	identity_key_u64: u64 = 0
+	identity_key_numeric := false
+	if len(rt.identity_key_u64) > 0 {
+		identity_key_u64 = rt.identity_key_u64[len(rt.identity_key_u64)-1]
+		identity_key_numeric = rt.identity_key_numeric[len(rt.identity_key_numeric)-1]
+	}
+	description := Description{id, parent_node, source, key, explicit_key, kind, label, text, style, color, paint_value, region_revision, is_region, focusable, identity_key, identity_key_u64, identity_key_numeric}
+	append(&rt.pending, Pending_Item{.Description, description, 0})
 	rt.stats.descriptions_emitted += 1
 	return id
 }
@@ -428,6 +452,27 @@ key_scope_begin :: proc(ui: ^UI, key: string, source := Source_Site{}, loc := #c
 	rt.identity_scopes[id] = true
 	append(&rt.identity_stack, id)
 	append(&rt.identity_labels, key)
+	append(&rt.identity_key_u64, 0)
+	append(&rt.identity_key_numeric, false)
+	return true
+}
+
+// key_scope_u64 is the allocation-free typed-key path used by large keyed
+// trees. It has the same identity and ambiguity rules as string keys.
+key_scope_u64 :: proc(ui: ^UI, key: u64, source := Source_Site{}, loc := #caller_location) -> bool {
+	rt := ui.runtime
+	resolved_source := resolve_source(source, "key_scope_u64", loc)
+	parent := current_identity_parent(ui)
+	id := identity_hash_u64(parent, resolved_source, key)
+	if rt.identity_scopes[id] {
+		append_diagnostic(rt, fmt.tprintf("duplicate numeric key scope at %s:%d:%d component=%s key=%d", resolved_source.file, resolved_source.line, resolved_source.column, resolved_source.component, key))
+		return false
+	}
+	rt.identity_scopes[id] = true
+	append(&rt.identity_stack, id)
+	append(&rt.identity_labels, "")
+	append(&rt.identity_key_u64, key)
+	append(&rt.identity_key_numeric, true)
 	return true
 }
 
@@ -445,6 +490,8 @@ component_end :: proc(ui: ^UI) {
 key_scope_end :: proc(ui: ^UI) {
 	if len(ui.runtime.identity_stack) > 0 { pop(&ui.runtime.identity_stack) }
 	if len(ui.runtime.identity_labels) > 0 { pop(&ui.runtime.identity_labels) }
+	if len(ui.runtime.identity_key_u64) > 0 { pop(&ui.runtime.identity_key_u64) }
+	if len(ui.runtime.identity_key_numeric) > 0 { pop(&ui.runtime.identity_key_numeric) }
 }
 
 container_begin :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, focusable := false, loc := #caller_location) -> Node_ID {
@@ -454,6 +501,8 @@ container_begin :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, label
 		append(&ui.runtime.stack, id)
 		append(&ui.runtime.identity_stack, id)
 		append(&ui.runtime.identity_labels, "")
+		append(&ui.runtime.identity_key_u64, 0)
+		append(&ui.runtime.identity_key_numeric, false)
 	}
 	return id
 }
@@ -462,6 +511,8 @@ container_end :: proc(ui: ^UI) {
 	if len(ui.runtime.stack) > 0 { pop(&ui.runtime.stack) }
 	if len(ui.runtime.identity_stack) > 0 { pop(&ui.runtime.identity_stack) }
 	if len(ui.runtime.identity_labels) > 0 { pop(&ui.runtime.identity_labels) }
+	if len(ui.runtime.identity_key_u64) > 0 { pop(&ui.runtime.identity_key_u64) }
+	if len(ui.runtime.identity_key_numeric) > 0 { pop(&ui.runtime.identity_key_numeric) }
 }
 
 // A structural wrapper can be made identity-transparent when a caller wants a
@@ -525,20 +576,19 @@ region_begin :: proc(ui: ^UI, key: string, revision: u64, source := Source_Site{
 	}
 	if old, ok := rt.nodes[id]; ok && old.region && old.region_cached && old.region_revision == revision {
 		rt.stats.regions_skipped += 1
-		rt.stats.descriptions_reused += u64(len(old.region_cache))
-		for cached in old.region_cache {
-			if rt.seen[cached.id] {
-				append_diagnostic(rt, fmt.tprintf("cached region identity collision for node %d", cached.id))
-				continue
-			}
-			rt.seen[cached.id] = true
-			append(&rt.pending, cached)
-		}
+		rt.stats.retained_subtrees_reused += 1
+		// The cached retained hierarchy is already authoritative. A marker is
+		// enough to keep the subtree present; descendants are not copied into a
+		// flat pending description list.
+		append(&rt.pending, Pending_Item{.Reuse_Subtree, Description{}, id})
+		record_trace(rt, .Reconcile, id, "retained subtree reused without descendant descriptions")
 		return id, true
 	}
 	append(&rt.stack, id)
 	append(&rt.identity_stack, id)
 	append(&rt.identity_labels, "")
+	append(&rt.identity_key_u64, 0)
+	append(&rt.identity_key_numeric, false)
 	return id, false
 }
 
@@ -547,7 +597,8 @@ region_end :: proc(ui: ^UI, id: Node_ID, reused: bool, start: int) {
 	pop(&ui.runtime.stack)
 	pop(&ui.runtime.identity_stack)
 	pop(&ui.runtime.identity_labels)
-	ui.runtime.region_captures[id] = clone_descriptions(ui.runtime.pending[start:])[:]
+	pop(&ui.runtime.identity_key_u64)
+	pop(&ui.runtime.identity_key_numeric)
 }
 
 region :: proc(ui: ^UI, key: string, revision: u64, source := Source_Site{}, body: proc(), style := DEFAULT_STYLE, loc := #caller_location) -> Node_ID {
