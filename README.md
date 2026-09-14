@@ -16,9 +16,10 @@ The repository contains a working, dependency-light retained runtime with:
 - a custom-surface/GPU lifetime seam with deferred retirement bookkeeping;
 - identity torture, property, layout, input, lifetime and benchmark executables.
 
-The SDL3/SDL_GPU boundary is documented and an SDL3 smoke example is provided.
-Runa is not installed in the available Odin SDK, so the text engine adapter is
-deliberately explicit and the Runa-backed claim is not marked proven.
+The SDL3/SDL_GPU boundary includes a native retained compositor proof with
+three frames in flight and deferred texture retirement.
+Runa is vendored at a recorded commit; the adapter performs real font loading,
+paragraph layout and bounded shape-cache reuse.
 
 ## Build and test
 

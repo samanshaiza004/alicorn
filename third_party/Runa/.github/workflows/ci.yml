@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Odin
+        uses: laytan/setup-odin@v2
+        with:
+          release: dev-2026-04
+
+      # Test fonts (Roboto-Regular, InterVariable, FiraCode-Regular,
+      # Twemoji-Mozilla) are not committed to the repo. CI fetches them
+      # on a best-effort basis so the integration tests get exercised;
+      # if the fetch fails (network hiccup, upstream URL change) the
+      # font-dependent tests skip themselves with an INFO log and the
+      # job still reports the compile + synthetic results.
+      - name: Fetch test fonts
+        shell: bash
+        run: bash tools/ci/fetch_test_fonts.sh || echo "font fetch failed — integration tests will skip"
+
+      - name: Type-check library
+        run: odin check . -no-entry-point
+
+      - name: Test parse
+        run: odin test tests/parse
+      - name: Test runa
+        run: odin test tests/runa
+      - name: Test raster
+        run: odin test tests/raster
+      - name: Test atlas
+        run: odin test tests/atlas
+      - name: Test linebreak
+        run: odin test tests/linebreak
+      - name: Test linebreak (Thai dictionary opt-in)
+        run: odin test tests/linebreak -define:RUNA_THAI_DICT=true
+      - name: Test bidi
+        run: odin test tests/bidi
+      - name: Test itemize
+        run: odin test tests/itemize
+      - name: Test normalize
+        run: odin test tests/normalize
+
+      # The full shape suite asserts exact glyph IDs pinned to specific font
+      # versions, so it's not run in CI. Run the version-robust subset:
+      #   test_devanagari_lone_reph          — RA+Virama "र्" must not crash (1.2.1)
+      #   test_devanagari_reph_punct_order_robust — punctuation after a
+      #     syllable-final reph must not sort ahead of it (1.2.2); resolves
+      #     gids through the font's own cmap, so it holds on any build.
+      - name: Test indic reph regression
+        shell: bash
+        run: |
+          if [ -f tests/fonts/NotoSansDevanagari.ttf ]; then
+            odin test tests/shape -define:ODIN_TEST_NAMES=shape_test.test_devanagari_lone_reph,shape_test.test_devanagari_reph_punct_order_robust
+          else
+            echo "no Devanagari font — skipping indic regression"
+          fi
+
+      # Arabic cursive joining across Transparent marks. These assert
+      # Joining_Type / Joining_Form rather than glyph IDs, so they are
+      # font-independent and always safe to run.
+      - name: Test Arabic joining regression
+        shell: bash
+        run: |
+          out=$(odin test tests/shape -define:ODIN_TEST_NAMES=shape_test.test_joining_type_transparent_marks,shape_test.test_arabic_join_state_mark_is_transparent,shape_test.test_arabic_join_state_multiple_marks_transparent,shape_test.test_arabic_join_state_zwnj_still_breaks,shape_test.test_transparent_table_matches_ucd 2>&1)
+          echo "$out"
+          # ODIN_TEST_NAMES silently runs nothing (exit 0) if a name drifts,
+          # so assert the expected count actually ran.
+          echo "$out" | grep -q "Finished 5 tests" || { echo "::error::expected 5 tests to run — a test name has drifted"; exit 1; }
+
+      - name: UAX #14 conformance
+        shell: bash
+        run: |
+          odin run tools/lb_conformance.odin -file > /tmp/lb.txt 2>&1 || true
+          grep -F "passed" /tmp/lb.txt || true
+
+      - name: Fuzz (smoke run)
+        shell: bash
+        run: |
+          if [ -f tests/fonts/Roboto-Regular.ttf ]; then
+            odin run tools/bit_flip_fuzz.odin -file -- \
+              tests/fonts/Roboto-Regular.ttf --iters 1000
+          else
+            echo "no Roboto font — skipping fuzz"
+          fi
+
+      - name: Bench (informational)
+        shell: bash
+        run: |
+          if [ -f tests/fonts/Roboto-Regular.ttf ]; then
+            odin run tools/bench.odin -file -- tests/fonts/Roboto-Regular.ttf || true
+          fi

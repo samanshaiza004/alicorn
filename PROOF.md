@@ -28,15 +28,20 @@ the repository contains a repeatable test or measurement for it.
 ## Claim: stage work is granular and inspectable
 
 - Implementation: independent description/layout/paint/composite hashes,
-  counters, inspector and trace ring.
+  counters, retained child adjacency, inspector and trace ring.
 - Test: changing one keyed meter changes that node's paint stage while sibling
   descriptions and layouts are reused.
-- Verdict: partially proven; composition currently rebuilds conservatively.
+- Result: the 10,000-node unchanged benchmark is now approximately linear after
+  replacing global child scans with retained adjacency; composition remains
+  conservative.
+- Verdict: partially proven.
 
 ## Claim: input and focus are deterministic
 
 - Implementation: one `focused` Node_ID, retained hit testing and fallback.
-- Test: focus through reorder, removal, filtering and representation changes.
+- Test: focus through reorder, removal, filtering and representation changes;
+  activation consumption, retained hover/pressed state, ancestor fallback and
+  nested clipping regressions.
 - Verdict: proven by headless tests for the defined fallback policy.
 
 ## Claim: a million-row list has bounded retained state
@@ -44,27 +49,34 @@ the repository contains a repeatable test or measurement for it.
 - Implementation: fixed-height `virtual_list` emits only the visible range.
 - Test/benchmark: `tests/main.odin` and `benchmarks/main.odin`.
 - Result: retained rows are viewport-scale, not logical-item-scale.
-- Known limitations: the current helper proves range virtualization and hit
-  testing is covered for ordinary controls, but virtual-row selection routing is
-  not yet implemented.
+- Known limitations: fixed-height rows only; fractional scroll offset and
+  offscreen selection storage are not implemented.
 - Verdict: proven for fixed-height rows.
 
 ## Claim: Runa-backed text rendering and editing works
 
-- Implementation: text-node/editing abstraction exists, but the installed Odin
-  SDK has no Runa package. Upstream Runa v1.2.3 exposes the expected facade and
-  segmentation/raster APIs, but has not been vendored or wired into this tree.
-- Result: basic retained text editing is headlessly testable; shaping, bidi,
-  segmentation, rasterization and cluster mapping are not.
-- Verdict: not proven.
+- Implementation: `runtime/text.odin` owns a cloned font buffer, parsed Runa
+  font, bounded Runa shape cache and GUI-facing layout metrics. The GUI does not
+  retain Runa's atlas representation.
+- Test/measurement: `examples/runa_text` loads a caller-provided font and lays
+  out `office — Alicorn` twice. On the verification host it reported
+  `169.86328 x 31.921875`, `16` glyphs, and cache size `1 -> 1`.
+- Result: real Runa font loading and paragraph layout work; the existing basic
+  text-field editing test remains byte-oriented and does not prove grapheme
+  caret mapping, IME or atlas upload.
+- Verdict: partially proven.
 
 ## Claim: SDL3/SDL_GPU and custom-surface lifetime behavior is safe
 
-- Implementation: platform-neutral command/fence retirement model and SDL3
-  vendor availability notes.
-- Result: the lifetime model has stress tests; native driver execution has not
-  been run in this environment.
-- Verdict: partially proven; native compositor remains unverified.
+- Implementation: platform-neutral command/fence retirement model plus a native
+  SDL3 adapter that acquires swapchain textures, runs render passes, composes
+  retained rectangle commands with GPU blits, and retires temporary textures
+  behind submission fences.
+- Result: the native proof submitted `6` frames with `3` frames in flight and
+  retired `6` concrete offscreen textures on this host.
+- Known limitations: the compositor is rectangle-based; shader pipelines,
+  glyph-atlas upload and cross-platform driver coverage remain unverified.
+- Verdict: partially proven.
 
 ## Claim: idle UI performs effectively no unnecessary work
 
@@ -77,11 +89,11 @@ the repository contains a repeatable test or measurement for it.
 
 ## Gate recommendation
 
-`REVISE`: the identity, invalidation, input and fixed-height scale mechanisms are
-credible, and the SDL3/SDL_GPU fence smoke path runs on this host. Runa-backed
-text and full retained display-list rendering remain unproven, and composition
-reuse is conservative. The next layer should not expand until those gaps are
-closed on a native fixture.
+`REVISE`: the identity, invalidation, input, fixed-height scale, Runa layout and
+native rectangle-composition mechanisms are now credible. Full glyph atlas
+rendering, IME/cluster editing, cross-platform native coverage and conservative
+composition reuse remain open. The next layer should not expand until those
+gaps are closed.
 
 ## Raw benchmark sample
 
@@ -92,16 +104,15 @@ tools/bench.ps1`.
 
 | workload | first ns | unchanged ns | one change ns | keyed reorder ns | retained nodes | cumulative layout updates |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 100 nodes | 559200 | 356000 | 361000 | 383600 | 101 | 200 |
-| 1,000 nodes | 23403900 | 21722500 | 21881800 | 22470400 | 1001 | 2000 |
-| 10,000 nodes | 2804309400 | 2792453000 | 2796636600 | 2792247700 | 10001 | 20000 |
+| 100 nodes | 457700 | 137100 | 207500 | 206200 | 101 | 100 |
+| 1,000 nodes | 3896900 | 1170700 | 1196700 | 1158200 | 1001 | 1000 |
+| 10,000 nodes | 33177200 | 14446700 | 15090700 | 15833100 | 10001 | 10000 |
 
-Virtual list: 1,000,000 logical rows, 100 scroll frames, elapsed `6197800 ns`,
-retained nodes `23`. Idle: 10,000 attempted frames, elapsed `18400 ns`,
+Virtual list: 1,000,000 logical rows, 100 scroll frames, elapsed `5852100 ns`,
+retained nodes `23`. Idle: 10,000 attempted frames, elapsed `18700 ns`,
 `idle_count=10000`, headless GPU submits `0`.
 
 Native command: build `native/sdl_gpu`, put the SDK's SDL3 directory on
-`PATH`, run the executable. On this host it submitted and fence-waited three
-SDL_GPU command buffers successfully and enabled the SDL mouse/window event
-adapter. It is a lifetime smoke test, not yet a full retained display-list
-renderer.
+`PATH`, run the executable. On this host it submitted six SDL_GPU frames,
+composed four retained display commands per frame, maintained three frames in
+flight, and retired six temporary textures behind queried/waited fences.

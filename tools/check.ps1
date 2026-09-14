@@ -17,7 +17,8 @@ $targets = @(
     @('tests', 'out\alicorn_tests.exe'),
     @('benchmarks', 'out\alicorn_benchmarks.exe'),
     @('examples\identity_torture', 'out\identity_torture.exe'),
-    @('examples\crucible', 'out\crucible.exe')
+    @('examples\crucible', 'out\crucible.exe'),
+    @('examples\runa_text', 'out\runa_text.exe')
 )
 foreach ($target in $targets) {
     & $Odin build $target[0] -out:$target[1]
@@ -26,4 +27,3 @@ foreach ($target in $targets) {
 
 & .\out\alicorn_tests.exe
 exit $LASTEXITCODE
-
