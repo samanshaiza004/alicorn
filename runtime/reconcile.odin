@@ -82,10 +82,19 @@ release_node_strings :: proc(node: ^Node) {
 	node.key, node.label, node.text, node.identity_key, node.last_reason = "", "", "", "", ""
 }
 
+node_has_text_product :: proc(kind: Node_Kind) -> bool {
+	return kind == .Text || kind == .Text_Field
+}
+
 copy_node_description :: proc(node: ^Node, d: Description) {
 	// Runtime-owned copies are important: a generic description may borrow a
 	// caller's string for only the duration of this procedure.
 	text_changed := node.text != d.text
+	kind_changed := node.kind != d.kind
+	if node.text_run_valid && (text_changed || kind_changed || !node_has_text_product(d.kind)) {
+		text_run_destroy(&node.text_run)
+		node.text_run_valid = false
+	}
 	replace_site(&node.site, d.site)
 	replace_owned(&node.key, d.key)
 	replace_owned(&node.label, d.label)
@@ -162,6 +171,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	for command in node.paint { if len(command.text) > 0 { delete(command.text) } }
 	delete(node.paint)
 	delete(node.children)
+	text_run_destroy(&node.text_run)
 	release_node_strings(node)
 	free(node)
 	rt.stats.nodes_retired += 1
@@ -329,6 +339,7 @@ reconcile :: proc(rt: ^Runtime) {
 		}
 	}
 
+	prepare_text_runs(rt)
 	layout_tree(rt)
 	update_paint(rt)
 	rt.frame_open = false
@@ -343,6 +354,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		for command in node.paint { if len(command.text) > 0 { delete(command.text) } }
 		delete(node.paint)
 		delete(node.children)
+		text_run_destroy(&node.text_run)
 		release_node_strings(node)
 		free(node)
 	}
@@ -361,6 +373,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	for entry in rt.trace.events { if len(entry.reason) > 0 { delete(entry.reason) } }
 	delete(rt.trace.events)
 	delete(rt.display)
+	text_engine_destroy(&rt.text_engine)
 	if len(rt.last_invalidation_reason) > 0 { delete(rt.last_invalidation_reason) }
 	if len(rt.diagnostic) > 0 { delete(rt.diagnostic) }
 }

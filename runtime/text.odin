@@ -218,6 +218,54 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 	return
 }
 
+// prepare_text_runs materializes the platform-neutral text product before
+// layout. A node owns the product for as long as its retained identity lives;
+// the application never needs to retain a Runa object or a renderer handle.
+// Font replacement is represented by font_generation, so old runs are
+// discarded before their stale atlas slots can reach layout or paint.
+prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node) {
+	if !node_has_text_product(node.kind) || !node.active { return }
+	if !rt.text_engine.font_loaded {
+		if node.text_run_valid {
+			text_run_destroy(&node.text_run)
+			node.text_run_valid = false
+		}
+		return
+	}
+	max_width: f32 = 0
+	if node.style.width > 0 { max_width = node.style.width }
+	if node.text_run_valid &&
+		node.text_run.font_generation == rt.text_engine.font_generation &&
+		node.text_run.max_width == max_width {
+		return
+	}
+	if node.text_run_valid { text_run_destroy(&node.text_run) }
+	run, built := text_run_build(&rt.text_engine, node.text, 16, max_width)
+	if built {
+		node.text_run = run
+		node.text_run_valid = true
+	}
+}
+
+prepare_text_runs :: proc(rt: ^Runtime) {
+	// Normal frames only prepare nodes already made dirty by reconciliation.
+	// A font replacement is the exceptional explicit event that changes every
+	// text product's generation and therefore permits one full text-node pass.
+	font_changed := rt.text_font_generation_seen != rt.text_engine.font_generation
+	if font_changed {
+		for id in rt.order {
+			node, ok := rt.nodes[id]
+			if ok { prepare_text_run_node(rt, node) }
+		}
+		rt.text_font_generation_seen = rt.text_engine.font_generation
+		return
+	}
+	for id in rt.paint_queue {
+		node, ok := rt.nodes[id]
+		if ok { prepare_text_run_node(rt, node) }
+	}
+}
+
 runa_cache_size :: proc(engine: ^Text_Engine) -> int {
 	if !engine.font_loaded { return 0 }
 	return runa.cache_size(&engine.cache)

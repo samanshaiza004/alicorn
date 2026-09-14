@@ -36,9 +36,11 @@ rect_intersection :: proc(a, b: Rect) -> Rect {
 intrinsic_main :: proc(node: ^Node, direction: Layout_Direction) -> f32 {
 	if direction == .Row {
 		if node.style.width >= 0 { return node.style.width }
+		if node.text_run_valid { return node.text_run.width }
 		return 80
 	}
 	if node.style.height >= 0 { return node.style.height }
+	if node.text_run_valid { return node.text_run.height }
 	return 24
 }
 

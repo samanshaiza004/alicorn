@@ -730,6 +730,25 @@ test_gpu_text_resource_boundary :: proc(state: ^Test_State) {
 	delete(final_snapshot)
 }
 
+test_retained_text_product_lifetime :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
+	id := render_text_field(&rt, "retained")
+	node, found := rt.nodes[id]
+	expect(state, found && node != nil, "text field must create a retained node")
+	if found && node != nil {
+		// A real GPU/native run is populated only when a font provider is
+		// configured. This sentinel exercises the ownership boundary: changing
+		// the retained text must invalidate and destroy the node-owned product.
+		node.text_run_valid = true
+	}
+	changed_id := render_text_field(&rt, "changed")
+	expect(state, changed_id == id, "text changes must preserve text-field identity")
+	if node, ok := rt.nodes[id]; ok {
+		expect(state, !node.text_run_valid, "changed text must invalidate the retained text product")
+	}
+	alicorn.destroy_runtime(&rt)
+}
+
 main :: proc() {
 	state: Test_State
 	test_identity_and_ambiguity(&state)
@@ -744,6 +763,7 @@ main :: proc() {
 	test_virtualization_and_gpu(&state)
 	test_layout_geometry(&state)
 	test_gpu_text_resource_boundary(&state)
+	test_retained_text_product_lifetime(&state)
 	if state.failures == 0 {
 		fmt.println("Alicorn foundation tests: PASS")
 		return

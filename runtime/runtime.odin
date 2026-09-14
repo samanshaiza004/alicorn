@@ -74,6 +74,7 @@ Display_Command :: struct {
 	node:   Node_ID,
 	kind: Node_Kind,
 	bounds: Rect,
+	clip:   Rect,
 	text:   string,
 	color:  Color,
 }
@@ -152,6 +153,8 @@ Node :: struct {
 	description_hash: u64,
 	layout_hash: u64,
 	paint_hash: u64,
+	text_run:  Text_Run,
+	text_run_valid: bool,
 	paint:       [dynamic]Display_Command,
 	display_index: int,
 	paint_queued: bool,
@@ -233,6 +236,8 @@ Runtime :: struct {
 	stats:       Frame_Stats,
 	trace:       Trace_Ring,
 	display:     [dynamic]Display_Command,
+	text_engine: Text_Engine,
+	text_font_generation_seen: u64,
 }
 
 UI :: struct {
@@ -288,6 +293,7 @@ new_runtime :: proc(viewport: Rect, trace_capacity := 256) -> Runtime {
 		viewport = viewport,
 		invalidated = true,
 		trace = Trace_Ring{events = make([dynamic]Trace_Event, capacity)},
+		text_engine = new_text_engine("runtime text", false),
 	}
 	return rt
 }
