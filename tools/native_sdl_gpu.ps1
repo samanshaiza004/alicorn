@@ -1,6 +1,7 @@
 param(
     [string]$Odin = $env:ALICORN_ODIN,
-    [switch]$ManualIme
+    [switch]$ManualIme,
+    [switch]$SurfaceStress
 )
 
 $ErrorActionPreference = 'Stop'
@@ -48,5 +49,6 @@ git lfs pull
 Copy-Item -LiteralPath $sdl_dll -Destination 'out\SDL3.dll' -Force
 $arguments = @()
 if ($ManualIme) { $arguments += '--manual-ime' }
+if ($SurfaceStress) { $arguments += '--surface-stress' }
 & .\out\alicorn_sdl_gpu.exe @arguments
 exit $LASTEXITCODE
