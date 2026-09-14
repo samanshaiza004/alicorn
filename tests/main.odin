@@ -943,6 +943,32 @@ test_retained_text_product_lifetime :: proc(state: ^Test_State) {
 	alicorn.destroy_runtime(&rt)
 }
 
+test_runtime_edit_invalidates_text_product :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
+	id := render_text_field(&rt, "hello")
+	node, found := rt.nodes[id]
+	if found && node != nil {
+		// Model the run that a configured text provider would have built. This
+		// test deliberately does not depend on a host font being installed in
+		// headless CI.
+		node.text_run.value, _ = strings.clone("hello")
+		node.text_run_valid = true
+		old_generation := node.text_run_generation
+		alicorn.set_text_caret(&rt, id, 3)
+		change := alicorn.process_text_edit(&rt, id, alicorn.Text_Edit{.Backspace, ""})
+		expect(state, change.changed && change.text == "helo", "runtime backspace must return the edited application value")
+		expect(state, !node.text_run_valid, "runtime text mutation must invalidate the retained text run immediately")
+		expect(state, node.text_run_generation > old_generation, "runtime text mutation must advance text-run generation")
+		// Simulate the direct-style application echoing Text_Change.text on the
+		// next frame. The retained identity survives, but the old run must not.
+		render_text_field(&rt, change.text)
+		expect(state, rt.nodes[id].text == "helo", "application echo must preserve the edited retained value")
+		expect(state, !rt.nodes[id].text_run_valid, "application echo must not resurrect the previous text run")
+		if len(change.text) > 0 { delete(change.text) }
+	}
+	alicorn.destroy_runtime(&rt)
+}
+
 main :: proc() {
 	state: Test_State
 	test_identity_and_ambiguity(&state)
@@ -961,6 +987,7 @@ main :: proc() {
 	test_text_geometry(&state)
 	test_gpu_text_resource_boundary(&state)
 	test_retained_text_product_lifetime(&state)
+	test_runtime_edit_invalidates_text_product(&state)
 	if state.failures == 0 {
 		fmt.println("Alicorn foundation tests: PASS")
 		return

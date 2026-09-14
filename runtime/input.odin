@@ -130,6 +130,22 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 	return target
 }
 
+invalidate_text_product :: proc(rt: ^Runtime, node: ^Node, reason := "retained text product invalidated") {
+	if node.text_run_valid {
+		text_run_destroy(&node.text_run)
+		node.text_run_valid = false
+		node.text_run_generation += 1
+	}
+	text_composition_run_destroy(node)
+	node.dirty.layout = true
+	node.dirty.paint = true
+	node.dirty.composite = true
+	mark_layout_ancestors(rt, node.id)
+	if len(node.last_reason) > 0 { delete(node.last_reason) }
+	node.last_reason = owned(reason)
+	queue_paint(rt, node.id)
+}
+
 process_text_edit :: proc(rt: ^Runtime, id: Node_ID, edit: Text_Edit) -> Text_Change {
 	change := Text_Change{id, "", false}
 	node, ok := rt.nodes[id]
@@ -179,10 +195,10 @@ process_text_edit :: proc(rt: ^Runtime, id: Node_ID, edit: Text_Edit) -> Text_Ch
 		node.selection_anchor = node.caret
 		node.selection_focus = node.caret
 		change.changed = start != end || len(edit.text) > 0
+		invalidate_text_product(rt, node, "runtime text value changed")
 	}
 	change.text = owned(node.text)
 	if change.changed {
-		node.paint_hash = 0
 		invalidate_interaction_paint(rt, node.id, "text edit caret changed")
 		invalidate_root(rt, "text edit")
 	}
