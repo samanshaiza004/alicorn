@@ -598,10 +598,40 @@ test_unicode_editing :: proc(state: ^Test_State) {
 	if len(change.text) > 0 { delete(change.text) }
 	render_text_field(&rt, "é世😀")
 	expect(state, alicorn.set_text_selection(&rt, id, 5, 1), "selection setter must accept reversed byte offsets")
+	expect(state, rt.nodes[id].selection_anchor.byte == 5 && rt.nodes[id].selection_anchor.affinity == .Trailing, "reverse selection must retain its anchor affinity")
+	expect(state, rt.nodes[id].selection_focus.byte == 0 && rt.nodes[id].selection_focus.affinity == .Leading, "reverse selection must retain its active-end affinity")
 	change = alicorn.process_text_edit(&rt, id, alicorn.Text_Edit{.Backspace, ""})
 	expect(state, change.changed && change.text == "😀", "selection deletion must expand to grapheme boundaries")
 	if len(change.text) > 0 { delete(change.text) }
-	expect(state, rt.nodes[id].caret_byte == 0, "selection deletion must collapse caret to range start")
+	expect(state, rt.nodes[id].caret.byte == 0 && rt.nodes[id].caret.affinity == .Leading, "selection deletion must collapse caret to range start")
+	alicorn.destroy_runtime(&rt)
+}
+
+test_interaction_paint_invalidation :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 200})
+	id := render_text_field(&rt, "caret")
+	expect(state, len(rt.nodes[id].paint) == 1, "unfocused text field starts with only its text command")
+	paint_before_focus := rt.stats.paint_updates
+	expect(state, alicorn.focus(&rt, id), "text field must accept focus")
+	ui, build := alicorn.begin_frame(&rt)
+	if build {
+		alicorn.container_begin(&ui, .Root, S_ROOT)
+		field := alicorn.text_field(&ui, "caret", alicorn.site("tests/edit.odin", 2, 1, "query"))
+		alicorn.container_end(&ui)
+		alicorn.end_frame(&ui)
+		expect(state, field == id, "focus repaint frame must preserve field identity")
+	}
+	expect(state, rt.stats.paint_updates > paint_before_focus, "focus change must queue an interaction repaint")
+	paint_before_focus = rt.stats.paint_updates
+	alicorn.set_text_selection(&rt, id, 5, 1)
+	ui, build = alicorn.begin_frame(&rt)
+	if build {
+		alicorn.container_begin(&ui, .Root, S_ROOT)
+		alicorn.text_field(&ui, "caret", alicorn.site("tests/edit.odin", 2, 1, "query"))
+		alicorn.container_end(&ui)
+		alicorn.end_frame(&ui)
+	}
+	expect(state, rt.stats.paint_updates > paint_before_focus, "selection change must queue an interaction repaint")
 	alicorn.destroy_runtime(&rt)
 }
 
@@ -847,6 +877,7 @@ main :: proc() {
 	test_region_identity_sequences(&state)
 	test_focus_and_editing(&state)
 	test_unicode_editing(&state)
+	test_interaction_paint_invalidation(&state)
 	test_interaction_regressions(&state)
 	test_ergonomic_identity(&state)
 	test_virtualization_and_gpu(&state)

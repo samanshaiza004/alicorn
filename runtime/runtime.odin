@@ -141,9 +141,9 @@ Node :: struct {
 	pressed:     bool,
 	selected:    bool,
 	last_consumed_activation: u64,
-	caret_byte:  int,
-	selection_start: int,
-	selection_end:   int,
+	caret:       Text_Position,
+	selection_anchor: Text_Position,
+	selection_focus:  Text_Position,
 	local_counter: int,
 	identity_key: string,
 	identity_key_u64: u64,
@@ -394,7 +394,9 @@ begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
 	clear(&rt.identity_labels)
 	clear(&rt.identity_key_u64)
 	clear(&rt.identity_key_numeric)
-	clear(&rt.paint_queue)
+	// Interaction invalidation may have queued a retained node before the
+	// next frame begins. update_paint clears the queue after consuming it;
+	// clearing it here would discard focus/caret/selection repaint requests.
 	rt.stats.frames_built += 1
 	return ui, true
 }

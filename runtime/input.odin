@@ -19,8 +19,15 @@ focus :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 	if !ok || !node.active || !node.focusable {
 		return false
 	}
+	previous := rt.focused
+	if previous == id {
+		return true
+	}
 	rt.focused = id
 	record_trace(rt, .Focus, id, "pointer focus owner assigned")
+	invalidate_interaction_paint(rt, previous, "focus lost")
+	invalidate_interaction_paint(rt, id, "focus gained")
+	invalidate_root(rt, "focus owner changed")
 	return true
 }
 
@@ -32,10 +39,14 @@ select :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 	if !ok || !next.active { return false }
 	if rt.selected == id { return true }
 	if rt.selected != 0 {
-		if old, old_ok := rt.nodes[rt.selected]; old_ok { old.selected = false }
+		if old, old_ok := rt.nodes[rt.selected]; old_ok {
+			old.selected = false
+			invalidate_interaction_paint(rt, old.id, "selection lost")
+		}
 	}
 	next.selected = true
 	rt.selected = id
+	invalidate_interaction_paint(rt, id, "selection gained")
 	record_trace(rt, .Focus, id, "selection owner assigned")
 	invalidate_root(rt, "selection changed")
 	return true
@@ -47,27 +58,38 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 	if event.kind == .Move {
 		if target != rt.last_hovered {
 			if rt.last_hovered != 0 {
-				if old, ok := rt.nodes[rt.last_hovered]; ok { old.hovered = false }
+				if old, ok := rt.nodes[rt.last_hovered]; ok {
+					old.hovered = false
+					invalidate_interaction_paint(rt, old.id, "hover lost")
+				}
 			}
 			if target != 0 {
-				if next, ok := rt.nodes[target]; ok { next.hovered = true }
+				if next, ok := rt.nodes[target]; ok {
+					next.hovered = true
+					invalidate_interaction_paint(rt, next.id, "hover gained")
+				}
 			}
 			rt.last_hovered = target
 			invalidate_root(rt, "hover target changed")
 		}
 	} else if event.kind == .Down {
 		if rt.captured_node != 0 {
-			if old, ok := rt.nodes[rt.captured_node]; ok { old.pressed = false }
+			if old, ok := rt.nodes[rt.captured_node]; ok {
+				old.pressed = false
+				invalidate_interaction_paint(rt, old.id, "press canceled")
+			}
 		}
 		if target != 0 {
 			focus(rt, target)
 			if node, ok := rt.nodes[target]; ok {
 				node.pressed = true
+				invalidate_interaction_paint(rt, node.id, "press began")
 				if node.kind == .Text_Field && node.text_run_valid {
 					position := text_run_hit_test(&node.text_run, event.x-node.bounds.x, event.y-node.bounds.y)
-					node.caret_byte = position.byte
-					node.selection_start = position.byte
-					node.selection_end = position.byte
+					node.caret = position
+					node.selection_anchor = position
+					node.selection_focus = position
+					invalidate_interaction_paint(rt, node.id, "pointer assigned text caret")
 					record_trace(rt, .Focus, target, "pointer assigned text caret at visual boundary")
 				}
 			}
@@ -79,7 +101,10 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 	} else if event.kind == .Up {
 		captured := rt.captured_node
 		if captured != 0 {
-			if node, ok := rt.nodes[captured]; ok { node.pressed = false }
+			if node, ok := rt.nodes[captured]; ok {
+				node.pressed = false
+				invalidate_interaction_paint(rt, node.id, "press ended")
+			}
 			rt.captured_node = 0
 		}
 		if captured != 0 && captured == target {
@@ -103,13 +128,13 @@ process_text_edit :: proc(rt: ^Runtime, id: Node_ID, edit: Text_Edit) -> Text_Ch
 	if !focus(rt, id) {
 		return change
 	}
-	start := node.selection_start
-	end := node.selection_end
+	start := node.selection_anchor.byte
+	end := node.selection_focus.byte
 	if start > end { start, end = end, start }
 	start = grapheme_floor_boundary(node.text, start)
 	end = grapheme_ceil_boundary(node.text, end)
 	if start == end {
-		caret := grapheme_floor_boundary(node.text, node.caret_byte)
+			caret := grapheme_floor_boundary(node.text, node.caret.byte)
 		switch edit.kind {
 		case .Insert:
 			start, end = caret, caret
@@ -126,21 +151,22 @@ process_text_edit :: proc(rt: ^Runtime, id: Node_ID, edit: Text_Edit) -> Text_Ch
 	if edit.kind == .Insert && len(edit.text) == 0 && start == end {
 		// Empty insertion still leaves a normalized caret, but does not create
 		// an application-state change.
-		node.caret_byte = start
-		node.selection_start = start
-		node.selection_end = start
+		node.caret = Text_Position{start, .Leading}
+		node.selection_anchor = node.caret
+		node.selection_focus = node.caret
 	} else if start != end || edit.kind == .Insert {
 		old_text := node.text
 		node.text = fmt.aprintf("%s%s%s", old_text[:start], edit.text, old_text[end:])
 		if len(old_text) > 0 { delete(old_text) }
-		node.caret_byte = start + len(edit.text)
-		node.selection_start = node.caret_byte
-		node.selection_end = node.caret_byte
+		node.caret = Text_Position{start + len(edit.text), .Leading}
+		node.selection_anchor = node.caret
+		node.selection_focus = node.caret
 		change.changed = start != end || len(edit.text) > 0
 	}
 	change.text = owned(node.text)
 	if change.changed {
 		node.paint_hash = 0
+		invalidate_interaction_paint(rt, node.id, "text edit caret changed")
 		invalidate_root(rt, "text edit")
 	}
 	return change
@@ -154,9 +180,10 @@ set_text_caret :: proc(rt: ^Runtime, id: Node_ID, byte_index: int) -> bool {
 	node, ok := rt.nodes[id]
 	if !ok || !node.active || node.kind != .Text_Field { return false }
 	caret := grapheme_floor_boundary(node.text, byte_index)
-	node.caret_byte = caret
-	node.selection_start = caret
-	node.selection_end = caret
+	node.caret = Text_Position{caret, .Leading}
+	node.selection_anchor = node.caret
+	node.selection_focus = node.caret
+	invalidate_interaction_paint(rt, id, "text caret changed")
 	invalidate_root(rt, "text caret changed")
 	return true
 }
@@ -164,13 +191,15 @@ set_text_caret :: proc(rt: ^Runtime, id: Node_ID, byte_index: int) -> bool {
 set_text_selection :: proc(rt: ^Runtime, id: Node_ID, start, end: int) -> bool {
 	node, ok := rt.nodes[id]
 	if !ok || !node.active || node.kind != .Text_Field { return false }
-	low, high := start, end
-	if low > high { low, high = high, low }
-	lo := grapheme_floor_boundary(node.text, low)
-	hi := grapheme_ceil_boundary(node.text, high)
-	node.selection_start = lo
-	node.selection_end = hi
-	node.caret_byte = hi
+	if start <= end {
+		node.selection_anchor = Text_Position{grapheme_floor_boundary(node.text, start), .Leading}
+		node.selection_focus = Text_Position{grapheme_ceil_boundary(node.text, end), .Trailing}
+	} else {
+		node.selection_anchor = Text_Position{grapheme_ceil_boundary(node.text, start), .Trailing}
+		node.selection_focus = Text_Position{grapheme_floor_boundary(node.text, end), .Leading}
+	}
+	node.caret = node.selection_focus
+	invalidate_interaction_paint(rt, id, "text selection changed")
 	invalidate_root(rt, "text selection changed")
 	return true
 }
@@ -180,7 +209,7 @@ text_field_caret_geometry :: proc(rt: ^Runtime, id: Node_ID) -> Text_Caret_Geome
 	if !ok || !node.active || node.kind != .Text_Field || !node.text_run_valid {
 		return Text_Caret_Geometry{}
 	}
-	geometry := text_run_caret_geometry(&node.text_run, Text_Position{node.caret_byte, .Leading})
+	geometry := text_run_caret_geometry(&node.text_run, node.caret)
 	geometry.rect.x += node.bounds.x
 	geometry.rect.y += node.bounds.y
 	return geometry
@@ -201,8 +230,8 @@ text_field_selection_rects :: proc(rt: ^Runtime, id: Node_ID, allocator := conte
 	}
 	result := text_run_selection_rects(
 		&node.text_run,
-		Text_Position{node.selection_start, .Leading},
-		Text_Position{node.selection_end, .Trailing},
+		node.selection_anchor,
+		node.selection_focus,
 		allocator,
 	)
 	for &selection in result {

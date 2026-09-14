@@ -80,8 +80,31 @@ main :: proc() {
 		fmt.eprintln("Runa glyph cache reuse proof failed")
 		os.exit(1)
 	}
+	// Exercise a real-font cluster boundary after a possible ffi ligature.
+	// Editable runs disable discretionary ligatures because the vendored Runa
+	// changelog records cluster-index drift after GSUB ligation. Mandatory
+	// shaping remains enabled; the editable path must still expose the byte
+	// boundary before A, whether or not this font forms ffi.
+	ligature_run, ligature_ok := alicorn.text_run_build(&engine, "ffiABC", 24)
+	editable_ligature_run, editable_ok := alicorn.text_run_build(&engine, "ffiABC", 24, editable=true)
+	if !ligature_ok || !editable_ok {
+		fmt.eprintln("Runa real-font ligature regression setup failed")
+		os.exit(1)
+	}
+	editable_after_ffi := false
+	for glyph in editable_ligature_run.glyphs {
+		if glyph.cluster_start == 3 { editable_after_ffi = true; break }
+	}
+	if !editable_after_ffi || len(editable_ligature_run.glyphs) < len(ligature_run.glyphs) {
+		fmt.eprintln("editable Runa clusters lost the byte boundary after ffi")
+		os.exit(1)
+	}
+	real_ligature := len(ligature_run.glyphs) < len(editable_ligature_run.glyphs)
+	editable_feature_policy := editable_ligature_run.ligatures_disabled
 	alicorn.text_run_destroy(&run)
 	alicorn.text_run_destroy(&reused)
-	fmt.println("Runa text proof: PASS", "width", width, "height", height, "glyphs", glyphs, "multiline_height", multiline_height, "multiline_glyphs", multiline_glyphs, "wrapped_height", wrapped_height, "wrapped_glyphs", wrapped_glyphs, "cache", first_cache_size, "->", second_cache_size, "shape_calls", engine.shape_calls, "glyph_cache_hits", engine.glyph_cache_hits, "glyph_cache_misses", engine.glyph_cache_misses, "rasterizations", engine.glyph_rasterizations)
+	alicorn.text_run_destroy(&ligature_run)
+	alicorn.text_run_destroy(&editable_ligature_run)
+	fmt.println("Runa text proof: PASS", "width", width, "height", height, "glyphs", glyphs, "multiline_height", multiline_height, "multiline_glyphs", multiline_glyphs, "wrapped_height", wrapped_height, "wrapped_glyphs", wrapped_glyphs, "cache", first_cache_size, "->", second_cache_size, "shape_calls", engine.shape_calls, "glyph_cache_hits", engine.glyph_cache_hits, "glyph_cache_misses", engine.glyph_cache_misses, "rasterizations", engine.glyph_rasterizations, "real_ffi_ligature", real_ligature, "editable_features_disabled", editable_feature_policy)
 	alicorn.text_engine_destroy(&engine)
 }

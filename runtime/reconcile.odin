@@ -52,9 +52,13 @@ same_rect :: proc(a, b: Rect) -> bool {
 }
 
 mark_dirty :: proc(node: ^Node, reason: string, description, layout, paint, composite: bool) {
-	if len(node.last_reason) > 0 { delete(node.last_reason) }
-	node.dirty = Dirty_Stages{description, layout, paint, composite}
-	node.last_reason = owned(reason)
+	previous_paint := node.dirty.paint
+	previous_composite := node.dirty.composite
+	node.dirty = Dirty_Stages{description, layout, paint || previous_paint, composite || previous_composite}
+	if !previous_paint {
+		if len(node.last_reason) > 0 { delete(node.last_reason) }
+		node.last_reason = owned(reason)
+	}
 }
 
 replace_owned :: proc(destination: ^string, value: string) {
@@ -111,9 +115,9 @@ copy_node_description :: proc(node: ^Node, d: Description) {
 	node.identity_key_u64 = d.identity_key_u64
 	node.identity_key_numeric = d.identity_key_numeric
 	if text_changed {
-		node.caret_byte = len(d.text)
-		node.selection_start = node.caret_byte
-		node.selection_end = node.caret_byte
+		node.caret = Text_Position{len(d.text), .Leading}
+		node.selection_anchor = node.caret
+		node.selection_focus = node.caret
 	}
 }
 
@@ -122,6 +126,17 @@ queue_paint :: proc(rt: ^Runtime, id: Node_ID) {
 	if !ok || node.paint_queued { return }
 	node.paint_queued = true
 	append(&rt.paint_queue, id)
+}
+
+invalidate_interaction_paint :: proc(rt: ^Runtime, id: Node_ID, reason := "interaction visual state changed") {
+	node, ok := rt.nodes[id]
+	if !ok || !node.active { return }
+	node.dirty.paint = true
+	node.dirty.composite = true
+	if len(node.last_reason) > 0 { delete(node.last_reason) }
+	node.last_reason = owned(reason)
+	queue_paint(rt, id)
+	record_trace(rt, .Invalidation, id, reason)
 }
 
 mark_layout_ancestors :: proc(rt: ^Runtime, id: Node_ID) {
@@ -337,6 +352,13 @@ reconcile :: proc(rt: ^Runtime) {
 		if node, ok := rt.nodes[rt.focused]; !ok || !node.active || !node.focusable {
 			rt.focused = focus_fallback(rt, focus_lineage[:])
 		}
+	}
+	if rt.focused != previous_focus {
+		// The old focus owner may have been retired during reconciliation. The
+		// new owner still needs an interaction repaint so a fallback caret or
+		// focus decoration appears on the very next frame.
+		invalidate_interaction_paint(rt, previous_focus, "focus visual state changed")
+		invalidate_interaction_paint(rt, rt.focused, "focus visual state changed")
 	}
 
 	prepare_text_runs(rt)

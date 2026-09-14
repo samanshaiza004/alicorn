@@ -111,6 +111,7 @@ Text_Run :: struct {
 	size:           f32,
 	max_width:      f32,
 	font_generation: u64,
+	ligatures_disabled: bool,
 	allocator:      mem.Allocator,
 }
 
@@ -239,10 +240,17 @@ text_min_int :: proc(a, b: int) -> int {
 // size. Physical glyph rasterization is deliberately deferred to the native
 // renderer so a window can move between DPI scales without changing logical
 // layout.
-text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, allocator := context.allocator) -> (run: Text_Run, ok: bool) {
+text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, editable: bool = false, allocator := context.allocator) -> (run: Text_Run, ok: bool) {
 	if !engine.font_loaded || size <= 0 { return }
 	stack := runa.Font_Stack{&engine.font}
-	opts := runa.Paragraph_Opts{fonts=stack, size=size, direction=.Auto, align=.Start, max_width=max_width}
+	disable_features: bit_set[runa.Feature] = {}
+	if editable {
+		// Runa documents a known cluster bookkeeping defect after GSUB
+		// ligation. Editable text keeps mandatory shaping but disables the
+		// discretionary features that commonly collapse Latin source spans.
+		disable_features = {.Ligatures, .Contextual_Ligatures, .Contextual_Alternates}
+	}
+	opts := runa.Paragraph_Opts{fonts=stack, size=size, direction=.Auto, align=.Start, max_width=max_width, disable_features=disable_features}
 	lines, err := runa.layout_paragraph(value, opts, &engine.cache, allocator=allocator)
 	if err != .None { return }
 	defer {
@@ -257,6 +265,7 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 	run.size = size
 	run.max_width = max_width
 	run.font_generation = engine.font_generation
+	run.ligatures_disabled = editable
 	run.allocator = allocator
 	// A ligature may collapse several source graphemes into one shaping
 	// cluster. The next distinct shaped cluster therefore defines its source
@@ -369,7 +378,7 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 		return false
 	}
 	if node.text_run_valid { text_run_destroy(&node.text_run) }
-	run, built := text_run_build(&rt.text_engine, node.text, 16, requested_width)
+	run, built := text_run_build(&rt.text_engine, node.text, 16, requested_width, editable=node.kind == .Text_Field)
 	if built {
 		node.text_run = run
 		node.text_run_valid = true

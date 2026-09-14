@@ -33,8 +33,8 @@ update_paint :: proc(rt: ^Runtime) {
 			if node.kind == .Text_Field && node.text_run_valid {
 				selection := text_run_selection_rects(
 					&node.text_run,
-					Text_Position{node.selection_start, .Leading},
-					Text_Position{node.selection_end, .Trailing},
+					node.selection_anchor,
+					node.selection_focus,
 				)
 				for selected in selection {
 					bounds := selected.rect
@@ -49,7 +49,7 @@ update_paint :: proc(rt: ^Runtime) {
 			}
 			append(&node.paint, Display_Command{node.id, node.kind, node.bounds, node.clip, owned(display_text), node.color})
 			if node.kind == .Text_Field && rt.focused == node.id {
-				caret := text_run_caret_geometry(&node.text_run, Text_Position{node.caret_byte, .Leading})
+				caret := text_run_caret_geometry(&node.text_run, node.caret)
 				if caret.valid {
 					bounds := caret.rect
 					bounds.x += node.bounds.x

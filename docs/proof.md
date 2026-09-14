@@ -336,17 +336,24 @@ download buffer. Process-wide GPU allocator telemetry remains uncertain.
   operate on the retained run. Runtime wrappers expose field geometry without
   retaining an application buffer pointer. Focused fields emit selection and
   caret display commands in retained paint order; pointer-down maps to the
-  nearest visual boundary.
-- Test: headless geometry tests cover ASCII and wrapped lines; existing editing
-  tests cover UTF-8, combining/extended grapheme deletion, insertion and
-  selection replacement. The native fixture now composes a focused field and
-  reports five display commands, including its caret decoration.
+  nearest visual boundary. Retained fields store `Text_Position` affinity and
+  selection anchor/focus rather than only a sorted byte interval. Interaction
+  changes explicitly queue the affected node's paint product.
+- Test: headless geometry tests cover ASCII and wrapped lines; editing tests
+  cover UTF-8, combining/extended grapheme deletion, insertion, selection
+  direction and interaction repaint propagation. The native fixture composes a
+  focused field and reports five display commands, including its caret
+  decoration. `examples/runa_text` runs a real-font `ffiABC` regression; when
+  the font forms the discretionary ligature, the editable policy disables it
+  and verifies the byte boundary before `A` remains present.
 - Result: the platform-neutral geometry and native decoration seam exists and
   passes the current deterministic tests.
-- Known limitations: pointer drag selection, clipboard, word movement, full
-  bidi caret affinity, real RTL/ligature geometry fixtures, and SDL committed
-  text input/IME are not implemented. The current visual readback proves
-  glyph coverage, not a golden caret/selection image.
+- Known limitations: pointer drag selection, clipboard, full bidi caret
+  movement/selection behavior and SDL committed text input/IME are not
+  implemented.
+  Internal ligature caret placement remains interpolation rather than
+  font-provided component data. The current visual readback proves glyph
+  coverage, not a golden caret/selection image.
 - Verdict: partially proven.
 
 ## What was falsified or narrowed

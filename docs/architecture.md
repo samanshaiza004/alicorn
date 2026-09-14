@@ -53,10 +53,16 @@ inspectable.
 
 Retained nodes contain runtime-owned identity metadata, interaction state,
 geometry, display commands and textual copies. Text-field
-caret and selection offsets are byte positions normalized to Runa UAX #29
-grapheme boundaries. They do not
+caret and selection positions use byte offsets normalized to Runa UAX #29
+grapheme boundaries plus affinity. The node retains a caret and an
+anchor/focus pair, so selection direction is not lost. They do not
 contain `rawptr`, `^T` application pointers or closures. The application must
 copy a text-edit result into its own ordinary state before the next frame.
+
+Interaction changes are separate from application description changes. Focus,
+hover, press, selection and caret updates mark the affected retained node's
+paint product and queue it for the next invalidated frame; they do not require
+the application description to change.
 
 `Runtime.text_engine` owns cloned font bytes, the parsed Runa font, a shape
 cache, CPU atlas residency and a glyph-resource cache. Each retained text node
@@ -70,6 +76,11 @@ physical atlas slot. This keeps logical text geometry separate from rendering
 residency and lets a window change DPI without stretching a low-resolution
 slot. The SDL adapter has no historical run cache of its own, so virtualized
 node retirement also bounds text-product retention.
+
+Editable text runs disable Runa's discretionary `liga`, `clig` and `calt`
+features. This is a narrow mitigation for the vendored Runa cluster-index bug
+after ligation; static labels retain the normal feature set. Mandatory shaping
+features remain enabled.
 
 ## Regions and explicit invalidation
 

@@ -25,7 +25,7 @@ inspect :: proc(rt: ^Runtime) -> string {
 			fmt.sbprintf(&sb, "Node: %d parent=%d kind=%v source=%s:%d:%d component=%s key=%q scope=%q bounds=(%.1f,%.1f %.1fx%.1f)\n", node.id, node.parent, node.kind, node.site.file, node.site.line, node.site.column, node.site.component, node.key, node.identity_key, node.bounds.x, node.bounds.y, node.bounds.w, node.bounds.h)
 		}
 		fmt.sbprintf(&sb, "  description: %s layout: %s paint: %s composite: %s\n", stage_word(node.dirty.description), stage_word(node.dirty.layout), stage_word(node.dirty.paint), stage_word(node.dirty.composite))
-		fmt.sbprintf(&sb, "  selected=%t hovered=%t pressed=%t caret=%d selection=(%d,%d) reason: %s\n", node.selected, node.hovered, node.pressed, node.caret_byte, node.selection_start, node.selection_end, node.last_reason)
+		fmt.sbprintf(&sb, "  selected=%t hovered=%t pressed=%t caret=(%d,%v) selection=(%d,%v)->(%d,%v) reason: %s\n", node.selected, node.hovered, node.pressed, node.caret.byte, node.caret.affinity, node.selection_anchor.byte, node.selection_anchor.affinity, node.selection_focus.byte, node.selection_focus.affinity, node.last_reason)
 	}
 	if rt.hard_error {
 		fmt.sbprintf(&sb, "HARD ERROR: %s\n", rt.diagnostic)

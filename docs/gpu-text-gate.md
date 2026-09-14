@@ -291,7 +291,8 @@ after the second upload.
 
 Once glyphs are visible, make the existing field genuinely usable:
 
-- retain a caret and selection as grapheme-boundary byte offsets;
+- retain a caret and selection as grapheme-boundary byte offsets plus affinity,
+  preserving selection anchor/focus direction;
 - derive caret x/y and selection rectangles from shaped line/cluster data;
 - map pointer coordinates to the nearest visual caret boundary;
 - implement logical movement by grapheme boundaries and visual movement by
@@ -304,7 +305,9 @@ Once glyphs are visible, make the existing field genuinely usable:
   in a node.
 
 Tests must cover ASCII, combining marks, emoji ZWJ sequences, CJK, RTL text,
-ligatures and wrapped/multiline fields. A field that merely avoids splitting
+ligatures and wrapped/multiline fields. Editable runs should disable
+discretionary ligatures until Runa's cluster bookkeeping is fixed or replaced.
+A field that merely avoids splitting
 UTF-8 bytes is not enough; caret and selection behavior must be defined at
 grapheme/cluster boundaries.
 
@@ -539,7 +542,12 @@ Stage 2 is implemented across `runtime/text.odin`, `runtime/layout.odin`,
 - The runtime exposes caret geometry, multi-line selection rectangles,
   visual-boundary hit testing, grapheme-based logical movement, and line-based
   visual movement. Focused fields emit retained selection/caret display
-  commands without retaining application buffer pointers.
+  commands without retaining application buffer pointers. Caret affinity and
+  selection anchor/focus are retained, and interaction changes queue paint
+  directly instead of relying on description-hash changes.
+- Editable text disables Runa's discretionary ligature features. The real-font
+  example exercises `ffiABC`, verifies the byte boundary after `ffi`, and
+  reports whether the supplied font actually formed the ligature.
 - The native fixture now renders a focused text field and keeps the existing
   ordered GPU text/compositor path intact.
 
@@ -557,8 +565,8 @@ text_readback_non_background 969
 
 The 303 shape/layout calls are expected because the resize stress alternates
 the field's available width; they are not evidence of unchanged-text reuse.
-Stage 2 does not yet include pointer-drag selection, clipboard, word movement,
-full bidi caret affinity, SDL committed text input, IME, color glyphs, or a
+Stage 2 does not yet include pointer-drag selection, clipboard, full bidi
+caret movement/selection behavior, SDL committed text input, IME, color glyphs, or a
 golden caret/selection screenshot suite.
 
 At completion, update `proof.md` with:
