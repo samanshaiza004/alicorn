@@ -451,7 +451,8 @@ Sources: [Xilem architecture](https://github.com/linebender/xilem/blob/main/xile
 ### GPU surface measurements
 
 Starting SHA for this gate: `9af95f2301e8a9977a2dfad4dd972f25cbd3b06e`.
-Ending SHA is recorded when the gate commits.
+Ending implementation SHA: `c2ebe9c` (`native: add shader-backed retained
+waveform surface`). This proof-record update is committed separately.
 
 Environment: Windows host, Odin `dev-2026-09-nightly:a2fb372`, SDL 3.4.14,
 Direct3D12, 2026-09-14.
