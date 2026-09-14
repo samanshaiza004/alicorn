@@ -95,8 +95,10 @@ SDL_GPU's intended upload path matches the required ownership model:
   encoding upload commands;
 - begin one copy pass, call `SDL_UploadToGPUTexture` for a texture region, and
   end the copy pass;
-- the upload executes on the GPU timeline, so the staging transfer buffer must
-  remain alive until the submission's fence is signaled;
+- the upload executes on the GPU timeline. Alicorn must not reuse upload memory
+  unsafely; it may explicitly retain a transfer buffer, use SDL's cycling
+  behavior, or release the SDL handle after encoding and rely on SDL's
+  documented safe-release semantics;
 - submitting with `SDL_SubmitGPUCommandBufferAndAcquireFence` makes the command
   buffer unusable and returns a fence that must eventually be released.
 
@@ -134,6 +136,11 @@ References: [SDL_GetGPUShaderFormats](https://wiki.libsdl.org/SDL3/SDL_GetGPUSha
 [SDL_GPUShaderFormat](https://wiki.libsdl.org/SDL3/SDL_GPUShaderFormat),
 [SDL_CreateGPUShader](https://wiki.libsdl.org/SDL3/SDL_CreateGPUShader), and
 [SDL_CreateGPUGraphicsPipeline](https://wiki.libsdl.org/SDL3/SDL_CreateGPUGraphicsPipeline).
+
+SDL's [SDL_shadercross](https://github.com/libsdl-org/SDL_shadercross) is a
+candidate build-time translator for a small HLSL source pair. It should be
+adopted only with a pinned tool revision and recorded output formats; runtime
+shader-source compilation is not a substitute for reproducible artifacts.
 
 ### SDL text input and IME
 
@@ -189,6 +196,24 @@ Glyph_Run = retained placements + cluster map + atlas slot references
 The key must include every parameter that changes raster output. A font handle
 must identify runtime-owned font bytes/face state, not an application pointer.
 
+Keep CPU atlas identity separate from GPU residency identity:
+
+```text
+Glyph_Atlas_Page_ID
+    ↓
+CPU/Runa page state
+    ↓
+GPU residency record
+    texture handle
+    uploaded generation
+    dirty generation
+```
+
+The first useful invariant is `cpu_generation == gpu_generation` after the
+upload for a page. A later device recreation, page replacement or cache policy
+can then invalidate GPU residency without changing the logical glyph resource
+identity. A Runa page number must never be treated as an `SDL_GPUTexture *`.
+
 ### 1. Runa rasterization to a persistent GPU atlas
 
 Implement this first and stop for a proof review before adding IME.
@@ -200,13 +225,19 @@ Implement this first and stop for a proof review before adding IME.
 4. Create persistent SDL_GPU atlas textures per page. Do not recreate them per
    frame. Page dimensions are fixed for the first gate; use page growth rather
    than eviction so lifetime behavior is easy to prove.
-5. Consume Runa dirty rectangles and upload only those regions. Batch dirty
-   rectangles for one page into one transfer buffer where practical, but keep
-   the first implementation correct and inspectable.
-6. Keep transfer buffers and any CPU staging memory alive until the submission
-   fence signals. Keep atlas textures alive while any retained glyph display
-   command may reference them. Replace or retire pages only through the existing
-   deferred-retirement mechanism.
+5. Stage uploads as three proofs: (A) upload a persistent page and draw one
+   glyph correctly, (B) upload only the dirty rectangle, and (C) batch multiple
+   dirty rectangles/pages where measurement justifies it. Do not make batching
+   a prerequisite for the first visible-glyph proof. Account for backend
+   alignment and measure whether SDL inserts an internal copy for a tightly
+   packed dirty rectangle.
+6. After unmapping, do not access the mapped transfer pointer. Choose staging
+   lifetime explicitly: retain the SDL handle behind the existing fence, or
+   release it after encoding and rely on SDL's safe-release/cycling semantics.
+   The invariant is that upload memory is never reused unsafely; manual fence
+   retention is not mandatory. Keep atlas textures alive while any retained
+   glyph display command may reference them. Replace or retire pages only
+   through the existing deferred-retirement mechanism.
 7. Add a minimal glyph vertex format containing destination position, UV,
    color and page/type selection. Retained text paint stores glyph placements
    and page references; composition binds the atlas texture and samples it in a
@@ -290,6 +321,8 @@ rebuild.
 | changed color/position, same text | no rasterization/upload; only the necessary paint/composition work |
 | changed text using existing glyphs | shape/layout as required; glyph cache hits; zero new raster/upload for existing glyphs |
 | one new glyph | one glyph miss/raster result and one affected dirty upload, subject to page creation |
+| same text, changed font size | shape/layout as required; new size-specific glyph keys miss; old slots remain valid until policy retirement |
+| same text, changed variable-font axis | shape/layout and glyph keys change with the variation generation; no stale pixels from the prior instance |
 | repeated new glyphs in one frame | raster misses equal unique resource keys; uploads are bounded by dirty pages/rectangles |
 | atlas survives many frames | same page/slot identity and no re-upload when content is unchanged |
 | page replacement or shutdown | no use-after-free; resource retirement waits for a signaled fence |
@@ -372,7 +405,9 @@ The gate is not green if any of these occur:
 - a glyph key omits a raster parameter and displays stale pixels;
 - the runtime retains an application buffer pointer to make editing work;
 - a reused region loses glyph-run, caret, focus or selection state;
-- atlas, staging or pipeline resources are freed before their fence;
+- atlas or pipeline resources are freed before their fence, or a transfer
+  buffer is released/reused in a way that violates SDL's safe-release and
+  cycling semantics;
 - page growth or replacement leaks resources over repeated stress cycles;
 - cluster mapping cannot support deterministic caret/selection behavior;
 - the shader artifact path is not reproducible on a supported SDL_GPU backend;

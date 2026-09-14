@@ -17,6 +17,9 @@ arbitrary Odin memory. The application explicitly invalidates the root or a
 logical region when its state changes; the runtime then decides which retained
 work can be reused.
 
+**Status: early experimental runtime; architecture is being proven before API
+stability or widget breadth.**
+
 ## The thesis
 
 The thesis is not that immediate-mode APIs are secretly retained widgets. It
@@ -84,7 +87,8 @@ the root.
 
 ### Ordinary application state
 
-The application owns the data it cares about:
+Conceptual target ergonomics, not a promise that every call below is the
+current compiled public API:
 
 ```odin
 if ui.button("Save") {
