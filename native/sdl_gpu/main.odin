@@ -482,6 +482,12 @@ wait_and_retire_oldest :: proc(
 main :: proc() {
 	// SDL video, window, text-input, event polling, and GPU operations all run
 	// on this main thread. No background event loop is introduced by the adapter.
+	manual_ime := false
+	for argument in os.args {
+		if argument == "--manual-ime" {
+			manual_ime = true
+		}
+	}
 	if !sdl3.Init(sdl3.INIT_VIDEO) {
 		fail("SDL_Init failed")
 	}
@@ -628,6 +634,9 @@ main :: proc() {
 	if app_text != expected_probe_text || rt.nodes[field].composition.active {
 		fail("SDL text-input probe failed to commit and clear preedit")
 	}
+	if manual_ime {
+		fmt.println("manual_ime_mode", "focus the text field, activate Microsoft Japanese IME or Microsoft Pinyin, type a composition, and close the window when finished")
+	}
 	submitted := 0
 	retired := 0
 	max_in_flight := 0
@@ -637,6 +646,14 @@ main :: proc() {
 
 	resize_widths := [3]c.int{801, 1024, 640}
 	resize_heights := [3]c.int{601, 768, 480}
+	frame_limit: int = RESIZE_STRESS_ITERATIONS
+	if manual_ime {
+		// Five minutes at the manual fixture's 60 Hz pacing is enough for a
+		// real-OS IME check while keeping accidental unattended runs bounded.
+		frame_limit = 18_000
+	}
+	last_manual_text_input_events := text_input_events
+	last_manual_composition_events := composition_events
 	// Submit an initial three-frame burst before any programmatic resize. This
 	// proves the configured frames-in-flight retirement path independently of
 	// the swapchain invalidation that a resize can trigger.
@@ -646,8 +663,8 @@ main :: proc() {
 	// by that mutation.
 	// The following 300 iterations then drain before each resize and retire each
 	// resized frame before the next resize, matching SDL's swapchain lifecycle.
-	for step := -3; step < RESIZE_STRESS_ITERATIONS; step += 1 {
-		if step >= 0 {
+	for step := -3; step < frame_limit; step += 1 {
+		if step >= 0 && !manual_ime {
 			for len(in_flight) > 0 {
 				if !wait_and_retire_oldest(device, &in_flight, &query_before_wait_true, &query_after_wait_true, &wait_count) {
 					fail("SDL_WaitForGPUFences failed before resize")
@@ -687,7 +704,31 @@ main :: proc() {
 			&composition_events,
 			&app_text,
 		)
+		if manual_ime {
+			if composition_events > last_manual_composition_events {
+				if node, ok := rt.nodes[rt.focused]; ok {
+					fmt.println(
+						"manual_ime_event", "TEXT_EDITING",
+						"count", composition_events,
+						"preedit", node.composition.text,
+						"selection_bytes", node.composition.selection_start, node.composition.selection_end,
+					)
+				}
+			}
+			if text_input_events > last_manual_text_input_events {
+				fmt.println(
+					"manual_ime_event", "TEXT_INPUT",
+					"count", text_input_events,
+					"committed_text", app_text,
+				)
+			}
+			last_manual_composition_events = composition_events
+			last_manual_text_input_events = text_input_events
+		}
 		if quit_requested {
+			if manual_ime {
+				break
+			}
 			fail("window close requested during validation")
 		}
 		if !read_window_metrics(window, &metrics) {
@@ -774,6 +815,9 @@ main :: proc() {
 				fail("SDL_WaitForGPUFences failed after resize")
 			}
 			retired += 1
+		}
+		if manual_ime {
+			sdl3.Delay(16)
 		}
 	}
 
