@@ -38,3 +38,15 @@ adjacency, local retirement and stage-specific queues. It will not add a
 signal graph, automatic dependency discovery, compiler instrumentation or
 application-owned widget objects. Global root wake-up and structural reorder
 remain intentionally more expensive paths and will be measured separately.
+
+## GPU surface gate
+
+The same precedents support a second boundary. Xilem's pruning idea explains
+why a retained surface should not force an ordinary subtree rebuild. GPUI's
+dirty-view set explains why a high-frequency surface needs its own explicit
+wake bit. SDL_GPU's pass rules explain why the surface cannot own a raw command
+buffer: graphics, copy, and compute work must be scheduled in compatible pass
+lifetimes, and submitted command buffers cannot be reused. Alicorn therefore
+uses an explicit `gpu_surface_update` handle with copied samples; the runtime
+owns placement and wakeup, while the native surface adapter owns only its
+specialized pipeline and buffers.

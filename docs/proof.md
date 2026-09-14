@@ -402,6 +402,81 @@ The native run remains a Windows Direct3D12 proof. Hosted macOS foundation CI
 continues to compile and run the headless/native baseline, but this gate does
 not claim a Metal IME or GPU-text execution result.
 
+## GPU surface gate — retained high-frequency custom surface
+
+### Research conclusions
+
+Xilem's `Memoize` confirms the value of an explicit subtree-pruning boundary,
+but its reactive dependency model does not fit Alicorn's ordinary Odin state
+and explicit revision contract. GPUI's dirty-view set confirms that a separate
+dirty frontier can wake a window without treating every retained view as dirty;
+Alicorn transfers that work-queue idea without adopting GPUI entities or
+observer notifications. SDL_GPU requires graphics pipelines to be bound inside
+render passes, does not permit overlapping render/copy/compute passes, and
+invalidates command-buffer use after submission. Those rules justify keeping
+pass scheduling and submission in the Alicorn compositor while exposing no raw
+SDL pass to application code.
+
+Sources: [Xilem architecture](https://github.com/linebender/xilem/blob/main/xilem/ARCHITECTURE.md),
+[GPUI window invalidation](https://github.com/zed-industries/zed/blob/main/crates/gpui/src/window.rs),
+[SDL render passes](https://wiki.libsdl.org/SDL3/SDL_BeginGPURenderPass),
+[SDL copy passes](https://wiki.libsdl.org/SDL3/SDL_BeginGPUCopyPass), and
+[SDL command buffers](https://wiki.libsdl.org/SDL3/SDL_AcquireGPUCommandBuffer).
+
+### Claim: a high-frequency surface can update independently
+
+- Implementation: `GPU_Surface_Context` records retained logical bounds,
+  physical extent, DPI, effective clip and revision. `gpu_surface_update`
+  copies samples into the retained `.Custom_Surface` node and sets a
+  compositor-frame-pending bit without invalidating the procedural root.
+  `native/sdl_gpu/surface.odin` owns a dedicated pipeline, sampler, 1×1 white
+  texture, vertex buffer and transfer buffer, and encodes a scissored waveform
+  render pass at the display-command position.
+- Test: `test_gpu_surface_contract` verifies the context, copied data,
+  surface-only frame wake, zero ordinary frame work, preservation across a
+  later root wake, and rejection after surface retirement.
+- Benchmark: the warmed headless loop performs 1,200 explicit updates with
+  zero ordinary descriptions, reconciliation, layout, paint or composition
+  visits and zero measured allocations. The Windows native surface stress runs
+  1,200 revisions at 120 Hz pacing beside the retained text/button fixture.
+- Result: the surface updates and uploads every revision while the surrounding
+  procedural UI remains asleep; its five GPU resources are created once and
+  three frames in flight remain bounded.
+- Known limitations: native surface execution is proven on Windows Direct3D12
+  only. The current API accepts copied waveform samples, not arbitrary shader
+  callbacks, compute, multiple independent surfaces, variable-size resources,
+  or a full visual readback assertion for waveform geometry.
+- Verdict: proven for the measured explicit waveform surface; continue.
+
+### GPU surface measurements
+
+Starting SHA for this gate: `9af95f2301e8a9977a2dfad4dd972f25cbd3b06e`.
+Ending SHA is recorded when the gate commits.
+
+Environment: Windows host, Odin `dev-2026-09-nightly:a2fb372`, SDL 3.4.14,
+Direct3D12, 2026-09-14.
+
+| case | updates/frames | wall ns | encodes | vertex uploads | resources created | ordinary descriptions | reconcile | layout | paint | compose | allocations | max in flight |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| headless warmed surface locality | 1,200 / 1,200 | 5,152,600 | n/a | n/a | n/a | 0 | 0 | 0 | 0 | 0 | 0 | n/a |
+| native Windows surface stress | 1,200 / 1,200 | 11,606,128,600 | 1,203 | 1,200 | 5 | 0 | 0 | 0 | 0 | 0 | n/a | 3 |
+
+Native baseline after the change: 303 submissions, 303 retirements, no SDL
+error, and the existing text readback remained positive. Reproducible
+commands are `.\tools\check.ps1`, `.\tools\bench.ps1`,
+`.\tools\native_sdl_gpu.ps1`, and
+`.\tools\native_sdl_gpu.ps1 -SurfaceStress`.
+
+### Allocation observations
+
+The first implementation recorded one allocated trace string per surface
+update. That was instrumentation overhead, not surface data ownership, so
+high-frequency literal trace reasons now use the bounded trace ring without a
+heap copy. After warming the retained sample capacity, the 1,200-update
+headless loop reports zero allocator requests. The native path still performs
+the expected per-frame transfer-buffer map/upload, while its pipeline, sampler,
+texture, vertex buffer and transfer buffer are persistent.
+
 ## What was falsified or narrowed
 
 - The old assumption that skipping a region body implied skipping retained
@@ -429,15 +504,17 @@ short-circuiting remain intact in the current tests.
 
 No automatic domain mutation observation, variable-height virtualization,
 offscreen selection, semantic tree, reactive state graph, color glyph policy,
-real OS IME telemetry, or platform-idle telemetry was added. The visual check
-is a bounded offscreen readback rather than a full screenshot corpus, and the
-native compositor remains a conservative per-item rectangle/text path.
+real OS IME telemetry, or platform-idle telemetry was added. The surface gate
+also does not prove Metal/Vulkan execution or a general arbitrary-GPU API. The
+visual check is a bounded offscreen readback rather than a full screenshot
+corpus, and the native compositor remains a conservative per-item
+rectangle/text/surface path.
 
 ## Decision
 
 `CONTINUE`
 
-GPU Text Stage 3 is credible enough to proceed to manual/native OS IME
-validation. The runtime now has the intended committed/preedit boundary, but
-the platform proof is deliberately incomplete; the next gate should validate
-real IME event behavior on Windows and macOS before broader editing work.
+The explicit retained surface path now demonstrates the central locality claim
+for a high-frequency shader-backed waveform without a mandatory reactive
+application model. The next gate may investigate broader shader-backed domain
+drawing, but this foundation gate is complete for its stated scope.

@@ -70,7 +70,9 @@ geometry.
 The current GPU text path is an alpha-glyph proof with platform-neutral caret,
 selection, wrapping, and hit-testing foundations. Committed SDL Unicode input
 and transient preedit composition now work through the retained text field;
-real OS IME validation, color glyphs, and broader platform proof remain.
+real OS IME validation, color glyphs, and broader platform proof remain. A
+separate retained GPU-surface gate now proves a small shader-backed waveform
+can update without rebuilding the surrounding UI on Windows Direct3D12.
 
 ## Try it
 
@@ -80,6 +82,7 @@ fixture.
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/check.ps1
 powershell -ExecutionPolicy Bypass -File tools/bench.ps1
+powershell -ExecutionPolicy Bypass -File tools/native_sdl_gpu.ps1 -SurfaceStress
 ```
 
 See [`docs/examples.md`](docs/examples.md) for the available examples and

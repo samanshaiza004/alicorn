@@ -335,22 +335,12 @@ updates where the host platform exposes them.
 
 ### 4. One shader-backed custom surface
 
-Only after the text path is stable, add one real custom surface such as an
-animated process graph or waveform. It receives the existing surface contract:
-
-```text
-logical bounds
-pixel bounds
-DPI scale
-clip
-frame information
-```
-
-The runtime schedules its command recording and owns pipeline/buffer lifetime.
-The surface updates continuously while unchanged controls keep their retained
-text/layout/paint products. This proves that a custom pipeline and a glyph
-pipeline can coexist without turning the whole window into one application
-rebuild.
+This follow-on gate is implemented separately in
+[`gpu-surface-gate.md`](gpu-surface-gate.md). It uses an explicit retained
+surface handle and a 512-sample waveform to prove that high-frequency surface
+updates can coexist with sleeping retained text and controls. It does not yet
+make arbitrary shader callbacks, compute, or a general graphics framework part
+of the text gate.
 
 ## Proof matrix
 

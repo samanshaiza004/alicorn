@@ -28,6 +28,9 @@
   glyphs, broader screenshot proof and one shader-backed custom surface remain
   separately gated;
 - broader native coverage on Windows, macOS and Linux;
+- [GPU surface gate](gpu-surface-gate.md): the explicit retained waveform
+  surface path is proven on Windows Direct3D12. It is intentionally not yet a
+  general shader callback API, compute surface, or multi-surface scheduler;
 - accessibility integration through a separate semantic adapter.
 
 ## Observability

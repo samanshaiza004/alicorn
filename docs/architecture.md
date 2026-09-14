@@ -154,3 +154,24 @@ z-order and clipping. Atlas/vertex resources are released after the final
 device-idle wait. The shader artifacts are checked-in DXIL, MSL and SPIR-V
 outputs derived from SDL_ttf's GPU-text example. A native offscreen download
 probe verifies glyph coverage in the expected bounds.
+
+## Custom GPU surfaces
+
+`gpu_surface` creates a retained `.Custom_Surface` placement with a stable
+identity, logical bounds, physical extent, DPI scale and initial revision.
+`gpu_surface_update` is the explicit high-frequency path: it copies caller
+samples into node-owned storage, records a bounded structural trace event and
+sets a compositor-frame-pending bit. It does not invalidate the root or queue
+ordinary description/layout/paint work. `gpu_surface_frame_consumed` clears
+that bit after a successful native submission.
+
+The first native implementation is a 512-sample waveform. Its SDL adapter
+owns a dedicated pipeline, sampler, white texture, vertex buffer and transfer
+buffer. It encodes a scissored render pass at the retained display-command
+position and cycles buffer uploads safely while three frames may be in flight.
+The application never receives an SDL command buffer or render-pass pointer.
+Surface samples are copied; arbitrary application pointers and closures are not
+retained. Surface resource destruction occurs after the adapter's final device
+idle wait. The measured surface-only path has zero ordinary runtime visits and
+zero warmed-loop allocations; the native stress path performs 1,200 waveform
+uploads with five resources created once.

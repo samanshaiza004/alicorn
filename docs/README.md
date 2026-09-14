@@ -26,6 +26,7 @@ project record.
   ownership and the remaining native proof boundary.
 - [SDL3 / SDL_GPU boundary](platform/sdl-gpu.md) — native backend lifetime and composition notes.
 - [macOS validation](platform/macos-validation.md) — Apple Silicon validation history and limits.
+- [GPU surface gate](gpu-surface-gate.md) — explicit high-frequency waveform updates beside retained UI.
 
 ## Examples
 
