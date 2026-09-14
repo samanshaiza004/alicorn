@@ -7,7 +7,7 @@ the repository contains a repeatable test or measurement for it.
 
 - Implementation: `runtime/runtime.odin`, hierarchical FNV identity and
   explicit `key_scope`.
-- Test: `tests/identity_tests.odin`, including insertion, deletion, reorder,
+- Test: `tests/main.odin`, including insertion, deletion, reorder,
   filter, wrapper/conditional changes and deterministic randomized sequences.
 - Benchmark: `benchmarks/main.odin` keyed reorder.
 - Result: the test checks `logical_key -> retained state` after each operation.

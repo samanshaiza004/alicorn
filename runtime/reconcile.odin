@@ -57,6 +57,19 @@ mark_dirty :: proc(node: ^Node, reason: string, description, layout, paint, comp
 	node.last_reason = owned(reason)
 }
 
+replace_owned :: proc(destination: ^string, value: string) {
+	if destination^ == value { return }
+	if len(destination^) > 0 { delete(destination^) }
+	destination^ = owned(value)
+}
+
+replace_site :: proc(destination: ^Source_Site, value: Source_Site) {
+	replace_owned(&destination.file, value.file)
+	replace_owned(&destination.component, value.component)
+	destination.line = value.line
+	destination.column = value.column
+}
+
 release_node_strings :: proc(node: ^Node) {
 	if len(node.site.file) > 0 { delete(node.site.file) }
 	if len(node.site.component) > 0 { delete(node.site.component) }
@@ -72,11 +85,10 @@ release_node_strings :: proc(node: ^Node) {
 copy_node_description :: proc(node: ^Node, d: Description) {
 	// Runtime-owned copies are important: a generic description may borrow a
 	// caller's string for only the duration of this procedure.
-	release_node_strings(node)
-	node.site = clone_site(d.site)
-	node.key = owned(d.key)
-	node.label = owned(d.label)
-	node.text = owned(d.text)
+	replace_site(&node.site, d.site)
+	replace_owned(&node.key, d.key)
+	replace_owned(&node.label, d.label)
+	replace_owned(&node.text, d.text)
 	node.parent = d.parent
 	node.kind = d.kind
 	node.style = d.style
@@ -85,15 +97,35 @@ copy_node_description :: proc(node: ^Node, d: Description) {
 	node.region_revision = d.region_revision
 	node.region = d.region
 	node.focusable = d.focusable
-	node.identity_key = owned(d.identity_key)
+	replace_owned(&node.identity_key, d.identity_key)
+}
+
+mark_layout_ancestors :: proc(rt: ^Runtime, id: Node_ID) {
+	current := id
+	for current != 0 {
+		node, ok := rt.nodes[current]
+		if !ok { break }
+		node.dirty.layout = true
+		node.dirty.composite = true
+		current = node.parent
+	}
 }
 
 reconcile :: proc(rt: ^Runtime) {
 	previous_focus := rt.focused
+	focus_lineage := make([dynamic]Node_ID, 0)
+	if previous_focus != 0 {
+		current := previous_focus
+		for current != 0 {
+			append(&focus_lineage, current)
+			old, ok := rt.nodes[current]
+			if !ok { break }
+			current = old.parent
+		}
+	}
 	for _, node in rt.nodes {
 		node.active = false
-		node.hovered = false
-		node.pressed = false
+		node.present = false
 	}
 	clear(&rt.order)
 	for d in rt.pending {
@@ -108,6 +140,7 @@ reconcile :: proc(rt: ^Runtime) {
 			node.layout_hash = layout_hash(d)
 			node.paint_hash = paint_hash(d)
 			mark_dirty(node, "new retained node", true, true, true, true)
+			mark_layout_ancestors(rt, d.id)
 			record_trace(rt, .Reconcile, d.id, "new retained node")
 		} else {
 			new_desc_hash := description_hash(d)
@@ -124,7 +157,8 @@ reconcile :: proc(rt: ^Runtime) {
 			if description_changed {
 				reason = "description changed"
 			}
-			mark_dirty(node, reason, description_changed, layout_changed, paint_changed, false)
+			mark_dirty(node, reason, description_changed, layout_changed, paint_changed || layout_changed, false)
+			if layout_changed { mark_layout_ancestors(rt, d.id) }
 			if description_changed || layout_changed || paint_changed {
 				record_trace(rt, .Reconcile, d.id, reason)
 			} else {
@@ -132,6 +166,7 @@ reconcile :: proc(rt: ^Runtime) {
 			}
 		}
 		node.active = true
+		node.present = true
 		append(&rt.order, d.id)
 		if cache, ok := rt.region_captures[d.id]; ok {
 			free_region_cache(node)
@@ -144,13 +179,14 @@ reconcile :: proc(rt: ^Runtime) {
 	// application pointer or widget object is retained outside it.
 	for id, node in rt.nodes {
 		if !node.active {
-			if id == rt.focused {
-				// Resolve after deletion using the old parent below.
-			}
 			delete_key(&rt.nodes, id)
+			if id == rt.last_hovered { rt.last_hovered = 0 }
+			if id == rt.pressed_node { rt.pressed_node = 0 }
+			if id == rt.selected { rt.selected = 0 }
 			free_region_cache(node)
 			for command in node.paint { if len(command.text) > 0 { delete(command.text) } }
 			delete(node.paint)
+			delete(node.children)
 			release_node_strings(node)
 			free(node)
 			rt.stats.nodes_retired += 1
@@ -162,7 +198,7 @@ reconcile :: proc(rt: ^Runtime) {
 		if node, ok := rt.nodes[previous_focus]; ok && node.active && node.focusable {
 			rt.focused = previous_focus
 		} else {
-			rt.focused = focus_fallback(rt, previous_focus)
+			rt.focused = focus_fallback(rt, focus_lineage[:])
 			if rt.focused != previous_focus {
 				record_trace(rt, .Focus, rt.focused, "focused node disappeared; deterministic fallback")
 			}
@@ -170,15 +206,17 @@ reconcile :: proc(rt: ^Runtime) {
 	}
 	if rt.focused != 0 {
 		if node, ok := rt.nodes[rt.focused]; !ok || !node.active || !node.focusable {
-			rt.focused = focus_fallback(rt, rt.focused)
+			rt.focused = focus_fallback(rt, focus_lineage[:])
 		}
 	}
 
+	rebuild_adjacency(rt)
 	layout_tree(rt)
 	update_paint(rt)
 	rt.frame_open = false
 	rt.invalidated = false
 	rt.stats.frame += 1
+	delete(focus_lineage)
 	record_trace(rt, .Reconcile, 0, fmt.tprintf("frame %d reconciled", rt.stats.frame))
 }
 
@@ -202,6 +240,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		free_region_cache(node)
 		for command in node.paint { if len(command.text) > 0 { delete(command.text) } }
 		delete(node.paint)
+		delete(node.children)
 		release_node_strings(node)
 		free(node)
 	}
@@ -221,14 +260,10 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	if len(rt.diagnostic) > 0 { delete(rt.diagnostic) }
 }
 
-focus_fallback :: proc(rt: ^Runtime, disappeared: Node_ID) -> Node_ID {
-	old_parent: Node_ID = 0
-	if old, ok := rt.nodes[disappeared]; ok {
-		old_parent = old.parent
-	}
-	if old_parent != 0 {
-		if parent, ok := rt.nodes[old_parent]; ok && parent.active && parent.focusable {
-			return old_parent
+focus_fallback :: proc(rt: ^Runtime, lineage: []Node_ID) -> Node_ID {
+	for i := 1; i < len(lineage); i += 1 {
+		if parent, ok := rt.nodes[lineage[i]]; ok && parent.active && parent.focusable {
+			return lineage[i]
 		}
 	}
 	for id in rt.order {

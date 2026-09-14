@@ -18,14 +18,20 @@ explicit key. `key_scope` contributes a scope component without creating a
 widget node. Emitted containers contribute a retained node component and also
 become the retained hierarchy parent. See `IDENTITY.md`.
 
-Source-site strings are passed by the caller in this foundation API. The API is
-ready for a `#caller_location` wrapper, but does not pretend an arbitrary source
-location is enough to identify repeated data.
+Source-site strings remain available for deterministic tests and low-level
+adapters, but public emission calls can omit them. Omitted sites are
+constructed from Odin `#caller_location`; reusable helpers use
+`component_begin/end` to add an invocation scope at the actual call site.
+Source location alone is still not enough to identify repeated data.
 
 ## Reconciliation and invalidation
 
 Each retained node tracks description, layout, paint and composite dirtiness,
-plus the reason recorded for the latest invalidation. A changed description
+plus the reason recorded for the latest invalidation. It also owns an ordered
+`children` array. Reconciliation builds this adjacency from pending preorder
+once; layout never scans the global retained order to discover children. Dirty
+layout is propagated through ancestors so clean subtrees can be skipped. A
+changed description
 does not automatically imply changed layout: the layout hash and paint hash
 are compared independently. Region caches contain cloned descriptions, never
 application-owned strings or pointers.
@@ -43,10 +49,18 @@ copy a text-edit result into its own ordinary state before the next frame.
 
 ## Input and focus
 
-Hit testing walks the retained order backwards. Pointer down selects one
-retained node and assigns the single `Runtime.focused` owner when focusable.
+Hit testing walks the retained order backwards and requires both bounds and the
+effective retained clip rectangle. Pointer down selects one retained node and
+assigns the single `Runtime.focused` owner when focusable. Activation carries a
+monotonic event sequence and is consumed by the matching button exactly once;
+hover and pressed state are interaction state, separate from frame presence.
 When the focused node disappears, the nearest active focusable ancestor is
 chosen, otherwise the first active focusable node in retained order is chosen.
+
+Virtual lists require an item-key callback. The visible range is fixed-height
+and bounded to the viewport; row identity follows the callback's logical key,
+not the row's viewport index. Fractional scroll offset and persistent offscreen
+selection storage remain future scale work.
 
 ## GPU boundary
 
@@ -55,4 +69,3 @@ cannot be used after submit, and submitted resource references retire only after
 an observed fence. `native/sdl_gpu` documents the SDL3 mapping. This repository
 does not claim native GPU rendering is proven until a machine with the SDL3
 runtime and a usable driver runs that example.
-

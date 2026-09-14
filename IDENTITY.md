@@ -8,14 +8,18 @@ For an emitted node:
 Node_ID = hash(parent_identity_scope, source_site, explicit_key_or_zero)
 ```
 
-`Source_Site` consists of a file label, line, column and component label. In
-the foundation API the site is supplied explicitly; `caller_site` can derive
-the source portion with Odin `#caller_location`. The source portion identifies
-the structural program site. It does not identify a repeated runtime item.
+`Source_Site` consists of a file label, line, column and component label. Public
+emission calls may omit the site; they derive it from Odin `#caller_location`.
+Low-level tests may still supply an explicit site. The `component_begin/end`
+API captures an invocation site and adds a keyed component scope, allowing a
+helper's internal widget call site to be reused safely at multiple call sites.
+The source portion identifies the structural program site. It does not identify
+a repeated runtime item.
 
 `ui.key_scope(key, site, body)` adds a keyed identity scope without emitting a
 retained node. A keyed list should put the logical item key in this scope.
 Nested reusable components then derive their descendants from that item scope.
+`virtual_list` enforces the same rule through its `item_key(index)` callback.
 
 Rules:
 

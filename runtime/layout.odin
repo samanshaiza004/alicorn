@@ -42,25 +42,26 @@ intrinsic_main :: proc(node: ^Node, direction: Layout_Direction) -> f32 {
 	return 24
 }
 
-child_ids :: proc(rt: ^Runtime, parent: Node_ID) -> [dynamic]Node_ID {
-	result := make([dynamic]Node_ID, 0)
+rebuild_adjacency :: proc(rt: ^Runtime) {
+	for _, node in rt.nodes {
+		delete(node.children)
+		node.children = nil
+	}
 	for id in rt.order {
-		if node, ok := rt.nodes[id]; ok && node.active && node.parent == parent {
-			append(&result, id)
+		node, ok := rt.nodes[id]
+		if !ok || !node.active || node.parent == 0 { continue }
+		if parent, parent_ok := rt.nodes[node.parent]; parent_ok {
+			append(&parent.children, id)
 		}
 	}
-	return result
 }
 
 layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	parent, ok := rt.nodes[parent_id]
 	if !ok { return }
-	children := child_ids(rt, parent_id)
+	children := parent.children[:]
 	count := len(children)
-	if count == 0 {
-		delete(children)
-		return
-	}
+	if count == 0 { return }
 	inner := Rect{parent.bounds.x + parent.style.padding, parent.bounds.y + parent.style.padding, parent.bounds.w - 2*parent.style.padding, parent.bounds.h - 2*parent.style.padding}
 	if inner.w < 0 { inner.w = 0 }
 	if inner.h < 0 { inner.h = 0 }
@@ -102,9 +103,13 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 			if parent.style.align == .End { cross_pos += cross_size-cross }
 			child.bounds = Rect{cross_pos, inner.y+main_offset, cross, clampf(main, child.style.min_height, child.style.max_height)}
 		}
+		old_clip := child.clip
 		if parent.style.clip { child.clip = rect_intersection(parent.clip, parent.bounds) } else { child.clip = parent.clip }
-		if !same_rect(old_bounds, child.bounds) {
+		bounds_changed := !same_rect(old_bounds, child.bounds)
+		clip_changed := !same_rect(old_clip, child.clip)
+		if bounds_changed || clip_changed {
 			child.dirty.layout = true
+			child.dirty.paint = true
 			child.dirty.composite = true
 			rt.stats.layout_updates += 1
 			record_trace(rt, .Layout, id, "layout hash or parent bounds changed")
@@ -112,10 +117,11 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 			rt.stats.layout_updates += 1
 			record_trace(rt, .Layout, id, "layout hash changed")
 		}
-		layout_children(rt, id)
+		if bounds_changed || clip_changed || child.dirty.layout {
+			layout_children(rt, id)
+		}
 		main_offset += main + parent.style.gap
 	}
-	delete(children)
 }
 
 layout_tree :: proc(rt: ^Runtime) {
@@ -128,9 +134,12 @@ layout_tree :: proc(rt: ^Runtime) {
 			node.clip = rt.viewport
 			if !same_rect(old, node.bounds) {
 				node.dirty.layout = true
+				node.dirty.paint = true
 				node.dirty.composite = true
 			}
-			layout_children(rt, id)
+			if !same_rect(old, node.bounds) || node.dirty.layout {
+				layout_children(rt, id)
+			}
 		}
 	}
 }

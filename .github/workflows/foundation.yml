@@ -10,8 +10,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Odin
-        uses: laytan/odin-action@v1
+        uses: laytan/setup-odin@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          release: nightly
       - name: Build and run foundation tests
         shell: pwsh
         run: ./tools/test.ps1 -Odin odin
-

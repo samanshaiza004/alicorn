@@ -5,7 +5,7 @@ import "core:fmt"
 hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
 		id := rt.order[i]
-		if node, ok := rt.nodes[id]; ok && node.active && rect_contains(node.bounds, x, y) {
+		if node, ok := rt.nodes[id]; ok && node.active && rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
 			if node.kind == .Button || node.kind == .Text_Field || node.kind == .Custom_Surface {
 				return id
 			}
@@ -21,6 +21,23 @@ focus :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 	}
 	rt.focused = id
 	record_trace(rt, .Focus, id, "pointer focus owner assigned")
+	return true
+}
+
+// Selection is an explicit runtime projection of an application choice. It
+// is not inferred from arbitrary application memory and disappears
+// deterministically when its retained node leaves the description.
+select :: proc(rt: ^Runtime, id: Node_ID) -> bool {
+	next, ok := rt.nodes[id]
+	if !ok || !next.active { return false }
+	if rt.selected == id { return true }
+	if rt.selected != 0 {
+		if old, old_ok := rt.nodes[rt.selected]; old_ok { old.selected = false }
+	}
+	next.selected = true
+	rt.selected = id
+	record_trace(rt, .Focus, id, "selection owner assigned")
+	invalidate_root(rt, "selection changed")
 	return true
 }
 
@@ -41,14 +58,20 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 	} else if event.kind == .Down {
 		if target != 0 {
 			focus(rt, target)
+			if rt.pressed_node != 0 {
+				if old, ok := rt.nodes[rt.pressed_node]; ok { old.pressed = false }
+			}
 			if node, ok := rt.nodes[target]; ok { node.pressed = true }
-			rt.last_activated = target
+			rt.pressed_node = target
+			rt.activation_sequence += 1
+			rt.activation_node = target
 		}
 		record_trace(rt, .Pointer, target, "pointer down hit retained node")
 		invalidate_root(rt, "pointer down")
 	} else if event.kind == .Up {
-		if target != 0 {
-			if node, ok := rt.nodes[target]; ok { node.pressed = false }
+		if rt.pressed_node != 0 {
+			if node, ok := rt.nodes[rt.pressed_node]; ok { node.pressed = false }
+			rt.pressed_node = 0
 		}
 		record_trace(rt, .Pointer, target, "pointer up hit retained node")
 		invalidate_root(rt, "pointer up")

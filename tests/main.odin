@@ -15,6 +15,8 @@ S_VROW :: alicorn.Source_Site{"tests/render.odin", 51, 1, "virtual_row"}
 S_LAYOUT_A :: alicorn.Source_Site{"tests/layout.odin", 1, 1, "fixed"}
 S_LAYOUT_B :: alicorn.Source_Site{"tests/layout.odin", 2, 1, "grow"}
 
+virtual_keys: []string
+
 Test_State :: struct {
 	failures: int,
 }
@@ -73,14 +75,106 @@ virtual_row :: proc(ui: ^alicorn.UI, index: int) {
 	alicorn.text(ui, fmt.tprintf("row %d", index), S_VROW)
 }
 
+virtual_item_key :: proc(index: int) -> string {
+	return fmt.tprintf("item-%d", index)
+}
+
+virtual_data_key :: proc(index: int) -> string {
+	return virtual_keys[index]
+}
+
+virtual_data_row :: proc(ui: ^alicorn.UI, index: int) {
+	alicorn.text(ui, virtual_keys[index], S_VROW)
+}
+
 render_virtual :: proc(rt: ^alicorn.Runtime, scroll: f32) {
 	alicorn.invalidate_root(rt, "test virtual scroll")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return }
 	alicorn.container_begin(&ui, .Root, S_ROOT, label="root")
-	alicorn.virtual_list(&ui, 1_000_000, scroll, 200, 20, S_VLIST, virtual_row)
+	alicorn.virtual_list(&ui, 1_000_000, scroll, 200, 20, S_VLIST, virtual_item_key, virtual_row)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
+}
+
+render_virtual_data :: proc(rt: ^alicorn.Runtime, keys: []string, scroll: f32) -> map[string]alicorn.Node_ID {
+	virtual_keys = keys
+	alicorn.invalidate_root(rt, "test logical virtual data")
+	ui, build := alicorn.begin_frame(rt)
+	ids := make(map[string]alicorn.Node_ID)
+	if !build { return ids }
+	alicorn.container_begin(&ui, .Root, S_ROOT, label="virtual-data-root")
+	alicorn.virtual_list(&ui, len(keys), scroll, 200, 20, S_VLIST, virtual_data_key, virtual_data_row)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	for id in rt.order {
+		if node, ok := rt.nodes[id]; ok && node.kind == .Text && node.identity_key != "" {
+			ids[node.identity_key] = id
+		}
+	}
+	return ids
+}
+
+render_single_button :: proc(rt: ^alicorn.Runtime) -> (id: alicorn.Node_ID, clicked: bool) {
+	alicorn.invalidate_root(rt, "test button frame")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin(&ui, .Root, S_ROOT, label="button-root")
+	id, clicked = alicorn.button(&ui, "button", S_BUTTON, style=alicorn.Layout_Style{.Column, 100, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return
+}
+
+render_focus_ancestor :: proc(rt: ^alicorn.Runtime, include_child: bool) -> alicorn.Node_ID {
+	alicorn.invalidate_root(rt, "test focus ancestor")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return 0 }
+	alicorn.container_begin(&ui, .Root, S_ROOT, label="focus-root")
+	parent := alicorn.container_begin(&ui, .Container, S_WRAP, label="focus-parent", focusable=true, style=alicorn.Layout_Style{.Column, 120, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	if include_child {
+		child, _ := alicorn.button(&ui, "child", S_BUTTON, style=alicorn.Layout_Style{.Column, 100, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+		parent = child
+	}
+	alicorn.container_end(&ui)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return parent
+}
+
+render_clipped :: proc(rt: ^alicorn.Runtime) -> alicorn.Node_ID {
+	alicorn.invalidate_root(rt, "test clipping")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return 0 }
+	alicorn.container_begin(&ui, .Root, S_ROOT, label="clip-root")
+	alicorn.container_begin(&ui, .Container, S_WRAP, label="clip-parent", style=alicorn.Layout_Style{.Column, 50, 50, 0, -1, 0, -1, 0, 0, 0, .Stretch, true})
+	child, _ := alicorn.button(&ui, "oversized", S_BUTTON, style=alicorn.Layout_Style{.Column, 100, 100, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	alicorn.container_end(&ui)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return child
+}
+
+ergonomic_row :: proc(ui: ^alicorn.UI, label: string) -> alicorn.Node_ID {
+	id, _ := alicorn.button(ui, label, key=label, explicit_key=true, style=alicorn.Layout_Style{.Column, 100, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	return id
+}
+
+render_ergonomic :: proc(rt: ^alicorn.Runtime, keys: []string) -> map[string]alicorn.Node_ID {
+	ids := make(map[string]alicorn.Node_ID)
+	alicorn.invalidate_root(rt, "test ergonomic API")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return ids }
+	alicorn.container_begin(&ui, .Root, label="ergonomic-root")
+	for key in keys {
+		if alicorn.component_begin(&ui, key) {
+			ids[key] = ergonomic_row(&ui, key)
+			alicorn.component_end(&ui)
+		}
+	}
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return ids
 }
 
 test_identity_and_ambiguity :: proc(state: ^Test_State) {
@@ -232,6 +326,53 @@ test_focus_and_editing :: proc(state: ^Test_State) {
 	alicorn.destroy_runtime(&rt)
 }
 
+test_interaction_regressions :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 200})
+	id, _ := render_single_button(&rt)
+	node := rt.nodes[id]
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, node.bounds.x+2, node.bounds.y+2, 0})
+	render_single_button(&rt)
+	expect(state, rt.nodes[id].hovered, "hover state must survive reconciliation")
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, node.bounds.x+2, node.bounds.y+2, 1})
+	_, clicked := render_single_button(&rt)
+	expect(state, clicked && rt.nodes[id].pressed, "pointer down must activate once and retain pressed state")
+	for _ in 0..<100 {
+		_, clicked = render_single_button(&rt)
+		expect(state, !clicked, "button activation must be consumed exactly once")
+	}
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, 400, 180, 1})
+	render_single_button(&rt)
+	expect(state, !rt.nodes[id].pressed, "pointer up outside target must release pressed state")
+
+	child := render_focus_ancestor(&rt, true)
+	child_node := rt.nodes[child]
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, child_node.bounds.x+2, child_node.bounds.y+2, 1})
+	render_focus_ancestor(&rt, true)
+	expect(state, rt.focused == child, "child should own focus before removal")
+	parent := render_focus_ancestor(&rt, false)
+	expect(state, rt.focused == parent, "removed focus must fall back to nearest active focusable ancestor")
+
+	clipped := render_clipped(&rt)
+	clipped_node := rt.nodes[clipped]
+	expect(state, alicorn.hit_test(&rt, clipped_node.bounds.x+10, clipped_node.bounds.y+10) == clipped, "visible clipped child should hit")
+	expect(state, alicorn.hit_test(&rt, clipped_node.bounds.x+75, clipped_node.bounds.y+10) == 0, "clipped child must not hit outside effective clip")
+	alicorn.destroy_runtime(&rt)
+}
+
+test_ergonomic_identity :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 200})
+	first := render_ergonomic(&rt, []string{"a", "b", "c"})
+	for key, id in first { rt.nodes[id].local_counter = 700 + len(key) }
+	second := render_ergonomic(&rt, []string{"c", "a", "b"})
+	for key, id in second {
+		expect(state, rt.nodes[id].local_counter == 700+len(key), fmt.tprintf("caller-location component identity moved for %s", key))
+	}
+	for _, id in second {
+		expect(state, len(rt.nodes[id].site.file) > 0 && rt.nodes[id].site.component == "button", "auto widget API must retain caller source site")
+	}
+	alicorn.destroy_runtime(&rt)
+}
+
 test_virtualization_and_gpu :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 800, 600})
 	render_virtual(&rt, 0)
@@ -239,6 +380,16 @@ test_virtualization_and_gpu :: proc(state: ^Test_State) {
 	first_count := len(rt.nodes)
 	render_virtual(&rt, 500000)
 	expect(state, len(rt.nodes) == first_count, "scrolling fixed-height virtual list keeps bounded node count")
+	logical_keys := []string{"k0", "k1", "k2", "k3", "k4", "k5", "k6", "k7", "k8", "k9", "k10", "k11"}
+	ids := render_virtual_data(&rt, logical_keys, 0)
+	for key, id in ids { rt.nodes[id].local_counter = 900 + len(key) }
+	expect(state, alicorn.select(&rt, ids["k3"]), "visible virtual row can be selected explicitly")
+	logical_keys = []string{"k5", "k0", "k1", "k2", "k3", "k4", "k6", "k7", "k8", "k9", "k10", "k11"}
+	ids = render_virtual_data(&rt, logical_keys, 0)
+	for key, id in ids {
+		expect(state, rt.nodes[id].local_counter == 900+len(key), fmt.tprintf("virtual row identity moved for %s", key))
+	}
+	expect(state, rt.selected == ids["k3"] && rt.nodes[ids["k3"]].selected, "virtual selection follows logical row identity")
 	gpu := alicorn.new_gpu_backend()
 	for i := 0; i < 10000; i += 1 {
 		command := alicorn.gpu_begin_commands(&gpu)
@@ -280,6 +431,8 @@ main :: proc() {
 	test_property_sequences(&state)
 	test_regions_and_stages(&state)
 	test_focus_and_editing(&state)
+	test_interaction_regressions(&state)
+	test_ergonomic_identity(&state)
 	test_virtualization_and_gpu(&state)
 	test_layout_geometry(&state)
 	if state.failures == 0 {

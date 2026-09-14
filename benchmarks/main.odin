@@ -28,12 +28,16 @@ render_virtual_row :: proc(ui: ^alicorn.UI, index: int) {
 	alicorn.text(ui, "row", ROW, paint_value=u64(index))
 }
 
+render_virtual_key :: proc(index: int) -> string {
+	return fmt.tprintf("item-%d", index)
+}
+
 render_virtual :: proc(rt: ^alicorn.Runtime, scroll: f32) {
 	alicorn.invalidate_root(rt, "benchmark scroll")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return }
 	alicorn.container_begin(&ui, .Root, ROOT)
-	alicorn.virtual_list(&ui, 1_000_000, scroll, 400, 20, ROW, render_virtual_row)
+	alicorn.virtual_list(&ui, 1_000_000, scroll, 400, 20, ROW, render_virtual_key, render_virtual_row)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 }
