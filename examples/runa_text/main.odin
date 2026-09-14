@@ -36,6 +36,19 @@ main :: proc() {
 	first_cache_size := alicorn.runa_cache_size(&engine)
 	_, _, _, _ = alicorn.text_layout(&engine, "office — Alicorn", 24)
 	second_cache_size := alicorn.runa_cache_size(&engine)
-	fmt.println("Runa text proof: PASS", "width", width, "height", height, "glyphs", glyphs, "multiline_height", multiline_height, "multiline_glyphs", multiline_glyphs, "wrapped_height", wrapped_height, "wrapped_glyphs", wrapped_glyphs, "cache", first_cache_size, "->", second_cache_size)
+	run, run_ok := alicorn.text_run_build(&engine, "office — Alicorn", 24)
+	if !run_ok || len(run.glyphs) == 0 || engine.glyph_rasterizations == 0 {
+		fmt.eprintln("Runa glyph run proof failed")
+		os.exit(1)
+	}
+	rasterizations_before_reuse := engine.glyph_rasterizations
+	reused, reused_ok := alicorn.text_run_build(&engine, "office — Alicorn", 24)
+	if !reused_ok || engine.glyph_rasterizations != rasterizations_before_reuse || engine.glyph_cache_hits == 0 {
+		fmt.eprintln("Runa glyph cache reuse proof failed")
+		os.exit(1)
+	}
+	alicorn.text_run_destroy(&run)
+	alicorn.text_run_destroy(&reused)
+	fmt.println("Runa text proof: PASS", "width", width, "height", height, "glyphs", glyphs, "multiline_height", multiline_height, "multiline_glyphs", multiline_glyphs, "wrapped_height", wrapped_height, "wrapped_glyphs", wrapped_glyphs, "cache", first_cache_size, "->", second_cache_size, "shape_calls", engine.shape_calls, "glyph_cache_hits", engine.glyph_cache_hits, "glyph_cache_misses", engine.glyph_cache_misses, "rasterizations", engine.glyph_rasterizations)
 	alicorn.text_engine_destroy(&engine)
 }

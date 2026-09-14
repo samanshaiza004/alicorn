@@ -30,11 +30,22 @@ Atlas_Format :: raster.Atlas_Format
 Atlas_Dirty  :: raster.Atlas_Dirty
 Atlas_Error  :: raster.Atlas_Error
 
+// Read-only atlas consumer views. These keep GPU backends independent
+// of raster's packing internals while retaining the existing Atlas,
+// Atlas_Slot, and Atlas_Dirty types for compatibility.
+Atlas_Page_View  :: raster.Atlas_Page_View
+Atlas_Slot_View  :: raster.Atlas_Slot_View
+Atlas_Dirty_View :: raster.Atlas_Dirty_View
+
 atlas_make        :: raster.atlas_make
 atlas_destroy     :: raster.atlas_destroy
 atlas_pack_alpha  :: raster.atlas_pack_alpha
 atlas_pack_rgba   :: raster.atlas_pack_rgba
 atlas_flush_dirty :: raster.atlas_flush_dirty
+atlas_page_view   :: raster.atlas_page_view
+atlas_slot_view   :: raster.atlas_slot_view
+atlas_dirty_snapshot :: raster.atlas_dirty_snapshot
+atlas_dirty_ack      :: raster.atlas_dirty_ack
 
 // ---- UAX #29 segmentation iterators (re-exported from itemize) -------
 //

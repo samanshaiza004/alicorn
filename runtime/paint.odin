@@ -30,7 +30,7 @@ update_paint :: proc(rt: ^Runtime) {
 			for command in node.paint { if len(command.text) > 0 { delete(command.text) } }
 			clear(&node.paint)
 			display_text := node.label if node.label != "" else node.text
-			append(&node.paint, Display_Command{node.kind, node.bounds, owned(display_text), node.color})
+			append(&node.paint, Display_Command{node.id, node.kind, node.bounds, owned(display_text), node.color})
 			rt.stats.paint_updates += 1
 			node.dirty.composite = true
 			record_trace(rt, .Paint, id, node.last_reason)

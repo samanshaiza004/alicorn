@@ -44,6 +44,22 @@ Atlas_Page :: struct {
 	dirty_min:  [2]u16,
 	dirty_max:  [2]u16,
 	is_dirty:   bool,
+	// Monotonically increasing write generation. A consumer includes
+	// this in a dirty snapshot and acknowledges only the generation it
+	// actually uploaded. That preserves a later write, even when it
+	// lands inside the same bounding box as an in-flight upload.
+	dirty_generation: u64,
+}
+
+// Atlas_Page_View is the read-only consumer view of one atlas page.
+// Pixels are tightly packed row-major bytes owned by the Atlas. Odin
+// slices are not const-qualified, so callers must treat Pixels as
+// immutable; atlas writes are made only by the pack operations.
+Atlas_Page_View :: struct {
+	Pixels: []u8,
+	Width:  u16,
+	Height: u16,
+	Format: Atlas_Format,
 }
 
 @(private)
@@ -67,6 +83,17 @@ Atlas_Slot :: struct {
 	px_size:    [2]u16,
 	bearing:    [2]f32,
 	is_color:   bool,
+}
+
+// Atlas_Slot_View is the read-only consumer view of a packed glyph.
+// Page_Index addresses the alpha or colour page list selected by
+// Is_Color. UV_Rect is {u0, v0, u1, v1} in normalized page space.
+Atlas_Slot_View :: struct {
+	Page_Index: u16,
+	UV_Rect:    [4]f32,
+	Px_Size:    [2]u16,
+	Bearing:    [2]f32,
+	Is_Color:   bool,
 }
 
 // Atlas is the top-level container. `pages_alpha` and `pages_color`
@@ -218,6 +245,7 @@ page_copy_into :: proc(p: ^Atlas_Page, src: []u8, w, h, x, y: u16) {
 
 @(private)
 mark_dirty :: proc(p: ^Atlas_Page, x, y, w, h: u16) {
+	p.dirty_generation += 1
 	x1 := x + w
 	y1 := y + h
 	if !p.is_dirty {
@@ -257,6 +285,98 @@ Atlas_Dirty :: struct {
 	is_color:   bool,
 	x, y:       u16,
 	w, h:       u16,
+}
+
+// Atlas_Dirty_View describes one page region that was dirty when a
+// snapshot was taken. Generation is deliberately part of the view:
+// acknowledgement is conditional, so writes made after the snapshot
+// cannot be lost when an upload is still in flight.
+Atlas_Dirty_View :: struct {
+	Page_Index: u16,
+	Is_Color:   bool,
+	X, Y:       u16,
+	W, H:       u16,
+	Generation: u64,
+}
+
+// atlas_page_view returns a non-owning view of an atlas page. The
+// returned pixel slice remains valid until the Atlas is destroyed; its
+// contents can change when another glyph is packed into that page.
+atlas_page_view :: proc(a: ^Atlas, page_index: u16, is_color: bool) -> (view: Atlas_Page_View, ok: bool) {
+	pages := &a.pages_alpha
+	if is_color { pages = &a.pages_color }
+	if int(page_index) >= len(pages^) { return {}, false }
+	p := pages^[int(page_index)]
+	return Atlas_Page_View{
+		Pixels = p.pixels,
+		Width  = p.width,
+		Height = p.height,
+		Format = p.format,
+	}, true
+}
+
+// atlas_slot_view converts the retained slot record into a public
+// read-only view without exposing Atlas' packing internals.
+atlas_slot_view :: proc(slot: Atlas_Slot) -> Atlas_Slot_View {
+	return Atlas_Slot_View{
+		Page_Index = slot.page_index,
+		UV_Rect    = slot.uv_rect,
+		Px_Size    = slot.px_size,
+		Bearing    = slot.bearing,
+		Is_Color   = slot.is_color,
+	}
+}
+
+// atlas_dirty_snapshot returns the current dirty page rectangles
+// without clearing them. The caller owns the returned slice and must
+// acknowledge it only after the corresponding upload has been safely
+// submitted (or retry it after a failed upload).
+atlas_dirty_snapshot :: proc(a: ^Atlas, allocator := context.allocator) -> []Atlas_Dirty_View {
+	out := make([dynamic]Atlas_Dirty_View, 0, len(a.pages_alpha) + len(a.pages_color), allocator)
+	for &p, i in a.pages_alpha {
+		if !p.is_dirty { continue }
+		append(&out, Atlas_Dirty_View{
+			Page_Index = u16(i),
+			Is_Color   = false,
+			X          = p.dirty_min[0],
+			Y          = p.dirty_min[1],
+			W          = p.dirty_max[0] - p.dirty_min[0],
+			H          = p.dirty_max[1] - p.dirty_min[1],
+			Generation = p.dirty_generation,
+		})
+	}
+	for &p, i in a.pages_color {
+		if !p.is_dirty { continue }
+		append(&out, Atlas_Dirty_View{
+			Page_Index = u16(i),
+			Is_Color   = true,
+			X          = p.dirty_min[0],
+			Y          = p.dirty_min[1],
+			W          = p.dirty_max[0] - p.dirty_min[0],
+			H          = p.dirty_max[1] - p.dirty_min[1],
+			Generation = p.dirty_generation,
+		})
+	}
+	return out[:]
+}
+
+// atlas_dirty_ack acknowledges only the exact dirty generations and
+// rectangles supplied in a previous snapshot. If a page was written
+// after that snapshot, its generation no longer matches and it stays
+// dirty for the next upload attempt. This is the retry-safe companion
+// to atlas_dirty_snapshot.
+atlas_dirty_ack :: proc(a: ^Atlas, snapshot: []Atlas_Dirty_View) {
+	for dirty in snapshot {
+		pages := &a.pages_alpha
+		if dirty.Is_Color { pages = &a.pages_color }
+		if int(dirty.Page_Index) >= len(pages^) { continue }
+		p := &pages^[int(dirty.Page_Index)]
+		if !p.is_dirty || p.dirty_generation != dirty.Generation { continue }
+		if p.dirty_min[0] != dirty.X || p.dirty_min[1] != dirty.Y || p.dirty_max[0] != dirty.X + dirty.W || p.dirty_max[1] != dirty.Y + dirty.H {
+			continue
+		}
+		p.is_dirty = false
+	}
 }
 
 atlas_flush_dirty :: proc(a: ^Atlas, allocator := context.allocator) -> []Atlas_Dirty {

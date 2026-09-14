@@ -71,6 +71,7 @@ Text_Change :: struct {
 }
 
 Display_Command :: struct {
+	node:   Node_ID,
 	kind: Node_Kind,
 	bounds: Rect,
 	text:   string,

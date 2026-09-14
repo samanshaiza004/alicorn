@@ -3,6 +3,7 @@ package main
 import "core:fmt"
 import "core:os"
 import alicorn "../runtime"
+import runa "../third_party/Runa"
 
 S_ROOT :: alicorn.Source_Site{"tests/render.odin", 1, 1, "root"}
 S_ROW :: alicorn.Source_Site{"tests/render.odin", 10, 1, "track_row"}
@@ -686,6 +687,49 @@ test_layout_geometry :: proc(state: ^Test_State) {
 	alicorn.destroy_runtime(&rt)
 }
 
+test_gpu_text_resource_boundary :: proc(state: ^Test_State) {
+	// The key is CPU-resource identity, not GPU residency. Every raster
+	// parameter that can change pixels must participate in the key.
+	size_16: f32 = 16
+	size_18: f32 = 18
+	base := alicorn.Glyph_Resource_Key{font_generation=1, size_bits=transmute(u32)size_16, subpixel_bucket=0, hint=true, is_color=false}
+	other_size := base
+	other_size.size_bits = transmute(u32)size_18
+	other_subpixel := base
+	other_subpixel.subpixel_bucket = 1
+	other_font := base
+	other_font.font_generation = 2
+	expect(state, base != other_size, "glyph key must include pixel size")
+	expect(state, base != other_subpixel, "glyph key must include subpixel bucket")
+	expect(state, base != other_font, "glyph key must include font generation")
+
+	atlas := runa.atlas_make(16, 16)
+	defer runa.atlas_destroy(&atlas)
+	pixels := [4]u8{255, 128, 64, 32}
+	_, pack_err := runa.atlas_pack_alpha(&atlas, pixels[:], 2, 2, [2]f32{})
+	expect(state, pack_err == .None, "synthetic glyph must pack into the CPU atlas")
+	snapshot := runa.atlas_dirty_snapshot(&atlas)
+	expect(state, len(snapshot) == 1, "dirty snapshot must expose the page without clearing it")
+	if len(snapshot) == 1 {
+		view, view_ok := runa.atlas_page_view(&atlas, snapshot[0].Page_Index, snapshot[0].Is_Color)
+		expect(state, view_ok && len(view.Pixels) == 16*16, "atlas page view must expose stable page pixels")
+	}
+	// A second write after the snapshot must survive acknowledgement of the
+	// first upload generation. This is the retry/lost-update invariant.
+	second_pixel := [1]u8{7}
+	_, second_err := runa.atlas_pack_alpha(&atlas, second_pixel[:], 1, 1, [2]f32{})
+	expect(state, second_err == .None, "second synthetic glyph must pack")
+	runa.atlas_dirty_ack(&atlas, snapshot)
+	delete(snapshot)
+	remaining := runa.atlas_dirty_snapshot(&atlas)
+	expect(state, len(remaining) == 1, "dirty writes after a snapshot must remain pending")
+	if len(remaining) > 0 { runa.atlas_dirty_ack(&atlas, remaining) }
+	delete(remaining)
+	final_snapshot := runa.atlas_dirty_snapshot(&atlas)
+	expect(state, len(final_snapshot) == 0, "acknowledged atlas page must become clean")
+	delete(final_snapshot)
+}
+
 main :: proc() {
 	state: Test_State
 	test_identity_and_ambiguity(&state)
@@ -699,6 +743,7 @@ main :: proc() {
 	test_ergonomic_identity(&state)
 	test_virtualization_and_gpu(&state)
 	test_layout_geometry(&state)
+	test_gpu_text_resource_boundary(&state)
 	if state.failures == 0 {
 		fmt.println("Alicorn foundation tests: PASS")
 		return
