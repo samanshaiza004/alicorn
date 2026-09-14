@@ -3,6 +3,9 @@
 ## Foundation
 
 - identity, reconciliation, invalidation, layout, input/focus;
+- retained-subtree reuse proof: unchanged region bodies emit one reuse marker,
+  local reconciliation visits only explicit frontier nodes, and subtree
+  removal retires retained adjacency deterministically;
 - retained display products and headless proof tests;
 - SDL3/SDL_GPU boundary smoke and safe headless resource retirement;
 - Runa-backed text loading, grapheme-safe editing, multiline metrics and
@@ -11,7 +14,8 @@
 
 ## Scale
 
-- logical item-key virtualization is now in foundation; variable-height rows,
+- logical item-key virtualization and fixed-height retained-work locality are
+  now in foundation; variable-height rows,
   fractional scroll anchoring and offscreen selection storage remain here;
 - real glyph-atlas SDL_GPU display-list rendering and broader native coverage
   on Windows, macOS and Linux;

@@ -8,8 +8,11 @@ before native rendering is allowed to influence the architecture.
 
 The repository contains a working, dependency-light retained runtime with:
 
-- hierarchical source/key identity and hard ambiguity diagnostics;
+- hierarchical source/key identity (including allocation-free `u64` scopes) and
+  hard ambiguity diagnostics;
 - retained node state, explicit invalidation, retained regions and stage counters;
+- retained-subtree reuse markers with local reconciliation and deterministic
+  subtree retirement;
 - deterministic flex-like layout, hit testing and one canonical focus owner;
 - retained display commands and a bounded structural trace ring;
 - a fixed-height million-row virtual-list proof;
