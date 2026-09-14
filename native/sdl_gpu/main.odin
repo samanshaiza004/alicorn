@@ -181,7 +181,13 @@ pump_events :: proc(
 			alicorn.process_pointer(rt, pointer)
 		}
 		if event.type == .KEY_DOWN && event.key.down {
-			if manual_log {
+			modifier_key := false
+			switch event.key.key {
+			case sdl3.K_LCTRL, sdl3.K_LSHIFT, sdl3.K_LALT, sdl3.K_LGUI,
+				sdl3.K_RCTRL, sdl3.K_RSHIFT, sdl3.K_RALT, sdl3.K_RGUI:
+				modifier_key = true
+			}
+			if manual_log && (!event.key.repeat || !modifier_key) {
 				composition_active := false
 				if node, ok := rt.nodes[rt.focused]; ok {
 					composition_active = node.composition.active
@@ -549,6 +555,11 @@ main :: proc() {
 		if argument == "--manual-ime" {
 			manual_ime = true
 		}
+	}
+	// Alicorn renders the inline preedit and underline; the operating system
+	// continues to own candidate-list presentation.
+	if !sdl3.SetHint(sdl3.HINT_IME_IMPLEMENTED_UI, "composition") {
+		fail("SDL_IME_IMPLEMENTED_UI hint could not be set")
 	}
 	if !sdl3.Init(sdl3.INIT_VIDEO) {
 		fail("SDL_Init failed")
