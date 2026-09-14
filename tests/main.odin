@@ -14,6 +14,11 @@ S_VLIST :: alicorn.Source_Site{"tests/render.odin", 50, 1, "virtual_list"}
 S_VROW :: alicorn.Source_Site{"tests/render.odin", 51, 1, "virtual_row"}
 S_LAYOUT_A :: alicorn.Source_Site{"tests/layout.odin", 1, 1, "fixed"}
 S_LAYOUT_B :: alicorn.Source_Site{"tests/layout.odin", 2, 1, "grow"}
+S_REGION_STRESS :: alicorn.Source_Site{"tests/region_stress.odin", 1, 1, "region"}
+S_REGION_STRESS_SCOPE :: alicorn.Source_Site{"tests/region_stress.odin", 2, 1, "scope"}
+S_REGION_STRESS_NODE :: alicorn.Source_Site{"tests/region_stress.odin", 3, 1, "node"}
+S_REGION_STRESS_SIBLING :: alicorn.Source_Site{"tests/region_stress.odin", 4, 1, "sibling"}
+S_REGION_STRESS_NESTED :: alicorn.Source_Site{"tests/region_stress.odin", 5, 1, "nested"}
 
 virtual_keys: []string
 
@@ -55,6 +60,24 @@ render_keyed :: proc(rt: ^alicorn.Runtime, keys: []string, values: []int, extra,
 	return ids
 }
 
+render_numeric_keyed :: proc(rt: ^alicorn.Runtime, keys: []u64, values: []int) -> map[u64]alicorn.Node_ID {
+	ids := make(map[u64]alicorn.Node_ID)
+	alicorn.invalidate_root(rt, "test numeric keyed render")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return ids }
+	alicorn.container_begin(&ui, .Root, S_ROOT, label="numeric-root")
+	for key, i in keys {
+		if alicorn.key_scope_u64(&ui, key, S_ROW) {
+			id, _ := alicorn.button(&ui, fmt.tprintf("n%d", key), S_BUTTON, style=alicorn.Layout_Style{.Column, -1, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false}, paint_value=u64(values[i] if i < len(values) else 0))
+			ids[key] = id
+			alicorn.key_scope_end(&ui)
+		}
+	}
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return ids
+}
+
 render_region :: proc(rt: ^alicorn.Runtime, revision: u64, body_counter: ^int) {
 	alicorn.invalidate_root(rt, "test region render")
 	ui, build := alicorn.begin_frame(rt)
@@ -69,6 +92,71 @@ render_region :: proc(rt: ^alicorn.Runtime, revision: u64, body_counter: ^int) {
 	}
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
+}
+
+render_stress_region :: proc(rt: ^alicorn.Runtime, revision: u64, include_region: bool, body_counter: ^int) -> alicorn.Node_ID {
+	alicorn.invalidate_root(rt, "test retained subtree stress")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return 0 }
+	alicorn.container_begin(&ui, .Root, S_ROOT, label="stress-root")
+	sibling, _ := alicorn.button(&ui, "fallback", S_REGION_STRESS_SIBLING, style=alicorn.Layout_Style{.Column, 160, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	if include_region && alicorn.key_scope_begin(&ui, "retained", S_REGION_STRESS_SCOPE) {
+		id, reused := alicorn.region_begin(&ui, "body", revision, S_REGION_STRESS)
+		if id != 0 && !reused {
+			body_counter^ += 1
+			start := len(rt.pending)
+			if alicorn.key_scope_u64(&ui, 0, S_REGION_STRESS_NODE) {
+				alicorn.button(&ui, "focused descendant", S_REGION_STRESS_NODE, style=alicorn.Layout_Style{.Column, 180, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+				alicorn.key_scope_end(&ui)
+			}
+			for i := 1; i < 256; i += 1 {
+				if alicorn.key_scope_u64(&ui, u64(i), S_REGION_STRESS_NODE) {
+					alicorn.text(&ui, "retained descendant", S_REGION_STRESS_NODE)
+					alicorn.key_scope_end(&ui)
+				}
+			}
+			alicorn.region_end(&ui, id, false, start)
+		}
+		alicorn.key_scope_end(&ui)
+	}
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return sibling
+}
+
+render_region_collection :: proc(rt: ^alicorn.Runtime, order: []u64, enabled: []bool, revisions: []u64, nested: bool, body_counter: ^int) -> map[u64]alicorn.Node_ID {
+	roots := make(map[u64]alicorn.Node_ID)
+	alicorn.invalidate_root(rt, "test region collection")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return roots }
+	alicorn.container_begin(&ui, .Root, S_ROOT, label="region-collection")
+	for key in order {
+		if key >= u64(len(enabled)) || !enabled[key] { continue }
+		if !alicorn.key_scope_u64(&ui, key, S_REGION_STRESS_SCOPE) { continue }
+		id, reused := alicorn.region_begin(&ui, "item", revisions[key], S_REGION_STRESS)
+		roots[key] = id
+		if id != 0 && !reused {
+			body_counter^ += 1
+			start := len(rt.pending)
+			if alicorn.key_scope_u64(&ui, 0, S_REGION_STRESS_NODE) {
+				alicorn.button(&ui, "region-state", S_REGION_STRESS_NODE, style=alicorn.Layout_Style{.Column, 120, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false}, paint_value=key)
+				alicorn.key_scope_end(&ui)
+			}
+			if nested && key == 0 {
+				nested_id, nested_reused := alicorn.region_begin(&ui, "nested", revisions[key], S_REGION_STRESS_NESTED)
+				if nested_id != 0 && !nested_reused {
+					nested_start := len(rt.pending)
+					alicorn.text(&ui, "nested-state", S_REGION_STRESS_NODE)
+					alicorn.region_end(&ui, nested_id, false, nested_start)
+				}
+			}
+			alicorn.region_end(&ui, id, false, start)
+		}
+		alicorn.key_scope_end(&ui)
+	}
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return roots
 }
 
 virtual_row :: proc(ui: ^alicorn.UI, index: int) {
@@ -230,6 +318,30 @@ test_identity_and_ambiguity :: proc(state: ^Test_State) {
 	}
 	expect(state, rt.hard_error, "duplicate explicit keys must be a hard diagnostic")
 	alicorn.destroy_runtime(&rt)
+	rt = alicorn.new_runtime(alicorn.Rect{0, 0, 800, 500})
+	numeric_keys := []u64{11, 22, 33, 44}
+	numeric_values := []int{1, 2, 3, 4}
+	numeric_ids := render_numeric_keyed(&rt, numeric_keys, numeric_values)
+	for key, id in numeric_ids { rt.nodes[id].local_counter = int(key) }
+	numeric_keys = []u64{44, 22, 11, 33}
+	numeric_ids = render_numeric_keyed(&rt, numeric_keys, numeric_values)
+	for key, id in numeric_ids {
+		expect(state, rt.nodes[id].local_counter == int(key), fmt.tprintf("typed key retained counter moved for %d", key))
+		expect(state, rt.nodes[id].identity_key_numeric && rt.nodes[id].identity_key_u64 == key, fmt.tprintf("typed key retained inspector identity for %d", key))
+	}
+	alicorn.destroy_runtime(&rt)
+	rt = alicorn.new_runtime(alicorn.Rect{0, 0, 100, 100})
+	alicorn.invalidate_root(&rt, "duplicate numeric key test")
+	ui, build = alicorn.begin_frame(&rt)
+	if build {
+		alicorn.container_begin(&ui, .Root, S_ROOT)
+		if alicorn.key_scope_u64(&ui, 7, S_ROW) { alicorn.text(&ui, "one", S_BUTTON); alicorn.key_scope_end(&ui) }
+		if alicorn.key_scope_u64(&ui, 7, S_ROW) { alicorn.text(&ui, "two", S_BUTTON); alicorn.key_scope_end(&ui) }
+		alicorn.container_end(&ui)
+		alicorn.end_frame(&ui)
+	}
+	expect(state, rt.hard_error, "duplicate numeric keys must be a hard diagnostic")
+	alicorn.destroy_runtime(&rt)
 }
 
 test_property_sequences :: proc(state: ^Test_State) {
@@ -313,6 +425,109 @@ test_regions_and_stages :: proc(state: ^Test_State) {
 	expect(state, rt.stats.adjacency_rebuilds == adjacency_before, "unchanged structure must reuse retained adjacency")
 	report := alicorn.inspect(&rt)
 	expect(state, len(report) > 100 && len(alicorn.trace_snapshot(&rt)) > 0, "inspector and bounded trace must expose structural work")
+	alicorn.destroy_runtime(&rt)
+}
+
+test_retained_subtree_reuse :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 800, 500})
+	body_calls: int = 0
+	sibling := render_stress_region(&rt, 1, true, &body_calls)
+	expect(state, body_calls == 1, "stress region body executes initially")
+	region_nodes := len(rt.nodes)
+	child: alicorn.Node_ID = 0
+	for id, node in rt.nodes {
+		if node.kind == .Button && node.label == "focused descendant" { child = id; break }
+	}
+	expect(state, child != 0, "stress region retains a focusable descendant")
+	if child != 0 {
+		rt.nodes[child].local_counter = 4242
+		expect(state, alicorn.focus(&rt, child), "stress descendant can own focus")
+	}
+	before := rt.stats
+	render_stress_region(&rt, 1, true, &body_calls)
+	expect(state, body_calls == 1, "reused stress region body is not reevaluated")
+	expect(state, len(rt.nodes) == region_nodes, "reused stress subtree remains retained")
+	expect(state, rt.stats.reconcile_nodes_visited-before.reconcile_nodes_visited <= 3, "subtree reuse does not visit cached descendants")
+	expect(state, rt.stats.retained_subtrees_reused-before.retained_subtrees_reused == 1, "reuse marker is observable")
+	if child != 0 {
+		expect(state, rt.nodes[child].local_counter == 4242, "reused subtree preserves descendant state")
+		expect(state, rt.focused == child, "reused subtree preserves focus")
+	}
+	rt.viewport.w = 900
+	before = rt.stats
+	render_stress_region(&rt, 1, true, &body_calls)
+	expect(state, body_calls == 1, "constraint-only wake does not reevaluate reused description")
+	expect(state, rt.stats.reconcile_nodes_visited-before.reconcile_nodes_visited <= 3, "constraint-only wake remains description-local")
+	expect(state, rt.stats.layout_nodes_visited-before.layout_nodes_visited > 0, "constraint change can lay out retained descendants")
+	before = rt.stats
+	new_sibling := render_stress_region(&rt, 1, false, &body_calls)
+	expect(state, body_calls == 1, "hidden region does not execute its body")
+	expect(state, rt.stats.nodes_retired-before.nodes_retired >= 257, "removing a region retires its full retained subtree")
+	expect(state, len(rt.nodes) == 2, "removed region descendants are no longer retained")
+	expect(state, new_sibling == sibling && rt.focused == sibling, "focus falls back to surviving sibling deterministically")
+	_, child_present := rt.nodes[child]
+	expect(state, child == 0 || !child_present, "removed subtree child is unreachable")
+	alicorn.destroy_runtime(&rt)
+}
+
+test_region_identity_sequences :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 800, 500})
+	order := make([dynamic]u64, 0)
+	enabled := make([dynamic]bool, 0)
+	revisions := make([dynamic]u64, 0)
+	for key := 0; key < 6; key += 1 {
+		append(&order, u64(key))
+		append(&enabled, true)
+		append(&revisions, 0)
+	}
+	nested := true
+	body_calls: int = 0
+	roots := render_region_collection(&rt, order[:], enabled[:], revisions[:], nested, &body_calls)
+	expected := make(map[u64]int)
+	for key, id in roots { expected[key] = int(key)+1000; rt.nodes[id].local_counter = expected[key] }
+	seed: u64 = 0xA11C0DE
+	for step := 0; step < 500; step += 1 {
+		seed = seed*6364136223846793005 + 1442695040888963407
+		op := int(seed % 6)
+		if op == 0 {
+			at := int(seed % u64(len(order)))
+			to := int((seed >> 8) % u64(len(order)))
+			key := order[at]
+			for i := at; i < len(order)-1; i += 1 { order[i] = order[i+1] }
+			pop(&order)
+			append(&order, 0)
+			for i := len(order)-1; i > to; i -= 1 { order[i] = order[i-1] }
+			order[to] = key
+		} else if op == 1 {
+			key := u64(seed % u64(len(enabled)))
+			enabled[key] = !enabled[key]
+			if enabled[key] { expected[key] = 0 } else { delete_key(&expected, key) }
+		} else if op == 2 {
+			key := u64(seed % u64(len(revisions)))
+			revisions[key] += 1
+		} else if op == 3 {
+			nested = !nested
+			revisions[0] += 1
+		} else if op == 4 && len(enabled) < 8 {
+			key := u64(len(enabled))
+			append(&enabled, true)
+			append(&revisions, 0)
+			append(&order, key)
+			expected[key] = 0
+		} else {
+			key := u64(seed % u64(len(enabled)))
+			enabled[key] = true
+			if _, exists := expected[key]; !exists { expected[key] = 0 }
+		}
+		before_body := body_calls
+		roots = render_region_collection(&rt, order[:], enabled[:], revisions[:], nested, &body_calls)
+		for key, id in roots {
+			expect(state, rt.nodes[id].local_counter == expected[key], fmt.tprintf("region state followed key at step %d key %d", step, key))
+		}
+		expect(state, body_calls >= before_body, "region body count is monotonic")
+	}
+	for _, id in roots { expect(state, rt.nodes[id].region, "region collection root remains a region") }
+	expect(state, len(rt.nodes) < 80, "region collection retains only enabled live structure")
 	alicorn.destroy_runtime(&rt)
 }
 
@@ -476,6 +691,8 @@ main :: proc() {
 	test_identity_and_ambiguity(&state)
 	test_property_sequences(&state)
 	test_regions_and_stages(&state)
+	test_retained_subtree_reuse(&state)
+	test_region_identity_sequences(&state)
 	test_focus_and_editing(&state)
 	test_unicode_editing(&state)
 	test_interaction_regressions(&state)

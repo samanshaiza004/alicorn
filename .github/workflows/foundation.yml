@@ -17,3 +17,6 @@ jobs:
       - name: Build and run foundation tests
         shell: pwsh
         run: ./tools/test.ps1 -Odin odin
+      - name: Build and run retained-work benchmark
+        shell: pwsh
+        run: ./tools/bench.ps1 -Odin odin

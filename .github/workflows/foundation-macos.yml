@@ -22,3 +22,7 @@ jobs:
       - name: Build and run foundation checks
         shell: sh
         run: ./tools/check.sh
+
+      - name: Build and run retained-work benchmark
+        shell: sh
+        run: ./tools/bench.sh
