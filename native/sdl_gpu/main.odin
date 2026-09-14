@@ -1,10 +1,10 @@
 package main
 
 // Native SDL3/SDL_GPU proof path. It renders Alicorn's retained display list
-// as solid rectangles using a 1x1 offscreen texture and GPU blits. This keeps
-// the compositor shader-free while exercising real swapchain acquisition,
-// render passes, logical-to-physical composition and asynchronous resource
-// retirement.
+// as rectangles using a 1x1 offscreen texture and GPU blits, and renders text
+// commands through the retained Runa glyph pipeline. This exercises real
+// swapchain acquisition, ordered render passes, logical-to-physical composition
+// and asynchronous resource retirement.
 import "core:fmt"
 import "core:os"
 import "core:c"
@@ -12,6 +12,8 @@ import alicorn "../../runtime"
 import "vendor:sdl3"
 
 RESIZE_STRESS_ITERATIONS :: 300
+NATIVE_TEXT_BASE :: "Alicorn retained display list"
+NATIVE_TEXT_MUTATED :: "Alicorn retained display list Z"
 
 Window_Metrics :: struct {
 	logical_width:  int,
@@ -162,12 +164,12 @@ pump_events :: proc(
 	}
 }
 
-render_native_ui :: proc(rt: ^alicorn.Runtime, frame: u64) {
+render_native_ui :: proc(rt: ^alicorn.Runtime, frame: u64, value := NATIVE_TEXT_BASE) {
 	alicorn.invalidate_root(rt, "native frame")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return }
 	alicorn.container_begin(&ui, .Root, label="native-root", style=alicorn.Layout_Style{.Column, -1, -1, 0, -1, 0, -1, 0, 12, 8, .Stretch, true})
-	alicorn.text(&ui, "Alicorn retained display list", style=alicorn.Layout_Style{.Column, -1, 32, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	alicorn.text(&ui, value, style=alicorn.Layout_Style{.Column, -1, 32, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
 	alicorn.button(&ui, "GPU frame", style=alicorn.Layout_Style{.Column, 180, 32, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
 	alicorn.custom_surface(&ui, "animated-surface", frame, alicorn.Rect{0, 0, 280, 120}, 560, 240, 2, style_source())
 	alicorn.container_end(&ui)
@@ -196,6 +198,7 @@ draw_display_list :: proc(
 	text_renderer: ^Native_Text_Renderer,
 	display: []alicorn.Display_Command,
 	logical_to_pixel_x, logical_to_pixel_y: f32,
+	skip_root := false,
 ) -> bool {
 	if !native_text_rebuild_mesh(text_renderer, display, logical_to_pixel_x, logical_to_pixel_y) { return false }
 	if !native_text_sync_atlas(text_renderer, command) { return false }
@@ -209,6 +212,13 @@ draw_display_list :: proc(
 
 	index: int = 0
 	for draw in display {
+		if skip_root && draw.kind == .Root { continue }
+		if native_text_is_text(draw.kind) {
+			if !native_text_render_command(text_renderer, command, draw, swapchain, swap_w, swap_h, logical_to_pixel_x, logical_to_pixel_y) {
+				return false
+			}
+			continue
+		}
 		x0, y0, x1, y1 := logical_to_pixel_bounds(draw.bounds, logical_to_pixel_x, logical_to_pixel_y)
 		if x0 < 0 { x0 = 0 }
 		if y0 < 0 { y0 = 0 }
@@ -228,13 +238,135 @@ draw_display_list :: proc(
 			load_op = .LOAD,
 			flip_mode = .NONE,
 			filter = .NEAREST,
-			cycle = index > 0,
+			// The destination is a retained display target. Cycling it here
+			// would invalidate earlier display-list items, including text.
+			cycle = false,
 		}
 		sdl3.BlitGPUTexture(command, blit)
 		index += 1
 	}
-	if !native_text_render(text_renderer, command, swapchain, swap_w, swap_h) { return false }
 	return true
+}
+
+// Render one retained frame into a software-readable GPU target matching the
+// text pipeline's swapchain format. This is a deliberately small visual proof:
+// it verifies that glyph coverage lands in
+// the expected text bounds and gives us a stable observation point for atlas
+// cycling and display-list ordering without depending on a screenshot of a
+// window manager surface.
+native_text_readback_probe :: proc(
+	device: ^sdl3.GPUDevice,
+	text_renderer: ^Native_Text_Renderer,
+	display: []alicorn.Display_Command,
+	width, height: sdl3.Uint32,
+) -> (ok: bool, non_background: int) {
+	if width == 0 || height == 0 { return false, 0 }
+	if !sdl3.GPUTextureSupportsFormat(device, text_renderer.swapchain_format, .D2, sdl3.GPUTextureUsageFlags{.COLOR_TARGET}) {
+		return false, 0
+	}
+	probe_texture := sdl3.CreateGPUTexture(device, sdl3.GPUTextureCreateInfo{
+		type=.D2, format=text_renderer.swapchain_format, usage=sdl3.GPUTextureUsageFlags{.COLOR_TARGET},
+		width=width, height=height, layer_count_or_depth=1, num_levels=1, sample_count=._1,
+	})
+	if probe_texture == nil { return false, 0 }
+	temporary := sdl3.CreateGPUTexture(device, sdl3.GPUTextureCreateInfo{
+		type=.D2, format=.R8G8B8A8_UNORM, usage=sdl3.GPUTextureUsageFlags{.SAMPLER, .COLOR_TARGET},
+		width=1, height=1, layer_count_or_depth=1, num_levels=1, sample_count=._1,
+	})
+	if temporary == nil {
+		sdl3.ReleaseGPUTexture(device, probe_texture)
+		return false, 0
+	}
+	download := sdl3.CreateGPUTransferBuffer(device, sdl3.GPUTransferBufferCreateInfo{
+		usage=.DOWNLOAD, size=width * height * 4,
+	})
+	if download == nil {
+		sdl3.ReleaseGPUTexture(device, temporary)
+		sdl3.ReleaseGPUTexture(device, probe_texture)
+		return false, 0
+	}
+	command := sdl3.AcquireGPUCommandBuffer(device)
+	if command == nil {
+		sdl3.ReleaseGPUTransferBuffer(device, download)
+		sdl3.ReleaseGPUTexture(device, temporary)
+		sdl3.ReleaseGPUTexture(device, probe_texture)
+		return false, 0
+	}
+	if !draw_display_list(command, probe_texture, width, height, temporary, text_renderer, display, 1, 1, true) {
+		_ = sdl3.CancelGPUCommandBuffer(command)
+		sdl3.ReleaseGPUTransferBuffer(device, download)
+		sdl3.ReleaseGPUTexture(device, temporary)
+		sdl3.ReleaseGPUTexture(device, probe_texture)
+		return false, 0
+	}
+	copy_pass := sdl3.BeginGPUCopyPass(command)
+	if copy_pass == nil {
+		_ = sdl3.CancelGPUCommandBuffer(command)
+		sdl3.ReleaseGPUTransferBuffer(device, download)
+		sdl3.ReleaseGPUTexture(device, temporary)
+		sdl3.ReleaseGPUTexture(device, probe_texture)
+		return false, 0
+	}
+	source := sdl3.GPUTextureRegion{texture=probe_texture, mip_level=0, layer=0, x=0, y=0, z=0, w=width, h=height, d=1}
+	destination := sdl3.GPUTextureTransferInfo{transfer_buffer=download, offset=0, pixels_per_row=width, rows_per_layer=height}
+	sdl3.DownloadFromGPUTexture(copy_pass, source, destination)
+	sdl3.EndGPUCopyPass(copy_pass)
+	fence := sdl3.SubmitGPUCommandBufferAndAcquireFence(command)
+	if fence == nil {
+		sdl3.ReleaseGPUTransferBuffer(device, download)
+		sdl3.ReleaseGPUTexture(device, temporary)
+		sdl3.ReleaseGPUTexture(device, probe_texture)
+		return false, 0
+	}
+	fences := [1]^sdl3.GPUFence{fence}
+	if !sdl3.WaitForGPUFences(device, true, &fences[0], 1) {
+		sdl3.ReleaseGPUFence(device, fence)
+		sdl3.ReleaseGPUTransferBuffer(device, download)
+		sdl3.ReleaseGPUTexture(device, temporary)
+		sdl3.ReleaseGPUTexture(device, probe_texture)
+		return false, 0
+	}
+	mapped := sdl3.MapGPUTransferBuffer(device, download, false)
+	if mapped == nil {
+		sdl3.ReleaseGPUFence(device, fence)
+		sdl3.ReleaseGPUTransferBuffer(device, download)
+		sdl3.ReleaseGPUTexture(device, temporary)
+		sdl3.ReleaseGPUTexture(device, probe_texture)
+		return false, 0
+	}
+	text_bounds: alicorn.Rect
+	text_found := false
+	for draw in display {
+		if native_text_is_text(draw.kind) {
+			text_bounds = draw.bounds
+			text_found = true
+			break
+		}
+	}
+	if text_found {
+		x0, y0, x1, y1 := logical_to_pixel_bounds(text_bounds, 1, 1)
+		if x0 < 0 { x0 = 0 }
+		if y0 < 0 { y0 = 0 }
+		if x1 > int(width) { x1 = int(width) }
+		if y1 > int(height) { y1 = int(height) }
+		pixels := cast([^]u8)mapped
+		for y in y0..<y1 {
+			for x in x0..<x1 {
+				index := (y * int(width) + x) * 4
+				if pixels[index+0] > 50 || pixels[index+1] > 50 || pixels[index+2] > 50 {
+					non_background += 1
+				}
+			}
+		}
+	}
+	sdl3.UnmapGPUTransferBuffer(device, download)
+	native_text_commit_submission(text_renderer)
+	sdl3.ReleaseGPUFence(device, fence)
+	sdl3.ReleaseGPUTransferBuffer(device, download)
+	sdl3.ReleaseGPUTexture(device, temporary)
+	sdl3.ReleaseGPUTexture(device, probe_texture)
+	ok = text_found && non_background > 0
+	return
 }
 
 native_font_path :: proc() -> string {
@@ -339,17 +471,38 @@ main :: proc() {
 	if !sdl3.SetGPUAllowedFramesInFlight(device, 3) {
 		fail("SDL_SetGPUAllowedFramesInFlight failed")
 	}
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, f32(metrics.logical_width), f32(metrics.logical_height)})
 
 	font_data, font_err := os.read_entire_file_from_path(native_font_path(), context.allocator)
 	if font_err != nil {
 		fail("GPU text font could not be loaded from the platform font path")
 	}
-	text_renderer, text_ok := native_text_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), font_data)
+	if !alicorn.text_engine_load_font(&rt.text_engine, font_data) {
+		delete(font_data)
+		fail("Runa font initialization failed")
+	}
 	delete(font_data)
+	text_renderer, text_ok := native_text_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
 	if !text_ok {
-		fail("GPU text pipeline, atlas, or Runa font initialization failed")
+		fail("GPU text pipeline or atlas initialization failed")
 	}
 	defer native_text_destroy(&text_renderer)
+	// Establish a deterministic visual proof before the resize stress. The
+	// runtime display is rendered into an offscreen RGBA8 target, downloaded
+	// only after its submission fence signals, and checked inside the text
+	// bounds.
+	render_native_ui(&rt, 0)
+	readback_ok, readback_non_background := native_text_readback_probe(
+		device,
+		&text_renderer,
+		rt.display[:],
+		sdl3.Uint32(metrics.logical_width),
+		sdl3.Uint32(metrics.logical_height),
+	)
+	if !readback_ok {
+		fmt.println("GPU text readback probe failed", "non_background", readback_non_background, "display_commands", len(rt.display))
+		fail("GPU text offscreen readback found no glyph coverage")
+	}
 
 	// SDL text input is opt-in. The input rectangle is in logical window
 	// coordinates, never physical pixels.
@@ -364,7 +517,6 @@ main :: proc() {
 		fail("SDL_TextInputActive returned false after SDL_StartTextInput")
 	}
 
-	rt := alicorn.new_runtime(alicorn.Rect{0, 0, f32(metrics.logical_width), f32(metrics.logical_height)})
 	in_flight := make([dynamic]Native_In_Flight, 0, 3)
 	defer delete(in_flight)
 	quit_requested := false
@@ -385,6 +537,10 @@ main :: proc() {
 	// Submit an initial three-frame burst before any programmatic resize. This
 	// proves the configured frames-in-flight retirement path independently of
 	// the swapchain invalidation that a resize can trigger.
+	// The first burst also changes the text after the first submission, so a new
+	// glyph is rasterized and uploaded while the old text submission is allowed
+	// to remain in flight. The conservative full-page upload policy is exercised
+	// by that mutation.
 	// The following 300 iterations then drain before each resize and retire each
 	// resized frame before the next resize, matching SDL's swapchain lifecycle.
 	for step := -3; step < RESIZE_STRESS_ITERATIONS; step += 1 {
@@ -437,7 +593,8 @@ main :: proc() {
 			print_window_metrics("resize", metrics)
 		}
 
-		render_native_ui(&rt, u64(step+3))
+		text_value := NATIVE_TEXT_BASE if step == -3 else NATIVE_TEXT_MUTATED
+		render_native_ui(&rt, u64(step+3), text_value)
 		command := sdl3.AcquireGPUCommandBuffer(device)
 		if command == nil {
 			fail("SDL_AcquireGPUCommandBuffer failed")
@@ -538,14 +695,15 @@ main :: proc() {
 		"scale_events", scale_events,
 		"text_input_events", text_input_events,
 		"composition_events", composition_events,
-		"text_shape_calls", text_renderer.engine.shape_calls,
-		"text_run_cache_hits", text_renderer.run_cache_hits,
-		"text_run_cache_misses", text_renderer.run_cache_misses,
-		"text_glyph_cache_hits", text_renderer.engine.glyph_cache_hits,
-		"text_glyph_cache_misses", text_renderer.engine.glyph_cache_misses,
-		"text_rasterizations", text_renderer.engine.glyph_rasterizations,
+		"text_shape_calls", rt.text_engine.shape_calls,
+		"text_glyph_cache_hits", rt.text_engine.glyph_cache_hits,
+		"text_glyph_cache_misses", rt.text_engine.glyph_cache_misses,
+		"text_rasterizations", rt.text_engine.glyph_rasterizations,
 		"text_atlas_pages", len(text_renderer.pages),
 		"text_quads", len(text_renderer.draws),
+		"text_atlas_full_page_uploads", text_renderer.atlas_uploads,
+		"text_atlas_upload_bytes", text_renderer.atlas_upload_bytes,
+		"text_readback_non_background", readback_non_background,
 		"text_input_boundary", "start-set-area-active-stop",
 		"pointer_adapter", "logical coordinates unchanged",
 		"logical_to_physical", "compositor boundary only",

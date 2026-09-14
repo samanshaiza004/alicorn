@@ -10,8 +10,7 @@ following lifecycle to the SDL3 vendor package:
 5. render retained rectangles with the existing 1x1 offscreen texture and
    `SDL_BlitGPUTexture`;
 6. render retained Runa glyph runs through a persistent RGBA GPU atlas,
-   staged dirty-region uploads, a persistent vertex buffer and an SDL_GPU
-   text pipeline;
+   staged uploads, a persistent vertex buffer and an SDL_GPU text pipeline;
 7. associate the temporary texture with the submission fence and release it only
    after a blocking fence wait confirms completion;
 8. release the command buffer/pass/window/device in SDL's required order.
@@ -36,6 +35,20 @@ SDL command buffers are frame-scoped. Alicorn must never retain one in a node
 or use it after submission. Nodes retain display data and resource handles, not
 submitted command buffers.
 
+The runtime owns the platform-neutral `Text_Run` attached to each retained
+text node. The native adapter consumes those runs and does not maintain a
+historical `Node_ID`-keyed run cache, so virtualized node retirement also
+retires its text product. Atlas pages are cycled conservatively: any dirty
+write rewrites the complete page because SDL defines the rest of a cycled
+texture as undefined until rewritten. The text mesh fingerprint includes
+ordered node identity, text, color, bounds, clip and DPI scale, which catches
+removal, reorder, color and geometry changes.
+
+Text commands are composed at their display-list position with load-preserving
+passes and per-command scissors. The native fixture also renders a known frame
+to an offscreen target, downloads it after a fence, and checks that glyph
+coverage differs from the clear color inside the expected text bounds.
+
 The fixture records `SDL_QueryGPUFence` before and after each blocking wait.
 The tested Metal backend returned false after waits for real render/blit
 commands, so the blocking wait—not the query result—is used for known-oldest
@@ -43,9 +56,9 @@ resource retirement. The anomaly is reported rather than treated as proof of
 post-wait query correctness.
 
 The text path currently proves monochrome alpha glyphs and keeps color glyph
-pages distinct at the CPU identity boundary; the native fixture does not yet
-claim screenshot comparison, caret/selection geometry, IME, or a production
-font fallback policy. Build and run it from a normal GUI login session with:
+pages distinct at the CPU identity boundary; caret/selection geometry, IME and
+a production font fallback policy remain future gates. Build and run it from a
+normal GUI login session with:
 
 ```sh
 ALICORN_ODIN=/path/to/odin ./tools/native_sdl_gpu.sh

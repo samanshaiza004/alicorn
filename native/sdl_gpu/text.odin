@@ -1,12 +1,11 @@
 package main
 
-import "core:strings"
+import "core:c"
 import alicorn "../../runtime"
 import runa "../../third_party/Runa"
 import "vendor:sdl3"
 
 MAX_TEXT_VERTICES :: 65536
-TEXT_LOGICAL_SIZE: f32 = 16
 
 Native_Text_Vertex :: struct {
 	position: [3]f32,
@@ -29,15 +28,9 @@ Native_Atlas_Page :: struct {
 
 Native_Text_Draw :: struct {
 	first_vertex: sdl3.Uint32,
+	node:         alicorn.Node_ID,
 	page_index:   u16,
 	is_color:     bool,
-}
-
-Native_Text_Cached_Run :: struct {
-	run:          alicorn.Text_Run,
-	raster_scale: f32,
-	bounds:       alicorn.Rect,
-	has_bounds:   bool,
 }
 
 Native_Text_Renderer :: struct {
@@ -48,8 +41,7 @@ Native_Text_Renderer :: struct {
 	atlas_transfer: ^sdl3.GPUTransferBuffer,
 	vertex_buffer:  ^sdl3.GPUBuffer,
 	vertex_transfer: ^sdl3.GPUTransferBuffer,
-	engine:         alicorn.Text_Engine,
-	runs:           map[alicorn.Node_ID]^Native_Text_Cached_Run,
+	runtime:        ^alicorn.Runtime,
 	pages:          [dynamic]Native_Atlas_Page,
 	vertices:       [dynamic]Native_Text_Vertex,
 	draws:          [dynamic]Native_Text_Draw,
@@ -58,8 +50,9 @@ Native_Text_Renderer :: struct {
 	vertex_upload_pending: bool,
 	last_scale_x:   f32,
 	last_scale_y:   f32,
-	run_cache_hits: u64,
-	run_cache_misses: u64,
+	mesh_fingerprint: u64,
+	atlas_uploads: u64,
+	atlas_upload_bytes: u64,
 }
 
 native_shader_supported :: proc(supported: sdl3.GPUShaderFormat, format: sdl3.GPUShaderFormat) -> bool {
@@ -115,16 +108,14 @@ native_text_page :: proc(renderer: ^Native_Text_Renderer, page_index: u16, is_co
 	return nil
 }
 
-native_text_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTextureFormat, font_data: []u8) -> (renderer: Native_Text_Renderer, ok: bool) {
+native_text_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTextureFormat, runtime: ^alicorn.Runtime) -> (renderer: Native_Text_Renderer, ok: bool) {
 	renderer.device = device
 	renderer.swapchain_format = swapchain_format
-	renderer.engine = alicorn.new_text_engine("Runa GPU text", true)
-	renderer.runs = make(map[alicorn.Node_ID]^Native_Text_Cached_Run)
+	renderer.runtime = runtime
 	renderer.pages = make([dynamic]Native_Atlas_Page, 0, 4)
 	renderer.vertices = make([dynamic]Native_Text_Vertex, 0, 4096)
 	renderer.draws = make([dynamic]Native_Text_Draw, 0, 512)
 	renderer.pending_dirty = make([dynamic]runa.Atlas_Dirty_View, 0, 4)
-	if !alicorn.text_engine_load_font(&renderer.engine, font_data) { return renderer, false }
 
 	vertex_shader := native_text_shader(device, .VERTEX, false)
 	fragment_shader := native_text_shader(device, .FRAGMENT, true)
@@ -181,13 +172,6 @@ native_text_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUText
 }
 
 native_text_destroy :: proc(renderer: ^Native_Text_Renderer) {
-	for _, cached in renderer.runs {
-		if cached != nil {
-			alicorn.text_run_destroy(&cached.run)
-			free(cached)
-		}
-	}
-	delete(renderer.runs)
 	for page in renderer.pages {
 		if page.texture != nil { sdl3.ReleaseGPUTexture(renderer.device, page.texture) }
 	}
@@ -200,66 +184,87 @@ native_text_destroy :: proc(renderer: ^Native_Text_Renderer) {
 	delete(renderer.vertices)
 	delete(renderer.draws)
 	delete(renderer.pending_dirty)
-	alicorn.text_engine_destroy(&renderer.engine)
 	renderer^ = {}
-}
-
-native_text_get_run :: proc(renderer: ^Native_Text_Renderer, command: alicorn.Display_Command, raster_scale: f32) -> (^Native_Text_Cached_Run, bool) {
-	cached: ^Native_Text_Cached_Run
-	if existing, found := renderer.runs[command.node]; found && existing != nil {
-		cached = existing
-		if cached.run.value == command.text && cached.raster_scale == raster_scale {
-			renderer.run_cache_hits += 1
-			return cached, false
-		}
-		alicorn.text_run_destroy(&cached.run)
-	} else {
-		cached = new(Native_Text_Cached_Run)
-		renderer.runs[command.node] = cached
-	}
-	renderer.run_cache_misses += 1
-	run, ok := alicorn.text_run_build(&renderer.engine, command.text, TEXT_LOGICAL_SIZE * raster_scale)
-	if !ok {
-		return cached, false
-	}
-	cached.run = run
-	cached.raster_scale = raster_scale
-	cached.has_bounds = false
-	return cached, true
 }
 
 native_text_is_text :: proc(kind: alicorn.Node_Kind) -> bool {
 	return kind == .Text || kind == .Text_Field
 }
 
-native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []alicorn.Display_Command, scale_x, scale_y: f32) -> bool {
-	raster_scale := scale_x
-	if scale_y > raster_scale { raster_scale = scale_y }
-	if raster_scale <= 0 { raster_scale = 1 }
-	needs_rebuild := !renderer.mesh_valid || renderer.last_scale_x != scale_x || renderer.last_scale_y != scale_y
-	for command in display {
-		if !native_text_is_text(command.kind) { continue }
-		cached, changed := native_text_get_run(renderer, command, raster_scale)
-		if cached == nil || cached.run.value != command.text { continue }
-		if changed || !cached.has_bounds || cached.bounds != command.bounds { needs_rebuild = true }
+native_text_hash_mix :: proc(h, value: u64) -> u64 {
+	result := h ~ value
+	result *= 1099511628211
+	return result
+}
+
+native_text_hash_string :: proc(value: string) -> u64 {
+	h: u64 = 1469598103934665603
+	for i := 0; i < len(value); i += 1 {
+		h = native_text_hash_mix(h, u64(value[i]))
 	}
-	if !needs_rebuild { return true }
+	return h
+}
+
+native_text_hash_rect :: proc(h: u64, rect: alicorn.Rect) -> u64 {
+	result := h
+	result = native_text_hash_mix(result, u64(transmute(u32)rect.x))
+	result = native_text_hash_mix(result, u64(transmute(u32)rect.y))
+	result = native_text_hash_mix(result, u64(transmute(u32)rect.w))
+	result = native_text_hash_mix(result, u64(transmute(u32)rect.h))
+	return result
+}
+
+native_text_hash_color :: proc(h: u64, color: alicorn.Color) -> u64 {
+	result := h
+	result = native_text_hash_mix(result, u64(transmute(u32)color.r))
+	result = native_text_hash_mix(result, u64(transmute(u32)color.g))
+	result = native_text_hash_mix(result, u64(transmute(u32)color.b))
+	result = native_text_hash_mix(result, u64(transmute(u32)color.a))
+	return result
+}
+
+// The mesh fingerprint includes the complete ordered display state that can
+// affect text pixels. This deliberately catches removal, reorder, color,
+// bounds, clip and DPI changes; a later compositor generation can replace the
+// scan without changing the invalidation contract.
+native_text_mesh_fingerprint :: proc(display: []alicorn.Display_Command, scale_x, scale_y: f32) -> u64 {
+	h: u64 = 1469598103934665603
+	h = native_text_hash_mix(h, u64(len(display)))
+	h = native_text_hash_mix(h, u64(transmute(u32)scale_x))
+	h = native_text_hash_mix(h, u64(transmute(u32)scale_y))
+	for command, index in display {
+		h = native_text_hash_mix(h, u64(index))
+		h = native_text_hash_mix(h, u64(command.node))
+		h = native_text_hash_mix(h, u64(command.kind))
+		h = native_text_hash_rect(h, command.bounds)
+		h = native_text_hash_rect(h, command.clip)
+		h = native_text_hash_color(h, command.color)
+		h = native_text_hash_mix(h, native_text_hash_string(command.text))
+	}
+	return h
+}
+
+native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []alicorn.Display_Command, scale_x, scale_y: f32) -> bool {
+	fingerprint := native_text_mesh_fingerprint(display, scale_x, scale_y)
+	// Font replacement can preserve every display-command field while changing
+	// the retained run's atlas slots. Include the runtime text generation so a
+	// same-string font swap cannot leave old vertices resident.
+	fingerprint = native_text_hash_mix(fingerprint, renderer.runtime.text_engine.font_generation)
+	if renderer.mesh_valid && renderer.mesh_fingerprint == fingerprint { return true }
 	clear(&renderer.vertices)
 	clear(&renderer.draws)
 	for command in display {
 		if !native_text_is_text(command.kind) { continue }
-		cached, _ := native_text_get_run(renderer, command, raster_scale)
-		if cached == nil || cached.run.value != command.text { continue }
-		cached.bounds = command.bounds
-		cached.has_bounds = true
-		for glyph in cached.run.glyphs {
+		node, found := renderer.runtime.nodes[command.node]
+		if !found || !node.text_run_valid { continue }
+		for glyph in node.text_run.glyphs {
 			if !glyph.drawable { continue }
 			if len(renderer.vertices) + 6 > MAX_TEXT_VERTICES { return false }
 			slot := runa.atlas_slot_view(glyph.slot)
-			x0 := (command.bounds.x + (glyph.x + slot.Bearing[0]) / raster_scale) * scale_x
-			y0 := (command.bounds.y + (glyph.y + slot.Bearing[1]) / raster_scale) * scale_y
-			x1 := x0 + f32(slot.Px_Size[0]) * scale_x / raster_scale
-			y1 := y0 + f32(slot.Px_Size[1]) * scale_y / raster_scale
+			x0 := (command.bounds.x + glyph.x + slot.Bearing[0]) * scale_x
+			y0 := (command.bounds.y + glyph.y + slot.Bearing[1]) * scale_y
+			x1 := x0 + f32(slot.Px_Size[0]) * scale_x
+			y1 := y0 + f32(slot.Px_Size[1]) * scale_y
 			u0, v0, u1, v1 := slot.UV_Rect[0], slot.UV_Rect[1], slot.UV_Rect[2], slot.UV_Rect[3]
 			color := [4]f32{command.color.r, command.color.g, command.color.b, command.color.a}
 			first := sdl3.Uint32(len(renderer.vertices))
@@ -271,21 +276,22 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 				Native_Text_Vertex{[3]f32{x1, y1, 0}, color, [2]f32{u1, v1}},
 				Native_Text_Vertex{[3]f32{x0, y1, 0}, color, [2]f32{u0, v1}},
 			)
-			append(&renderer.draws, Native_Text_Draw{first, slot.Page_Index, slot.Is_Color})
+			append(&renderer.draws, Native_Text_Draw{first, command.node, slot.Page_Index, slot.Is_Color})
 		}
 	}
 	renderer.last_scale_x = scale_x
 	renderer.last_scale_y = scale_y
+	renderer.mesh_fingerprint = fingerprint
 	renderer.mesh_valid = true
-	renderer.vertex_upload_pending = true
+	renderer.vertex_upload_pending = len(renderer.vertices) > 0
 	return true
 }
 
 native_text_sync_atlas :: proc(renderer: ^Native_Text_Renderer, command: ^sdl3.GPUCommandBuffer) -> bool {
-	snapshot := runa.atlas_dirty_snapshot(&renderer.engine.atlas, context.temp_allocator)
+	snapshot := runa.atlas_dirty_snapshot(&renderer.runtime.text_engine.atlas, context.temp_allocator)
 	if len(snapshot) == 0 { return true }
 	for dirty in snapshot {
-		view, ok := runa.atlas_page_view(&renderer.engine.atlas, dirty.Page_Index, dirty.Is_Color)
+		view, ok := runa.atlas_page_view(&renderer.runtime.text_engine.atlas, dirty.Page_Index, dirty.Is_Color)
 		if !ok { delete(snapshot, context.temp_allocator); return false }
 		page := native_text_page(renderer, dirty.Page_Index, dirty.Is_Color)
 		if page == nil {
@@ -297,19 +303,23 @@ native_text_sync_atlas :: proc(renderer: ^Native_Text_Renderer, command: ^sdl3.G
 			append(&renderer.pages, Native_Atlas_Page{dirty.Page_Index, dirty.Is_Color, view.Width, view.Height, texture})
 			page = &renderer.pages[len(renderer.pages)-1]
 		}
-		bpp := 4
-		row_bytes := int(dirty.W) * bpp
-		upload_bytes := row_bytes * int(dirty.H)
+		// The atlas texture is cycled because earlier submissions may still
+		// sample it. SDL cycles the complete texture, not only the destination
+		// rectangle, so the safe first implementation rewrites the complete
+		// page whenever any glyph makes it dirty.
+		upload_width := int(view.Width)
+		upload_height := int(view.Height)
+		upload_bytes := upload_width * upload_height * 4
 		mapped := sdl3.MapGPUTransferBuffer(renderer.device, renderer.atlas_transfer, true)
 		if mapped == nil || upload_bytes > 4*1024*1024 { delete(snapshot, context.temp_allocator); return false }
 		destination := cast([^]u8)mapped
-		for y in 0..<int(dirty.H) {
-			src_row := (int(dirty.Y)+y) * int(view.Width)
-			for x in 0..<int(dirty.W) {
-				src := view.Pixels[src_row + int(dirty.X) + x]
-				dst := (y * int(dirty.W) + x) * 4
+		for y in 0..<upload_height {
+			src_row := y * upload_width
+			for x in 0..<upload_width {
+				src := view.Pixels[src_row + x]
+				dst := (y * upload_width + x) * 4
 				if dirty.Is_Color {
-					src4 := (src_row + int(dirty.X) + x) * 4
+					src4 := (src_row + x) * 4
 					destination[dst+0] = view.Pixels[src4+0]
 					destination[dst+1] = view.Pixels[src4+1]
 					destination[dst+2] = view.Pixels[src4+2]
@@ -325,10 +335,12 @@ native_text_sync_atlas :: proc(renderer: ^Native_Text_Renderer, command: ^sdl3.G
 		sdl3.UnmapGPUTransferBuffer(renderer.device, renderer.atlas_transfer)
 		copy_pass := sdl3.BeginGPUCopyPass(command)
 		if copy_pass == nil { delete(snapshot, context.temp_allocator); return false }
-		source := sdl3.GPUTextureTransferInfo{transfer_buffer=renderer.atlas_transfer, offset=0, pixels_per_row=sdl3.Uint32(dirty.W), rows_per_layer=sdl3.Uint32(dirty.H)}
-		destination_region := sdl3.GPUTextureRegion{texture=page.texture, mip_level=0, layer=0, x=sdl3.Uint32(dirty.X), y=sdl3.Uint32(dirty.Y), z=0, w=sdl3.Uint32(dirty.W), h=sdl3.Uint32(dirty.H), d=1}
+		source := sdl3.GPUTextureTransferInfo{transfer_buffer=renderer.atlas_transfer, offset=0, pixels_per_row=sdl3.Uint32(upload_width), rows_per_layer=sdl3.Uint32(upload_height)}
+		destination_region := sdl3.GPUTextureRegion{texture=page.texture, mip_level=0, layer=0, x=0, y=0, z=0, w=sdl3.Uint32(view.Width), h=sdl3.Uint32(view.Height), d=1}
 		sdl3.UploadToGPUTexture(copy_pass, source, destination_region, true)
 		sdl3.EndGPUCopyPass(copy_pass)
+		renderer.atlas_uploads += 1
+		renderer.atlas_upload_bytes += u64(upload_bytes)
 		append(&renderer.pending_dirty, dirty)
 	}
 	delete(snapshot, context.temp_allocator)
@@ -351,26 +363,51 @@ native_text_upload_vertices :: proc(renderer: ^Native_Text_Renderer, command: ^s
 	return true
 }
 
-native_text_render :: proc(renderer: ^Native_Text_Renderer, command: ^sdl3.GPUCommandBuffer, swapchain: ^sdl3.GPUTexture, swap_w, swap_h: sdl3.Uint32) -> bool {
-	if len(renderer.draws) == 0 { return true }
+native_text_render_command :: proc(
+	renderer: ^Native_Text_Renderer,
+	command_buffer: ^sdl3.GPUCommandBuffer,
+	command: alicorn.Display_Command,
+	target: ^sdl3.GPUTexture,
+	target_w, target_h: sdl3.Uint32,
+	scale_x, scale_y: f32,
+) -> bool {
+	has_draw := false
+	for draw in renderer.draws {
+		if draw.node == command.node {
+			has_draw = true
+			break
+		}
+	}
+	if !has_draw { return true }
 	uniforms := Native_Text_Uniforms{
 		proj_view = [4][4]f32{
-			{2/f32(swap_w), 0, 0, 0},
-			{0, -2/f32(swap_h), 0, 0},
+			{2/f32(target_w), 0, 0, 0},
+			{0, -2/f32(target_h), 0, 0},
 			{0, 0, 1, 0},
 			{-1, 1, 0, 1},
 		},
 		model = [4][4]f32{{1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1}},
 	}
-	sdl3.PushGPUVertexUniformData(command, 0, &uniforms, sdl3.Uint32(size_of(Native_Text_Uniforms)))
-	target := sdl3.GPUColorTargetInfo{texture=swapchain, clear_color=sdl3.FColor{}, load_op=.LOAD, store_op=.STORE}
-	pass := sdl3.BeginGPURenderPass(command, &target, 1, nil)
+	sdl3.PushGPUVertexUniformData(command_buffer, 0, &uniforms, sdl3.Uint32(size_of(Native_Text_Uniforms)))
+	target_info := sdl3.GPUColorTargetInfo{texture=target, clear_color=sdl3.FColor{}, load_op=.LOAD, store_op=.STORE}
+	pass := sdl3.BeginGPURenderPass(command_buffer, &target_info, 1, nil)
 	if pass == nil { return false }
 	sdl3.BindGPUGraphicsPipeline(pass, renderer.pipeline)
-	sdl3.SetGPUViewport(pass, sdl3.GPUViewport{0, 0, f32(swap_w), f32(swap_h), 0, 1})
+	sdl3.SetGPUViewport(pass, sdl3.GPUViewport{0, 0, f32(target_w), f32(target_h), 0, 1})
+	x0, y0, x1, y1 := logical_to_pixel_bounds(command.clip, scale_x, scale_y)
+	if x0 < 0 { x0 = 0 }
+	if y0 < 0 { y0 = 0 }
+	if x1 > int(target_w) { x1 = int(target_w) }
+	if y1 > int(target_h) { y1 = int(target_h) }
+	if x1 <= x0 || y1 <= y0 {
+		sdl3.EndGPURenderPass(pass)
+		return true
+	}
+	sdl3.SetGPUScissor(pass, sdl3.Rect{x=c.int(x0), y=c.int(y0), w=c.int(x1-x0), h=c.int(y1-y0)})
 	vertex_binding := sdl3.GPUBufferBinding{buffer=renderer.vertex_buffer, offset=0}
 	sdl3.BindGPUVertexBuffers(pass, 0, &vertex_binding, 1)
 	for draw in renderer.draws {
+		if draw.node != command.node { continue }
 		page := native_text_page(renderer, draw.page_index, draw.is_color)
 		if page == nil || page.texture == nil { continue }
 		binding := sdl3.GPUTextureSamplerBinding{texture=page.texture, sampler=renderer.sampler}
@@ -383,7 +420,7 @@ native_text_render :: proc(renderer: ^Native_Text_Renderer, command: ^sdl3.GPUCo
 
 native_text_commit_submission :: proc(renderer: ^Native_Text_Renderer) {
 	if len(renderer.pending_dirty) > 0 {
-		runa.atlas_dirty_ack(&renderer.engine.atlas, renderer.pending_dirty[:])
+		runa.atlas_dirty_ack(&renderer.runtime.text_engine.atlas, renderer.pending_dirty[:])
 		clear(&renderer.pending_dirty)
 	}
 	renderer.vertex_upload_pending = false
