@@ -1006,6 +1006,8 @@ test_gpu_surface_contract :: proc(state: ^Test_State) {
 	// independently updated retained surface revision or its copied samples.
 	render_gpu_surface(&rt, true, 0)
 	expect(state, rt.nodes[id].surface_revision == 1 && len(rt.nodes[id].surface_samples) == 4, "root wake must preserve a newer explicit surface update")
+	render_gpu_surface(&rt, true, 2)
+	expect(state, rt.nodes[id].surface_revision == 2, "a changed surface description revision must replace a direct update")
 	render_gpu_surface(&rt, false, 0)
 	expect(state, !alicorn.gpu_surface_update(&rt, id, 2, samples[:]), "retired surface handles must reject updates")
 	expect(state, rt.focused == 0 && len(rt.nodes) == 1, "surface removal must retire its retained node")

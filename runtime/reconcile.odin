@@ -114,11 +114,11 @@ copy_node_description :: proc(node: ^Node, d: Description) {
 	node.kind = d.kind
 	node.style = d.style
 	node.color = d.color
+	surface_description_changed := node.paint_value != d.paint_value
 	node.paint_value = d.paint_value
 	node.region_revision = d.region_revision
 	node.region = d.region
 	node.focusable = d.focusable
-	surface_description_changed := node.paint_value != d.paint_value
 	node.surface_kind = d.surface_kind
 	node.surface_pixel_width = d.surface_pixel_width
 	node.surface_pixel_height = d.surface_pixel_height
