@@ -2,6 +2,7 @@ package main
 
 import "core:fmt"
 import "core:os"
+import "core:strings"
 import alicorn "../runtime"
 import runa "../third_party/Runa"
 
@@ -224,6 +225,30 @@ render_text_field :: proc(rt: ^alicorn.Runtime, value: string) -> alicorn.Node_I
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	return id
+}
+
+make_geometry_run :: proc() -> alicorn.Text_Run {
+	value, err := strings.clone("abcd")
+	if err != nil { return alicorn.Text_Run{} }
+	run := alicorn.Text_Run{
+		value=value,
+		glyphs=make([dynamic]alicorn.Text_Glyph, 0, 4),
+		lines=make([dynamic]alicorn.Text_Line, 0, 2),
+		width=20,
+		height=20,
+		size=16,
+	}
+	append(&run.glyphs,
+		alicorn.Text_Glyph{glyph_id=0, cluster_start=0, cluster_end=1, x=0, x_advance=10, line_index=0},
+		alicorn.Text_Glyph{glyph_id=0, cluster_start=1, cluster_end=2, x=10, x_advance=10, line_index=0},
+		alicorn.Text_Glyph{glyph_id=0, cluster_start=2, cluster_end=3, x=0, y=10, x_advance=10, line_index=1},
+		alicorn.Text_Glyph{glyph_id=0, cluster_start=3, cluster_end=4, x=10, y=10, x_advance=10, line_index=1},
+	)
+	append(&run.lines,
+		alicorn.Text_Line{glyph_start=0, glyph_end=2, byte_start=0, byte_end=2, x=0, y=0, width=20, height=10, baseline=8},
+		alicorn.Text_Line{glyph_start=2, glyph_end=4, byte_start=2, byte_end=4, x=0, y=10, width=20, height=10, baseline=8},
+	)
+	return run
 }
 
 render_focus_ancestor :: proc(rt: ^alicorn.Runtime, include_child: bool) -> alicorn.Node_ID {
@@ -687,6 +712,70 @@ test_layout_geometry :: proc(state: ^Test_State) {
 	alicorn.destroy_runtime(&rt)
 }
 
+test_text_geometry :: proc(state: ^Test_State) {
+	run := make_geometry_run()
+	defer alicorn.text_run_destroy(&run)
+
+	caret := alicorn.text_run_caret_geometry(&run, alicorn.Text_Position{1, .Leading})
+	expect(state, caret.valid && caret.line_index == 0 && caret.rect.x == 10 && caret.rect.y == 0, "caret geometry must map a logical boundary to line coordinates")
+	hit := alicorn.text_run_hit_test(&run, 19, 2)
+	expect(state, hit.byte == 2, "text hit testing must choose the nearest visual cluster boundary")
+	hit = alicorn.text_run_hit_test(&run, 1, 12)
+	expect(state, hit.byte == 2, "text hit testing must select the correct wrapped line")
+
+	selection := alicorn.text_run_selection_rects(&run, alicorn.Text_Position{1, .Leading}, alicorn.Text_Position{3, .Trailing})
+	expect(state, len(selection) == 2, "selection across wrapped lines must produce one rectangle per line")
+	if len(selection) == 2 {
+		expect(state, selection[0].rect.x == 10 && selection[0].rect.w == 10, "first selection line must begin at the selected boundary")
+		expect(state, selection[1].rect.x == 0 && selection[1].rect.w == 10, "second selection line must end at the selected boundary")
+	}
+	delete(selection)
+
+	ligature_value, ligature_err := strings.clone("ffi")
+	ligature := alicorn.Text_Run{
+		value=ligature_value,
+		glyphs=make([dynamic]alicorn.Text_Glyph, 0, 1),
+		lines=make([dynamic]alicorn.Text_Line, 0, 1),
+		width=30,
+		height=10,
+	}
+	if ligature_err == nil {
+		append(&ligature.glyphs, alicorn.Text_Glyph{cluster_start=0, cluster_end=3, x=0, x_advance=30, line_index=0})
+		append(&ligature.lines, alicorn.Text_Line{glyph_start=0, glyph_end=1, byte_start=0, byte_end=3, width=30, height=10})
+		ligature_caret := alicorn.text_run_caret_geometry(&ligature, alicorn.Text_Position{1, .Leading})
+		expect(state, ligature_caret.valid && ligature_caret.rect.x == 10, "ligature caret must expose internal grapheme boundaries")
+	}
+	alicorn.text_run_destroy(&ligature)
+
+	rtl_value, rtl_err := strings.clone("אב")
+	rtl := alicorn.Text_Run{
+		value=rtl_value,
+		glyphs=make([dynamic]alicorn.Text_Glyph, 0, 2),
+		lines=make([dynamic]alicorn.Text_Line, 0, 1),
+		width=20,
+		height=10,
+	}
+	if rtl_err == nil {
+		// Runa gives the visual line order to consumers. The logical first
+		// Hebrew cluster is therefore on the right-hand side here.
+		append(&rtl.glyphs,
+			alicorn.Text_Glyph{cluster_start=2, cluster_end=4, x=0, x_advance=10, line_index=0, level=1},
+			alicorn.Text_Glyph{cluster_start=0, cluster_end=2, x=10, x_advance=10, line_index=0, level=1},
+		)
+		append(&rtl.lines, alicorn.Text_Line{glyph_start=0, glyph_end=2, byte_start=0, byte_end=4, width=20, height=10})
+		rtl_caret := alicorn.text_run_caret_geometry(&rtl, alicorn.Text_Position{0, .Leading})
+		expect(state, rtl_caret.valid && rtl_caret.rect.x == 20, "RTL caret leading edge must use visual glyph direction")
+	}
+	alicorn.text_run_destroy(&rtl)
+
+	logical := alicorn.text_move_logical("Aé世😀", alicorn.Text_Position{len("Aé世😀"), .Leading}, -1)
+	expect(state, logical.byte == len("Aé世"), "logical movement must step by grapheme rather than byte")
+	visual := alicorn.text_run_move_visual(&run, alicorn.Text_Position{1, .Leading}, 1)
+	expect(state, visual.byte == 2, "visual movement must advance to the next boundary on the line")
+	visual = alicorn.text_run_move_visual(&run, alicorn.Text_Position{2, .Trailing}, 1)
+	expect(state, visual.byte == 2, "visual movement at a wrapped line end must enter the next line deterministically")
+}
+
 test_gpu_text_resource_boundary :: proc(state: ^Test_State) {
 	// The key is CPU-resource identity, not GPU residency. Every raster
 	// parameter that can change pixels must participate in the key.
@@ -762,6 +851,7 @@ main :: proc() {
 	test_ergonomic_identity(&state)
 	test_virtualization_and_gpu(&state)
 	test_layout_geometry(&state)
+	test_text_geometry(&state)
 	test_gpu_text_resource_boundary(&state)
 	test_retained_text_product_lifetime(&state)
 	if state.failures == 0 {

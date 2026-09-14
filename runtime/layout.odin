@@ -44,6 +44,18 @@ intrinsic_main :: proc(node: ^Node, direction: Layout_Direction) -> f32 {
 	return 24
 }
 
+layout_text_constraint :: proc(parent: ^Node, child: ^Node, cross_size: f32) -> f32 {
+	if !node_has_text_product(child.kind) { return 0 }
+	constraint: f32 = 0
+	if child.style.width > 0 {
+		constraint = child.style.width
+	} else if parent.style.direction == .Column {
+		constraint = cross_size
+	}
+	if constraint <= 0 { return 0 }
+	return clampf(constraint, child.style.min_width, child.style.max_width)
+}
+
 layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	parent, ok := rt.nodes[parent_id]
 	if !ok { return }
@@ -57,6 +69,22 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	cross_size := parent.style.direction == .Row ? inner.h : inner.w
 	gap_total := parent.style.gap * f32(count-1)
 	available := maxf(main_size-gap_total, 0)
+	// Text line breaking depends on the width assigned by the parent. Prepare
+	// that logical product before measuring the main axis; this keeps layout
+	// authoritative for wrapping without re-executing the application
+	// description. The native renderer later resolves physical glyph residency
+	// for the current DPI.
+	for id in children {
+		child := rt.nodes[id]
+		if node_has_text_product(child.kind) {
+			constraint := layout_text_constraint(parent, child, cross_size)
+			if prepare_text_run_node(rt, child, constraint) {
+				child.dirty.paint = true
+				child.dirty.composite = true
+				queue_paint(rt, id)
+			}
+		}
+	}
 	fixed: f32 = 0
 	grow: f32 = 0
 	for id in children {

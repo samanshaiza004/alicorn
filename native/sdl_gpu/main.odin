@@ -164,16 +164,17 @@ pump_events :: proc(
 	}
 }
 
-render_native_ui :: proc(rt: ^alicorn.Runtime, frame: u64, value := NATIVE_TEXT_BASE) {
+render_native_ui :: proc(rt: ^alicorn.Runtime, frame: u64, value := NATIVE_TEXT_BASE) -> alicorn.Node_ID {
 	alicorn.invalidate_root(rt, "native frame")
 	ui, build := alicorn.begin_frame(rt)
-	if !build { return }
+	if !build { return 0 }
 	alicorn.container_begin(&ui, .Root, label="native-root", style=alicorn.Layout_Style{.Column, -1, -1, 0, -1, 0, -1, 0, 12, 8, .Stretch, true})
-	alicorn.text(&ui, value, style=alicorn.Layout_Style{.Column, -1, 32, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	field := alicorn.text_field(&ui, value, style=alicorn.Layout_Style{.Column, -1, 32, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
 	alicorn.button(&ui, "GPU frame", style=alicorn.Layout_Style{.Column, 180, 32, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
 	alicorn.custom_surface(&ui, "animated-surface", frame, alicorn.Rect{0, 0, 280, 120}, 560, 240, 2, style_source())
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
+	return field
 }
 
 style_source :: proc() -> alicorn.Source_Site {
@@ -491,6 +492,8 @@ main :: proc() {
 	// runtime display is rendered into an offscreen RGBA8 target, downloaded
 	// only after its submission fence signals, and checked inside the text
 	// bounds.
+	field := render_native_ui(&rt, 0)
+	alicorn.focus(&rt, field)
 	render_native_ui(&rt, 0)
 	readback_ok, readback_non_background := native_text_readback_probe(
 		device,

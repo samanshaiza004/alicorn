@@ -20,6 +20,10 @@ The headless runtime has no external dependency beyond Odin's core packages.
 The native probe imports `vendor:sdl3`; its build is intentionally separate so
 CI can run structural tests without a window system or GPU driver.
 
+Project Alicorn is distributed under the zlib License in the repository root
+[`LICENSE`](../LICENSE). Vendored Runa keeps its own license and attribution;
+do not treat the project license as a replacement for third-party notices.
+
 `runtime/text.odin` owns a cloned font byte buffer, parsed Runa font, bounded
 shape cache and GUI-facing layout metrics. `examples/runa_text` is the
 reproducible font/layout/glyph-cache proof. The checked-in native shader bytes

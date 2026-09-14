@@ -246,6 +246,12 @@ native_text_mesh_fingerprint :: proc(display: []alicorn.Display_Command, scale_x
 
 native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []alicorn.Display_Command, scale_x, scale_y: f32) -> bool {
 	fingerprint := native_text_mesh_fingerprint(display, scale_x, scale_y)
+	for command in display {
+		if !native_text_is_text(command.kind) { continue }
+		if node, found := renderer.runtime.nodes[command.node]; found {
+			fingerprint = native_text_hash_mix(fingerprint, node.text_run_generation)
+		}
+	}
 	// Font replacement can preserve every display-command field while changing
 	// the retained run's atlas slots. Include the runtime text generation so a
 	// same-string font swap cannot leave old vertices resident.
@@ -258,14 +264,19 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 		node, found := renderer.runtime.nodes[command.node]
 		if !found || !node.text_run_valid { continue }
 		for glyph in node.text_run.glyphs {
-			if !glyph.drawable { continue }
 			if len(renderer.vertices) + 6 > MAX_TEXT_VERTICES { return false }
-			slot := runa.atlas_slot_view(glyph.slot)
-			x0 := (command.bounds.x + glyph.x + slot.Bearing[0]) * scale_x
-			y0 := (command.bounds.y + glyph.y + slot.Bearing[1]) * scale_y
-			x1 := x0 + f32(slot.Px_Size[0]) * scale_x
-			y1 := y0 + f32(slot.Px_Size[1]) * scale_y
-			u0, v0, u1, v1 := slot.UV_Rect[0], slot.UV_Rect[1], slot.UV_Rect[2], slot.UV_Rect[3]
+			// Text_Run stores logical geometry only. Resolve the physical glyph
+			// resource at the current raster scale so moving a window to a Retina
+			// display does not stretch a low-resolution atlas slot.
+			raster_size := node.text_run.size * scale_y
+			slot, drawable, glyph_ok := alicorn.text_engine_glyph(&renderer.runtime.text_engine, glyph.glyph_id, raster_size)
+			if !glyph_ok || !drawable { continue }
+			slot_view := runa.atlas_slot_view(slot)
+			x0 := (command.bounds.x + glyph.x) * scale_x + slot_view.Bearing[0]
+			y0 := (command.bounds.y + glyph.y) * scale_y + slot_view.Bearing[1]
+			x1 := x0 + f32(slot_view.Px_Size[0])
+			y1 := y0 + f32(slot_view.Px_Size[1])
+			u0, v0, u1, v1 := slot_view.UV_Rect[0], slot_view.UV_Rect[1], slot_view.UV_Rect[2], slot_view.UV_Rect[3]
 			color := [4]f32{command.color.r, command.color.g, command.color.b, command.color.a}
 			first := sdl3.Uint32(len(renderer.vertices))
 			append(&renderer.vertices,
@@ -276,7 +287,7 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 				Native_Text_Vertex{[3]f32{x1, y1, 0}, color, [2]f32{u1, v1}},
 				Native_Text_Vertex{[3]f32{x0, y1, 0}, color, [2]f32{u0, v1}},
 			)
-			append(&renderer.draws, Native_Text_Draw{first, command.node, slot.Page_Index, slot.Is_Color})
+			append(&renderer.draws, Native_Text_Draw{first, command.node, slot_view.Page_Index, slot_view.Is_Color})
 		}
 	}
 	renderer.last_scale_x = scale_x

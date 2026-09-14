@@ -37,7 +37,7 @@ Rules:
    identity uses `transparent_container_begin/end`. The wrapper remains in the
    retained hierarchy for layout, while keyed descendants retain their scope.
 8. A missing node is retired at reconciliation end. Focus fallback is
-   deterministic and defined in `ARCHITECTURE.md`.
+   deterministic and defined in [`architecture.md`](architecture.md).
 
 When a region revision is unchanged, the region root is emitted followed by a
 retained-subtree reuse marker. The marker does not enumerate descendants;

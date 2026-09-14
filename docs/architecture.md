@@ -17,7 +17,7 @@ but its revision controls whether the region body is executed.
 An ID is the FNV-1a hash of the parent identity scope, source site and optional
 explicit key. `key_scope` contributes a scope component without creating a
 widget node. Emitted containers contribute a retained node component and also
-become the retained hierarchy parent. See `IDENTITY.md`.
+become the retained hierarchy parent. See [`identity.md`](identity.md).
 
 Source-site strings remain available for deterministic tests and low-level
 adapters, but public emission calls can omit them. Omitted sites are
@@ -59,15 +59,17 @@ contain `rawptr`, `^T` application pointers or closures. The application must
 copy a text-edit result into its own ordinary state before the next frame.
 
 `Runtime.text_engine` owns cloned font bytes, the parsed Runa font, a shape
-cache, an atlas and a glyph cache. Each retained text node owns one
-platform-neutral `Text_Run`; it is rebuilt only when the node's text/layout
-inputs or the font generation require it. `Text_Run` copies glyph IDs,
-clusters, advances, offsets and atlas slots out of Runa's temporary paragraph
-lines; it never retains Runa's non-owning font pointer. `Glyph_Resource_Key`
-contains font generation, raster size, subpixel bucket, hinting and color-page
-policy. CPU atlas page identity is separate from GPU texture residency. The
-SDL adapter consumes node-owned runs and has no historical run cache of its
-own, so virtualized node retirement also bounds text-product retention.
+cache, CPU atlas residency and a glyph-resource cache. Each retained text node
+owns one platform-neutral `Text_Run`; it is rebuilt only when the node's
+text/layout inputs or the font generation require it. `Text_Run` copies glyph
+IDs, cluster ranges, advances, offsets, line records and caret-relevant
+geometry out of Runa's temporary paragraph lines; it never retains Runa's
+non-owning font pointer or a physical atlas slot. The native adapter resolves
+each logical glyph at the current DPI into a `Glyph_Resource_Key` and a
+physical atlas slot. This keeps logical text geometry separate from rendering
+residency and lets a window change DPI without stretching a low-resolution
+slot. The SDL adapter has no historical run cache of its own, so virtualized
+node retirement also bounds text-product retention.
 
 ## Regions and explicit invalidation
 

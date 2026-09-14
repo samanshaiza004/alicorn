@@ -30,12 +30,41 @@ update_paint :: proc(rt: ^Runtime) {
 			for command in node.paint { if len(command.text) > 0 { delete(command.text) } }
 			clear(&node.paint)
 			display_text := node.label if node.label != "" else node.text
+			if node.kind == .Text_Field && node.text_run_valid {
+				selection := text_run_selection_rects(
+					&node.text_run,
+					Text_Position{node.selection_start, .Leading},
+					Text_Position{node.selection_end, .Trailing},
+				)
+				for selected in selection {
+					bounds := selected.rect
+					bounds.x += node.bounds.x
+					bounds.y += node.bounds.y
+					append(&node.paint, Display_Command{
+						node.id, .Text_Selection, bounds, node.clip, "",
+						Color{0.20, 0.42, 0.78, 0.45},
+					})
+				}
+				delete(selection)
+			}
 			append(&node.paint, Display_Command{node.id, node.kind, node.bounds, node.clip, owned(display_text), node.color})
+			if node.kind == .Text_Field && rt.focused == node.id {
+				caret := text_run_caret_geometry(&node.text_run, Text_Position{node.caret_byte, .Leading})
+				if caret.valid {
+					bounds := caret.rect
+					bounds.x += node.bounds.x
+					bounds.y += node.bounds.y
+					append(&node.paint, Display_Command{
+						node.id, .Text_Caret, bounds, node.clip, "",
+						Color{0.92, 0.95, 1.0, 1.0},
+					})
+				}
+			}
 			rt.stats.paint_updates += 1
 			node.dirty.composite = true
 			record_trace(rt, .Paint, id, node.last_reason)
 		}
-		if !rt.composition_rebuild && node.display_index >= 0 && len(node.paint) > 0 {
+		if !rt.composition_rebuild && node.display_index >= 0 && len(node.paint) == 1 {
 			rt.display[node.display_index] = node.paint[0]
 			rt.stats.composition_nodes_visited += 1
 			rt.stats.composite_updates += 1

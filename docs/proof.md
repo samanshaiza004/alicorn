@@ -187,10 +187,10 @@ baseline, not new cross-platform GPU-text proof from this gate.
 ### Claim: Runa glyphs become retained GPU display data
 
 - Implementation: `Runtime.text_engine` owns cloned font bytes, the parsed Runa
-  font, a generation-keyed glyph cache, a CPU atlas and copied `Text_Run`
-  placements. Each retained text node owns its platform-neutral `Text_Run`;
-  the SDL adapter consumes those products and owns only GPU residency,
-  transfer buffers, a vertex buffer, shader pipeline and sampler.
+  font, a generation-keyed glyph-resource cache, a CPU atlas and copied logical
+  `Text_Run` placements. Each retained text node owns its platform-neutral
+  `Text_Run`; the SDL adapter resolves physical residency and owns the GPU
+  transfer buffers, vertex buffer, shader pipeline and sampler.
 - Test: `test_gpu_text_resource_boundary` verifies key separation and
   generation-safe Runa dirty snapshot/ack behavior. `examples/runa_text`
   verifies a shaped run rasterizes its unique glyphs once and reuses them on a
@@ -229,6 +229,10 @@ baseline, not new cross-platform GPU-text proof from this gate.
 | case | submissions | shape calls | glyph misses | glyph hits | rasterizations | atlas pages | quads | full-page uploads | upload bytes | readback pixels |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | native retained text + 300-frame resize stress | 303 | 2 | 16 | 44 | 16 | 1 | 27 | 2 | 8,388,608 | 969 |
+
+This row is the historical Stage 1 fixture, before Stage 2 made the focused
+field's width constraint part of the retained logical text product. The
+current constraint-driven native result is recorded in the Stage 2 section.
 
 - Result: after the initial base string and one deliberate `Z` mutation in the
   three-frame burst, subsequent unchanged text caused no additional shaping or
@@ -283,6 +287,67 @@ the handles remain alive through shutdown after a device-idle wait; no per-frame
 transfer buffer or atlas texture is created in the 300-frame stress run. The
 native readback additionally creates and fence-retires one offscreen target and
 download buffer. Process-wide GPU allocator telemetry remains uncertain.
+
+## GPU text gate — stage 2: text geometry and editing foundation
+
+### Claim: logical text geometry can be retained independently of physical glyph residency
+
+- Implementation: `Text_Run` now retains copied logical glyph IDs, cluster
+  start/end byte ranges, line records, cumulative line Y positions, advances,
+  offsets, embedding levels, and constraint metadata. It no longer stores a
+  Runa atlas slot. The native SDL adapter resolves each glyph at the current
+  DPI and raster size when it builds the physical mesh.
+- Test: `test_text_geometry` exercises line-local caret coordinates, wrapped
+  hit testing, multi-line selection rectangles, logical grapheme movement, and
+  visual movement. `examples/runa_text` checks real Runa multiline and wrapped
+  runs have increasing cumulative line positions.
+- Result: logical layout survives physical residency changes as a separate
+  retained product. A DPI change can select a new raster resource without
+  changing the retained logical run.
+- Known limitations: physical DPI changes have only been exercised through the
+  native scale boundary; Retina/HiDPI GPU text execution remains unproven on
+  this host, and internal caret placement inside a multi-grapheme ligature is
+  deterministic interpolation rather than font-provided caret data.
+- Verdict: partially proven.
+
+### Claim: text layout can honor parent constraints without re-executing the application description
+
+- Implementation: the layout pass derives an auto-width text constraint from
+  the parent's cross-axis size before measuring the child's main axis. A new
+  width rebuilds only the retained logical text product; unchanged root wakes
+  do not rebuild a valid auto-width run.
+- Test: the Runa example verifies constrained wrapping and cumulative metrics.
+  The native focused-field fixture alternates logical window widths through 300
+  resize iterations while retaining the same field identity and GPU resources.
+- Native result: Windows Direct3D12 completed 303 submissions with 303 fence
+  retirements, 16 glyph rasterizations, 16 glyph-cache misses, 9,344 glyph
+  cache hits, one atlas page, and two full-page uploads. Shape/layout calls are
+  expected to rise when the resize changes the text width constraint; this is
+  not an unchanged-text reuse claim.
+- Known limitations: the flex subset still uses a deliberately small two-pass
+  model. Text in a row with an auto main-axis width does not yet participate in
+  sophisticated shrink negotiation.
+- Verdict: proven for the current constraint model.
+
+### Claim: a retained text field can expose deterministic caret and selection geometry
+
+- Implementation: `text_run_caret_geometry`, `text_run_selection_rects`,
+  `text_run_hit_test`, logical grapheme movement, and line-based visual movement
+  operate on the retained run. Runtime wrappers expose field geometry without
+  retaining an application buffer pointer. Focused fields emit selection and
+  caret display commands in retained paint order; pointer-down maps to the
+  nearest visual boundary.
+- Test: headless geometry tests cover ASCII and wrapped lines; existing editing
+  tests cover UTF-8, combining/extended grapheme deletion, insertion and
+  selection replacement. The native fixture now composes a focused field and
+  reports five display commands, including its caret decoration.
+- Result: the platform-neutral geometry and native decoration seam exists and
+  passes the current deterministic tests.
+- Known limitations: pointer drag selection, clipboard, word movement, full
+  bidi caret affinity, real RTL/ligature geometry fixtures, and SDL committed
+  text input/IME are not implemented. The current visual readback proves
+  glyph coverage, not a golden caret/selection image.
+- Verdict: partially proven.
 
 ## What was falsified or narrowed
 

@@ -11,5 +11,4 @@ Odin memory and does not retain arbitrary application pointers.
 This foundation milestone asks one question: can that model support stable
 identity, granular reuse, bounded virtualization, deterministic input/focus and
 a native compositor boundary without requiring a mandatory reactive state
-model? `PROOF.md` is the authority for the current evidence and verdict.
-
+model? `proof.md` is the authority for the current evidence and verdict.

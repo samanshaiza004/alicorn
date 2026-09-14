@@ -9,7 +9,7 @@
 - retained display products and headless proof tests;
 - SDL3/SDL_GPU boundary smoke and safe headless resource retirement;
 - Runa-backed text loading, grapheme-safe editing, multiline metrics and
-  wrapping;
+  wrapping, logical text runs, caret/selection geometry, and cluster hit testing;
 - inspector, structural tracing, virtualized list and the eight-track Crucible.
 
 ## Scale
@@ -17,9 +17,11 @@
 - logical item-key virtualization and fixed-height retained-work locality are
   now in foundation; variable-height rows,
   fractional scroll anchoring and offscreen selection storage remain here;
-- [GPU text gate](GPU_TEXT_GATE.md): Runa rasterization → persistent alpha
+- [GPU text gate](gpu-text-gate.md): Runa rasterization → persistent alpha
   glyph atlas → SDL_GPU text is implemented and the Windows monochrome path is
-  proven with a fence-signaled offscreen readback; native editing, IME, color
+  proven with a fence-signaled offscreen readback. Text Geometry Stage 2 now
+  separates logical layout from DPI-specific residency and supplies basic
+  caret/selection/hit-testing products; native committed editing, IME, color
   glyphs, broader screenshot proof and one shader-backed custom surface remain
   separately gated;
 - broader native coverage on Windows, macOS and Linux;

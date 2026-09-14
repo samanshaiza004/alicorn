@@ -187,7 +187,8 @@ policy.
 No files under `runtime/` changed; the portability change is confined to
 `native/sdl_gpu/main.odin`. The shell scripts, isolated
 workflow, and report are additive. Likely conflict points with parallel work
-are `README.md`, `native/sdl_gpu/README.md`, and `native/sdl_gpu/main.odin`.
+are the root [`README.md`](../../README.md),
+[`sdl-gpu.md`](sdl-gpu.md), and `native/sdl_gpu/main.odin`.
 Cherry-pick the tooling/CI commit first, the native compositor/platform commit
 second, and documentation last. Do not replace the current Runa-enabled
 runtime or current real retained compositor with the older empty-command

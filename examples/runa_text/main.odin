@@ -33,17 +33,50 @@ main :: proc() {
 		fmt.eprintln("Runa multiline/wrap metrics failed", "one", one_line_height, "multi", multiline_height, "wrapped", wrapped_height)
 		os.exit(1)
 	}
+	multiline_run, multiline_run_ok := alicorn.text_run_build(&engine, "one\ntwo\nthree", 24)
+	wrapped_run, wrapped_run_ok := alicorn.text_run_build(&engine, "one two three four five", 24, 70)
+	if !multiline_run_ok || !wrapped_run_ok || len(multiline_run.lines) < 3 || len(wrapped_run.lines) < 2 {
+		fmt.eprintln("Runa retained line geometry failed")
+		os.exit(1)
+	}
+	if multiline_run.lines[1].y <= multiline_run.lines[0].y || multiline_run.lines[2].y <= multiline_run.lines[1].y {
+		fmt.eprintln("Runa retained line positions failed", multiline_run.lines[0].y, multiline_run.lines[1].y, multiline_run.lines[2].y)
+		os.exit(1)
+	}
+	wrapped_caret := alicorn.text_run_caret_geometry(&wrapped_run, alicorn.Text_Position{len("one two three four five"), .Leading})
+	if !wrapped_caret.valid || wrapped_caret.line_index < 1 {
+		fmt.eprintln("Runa wrapped caret geometry failed")
+		os.exit(1)
+	}
+	alicorn.text_run_destroy(&multiline_run)
+	alicorn.text_run_destroy(&wrapped_run)
 	first_cache_size := alicorn.runa_cache_size(&engine)
 	_, _, _, _ = alicorn.text_layout(&engine, "office — Alicorn", 24)
 	second_cache_size := alicorn.runa_cache_size(&engine)
 	run, run_ok := alicorn.text_run_build(&engine, "office — Alicorn", 24)
-	if !run_ok || len(run.glyphs) == 0 || engine.glyph_rasterizations == 0 {
+	if !run_ok || len(run.glyphs) == 0 || len(run.lines) != 1 {
 		fmt.eprintln("Runa glyph run proof failed")
 		os.exit(1)
 	}
+	// Logical text layout does not own physical atlas slots. Resolve this run
+	// for one display scale explicitly, as the native renderer does.
+	for glyph in run.glyphs {
+		_, _, glyph_ok := alicorn.text_engine_glyph(&engine, glyph.glyph_id, run.size)
+		if !glyph_ok {
+			fmt.eprintln("Runa glyph residency proof failed")
+			os.exit(1)
+		}
+	}
+	caret := alicorn.text_run_caret_geometry(&run, alicorn.Text_Position{len(run.value), .Leading})
+	selection := alicorn.text_run_selection_rects(&run, alicorn.Text_Position{0, .Leading}, alicorn.Text_Position{len(run.value), .Trailing})
+	if !caret.valid || len(selection) != 1 {
+		fmt.eprintln("Runa single-line caret/selection geometry failed")
+		os.exit(1)
+	}
+	delete(selection)
 	rasterizations_before_reuse := engine.glyph_rasterizations
 	reused, reused_ok := alicorn.text_run_build(&engine, "office — Alicorn", 24)
-	if !reused_ok || engine.glyph_rasterizations != rasterizations_before_reuse || engine.glyph_cache_hits == 0 {
+	if !reused_ok || len(reused.lines) != 1 || engine.glyph_rasterizations != rasterizations_before_reuse || engine.glyph_cache_hits == 0 {
 		fmt.eprintln("Runa glyph cache reuse proof failed")
 		os.exit(1)
 	}

@@ -2,12 +2,13 @@
 
 This document is the researched implementation and proof record for Alicorn's
 first GPU-text gate. The alpha-glyph path and its first correctness-closure
-pass are implemented; the later editing, IME and color-glyph stages remain
-explicitly out of scope here.
+pass are complete. Stage 2 now adds the platform-neutral text geometry and
+native caret/selection foundation; IME and color-glyph work remain out of
+scope here.
 
 Research checked against the vendored Runa sources and the current SDL3 wiki
 on 2026-09-14. The gate must use the versions recorded in
-[`DEPENDENCIES.md`](DEPENDENCIES.md) and re-verify them at implementation
+[`dependencies.md`](dependencies.md) and re-verify them at implementation
 time.
 
 ## Gate question
@@ -42,7 +43,8 @@ graphics API.
 The current code already provides useful boundaries:
 
 - `runtime/text.odin` owns cloned font bytes, parsed Runa fonts, a bounded
-  shape cache, GUI-facing layout metrics and grapheme boundary helpers;
+  shape cache, GUI-facing logical text geometry, line records, and grapheme
+  boundary helpers;
 - the native SDL3 path owns command-buffer/render-pass lifetime, ordered
   swapchain composition and deferred retirement, and now draws retained alpha
   glyphs beside rectangles;
@@ -50,7 +52,7 @@ The current code already provides useful boundaries:
   application description execution;
 - the current Runa vendor commit is
   `4dd00c541c374938b192e23dc2efa983748a92ab`, recorded as the 1.3.1 line in
-  [`DEPENDENCIES.md`](DEPENDENCIES.md).
+  [`dependencies.md`](dependencies.md).
 
 Runa's public facade exposes `raster_glyph`, `Atlas`, `Atlas_Slot`, dirty-page
 tracking and `atlas_flush_dirty`. The vendored facade now also exposes narrow
@@ -67,8 +69,8 @@ The two candidate seams were:
 
 The chosen first-stage seam is the narrow accessor path. Do not duplicate the
 rasterizer or expose the entire internal atlas structure as Alicorn's text API.
-The runtime translates Runa output into retained `Text_Run` placements and the
-native adapter translates atlas views into GPU page residency.
+The runtime translates Runa output into retained logical `Text_Run` geometry;
+the native adapter resolves physical atlas residency for the current DPI.
 
 ## Research findings
 
@@ -214,7 +216,8 @@ Font_Handle
 Glyph_Resource_Key = font face + variation state + pixel size + glyph ID
                     + subpixel bucket + raster flags
 Glyph_Slot = atlas page + UV rectangle + pixel size + bearing + color flag
-Glyph_Run = retained placements + cluster map + atlas slot references
+Glyph_Run = retained logical placements + cluster map
+physical slot residency = resolved by the native renderer
 ```
 
 The key must include every parameter that changes raster output. A font handle
@@ -415,7 +418,7 @@ wall time
 
 The native fixture should print the same counters plus GPU submissions, fences,
 pages created/retired and peak in-flight resources. Publish raw values in
-`PROOF.md`; do not convert one machine's timing into a universal threshold.
+`proof.md`; do not convert one machine's timing into a universal threshold.
 
 Reproducible commands should be:
 
@@ -493,12 +496,14 @@ The first stage is implemented in `runtime/text.odin` and
 - Runa page pixels, slot metadata and dirty generations cross a narrow
   accessor boundary; dirty snapshots are acknowledged only after an upload is
   encoded and the SDL command buffer is successfully submitted.
-- Alicorn retains `Glyph_Resource_Key` and `Text_Run` products. The key carries
-  font generation, glyph ID, physical raster size, subpixel bucket, hinting
-  choice and color-page choice. It never contains a GPU pointer.
+- Alicorn retains `Glyph_Resource_Key` residency products and logical
+  `Text_Run` products. The key carries font generation, glyph ID, physical
+  raster size, subpixel bucket, hinting choice and color-page choice. The
+  logical run never contains a GPU pointer or physical atlas slot.
 - The native adapter creates one persistent RGBA GPU texture per Runa page,
-  expands alpha coverage to RGBA during staging, uploads only the dirty
-  rectangle, and keeps a persistent vertex buffer and text pipeline.
+  expands alpha coverage to RGBA during staging, and conservatively rewrites
+  the complete page when SDL texture cycling is required. It keeps a
+  persistent vertex buffer and text pipeline.
 - The shader artifacts are checked-in Odin byte arrays generated from the
   official SDL_ttf `testgputext` artifacts at SDL_ttf main commit
   `65df5b20d7f6497f24cdf78e583205d53e5c96a1`. DXIL, MSL and SPIR-V are selected
@@ -506,7 +511,7 @@ The first stage is implemented in `runtime/text.odin` and
 - The existing rectangle compositor remains in place. Text is an additional
   retained display command identified by `Display_Command.node`.
 
-Windows native smoke output on 2026-09-14 (Odin
+The original Stage 1 Windows native smoke output on 2026-09-14 (Odin
 `dev-2026-09-nightly:a2fb372`, SDL 3.4.14, Direct3D12) recorded:
 
 ```text
@@ -517,12 +522,46 @@ text_rasterizations 15, text_atlas_pages 1, text_quads 26
 ```
 
 This proves that the native command path can execute persistent Runa-backed
-alpha glyph rendering and that unchanged text does not reshape or rerasterize
-on the 300-frame native resize stress. It does not yet prove screenshot-level
-visual correctness, color glyph rendering, caret/selection geometry, IME or
-Linux/Apple native execution for this new text path.
+alpha glyph rendering. The current Stage 2 focused-field fixture separately
+measures constraint-driven logical layout and caret composition below.
 
-At completion, update `PROOF.md` with:
+## Stage 2 implementation result: text geometry and editing foundation
+
+Stage 2 is implemented across `runtime/text.odin`, `runtime/layout.odin`,
+`runtime/input.odin`, `runtime/paint.odin`, and the native SDL adapter.
+
+- `Text_Run` retains logical glyph placement, cluster byte ranges, line records,
+  cumulative line positions, and embedding levels. Physical atlas slots are
+  resolved by the native renderer at the current DPI and raster size.
+- Parent layout supplies an auto-width text constraint before measuring the
+  child's main axis, so wrapping and height are based on actual retained
+  geometry rather than a fixed intrinsic placeholder.
+- The runtime exposes caret geometry, multi-line selection rectangles,
+  visual-boundary hit testing, grapheme-based logical movement, and line-based
+  visual movement. Focused fields emit retained selection/caret display
+  commands without retaining application buffer pointers.
+- The native fixture now renders a focused text field and keeps the existing
+  ordered GPU text/compositor path intact.
+
+Headless tests pass for ASCII/wrapped geometry and grapheme movement. The Runa
+example verifies real multiline and constrained line records. The latest
+Windows native run completed:
+
+```text
+display_commands 5, submissions 303, retired 303, max_frames_in_flight 3
+text_shape_calls 303, glyph_cache_misses 16, glyph_cache_hits 9344
+text_rasterizations 16, atlas_pages 1, text_quads 27
+atlas_full_page_uploads 2, atlas_upload_bytes 8388608
+text_readback_non_background 969
+```
+
+The 303 shape/layout calls are expected because the resize stress alternates
+the field's available width; they are not evidence of unchanged-text reuse.
+Stage 2 does not yet include pointer-drag selection, clipboard, word movement,
+full bidi caret affinity, SDL committed text input, IME, color glyphs, or a
+golden caret/selection screenshot suite.
+
+At completion, update `proof.md` with:
 
 - the exact starting and ending SHAs;
 - the Runa API seam chosen and why;

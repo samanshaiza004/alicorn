@@ -3,7 +3,7 @@ package main
 // Generated from the official SDL_ttf testgputext shader artifacts.
 // Source revision: SDL_ttf main 65df5b20d7f6497f24cdf78e583205d53e5c96a1,
 // retrieved 2026-09-14.
-// The HLSL source and binding layout are documented in GPU_TEXT_GATE.md.
+// The HLSL source and binding layout are documented in ../../docs/gpu-text-gate.md.
 
 GPU_TEXT_VERT_SPV: [1312]u8 = {
 	0x03, 0x02, 0x23, 0x07, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x0e, 0x00, 0x2a, 0x00, 0x00, 0x00,

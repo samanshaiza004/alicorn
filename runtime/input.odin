@@ -61,7 +61,16 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 		}
 		if target != 0 {
 			focus(rt, target)
-			if node, ok := rt.nodes[target]; ok { node.pressed = true }
+			if node, ok := rt.nodes[target]; ok {
+				node.pressed = true
+				if node.kind == .Text_Field && node.text_run_valid {
+					position := text_run_hit_test(&node.text_run, event.x-node.bounds.x, event.y-node.bounds.y)
+					node.caret_byte = position.byte
+					node.selection_start = position.byte
+					node.selection_end = position.byte
+					record_trace(rt, .Focus, target, "pointer assigned text caret at visual boundary")
+				}
+			}
 			rt.captured_node = target
 		}
 		rt.activation_node = 0
@@ -164,4 +173,41 @@ set_text_selection :: proc(rt: ^Runtime, id: Node_ID, start, end: int) -> bool {
 	node.caret_byte = hi
 	invalidate_root(rt, "text selection changed")
 	return true
+}
+
+text_field_caret_geometry :: proc(rt: ^Runtime, id: Node_ID) -> Text_Caret_Geometry {
+	node, ok := rt.nodes[id]
+	if !ok || !node.active || node.kind != .Text_Field || !node.text_run_valid {
+		return Text_Caret_Geometry{}
+	}
+	geometry := text_run_caret_geometry(&node.text_run, Text_Position{node.caret_byte, .Leading})
+	geometry.rect.x += node.bounds.x
+	geometry.rect.y += node.bounds.y
+	return geometry
+}
+
+text_field_hit_test :: proc(rt: ^Runtime, id: Node_ID, x, y: f32) -> Text_Position {
+	node, ok := rt.nodes[id]
+	if !ok || !node.active || node.kind != .Text_Field || !node.text_run_valid {
+		return Text_Position{}
+	}
+	return text_run_hit_test(&node.text_run, x-node.bounds.x, y-node.bounds.y)
+}
+
+text_field_selection_rects :: proc(rt: ^Runtime, id: Node_ID, allocator := context.allocator) -> [dynamic]Text_Selection_Rect {
+	node, ok := rt.nodes[id]
+	if !ok || !node.active || node.kind != .Text_Field || !node.text_run_valid {
+		return make([dynamic]Text_Selection_Rect, 0, 4, allocator)
+	}
+	result := text_run_selection_rects(
+		&node.text_run,
+		Text_Position{node.selection_start, .Leading},
+		Text_Position{node.selection_end, .Trailing},
+		allocator,
+	)
+	for &selection in result {
+		selection.rect.x += node.bounds.x
+		selection.rect.y += node.bounds.y
+	}
+	return result
 }
