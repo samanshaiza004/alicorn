@@ -23,6 +23,11 @@ focus :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 	if previous == id {
 		return true
 	}
+	if previous != 0 {
+		if old, old_ok := rt.nodes[previous]; old_ok && clear_text_composition(old) {
+			invalidate_interaction_paint(rt, previous, "text composition canceled on focus loss")
+		}
+	}
 	rt.focused = id
 	record_trace(rt, .Focus, id, "pointer focus owner assigned")
 	invalidate_interaction_paint(rt, previous, "focus lost")
@@ -82,6 +87,12 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 		if target != 0 {
 			focus(rt, target)
 			if node, ok := rt.nodes[target]; ok {
+				// Pointer placement is an explicit cancellation boundary for a
+				// platform preedit. The next hit test must use committed text
+				// geometry, not the temporary composition projection.
+				if node.kind == .Text_Field && clear_text_composition(node) {
+					invalidate_interaction_paint(rt, node.id, "text composition canceled by pointer")
+				}
 				node.pressed = true
 				invalidate_interaction_paint(rt, node.id, "press began")
 				if node.kind == .Text_Field && node.text_run_valid {
@@ -151,9 +162,15 @@ process_text_edit :: proc(rt: ^Runtime, id: Node_ID, edit: Text_Edit) -> Text_Ch
 	if edit.kind == .Insert && len(edit.text) == 0 && start == end {
 		// Empty insertion still leaves a normalized caret, but does not create
 		// an application-state change.
+		caret_changed := node.caret.byte != start || node.caret.affinity != .Leading ||
+			node.selection_anchor.byte != start || node.selection_focus.byte != start
 		node.caret = Text_Position{start, .Leading}
 		node.selection_anchor = node.caret
 		node.selection_focus = node.caret
+		if caret_changed {
+			invalidate_interaction_paint(rt, node.id, "empty text edit normalized caret")
+			invalidate_root(rt, "empty text edit normalized caret")
+		}
 	} else if start != end || edit.kind == .Insert {
 		old_text := node.text
 		node.text = fmt.aprintf("%s%s%s", old_text[:start], edit.text, old_text[end:])
@@ -210,6 +227,9 @@ text_field_caret_geometry :: proc(rt: ^Runtime, id: Node_ID) -> Text_Caret_Geome
 		return Text_Caret_Geometry{}
 	}
 	geometry := text_run_caret_geometry(&node.text_run, node.caret)
+	if node.composition.active && node.composition_run_valid {
+		geometry = text_run_caret_geometry(&node.composition_run, text_composition_visual_position(node))
+	}
 	geometry.rect.x += node.bounds.x
 	geometry.rect.y += node.bounds.y
 	return geometry

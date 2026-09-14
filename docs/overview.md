@@ -114,8 +114,10 @@ command-buffer, render-pass, resource, and fence lifetimes. Runa provides font
 parsing, shaping, bidi, segmentation, line breaking, and rasterization.
 
 Alicorn keeps its GUI text model separate from Runa's atlas representation.
-The current native path proves retained monochrome glyph rendering; editing,
-IME, and broader platform validation remain later gates.
+The current native path proves retained monochrome glyph rendering and the
+SDL adapter now handles committed Unicode input plus transient preedit
+composition. Real OS IME behavior, candidate placement, color glyphs, and
+broader platform validation remain later gates.
 
 ## What we are betting on
 

@@ -356,6 +356,48 @@ download buffer. Process-wide GPU allocator telemetry remains uncertain.
   coverage, not a golden caret/selection image.
 - Verdict: partially proven.
 
+## GPU text gate — stage 3: committed input and transient IME composition
+
+### Claim: platform text input can be integrated without making preedit application state
+
+- Implementation: `Text_Composition` is owned by the retained text-field node.
+  The native adapter copies SDL `TEXT_EDITING` and `TEXT_INPUT` strings at
+  event processing time. Editing events update a temporary projected
+  `Text_Run`; committed events use the ordinary text-edit path and return an
+  owned `Text_Change` for the application to copy.
+- Test: `test_text_input_composition` covers UTF-8 character-index conversion,
+  preedit non-mutation, repeated updates, reverse selection replacement,
+  empty-preedit cancellation, focus transfer and composing-node retirement.
+  The native SDL fixture pushes one `TEXT_EDITING` event followed by one
+  `TEXT_INPUT` event through SDL's actual event queue and verifies the
+  composition display command, committed application value and cleared state.
+- Result: the runtime and native SDL adapter preserve the distinction between
+  committed text and transient composition. SDL text input starts only while a
+  focused text field owns keyboard focus, the input area follows retained caret
+  geometry, and focus loss/shutdown clears and stops the platform composition.
+- Known limitations: the SDL queue probe is deterministic adapter coverage,
+  not proof that a real Windows/macOS IME emits the expected events. A manual
+  Japanese or Chinese IME run with candidate-window observation is still
+  required. Clipboard, drag selection, rich candidate rendering and full bidi
+  composition selection remain out of scope.
+- Verdict: partially proven; continue to native OS IME validation.
+
+### Stage 3 measurements
+
+| validation | result |
+| --- | --- |
+| headless foundation tests | PASS |
+| native SDL/D3D12 event-queue probe | 1 `TEXT_EDITING`, 1 `TEXT_INPUT` |
+| preedit committed text mutation | none before commit |
+| composition display command | present before commit |
+| commit result | `NATIVE_TEXT_BASE + 世界` |
+| focus-owned SDL lifecycle | start on focused field, caret-area update, clear/stop on shutdown |
+| existing GPU stress | 303 submissions, 303 fence retirements, 3 frames in flight |
+
+The native run remains a Windows Direct3D12 proof. Hosted macOS foundation CI
+continues to compile and run the headless/native baseline, but this gate does
+not claim a Metal IME or GPU-text execution result.
+
 ## What was falsified or narrowed
 
 - The old assumption that skipping a region body implied skipping retained
@@ -382,16 +424,16 @@ short-circuiting remain intact in the current tests.
 ## Known limitations
 
 No automatic domain mutation observation, variable-height virtualization,
-offscreen selection, IME, semantic tree, reactive state graph, color glyph
-policy, or platform-idle telemetry was added. The visual check is a bounded
-offscreen readback rather than a full screenshot corpus, and the native
-compositor remains a conservative per-item rectangle/text path.
+offscreen selection, semantic tree, reactive state graph, color glyph policy,
+real OS IME telemetry, or platform-idle telemetry was added. The visual check
+is a bounded offscreen readback rather than a full screenshot corpus, and the
+native compositor remains a conservative per-item rectangle/text path.
 
 ## Decision
 
 `CONTINUE`
 
-GPU Text Stage 1 is credible enough to proceed to native text geometry. The
-next gate should be caret/selection/hit testing over the runtime-owned
-`Text_Run`, followed by committed SDL text input and IME; color glyphs and
-generalized batching remain out of scope.
+GPU Text Stage 3 is credible enough to proceed to manual/native OS IME
+validation. The runtime now has the intended committed/preedit boundary, but
+the platform proof is deliberately incomplete; the next gate should validate
+real IME event behavior on Windows and macOS before broader editing work.

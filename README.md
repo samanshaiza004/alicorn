@@ -68,8 +68,9 @@ native SDL3/SDL_GPU compositor, and a retained GPU text path with basic text
 geometry.
 
 The current GPU text path is an alpha-glyph proof with platform-neutral caret,
-selection, wrapping, and hit-testing foundations. It is not a finished text
-editor: IME, color glyphs, and broader platform proof are next steps.
+selection, wrapping, and hit-testing foundations. Committed SDL Unicode input
+and transient preedit composition now work through the retained text field;
+real OS IME validation, color glyphs, and broader platform proof remain.
 
 ## Try it
 

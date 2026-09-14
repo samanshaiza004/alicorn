@@ -27,29 +27,66 @@ update_paint :: proc(rt: ^Runtime) {
 		if !node.active { continue }
 		rt.stats.paint_nodes_visited += 1
 		if node.dirty.paint || len(node.paint) == 0 {
+			if node.kind == .Text_Field && node.composition.active {
+				prepare_text_composition_node(rt, node)
+			}
 			for command in node.paint { if len(command.text) > 0 { delete(command.text) } }
 			clear(&node.paint)
 			display_text := node.label if node.label != "" else node.text
-			if node.kind == .Text_Field && node.text_run_valid {
-				selection := text_run_selection_rects(
-					&node.text_run,
-					node.selection_anchor,
-					node.selection_focus,
-				)
-				for selected in selection {
-					bounds := selected.rect
-					bounds.x += node.bounds.x
-					bounds.y += node.bounds.y
-					append(&node.paint, Display_Command{
-						node.id, .Text_Selection, bounds, node.clip, "",
-						Color{0.20, 0.42, 0.78, 0.45},
-					})
-				}
-				delete(selection)
+			display_kind := node.kind
+			if node.kind == .Text_Field && node.composition.active && node.composition_run_valid {
+				// A composition command renders the temporary projection once;
+				// the committed selection is not rendered underneath it.
+				display_text = node.composition_run.value
+				display_kind = .Text_Composition
 			}
-			append(&node.paint, Display_Command{node.id, node.kind, node.bounds, node.clip, owned(display_text), node.color})
+			if node.kind == .Text_Field && node.text_run_valid {
+				if !node.composition.active {
+					selection := text_run_selection_rects(
+						&node.text_run,
+						node.selection_anchor,
+						node.selection_focus,
+					)
+					for selected in selection {
+						bounds := selected.rect
+						bounds.x += node.bounds.x
+						bounds.y += node.bounds.y
+						append(&node.paint, Display_Command{
+							node.id, .Text_Selection, bounds, node.clip, "",
+							Color{0.20, 0.42, 0.78, 0.45},
+						})
+					}
+					delete(selection)
+				} else if node.composition_run_valid {
+					visual_start := text_composition_visual_start(node)
+					preedit_start := visual_start + grapheme_floor_boundary(node.composition.text, node.composition.selection_start)
+					preedit_end := visual_start + grapheme_ceil_boundary(node.composition.text, node.composition.selection_end)
+					if preedit_start == preedit_end {
+						preedit_end = visual_start + len(node.composition.text)
+					}
+					selection := text_run_selection_rects(
+						&node.composition_run,
+						Text_Position{preedit_start, .Leading},
+						Text_Position{preedit_end, .Trailing},
+					)
+					for selected in selection {
+						bounds := selected.rect
+						bounds.x += node.bounds.x
+						bounds.y += node.bounds.y + bounds.h - 2
+						bounds.h = 1
+						append(&node.paint, Display_Command{
+							node.id, .Text_Selection, bounds, node.clip, "",
+							Color{0.70, 0.86, 1.0, 0.95},
+						})
+					}
+					delete(selection)
+				}
+			}
+			append(&node.paint, Display_Command{node.id, display_kind, node.bounds, node.clip, owned(display_text), node.color})
 			if node.kind == .Text_Field && rt.focused == node.id {
-				caret := text_run_caret_geometry(&node.text_run, node.caret)
+				caret := text_field_caret_geometry(rt, node.id)
+				caret.rect.x -= node.bounds.x
+				caret.rect.y -= node.bounds.y
 				if caret.valid {
 					bounds := caret.rect
 					bounds.x += node.bounds.x

@@ -188,7 +188,7 @@ native_text_destroy :: proc(renderer: ^Native_Text_Renderer) {
 }
 
 native_text_is_text :: proc(kind: alicorn.Node_Kind) -> bool {
-	return kind == .Text || kind == .Text_Field
+	return kind == .Text || kind == .Text_Field || kind == .Text_Composition
 }
 
 native_text_hash_mix :: proc(h, value: u64) -> u64 {
@@ -249,7 +249,9 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 	for command in display {
 		if !native_text_is_text(command.kind) { continue }
 		if node, found := renderer.runtime.nodes[command.node]; found {
-			fingerprint = native_text_hash_mix(fingerprint, node.text_run_generation)
+			generation := node.text_run_generation
+			if command.kind == .Text_Composition { generation = node.composition_run_generation }
+			fingerprint = native_text_hash_mix(fingerprint, generation)
 		}
 	}
 	// Font replacement can preserve every display-command field while changing
@@ -262,13 +264,19 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 	for command in display {
 		if !native_text_is_text(command.kind) { continue }
 		node, found := renderer.runtime.nodes[command.node]
-		if !found || !node.text_run_valid { continue }
-		for glyph in node.text_run.glyphs {
+		if !found { continue }
+		run := &node.text_run
+		if command.kind == .Text_Composition {
+			run = &node.composition_run
+		}
+		if !node.text_run_valid && command.kind != .Text_Composition { continue }
+		if command.kind == .Text_Composition && !node.composition_run_valid { continue }
+		for glyph in run.glyphs {
 			if len(renderer.vertices) + 6 > MAX_TEXT_VERTICES { return false }
 			// Text_Run stores logical geometry only. Resolve the physical glyph
 			// resource at the current raster scale so moving a window to a Retina
 			// display does not stretch a low-resolution atlas slot.
-			raster_size := node.text_run.size * scale_y
+			raster_size := run.size * scale_y
 			slot, drawable, glyph_ok := alicorn.text_engine_glyph(&renderer.runtime.text_engine, glyph.glyph_id, raster_size)
 			if !glyph_ok || !drawable { continue }
 			slot_view := runa.atlas_slot_view(slot)

@@ -22,6 +22,8 @@ project record.
 ## Current GPU and platform work
 
 - [GPU text gate](gpu-text-gate.md) — the GPU text implementation and closure record.
+- [Text input and IME](text-input.md) — committed input, transient composition,
+  ownership and the remaining native proof boundary.
 - [SDL3 / SDL_GPU boundary](platform/sdl-gpu.md) — native backend lifetime and composition notes.
 - [macOS validation](platform/macos-validation.md) — Apple Silicon validation history and limits.
 

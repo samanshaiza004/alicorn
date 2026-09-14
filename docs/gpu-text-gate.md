@@ -1,10 +1,10 @@
 # GPU text gate
 
 This document is the researched implementation and proof record for Alicorn's
-first GPU-text gate. The alpha-glyph path and its first correctness-closure
-pass are complete. Stage 2 now adds the platform-neutral text geometry and
-native caret/selection foundation; IME and color-glyph work remain out of
-scope here.
+GPU-text gates. The alpha-glyph path, correctness closure, platform-neutral
+text geometry, native caret/selection foundation, and Stage 3 committed-input
+adapter are implemented. Real OS IME behavior, candidate-window verification,
+and color-glyph work remain separately gated.
 
 Research checked against the vendored Runa sources and the current SDL3 wiki
 on 2026-09-14. The gate must use the versions recorded in
@@ -34,7 +34,8 @@ swapchain
 ```
 
 The gate then extends that path to a real editable field, SDL text input/IME,
-and one shader-backed custom surface. The sequence is intentionally narrow:
+and one shader-backed custom surface. Stage 3 now covers the SDL event seam
+and transient preedit model; the sequence remains intentionally narrow:
 it proves the resource seam before adding editor behavior or a generalized
 graphics API.
 
@@ -565,8 +566,8 @@ text_readback_non_background 969
 
 The 303 shape/layout calls are expected because the resize stress alternates
 the field's available width; they are not evidence of unchanged-text reuse.
-Stage 2 does not yet include pointer-drag selection, clipboard, full bidi
-caret movement/selection behavior, SDL committed text input, IME, color glyphs, or a
+Stage 3 does not yet include pointer-drag selection, clipboard, full bidi
+caret movement/selection behavior, real OS IME observation, color glyphs, or a
 golden caret/selection screenshot suite.
 
 At completion, update `proof.md` with:
@@ -591,8 +592,9 @@ STOP — the required GPU text behavior cannot be achieved without violating
 ordinary Odin state, explicit invalidation or safe retained ownership.
 ```
 
-If the first stage passes, stop and review the evidence before beginning the
-next stage. The recommended order remains:
+The current implementation stops after the SDL event-queue probe and requires
+manual Windows/macOS IME validation before claiming the native platform gate.
+The recommended order remains:
 
 ```text
 Runa raster → GPU glyph atlas → SDL_GPU text

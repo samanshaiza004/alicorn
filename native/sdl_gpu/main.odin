@@ -8,6 +8,7 @@ package main
 import "core:fmt"
 import "core:os"
 import "core:c"
+import "core:strings"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
@@ -110,6 +111,48 @@ validate_pixel_transform :: proc() {
 	}
 }
 
+sync_text_input_focus :: proc(
+	window: ^sdl3.Window,
+	rt: ^alicorn.Runtime,
+	active: ^bool,
+	owner: ^alicorn.Node_ID,
+) {
+	desired := rt.focused
+	if node, ok := rt.nodes[desired]; !ok || !node.active || node.kind != .Text_Field {
+		desired = 0
+	}
+	if desired != owner^ {
+		if active^ {
+			// Clear the platform preedit before changing the Alicorn owner;
+			// otherwise a late platform event could be applied to the wrong
+			// retained field.
+			if !sdl3.ClearComposition(window) { fail("SDL_ClearComposition failed during focus transfer") }
+			if !sdl3.StopTextInput(window) { fail("SDL_StopTextInput failed during focus transfer") }
+			active^ = false
+		}
+		owner^ = 0
+		if desired != 0 {
+			if !sdl3.StartTextInput(window) { fail("SDL_StartTextInput failed for focused text field") }
+			active^ = true
+			owner^ = desired
+		}
+	}
+	if active^ && owner^ != 0 {
+		area, cursor, ok := alicorn.text_field_input_area(rt, owner^)
+		if !ok { return }
+		width := int(area.w)
+		height := int(area.h)
+		if width < 1 { width = 1 }
+		if height < 1 { height = 1 }
+		input_area := sdl3.Rect{
+			x=c.int(area.x), y=c.int(area.y), w=c.int(width), h=c.int(height),
+		}
+		if !sdl3.SetTextInputArea(window, &input_area, c.int(cursor)) {
+			fail("SDL_SetTextInputArea failed for focused text field")
+		}
+	}
+}
+
 pump_events :: proc(
 	window: ^sdl3.Window,
 	rt: ^alicorn.Runtime,
@@ -117,6 +160,7 @@ pump_events :: proc(
 	quit_requested: ^bool,
 	logical_resize_events, pixel_resize_events, scale_events: ^int,
 	text_input_events, composition_events: ^int,
+	app_text: ^string,
 ) {
 	event: sdl3.Event
 	for sdl3.PollEvent(&event) {
@@ -125,6 +169,11 @@ pump_events :: proc(
 		}
 		if pointer, ok := pointer_from_sdl(event); ok {
 			alicorn.process_pointer(rt, pointer)
+		}
+		if event.type == .KEY_DOWN && event.key.down && event.key.key == sdl3.K_ESCAPE {
+			if alicorn.cancel_text_composition(rt, rt.focused, "Escape canceled text composition") {
+				if !sdl3.ClearComposition(window) { fail("SDL_ClearComposition failed for Escape") }
+			}
 		}
 
 		#partial switch event.type {
@@ -149,8 +198,27 @@ pump_events :: proc(
 			alicorn.invalidate_root(rt, "SDL display scale changed")
 		case .TEXT_INPUT:
 			text_input_events^ += 1
+			if event.text.text != nil {
+				change := alicorn.process_text_input(rt, rt.focused, string(event.text.text))
+				if change.changed {
+					if len(app_text^) > 0 { delete(app_text^) }
+					app_text^ = change.text
+					change.text = ""
+				} else if len(change.text) > 0 {
+					delete(change.text)
+				}
+			}
 		case .TEXT_EDITING:
 			composition_events^ += 1
+			if event.edit.text != nil {
+				alicorn.process_text_editing(
+					rt,
+					rt.focused,
+					string(event.edit.text),
+					int(event.edit.start),
+					int(event.edit.length),
+				)
+			}
 		}
 
 		if event.type == .WINDOW_RESIZED ||
@@ -507,19 +575,6 @@ main :: proc() {
 		fail("GPU text offscreen readback found no glyph coverage")
 	}
 
-	// SDL text input is opt-in. The input rectangle is in logical window
-	// coordinates, never physical pixels.
-	input_area := sdl3.Rect{16, 16, 320, 24}
-	if !sdl3.StartTextInput(window) {
-		fail("SDL_StartTextInput failed")
-	}
-	if !sdl3.SetTextInputArea(window, &input_area, 0) {
-		fail("SDL_SetTextInputArea failed")
-	}
-	if !sdl3.TextInputActive(window) {
-		fail("SDL_TextInputActive returned false after SDL_StartTextInput")
-	}
-
 	in_flight := make([dynamic]Native_In_Flight, 0, 3)
 	defer delete(in_flight)
 	quit_requested := false
@@ -528,6 +583,51 @@ main :: proc() {
 	scale_events := 0
 	text_input_events := 0
 	composition_events := 0
+	app_text, app_text_err := strings.clone(NATIVE_TEXT_BASE)
+	if app_text_err != nil { fail("native text state allocation failed") }
+	defer { if len(app_text) > 0 { delete(app_text) } }
+	text_input_active := false
+	text_input_owner: alicorn.Node_ID = 0
+	sync_text_input_focus(window, &rt, &text_input_active, &text_input_owner)
+	if !text_input_active || !sdl3.TextInputActive(window) {
+		fail("focused text field did not activate SDL text input")
+	}
+	// Feed one deterministic pair through SDL's own event queue. This is not
+	// a substitute for manual OS-IME validation, but it proves the native
+	// adapter consumes the real SDL_TEXT_EDITING/TEXT_INPUT union fields,
+	// copies their strings into runtime-owned state, and commits only on the
+	// committed event.
+	preedit_event := sdl3.Event{type=.TEXT_EDITING}
+	preedit_event.edit.text = "かな"
+	preedit_event.edit.start = 1
+	preedit_event.edit.length = 1
+	if !sdl3.PushEvent(&preedit_event) { fail("SDL_PushEvent failed for text-editing probe") }
+	pump_events(
+		window, &rt, &metrics, &quit_requested,
+		&logical_resize_events, &pixel_resize_events, &scale_events,
+		&text_input_events, &composition_events, &app_text,
+	)
+	if rt.nodes[field].text != NATIVE_TEXT_BASE || !rt.nodes[field].composition.active {
+		fail("SDL text-editing probe mutated committed text or failed to retain preedit")
+	}
+	render_native_ui(&rt, 0, app_text)
+	composition_command_found := false
+	for command in rt.display {
+		if command.kind == .Text_Composition { composition_command_found = true; break }
+	}
+	if !composition_command_found { fail("SDL text-editing probe did not produce a composition display command") }
+	commit_event := sdl3.Event{type=.TEXT_INPUT}
+	commit_event.text.text = "世界"
+	if !sdl3.PushEvent(&commit_event) { fail("SDL_PushEvent failed for text-input probe") }
+	pump_events(
+		window, &rt, &metrics, &quit_requested,
+		&logical_resize_events, &pixel_resize_events, &scale_events,
+		&text_input_events, &composition_events, &app_text,
+	)
+	expected_probe_text := fmt.tprintf("%s%s", NATIVE_TEXT_BASE, "世界")
+	if app_text != expected_probe_text || rt.nodes[field].composition.active {
+		fail("SDL text-input probe failed to commit and clear preedit")
+	}
 	submitted := 0
 	retired := 0
 	max_in_flight := 0
@@ -585,6 +685,7 @@ main :: proc() {
 			&scale_events,
 			&text_input_events,
 			&composition_events,
+			&app_text,
 		)
 		if quit_requested {
 			fail("window close requested during validation")
@@ -596,8 +697,17 @@ main :: proc() {
 			print_window_metrics("resize", metrics)
 		}
 
-		text_value := NATIVE_TEXT_BASE if step == -3 else NATIVE_TEXT_MUTATED
+		sync_text_input_focus(window, &rt, &text_input_active, &text_input_owner)
+		// Preserve the fixture's second-frame atlas mutation without replacing
+		// text that a real SDL_TEXT_INPUT event has already committed.
+		if step == -2 && text_input_events == 0 && composition_events == 0 {
+			if len(app_text) > 0 { delete(app_text) }
+			app_text, app_text_err = strings.clone(NATIVE_TEXT_MUTATED)
+			if app_text_err != nil { fail("native text mutation allocation failed") }
+		}
+		text_value := app_text
 		render_native_ui(&rt, u64(step+3), text_value)
+		sync_text_input_focus(window, &rt, &text_input_active, &text_input_owner)
 		command := sdl3.AcquireGPUCommandBuffer(device)
 		if command == nil {
 			fail("SDL_AcquireGPUCommandBuffer failed")
@@ -676,8 +786,11 @@ main :: proc() {
 		retired += 1
 	}
 	clear(&in_flight)
-	if !sdl3.StopTextInput(window) {
-		fail("SDL_StopTextInput failed")
+	if text_input_active {
+		if !sdl3.ClearComposition(window) { fail("SDL_ClearComposition failed during shutdown") }
+		if !sdl3.StopTextInput(window) { fail("SDL_StopTextInput failed") }
+		text_input_active = false
+		text_input_owner = 0
 	}
 	if !sdl3.HideWindow(window) || !sdl3.ShowWindow(window) {
 		fail("SDL hide/show window lifecycle failed")
@@ -707,7 +820,7 @@ main :: proc() {
 		"text_atlas_full_page_uploads", text_renderer.atlas_uploads,
 		"text_atlas_upload_bytes", text_renderer.atlas_upload_bytes,
 		"text_readback_non_background", readback_non_background,
-		"text_input_boundary", "start-set-area-active-stop",
+		"text_input_boundary", "focus-start-caret-area-stop",
 		"pointer_adapter", "logical coordinates unchanged",
 		"logical_to_physical", "compositor boundary only",
 	)

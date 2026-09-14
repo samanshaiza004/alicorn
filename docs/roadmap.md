@@ -21,7 +21,10 @@
   glyph atlas → SDL_GPU text is implemented and the Windows monochrome path is
   proven with a fence-signaled offscreen readback. Text Geometry Stage 2 now
   separates logical layout from DPI-specific residency and supplies basic
-  caret/selection/hit-testing products; native committed editing, IME, color
+  caret/selection/hit-testing products. Stage 3 now has committed SDL text
+  input, transient retained preedit composition, focus-owned text-input
+  activation, dynamic caret-area updates, and a deterministic SDL event-queue
+  smoke test. Real OS IME behavior, candidate-window verification, color
   glyphs, broader screenshot proof and one shader-backed custom surface remain
   separately gated;
 - broader native coverage on Windows, macOS and Linux;

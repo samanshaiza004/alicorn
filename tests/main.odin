@@ -21,6 +21,8 @@ S_REGION_STRESS_SCOPE :: alicorn.Source_Site{"tests/region_stress.odin", 2, 1, "
 S_REGION_STRESS_NODE :: alicorn.Source_Site{"tests/region_stress.odin", 3, 1, "node"}
 S_REGION_STRESS_SIBLING :: alicorn.Source_Site{"tests/region_stress.odin", 4, 1, "sibling"}
 S_REGION_STRESS_NESTED :: alicorn.Source_Site{"tests/region_stress.odin", 5, 1, "nested"}
+S_TEXT_A :: alicorn.Source_Site{"tests/text_input.odin", 1, 1, "field_a"}
+S_TEXT_B :: alicorn.Source_Site{"tests/text_input.odin", 2, 1, "field_b"}
 
 virtual_keys: []string
 
@@ -222,6 +224,30 @@ render_text_field :: proc(rt: ^alicorn.Runtime, value: string) -> alicorn.Node_I
 	if !build { return 0 }
 	alicorn.container_begin(&ui, .Root, S_ROOT, label="text-field-root")
 	id := alicorn.text_field(&ui, value, alicorn.site("tests/edit.odin", 2, 1, "query"))
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return id
+}
+
+render_two_text_fields :: proc(rt: ^alicorn.Runtime) -> (first, second: alicorn.Node_ID) {
+	alicorn.invalidate_root(rt, "test two text fields")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin(&ui, .Root, S_ROOT, label="two-text-fields")
+	first = alicorn.text_field(&ui, "first", S_TEXT_A)
+	second = alicorn.text_field(&ui, "second", S_TEXT_B)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return
+}
+
+render_optional_text_field :: proc(rt: ^alicorn.Runtime, include: bool) -> alicorn.Node_ID {
+	alicorn.invalidate_root(rt, "test optional composition field")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return 0 }
+	alicorn.container_begin(&ui, .Root, S_ROOT, label="optional-text-field")
+	id: alicorn.Node_ID
+	if include { id = alicorn.text_field(&ui, "retained", S_TEXT_A) }
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	return id
@@ -607,6 +633,55 @@ test_unicode_editing :: proc(state: ^Test_State) {
 	alicorn.destroy_runtime(&rt)
 }
 
+test_text_input_composition :: proc(state: ^Test_State) {
+	expect(state, alicorn.utf8_character_index_to_byte_offset("é世😀", 0) == 0, "SDL character index zero maps to byte zero")
+	expect(state, alicorn.utf8_character_index_to_byte_offset("é世😀", 1) == 2, "UTF-8 character index maps past a two-byte code point")
+	expect(state, alicorn.utf8_character_index_to_byte_offset("é世😀", 2) == 5, "UTF-8 character index maps past a three-byte code point")
+	expect(state, alicorn.utf8_character_index_to_byte_offset("é世😀", 3) == 9, "UTF-8 character index maps past a four-byte code point")
+	expect(state, alicorn.utf8_character_index_to_byte_offset("é世😀", 99) == 9, "out-of-range SDL character indexes clamp to the string end")
+
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 200})
+	id := render_text_field(&rt, "hello world")
+	alicorn.set_text_selection(&rt, id, 11, 6)
+	paint_before := rt.stats.paint_updates
+	expect(state, alicorn.process_text_editing(&rt, id, "日本", 0, 2), "TEXT_EDITING must be accepted by a focused text field")
+	expect(state, rt.nodes[id].text == "hello world", "preedit must not mutate committed application text")
+	expect(state, rt.nodes[id].composition.active, "preedit must become retained transient composition state")
+	expect(state, rt.nodes[id].composition.replace_anchor.byte == 11 && rt.nodes[id].composition.replace_focus.byte == 6, "composition must retain the original selection direction")
+	expect(state, rt.nodes[id].composition.selection_start == 0 && rt.nodes[id].composition.selection_end == 6, "SDL character indexes must convert to composition byte offsets")
+	render_text_field(&rt, "hello world")
+	expect(state, rt.stats.paint_updates > paint_before, "preedit updates must repaint the focused field")
+
+	expect(state, alicorn.process_text_editing(&rt, id, "にほ", 1, 1), "composition updates must replace the copied preedit")
+	expect(state, rt.nodes[id].composition.selection_start == 3 && rt.nodes[id].composition.selection_end == 6, "composition cursor selection must track later UTF-8 updates")
+	change := alicorn.process_text_input(&rt, id, "世界")
+	expect(state, change.changed && change.text == "hello 世界", "committed TEXT_INPUT must replace the captured selection exactly once")
+	expect(state, !rt.nodes[id].composition.active, "committed input must clear transient composition state")
+	if len(change.text) > 0 { delete(change.text) }
+	render_text_field(&rt, "hello 世界")
+
+	expect(state, alicorn.process_text_editing(&rt, id, "かな", -1, -1), "composition with unset SDL cursor metadata must be accepted")
+	expect(state, rt.nodes[id].composition.selection_start == len("かな") && rt.nodes[id].composition.selection_end == len("かな"), "unset SDL cursor metadata must place the preedit cursor at its end")
+	expect(state, alicorn.cancel_text_composition(&rt, id, "test explicit composition cancel"), "explicit composition cancellation must clear an active preedit")
+	expect(state, !rt.nodes[id].composition.active && rt.nodes[id].text == "hello 世界", "explicit cancellation must not change committed text")
+	alicorn.process_text_editing(&rt, id, "かな", 0, 2)
+	alicorn.process_text_editing(&rt, id, "", 0, 0)
+	expect(state, !rt.nodes[id].composition.active && rt.nodes[id].text == "hello 世界", "empty TEXT_EDITING must cancel without changing committed text")
+
+	first, second := render_two_text_fields(&rt)
+	alicorn.process_text_editing(&rt, first, "候", 0, 1)
+	expect(state, rt.nodes[first].composition.active, "first field should own its active composition")
+	expect(state, alicorn.focus(&rt, second), "focus transfer to another text field must succeed")
+	expect(state, !rt.nodes[first].composition.active, "focus loss must cancel the old field composition")
+
+	retained := render_optional_text_field(&rt, true)
+	alicorn.process_text_editing(&rt, retained, "消", 0, 1)
+	render_optional_text_field(&rt, false)
+	expect(state, rt.focused == 0, "retiring a composing field must clear keyboard focus")
+	expect(state, len(rt.nodes) == 1, "retiring a composing field must remove its retained node")
+	alicorn.destroy_runtime(&rt)
+}
+
 test_interaction_paint_invalidation :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 200})
 	id := render_text_field(&rt, "caret")
@@ -877,6 +952,7 @@ main :: proc() {
 	test_region_identity_sequences(&state)
 	test_focus_and_editing(&state)
 	test_unicode_editing(&state)
+	test_text_input_composition(&state)
 	test_interaction_paint_invalidation(&state)
 	test_interaction_regressions(&state)
 	test_ergonomic_identity(&state)

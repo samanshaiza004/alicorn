@@ -113,6 +113,30 @@ and bounded to the viewport; row identity follows the callback's logical key,
 not the row's viewport index. Fractional scroll offset and persistent offscreen
 selection storage remain future scale work.
 
+## Committed text input and composition
+
+`Text_Composition` is transient interaction state attached to the focused text
+field. It owns a copied UTF-8 preedit string, the platform's selected range
+converted to byte offsets, and the committed anchor/focus range that the
+composition will replace. `SDL_EVENT_TEXT_EDITING` updates this state and
+invalidates only the field's interaction paint. It never changes `Node.text`.
+
+`SDL_EVENT_TEXT_INPUT` is the commit boundary. The runtime sends the committed
+string through the ordinary insertion/editing path, replacing the captured
+selection once, then clears the composition. The application receives an
+owned `Text_Change` and copies it into its ordinary Odin state before the next
+description. Empty editing text cancels; focus loss, pointer placement and
+node retirement also cancel deterministically.
+
+SDL reports composition selection positions as UTF-8 character indexes, so the
+native adapter passes them through an explicit character-to-byte conversion.
+The retained `Text_Position` model remains byte-based with grapheme-boundary
+normalization and affinity. The native adapter starts text input only while a
+focused text field exists, stops it on focus loss, and updates
+`SDL_SetTextInputArea` from the field bounds and actual retained caret
+geometry. Platform candidate-window behavior remains SDL/OS-owned; Alicorn
+currently renders a simple inline preedit projection and underline.
+
 ## GPU boundary
 
 `runtime.GPU_Backend` is a platform-neutral lifetime model: command buffers

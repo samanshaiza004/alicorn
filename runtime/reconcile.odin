@@ -99,6 +99,9 @@ copy_node_description :: proc(node: ^Node, d: Description) {
 		text_run_destroy(&node.text_run)
 		node.text_run_valid = false
 	}
+	if text_changed || kind_changed || !node_has_text_product(d.kind) {
+		clear_text_composition(node)
+	}
 	replace_site(&node.site, d.site)
 	replace_owned(&node.key, d.key)
 	replace_owned(&node.label, d.label)
@@ -187,6 +190,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	delete(node.paint)
 	delete(node.children)
 	text_run_destroy(&node.text_run)
+	clear_text_composition(node)
 	release_node_strings(node)
 	free(node)
 	rt.stats.nodes_retired += 1
@@ -377,6 +381,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		delete(node.paint)
 		delete(node.children)
 		text_run_destroy(&node.text_run)
+		clear_text_composition(node)
 		release_node_strings(node)
 		free(node)
 	}

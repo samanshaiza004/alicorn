@@ -11,6 +11,7 @@ Node_Kind :: enum {
 	Button,
 	Text,
 	Text_Field,
+	Text_Composition,
 	Text_Selection,
 	Text_Caret,
 	Virtual_List,
@@ -64,6 +65,20 @@ Text_Edit_Kind :: enum { Insert, Backspace, Delete }
 Text_Edit :: struct {
 	kind: Text_Edit_Kind,
 	text: string,
+}
+
+// Text_Composition is transient interaction state owned by one retained text
+// field. Its text is an owned copy of the platform preedit string and is never
+// silently written into the application's committed value. The replacement
+// positions are captured when composition begins so repeated platform updates
+// continue to edit the same committed selection until a commit arrives.
+Text_Composition :: struct {
+	active:          bool,
+	text:            string,
+	selection_start: int,
+	selection_end:   int,
+	replace_anchor:  Text_Position,
+	replace_focus:   Text_Position,
 }
 
 Text_Change :: struct {
@@ -158,6 +173,10 @@ Node :: struct {
 	text_run:  Text_Run,
 	text_run_valid: bool,
 	text_run_generation: u64,
+	composition: Text_Composition,
+	composition_run: Text_Run,
+	composition_run_valid: bool,
+	composition_run_generation: u64,
 	paint:       [dynamic]Display_Command,
 	display_index: int,
 	paint_queued: bool,
