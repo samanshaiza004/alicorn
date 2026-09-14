@@ -62,9 +62,10 @@ The native proof fixture also handles non-composition Backspace, Delete, and
 logical Left/Right movement from SDL key events. While a preedit is active,
 those keys are left for the IME rather than mutating committed text.
 
-On Windows, run `out\alicorn_sdl_gpu.exe --manual-ime` from a normal GUI
-session for a hands-on check. Manual mode keeps the window alive, redraws only
-after an invalidation, and logs raw `KEY_DOWN`, `TEXT_EDITING`, and
+On Windows, run `.\tools\native_sdl_gpu.ps1 -ManualIme` from a normal GUI
+session for a hands-on check. The runner bundles `SDL3.dll` and passes the
+manual-mode switch to the fixture. Manual mode keeps the window alive, redraws
+only after an invalidation, and logs raw `KEY_DOWN`, `TEXT_EDITING`, and
 `TEXT_INPUT` events. It is a diagnostic aid, not a substitute for a recorded
 real-IME test result.
 

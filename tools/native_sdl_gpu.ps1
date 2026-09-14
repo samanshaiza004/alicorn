@@ -1,5 +1,6 @@
 param(
-    [string]$Odin = $env:ALICORN_ODIN
+    [string]$Odin = $env:ALICORN_ODIN,
+    [switch]$ManualIme
 )
 
 $ErrorActionPreference = 'Stop'
@@ -45,5 +46,7 @@ git lfs pull
 }
 
 Copy-Item -LiteralPath $sdl_dll -Destination 'out\SDL3.dll' -Force
-& .\out\alicorn_sdl_gpu.exe
+$arguments = @()
+if ($ManualIme) { $arguments += '--manual-ime' }
+& .\out\alicorn_sdl_gpu.exe @arguments
 exit $LASTEXITCODE
