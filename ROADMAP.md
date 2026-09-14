@@ -17,9 +17,10 @@
 - logical item-key virtualization and fixed-height retained-work locality are
   now in foundation; variable-height rows,
   fractional scroll anchoring and offscreen selection storage remain here;
-- [GPU text gate](GPU_TEXT_GATE.md): Runa rasterization, persistent glyph atlas,
-  SDL_GPU text display, native editing, IME and one shader-backed custom
-  surface, each gated by executable evidence;
+- [GPU text gate](GPU_TEXT_GATE.md): the first Runa rasterization → persistent
+  alpha glyph atlas → SDL_GPU text stage is implemented and partially proven;
+  native editing, IME, color glyphs, screenshot proof and one shader-backed
+  custom surface remain separately gated;
 - broader native coverage on Windows, macOS and Linux;
 - accessibility integration through a separate semantic adapter.
 

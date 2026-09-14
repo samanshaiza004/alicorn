@@ -12,8 +12,9 @@ The verification environment used for this foundation snapshot is:
   reproducible opt-in builds, but Alicorn does not enable it by default.
   Enabling it requires retaining the upstream CC-BY-SA attribution and
   share-alike obligations. The adapter uses `font_load`, `layout_paragraph`,
-  `line_destroy` and `cache_make/cache_size/cache_destroy`; the GUI does not
-  expose Runa's atlas representation.
+  `line_destroy` and `cache_make/cache_size/cache_destroy`. Alicorn uses the
+  narrow atlas page/slot/dirty snapshot accessors added for the GPU-text gate;
+  it does not depend on Runa's packing internals.
 
 The headless runtime has no external dependency beyond Odin's core packages.
 The native probe imports `vendor:sdl3`; its build is intentionally separate so
@@ -21,5 +22,7 @@ CI can run structural tests without a window system or GPU driver.
 
 `runtime/text.odin` owns a cloned font byte buffer, parsed Runa font, bounded
 shape cache and GUI-facing layout metrics. `examples/runa_text` is the
-reproducible font/layout/cache proof. Do not make Runa's atlas representation
-the GUI text abstraction.
+reproducible font/layout/glyph-cache proof. The checked-in native shader bytes
+come from SDL_ttf `testgputext` at commit
+`65df5b20d7f6497f24cdf78e583205d53e5c96a1`; runtime shader compilation is not
+required. Do not make Runa's atlas representation the GUI text abstraction.

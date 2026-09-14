@@ -58,6 +58,13 @@ grapheme boundaries. They do not
 contain `rawptr`, `^T` application pointers or closures. The application must
 copy a text-edit result into its own ordinary state before the next frame.
 
+`Text_Engine` also owns cloned font bytes, the parsed Runa font, a shape cache,
+an atlas and a glyph cache. `Text_Run` copies glyph IDs, clusters, advances,
+offsets and atlas slots out of Runa's temporary paragraph lines; it never
+retains Runa's non-owning font pointer. `Glyph_Resource_Key` contains font
+generation, raster size, subpixel bucket, hinting and color-page policy. CPU
+atlas page identity is separate from GPU texture residency.
+
 ## Regions and explicit invalidation
 
 `region(key, revision)` is an explicit trust boundary. If the same retained
@@ -94,5 +101,10 @@ selection storage remain future scale work.
 `runtime.GPU_Backend` is a platform-neutral lifetime model: command buffers
 cannot be used after submit, and submitted resource references retire only after
 an observed fence. `native/sdl_gpu` documents the SDL3 mapping. The native
-rectangle compositor has been run on the verification Windows host; glyph
-atlas rendering and cross-platform driver coverage remain unverified.
+adapter now keeps one GPU texture per Runa atlas page, stages dirty regions
+through cycling SDL transfer buffers, and draws retained alpha glyph quads in a
+separate load-preserving render pass. Dirty-page acknowledgement happens only
+after command submission; atlas/vertex resources are released after the final
+device-idle wait. The shader artifacts are checked-in DXIL, MSL and SPIR-V
+outputs derived from SDL_ttf's GPU-text example. The native rectangle path and
+three-frame fence retirement remain unchanged around this text pass.

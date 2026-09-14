@@ -236,12 +236,16 @@ The current foundation has executable evidence for:
   metrics;
 - retained rectangle display data and a native SDL3/SDL_GPU compositor with
   three frames in flight and deferred resource retirement;
+- a first real Runa-to-SDL_GPU alpha glyph path: retained glyph runs, a
+  generation-keyed CPU glyph cache, persistent atlas textures, dirty-region
+  transfer uploads and a portable shader pipeline selected per SDL backend;
 - a bounded structural trace and an inspector-facing runtime state model;
 - an eight-track Crucible and headless tests that exercise the above together.
 
-The native compositor is still rectangle based. GPU glyph rendering, a real
-native editable text field, IME behavior, Linux native validation, process-wide
-idle wakeup telemetry and the semantic/causal layers are not yet proven.
+The GPU text path is an early alpha-glyph proof, not a finished text system:
+color-glyph rendering, screenshot comparison, caret/selection geometry, real
+native editing, IME behavior, Linux native validation, process-wide idle
+wakeup telemetry and the semantic/causal layers are not yet proven.
 
 ## Benchmark evidence
 
@@ -259,6 +263,14 @@ than the wall-clock values; the full table and methodology are in
 | 10k-descendant region reused | 13,200 ns | 3 / 3 | 1 | 1 | 1 | 10,003 |
 | full keyed reorder | 12,724,000 ns | 10,001 / 10,001 | 10,000 | 1 | 10,001 | 10,001 |
 
+The first GPU-text smoke run is a separate native measurement, because its
+wall time includes window/swapchain stress rather than a headless text-only
+loop:
+
+| case | submissions | shape calls | run misses/hits | glyph misses/hits | rasterizations | atlas pages | quads |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Windows D3D12, 303 submissions / 300 resizes | 303 | 1 | 1 / 603 | 15 / 14 | 15 | 1 | 26 |
+
 The evidence supports a narrower claim than “everything is incremental”: true
 idle is constant with respect to the retained tree, and explicit region
 changes are local in description/reconciliation. Flat root wakes and global
@@ -266,18 +278,18 @@ structural reorders remain more expensive by design.
 
 ## Next gate
 
-The next gate is GPU text, in this order:
+The first Runa raster → persistent atlas → SDL_GPU alpha text stage is now
+implemented and partially proven. The next gate is a genuinely usable native
+editable field:
 
-1. Runa rasterization → persistent GPU glyph atlas → SDL_GPU text display.
-2. A native editable field with caret geometry, selection rectangles, mouse
+1. caret geometry, selection rectangles, mouse
    hit testing, visual/logical movement and clipboard.
-3. SDL text input and IME composition.
-4. One shader-backed custom surface beside ordinary retained UI.
+2. SDL text input and IME composition.
+3. One shader-backed custom surface beside ordinary retained UI.
 
-It will pass only if unchanged text avoids shaping, rasterization and uploads;
-existing glyphs are reused; new glyphs upload only the missing atlas data; and
-the text path does not rebuild unrelated UI. The complete research and proof
-plan is [`GPU_TEXT_GATE.md`](GPU_TEXT_GATE.md).
+The completed stage is documented in [`GPU_TEXT_GATE.md`](GPU_TEXT_GATE.md) and
+[`PROOF.md`](PROOF.md). Screenshot/readback validation, color glyphs, native
+caret/selection and non-Windows execution remain open evidence.
 
 ## Build and test
 

@@ -1,8 +1,8 @@
 # GPU text gate
 
-This document is the researched implementation and proof plan for Alicorn's
-next foundation gate. It is deliberately a plan, not a claim that GPU glyph
-rendering is already implemented.
+This document is the researched implementation and proof record for Alicorn's
+first GPU-text gate. The alpha-glyph path is implemented; the later editing,
+IME and color-glyph stages remain explicitly out of scope here.
 
 Research checked against the vendored Runa sources and the current SDL3 wiki
 on 2026-09-14. The gate must use the versions recorded in
@@ -408,7 +408,7 @@ Reproducible commands should be:
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/check.ps1
 powershell -ExecutionPolicy Bypass -File tools/bench.ps1
-ALICORN_NATIVE_GPU=1 powershell -ExecutionPolicy Bypass -File tools/native_sdl_gpu.ps1
+powershell -ExecutionPolicy Bypass -File tools/native_sdl_gpu.ps1
 ```
 
 If the last command does not exist yet, add the smallest platform-specific
@@ -470,6 +470,43 @@ Rejected because editing is an interaction capability of a retained node, not
 an excuse to move application state into a second ownership model.
 
 ## Gate review and decision
+
+## Stage 1 implementation result
+
+The first stage is implemented in `runtime/text.odin` and
+`native/sdl_gpu/text.odin`.
+
+- Runa page pixels, slot metadata and dirty generations cross a narrow
+  accessor boundary; dirty snapshots are acknowledged only after an upload is
+  encoded and the SDL command buffer is successfully submitted.
+- Alicorn retains `Glyph_Resource_Key` and `Text_Run` products. The key carries
+  font generation, glyph ID, physical raster size, subpixel bucket, hinting
+  choice and color-page choice. It never contains a GPU pointer.
+- The native adapter creates one persistent RGBA GPU texture per Runa page,
+  expands alpha coverage to RGBA during staging, uploads only the dirty
+  rectangle, and keeps a persistent vertex buffer and text pipeline.
+- The shader artifacts are checked-in Odin byte arrays generated from the
+  official SDL_ttf `testgputext` artifacts at SDL_ttf main commit
+  `65df5b20d7f6497f24cdf78e583205d53e5c96a1`. DXIL, MSL and SPIR-V are selected
+  from `SDL_GetGPUShaderFormats`; runtime shader compilation is not used.
+- The existing rectangle compositor remains in place. Text is an additional
+  retained display command identified by `Display_Command.node`.
+
+Windows native smoke output on 2026-09-14 (Odin
+`dev-2026-09-nightly:a2fb372`, SDL 3.4.14, Direct3D12) recorded:
+
+```text
+submissions 303, retired 303, max_frames_in_flight 3
+text_shape_calls 1, text_run_cache_misses 1, text_run_cache_hits 603
+text_glyph_cache_misses 15, text_glyph_cache_hits 14
+text_rasterizations 15, text_atlas_pages 1, text_quads 26
+```
+
+This proves that the native command path can execute persistent Runa-backed
+alpha glyph rendering and that unchanged text does not reshape or rerasterize
+on the 300-frame native resize stress. It does not yet prove screenshot-level
+visual correctness, color glyph rendering, caret/selection geometry, IME or
+Linux/Apple native execution for this new text path.
 
 At completion, update `PROOF.md` with:
 

@@ -7,11 +7,14 @@ following lifecycle to the SDL3 vendor package:
 2. claim the window for an SDL_GPU device and configure three frames in flight;
 3. acquire a command buffer and swapchain texture for the retained display list;
 4. convert logical display-command bounds to physical swapchain pixels;
-5. render each retained command as a solid-color rectangle using a 1x1
-   offscreen GPU texture and `SDL_BlitGPUTexture`;
-6. associate the temporary texture with the submission fence and release it only
+5. render retained rectangles with the existing 1x1 offscreen texture and
+   `SDL_BlitGPUTexture`;
+6. render retained Runa glyph runs through a persistent RGBA GPU atlas,
+   staged dirty-region uploads, a persistent vertex buffer and an SDL_GPU
+   text pipeline;
+7. associate the temporary texture with the submission fence and release it only
    after a blocking fence wait confirms completion;
-7. release the command buffer/pass/window/device in SDL's required order.
+8. release the command buffer/pass/window/device in SDL's required order.
 
 `Window_Metrics` keeps logical window size, physical drawable size, pixel
 density, and display scale distinct. Layout, pointer events, and the SDL text
@@ -39,9 +42,10 @@ commands, so the blocking wait—not the query result—is used for known-oldest
 resource retirement. The anomaly is reported rather than treated as proof of
 post-wait query correctness.
 
-The compositor is still rectangle-based: shader pipelines, glyph-atlas upload,
-and visual screenshot comparison are not claimed. Build and run it from a
-normal macOS GUI login session with:
+The text path currently proves monochrome alpha glyphs and keeps color glyph
+pages distinct at the CPU identity boundary; the native fixture does not yet
+claim screenshot comparison, caret/selection geometry, IME, or a production
+font fallback policy. Build and run it from a normal GUI login session with:
 
 ```sh
 ALICORN_ODIN=/path/to/odin ./tools/native_sdl_gpu.sh

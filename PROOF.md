@@ -182,6 +182,76 @@ not redesigned; it must be rerun with the host's SDL3 DLL path after runtime
 changes. Existing Windows and Apple Silicon macOS validation remains the
 platform baseline, not new cross-platform proof from this gate.
 
+## GPU text gate — stage 1
+
+### Claim: Runa glyphs can become retained GPU display data
+
+- Implementation: `runtime/text.odin` owns cloned font bytes, the parsed Runa
+  font, a generation-keyed glyph cache, a CPU atlas and copied `Text_Run`
+  placements. `native/sdl_gpu/text.odin` owns persistent atlas textures,
+  staging transfer buffers, a vertex buffer, shader pipeline and sampler.
+- Test: `test_gpu_text_resource_boundary` verifies key separation and
+  generation-safe Runa dirty snapshot/ack behavior. `examples/runa_text`
+  verifies a shaped run rasterizes its unique glyphs once and reuses them on a
+  second run.
+- Native validation: the Windows SDL3/SDL_GPU fixture ran 303 submissions with
+  three frames in flight and no SDL error. The actual text render pass issued
+  26 glyph quads from one persistent atlas page.
+- Result: the Runa-to-SDL_GPU path executes with real shader, copy-pass,
+  render-pass, atlas texture and fence-backed compositor resources.
+- Known limitations: no screenshot/readback assertion, no color-glyph shader
+  policy, no caret/selection geometry, no IME, and the new text path has only
+  been executed on the validated Windows Direct3D12 host in this gate.
+- Verdict: partially proven.
+
+### Claim: unchanged native text avoids shaping and rasterization
+
+- Implementation: native text runs are cached by retained `Display_Command.node`
+  and raster scale; Runa glyph slots are cached by font generation, glyph ID,
+  raster size, subpixel bucket, hint mode and color-page policy.
+- Benchmark command:
+
+  ```powershell
+  $odin='C:\Users\saman\Documents\odin\dist\odin.exe'
+  & $odin build native\sdl_gpu -out:out\alicorn_sdl_gpu.exe
+  $env:PATH='C:\Users\saman\Documents\odin\dist\vendor\sdl3;'+$env:PATH
+  & .\out\alicorn_sdl_gpu.exe
+  ```
+
+- Environment: Windows host, Odin `dev-2026-09-nightly:a2fb372`, SDL 3.4.14,
+  Direct3D12, 2026-09-14. The fixture also performs 300 resize iterations.
+
+| case | submissions | shape calls | run misses | run hits | glyph misses | glyph hits | rasterizations | atlas pages | quads |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| native retained text + 300-frame resize stress | 303 | 1 | 1 | 603 | 15 | 14 | 15 | 1 | 26 |
+
+- Result: after the first frame, unchanged text caused no additional shaping or
+  glyph rasterization. This is a cache/reuse proof, not a screenshot proof.
+- Verdict: proven for the measured retained native fixture.
+
+### Claim: atlas dirty uploads are retry-safe
+
+- Implementation: Runa now exposes immutable page/slot views plus
+  `atlas_dirty_snapshot` and generation-checked `atlas_dirty_ack`. The native
+  adapter acknowledges dirty pages only after SDL command submission.
+- Test: the headless boundary test writes a second glyph after the first dirty
+  snapshot and verifies that acknowledging the first generation leaves the
+  second write pending.
+- Result: a failed or superseded upload cannot silently clear a later page
+  mutation.
+- Verdict: proven at the CPU adapter boundary; native transfer failure
+  injection remains future work.
+
+### GPU text allocation observations
+
+The native adapter creates one atlas transfer buffer, one vertex transfer
+buffer and one persistent vertex buffer. Atlas pages are created only when a
+new Runa page appears. SDL transfer buffers are mapped with `cycle=true`, and
+the handles remain alive through shutdown after a device-idle wait; no per-frame
+transfer buffer or atlas texture is created in the 300-frame stress run. The
+current fixture does not yet print byte-level GPU allocator telemetry, so
+process-wide GPU memory plateau behavior remains uncertain.
+
 ## What was falsified or narrowed
 
 - The old assumption that skipping a region body implied skipping retained
@@ -206,9 +276,10 @@ short-circuiting remain intact in the current tests.
 ## Known limitations
 
 No automatic domain mutation observation, variable-height virtualization,
-offscreen selection, GPU glyph atlas, IME, semantic tree, reactive state graph,
-or platform-idle telemetry was added. The native compositor remains rectangle
-based and its structural composition path is conservative.
+offscreen selection, IME, semantic tree, reactive state graph, GPU screenshot
+comparison, color glyph policy, or platform-idle telemetry was added. The
+native compositor still has a conservative rectangle composition path around
+the new alpha-text pass.
 
 ## Decision
 
