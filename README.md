@@ -184,8 +184,9 @@ SDL objects to application code.
 Runa supplies the text machinery that would be unreasonable to recreate inside
 the GUI runtime: shaping, bidi, segmentation, line breaking, font parsing and
 rasterization. The Alicorn text layer keeps its own font policy, layout and
-editing abstractions separate from Runa's atlas representation. The next gate
-is the first real Runa-to-SDL_GPU glyph path; see
+editing abstractions separate from Runa's atlas representation. The first
+Runa-to-SDL_GPU alpha glyph path now exists; its next gate is native text
+geometry and editing. See
 [`GPU_TEXT_GATE.md`](GPU_TEXT_GATE.md).
 
 ## What we are betting on
@@ -236,15 +237,16 @@ The current foundation has executable evidence for:
   metrics;
 - retained rectangle display data and a native SDL3/SDL_GPU compositor with
   three frames in flight and deferred resource retirement;
-- a first real Runa-to-SDL_GPU alpha glyph path: retained glyph runs, a
-  generation-keyed CPU glyph cache, persistent atlas textures, dirty-region
-  transfer uploads and a portable shader pipeline selected per SDL backend;
+- a first real Runa-to-SDL_GPU alpha glyph path: runtime-owned retained glyph
+  runs, a generation-keyed CPU glyph cache, persistent atlas textures,
+  conservative full-page-on-cycle uploads, ordered/scissored text passes and
+  a portable shader pipeline selected per SDL backend;
 - a bounded structural trace and an inspector-facing runtime state model;
 - an eight-track Crucible and headless tests that exercise the above together.
 
 The GPU text path is an early alpha-glyph proof, not a finished text system:
-color-glyph rendering, screenshot comparison, caret/selection geometry, real
-native editing, IME behavior, Linux native validation, process-wide idle
+color-glyph rendering, broad screenshot comparison, caret/selection geometry,
+real native editing, IME behavior, Linux native validation, process-wide idle
 wakeup telemetry and the semantic/causal layers are not yet proven.
 
 ## Benchmark evidence
@@ -257,7 +259,7 @@ than the wall-clock values; the full table and methodology are in
 | case | wall time | description/reconcile | retained-region reuse | paint | composition | retained nodes |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | true idle, 10k tree, 10k attempted frames | 18,400 ns total | 0 | 0 | 0 | 0 | 10,001 |
-| 10k root wake, unchanged | 10,614,500 ns | 10,001 / 10,001 | 0 | 0 | 0 | 10,001 |
+| 10k root wake, unchanged | 12,772,400 ns | 10,001 / 10,001 | 0 | 0 | 0 | 10,001 |
 | regional tree, unchanged root wake | 144,700 ns | 102 / 102 | 100 | 0 | 0 | 10,102 |
 | one 100-node region changed | 294,100 ns | 202 / 202 | 99 | 101 | 101 | 10,102 |
 | 10k-descendant region reused | 13,200 ns | 3 / 3 | 1 | 1 | 1 | 10,003 |

@@ -1,8 +1,9 @@
 # GPU text gate
 
 This document is the researched implementation and proof record for Alicorn's
-first GPU-text gate. The alpha-glyph path is implemented; the later editing,
-IME and color-glyph stages remain explicitly out of scope here.
+first GPU-text gate. The alpha-glyph path and its first correctness-closure
+pass are implemented; the later editing, IME and color-glyph stages remain
+explicitly out of scope here.
 
 Research checked against the vendored Runa sources and the current SDL3 wiki
 on 2026-09-14. The gate must use the versions recorded in
@@ -42,8 +43,9 @@ The current code already provides useful boundaries:
 
 - `runtime/text.odin` owns cloned font bytes, parsed Runa fonts, a bounded
   shape cache, GUI-facing layout metrics and grapheme boundary helpers;
-- the native SDL3 path owns command-buffer/render-pass lifetime, swapchain
-  composition and deferred retirement, but currently draws retained rectangles;
+- the native SDL3 path owns command-buffer/render-pass lifetime, ordered
+  swapchain composition and deferred retirement, and now draws retained alpha
+  glyphs beside rectangles;
 - the retained runtime can preserve paint/display products independently of
   application description execution;
 - the current Runa vendor commit is
@@ -51,10 +53,11 @@ The current code already provides useful boundaries:
   [`DEPENDENCIES.md`](DEPENDENCIES.md).
 
 Runa's public facade exposes `raster_glyph`, `Atlas`, `Atlas_Slot`, dirty-page
-tracking and `atlas_flush_dirty`. The current vendored atlas implementation
-stores page pixels, page format and slot fields in package-private fields,
-however. Alicorn must not reach into those private fields by accident. Before
-GPU integration, choose one of these narrow seams:
+tracking and `atlas_flush_dirty`. The vendored facade now also exposes narrow
+read-only page/slot views plus generation-aware dirty snapshot/ack accessors;
+Alicorn does not reach into package-private atlas fields.
+
+The two candidate seams were:
 
 1. Preferred: add Runa facade accessors returning an immutable page/slot view
    and dirty-page pixel span, preserving Runa's atlas ownership and allowing
@@ -62,9 +65,10 @@ GPU integration, choose one of these narrow seams:
 2. Alternative: add a Runa API that rasterizes into an Alicorn-provided
    bitmap/slot sink, keeping the GUI independent of the Runa atlas allocator.
 
-Do not duplicate the rasterizer or expose the entire internal atlas structure
-as Alicorn's text API. The adapter should translate Runa output into
-Alicorn-owned `Glyph_Atlas_Page`, `Glyph_Slot` and `Glyph_Run` data.
+The chosen first-stage seam is the narrow accessor path. Do not duplicate the
+rasterizer or expose the entire internal atlas structure as Alicorn's text API.
+The runtime translates Runa output into retained `Text_Run` placements and the
+native adapter translates atlas views into GPU page residency.
 
 ## Research findings
 
@@ -234,9 +238,7 @@ upload for a page. A later device recreation, page replacement or cache policy
 can then invalidate GPU residency without changing the logical glyph resource
 identity. A Runa page number must never be treated as an `SDL_GPUTexture *`.
 
-### 1. Runa rasterization to a persistent GPU atlas
-
-Implement this first and stop for a proof review before adding IME.
+### 1. Runa rasterization to a persistent GPU atlas — implemented
 
 1. Add the narrow Runa page/slot view seam described above.
 2. Create an Alicorn glyph cache keyed by `Glyph_Resource_Key`.
@@ -245,12 +247,12 @@ Implement this first and stop for a proof review before adding IME.
 4. Create persistent SDL_GPU atlas textures per page. Do not recreate them per
    frame. Page dimensions are fixed for the first gate; use page growth rather
    than eviction so lifetime behavior is easy to prove.
-5. Stage uploads as three proofs: (A) upload a persistent page and draw one
-   glyph correctly, (B) upload only the dirty rectangle, and (C) batch multiple
-   dirty rectangles/pages where measurement justifies it. Do not make batching
-   a prerequisite for the first visible-glyph proof. Account for backend
-   alignment and measure whether SDL inserts an internal copy for a tightly
-   packed dirty rectangle.
+5. Stage uploads through a cycling transfer buffer. The first native policy
+   deliberately uploads the complete 1024×1024 page on every dirty write:
+   SDL's texture-cycling rule makes a partial destination upload unsafe because
+   the rest of the cycled texture is undefined. Dirty rectangles remain useful
+   invalidation metadata; partial-page bandwidth optimization is deferred until
+   a non-cycling or complete-copy policy is proven.
 6. After unmapping, do not access the mapped transfer pointer. Choose staging
    lifetime explicitly: retain the SDL handle behind the existing fence, or
    release it after encoding and rely on SDL's safe-release/cycling semantics.
@@ -258,17 +260,29 @@ Implement this first and stop for a proof review before adding IME.
    retention is not mandatory. Keep atlas textures alive while any retained
    glyph display command may reference them. Replace or retire pages only
    through the existing deferred-retirement mechanism.
-7. Add a minimal glyph vertex format containing destination position, UV,
-   color and page/type selection. Retained text paint stores glyph placements
-   and page references; composition binds the atlas texture and samples it in a
-   shader pipeline.
+7. The retained runtime owns a minimal glyph placement product. The native
+   adapter builds a mesh whose fingerprint includes ordered node identity, text,
+   color, bounds, clip and DPI scale.
 8. Preserve the existing rectangle compositor and custom-surface seam. Text is
-   an additional retained display command, not a replacement platform layer.
+   rendered at its display-list position in a load-preserving pass with a
+   per-command scissor. An offscreen fence-signaled download checks coverage in
+   the expected bounds.
 
 The first monochrome pipeline should use alpha coverage multiplied by the
 requested text color. RGBA color glyphs can be admitted only after the alpha
 path's proof is green; they should use a distinct atlas page type and shader
 sampling rule.
+
+Stage 1 closure result on Windows Direct3D12 (Odin
+`dev-2026-09-nightly:a2fb372`, SDL 3.4.14, 2026-09-14): one retained runtime
+`Text_Run`, 16 unique glyph rasterizations across a deliberate base→`Z`
+mutation, two conservative full-page atlas uploads, 27 glyph quads, and 969
+readback pixels differing from the clear color inside the expected text
+bounds. The native stress completed 303 submissions with three frames in
+flight and 303 fence retirements. The first burst changes the text after the
+first submission, exercising atlas mutation while the old submission may still
+be in flight; the fixture does not yet compare the old target pixel-by-pixel
+after the second upload.
 
 ### 2. Native editable field
 
@@ -340,7 +354,7 @@ rebuild.
 | unchanged text, repeated frames | no new shaping, rasterization, atlas upload or text paint |
 | changed color/position, same text | no rasterization/upload; only the necessary paint/composition work |
 | changed text using existing glyphs | shape/layout as required; glyph cache hits; zero new raster/upload for existing glyphs |
-| one new glyph | one glyph miss/raster result and one affected dirty upload, subject to page creation |
+| one new glyph | one glyph miss/raster result and one full-page upload under the conservative cycling policy |
 | same text, changed font size | shape/layout as required; new size-specific glyph keys miss; old slots remain valid until policy retirement |
 | same text, changed variable-font axis | shape/layout and glyph keys change with the variation generation; no stale pixels from the prior instance |
 | repeated new glyphs in one frame | raster misses equal unique resource keys; uploads are bounded by dirty pages/rectangles |

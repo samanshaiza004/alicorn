@@ -130,21 +130,21 @@ is used. Counters are per-row deltas unless noted.
 | case | wall ns | emit | reuse | region skip | subtree reuse | reconcile | layout | paint visit | compose visit | adjacency | alloc | alloc bytes | created | retired | retained |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | true idle, 10k tree, 10k frames | 18,400 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 10,001 |
-| 100 initial | 545,600 | 101 | 0 | 0 | 0 | 101 | 101 | 101 | 101 | 1 | 1,081 | 247,071 | 101 | 0 | 101 |
-| 100 root wake unchanged | 134,100 | 101 | 101 | 0 | 0 | 101 | 1 | 0 | 0 | 0 | 123 | 23,252 | 0 | 0 | 101 |
-| 1,000 initial | 2,730,100 | 1,001 | 0 | 0 | 0 | 1,001 | 1,001 | 1,001 | 1,001 | 1 | 10,114 | 2,166,075 | 1,001 | 0 | 1,001 |
-| 1,000 root wake unchanged | 1,048,400 | 1,001 | 1,001 | 0 | 0 | 1,001 | 1 | 0 | 0 | 0 | 1,032 | 176,412 | 0 | 0 | 1,001 |
-| 10,000 initial | 27,943,300 | 10,001 | 0 | 0 | 0 | 10,001 | 10,001 | 10,001 | 10,001 | 1 | 100,153 | 25,389,779 | 10,001 | 0 | 10,001 |
-| 10,000 root wake unchanged | 10,614,500 | 10,001 | 10,001 | 0 | 0 | 10,001 | 1 | 0 | 0 | 0 | 10,042 | 1,559,788 | 0 | 0 | 10,001 |
-| 10,000 root wake one value | 10,333,300 | 10,001 | 10,000 | 0 | 0 | 10,001 | 1 | 1 | 1 | 0 | 10,046 | 1,559,863 | 0 | 0 | 10,001 |
-| 10,000 full keyed reorder | 12,724,000 | 10,001 | 10,000 | 0 | 0 | 10,001 | 1 | 1 | 10,001 | 1 | 10,046 | 1,559,883 | 0 | 0 | 10,001 |
-| regional, unchanged root wake | 144,700 | 102 | 102 | 100 | 100 | 102 | 1 | 0 | 0 | 0 | 125 | 23,598 | 0 | 0 | 10,102 |
-| regional, one 100-node region changed | 294,100 | 202 | 101 | 99 | 99 | 202 | 1 | 101 | 101 | 0 | 640 | 53,643 | 0 | 0 | 10,102 |
-| large 10k region reused | 13,200 | 3 | 2 | 1 | 1 | 3 | 1 | 1 | 1 | 0 | 16 | 1,688 | 0 | 0 | 10,003 |
+| 100 initial | 322,400 | 101 | 0 | 0 | 0 | 101 | 101 | 101 | 101 | 1 | 1,081 | 282,919 | 101 | 0 | 101 |
+| 100 root wake unchanged | 114,800 | 101 | 101 | 0 | 0 | 101 | 1 | 0 | 0 | 0 | 123 | 23,252 | 0 | 0 | 101 |
+| 1,000 initial | 3,096,200 | 1,001 | 0 | 0 | 0 | 1,001 | 1,001 | 1,001 | 1,001 | 1 | 10,114 | 2,511,331 | 1,001 | 0 | 1,001 |
+| 1,000 root wake unchanged | 1,108,400 | 1,001 | 1,001 | 0 | 0 | 1,001 | 1 | 0 | 0 | 0 | 1,032 | 176,412 | 0 | 0 | 1,001 |
+| 10,000 initial | 35,701,800 | 10,001 | 0 | 0 | 0 | 10,001 | 10,001 | 10,001 | 10,001 | 1 | 100,153 | 29,136,315 | 10,001 | 0 | 10,001 |
+| 10,000 root wake unchanged | 12,772,400 | 10,001 | 10,001 | 0 | 0 | 10,001 | 1 | 0 | 0 | 0 | 10,042 | 1,559,788 | 0 | 0 | 10,001 |
+| 10,000 root wake one value | 12,873,500 | 10,001 | 10,000 | 0 | 0 | 10,001 | 1 | 1 | 1 | 0 | 10,046 | 1,559,863 | 0 | 0 | 10,001 |
+| 10,000 full keyed reorder | 14,643,100 | 10,001 | 10,000 | 0 | 0 | 10,001 | 1 | 1 | 10,001 | 1 | 10,046 | 1,559,883 | 0 | 0 | 10,001 |
+| regional, unchanged root wake | 197,100 | 102 | 102 | 100 | 100 | 102 | 1 | 0 | 0 | 0 | 225 | 29,098 | 0 | 0 | 10,102 |
+| regional, one 100-node region changed | 353,200 | 202 | 101 | 99 | 99 | 202 | 1 | 101 | 101 | 0 | 739 | 59,088 | 0 | 0 | 10,102 |
+| large 10k region reused | 30,400 | 3 | 2 | 1 | 1 | 3 | 1 | 1 | 1 | 0 | 17 | 1,743 | 0 | 0 | 10,003 |
 
-The regional initial build was `30,818,400 ns`, with 10,102 emitted,
+The regional initial build was `38,975,700 ns`, with 10,102 emitted,
 reconciled, laid-out and painted nodes. The large-region initial build was
-`32,224,400 ns`, with 10,003 retained nodes. The exact raw output is produced
+`37,004,200 ns`, with 10,003 retained nodes. The exact raw output is produced
 by the benchmark executable; one-shot timings are illustrative, while the
 visit-count locality is the primary evidence.
 
@@ -152,10 +152,10 @@ Structural churn on 10,000 keyed children measured swap, move-last-to-first,
 reverse, 1% replacement, and 1,000 reorder-every-frame iterations. Reorders
 created/retired zero nodes; each structural reorder rebuilt retained order and
 the flat display composition. The 1% replacement created and retired 100 nodes.
-Raw rows from this run were: swap `11,887,600 ns`, 10,001 reconciliation
+Raw rows from this run were: swap `15,248,100 ns`, 10,001 reconciliation
 visits, 10,001 composition visits, 1 adjacency rebuild; move
-`12,075,900 ns` with the same counts; reverse `11,886,700 ns` with the same
-counts; and 1% replacement `16,780,600 ns`, 10,001 reconciliation visits,
+`15,534,900 ns` with the same counts; reverse `14,557,500 ns` with the same
+counts; and 1% replacement `20,994,400 ns`, 10,001 reconciliation visits,
 9,998 paint visits, 100 created and 100 retired. The 1,000-frame reorder loop
 performed 1,000 adjacency rebuilds, 10,001,000 reconciliation visits, zero
 creation/retirement, and retained 10,001 nodes. The benchmark prints all raw
@@ -164,9 +164,9 @@ counters and allocator requests.
 Typed-key comparison from the same run:
 
 ```text
-formatted_string_10k: 32,751,600 ns, 120,153 allocations, 25,508,687 bytes
-typed_u64_10k:       27,950,500 ns, 100,153 allocations, 25,389,779 bytes
-difference:           4,801,100 ns, 20,000 allocations, 118,908 bytes
+formatted_string_10k: 41,177,500 ns, 120,153 allocations, 29,255,223 bytes
+typed_u64_10k:       34,449,900 ns, 100,153 allocations, 29,136,315 bytes
+difference:           6,727,600 ns, 20,000 allocations, 118,908 bytes
 ```
 
 The formatted path is a diagnostic comparison, not a claim that all of the
@@ -177,38 +177,43 @@ difference is string allocation.
 `tools/check.ps1` builds and runs the foundation tests, benchmark executable,
 identity torture executable, Crucible, and Runa text example. The headless
 foundation tests pass after this gate. The fixed-height million-row benchmark
-retains 23 nodes after 100 scroll frames (latest elapsed `6,512,000 ns`). The native SDL3/SDL_GPU fixture was
-not redesigned; it must be rerun with the host's SDL3 DLL path after runtime
-changes. Existing Windows and Apple Silicon macOS validation remains the
-platform baseline, not new cross-platform proof from this gate.
+retains 23 nodes after 100 scroll frames (latest elapsed `6,732,800 ns`). The
+native SDL3/SDL_GPU fixture was rerun after this closure on Windows
+Direct3D12; existing Apple Silicon macOS validation remains the platform
+baseline, not new cross-platform GPU-text proof from this gate.
 
 ## GPU text gate — stage 1
 
-### Claim: Runa glyphs can become retained GPU display data
+### Claim: Runa glyphs become retained GPU display data
 
-- Implementation: `runtime/text.odin` owns cloned font bytes, the parsed Runa
+- Implementation: `Runtime.text_engine` owns cloned font bytes, the parsed Runa
   font, a generation-keyed glyph cache, a CPU atlas and copied `Text_Run`
-  placements. `native/sdl_gpu/text.odin` owns persistent atlas textures,
-  staging transfer buffers, a vertex buffer, shader pipeline and sampler.
+  placements. Each retained text node owns its platform-neutral `Text_Run`;
+  the SDL adapter consumes those products and owns only GPU residency,
+  transfer buffers, a vertex buffer, shader pipeline and sampler.
 - Test: `test_gpu_text_resource_boundary` verifies key separation and
   generation-safe Runa dirty snapshot/ack behavior. `examples/runa_text`
   verifies a shaped run rasterizes its unique glyphs once and reuses them on a
   second run.
 - Native validation: the Windows SDL3/SDL_GPU fixture ran 303 submissions with
-  three frames in flight and no SDL error. The actual text render pass issued
-  26 glyph quads from one persistent atlas page.
+  three frames in flight and no SDL error. The text path issued 26 glyph quads
+  from one persistent atlas page and the offscreen readback found 969 pixels
+  differing from the clear color inside the expected text bounds.
 - Result: the Runa-to-SDL_GPU path executes with real shader, copy-pass,
-  render-pass, atlas texture and fence-backed compositor resources.
-- Known limitations: no screenshot/readback assertion, no color-glyph shader
-  policy, no caret/selection geometry, no IME, and the new text path has only
-  been executed on the validated Windows Direct3D12 host in this gate.
-- Verdict: partially proven.
+  render-pass, atlas texture, ordered display composition and fence-backed
+  compositor resources.
+- Known limitations: no color-glyph shader policy, no caret/selection
+  geometry, no IME, and this native visual proof is currently Windows
+  Direct3D12-only.
+- Verdict: proven for the measured monochrome native path.
 
 ### Claim: unchanged native text avoids shaping and rasterization
 
-- Implementation: native text runs are cached by retained `Display_Command.node`
-  and raster scale; Runa glyph slots are cached by font generation, glyph ID,
-  raster size, subpixel bucket, hint mode and color-page policy.
+- Implementation: node-owned `Text_Run` products are rebuilt only for dirty
+  text nodes or a changed font generation. Glyph slots are cached by font
+  generation, glyph ID, raster size, subpixel bucket, hint mode and color-page
+  policy. The SDL adapter has no historical run cache, so virtualized node
+  retirement bounds text-product retention.
 - Benchmark command:
 
   ```powershell
@@ -221,26 +226,53 @@ platform baseline, not new cross-platform proof from this gate.
 - Environment: Windows host, Odin `dev-2026-09-nightly:a2fb372`, SDL 3.4.14,
   Direct3D12, 2026-09-14. The fixture also performs 300 resize iterations.
 
-| case | submissions | shape calls | run misses | run hits | glyph misses | glyph hits | rasterizations | atlas pages | quads |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| native retained text + 300-frame resize stress | 303 | 1 | 1 | 603 | 15 | 14 | 15 | 1 | 26 |
+| case | submissions | shape calls | glyph misses | glyph hits | rasterizations | atlas pages | quads | full-page uploads | upload bytes | readback pixels |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| native retained text + 300-frame resize stress | 303 | 2 | 16 | 44 | 16 | 1 | 27 | 2 | 8,388,608 | 969 |
 
-- Result: after the first frame, unchanged text caused no additional shaping or
-  glyph rasterization. This is a cache/reuse proof, not a screenshot proof.
+- Result: after the initial base string and one deliberate `Z` mutation in the
+  three-frame burst, subsequent unchanged text caused no additional shaping or
+  glyph rasterization. The runtime-owned run is reused through the complete
+  resize stress; the mesh fingerprint is rechecked but does not rebuild for an
+  unchanged display.
 - Verdict: proven for the measured retained native fixture.
 
-### Claim: atlas dirty uploads are retry-safe
+### Claim: atlas updates preserve old glyph pixels when textures are cycled
 
-- Implementation: Runa now exposes immutable page/slot views plus
-  `atlas_dirty_snapshot` and generation-checked `atlas_dirty_ack`. The native
-  adapter acknowledges dirty pages only after SDL command submission.
+- Implementation: every dirty atlas write uses a cycling transfer buffer but
+  rewrites the complete page before cycling the destination texture. This
+  avoids SDL's rule that the rest of a cycled texture is undefined until
+  rewritten.
 - Test: the headless boundary test writes a second glyph after the first dirty
   snapshot and verifies that acknowledging the first generation leaves the
-  second write pending.
-- Result: a failed or superseded upload cannot silently clear a later page
-  mutation.
-- Verdict: proven at the CPU adapter boundary; native transfer failure
-  injection remains future work.
+  later write pending. The native readback uses a fence-signaled download from
+  the rendered target.
+- Result: partial dirty rectangles are retained as invalidation metadata, but
+  the native upload policy is a conservative 1024×1024×4-byte page upload. The
+  initial three-frame native burst changes the text after its first submission,
+  producing two full-page uploads and one additional glyph rasterization before
+  the burst is drained. The stress run completed without atlas corruption or
+  resource-use failures.
+- Known limitation: the native fixture does not inspect the first in-flight
+  target after the second upload; it proves the submitted sequence and safe
+  retirement, not a full pixel-by-pixel old/new atlas comparison.
+- Verdict: proven for the selected full-page policy and exercised mutation
+  sequence; visual preservation under every backend remains partial.
+
+### Claim: mesh and compositor state do not retain stale text
+
+- Implementation: the mesh fingerprint includes ordered display index, node ID,
+  text, color, bounds, clip and DPI scale. Text is emitted at its display-list
+  position, not in a final global text pass. Each text pass uses a load
+  operation and a per-command scissor. Destination blits do not cycle the
+  retained target, so later display items cannot erase earlier text.
+- Test: native offscreen readback checks the text region after interleaved
+  rectangle/text/rectangle composition. The fingerprint changes on the source
+  fields listed above, including removal and reorder by construction.
+- Result: the native fixture reports nonzero glyph coverage after ordered
+  composition and no stale adapter-side run entries exist after node removal.
+- Verdict: proven for the exercised ordered monochrome fixture; broad visual
+  screenshot tolerance tests remain future work.
 
 ### GPU text allocation observations
 
@@ -249,8 +281,8 @@ buffer and one persistent vertex buffer. Atlas pages are created only when a
 new Runa page appears. SDL transfer buffers are mapped with `cycle=true`, and
 the handles remain alive through shutdown after a device-idle wait; no per-frame
 transfer buffer or atlas texture is created in the 300-frame stress run. The
-current fixture does not yet print byte-level GPU allocator telemetry, so
-process-wide GPU memory plateau behavior remains uncertain.
+native readback additionally creates and fence-retires one offscreen target and
+download buffer. Process-wide GPU allocator telemetry remains uncertain.
 
 ## What was falsified or narrowed
 
@@ -261,7 +293,9 @@ process-wide GPU memory plateau behavior remains uncertain.
   named `root_invalidated_unchanged`.
 - A full flat root wake remains proportional to the flat description size; the
   explicit-region contract is required for locality.
-- Global flat composition is still necessary for structural order changes.
+- Global flat composition is still necessary for structural order changes;
+  text now preserves ordering within that list, but the renderer is not yet a
+  batched retained display graph.
 - Total process allocator bytes and native OS wakeups are not proven here.
 
 ## What was proven
@@ -276,15 +310,16 @@ short-circuiting remain intact in the current tests.
 ## Known limitations
 
 No automatic domain mutation observation, variable-height virtualization,
-offscreen selection, IME, semantic tree, reactive state graph, GPU screenshot
-comparison, color glyph policy, or platform-idle telemetry was added. The
-native compositor still has a conservative rectangle composition path around
-the new alpha-text pass.
+offscreen selection, IME, semantic tree, reactive state graph, color glyph
+policy, or platform-idle telemetry was added. The visual check is a bounded
+offscreen readback rather than a full screenshot corpus, and the native
+compositor remains a conservative per-item rectangle/text path.
 
 ## Decision
 
 `CONTINUE`
 
-Retained work avoidance scales with changed explicit regions closely enough to
-proceed to the real GPU text pipeline. The next task should begin with Runa
-raster-to-glyph-atlas integration and must not silently broaden this gate.
+GPU Text Stage 1 is credible enough to proceed to native text geometry. The
+next gate should be caret/selection/hit testing over the runtime-owned
+`Text_Run`, followed by committed SDL text input and IME; color glyphs and
+generalized batching remain out of scope.

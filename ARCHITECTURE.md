@@ -58,12 +58,16 @@ grapheme boundaries. They do not
 contain `rawptr`, `^T` application pointers or closures. The application must
 copy a text-edit result into its own ordinary state before the next frame.
 
-`Text_Engine` also owns cloned font bytes, the parsed Runa font, a shape cache,
-an atlas and a glyph cache. `Text_Run` copies glyph IDs, clusters, advances,
-offsets and atlas slots out of Runa's temporary paragraph lines; it never
-retains Runa's non-owning font pointer. `Glyph_Resource_Key` contains font
-generation, raster size, subpixel bucket, hinting and color-page policy. CPU
-atlas page identity is separate from GPU texture residency.
+`Runtime.text_engine` owns cloned font bytes, the parsed Runa font, a shape
+cache, an atlas and a glyph cache. Each retained text node owns one
+platform-neutral `Text_Run`; it is rebuilt only when the node's text/layout
+inputs or the font generation require it. `Text_Run` copies glyph IDs,
+clusters, advances, offsets and atlas slots out of Runa's temporary paragraph
+lines; it never retains Runa's non-owning font pointer. `Glyph_Resource_Key`
+contains font generation, raster size, subpixel bucket, hinting and color-page
+policy. CPU atlas page identity is separate from GPU texture residency. The
+SDL adapter consumes node-owned runs and has no historical run cache of its
+own, so virtualized node retirement also bounds text-product retention.
 
 ## Regions and explicit invalidation
 
@@ -101,10 +105,15 @@ selection storage remain future scale work.
 `runtime.GPU_Backend` is a platform-neutral lifetime model: command buffers
 cannot be used after submit, and submitted resource references retire only after
 an observed fence. `native/sdl_gpu` documents the SDL3 mapping. The native
-adapter now keeps one GPU texture per Runa atlas page, stages dirty regions
-through cycling SDL transfer buffers, and draws retained alpha glyph quads in a
-separate load-preserving render pass. Dirty-page acknowledgement happens only
-after command submission; atlas/vertex resources are released after the final
+adapter keeps one GPU texture per Runa atlas page and rewrites a complete page
+when cycling a texture; this is conservative but preserves old glyph pixels
+when new glyphs arrive. SDL transfer buffers are cycled for staging, while
+dirty-page acknowledgement happens only after command submission. Text meshes
+are rebuilt from an ordered display fingerprint that includes node identity,
+text, color, bounds, clip, ordering and DPI scale, so removal/reorder/color
+changes cannot leave stale vertices. Text is rendered at its display-list
+position in a load-preserving pass with a per-command scissor, preserving basic
+z-order and clipping. Atlas/vertex resources are released after the final
 device-idle wait. The shader artifacts are checked-in DXIL, MSL and SPIR-V
-outputs derived from SDL_ttf's GPU-text example. The native rectangle path and
-three-frame fence retirement remain unchanged around this text pass.
+outputs derived from SDL_ttf's GPU-text example. A native offscreen download
+probe verifies glyph coverage in the expected bounds.
