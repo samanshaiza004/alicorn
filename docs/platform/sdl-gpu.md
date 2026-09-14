@@ -57,8 +57,16 @@ post-wait query correctness.
 
 The text path currently proves monochrome alpha glyphs and keeps color glyph
 pages distinct at the CPU identity boundary; caret/selection geometry, IME and
-a production font fallback policy remain future gates. Build and run it from a
-normal GUI login session with:
+a production font fallback policy remain future gates. Build and run it from
+a normal GUI login session. On Windows, use the self-contained runner:
+
+```powershell
+.\tools\native_sdl_gpu.ps1
+```
+
+It copies the Odin distribution's `vendor\sdl3\SDL3.dll` beside the output
+executable, so the native fixture does not depend on a manually configured DLL
+search path. On macOS or Linux, use:
 
 ```sh
 ALICORN_ODIN=/path/to/odin ./tools/native_sdl_gpu.sh

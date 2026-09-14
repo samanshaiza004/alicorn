@@ -17,8 +17,33 @@ New-Item -ItemType Directory -Force -Path 'out' | Out-Null
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # The Odin SDK vendor directory carries the SDL3 DLL used by this fixture.
-$odin_dist = Split-Path -Parent $Odin
-$sdl_dir = Join-Path $odin_dist 'vendor\sdl3'
-if (Test-Path -LiteralPath $sdl_dir) { $env:PATH = "$sdl_dir;$env:PATH" }
+$odin_root = Split-Path -Parent $Odin
+$sdl_dll = Join-Path $odin_root 'vendor\sdl3\SDL3.dll'
+if (-not (Test-Path -LiteralPath $sdl_dll -PathType Leaf)) {
+    throw @"
+SDL3.dll was not found.
+
+Expected:
+$sdl_dll
+
+Use an Odin distribution containing vendor/sdl3,
+or run git lfs pull in your Odin checkout.
+"@
+}
+
+$sdl_info = Get-Item -LiteralPath $sdl_dll
+if ($sdl_info.Length -lt 100000) {
+    throw @"
+SDL3.dll appears invalid or is a Git LFS pointer:
+$sdl_dll
+Size: $($sdl_info.Length) bytes
+
+Run:
+git lfs install
+git lfs pull
+"@
+}
+
+Copy-Item -LiteralPath $sdl_dll -Destination 'out\SDL3.dll' -Force
 & .\out\alicorn_sdl_gpu.exe
 exit $LASTEXITCODE

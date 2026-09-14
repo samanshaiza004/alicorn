@@ -217,11 +217,13 @@ baseline, not new cross-platform GPU-text proof from this gate.
 - Benchmark command:
 
   ```powershell
-  $odin='C:\Users\saman\Documents\odin\dist\odin.exe'
-  & $odin build native\sdl_gpu -out:out\alicorn_sdl_gpu.exe
-  $env:PATH='C:\Users\saman\Documents\odin\dist\vendor\sdl3;'+$env:PATH
-  & .\out\alicorn_sdl_gpu.exe
+  .\tools\native_sdl_gpu.ps1
   ```
+
+  The Windows runner resolves Odin, validates the Odin distribution's
+  `vendor\sdl3\SDL3.dll`, copies it beside the executable as
+  `out\SDL3.dll`, and then launches the fixture. No SDL DLL `PATH` setup is
+  required.
 
 - Environment: Windows host, Odin `dev-2026-09-nightly:a2fb372`, SDL 3.4.14,
   Direct3D12, 2026-09-14. The fixture also performs 300 resize iterations.
