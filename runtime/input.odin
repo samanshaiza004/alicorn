@@ -56,22 +56,28 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 			invalidate_root(rt, "hover target changed")
 		}
 	} else if event.kind == .Down {
+		if rt.captured_node != 0 {
+			if old, ok := rt.nodes[rt.captured_node]; ok { old.pressed = false }
+		}
 		if target != 0 {
 			focus(rt, target)
-			if rt.pressed_node != 0 {
-				if old, ok := rt.nodes[rt.pressed_node]; ok { old.pressed = false }
-			}
 			if node, ok := rt.nodes[target]; ok { node.pressed = true }
-			rt.pressed_node = target
-			rt.activation_sequence += 1
-			rt.activation_node = target
+			rt.captured_node = target
 		}
+		rt.activation_node = 0
 		record_trace(rt, .Pointer, target, "pointer down hit retained node")
 		invalidate_root(rt, "pointer down")
 	} else if event.kind == .Up {
-		if rt.pressed_node != 0 {
-			if node, ok := rt.nodes[rt.pressed_node]; ok { node.pressed = false }
-			rt.pressed_node = 0
+		captured := rt.captured_node
+		if captured != 0 {
+			if node, ok := rt.nodes[captured]; ok { node.pressed = false }
+			rt.captured_node = 0
+		}
+		if captured != 0 && captured == target {
+			rt.activation_sequence += 1
+			rt.activation_node = captured
+		} else {
+			rt.activation_node = 0
 		}
 		record_trace(rt, .Pointer, target, "pointer up hit retained node")
 		invalidate_root(rt, "pointer up")
@@ -88,25 +94,40 @@ process_text_edit :: proc(rt: ^Runtime, id: Node_ID, edit: Text_Edit) -> Text_Ch
 	if !focus(rt, id) {
 		return change
 	}
-	if edit.kind == .Insert {
+	start := node.selection_start
+	end := node.selection_end
+	if start > end { start, end = end, start }
+	start = grapheme_floor_boundary(node.text, start)
+	end = grapheme_ceil_boundary(node.text, end)
+	if start == end {
+		caret := grapheme_floor_boundary(node.text, node.caret_byte)
+		switch edit.kind {
+		case .Insert:
+			start, end = caret, caret
+		case .Backspace:
+			if caret > 0 {
+				start, end = grapheme_floor_boundary(node.text, caret-1), caret
+			}
+		case .Delete:
+			if caret < len(node.text) {
+				start, end = caret, grapheme_ceil_boundary(node.text, caret+1)
+			}
+		}
+	}
+	if edit.kind == .Insert && len(edit.text) == 0 && start == end {
+		// Empty insertion still leaves a normalized caret, but does not create
+		// an application-state change.
+		node.caret_byte = start
+		node.selection_start = start
+		node.selection_end = start
+	} else if start != end || edit.kind == .Insert {
 		old_text := node.text
-		node.text = fmt.aprintf("%s%s", node.text, edit.text)
+		node.text = fmt.aprintf("%s%s%s", old_text[:start], edit.text, old_text[end:])
 		if len(old_text) > 0 { delete(old_text) }
-		change.changed = len(edit.text) > 0
-	} else if edit.kind == .Backspace {
-		if len(node.text) > 0 {
-			old_text := node.text
-			node.text = owned(node.text[:len(node.text)-1])
-			if len(old_text) > 0 { delete(old_text) }
-			change.changed = true
-		}
-	} else if edit.kind == .Delete {
-		if len(node.text) > 0 {
-			old_text := node.text
-			node.text = owned(node.text[1:])
-			if len(old_text) > 0 { delete(old_text) }
-			change.changed = true
-		}
+		node.caret_byte = start + len(edit.text)
+		node.selection_start = node.caret_byte
+		node.selection_end = node.caret_byte
+		change.changed = start != end || len(edit.text) > 0
 	}
 	change.text = owned(node.text)
 	if change.changed {
@@ -114,4 +135,33 @@ process_text_edit :: proc(rt: ^Runtime, id: Node_ID, edit: Text_Edit) -> Text_Ch
 		invalidate_root(rt, "text edit")
 	}
 	return change
+}
+
+// set_text_caret and set_text_selection are runtime editing primitives. The
+// byte offsets are normalized to Runa's UAX #29 grapheme boundaries before
+// they are retained, so callers cannot create a caret in the middle of UTF-8
+// or an extended grapheme cluster.
+set_text_caret :: proc(rt: ^Runtime, id: Node_ID, byte_index: int) -> bool {
+	node, ok := rt.nodes[id]
+	if !ok || !node.active || node.kind != .Text_Field { return false }
+	caret := grapheme_floor_boundary(node.text, byte_index)
+	node.caret_byte = caret
+	node.selection_start = caret
+	node.selection_end = caret
+	invalidate_root(rt, "text caret changed")
+	return true
+}
+
+set_text_selection :: proc(rt: ^Runtime, id: Node_ID, start, end: int) -> bool {
+	node, ok := rt.nodes[id]
+	if !ok || !node.active || node.kind != .Text_Field { return false }
+	low, high := start, end
+	if low > high { low, high = high, low }
+	lo := grapheme_floor_boundary(node.text, low)
+	hi := grapheme_ceil_boundary(node.text, high)
+	node.selection_start = lo
+	node.selection_end = hi
+	node.caret_byte = hi
+	invalidate_root(rt, "text selection changed")
+	return true
 }

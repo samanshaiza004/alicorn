@@ -44,8 +44,10 @@ intrinsic_main :: proc(node: ^Node, direction: Layout_Direction) -> f32 {
 
 rebuild_adjacency :: proc(rt: ^Runtime) {
 	for _, node in rt.nodes {
-		delete(node.children)
-		node.children = nil
+		// Retain dynamic-array capacity. The caller only invokes this when the
+		// parent/order structure hash changed, so unchanged invalidations avoid
+		// both the rebuild and this clear.
+		clear(&node.children)
 	}
 	for id in rt.order {
 		node, ok := rt.nodes[id]

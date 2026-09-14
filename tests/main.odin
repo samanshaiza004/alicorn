@@ -126,6 +126,17 @@ render_single_button :: proc(rt: ^alicorn.Runtime) -> (id: alicorn.Node_ID, clic
 	return
 }
 
+render_text_field :: proc(rt: ^alicorn.Runtime, value: string) -> alicorn.Node_ID {
+	alicorn.invalidate_root(rt, "test text field frame")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return 0 }
+	alicorn.container_begin(&ui, .Root, S_ROOT, label="text-field-root")
+	id := alicorn.text_field(&ui, value, alicorn.site("tests/edit.odin", 2, 1, "query"))
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return id
+}
+
 render_focus_ancestor :: proc(rt: ^alicorn.Runtime, include_child: bool) -> alicorn.Node_ID {
 	alicorn.invalidate_root(rt, "test focus ancestor")
 	ui, build := alicorn.begin_frame(rt)
@@ -297,6 +308,9 @@ test_regions_and_stages :: proc(state: ^Test_State) {
 	rt.invalidated = true
 	render_keyed(&rt, []string{"a", "b", "c"}, []int{0, 8, 0}, false, false)
 	expect(state, rt.stats.paint_updates-after_paint == 1, "one paint input should repaint one keyed node")
+	adjacency_before := rt.stats.adjacency_rebuilds
+	render_keyed(&rt, []string{"a", "b", "c"}, []int{0, 8, 0}, false, false)
+	expect(state, rt.stats.adjacency_rebuilds == adjacency_before, "unchanged structure must reuse retained adjacency")
 	report := alicorn.inspect(&rt)
 	expect(state, len(report) > 100 && len(alicorn.trace_snapshot(&rt)) > 0, "inspector and bounded trace must expose structural work")
 	alicorn.destroy_runtime(&rt)
@@ -326,6 +340,30 @@ test_focus_and_editing :: proc(state: ^Test_State) {
 	alicorn.destroy_runtime(&rt)
 }
 
+test_unicode_editing :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 200})
+	id := render_text_field(&rt, "Aé世😀👨‍👩‍👧")
+	change := alicorn.process_text_edit(&rt, id, alicorn.Text_Edit{.Backspace, ""})
+	expect(state, change.changed && change.text == "Aé世😀", "backspace must remove one complete family grapheme")
+	if len(change.text) > 0 { delete(change.text) }
+	render_text_field(&rt, "Aé世😀")
+	change = alicorn.process_text_edit(&rt, id, alicorn.Text_Edit{.Backspace, ""})
+	expect(state, change.changed && change.text == "Aé世", "backspace must remove one complete emoji grapheme")
+	if len(change.text) > 0 { delete(change.text) }
+	render_text_field(&rt, "é世😀")
+	expect(state, alicorn.set_text_caret(&rt, id, 1), "caret setter must accept a text field")
+	change = alicorn.process_text_edit(&rt, id, alicorn.Text_Edit{.Delete, ""})
+	expect(state, change.changed && change.text == "世😀", "delete must remove a complete UTF-8 grapheme")
+	if len(change.text) > 0 { delete(change.text) }
+	render_text_field(&rt, "é世😀")
+	expect(state, alicorn.set_text_selection(&rt, id, 5, 1), "selection setter must accept reversed byte offsets")
+	change = alicorn.process_text_edit(&rt, id, alicorn.Text_Edit{.Backspace, ""})
+	expect(state, change.changed && change.text == "😀", "selection deletion must expand to grapheme boundaries")
+	if len(change.text) > 0 { delete(change.text) }
+	expect(state, rt.nodes[id].caret_byte == 0, "selection deletion must collapse caret to range start")
+	alicorn.destroy_runtime(&rt)
+}
+
 test_interaction_regressions :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 200})
 	id, _ := render_single_button(&rt)
@@ -335,14 +373,22 @@ test_interaction_regressions :: proc(state: ^Test_State) {
 	expect(state, rt.nodes[id].hovered, "hover state must survive reconciliation")
 	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, node.bounds.x+2, node.bounds.y+2, 1})
 	_, clicked := render_single_button(&rt)
-	expect(state, clicked && rt.nodes[id].pressed, "pointer down must activate once and retain pressed state")
+	expect(state, !clicked && rt.nodes[id].pressed, "pointer down must capture and retain pressed state without activating")
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, 400, 180, 0})
+	render_single_button(&rt)
+	expect(state, rt.nodes[id].pressed, "captured button remains pressed while pointer leaves its bounds")
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, 400, 180, 1})
+	_, clicked = render_single_button(&rt)
+	expect(state, !clicked && !rt.nodes[id].pressed, "pointer up outside target must cancel activation")
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, node.bounds.x+2, node.bounds.y+2, 1})
+	render_single_button(&rt)
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, node.bounds.x+2, node.bounds.y+2, 1})
+	_, clicked = render_single_button(&rt)
+	expect(state, clicked && !rt.nodes[id].pressed, "pointer down/up on target must activate exactly once")
 	for _ in 0..<100 {
 		_, clicked = render_single_button(&rt)
 		expect(state, !clicked, "button activation must be consumed exactly once")
 	}
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, 400, 180, 1})
-	render_single_button(&rt)
-	expect(state, !rt.nodes[id].pressed, "pointer up outside target must release pressed state")
 
 	child := render_focus_ancestor(&rt, true)
 	child_node := rt.nodes[child]
@@ -431,6 +477,7 @@ main :: proc() {
 	test_property_sequences(&state)
 	test_regions_and_stages(&state)
 	test_focus_and_editing(&state)
+	test_unicode_editing(&state)
 	test_interaction_regressions(&state)
 	test_ergonomic_identity(&state)
 	test_virtualization_and_gpu(&state)

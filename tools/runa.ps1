@@ -4,7 +4,13 @@ param(
 )
 
 if (-not $Odin) { $Odin = 'C:\Users\saman\Documents\odin\dist\odin.exe' }
-if (-not (Test-Path -LiteralPath $Odin)) { throw "Odin executable not found: $Odin. Set ALICORN_ODIN." }
+if ([IO.Path]::IsPathRooted($Odin)) {
+    if (-not (Test-Path -LiteralPath $Odin)) { throw "Odin executable not found: $Odin. Set ALICORN_ODIN." }
+} else {
+    $command = Get-Command $Odin -ErrorAction SilentlyContinue
+    if (-not $command) { throw "Odin executable not found on PATH: $Odin. Set ALICORN_ODIN." }
+    $Odin = $command.Source
+}
 if (-not (Test-Path -LiteralPath $Font)) { throw "Font not found: $Font" }
 
 $ErrorActionPreference = 'Stop'

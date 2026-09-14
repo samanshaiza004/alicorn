@@ -5,7 +5,8 @@ line-breaking, rasterization. Built first to replace fontstash +
 stb_truetype in [Skald](https://github.com/BuLEEto/Skald), designed
 to be useful for any Odin project that needs production-quality text.
 
-**Status:** v1.2.3 — Arabic cursive joining across combining marks, on
+**Status:** v1.3.1 — the Thai word-break dictionary is opt-in, with Arabic
+cursive joining across combining marks, on
 top of v1.2.2's Indic reph fix, v1.2's bounded shape cache (LRU),
 v1.1's Latin autohinter, and v1.0's complex-script punch list. UAX #9
 bidi at **100 %**, UAX #29 graphemes at 100 %, CFF2 variable instances,
@@ -13,7 +14,7 @@ COLRv1 emoji with the full 28 W3C composite blend modes + linear /
 radial / sweep gradients, GPOS mark-to-ligature, frozen API
 ([`API.md`](API.md)), per-script shaping for **Devanagari, Bengali,
 Gujarati, Kannada, Odia, Tamil, Telugu, Malayalam, Gurmukhi, Thai,
-Lao, Khmer, Myanmar**, and a Thai word-break dictionary so Thai
+Lao, Khmer, Myanmar**, and an optional Thai word-break dictionary so Thai
 paragraphs reflow at word boundaries rather than as one giant
 unbreakable word. Full scoreboard in [`CHANGELOG.md`](CHANGELOG.md).
 

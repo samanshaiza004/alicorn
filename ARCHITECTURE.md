@@ -28,10 +28,10 @@ Source location alone is still not enough to identify repeated data.
 
 Each retained node tracks description, layout, paint and composite dirtiness,
 plus the reason recorded for the latest invalidation. It also owns an ordered
-`children` array. Reconciliation builds this adjacency from pending preorder
-once; layout never scans the global retained order to discover children. Dirty
-layout is propagated through ancestors so clean subtrees can be skipped. A
-changed description
+`children` array. Reconciliation hashes pending parent/order membership and
+rebuilds this adjacency only when that structure changes; layout never scans
+the global retained order to discover children. Dirty layout is propagated
+through ancestors so clean subtrees can be skipped. A changed description
 does not automatically imply changed layout: the layout hash and paint hash
 are compared independently. Region caches contain cloned descriptions, never
 application-owned strings or pointers.
@@ -43,17 +43,21 @@ expensive description/layout/paint stages remain granular and counted.
 ## Ownership
 
 Retained nodes contain runtime-owned identity metadata, interaction state,
-geometry, cached descriptions, display commands and textual copies. They do not
+geometry, cached descriptions, display commands and textual copies. Text-field
+caret and selection offsets are byte positions normalized to Runa UAX #29
+grapheme boundaries. They do not
 contain `rawptr`, `^T` application pointers or closures. The application must
 copy a text-edit result into its own ordinary state before the next frame.
 
 ## Input and focus
 
 Hit testing walks the retained order backwards and requires both bounds and the
-effective retained clip rectangle. Pointer down selects one retained node and
-assigns the single `Runtime.focused` owner when focusable. Activation carries a
-monotonic event sequence and is consumed by the matching button exactly once;
-hover and pressed state are interaction state, separate from frame presence.
+effective retained clip rectangle. Pointer down captures one retained node,
+assigns the single `Runtime.focused` owner when focusable, and sets its pressed
+state. Pointer up activates only when it hits the captured node; releasing
+outside cancels. Activation carries a monotonic event sequence and is consumed
+by the matching button exactly once; hover, capture and pressed state are
+interaction state, separate from frame presence.
 When the focused node disappears, the nearest active focusable ancestor is
 chosen, otherwise the first active focusable node in retained order is chosen.
 
@@ -66,6 +70,6 @@ selection storage remain future scale work.
 
 `runtime.GPU_Backend` is a platform-neutral lifetime model: command buffers
 cannot be used after submit, and submitted resource references retire only after
-an observed fence. `native/sdl_gpu` documents the SDL3 mapping. This repository
-does not claim native GPU rendering is proven until a machine with the SDL3
-runtime and a usable driver runs that example.
+an observed fence. `native/sdl_gpu` documents the SDL3 mapping. The native
+rectangle compositor has been run on the verification Windows host; glyph
+atlas rendering and cross-platform driver coverage remain unverified.

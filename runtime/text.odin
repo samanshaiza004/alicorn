@@ -64,10 +64,40 @@ runa_cache_size :: proc(engine: ^Text_Engine) -> int {
 	return runa.cache_size(&engine.cache)
 }
 
-text_layout :: proc(engine: ^Text_Engine, value: string, size: f32) -> (width, height: f32, glyphs: int, ok: bool) {
+// These are the text abstraction's editing boundaries. The runtime stores
+// byte offsets because strings are byte-addressed, but callers cannot create
+// a caret inside an extended grapheme cluster.
+grapheme_floor_boundary :: proc(value: string, byte_index: int) -> int {
+	if byte_index <= 0 { return 0 }
+	if byte_index >= len(value) { return len(value) }
+	last := 0
+	it := runa.grapheme_iter_make(value)
+	for {
+		lo, hi, ok := runa.grapheme_iter_next(&it)
+		if !ok { break }
+		if byte_index < hi { return lo }
+		last = hi
+	}
+	return last
+}
+
+grapheme_ceil_boundary :: proc(value: string, byte_index: int) -> int {
+	if byte_index <= 0 { return 0 }
+	if byte_index >= len(value) { return len(value) }
+	it := runa.grapheme_iter_make(value)
+	for {
+		lo, hi, ok := runa.grapheme_iter_next(&it)
+		if !ok { break }
+		if byte_index <= lo { return lo }
+		if byte_index < hi { return hi }
+	}
+	return len(value)
+}
+
+text_layout :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0) -> (width, height: f32, glyphs: int, ok: bool) {
 	if !engine.font_loaded || size <= 0 { return }
 	stack := runa.Font_Stack{&engine.font}
-	opts := runa.Paragraph_Opts{fonts=stack, size=size, direction=.Auto, align=.Start}
+	opts := runa.Paragraph_Opts{fonts=stack, size=size, direction=.Auto, align=.Start, max_width=max_width}
 	lines, err := runa.layout_paragraph(value, opts, &engine.cache)
 	if err != .None { return }
 	defer {
@@ -76,7 +106,7 @@ text_layout :: proc(engine: ^Text_Engine, value: string, size: f32) -> (width, h
 	}
 	for line in lines {
 		if line.width > width { width = line.width }
-		if line.height > height { height = line.height }
+		height += line.height
 		glyphs += len(line.glyphs)
 	}
 	ok = true

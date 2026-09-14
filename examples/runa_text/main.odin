@@ -26,9 +26,16 @@ main :: proc() {
 		fmt.eprintln("Runa paragraph layout failed")
 		os.exit(1)
 	}
+	_, one_line_height, _, one_line_ok := alicorn.text_layout(&engine, "one", 24)
+	_, multiline_height, multiline_glyphs, multiline_ok := alicorn.text_layout(&engine, "one\ntwo\nthree", 24)
+	_, wrapped_height, wrapped_glyphs, wrapped_ok := alicorn.text_layout(&engine, "one two three four five", 24, 70)
+	if !one_line_ok || !multiline_ok || !wrapped_ok || multiline_height <= one_line_height || wrapped_height <= one_line_height {
+		fmt.eprintln("Runa multiline/wrap metrics failed", "one", one_line_height, "multi", multiline_height, "wrapped", wrapped_height)
+		os.exit(1)
+	}
 	first_cache_size := alicorn.runa_cache_size(&engine)
 	_, _, _, _ = alicorn.text_layout(&engine, "office — Alicorn", 24)
 	second_cache_size := alicorn.runa_cache_size(&engine)
-	fmt.println("Runa text proof: PASS", "width", width, "height", height, "glyphs", glyphs, "cache", first_cache_size, "->", second_cache_size)
+	fmt.println("Runa text proof: PASS", "width", width, "height", height, "glyphs", glyphs, "multiline_height", multiline_height, "multiline_glyphs", multiline_glyphs, "wrapped_height", wrapped_height, "wrapped_glyphs", wrapped_glyphs, "cache", first_cache_size, "->", second_cache_size)
 	alicorn.text_engine_destroy(&engine)
 }

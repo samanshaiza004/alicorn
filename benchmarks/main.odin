@@ -56,7 +56,7 @@ measure_tree :: proc(count: int) {
 	start = time.now()
 	render_tree(&rt, count, -1, true)
 	reorder := time.duration_nanoseconds(time.since(start))
-	fmt.println("tree", count, "first_ns", first, "unchanged_ns", unchanged, "one_change_ns", one_change, "keyed_reorder_ns", reorder, "nodes", len(rt.nodes), "paint_updates", rt.stats.paint_updates, "layout_updates", rt.stats.layout_updates)
+	fmt.println("tree", count, "first_ns", first, "unchanged_ns", unchanged, "one_change_ns", one_change, "keyed_reorder_ns", reorder, "nodes", len(rt.nodes), "paint_updates", rt.stats.paint_updates, "layout_updates", rt.stats.layout_updates, "adjacency_rebuilds", rt.stats.adjacency_rebuilds)
 }
 
 main :: proc() {

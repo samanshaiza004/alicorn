@@ -28,21 +28,27 @@ the repository contains a repeatable test or measurement for it.
 ## Claim: stage work is granular and inspectable
 
 - Implementation: independent description/layout/paint/composite hashes,
-  counters, retained child adjacency, inspector and trace ring.
+  counters, retained child adjacency, inspector and trace ring. Adjacency is
+  guarded by a hash of pending parent/order membership and is rebuilt only on
+  structural change.
 - Test: changing one keyed meter changes that node's paint stage while sibling
-  descriptions and layouts are reused.
-- Result: the 10,000-node unchanged benchmark is now approximately linear after
-  replacing global child scans with retained adjacency; composition remains
+  descriptions and layouts are reused; an unchanged invalidation leaves the
+  adjacency rebuild counter unchanged.
+- Result: the 10,000-node unchanged benchmark is now approximately linear and
+  unchanged invalidations avoid adjacency reconstruction; composition remains
   conservative.
 - Verdict: partially proven.
 
 ## Claim: input and focus are deterministic
 
-- Implementation: one `focused` Node_ID, retained hit testing and fallback.
+- Implementation: one `focused` Node_ID, retained hit testing and fallback,
+  plus one pointer capture owner. Down captures and presses; Up activates only
+  when it returns to the captured node.
 - Test: focus through reorder, removal, filtering and representation changes;
-  activation consumption, retained hover/pressed state, ancestor fallback and
-  nested clipping regressions.
-- Verdict: proven by headless tests for the defined fallback policy.
+  activation consumption, retained hover/pressed state, outside-release
+  cancellation, click-on-release, ancestor fallback and nested clipping.
+- Verdict: proven by headless tests for the defined fallback and activation
+  policy.
 
 ## Claim: a million-row list has bounded retained state
 
@@ -59,11 +65,12 @@ the repository contains a repeatable test or measurement for it.
   font, bounded Runa shape cache and GUI-facing layout metrics. The GUI does not
   retain Runa's atlas representation.
 - Test/measurement: `examples/runa_text` loads a caller-provided font and lays
-  out `office — Alicorn` twice. On the verification host it reported
-  `169.86328 x 31.921875`, `16` glyphs, and cache size `1 -> 1`.
-- Result: real Runa font loading and paragraph layout work; the existing basic
-  text-field editing test remains byte-oriented and does not prove grapheme
-  caret mapping, IME or atlas upload.
+  out `office — Alicorn` twice, a three-line paragraph, and a width-constrained
+  paragraph. The headless runtime test exercises deletion and selection through
+  Runa UAX #29 grapheme boundaries for multi-byte and extended emoji clusters.
+- Result: real Runa font loading, cache reuse, multiline metrics, wrapping and
+  grapheme-safe text editing work. Caret hit testing, IME and atlas upload are
+  not implemented.
 - Verdict: partially proven.
 
 ## Claim: SDL3/SDL_GPU and custom-surface lifetime behavior is safe
@@ -102,15 +109,20 @@ Environment: Windows 10.0.19045, Odin `dev-2026-09-nightly:a2fb372`,
 model is claimed. Command: `powershell -ExecutionPolicy Bypass -File
 tools/bench.ps1`.
 
-| workload | first ns | unchanged ns | one change ns | keyed reorder ns | retained nodes | cumulative layout updates |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 100 nodes | 778100 | 139200 | 139000 | 140700 | 101 | 100 |
-| 1,000 nodes | 2979300 | 1354300 | 1261000 | 1178300 | 1001 | 1000 |
-| 10,000 nodes | 37815700 | 16931500 | 17947700 | 16871700 | 10001 | 10000 |
+| workload | first ns | unchanged ns | one change ns | keyed reorder ns | retained nodes | cumulative layout updates | adjacency rebuilds |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 100 nodes | 360100 | 101300 | 106800 | 109500 | 101 | 100 | 2 |
+| 1,000 nodes | 3835600 | 1123000 | 1079000 | 1124600 | 1001 | 1000 | 2 |
+| 10,000 nodes | 33057700 | 14397800 | 15431000 | 15199900 | 10001 | 10000 | 2 |
 
-Virtual list: 1,000,000 logical rows, 100 scroll frames, elapsed `5611200 ns`,
-retained nodes `23`. Idle: 10,000 attempted frames, elapsed `22700 ns`,
+Virtual list: 1,000,000 logical rows, 100 scroll frames, elapsed `5733400 ns`,
+retained nodes `23`. Idle: 10,000 attempted frames, elapsed `18600 ns`,
 `idle_count=10000`, headless GPU submits `0`.
+
+Runa text command: with `C:\Windows\Fonts\segoeui.ttf`, it reported single-line
+height `31.921875`, multiline height `95.765625`, wrapped height `159.60938`,
+multiline glyph count `13`, wrapped glyph count `23`, and cache size `4 -> 4`
+on the verification host.
 
 Native command: build `native/sdl_gpu`, put the SDK's SDL3 directory on
 `PATH`, run the executable. On this host it submitted six SDL_GPU frames,

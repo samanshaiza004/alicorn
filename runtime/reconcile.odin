@@ -85,6 +85,7 @@ release_node_strings :: proc(node: ^Node) {
 copy_node_description :: proc(node: ^Node, d: Description) {
 	// Runtime-owned copies are important: a generic description may borrow a
 	// caller's string for only the duration of this procedure.
+	text_changed := node.text != d.text
 	replace_site(&node.site, d.site)
 	replace_owned(&node.key, d.key)
 	replace_owned(&node.label, d.label)
@@ -98,6 +99,11 @@ copy_node_description :: proc(node: ^Node, d: Description) {
 	node.region = d.region
 	node.focusable = d.focusable
 	replace_owned(&node.identity_key, d.identity_key)
+	if text_changed {
+		node.caret_byte = len(d.text)
+		node.selection_start = node.caret_byte
+		node.selection_end = node.caret_byte
+	}
 }
 
 mark_layout_ancestors :: proc(rt: ^Runtime, id: Node_ID) {
@@ -181,7 +187,7 @@ reconcile :: proc(rt: ^Runtime) {
 		if !node.active {
 			delete_key(&rt.nodes, id)
 			if id == rt.last_hovered { rt.last_hovered = 0 }
-			if id == rt.pressed_node { rt.pressed_node = 0 }
+			if id == rt.captured_node { rt.captured_node = 0 }
 			if id == rt.selected { rt.selected = 0 }
 			free_region_cache(node)
 			for command in node.paint { if len(command.text) > 0 { delete(command.text) } }
@@ -210,7 +216,13 @@ reconcile :: proc(rt: ^Runtime) {
 		}
 	}
 
-	rebuild_adjacency(rt)
+	structure_hash := pending_structure_hash(rt.pending[:])
+	if !rt.adjacency_valid || rt.adjacency_hash != structure_hash {
+		rebuild_adjacency(rt)
+		rt.adjacency_hash = structure_hash
+		rt.adjacency_valid = true
+		rt.stats.adjacency_rebuilds += 1
+	}
 	layout_tree(rt)
 	update_paint(rt)
 	rt.frame_open = false
@@ -218,6 +230,16 @@ reconcile :: proc(rt: ^Runtime) {
 	rt.stats.frame += 1
 	delete(focus_lineage)
 	record_trace(rt, .Reconcile, 0, fmt.tprintf("frame %d reconciled", rt.stats.frame))
+}
+
+pending_structure_hash :: proc(descriptions: []Description) -> u64 {
+	h: u64 = 1469598103934665603
+	for d, index in descriptions {
+		h = hash_mix(h, u64(index))
+		h = hash_mix(h, u64(d.id))
+		h = hash_mix(h, u64(d.parent))
+	}
+	return h
 }
 
 free_region_cache :: proc(node: ^Node) {
