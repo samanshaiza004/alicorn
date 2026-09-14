@@ -193,9 +193,13 @@ draw_display_list :: proc(
 	swapchain: ^sdl3.GPUTexture,
 	swap_w, swap_h: sdl3.Uint32,
 	temporary: ^sdl3.GPUTexture,
+	text_renderer: ^Native_Text_Renderer,
 	display: []alicorn.Display_Command,
 	logical_to_pixel_x, logical_to_pixel_y: f32,
 ) -> bool {
+	if !native_text_rebuild_mesh(text_renderer, display, logical_to_pixel_x, logical_to_pixel_y) { return false }
+	if !native_text_sync_atlas(text_renderer, command) { return false }
+	if !native_text_upload_vertices(text_renderer, command) { return false }
 	// The retained display list remains in logical window units. Only this
 	// compositor boundary converts its geometry to the physical swapchain.
 	background := make_color_target(swapchain, sdl3.FColor{0.035, 0.045, 0.065, 1}, false)
@@ -229,7 +233,18 @@ draw_display_list :: proc(
 		sdl3.BlitGPUTexture(command, blit)
 		index += 1
 	}
+	if !native_text_render(text_renderer, command, swapchain, swap_w, swap_h) { return false }
 	return true
+}
+
+native_font_path :: proc() -> string {
+	when ODIN_OS == .Windows {
+		return "C:/Windows/Fonts/segoeui.ttf"
+	} else when ODIN_OS == .Darwin {
+		return "/System/Library/Fonts/SFNS.ttf"
+	} else {
+		return "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+	}
 }
 
 wait_and_retire_oldest :: proc(
@@ -324,6 +339,17 @@ main :: proc() {
 	if !sdl3.SetGPUAllowedFramesInFlight(device, 3) {
 		fail("SDL_SetGPUAllowedFramesInFlight failed")
 	}
+
+	font_data, font_err := os.read_entire_file_from_path(native_font_path(), context.allocator)
+	if font_err != nil {
+		fail("GPU text font could not be loaded from the platform font path")
+	}
+	text_renderer, text_ok := native_text_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), font_data)
+	delete(font_data)
+	if !text_ok {
+		fail("GPU text pipeline, atlas, or Runa font initialization failed")
+	}
+	defer native_text_destroy(&text_renderer)
 
 	// SDL text input is opt-in. The input rectangle is in logical window
 	// coordinates, never physical pixels.
@@ -458,7 +484,7 @@ main :: proc() {
 			_ = sdl3.CancelGPUCommandBuffer(command)
 			fail("SDL_CreateGPUTexture failed")
 		}
-		if !draw_display_list(command, swapchain, swap_w, swap_h, temporary, rt.display[:], logical_to_pixel_x, logical_to_pixel_y) {
+		if !draw_display_list(command, swapchain, swap_w, swap_h, temporary, &text_renderer, rt.display[:], logical_to_pixel_x, logical_to_pixel_y) {
 			sdl3.ReleaseGPUTexture(device, temporary)
 			_ = sdl3.CancelGPUCommandBuffer(command)
 			fail("Alicorn retained display-list pass failed")
@@ -469,6 +495,7 @@ main :: proc() {
 			fail("SDL_SubmitGPUCommandBufferAndAcquireFence failed")
 		}
 		append(&in_flight, Native_In_Flight{fence, temporary})
+		native_text_commit_submission(&text_renderer)
 		submitted += 1
 		rt.stats.gpu_submits += 1
 		if len(in_flight) > max_in_flight { max_in_flight = len(in_flight) }
@@ -511,6 +538,14 @@ main :: proc() {
 		"scale_events", scale_events,
 		"text_input_events", text_input_events,
 		"composition_events", composition_events,
+		"text_shape_calls", text_renderer.engine.shape_calls,
+		"text_run_cache_hits", text_renderer.run_cache_hits,
+		"text_run_cache_misses", text_renderer.run_cache_misses,
+		"text_glyph_cache_hits", text_renderer.engine.glyph_cache_hits,
+		"text_glyph_cache_misses", text_renderer.engine.glyph_cache_misses,
+		"text_rasterizations", text_renderer.engine.glyph_rasterizations,
+		"text_atlas_pages", len(text_renderer.pages),
+		"text_quads", len(text_renderer.draws),
 		"text_input_boundary", "start-set-area-active-stop",
 		"pointer_adapter", "logical coordinates unchanged",
 		"logical_to_physical", "compositor boundary only",
