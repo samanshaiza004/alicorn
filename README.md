@@ -73,6 +73,10 @@ and transient preedit composition now work through the retained text field;
 real OS IME validation, color glyphs, and broader platform proof remain. A
 separate retained GPU-surface gate now proves a small shader-backed waveform
 can update without rebuilding the surrounding UI on Windows Direct3D12.
+The first dogfood application is a separate Windows-first process monitor:
+[Alicorn Monitor](https://github.com/samanshaiza004/alicorn-monitor). It
+combines keyed visible process rows, filtering/sorting, and a live CPU graph
+through Alicorn's public runtime and native host boundaries.
 
 ## Try it
 

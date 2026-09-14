@@ -31,6 +31,8 @@ project record.
 ## Examples
 
 - [Examples and fixtures](examples.md) — identity torture, Crucible, benchmarks, and Runa text.
+- [Process monitor dogfood](process-monitor.md) — the first application-sized
+  Windows test combining sampling, keyed rows, text, and a live GPU surface.
 
 The documentation is intentionally organized as ordinary Markdown so it can be
 turned into a documentation site later without changing the source record.

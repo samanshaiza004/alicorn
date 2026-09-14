@@ -31,6 +31,22 @@ be observable, so its frontier is produced by explicit root/region revisions.
 
 Reference: <https://github.com/zed-industries/zed/blob/main/crates/gpui/src/window.rs>
 
+## Process-monitor precedents
+
+The first dogfood deliberately follows the shape of established monitoring
+tools without copying their application architecture. [bottom](https://github.com/ClementTsang/bottom)
+combines process sorting/search with live system graphs, which makes it a
+useful product-level precedent for choosing this app as the first integration
+test. The Alicorn version stays smaller: one CPU history surface, one process
+table, and no termination or tree-management features.
+
+Windows' process APIs also make this a useful identity test. A PID is not a
+durable logical identity because the operating system may reuse it. Alicorn
+therefore pairs the PID with the process creation `FILETIME` and uses that
+pair for row identity. CPU is sampled from `GetProcessTimes` deltas rather
+than inferred from the row's position, so sorting can change without making
+selection positional.
+
 ## Alicorn decision
 
 Alicorn will use explicit pending subtree reuse markers, retained child
@@ -50,3 +66,11 @@ lifetimes, and submitted command buffers cannot be reused. Alicorn therefore
 uses an explicit `gpu_surface_update` handle with copied samples; the runtime
 owns placement and wakeup, while the native surface adapter owns only its
 specialized pipeline and buffers.
+
+## Dogfood decision
+
+The process monitor is intentionally a separate repository at
+`samanshaiza004/alicorn-monitor`. Alicorn now exposes a reusable
+`alicorn_sdl_gpu.Application`/`Run` host boundary, so the app can pin Alicorn
+as a Git submodule without importing the foundation proof entrypoint or
+reaching into retained node/display-list internals.

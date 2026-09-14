@@ -13,3 +13,7 @@ a large demo. `runa_text <font.ttf>` loads a caller-provided font through the
 Runa adapter, lays out the same paragraph twice, and reports the stable cache
 entry count. The PowerShell wrapper is
 `powershell -File tools/runa.ps1 -Font C:\Windows\Fonts\segoeui.ttf`.
+
+The first application-sized dogfood is maintained in the separate
+[Alicorn Monitor repository](https://github.com/samanshaiza004/alicorn-monitor).
+Its README documents the pinned Alicorn dependency and native run commands.

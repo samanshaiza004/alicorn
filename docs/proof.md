@@ -478,6 +478,37 @@ headless loop reports zero allocator requests. The native path still performs
 the expected per-frame transfer-buffer map/upload, while its pipeline, sampler,
 texture, vertex buffer and transfer buffer are persistent.
 
+## Dogfood — process monitor v0
+
+### Claim: the proven runtime pieces can coexist in a real application shell
+
+- Implementation: the separate `samanshaiza004/alicorn-monitor` repository
+  owns ordinary process records, sorting, filtering, selection, sampling
+  cadence and graph history. It pins Alicorn as `vendor/alicorn` and calls the
+  reusable `alicorn_sdl_gpu.Application`/`Run` host. The process table emits a
+  bounded visible keyed range; it does not create one retained node per
+  process.
+- Identity: each Windows row uses PID plus process creation time, not PID or
+  viewport position alone.
+- Native source: `CreateToolhelp32Snapshot`/`Process32FirstW`/
+  `Process32NextW` enumerate rows; `GetProcessTimes` supplies CPU deltas and
+  `GetProcessMemoryInfo` supplies working-set bytes. Protected processes are
+  counted as query failures and skipped.
+- Test: `alicorn-monitor/tools/run.ps1 -Smoke` builds the separate application,
+  copies the required SDL3 DLL beside the executable, runs it for three
+  seconds, and reports sampling, surface, submission, and retirement counters.
+- Result: the development Windows host completed the smoke run with 12
+  samples, 84 visible process rows, 171 graph updates, 171 submissions, 171
+  retirements, and a maximum of three frames in flight. It recorded 867 query
+  failures without crashing.
+- Known limitations: this is an integration smoke test, not a full dogfood
+  performance report or cross-platform monitor. The reusable host is still a
+  deliberately small experimental shell.
+- Verdict: partially proven; proceed with interactive dogfood and let concrete
+  application needs drive the next framework changes.
+
+Details and the raw smoke command live in [the process monitor guide](process-monitor.md).
+
 ## What was falsified or narrowed
 
 - The old assumption that skipping a region body implied skipping retained
@@ -517,5 +548,6 @@ rectangle/text/surface path.
 
 The explicit retained surface path now demonstrates the central locality claim
 for a high-frequency shader-backed waveform without a mandatory reactive
-application model. The next gate may investigate broader shader-backed domain
-drawing, but this foundation gate is complete for its stated scope.
+application model. The next gate is application dogfood. Further surface
+generalization should be driven by concrete process-monitor or later
+application requirements.

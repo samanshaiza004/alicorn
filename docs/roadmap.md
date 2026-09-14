@@ -33,6 +33,19 @@
   general shader callback API, compute surface, or multi-surface scheduler;
 - accessibility integration through a separate semantic adapter.
 
+## Dogfood
+
+- first process-monitor application is maintained in the separate
+  [Alicorn Monitor repository](https://github.com/samanshaiza004/alicorn-monitor)
+  and pins Alicorn as a Git dependency;
+- its Windows sampler, PID-plus-creation identity, keyed visible rows,
+  filter/sort/pause controls, and live CPU graph use the public runtime and
+  reusable native SDL host;
+- let real use drive the next scrollbar, table, platform-sampler, and
+  accessibility requirements;
+- let real use drive the next scrollbar, table, platform-sampler, and
+  accessibility requirements.
+
 ## Observability
 
 - richer causality and performance timelines;
