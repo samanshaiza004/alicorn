@@ -56,8 +56,10 @@ resource retirement. The anomaly is reported rather than treated as proof of
 post-wait query correctness.
 
 The text path currently proves monochrome alpha glyphs and keeps color glyph
-pages distinct at the CPU identity boundary; caret/selection geometry, IME and
-a production font fallback policy remain future gates. Build and run it from
+pages distinct at the CPU identity boundary; a production font fallback policy
+remains future work. The Windows proof prefers `NotoSansJP-VF.ttf` when it is
+installed so the native fixture can display Japanese glyphs; this is a fixture
+font choice, not Alicorn's final fallback policy. Build and run it from
 a normal GUI login session. On Windows, use the self-contained runner:
 
 ```powershell

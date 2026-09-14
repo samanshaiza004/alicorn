@@ -153,6 +153,15 @@ sync_text_input_focus :: proc(
 	}
 }
 
+adopt_text_change :: proc(app_text: ^string, change: alicorn.Text_Change) {
+	if change.changed {
+		if len(app_text^) > 0 { delete(app_text^) }
+		app_text^ = change.text
+	} else if len(change.text) > 0 {
+		delete(change.text)
+	}
+}
+
 pump_events :: proc(
 	window: ^sdl3.Window,
 	rt: ^alicorn.Runtime,
@@ -161,6 +170,7 @@ pump_events :: proc(
 	logical_resize_events, pixel_resize_events, scale_events: ^int,
 	text_input_events, composition_events: ^int,
 	app_text: ^string,
+	manual_log := false,
 ) {
 	event: sdl3.Event
 	for sdl3.PollEvent(&event) {
@@ -170,9 +180,37 @@ pump_events :: proc(
 		if pointer, ok := pointer_from_sdl(event); ok {
 			alicorn.process_pointer(rt, pointer)
 		}
-		if event.type == .KEY_DOWN && event.key.down && event.key.key == sdl3.K_ESCAPE {
-			if alicorn.cancel_text_composition(rt, rt.focused, "Escape canceled text composition") {
-				if !sdl3.ClearComposition(window) { fail("SDL_ClearComposition failed for Escape") }
+		if event.type == .KEY_DOWN && event.key.down {
+			if manual_log {
+				composition_active := false
+				if node, ok := rt.nodes[rt.focused]; ok {
+					composition_active = node.composition.active
+				}
+				fmt.println("sdl_event", "KEY_DOWN", "key", event.key.key, "repeat", event.key.repeat, "composition_active", composition_active)
+			}
+			if event.key.key == sdl3.K_ESCAPE {
+				if alicorn.cancel_text_composition(rt, rt.focused, "Escape canceled text composition") {
+					if !sdl3.ClearComposition(window) { fail("SDL_ClearComposition failed for Escape") }
+				}
+			} else if node, ok := rt.nodes[rt.focused]; ok && node.active && node.kind == .Text_Field && !node.composition.active {
+				handled := true
+				switch event.key.key {
+				case sdl3.K_BACKSPACE:
+					adopt_text_change(app_text, alicorn.process_text_edit(rt, rt.focused, alicorn.Text_Edit{.Backspace, ""}))
+				case sdl3.K_DELETE:
+					adopt_text_change(app_text, alicorn.process_text_edit(rt, rt.focused, alicorn.Text_Edit{.Delete, ""}))
+				case sdl3.K_LEFT:
+					position := alicorn.text_move_logical(node.text, node.caret, -1)
+					_ = alicorn.set_text_caret(rt, rt.focused, position.byte)
+				case sdl3.K_RIGHT:
+					position := alicorn.text_move_logical(node.text, node.caret, 1)
+					_ = alicorn.set_text_caret(rt, rt.focused, position.byte)
+				case:
+					handled = false
+				}
+				if manual_log && handled {
+					fmt.println("alicorn_key_handled", "key", event.key.key, "text", app_text^)
+				}
 			}
 		}
 
@@ -198,18 +236,22 @@ pump_events :: proc(
 			alicorn.invalidate_root(rt, "SDL display scale changed")
 		case .TEXT_INPUT:
 			text_input_events^ += 1
+			if manual_log {
+				raw_text := ""
+				if event.text.text != nil { raw_text = string(event.text.text) }
+				fmt.println("sdl_event", "TEXT_INPUT", "text", raw_text)
+			}
 			if event.text.text != nil {
-				change := alicorn.process_text_input(rt, rt.focused, string(event.text.text))
-				if change.changed {
-					if len(app_text^) > 0 { delete(app_text^) }
-					app_text^ = change.text
-					change.text = ""
-				} else if len(change.text) > 0 {
-					delete(change.text)
-				}
+				adopt_text_change(app_text, alicorn.process_text_input(rt, rt.focused, string(event.text.text)))
+				if manual_log { fmt.println("alicorn_after_TEXT_INPUT", "text", app_text^) }
 			}
 		case .TEXT_EDITING:
 			composition_events^ += 1
+			if manual_log {
+				raw_text := ""
+				if event.edit.text != nil { raw_text = string(event.edit.text) }
+				fmt.println("sdl_event", "TEXT_EDITING", "text", raw_text, "start_chars", event.edit.start, "length_chars", event.edit.length)
+			}
 			if event.edit.text != nil {
 				alicorn.process_text_editing(
 					rt,
@@ -218,6 +260,15 @@ pump_events :: proc(
 					int(event.edit.start),
 					int(event.edit.length),
 				)
+				if manual_log {
+					if node, ok := rt.nodes[rt.focused]; ok {
+						fmt.println(
+							"alicorn_after_TEXT_EDITING",
+							"preedit", node.composition.text,
+							"selection_bytes", node.composition.selection_start, node.composition.selection_end,
+						)
+					}
+				}
 			}
 		}
 
@@ -236,7 +287,13 @@ render_native_ui :: proc(rt: ^alicorn.Runtime, frame: u64, value := NATIVE_TEXT_
 	alicorn.invalidate_root(rt, "native frame")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return 0 }
-	alicorn.container_begin(&ui, .Root, label="native-root", style=alicorn.Layout_Style{.Column, -1, -1, 0, -1, 0, -1, 0, 12, 8, .Stretch, true})
+	alicorn.container_begin(
+		&ui,
+		.Root,
+		label="native-root",
+		style=alicorn.Layout_Style{.Column, -1, -1, 0, -1, 0, -1, 0, 12, 8, .Stretch, true},
+		color=alicorn.Color{0.04, 0.05, 0.08, 1},
+	)
 	field := alicorn.text_field(&ui, value, style=alicorn.Layout_Style{.Column, -1, 32, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
 	alicorn.button(&ui, "GPU frame", style=alicorn.Layout_Style{.Column, 180, 32, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
 	alicorn.custom_surface(&ui, "animated-surface", frame, alicorn.Rect{0, 0, 280, 120}, 560, 240, 2, style_source())
@@ -361,7 +418,7 @@ native_text_readback_probe :: proc(
 		sdl3.ReleaseGPUTexture(device, probe_texture)
 		return false, 0
 	}
-	if !draw_display_list(command, probe_texture, width, height, temporary, text_renderer, display, 1, 1, true) {
+	if !draw_display_list(command, probe_texture, width, height, temporary, text_renderer, display, 1, 1, false) {
 		_ = sdl3.CancelGPUCommandBuffer(command)
 		sdl3.ReleaseGPUTransferBuffer(device, download)
 		sdl3.ReleaseGPUTexture(device, temporary)
@@ -440,6 +497,11 @@ native_text_readback_probe :: proc(
 
 native_font_path :: proc() -> string {
 	when ODIN_OS == .Windows {
+		// Segoe UI is a good Latin default but is not a reliable source for
+		// Japanese glyphs. Prefer the installed open Noto Sans JP variable font
+		// for this native proof; fall back to Segoe UI on minimal Windows images.
+		japanese_font := "C:/Windows/Fonts/NotoSansJP-VF.ttf"
+		if os.exists(japanese_font) { return japanese_font }
 		return "C:/Windows/Fonts/segoeui.ttf"
 	} else when ODIN_OS == .Darwin {
 		return "/System/Library/Fonts/SFNS.ttf"
@@ -652,8 +714,6 @@ main :: proc() {
 		// real-OS IME check while keeping accidental unattended runs bounded.
 		frame_limit = 18_000
 	}
-	last_manual_text_input_events := text_input_events
-	last_manual_composition_events := composition_events
 	// Submit an initial three-frame burst before any programmatic resize. This
 	// proves the configured frames-in-flight retirement path independently of
 	// the swapchain invalidation that a resize can trigger.
@@ -703,28 +763,8 @@ main :: proc() {
 			&text_input_events,
 			&composition_events,
 			&app_text,
+			manual_log=manual_ime,
 		)
-		if manual_ime {
-			if composition_events > last_manual_composition_events {
-				if node, ok := rt.nodes[rt.focused]; ok {
-					fmt.println(
-						"manual_ime_event", "TEXT_EDITING",
-						"count", composition_events,
-						"preedit", node.composition.text,
-						"selection_bytes", node.composition.selection_start, node.composition.selection_end,
-					)
-				}
-			}
-			if text_input_events > last_manual_text_input_events {
-				fmt.println(
-					"manual_ime_event", "TEXT_INPUT",
-					"count", text_input_events,
-					"committed_text", app_text,
-				)
-			}
-			last_manual_composition_events = composition_events
-			last_manual_text_input_events = text_input_events
-		}
 		if quit_requested {
 			if manual_ime {
 				break
@@ -741,15 +781,18 @@ main :: proc() {
 		sync_text_input_focus(window, &rt, &text_input_active, &text_input_owner)
 		// Preserve the fixture's second-frame atlas mutation without replacing
 		// text that a real SDL_TEXT_INPUT event has already committed.
-		if step == -2 && text_input_events == 0 && composition_events == 0 {
+		if !manual_ime && step == -2 && text_input_events == 0 && composition_events == 0 {
 			if len(app_text) > 0 { delete(app_text) }
 			app_text, app_text_err = strings.clone(NATIVE_TEXT_MUTATED)
 			if app_text_err != nil { fail("native text mutation allocation failed") }
 		}
-		text_value := app_text
-		render_native_ui(&rt, u64(step+3), text_value)
-		sync_text_input_focus(window, &rt, &text_input_active, &text_input_owner)
-		command := sdl3.AcquireGPUCommandBuffer(device)
+		if !manual_ime || rt.invalidated {
+			text_value := app_text
+			frame := u64(step+3)
+			if manual_ime { frame = 0 }
+			render_native_ui(&rt, frame, text_value)
+			sync_text_input_focus(window, &rt, &text_input_active, &text_input_owner)
+			command := sdl3.AcquireGPUCommandBuffer(device)
 		if command == nil {
 			fail("SDL_AcquireGPUCommandBuffer failed")
 		}
@@ -815,6 +858,7 @@ main :: proc() {
 				fail("SDL_WaitForGPUFences failed after resize")
 			}
 			retired += 1
+		}
 		}
 		if manual_ime {
 			sdl3.Delay(16)

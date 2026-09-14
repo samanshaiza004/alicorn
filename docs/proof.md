@@ -378,10 +378,12 @@ download buffer. Process-wide GPU allocator telemetry remains uncertain.
   focused text field owns keyboard focus, the input area follows retained caret
   geometry, and focus loss/shutdown clears and stops the platform composition.
 - Known limitations: the SDL queue probe is deterministic adapter coverage,
-  not proof that a real Windows/macOS IME emits the expected events. A manual
-  Japanese or Chinese IME run with candidate-window observation is still
-  required. Clipboard, drag selection, rich candidate rendering and full bidi
-  composition selection remain out of scope.
+  not proof that a real Windows/macOS IME emits the expected events. The
+  manual Windows fixture can now hold an interactive window and logs raw
+  platform events, but a reproducible recorded Japanese or Chinese IME result
+  with candidate-window observation is still required. Clipboard, drag
+  selection, rich candidate rendering and full bidi composition selection
+  remain out of scope.
 - Verdict: partially proven; continue to native OS IME validation.
 
 ### Stage 3 measurements

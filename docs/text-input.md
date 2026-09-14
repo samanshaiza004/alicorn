@@ -58,6 +58,16 @@ The adapter supplies the field bounds and the caret's horizontal offset to
 `SDL_SetTextInputArea` in logical window coordinates. The operating system
 continues to own candidate-window presentation.
 
+The native proof fixture also handles non-composition Backspace, Delete, and
+logical Left/Right movement from SDL key events. While a preedit is active,
+those keys are left for the IME rather than mutating committed text.
+
+On Windows, run `out\alicorn_sdl_gpu.exe --manual-ime` from a normal GUI
+session for a hands-on check. Manual mode keeps the window alive, redraws only
+after an invalidation, and logs raw `KEY_DOWN`, `TEXT_EDITING`, and
+`TEXT_INPUT` events. It is a diagnostic aid, not a substitute for a recorded
+real-IME test result.
+
 ## Proof status
 
 Headless tests cover Unicode index conversion, non-mutation during preedit,
@@ -65,6 +75,7 @@ selection replacement, cancellation, focus transfer and node retirement. The
 native Windows SDL3/D3D12 fixture pushes one editing event and one committed
 event through SDL's event queue and verifies the complete adapter path.
 
-This is not yet a real OS-IME proof. Manual Windows and macOS tests still need
-to verify Japanese or Chinese composition, candidate placement and the event
-sequence produced by the platform IME.
+This is not yet a complete real OS-IME proof. A manual Windows run has shown
+the candidate UI and committed input in the development environment, but the
+repository still needs a reproducible recorded result covering Japanese or
+Chinese composition, candidate placement, preedit updates and final commit.
