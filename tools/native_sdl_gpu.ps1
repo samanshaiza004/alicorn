@@ -15,7 +15,7 @@ if ([IO.Path]::IsPathRooted($Odin)) {
 }
 
 New-Item -ItemType Directory -Force -Path 'out' | Out-Null
-& $Odin build native\sdl_gpu -out:out\alicorn_sdl_gpu.exe
+& $Odin build native\sdl_gpu_entry -out:out\alicorn_sdl_gpu.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # The Odin SDK vendor directory carries the SDL3 DLL used by this fixture.

@@ -353,10 +353,12 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 // discarded before stale logical geometry can reach layout or paint.
 prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) -> bool {
 	if !node_has_text_product(node.kind) || !node.active { return false }
+	text_value := node.text
+	if node.kind == .Button { text_value = node.label }
 	// Runtime editing can update Node.text before the next application
 	// description is emitted. Never allow a logically valid-looking retained
 	// run for a different source value to reach layout or a native renderer.
-	if node.text_run_valid && node.text_run.value != node.text {
+	if node.text_run_valid && node.text_run.value != text_value {
 		text_run_destroy(&node.text_run)
 		node.text_run_valid = false
 		node.text_run_generation += 1
@@ -386,7 +388,7 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 		return false
 	}
 	if node.text_run_valid { text_run_destroy(&node.text_run) }
-	run, built := text_run_build(&rt.text_engine, node.text, 16, requested_width, editable=node.kind == .Text_Field)
+	run, built := text_run_build(&rt.text_engine, text_value, 16, requested_width, editable=node.kind == .Text_Field)
 	if built {
 		node.text_run = run
 		node.text_run_valid = true

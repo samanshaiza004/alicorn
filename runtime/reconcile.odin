@@ -91,13 +91,14 @@ release_node_strings :: proc(node: ^Node) {
 }
 
 node_has_text_product :: proc(kind: Node_Kind) -> bool {
-	return kind == .Text || kind == .Text_Field
+	return kind == .Text || kind == .Text_Field || kind == .Button
 }
 
 copy_node_description :: proc(node: ^Node, d: Description) {
 	// Runtime-owned copies are important: a generic description may borrow a
 	// caller's string for only the duration of this procedure.
-	text_changed := node.text != d.text
+	label_changed := d.kind == .Button && node.label != d.label
+	text_changed := node.text != d.text || label_changed
 	kind_changed := node.kind != d.kind
 	if node.text_run_valid && (text_changed || kind_changed || !node_has_text_product(d.kind)) {
 		text_run_destroy(&node.text_run)

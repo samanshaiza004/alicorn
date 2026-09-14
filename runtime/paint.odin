@@ -82,7 +82,16 @@ update_paint :: proc(rt: ^Runtime) {
 					delete(selection)
 				}
 			}
-			append(&node.paint, Display_Command{node.id, display_kind, node.bounds, node.clip, owned(display_text), node.color})
+			if node.kind == .Button {
+				button_color := Color{0.15, 0.25, 0.42, 1}
+				if node.hovered { button_color = Color{0.20, 0.34, 0.54, 1} }
+				if node.pressed { button_color = Color{0.24, 0.42, 0.68, 1} }
+				if node.selected { button_color = Color{0.27, 0.48, 0.70, 1} }
+				append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", button_color})
+				append(&node.paint, Display_Command{node.id, .Text, node.bounds, node.clip, owned(display_text), Color{0.90, 0.95, 1.0, 1.0}})
+			} else {
+				append(&node.paint, Display_Command{node.id, display_kind, node.bounds, node.clip, owned(display_text), node.color})
+			}
 			if node.kind == .Text_Field && rt.focused == node.id {
 				caret := text_field_caret_geometry(rt, node.id)
 				caret.rect.x -= node.bounds.x

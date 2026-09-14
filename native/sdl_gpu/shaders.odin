@@ -1,4 +1,4 @@
-package main
+package alicorn_sdl_gpu
 
 // Generated from the official SDL_ttf testgputext shader artifacts.
 // Source revision: SDL_ttf main 65df5b20d7f6497f24cdf78e583205d53e5c96a1,

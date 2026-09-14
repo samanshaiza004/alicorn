@@ -1,4 +1,4 @@
-package main
+package alicorn_sdl_gpu
 
 import "core:c"
 import alicorn "../../runtime"

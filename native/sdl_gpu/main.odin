@@ -1,4 +1,4 @@
-package main
+package alicorn_sdl_gpu
 
 // Native SDL3/SDL_GPU proof path. It renders Alicorn's retained display list
 // as rectangles using a 1x1 offscreen texture and GPU blits, and renders text
@@ -35,6 +35,46 @@ Native_In_Flight :: struct {
 Native_UI_Nodes :: struct {
 	field:   alicorn.Node_ID,
 	surface: alicorn.Node_ID,
+}
+
+// Application_Key is the small cross-platform command vocabulary exposed by
+// the SDL host. Applications do not need to depend on SDL keycode constants
+// just to implement navigation or a few commands.
+Application_Key :: enum {
+	Up,
+	Down,
+	Page_Up,
+	Page_Down,
+	Command_1,
+	Command_2,
+	Command_3,
+	Toggle,
+}
+
+Application_Build_Proc :: proc(
+	state: rawptr,
+	rt: ^alicorn.Runtime,
+	logical_width, logical_height: int,
+	dpi_scale: f32,
+) -> alicorn.Node_ID
+Application_Text_Change_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, change: alicorn.Text_Change)
+Application_Key_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, key: Application_Key) -> bool
+Application_Scroll_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, delta_y: f32)
+Application_Tick_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
+
+// Application is the intended public boundary for a small native Alicorn
+// program. State is borrowed by callbacks for the duration of Run; retained
+// runtime nodes never store this pointer.
+Application :: struct {
+	state:          rawptr,
+	title:          string,
+	width:          int,
+	height:         int,
+	build:          Application_Build_Proc,
+	on_text_change: Application_Text_Change_Proc,
+	on_key:         Application_Key_Proc,
+	on_scroll:      Application_Scroll_Proc,
+	on_tick:        Application_Tick_Proc,
 }
 
 fail :: proc(message: string) -> ! {
@@ -178,6 +218,7 @@ pump_events :: proc(
 	text_input_events, composition_events: ^int,
 	app_text: ^string,
 	manual_log := false,
+	application: ^Application = nil,
 ) {
 	event: sdl3.Event
 	for sdl3.PollEvent(&event) {
@@ -186,6 +227,11 @@ pump_events :: proc(
 		}
 		if pointer, ok := pointer_from_sdl(event); ok {
 			alicorn.process_pointer(rt, pointer)
+		}
+		if application != nil && event.type == .MOUSE_WHEEL {
+			if application.on_scroll != nil {
+				application.on_scroll(application.state, rt, event.wheel.y)
+			}
 		}
 		if event.type == .KEY_DOWN && event.key.down {
 			modifier_key := false
@@ -225,6 +271,30 @@ pump_events :: proc(
 					fmt.println("alicorn_key_handled", "key", event.key.key, "text", app_text^)
 				}
 			}
+			if application != nil {
+				text_field_focused := false
+				if node, ok := rt.nodes[rt.focused]; ok {
+					text_field_focused = node.active && node.kind == .Text_Field
+				}
+				if !text_field_focused {
+					application_key: Application_Key
+					handled := true
+					switch event.key.key {
+					case sdl3.K_UP: application_key = .Up
+					case sdl3.K_DOWN: application_key = .Down
+					case sdl3.K_PAGEUP: application_key = .Page_Up
+					case sdl3.K_PAGEDOWN: application_key = .Page_Down
+					case sdl3.K_1: application_key = .Command_1
+					case sdl3.K_2: application_key = .Command_2
+					case sdl3.K_3: application_key = .Command_3
+					case sdl3.K_SPACE: application_key = .Toggle
+					case: handled = false
+					}
+					if handled && application.on_key != nil && application.on_key(application.state, rt, application_key) {
+						alicorn.invalidate_root(rt, "application keyboard command")
+					}
+				}
+			}
 		}
 
 		#partial switch event.type {
@@ -242,6 +312,7 @@ pump_events :: proc(
 			metrics.pixel_width = int(event.window.data1)
 			metrics.pixel_height = int(event.window.data2)
 			pixel_resize_events^ += 1
+			alicorn.invalidate_root(rt, "SDL drawable size changed")
 		case .WINDOW_DISPLAY_SCALE_CHANGED:
 			scale_events^ += 1
 			metrics.pixel_density = sdl3.GetWindowPixelDensity(window)
@@ -255,8 +326,17 @@ pump_events :: proc(
 				fmt.println("sdl_event", "TEXT_INPUT", "text", raw_text)
 			}
 			if event.text.text != nil {
-				adopt_text_change(app_text, alicorn.process_text_input(rt, rt.focused, string(event.text.text)))
-				if manual_log { fmt.println("alicorn_after_TEXT_INPUT", "text", app_text^) }
+				change := alicorn.process_text_input(rt, rt.focused, string(event.text.text))
+				if application != nil {
+					if application.on_text_change != nil {
+						application.on_text_change(application.state, rt, change)
+					} else if len(change.text) > 0 {
+						delete(change.text)
+					}
+				} else {
+					adopt_text_change(app_text, change)
+				}
+				if manual_log && application == nil { fmt.println("alicorn_after_TEXT_INPUT", "text", app_text^) }
 			}
 		case .TEXT_EDITING:
 			composition_events^ += 1
@@ -570,7 +650,207 @@ fill_surface_samples :: proc(samples: ^[dynamic]f32, phase: f32) {
 	}
 }
 
-main :: proc() {
+// run_application_loop is the reusable native shell. Application state is
+// borrowed only through callbacks; retained runtime nodes do not store the
+// pointer. SDL, render-pass scheduling, and GPU resource retirement remain
+// host responsibilities.
+run_application_loop :: proc(
+	window: ^sdl3.Window,
+	device: ^sdl3.GPUDevice,
+	rt: ^alicorn.Runtime,
+	text_renderer: ^Native_Text_Renderer,
+	surface_renderer: ^Native_Surface_Renderer,
+	metrics: ^Window_Metrics,
+	application: Application,
+	smoke := false,
+) {
+	application_instance := application
+	quit_requested := false
+	logical_resize_events := 0
+	pixel_resize_events := 0
+	scale_events := 0
+	text_input_events := 0
+	composition_events := 0
+	text_input_active := false
+	text_input_owner: alicorn.Node_ID = 0
+	in_flight := make([dynamic]Native_In_Flight, 0, 3)
+	defer delete(in_flight)
+	retired := 0
+	max_in_flight := 0
+	query_before_wait_true := 0
+	query_after_wait_true := 0
+	wait_count := 0
+	submitted := 0
+
+	platform_text := ""
+	start := time.now()
+	alicorn.invalidate_root(rt, "SDL application initial frame")
+	_ = application.build(application.state, rt, metrics.logical_width, metrics.logical_height, metrics.display_scale)
+	sync_text_input_focus(window, rt, &text_input_active, &text_input_owner)
+
+	last_tick := time.now()
+	for !quit_requested {
+		pump_events(
+			window, rt, metrics, &quit_requested,
+			&logical_resize_events, &pixel_resize_events, &scale_events,
+			&text_input_events, &composition_events, &platform_text,
+			application=&application_instance,
+		)
+		if quit_requested { break }
+
+		now := time.now()
+		if smoke && time.duration_nanoseconds(time.since(start)) >= 3_000_000_000 {
+			quit_requested = true
+			continue
+		}
+		if time.duration_nanoseconds(time.since(last_tick)) >= 16_666_667 {
+			if application.on_tick != nil {
+				application.on_tick(application.state, rt)
+			}
+			last_tick = now
+		}
+
+		if rt.invalidated {
+			alicorn.invalidate_root(rt, "SDL application wake")
+			_ = application.build(application.state, rt, metrics.logical_width, metrics.logical_height, metrics.display_scale)
+			sync_text_input_focus(window, rt, &text_input_active, &text_input_owner)
+		}
+
+		if rt.invalidated || alicorn.gpu_surface_needs_frame(rt) {
+			if len(in_flight) >= 3 {
+				if !wait_and_retire_oldest(device, &in_flight, &query_before_wait_true, &query_after_wait_true, &wait_count) {
+					fail("SDL application fence retirement failed")
+				}
+				retired += 1
+			}
+			command := sdl3.AcquireGPUCommandBuffer(device)
+			if command == nil { fail("SDL application command acquisition failed") }
+			swapchain: ^sdl3.GPUTexture
+			swap_w, swap_h: sdl3.Uint32
+			if !sdl3.AcquireGPUSwapchainTexture(command, window, &swapchain, &swap_w, &swap_h) {
+				_ = sdl3.CancelGPUCommandBuffer(command)
+				fail("SDL application swapchain acquisition failed")
+			}
+			if swapchain == nil || swap_w == 0 || swap_h == 0 {
+				_ = sdl3.CancelGPUCommandBuffer(command)
+				continue
+			}
+			metrics.pixel_width = int(swap_w)
+			metrics.pixel_height = int(swap_h)
+			logical_to_pixel_x := f32(swap_w) / f32(metrics.logical_width)
+			logical_to_pixel_y := f32(swap_h) / f32(metrics.logical_height)
+			temporary := sdl3.CreateGPUTexture(device, sdl3.GPUTextureCreateInfo{
+				type=.D2, format=.R8G8B8A8_UNORM,
+				usage=sdl3.GPUTextureUsageFlags{.SAMPLER, .COLOR_TARGET},
+				width=1, height=1, layer_count_or_depth=1, num_levels=1,
+				sample_count=._1,
+			})
+			if temporary == nil {
+				_ = sdl3.CancelGPUCommandBuffer(command)
+				fail("SDL application temporary texture creation failed")
+			}
+			if !draw_display_list(
+				command, swapchain, swap_w, swap_h, temporary,
+				text_renderer, surface_renderer, rt.display[:],
+				logical_to_pixel_x, logical_to_pixel_y,
+			) {
+				sdl3.ReleaseGPUTexture(device, temporary)
+				_ = sdl3.CancelGPUCommandBuffer(command)
+				fail("SDL application display-list draw failed")
+			}
+			fence := sdl3.SubmitGPUCommandBufferAndAcquireFence(command)
+			if fence == nil {
+				sdl3.ReleaseGPUTexture(device, temporary)
+				fail("SDL application submission failed")
+			}
+			append(&in_flight, Native_In_Flight{fence, temporary})
+			native_text_commit_submission(text_renderer)
+			native_surface_commit_submission(surface_renderer)
+			alicorn.gpu_surface_frame_consumed(rt)
+			submitted += 1
+			rt.stats.gpu_submits += 1
+			if len(in_flight) > max_in_flight { max_in_flight = len(in_flight) }
+		}
+		if !rt.invalidated && !alicorn.gpu_surface_needs_frame(rt) {
+			sdl3.Delay(1)
+		}
+	}
+
+	if !sdl3.WaitForGPUIdle(device) { fail("SDL application GPU idle wait failed") }
+	for entry in in_flight {
+		sdl3.ReleaseGPUTexture(device, entry.texture)
+		sdl3.ReleaseGPUFence(device, entry.fence)
+		retired += 1
+	}
+	clear(&in_flight)
+	if text_input_active {
+		_ = sdl3.ClearComposition(window)
+		_ = sdl3.StopTextInput(window)
+	}
+	elapsed_ns := time.duration_nanoseconds(time.since(start))
+	fmt.println(
+		"SDL application PASS",
+		"submissions", submitted,
+		"retired", retired,
+		"max_frames_in_flight", max_in_flight,
+		"wall_ns", elapsed_ns,
+		"logical_resize_events", logical_resize_events,
+		"pixel_resize_events", pixel_resize_events,
+		"scale_events", scale_events,
+		"text_input_events", text_input_events,
+		"composition_events", composition_events,
+	)
+}
+
+// Run owns the complete SDL3/SDL_GPU application shell for external dogfood
+// programs. The app supplies only its state pointer and ordinary callbacks.
+Run :: proc(application: Application, smoke := false) {
+	if !sdl3.SetHint(sdl3.HINT_IME_IMPLEMENTED_UI, "composition") {
+		fail("SDL_IME_IMPLEMENTED_UI hint could not be set")
+	}
+	if !sdl3.Init(sdl3.INIT_VIDEO) { fail("SDL_Init failed") }
+	defer sdl3.Quit()
+	title := application.title
+	if title == "" { title = "Alicorn application" }
+	width := application.width
+	if width <= 0 { width = 960 }
+	height := application.height
+	if height <= 0 { height = 640 }
+	title_cstring, title_err := strings.clone_to_cstring(title, context.temp_allocator)
+	if title_err != nil { fail("application title allocation failed") }
+	window := sdl3.CreateWindow(title_cstring, c.int(width), c.int(height), sdl3.WindowFlags{.RESIZABLE, .HIGH_PIXEL_DENSITY})
+	if window == nil { fail("SDL_CreateWindow failed") }
+	defer sdl3.DestroyWindow(window)
+	metrics: Window_Metrics
+	if !read_window_metrics(window, &metrics) { fail("initial application window metrics unavailable") }
+	formats := sdl3.GPUShaderFormat{.SPIRV, .DXIL, .MSL}
+	gpu_driver_name: cstring = nil
+	when ODIN_OS == .Darwin { gpu_driver_name = "metal" }
+	device := sdl3.CreateGPUDevice(formats, false, gpu_driver_name)
+	if device == nil { fail("SDL_CreateGPUDevice failed") }
+	defer sdl3.DestroyGPUDevice(device)
+	if !sdl3.ClaimWindowForGPUDevice(device, window) { fail("SDL_ClaimWindowForGPUDevice failed") }
+	defer sdl3.ReleaseWindowFromGPUDevice(device, window)
+	if !sdl3.SetGPUAllowedFramesInFlight(device, 3) { fail("SDL_SetGPUAllowedFramesInFlight failed") }
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, f32(metrics.logical_width), f32(metrics.logical_height)})
+	defer alicorn.destroy_runtime(&rt)
+	font_data, font_err := os.read_entire_file_from_path(native_font_path(), context.allocator)
+	if font_err != nil { fail("application font could not be loaded") }
+	if !alicorn.text_engine_load_font(&rt.text_engine, font_data) {
+		delete(font_data)
+		fail("application Runa font initialization failed")
+	}
+	delete(font_data)
+	text_renderer, text_ok := native_text_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
+	if !text_ok { fail("application GPU text pipeline initialization failed") }
+	defer native_text_destroy(&text_renderer)
+	surface_renderer, surface_ok := native_surface_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
+	if !surface_ok { fail("application GPU surface pipeline initialization failed") }
+	defer native_surface_destroy(&surface_renderer)
+	run_application_loop(window, device, &rt, &text_renderer, &surface_renderer, &metrics, application, smoke)
+}
+
+RunFoundation :: proc() {
 	// SDL video, window, text-input, event polling, and GPU operations all run
 	// on this main thread. No background event loop is introduced by the adapter.
 	manual_ime := false

@@ -34,5 +34,5 @@ else
     fi
 fi
 
-"$ODIN" build native/sdl_gpu "-out:$OUT_DIR/alicorn_sdl_gpu"
+"$ODIN" build native/sdl_gpu_entry "-out:$OUT_DIR/alicorn_sdl_gpu"
 "$OUT_DIR/alicorn_sdl_gpu"
