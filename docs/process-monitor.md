@@ -101,14 +101,14 @@ separate repository with `tools/run.ps1 -Smoke`. A representative three-second
 run reported:
 
 ```text
-samples 12
-rows 82
-surface_updates 167
-surface_frames 167
-submissions 167
-retired 167
+samples 11
+rows 92
+surface_updates 11
+surface_frames 11
+submissions 11
+retired 11
 max_frames_in_flight 3
-query_failures 876
+query_failures 781
 ```
 
 The query failures are expected on a live Windows machine because some

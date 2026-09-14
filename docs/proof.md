@@ -497,9 +497,9 @@ texture, vertex buffer and transfer buffer are persistent.
 - Test: `alicorn-monitor/tools/run.ps1 -Smoke` builds the separate application,
   copies the required SDL3 DLL beside the executable, runs it for three
   seconds, and reports sampling, surface, submission, and retirement counters.
-- Result: the development Windows host completed the smoke run with 12
-  samples, 82 visible process rows, 167 graph updates, 167 submissions, 167
-  retirements, and a maximum of three frames in flight. It recorded 876 query
+- Result: the development Windows host completed the smoke run with 11
+  samples, 92 visible process rows, 11 graph updates, 11 submissions, 11
+  retirements, and a maximum of three frames in flight. It recorded 781 query
   failures without crashing.
 - Known limitations: this is an integration smoke test, not a full dogfood
   performance report or cross-platform monitor. The reusable host is still a
