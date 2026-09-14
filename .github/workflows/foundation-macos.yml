@@ -1,0 +1,24 @@
+name: Alicorn foundation (macOS)
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  headless:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Odin
+        run: brew install odin
+
+      - name: Report Odin installation
+        shell: sh
+        run: |
+          echo "Odin path: $(command -v odin)"
+          odin version
+
+      - name: Build and run foundation checks
+        shell: sh
+        run: ./tools/check.sh
