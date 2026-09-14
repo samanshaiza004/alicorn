@@ -43,3 +43,23 @@ powershell -ExecutionPolicy Bypass -File tools/bench.ps1
 ```
 
 The commands write build outputs under `out/`, which is ignored by Git.
+
+On macOS and other Unix-like hosts, use the equivalent scripts:
+
+```sh
+./tools/test.sh
+./tools/check.sh
+./tools/bench.sh
+```
+
+The scripts resolve `odin` through `PATH` by default and accept an explicit
+compiler with `ALICORN_ODIN=/path/to/odin`. To build and run the native SDL3
+validation fixture from a GUI login session:
+
+```sh
+./tools/native_sdl_gpu.sh
+```
+
+SDL3 is an external native dependency for this fixture. It is not an Alicorn
+runtime dependency; on macOS, Homebrew's `sdl3` formula supplies the normal
+linker-visible library.

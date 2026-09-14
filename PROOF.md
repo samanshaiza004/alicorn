@@ -79,10 +79,18 @@ the repository contains a repeatable test or measurement for it.
   SDL3 adapter that acquires swapchain textures, runs render passes, composes
   retained rectangle commands with GPU blits, and retires temporary textures
   behind submission fences.
-- Result: the native proof submitted `6` frames with `3` frames in flight and
-  retired `6` concrete offscreen textures on this host.
+- Result: the Windows proof submitted `6` frames with `3` frames in flight and
+  retired `6` concrete offscreen textures. The macOS validation branch at the
+  current commit submitted `303` real Metal frames (a three-frame burst plus
+  300 resize iterations), held at most `3` frames in flight, and retired `303`
+  concrete offscreen textures.
 - Known limitations: the compositor is rectangle-based; shader pipelines,
-  glyph-atlas upload and cross-platform driver coverage remain unverified.
+  glyph-atlas upload and cross-platform driver coverage remain unverified. On
+  SDL3 3.4.14 Metal, post-wait fence queries were false for the tested real
+  workload; the macOS fixture uses the successful blocking wait as completion
+  authority and records the anomaly. Resize validation recreates the SDL
+  window claim around each programmatic resize because that SDL/Metal path did
+  not reliably expose a drawable otherwise.
 - Verdict: partially proven.
 
 ## Claim: idle UI performs effectively no unnecessary work
