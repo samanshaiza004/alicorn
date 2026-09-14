@@ -35,6 +35,17 @@ For the non-mutating style/type gate plus all headless target builds:
 powershell -ExecutionPolicy Bypass -File tools/check.ps1
 ```
 
+On macOS and other Unix-like hosts, use the equivalent scripts:
+
+```sh
+./tools/test.sh
+./tools/check.sh
+./tools/bench.sh
+```
+
+The scripts resolve `odin` through `PATH` by default and accept an explicit
+compiler with `ALICORN_ODIN=/path/to/odin`.
+
 Run the benchmark suite:
 
 ```powershell

@@ -14,11 +14,33 @@ to map the following lifecycle to the SDL3 vendor package:
 
 `runtime.GPU_Backend` is the headless lifetime model used by tests. It rejects
 submission of a command buffer that is not open and makes deferred retirement
-observable. `vendor:sdl3` is available in the installed Odin SDK at the time of
-this build, including `SDL3.lib`, but no native window/driver run is asserted by
-the foundation report until the smoke executable is executed on that machine.
+observable. `vendor:sdl3` links to `system:SDL3` on Unix-like hosts. On macOS,
+the validation executable therefore needs SDL3 available through the normal
+system linker search path, for example Homebrew's `sdl3` formula; SDL3 is not
+made an Alicorn runtime dependency.
+
+Build and run the native validation executable from a normal macOS GUI login
+session with:
+
+```sh
+ALICORN_ODIN=/path/to/odin ./tools/native_sdl_gpu.sh
+```
+
+The fixture requests the `metal` SDL_GPU driver only on Darwin and fails if a
+different driver is selected. It creates a high-pixel-density window and
+reports `SDL_GetWindowSize`, `SDL_GetWindowSizeInPixels`,
+`SDL_GetWindowPixelDensity`, and `SDL_GetWindowDisplayScale` separately. It
+keeps layout, pointer, and text-input coordinates in logical window units;
+physical pixels are a compositor concern. `WINDOW_RESIZED`,
+`WINDOW_PIXEL_SIZE_CHANGED`/`WINDOW_METAL_VIEW_RESIZED`, and
+`WINDOW_DISPLAY_SCALE_CHANGED` are handled as distinct events.
+
+All SDL calls in this fixture run on the main thread, including video/window
+creation, event polling, text-input activation, and GPU submission. The
+fixture deliberately uses empty command buffers, so a successful run proves
+platform initialization, Metal selection, window claim, command-buffer/fence
+lifecycle, resize handling, and shutdown—not retained display-list rendering.
 
 SDL command buffers are frame-scoped. Alicorn must never retain one in a node
 or use it after `gpu_submit` returns. Nodes retain display data and resource
 handles, not submitted command buffers.
-
