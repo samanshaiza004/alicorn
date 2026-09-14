@@ -104,12 +104,12 @@ tools/bench.ps1`.
 
 | workload | first ns | unchanged ns | one change ns | keyed reorder ns | retained nodes | cumulative layout updates |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 100 nodes | 457700 | 137100 | 207500 | 206200 | 101 | 100 |
-| 1,000 nodes | 3896900 | 1170700 | 1196700 | 1158200 | 1001 | 1000 |
-| 10,000 nodes | 33177200 | 14446700 | 15090700 | 15833100 | 10001 | 10000 |
+| 100 nodes | 778100 | 139200 | 139000 | 140700 | 101 | 100 |
+| 1,000 nodes | 2979300 | 1354300 | 1261000 | 1178300 | 1001 | 1000 |
+| 10,000 nodes | 37815700 | 16931500 | 17947700 | 16871700 | 10001 | 10000 |
 
-Virtual list: 1,000,000 logical rows, 100 scroll frames, elapsed `5852100 ns`,
-retained nodes `23`. Idle: 10,000 attempted frames, elapsed `18700 ns`,
+Virtual list: 1,000,000 logical rows, 100 scroll frames, elapsed `5611200 ns`,
+retained nodes `23`. Idle: 10,000 attempted frames, elapsed `22700 ns`,
 `idle_count=10000`, headless GPU submits `0`.
 
 Native command: build `native/sdl_gpu`, put the SDK's SDL3 directory on
