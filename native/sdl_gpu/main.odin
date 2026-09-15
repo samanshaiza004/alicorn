@@ -999,6 +999,7 @@ run_application_loop :: proc(
 	sync_text_input_focus(window, rt, &text_input_active, &text_input_owner)
 
 	last_tick := time.now()
+	last_focus_log := start
 	for !quit_requested {
 		frame_start := time.now()
 		event_start := time.now()
@@ -1016,6 +1017,18 @@ run_application_loop :: proc(
 		if quit_requested { break }
 
 		now := time.now()
+		when ODIN_OS == .Darwin {
+			if manual_log && time.duration_nanoseconds(time.since(last_focus_log)) >= 1_000_000_000 {
+				focus := darwin_focus_state(window)
+				fmt.println(
+					"darwin_focus",
+					"app_active", focus.app_active,
+					"key_window", focus.key_window,
+					"sdl_input_focus", focus.input_focus,
+				)
+				last_focus_log = now
+			}
+		}
 		if smoke && time.duration_nanoseconds(time.since(start)) >= 3_000_000_000 {
 			quit_requested = true
 			continue
@@ -1180,6 +1193,18 @@ Run :: proc(application: Application, smoke := false) {
 	configure_platform_activation()
 	if !sdl3.Init(sdl3.INIT_VIDEO) { fail("SDL_Init failed") }
 	defer sdl3.Quit()
+	linked_sdl_version := sdl3.GetVersion()
+	fmt.println(
+		"sdl3_version",
+		sdl3.VERSIONNUM_MAJOR(linked_sdl_version),
+		sdl3.VERSIONNUM_MINOR(linked_sdl_version),
+		sdl3.VERSIONNUM_MICRO(linked_sdl_version),
+	)
+	when ODIN_OS == .Darwin {
+		if linked_sdl_version != sdl3.VERSIONNUM(3, 4, 16) {
+			fail("macOS requires SDL3 3.4.16")
+		}
+	}
 	title := application.title
 	if title == "" { title = "Alicorn application" }
 	width := application.width
