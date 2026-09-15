@@ -1,7 +1,7 @@
 package alicorn_sdl_gpu
 
 // Native SDL3/SDL_GPU proof path. It renders Alicorn's retained display list
-// as rectangles using a 1x1 offscreen texture and GPU blits, and renders text
+// with persistent solid-quad batches and renders text
 // commands through the retained Runa glyph pipeline. This exercises real
 // swapchain acquisition, ordered render passes, logical-to-physical composition
 // and asynchronous resource retirement.
@@ -28,8 +28,7 @@ Window_Metrics :: struct {
 }
 
 Native_In_Flight :: struct {
-	fence:   ^sdl3.GPUFence,
-	texture: ^sdl3.GPUTexture,
+	fence: ^sdl3.GPUFence,
 }
 
 #assert(offset_of(Native_Text_Vertex, position) == 0)
@@ -245,6 +244,7 @@ pump_events :: proc(
 	app_text: ^string,
 	manual_log := false,
 	application: ^Application = nil,
+	diagnostics_capture_requested: ^bool = nil,
 ) {
 	event: sdl3.Event
 	for sdl3.PollEvent(&event) {
@@ -269,6 +269,10 @@ pump_events :: proc(
 			}
 		}
 		if event.type == .KEY_DOWN && event.key.down {
+			if event.key.key == sdl3.K_F12 && diagnostics_capture_requested != nil {
+				diagnostics_capture_requested^ = true
+				fmt.println("alicorn_diagnostics", "capture_requested", "F12")
+			}
 			modifier_key := false
 			switch event.key.key {
 			case sdl3.K_LCTRL, sdl3.K_LSHIFT, sdl3.K_LALT, sdl3.K_LGUI,
@@ -445,9 +449,9 @@ draw_display_list :: proc(
 	command: ^sdl3.GPUCommandBuffer,
 	swapchain: ^sdl3.GPUTexture,
 	swap_w, swap_h: sdl3.Uint32,
-	temporary: ^sdl3.GPUTexture,
 	text_renderer: ^Native_Text_Renderer,
 	surface_renderer: ^Native_Surface_Renderer,
+	solid_renderer: ^Native_Solid_Renderer,
 	display: []alicorn.Display_Command,
 	logical_to_pixel_x, logical_to_pixel_y: f32,
 	skip_root := false,
@@ -455,6 +459,11 @@ draw_display_list :: proc(
 	if !native_text_rebuild_mesh(text_renderer, display, logical_to_pixel_x, logical_to_pixel_y) { return false }
 	if !native_text_sync_atlas(text_renderer, command) { return false }
 	if !native_text_upload_vertices(text_renderer, command) { return false }
+	if !native_solid_build(solid_renderer, display, logical_to_pixel_x, logical_to_pixel_y, swap_w, swap_h, skip_root) { return false }
+	if len(solid_renderer.vertices) > 0 {
+		if !native_solid_prepare_white_texture(solid_renderer, command) { return false }
+		if !native_solid_upload(solid_renderer, command) { return false }
+	}
 	// The retained display list remains in logical window units. Only this
 	// compositor boundary converts its geometry to the physical swapchain.
 	background := make_color_target(swapchain, sdl3.FColor{0.035, 0.045, 0.065, 1}, false)
@@ -462,46 +471,32 @@ draw_display_list :: proc(
 	if pass == nil { return false }
 	sdl3.EndGPURenderPass(pass)
 
-	index: int = 0
-	for draw in display {
-		if skip_root && draw.kind == .Root { continue }
+	display_index := 0
+	for display_index < len(display) {
+		draw := display[display_index]
 		if native_text_is_text(draw.kind) {
 			if !native_text_render_command(text_renderer, command, draw, swapchain, swap_w, swap_h, logical_to_pixel_x, logical_to_pixel_y) {
 				return false
 			}
+			display_index += 1
 			continue
 		}
 		if draw.kind == .Custom_Surface {
 			if !native_surface_render_command(surface_renderer, command, draw, swapchain, swap_w, swap_h, logical_to_pixel_x, logical_to_pixel_y) {
 				return false
 			}
+			display_index += 1
 			continue
 		}
-		x0, y0, x1, y1 := logical_to_pixel_bounds(draw.bounds, logical_to_pixel_x, logical_to_pixel_y)
-		if x0 < 0 { x0 = 0 }
-		if y0 < 0 { y0 = 0 }
-		if x1 > int(swap_w) { x1 = int(swap_w) }
-		if y1 > int(swap_h) { y1 = int(swap_h) }
-		if x1 <= x0 || y1 <= y0 { continue }
-
-		color := sdl3.FColor{draw.color.r, draw.color.g, draw.color.b, draw.color.a}
-		target := make_color_target(temporary, color, index > 0)
-		offscreen_pass := sdl3.BeginGPURenderPass(command, &target, 1, nil)
-		if offscreen_pass == nil { return false }
-		sdl3.EndGPURenderPass(offscreen_pass)
-
-		blit := sdl3.GPUBlitInfo{
-			source = sdl3.GPUBlitRegion{texture=temporary, w=1, h=1},
-			destination = sdl3.GPUBlitRegion{texture=swapchain, x=sdl3.Uint32(x0), y=sdl3.Uint32(y0), w=sdl3.Uint32(x1-x0), h=sdl3.Uint32(y1-y0)},
-			load_op = .LOAD,
-			flip_mode = .NONE,
-			filter = .NEAREST,
-			// The destination is a retained display target. Cycling it here
-			// would invalidate earlier display-list items, including text.
-			cycle = false,
+		batch_start := display_index
+		for display_index < len(display) {
+			batch_draw := display[display_index]
+			if native_text_is_text(batch_draw.kind) || batch_draw.kind == .Custom_Surface { break }
+			display_index += 1
 		}
-		sdl3.BlitGPUTexture(command, blit)
-		index += 1
+		if !native_solid_render_batch(solid_renderer, command, swapchain, swap_w, swap_h, solid_renderer.draws[batch_start:display_index]) {
+			return false
+		}
 	}
 	return true
 }
@@ -516,6 +511,7 @@ native_text_readback_probe :: proc(
 	device: ^sdl3.GPUDevice,
 	text_renderer: ^Native_Text_Renderer,
 	surface_renderer: ^Native_Surface_Renderer,
+	solid_renderer: ^Native_Solid_Renderer,
 	display: []alicorn.Display_Command,
 	width, height: sdl3.Uint32,
 ) -> (ok: bool, non_background: int) {
@@ -528,33 +524,22 @@ native_text_readback_probe :: proc(
 		width=width, height=height, layer_count_or_depth=1, num_levels=1, sample_count=._1,
 	})
 	if probe_texture == nil { return false, 0 }
-	temporary := sdl3.CreateGPUTexture(device, sdl3.GPUTextureCreateInfo{
-		type=.D2, format=.R8G8B8A8_UNORM, usage=sdl3.GPUTextureUsageFlags{.SAMPLER, .COLOR_TARGET},
-		width=1, height=1, layer_count_or_depth=1, num_levels=1, sample_count=._1,
-	})
-	if temporary == nil {
-		sdl3.ReleaseGPUTexture(device, probe_texture)
-		return false, 0
-	}
 	download := sdl3.CreateGPUTransferBuffer(device, sdl3.GPUTransferBufferCreateInfo{
 		usage=.DOWNLOAD, size=width * height * 4,
 	})
 	if download == nil {
-		sdl3.ReleaseGPUTexture(device, temporary)
 		sdl3.ReleaseGPUTexture(device, probe_texture)
 		return false, 0
 	}
 	command := sdl3.AcquireGPUCommandBuffer(device)
 	if command == nil {
 		sdl3.ReleaseGPUTransferBuffer(device, download)
-		sdl3.ReleaseGPUTexture(device, temporary)
 		sdl3.ReleaseGPUTexture(device, probe_texture)
 		return false, 0
 	}
-	if !draw_display_list(command, probe_texture, width, height, temporary, text_renderer, surface_renderer, display, 1, 1, false) {
+	if !draw_display_list(command, probe_texture, width, height, text_renderer, surface_renderer, solid_renderer, display, 1, 1, false) {
 		_ = sdl3.CancelGPUCommandBuffer(command)
 		sdl3.ReleaseGPUTransferBuffer(device, download)
-		sdl3.ReleaseGPUTexture(device, temporary)
 		sdl3.ReleaseGPUTexture(device, probe_texture)
 		return false, 0
 	}
@@ -562,7 +547,6 @@ native_text_readback_probe :: proc(
 	if copy_pass == nil {
 		_ = sdl3.CancelGPUCommandBuffer(command)
 		sdl3.ReleaseGPUTransferBuffer(device, download)
-		sdl3.ReleaseGPUTexture(device, temporary)
 		sdl3.ReleaseGPUTexture(device, probe_texture)
 		return false, 0
 	}
@@ -573,7 +557,6 @@ native_text_readback_probe :: proc(
 	fence := sdl3.SubmitGPUCommandBufferAndAcquireFence(command)
 	if fence == nil {
 		sdl3.ReleaseGPUTransferBuffer(device, download)
-		sdl3.ReleaseGPUTexture(device, temporary)
 		sdl3.ReleaseGPUTexture(device, probe_texture)
 		return false, 0
 	}
@@ -581,7 +564,6 @@ native_text_readback_probe :: proc(
 	if !sdl3.WaitForGPUFences(device, true, &fences[0], 1) {
 		sdl3.ReleaseGPUFence(device, fence)
 		sdl3.ReleaseGPUTransferBuffer(device, download)
-		sdl3.ReleaseGPUTexture(device, temporary)
 		sdl3.ReleaseGPUTexture(device, probe_texture)
 		return false, 0
 	}
@@ -589,7 +571,6 @@ native_text_readback_probe :: proc(
 	if mapped == nil {
 		sdl3.ReleaseGPUFence(device, fence)
 		sdl3.ReleaseGPUTransferBuffer(device, download)
-		sdl3.ReleaseGPUTexture(device, temporary)
 		sdl3.ReleaseGPUTexture(device, probe_texture)
 		return false, 0
 	}
@@ -623,7 +604,6 @@ native_text_readback_probe :: proc(
 	native_surface_commit_submission(surface_renderer)
 	sdl3.ReleaseGPUFence(device, fence)
 	sdl3.ReleaseGPUTransferBuffer(device, download)
-	sdl3.ReleaseGPUTexture(device, temporary)
 	sdl3.ReleaseGPUTexture(device, probe_texture)
 	ok = text_found && non_background > 0
 	return
@@ -667,6 +647,7 @@ wait_and_retire_oldest :: proc(
 	device: ^sdl3.GPUDevice,
 	in_flight: ^[dynamic; 3]Native_In_Flight,
 	query_before_wait_true, query_after_wait_true, wait_count: ^int,
+	timing: ^Native_Host_Timing = nil,
 ) -> bool {
 	if len(in_flight) == 0 { return true }
 	old := in_flight[0]
@@ -674,8 +655,14 @@ wait_and_retire_oldest :: proc(
 		query_before_wait_true^ += 1
 	}
 	fences := [1]^sdl3.GPUFence{old.fence}
+	wait_start := time.now()
 	if !sdl3.WaitForGPUFences(device, true, &fences[0], 1) {
+		if timing != nil { timing.fence_wait_ns += u64(time.duration_nanoseconds(time.since(wait_start))) }
 		return false
+	}
+	if timing != nil {
+		timing.fence_wait_ns += u64(time.duration_nanoseconds(time.since(wait_start)))
+		timing.fence_waits += 1
 	}
 	wait_count^ += 1
 	if sdl3.QueryGPUFence(device, old.fence) {
@@ -685,7 +672,6 @@ wait_and_retire_oldest :: proc(
 	// oldest submission. Query behavior is recorded but not required for safe
 	// retirement, including SDL backend implementations with unusual query
 	// semantics for completed work.
-	sdl3.ReleaseGPUTexture(device, old.texture)
 	sdl3.ReleaseGPUFence(device, old.fence)
 	for i := 1; i < len(in_flight); i += 1 {
 		in_flight[i-1] = in_flight[i]
@@ -711,10 +697,12 @@ run_application_loop :: proc(
 	rt: ^alicorn.Runtime,
 	text_renderer: ^Native_Text_Renderer,
 	surface_renderer: ^Native_Surface_Renderer,
+	solid_renderer: ^Native_Solid_Renderer,
 	metrics: ^Window_Metrics,
 	application: Application,
 	smoke := false,
 	manual_log := false,
+	gpu_driver := "unknown",
 ) {
 	application_instance := application
 	quit_requested := false
@@ -732,22 +720,30 @@ run_application_loop :: proc(
 	query_after_wait_true := 0
 	wait_count := 0
 	submitted := 0
+	timing := Native_Host_Timing{}
+	diagnostics := native_parse_diagnostics_options()
 
 	platform_text := ""
 	start := time.now()
 	alicorn.invalidate_root(rt, "SDL application initial frame")
+	build_start := time.now()
 	_ = application.build(application.state, rt, metrics.logical_width, metrics.logical_height, metrics.display_scale)
+	timing.application_build_ns += u64(time.duration_nanoseconds(time.since(build_start)))
 	sync_text_input_focus(window, rt, &text_input_active, &text_input_owner)
 
 	last_tick := time.now()
 	for !quit_requested {
+		frame_start := time.now()
+		event_start := time.now()
 		pump_events(
 			window, rt, metrics, &quit_requested,
 			&logical_resize_events, &pixel_resize_events, &scale_events,
 			&text_input_events, &composition_events, &platform_text,
 			manual_log=manual_log,
 			application=&application_instance,
+			diagnostics_capture_requested=&diagnostics.capture_requested,
 		)
+		timing.event_pump_ns += u64(time.duration_nanoseconds(time.since(event_start)))
 		if quit_requested { break }
 
 		now := time.now()
@@ -757,24 +753,41 @@ run_application_loop :: proc(
 		}
 		if time.duration_nanoseconds(time.since(last_tick)) >= 16_666_667 {
 			if application.on_tick != nil {
+				tick_start := time.now()
 				application.on_tick(application.state, rt)
+				timing.application_tick_ns += u64(time.duration_nanoseconds(time.since(tick_start)))
 			}
 			last_tick = now
 		}
 
 		if rt.invalidated {
 			alicorn.invalidate_root(rt, "SDL application wake")
+			build_start = time.now()
 			_ = application.build(application.state, rt, metrics.logical_width, metrics.logical_height, metrics.display_scale)
+			timing.application_build_ns += u64(time.duration_nanoseconds(time.since(build_start)))
 			sync_text_input_focus(window, rt, &text_input_active, &text_input_owner)
 		}
 
-		if rt.invalidated || alicorn.gpu_surface_needs_frame(rt) {
-			if len(in_flight) >= 3 {
-				if !wait_and_retire_oldest(device, &in_flight, &query_before_wait_true, &query_after_wait_true, &wait_count) {
+		// Interaction-only invalidation updates retained paint without asking the
+		// application to rebuild its procedural description. Flush that retained
+		// presentation before submitting the next GPU frame.
+		presentation_flushed := false
+		if !rt.invalidated && alicorn.presentation_needs_frame(rt) {
+			presentation_ui, ready := alicorn.begin_presentation_frame(rt)
+			if ready {
+				alicorn.end_presentation_frame(&presentation_ui)
+				presentation_flushed = true
+			}
+		}
+
+		if alicorn.frame_needs_submission(rt) || presentation_flushed {
+			if len(in_flight) >= 2 {
+				if !wait_and_retire_oldest(device, &in_flight, &query_before_wait_true, &query_after_wait_true, &wait_count, &timing) {
 					fail("SDL application fence retirement failed")
 				}
 				retired += 1
 			}
+			encode_start := time.now()
 			command := sdl3.AcquireGPUCommandBuffer(device)
 			if command == nil { fail("SDL application command acquisition failed") }
 			swapchain: ^sdl3.GPUTexture
@@ -791,46 +804,40 @@ run_application_loop :: proc(
 			metrics.pixel_height = int(swap_h)
 			logical_to_pixel_x := f32(swap_w) / f32(metrics.logical_width)
 			logical_to_pixel_y := f32(swap_h) / f32(metrics.logical_height)
-			temporary := sdl3.CreateGPUTexture(device, sdl3.GPUTextureCreateInfo{
-				type=.D2, format=.R8G8B8A8_UNORM,
-				usage=sdl3.GPUTextureUsageFlags{.SAMPLER, .COLOR_TARGET},
-				width=1, height=1, layer_count_or_depth=1, num_levels=1,
-				sample_count=._1,
-			})
-			if temporary == nil {
-				_ = sdl3.CancelGPUCommandBuffer(command)
-				fail("SDL application temporary texture creation failed")
-			}
 			if !draw_display_list(
-				command, swapchain, swap_w, swap_h, temporary,
-				text_renderer, surface_renderer, rt.display[:],
+				command, swapchain, swap_w, swap_h,
+				text_renderer, surface_renderer, solid_renderer, rt.display[:],
 				logical_to_pixel_x, logical_to_pixel_y,
 			) {
-				sdl3.ReleaseGPUTexture(device, temporary)
 				_ = sdl3.CancelGPUCommandBuffer(command)
 				fail("SDL application display-list draw failed")
 			}
+			timing.gpu_encode_ns += u64(time.duration_nanoseconds(time.since(encode_start)))
+			submit_start := time.now()
 			fence := sdl3.SubmitGPUCommandBufferAndAcquireFence(command)
+			timing.gpu_submit_ns += u64(time.duration_nanoseconds(time.since(submit_start)))
 			if fence == nil {
-				sdl3.ReleaseGPUTexture(device, temporary)
 				fail("SDL application submission failed")
 			}
-			append(&in_flight, Native_In_Flight{fence, temporary})
+			append(&in_flight, Native_In_Flight{fence})
 			native_text_commit_submission(text_renderer)
 			native_surface_commit_submission(surface_renderer)
 			alicorn.gpu_surface_frame_consumed(rt)
+			if presentation_flushed { alicorn.presentation_frame_consumed(rt) }
 			submitted += 1
+			timing.gpu_submissions += 1
 			rt.stats.gpu_submits += 1
 			if len(in_flight) > max_in_flight { max_in_flight = len(in_flight) }
 		}
-		if !rt.invalidated && !alicorn.gpu_surface_needs_frame(rt) {
+		if !rt.invalidated && !alicorn.frame_needs_submission(rt) {
 			sdl3.Delay(1)
 		}
+		native_timing_add_frame(&timing, u64(time.duration_nanoseconds(time.since(frame_start))))
+		native_write_diagnostics(&diagnostics, start, gpu_driver, metrics^, rt, text_renderer, surface_renderer, solid_renderer, &timing)
 	}
 
 	if !sdl3.WaitForGPUIdle(device) { fail("SDL application GPU idle wait failed") }
 	for entry in in_flight {
-		sdl3.ReleaseGPUTexture(device, entry.texture)
 		sdl3.ReleaseGPUFence(device, entry.fence)
 		retired += 1
 	}
@@ -851,6 +858,10 @@ run_application_loop :: proc(
 		"scale_events", scale_events,
 		"text_input_events", text_input_events,
 		"composition_events", composition_events,
+		"frame_p95_ns", native_timing_percentile(timing.frame_samples[:], 0.95),
+		"gpu_encode_ns", timing.gpu_encode_ns,
+		"gpu_submit_ns", timing.gpu_submit_ns,
+		"fence_wait_ns", timing.fence_wait_ns,
 	)
 }
 
@@ -897,9 +908,12 @@ Run :: proc(application: Application, smoke := false) {
 			fail("macOS SDL_GPU did not select the requested Metal driver")
 		}
 	}
-	if !sdl3.ClaimWindowForGPUDevice(device, window) { fail("SDL_ClaimWindowForGPUDevice failed") }
+		if !sdl3.ClaimWindowForGPUDevice(device, window) { fail("SDL_ClaimWindowForGPUDevice failed") }
 	defer sdl3.ReleaseWindowFromGPUDevice(device, window)
-	if !sdl3.SetGPUAllowedFramesInFlight(device, 3) { fail("SDL_SetGPUAllowedFramesInFlight failed") }
+	// The reusable desktop host favors interaction latency. The foundation
+	// stress fixture below intentionally uses three frames; ordinary apps use
+	// two unless they explicitly opt into throughput-oriented stress behavior.
+	if !sdl3.SetGPUAllowedFramesInFlight(device, 2) { fail("SDL_SetGPUAllowedFramesInFlight failed") }
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, f32(metrics.logical_width), f32(metrics.logical_height)})
 	defer alicorn.destroy_runtime(&rt)
 	font_data, font_err := os.read_entire_file_from_path(native_font_path(), context.allocator)
@@ -915,11 +929,14 @@ Run :: proc(application: Application, smoke := false) {
 	surface_renderer, surface_ok := native_surface_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
 	if !surface_ok { fail("application GPU surface pipeline initialization failed") }
 	defer native_surface_destroy(&surface_renderer)
+	solid_renderer, solid_ok := native_solid_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window))
+	if !solid_ok { fail("application solid rectangle pipeline initialization failed") }
+	defer native_solid_destroy(&solid_renderer)
 	// Metal/text/surface setup can briefly return focus to the launching
 	// terminal on macOS. Raise again only after the application is ready so a
 	// visible-but-inert window is not handed to the user.
 	if !sdl3.RaiseWindow(window) { fail("SDL_RaiseWindow failed after host initialization") }
-	run_application_loop(window, device, &rt, &text_renderer, &surface_renderer, &metrics, application, smoke, input_debug)
+	run_application_loop(window, device, &rt, &text_renderer, &surface_renderer, &solid_renderer, &metrics, application, smoke, input_debug, string(selected_driver))
 }
 
 RunFoundation :: proc() {
@@ -1024,6 +1041,9 @@ RunFoundation :: proc() {
 		fail("GPU surface pipeline initialization failed")
 	}
 	defer native_surface_destroy(&surface_renderer)
+	solid_renderer, solid_ok := native_solid_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window))
+	if !solid_ok { fail("GPU solid rectangle pipeline initialization failed") }
+	defer native_solid_destroy(&solid_renderer)
 	// Establish a deterministic visual proof before the resize stress. The
 	// runtime display is rendered into an offscreen RGBA8 target, downloaded
 	// only after its submission fence signals, and checked inside the text
@@ -1036,6 +1056,7 @@ RunFoundation :: proc() {
 		device,
 		&text_renderer,
 		&surface_renderer,
+		&solid_renderer,
 		rt.display[:],
 		sdl3.Uint32(metrics.logical_width),
 		sdl3.Uint32(metrics.logical_height),
@@ -1267,31 +1288,15 @@ RunFoundation :: proc() {
 		metrics.pixel_height = int(swap_h)
 		logical_to_pixel_x := f32(swap_w) / f32(metrics.logical_width)
 		logical_to_pixel_y := f32(swap_h) / f32(metrics.logical_height)
-		temporary := sdl3.CreateGPUTexture(device, sdl3.GPUTextureCreateInfo{
-			type = .D2,
-			format = .R8G8B8A8_UNORM,
-			usage = sdl3.GPUTextureUsageFlags{.SAMPLER, .COLOR_TARGET},
-			width = 1,
-			height = 1,
-			layer_count_or_depth = 1,
-			num_levels = 1,
-			sample_count = ._1,
-		})
-		if temporary == nil {
-			_ = sdl3.CancelGPUCommandBuffer(command)
-			fail("SDL_CreateGPUTexture failed")
-		}
-		if !draw_display_list(command, swapchain, swap_w, swap_h, temporary, &text_renderer, &surface_renderer, rt.display[:], logical_to_pixel_x, logical_to_pixel_y) {
-			sdl3.ReleaseGPUTexture(device, temporary)
+		if !draw_display_list(command, swapchain, swap_w, swap_h, &text_renderer, &surface_renderer, &solid_renderer, rt.display[:], logical_to_pixel_x, logical_to_pixel_y) {
 			_ = sdl3.CancelGPUCommandBuffer(command)
 			fail("Alicorn retained display-list pass failed")
 		}
 		fence := sdl3.SubmitGPUCommandBufferAndAcquireFence(command)
 		if fence == nil {
-			sdl3.ReleaseGPUTexture(device, temporary)
 			fail("SDL_SubmitGPUCommandBufferAndAcquireFence failed")
 		}
-		append(&in_flight, Native_In_Flight{fence, temporary})
+		append(&in_flight, Native_In_Flight{fence})
 			native_text_commit_submission(&text_renderer)
 			native_surface_commit_submission(&surface_renderer)
 			if surface_stress { alicorn.gpu_surface_frame_consumed(&rt) }
@@ -1317,7 +1322,6 @@ RunFoundation :: proc() {
 		fail("SDL_WaitForGPUIdle failed during shutdown validation")
 	}
 	for entry in in_flight {
-		sdl3.ReleaseGPUTexture(device, entry.texture)
 		sdl3.ReleaseGPUFence(device, entry.fence)
 		retired += 1
 	}

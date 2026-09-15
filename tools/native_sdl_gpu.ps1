@@ -1,7 +1,10 @@
 param(
     [string]$Odin = $env:ALICORN_ODIN,
     [switch]$ManualIme,
-    [switch]$SurfaceStress
+    [switch]$SurfaceStress,
+    [switch]$Diagnostics,
+    [int]$CaptureAfter = 2,
+    [string]$CaptureDir = 'out\diagnostics'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -50,5 +53,10 @@ Copy-Item -LiteralPath $sdl_dll -Destination 'out\SDL3.dll' -Force
 $arguments = @()
 if ($ManualIme) { $arguments += '--manual-ime' }
 if ($SurfaceStress) { $arguments += '--surface-stress' }
+if ($Diagnostics) {
+    $arguments += '--diagnostics'
+    $arguments += "--capture-after=$CaptureAfter"
+    $arguments += "--capture-dir=$CaptureDir"
+}
 & .\out\alicorn_sdl_gpu.exe @arguments
 exit $LASTEXITCODE
