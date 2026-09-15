@@ -103,19 +103,19 @@ native_write_diagnostics :: proc(
 	p99 := native_timing_percentile(timing.frame_samples[:], 0.99)
 	average := u64(0)
 	if timing.frames > 0 { average = timing.frame_ns_total / timing.frames }
-	json := fmt.tprintf(`{
+	json := fmt.tprintf(`{{
   "schema": 1,
   "kind": "alicorn-native-diagnostics",
   "gpu_driver": "%s",
-  "window": {
+  "window": {{
     "logical_width": %d,
     "logical_height": %d,
     "pixel_width": %d,
     "pixel_height": %d,
     "pixel_density": %.4f,
     "display_scale": %.4f
-  },
-  "timing_ns": {
+  }},
+  "timing_ns": {{
     "frames": %d,
     "event_pump": %d,
     "application_build": %d,
@@ -128,8 +128,8 @@ native_write_diagnostics :: proc(
     "frame_p95": %d,
     "frame_p99": %d,
     "frame_max": %d
-  },
-  "gpu": {
+  }},
+  "gpu": {{
     "submissions": %d,
     "fence_waits": %d,
     "text_shape_calls": %d,
@@ -141,20 +141,20 @@ native_write_diagnostics :: proc(
     "surface_vertex_uploads": %d,
     "solid_batches": %d,
     "solid_vertices_uploaded": %d
-  },
-  "runtime": {
+  }},
+  "runtime": {{
     "retained_nodes": %d,
     "display_commands": %d,
     "focused_node": %d,
     "gpu_surface_updates": %d,
     "gpu_surface_frames_consumed": %d
-  },
+  }},
   "notes": [
     "timing values are host wall-clock measurements in nanoseconds",
     "runtime allocation telemetry excludes application allocations, GPU memory, driver memory, and OS working set",
     "solid rectangles are batched only within contiguous display-list runs; text and custom surfaces remain ordering boundaries"
   ]
-}
+}}
 `, gpu_driver,
 		metrics.logical_width, metrics.logical_height, metrics.pixel_width, metrics.pixel_height,
 		metrics.pixel_density, metrics.display_scale,
