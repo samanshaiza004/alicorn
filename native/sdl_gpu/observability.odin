@@ -175,7 +175,18 @@ native_write_diagnostics :: proc(
 	json := strings.to_string(builder)
 	path := fmt.tprintf("%s/diagnostics.json", options.capture_dir)
 	if err := os.write_entire_file(path, json); err != nil { return false }
+	// Keep the full retained-tree explanation beside the compact JSON. The
+	// human-readable inspector already contains node identity, bounds, dirty
+	// stages, focus/hover state, and invalidation reasons without requiring a
+	// JSON escaping layer in the runtime.
+	inspection := alicorn.inspect(rt)
+	inspection_path := fmt.tprintf("%s/inspector.txt", options.capture_dir)
+	if err := os.write_entire_file(inspection_path, inspection); err != nil {
+		delete(inspection)
+		return false
+	}
+	delete(inspection)
 	options.captured = true
-	fmt.println("alicorn_diagnostics", "path", path, "frame_p95_ns", p95, "gpu_encode_ns", timing.gpu_encode_ns)
+	fmt.println("alicorn_diagnostics", "path", path, "inspector", inspection_path, "frame_p95_ns", p95, "gpu_encode_ns", timing.gpu_encode_ns)
 	return true
 }
