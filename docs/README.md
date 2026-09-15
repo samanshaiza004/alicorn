@@ -17,6 +17,8 @@ project record.
 - [Thesis](thesis.md) — the short statement the foundation is trying to prove.
 - [Architecture](architecture.md) — the mechanics that are actually implemented.
 - [Proof report](proof.md) — tests, measurements, limitations, and verdicts.
+- [Native observability](observability.md) — CLI/F12 diagnostics, timings,
+  retained inspection, and dependency-free screenshot captures.
 
 ## Runtime foundations
 
