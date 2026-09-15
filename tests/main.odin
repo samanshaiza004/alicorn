@@ -886,6 +886,11 @@ test_ergonomic_identity :: proc(state: ^Test_State) {
 
 test_virtualization_and_gpu :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 800, 600})
+	metrics := alicorn.virtual_list_metrics(100, 12.5, 100, 20)
+	expect(state, metrics.first == 0 && metrics.last == 6, "virtual metrics include the partially visible leading row")
+	expect(state, metrics.offset_y == 12.5 && metrics.max_scroll_y == 1900, "virtual metrics preserve fractional scroll and use the real viewport")
+	clamped_metrics := alicorn.virtual_list_metrics(100, 9999, 100, 20)
+	expect(state, clamped_metrics.offset_y == clamped_metrics.max_scroll_y && clamped_metrics.first == 95, "virtual metrics clamp to the content end")
 	render_virtual(&rt, 0)
 	expect(state, len(rt.nodes) <= 14, "million logical rows must retain only viewport-scale nodes")
 	first_count := len(rt.nodes)

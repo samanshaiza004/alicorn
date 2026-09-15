@@ -41,6 +41,7 @@ description_hash :: proc(d: Description) -> u64 {
 	h = hash_mix(h, u64(d.surface_pixel_width))
 	h = hash_mix(h, u64(d.surface_pixel_height))
 	h = hash_mix(h, u64(transmute(u32)d.surface_dpi_scale))
+	h = hash_mix(h, u64(transmute(u32)d.scroll_offset_y))
 	return h
 }
 
@@ -152,6 +153,7 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	node.surface_pixel_width = d.surface_pixel_width
 	node.surface_pixel_height = d.surface_pixel_height
 	node.surface_dpi_scale = d.surface_dpi_scale
+	node.scroll_offset_y = d.scroll_offset_y
 	// A direct surface update owns the high-frequency revision. A later root
 	// wake with the same description must not roll it back; a changed
 	// description revision is an explicit replacement and is authoritative.

@@ -1,6 +1,6 @@
 # macOS Validation
 
-Date: 2026-09-13
+Date: 2026-09-15
 
 Recommendation: `MACOS_READY_WITH_GAPS`
 
@@ -13,9 +13,9 @@ unverified.
 
 ## Baseline
 
-- Base SHA: `702a56527137bb7aca32dfd67e2ddf7e0c114825`
+- Base SHA: `55b7b16` (`fix(text): map platform word and line modifiers`)
 - Base branch: `master`; tree clean before validation changes
-- Validation branch: `port/macos-current-702a565`
+- Validation branch: `port/macos-host-input`
 - macOS: 26.6.2, build 25G83
 - Architecture: Apple Silicon, `arm64`
 - Darwin: 25.6.0
@@ -24,7 +24,7 @@ unverified.
 - Clang: Apple clang 21.0.0, target `arm64-apple-darwin25.6.0`
 - Odin: `dev-2026-09-nightly:a2fb372`
 - Odin executable: `/Users/keina/Documents/odin-macos-arm64-nightly+2026-09-01/odin`
-- SDL3: 3.4.14 from Homebrew at `/opt/homebrew/opt/sdl3`
+- SDL3: 3.4.16 from Homebrew at `/opt/homebrew/opt/sdl3`
 - SDL3 library: arm64 `/opt/homebrew/opt/sdl3/lib/libSDL3.0.dylib`
 - GPU: Apple M1, 8 cores; Metal supported
 
@@ -104,9 +104,10 @@ Alicorn failure.
 ### Fence observation
 
 The fixture queries each real render/blit fence before and after its blocking
-wait. On this SDL3 3.4.14 Metal path, the post-wait query was false for all
-observed waits (`fence_query_after_wait_true=0`); the query-before-wait count
-varied by run because this small workload often completed before observation.
+wait. On the SDL3 3.4.16 Metal path used for the current run, the post-wait
+query was true for all 303 observed waits (`fence_query_after_wait_true=303`);
+the query-before-wait count varied by run because this small workload often
+completed before observation.
 There was no SDL error. The fixture uses the successful blocking wait as the
 completion authority for the known oldest submission, then releases its
 temporary texture and fence. It does not claim post-wait query correctness for
@@ -156,6 +157,24 @@ policy.
   303 real submissions, three-frame burst, 300 resizes, 303 retirements, and
   clean shutdown pass on Metal.
 
+### macOS SDL event pump
+
+- Symptom: `SDL_PollEvent` could leave the Monitor's main thread in
+  `SDL_WaitEventTimeoutNS` / `Cocoa_PumpEventsUntilDate` even with a zero
+  timeout, making the rendered window appear frozen.
+- Root cause: on this macOS 26 session, both `SDL_PollEvent` and
+  `SDL_PumpEvents` reached the blocking Cocoa path in Homebrew SDL3 3.4.16;
+  changing the poll-sentinel hint did not remove it.
+- Change: Darwin now turns the main Core Foundation run loop for zero seconds
+  and drains SDL's already-translated queue with `SDL_PeepEvents`. Other
+  platforms retain `SDL_PollEvent`; all SDL/video work remains on the main
+  thread.
+- Regression: the Monitor no-sampler/no-surface probe reached 728 frames in
+  three seconds with 63,756,000 ns total event-pump time. A `sample` captured
+  the main thread in the normal host delay/run-loop path, with no
+  `SDL_WaitEvent` or `Cocoa_PumpEvents` stack. The full retained Metal fixture
+  also passed after this change.
+
 ## Diagnostics
 
 - `odin help build` advertises `-sanitize:address`, but
@@ -167,6 +186,11 @@ policy.
   reported 288 leaks / 18,816 bytes. Apple security restrictions marked the
   process not debuggable, and the report is dominated by system-framework
   allocations; no Alicorn-owned leak is isolated.
+
+The installed SDL was upgraded from Homebrew 3.4.14 to 3.4.16. Source-level
+comparison of the two SDL tags did not show a relevant Cocoa event-pump fix,
+so the SDL upgrade was retained as a useful current dependency but was not
+treated as the solution by itself.
 
 ## Unverified areas
 
@@ -184,8 +208,9 @@ policy.
 
 ## Merge notes
 
-No files under `runtime/` changed; the portability change is confined to
-`native/sdl_gpu/main.odin`. The shell scripts, isolated
+No files under `runtime/` changed for the macOS event fix; the portability
+change is confined to `native/sdl_gpu/main.odin` and the Darwin-only
+`native/sdl_gpu/events_darwin.odin`. The shell scripts, isolated
 workflow, and report are additive. Likely conflict points with parallel work
 are the root [`README.md`](../../README.md),
 [`sdl-gpu.md`](sdl-gpu.md), and `native/sdl_gpu/main.odin`.

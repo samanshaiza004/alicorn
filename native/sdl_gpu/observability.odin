@@ -7,6 +7,7 @@ import "core:strconv"
 import "core:strings"
 import "core:time"
 import alicorn "../../runtime"
+import "vendor:sdl3"
 
 NATIVE_DIAGNOSTIC_FRAME_SAMPLES :: 240
 
@@ -31,6 +32,12 @@ Native_Host_Timing :: struct {
 	frame_ns_max:        u64,
 	gpu_submissions:     u64,
 	fence_waits:         u64,
+	event_pump_max_ns:   u64,
+	application_build_max_ns: u64,
+	application_tick_max_ns:  u64,
+	gpu_encode_max_ns:   u64,
+	gpu_submit_max_ns:   u64,
+	fence_wait_max_ns:   u64,
 	frame_samples:       [dynamic; NATIVE_DIAGNOSTIC_FRAME_SAMPLES]u64,
 }
 
@@ -41,6 +48,54 @@ Native_Text_Event_Telemetry :: struct {
 	text_navigation_key_events: u64,
 	text_selection_key_events:  u64,
 	text_word_key_events:       u64,
+	events_this_pump:            u64,
+	events_per_pump_max:         u64,
+	oldest_event_age_max_ns:     u64,
+	pending_input_timestamp:     u64,
+	input_to_submit_samples:     [dynamic; NATIVE_DIAGNOSTIC_FRAME_SAMPLES]u64,
+	input_to_submit_max_ns:      u64,
+}
+
+native_note_input_event :: proc(telemetry: ^Native_Text_Event_Telemetry, timestamp: u64) {
+	telemetry.events_this_pump += 1
+	if timestamp == 0 { return }
+	now := u64(sdl3.GetTicksNS())
+	if now >= timestamp {
+		age := now - timestamp
+		if age > telemetry.oldest_event_age_max_ns { telemetry.oldest_event_age_max_ns = age }
+	}
+	if telemetry.pending_input_timestamp == 0 || timestamp < telemetry.pending_input_timestamp {
+		telemetry.pending_input_timestamp = timestamp
+	}
+}
+
+native_finish_input_pump :: proc(telemetry: ^Native_Text_Event_Telemetry) {
+	if telemetry.events_this_pump > telemetry.events_per_pump_max {
+		telemetry.events_per_pump_max = telemetry.events_this_pump
+	}
+	telemetry.events_this_pump = 0
+}
+
+native_note_input_submission :: proc(telemetry: ^Native_Text_Event_Telemetry) {
+	if telemetry.pending_input_timestamp == 0 { return }
+	now := u64(sdl3.GetTicksNS())
+	if now >= telemetry.pending_input_timestamp {
+		latency := now - telemetry.pending_input_timestamp
+		if len(telemetry.input_to_submit_samples) >= NATIVE_DIAGNOSTIC_FRAME_SAMPLES {
+			for i := 1; i < len(telemetry.input_to_submit_samples); i += 1 {
+				telemetry.input_to_submit_samples[i-1] = telemetry.input_to_submit_samples[i]
+			}
+			pop(&telemetry.input_to_submit_samples)
+		}
+		append(&telemetry.input_to_submit_samples, latency)
+		if latency > telemetry.input_to_submit_max_ns { telemetry.input_to_submit_max_ns = latency }
+	}
+	telemetry.pending_input_timestamp = 0
+}
+
+native_timing_accumulate :: proc(total, maximum: ^u64, elapsed: u64) {
+	total^ += elapsed
+	if elapsed > maximum^ { maximum^ = elapsed }
 }
 
 native_timing_add_frame :: proc(timing: ^Native_Host_Timing, frame_ns: u64) {
@@ -122,6 +177,16 @@ native_write_diagnostics :: proc(
 	p50 := native_timing_percentile(timing.frame_samples[:], 0.50)
 	p95 := native_timing_percentile(timing.frame_samples[:], 0.95)
 	p99 := native_timing_percentile(timing.frame_samples[:], 0.99)
+	input_p50: u64 = 0
+	input_p95: u64 = 0
+	input_p99: u64 = 0
+	input_max: u64 = 0
+	if text_events != nil {
+		input_p50 = native_timing_percentile(text_events.input_to_submit_samples[:], 0.50)
+		input_p95 = native_timing_percentile(text_events.input_to_submit_samples[:], 0.95)
+		input_p99 = native_timing_percentile(text_events.input_to_submit_samples[:], 0.99)
+		input_max = text_events.input_to_submit_max_ns
+	}
 	average := u64(0)
 	if timing.frames > 0 { average = timing.frame_ns_total / timing.frames }
 	builder, builder_err := strings.builder_make()
@@ -154,11 +219,19 @@ native_write_diagnostics :: proc(
     "frame_p50": %d,
     "frame_p95": %d,
     "frame_p99": %d,
-    "frame_max": %d
+    "frame_max": %d,
+    "event_pump_max": %d,
+    "application_build_max": %d,
+    "application_tick_max": %d,
+    "gpu_encode_max": %d,
+    "gpu_submit_max": %d,
+    "fence_wait_max": %d
   }},
 `, timing.frames, timing.event_pump_ns, timing.application_build_ns, timing.application_tick_ns,
 		timing.gpu_encode_ns, timing.gpu_submit_ns, timing.fence_wait_ns, average,
-		p50, p95, p99, timing.frame_ns_max)
+		p50, p95, p99, timing.frame_ns_max, timing.event_pump_max_ns,
+		timing.application_build_max_ns, timing.application_tick_max_ns,
+		timing.gpu_encode_max_ns, timing.gpu_submit_max_ns, timing.fence_wait_max_ns)
 	fmt.sbprintf(&builder, `  "gpu": {{
     "submissions": %d,
     "fence_waits": %d,
@@ -190,12 +263,20 @@ native_write_diagnostics :: proc(
     "edit_key_events": %d,
     "navigation_key_events": %d,
     "selection_key_events": %d,
-    "word_key_events": %d
+    "word_key_events": %d,
+    "events_per_pump_max": %d,
+    "oldest_event_age_max_ns": %d,
+    "input_to_submit_p50_ns": %d,
+    "input_to_submit_p95_ns": %d,
+    "input_to_submit_p99_ns": %d,
+    "input_to_submit_max_ns": %d
   }},
 `, text_events.text_change_dispatches, text_events.text_changes,
 			text_events.text_edit_key_events, text_events.text_navigation_key_events,
 			text_events.text_selection_key_events,
-			text_events.text_word_key_events)
+			text_events.text_word_key_events, text_events.events_per_pump_max,
+			text_events.oldest_event_age_max_ns, input_p50, input_p95, input_p99,
+			input_max)
 	}
 	fmt.sbprintf(&builder, `  "runtime": {{
     "retained_nodes": %d,

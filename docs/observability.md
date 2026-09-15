@@ -52,7 +52,11 @@ list. The same mode can be enabled at startup with `--debug-bounds`.
 Timing values are host wall-clock measurements in nanoseconds. Frame samples
 retain a bounded recent window and report p50, p95, p99, and maximum frame time.
 The capture also separates application build/tick, event pumping, GPU encoding,
-submission, and fence waits.
+submission, and fence waits. Each stage reports a maximum as well as an
+aggregate. Input diagnostics report the largest event burst, the maximum age
+of an event observed in the queue, and input-to-submit latency percentiles.
+The latter measures from the oldest pending timestamped input event to the next
+GPU submission, so startup/window events can make it conservative.
 
 Runtime allocation telemetry, when present, describes Alicorn's requested
 allocator bytes. It does not measure application allocations, GPU memory,
