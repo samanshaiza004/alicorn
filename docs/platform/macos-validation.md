@@ -11,11 +11,16 @@ physical scaling, resize handling, three-frame retirement, and clean shutdown.
 IME composition, glyph-atlas rendering, Intel macOS, and hosted macOS CI remain
 unverified.
 
+The latest validation branch also carries the focused Darwin host fix in
+`2b079fc`: SDL now performs its normal Cocoa event dispatch before the host
+drains the translated queue.
+
 ## Baseline
 
 - Base SHA: `55b7b16` (`fix(text): map platform word and line modifiers`)
 - Base branch: `master`; tree clean before validation changes
 - Validation branch: `port/macos-host-input`
+- Latest validation commit: `2b079fc` (`fix(mac): restore SDL Cocoa event dispatch`)
 - macOS: 26.6.2, build 25G83
 - Architecture: Apple Silicon, `arm64`
 - Darwin: 25.6.0
@@ -159,21 +164,19 @@ policy.
 
 ### macOS SDL event pump
 
-- Symptom: `SDL_PollEvent` could leave the Monitor's main thread in
-  `SDL_WaitEventTimeoutNS` / `Cocoa_PumpEventsUntilDate` even with a zero
-  timeout, making the rendered window appear frozen.
-- Root cause: on this macOS 26 session, both `SDL_PollEvent` and
-  `SDL_PumpEvents` reached the blocking Cocoa path in Homebrew SDL3 3.4.16;
-  changing the poll-sentinel hint did not remove it.
-- Change: Darwin now turns the main Core Foundation run loop for zero seconds
-  and drains SDL's already-translated queue with `SDL_PeepEvents`. Other
-  platforms retain `SDL_PollEvent`; all SDL/video work remains on the main
-  thread.
-- Regression: the Monitor no-sampler/no-surface probe reached 728 frames in
-  three seconds with 63,756,000 ns total event-pump time. A `sample` captured
-  the main thread in the normal host delay/run-loop path, with no
-  `SDL_WaitEvent` or `Cocoa_PumpEvents` stack. The full retained Metal fixture
-  also passed after this change.
+- Symptom: the rendered Monitor window remained inactive; gray macOS controls
+  and title text were accompanied by missing click, key, text, and close
+  interaction.
+- Root cause: the interim Core Foundation-only pump avoided SDL's problematic
+  polling path but also bypassed SDL's `NSApplication.sendEvent` dispatch and
+  activation behavior.
+- Change: Darwin now calls `SDL_PumpEvents` once and drains the translated queue
+  with `SDL_PeepEvents`. Other platforms retain `SDL_PollEvent`; all SDL/video
+  work remains on the main thread.
+- Regression: an exact Monitor binary reported `WINDOW_FOCUS_GAINED`, then
+  repeated `app_active true key_window true sdl_input_focus true`, and accepted
+  mouse-button, key-down, and text-input events during a live run. The full
+  retained Metal fixture also passed after this change.
 
 ## Diagnostics
 
@@ -187,10 +190,10 @@ policy.
   process not debuggable, and the report is dominated by system-framework
   allocations; no Alicorn-owned leak is isolated.
 
-The installed SDL was upgraded from Homebrew 3.4.14 to 3.4.16. Source-level
-comparison of the two SDL tags did not show a relevant Cocoa event-pump fix,
-so the SDL upgrade was retained as a useful current dependency but was not
-treated as the solution by itself.
+SDL3 `3.4.16` is the pinned Darwin runtime version for this validation branch.
+The public `Run` host reports the linked SDL version and fails fast if Darwin is
+linked against another version. This machine uses the arm64 Homebrew package
+at `/opt/homebrew/opt/sdl3`.
 
 ## Unverified areas
 
