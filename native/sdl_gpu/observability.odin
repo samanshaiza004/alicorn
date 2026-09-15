@@ -154,6 +154,7 @@ native_write_diagnostics :: proc(
   }},
 `, timing.gpu_submissions, timing.fence_waits,
 		rt.text_engine.shape_calls, rt.text_engine.glyph_cache_hits, rt.text_engine.glyph_cache_misses,
+		rt.text_engine.glyph_rasterizations,
 		len(text_renderer.pages), surface_renderer.encodes, surface_renderer.vertex_uploads,
 		solid_renderer.batches, solid_renderer.vertices_uploaded)
 	fmt.sbprintf(&builder, `  "runtime": {{
