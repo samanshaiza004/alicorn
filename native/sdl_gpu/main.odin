@@ -913,6 +913,10 @@ Run :: proc(application: Application, smoke := false) {
 	surface_renderer, surface_ok := native_surface_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
 	if !surface_ok { fail("application GPU surface pipeline initialization failed") }
 	defer native_surface_destroy(&surface_renderer)
+	// Metal/text/surface setup can briefly return focus to the launching
+	// terminal on macOS. Raise again only after the application is ready so a
+	// visible-but-inert window is not handed to the user.
+	if !sdl3.RaiseWindow(window) { fail("SDL_RaiseWindow failed after host initialization") }
 	run_application_loop(window, device, &rt, &text_renderer, &surface_renderer, &metrics, application, smoke, input_debug)
 }
 
