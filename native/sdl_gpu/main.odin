@@ -248,6 +248,15 @@ pump_events :: proc(
 ) {
 	event: sdl3.Event
 	for sdl3.PollEvent(&event) {
+		if manual_log {
+			if event.type == .WINDOW_FOCUS_GAINED {
+				fmt.println("sdl_event", "WINDOW_FOCUS_GAINED")
+			} else if event.type == .WINDOW_FOCUS_LOST {
+				fmt.println("sdl_event", "WINDOW_FOCUS_LOST")
+			} else if event.type == .MOUSE_BUTTON_DOWN || event.type == .MOUSE_BUTTON_UP {
+				fmt.println("sdl_event", "MOUSE_BUTTON", "x", event.button.x, "y", event.button.y, "button", event.button.button, "down", event.button.down)
+			}
+		}
 		if event.type == .QUIT || event.type == .WINDOW_CLOSE_REQUESTED {
 			quit_requested^ = true
 		}
@@ -635,6 +644,25 @@ native_font_path :: proc() -> string {
 	}
 }
 
+configure_platform_activation :: proc() {
+	when ODIN_OS == .Darwin {
+		// A bare executable launched from a terminal can create a visible SDL
+		// window without becoming the active macOS application. That leaves the
+		// retained UI looking healthy while keyboard and mouse events continue to
+		// go to the launching application. Make the host's foreground policy
+		// explicit before SDL initializes its Cocoa application object.
+		if !sdl3.SetHint(sdl3.HINT_MAC_BACKGROUND_APP, "0") {
+			fail("SDL_MAC_BACKGROUND_APP hint could not be set")
+		}
+		if !sdl3.SetHint(sdl3.HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "1") {
+			fail("SDL_WINDOW_ACTIVATE_WHEN_SHOWN hint could not be set")
+		}
+		if !sdl3.SetHint(sdl3.HINT_WINDOW_ACTIVATE_WHEN_RAISED, "1") {
+			fail("SDL_WINDOW_ACTIVATE_WHEN_RAISED hint could not be set")
+		}
+	}
+}
+
 wait_and_retire_oldest :: proc(
 	device: ^sdl3.GPUDevice,
 	in_flight: ^[dynamic; 3]Native_In_Flight,
@@ -686,6 +714,7 @@ run_application_loop :: proc(
 	metrics: ^Window_Metrics,
 	application: Application,
 	smoke := false,
+	manual_log := false,
 ) {
 	application_instance := application
 	quit_requested := false
@@ -716,6 +745,7 @@ run_application_loop :: proc(
 			window, rt, metrics, &quit_requested,
 			&logical_resize_events, &pixel_resize_events, &scale_events,
 			&text_input_events, &composition_events, &platform_text,
+			manual_log=manual_log,
 			application=&application_instance,
 		)
 		if quit_requested { break }
@@ -827,9 +857,14 @@ run_application_loop :: proc(
 // Run owns the complete SDL3/SDL_GPU application shell for external dogfood
 // programs. The app supplies only its state pointer and ordinary callbacks.
 Run :: proc(application: Application, smoke := false) {
+	input_debug := false
+	for argument in os.args {
+		if argument == "--input-debug" { input_debug = true }
+	}
 	if !sdl3.SetHint(sdl3.HINT_IME_IMPLEMENTED_UI, "composition") {
 		fail("SDL_IME_IMPLEMENTED_UI hint could not be set")
 	}
+	configure_platform_activation()
 	if !sdl3.Init(sdl3.INIT_VIDEO) { fail("SDL_Init failed") }
 	defer sdl3.Quit()
 	title := application.title
@@ -843,6 +878,10 @@ Run :: proc(application: Application, smoke := false) {
 	window := sdl3.CreateWindow(title_cstring, c.int(width), c.int(height), sdl3.WindowFlags{.RESIZABLE, .HIGH_PIXEL_DENSITY})
 	if window == nil { fail("SDL_CreateWindow failed") }
 	defer sdl3.DestroyWindow(window)
+	if !sdl3.RaiseWindow(window) { fail("SDL_RaiseWindow failed") }
+	if input_debug {
+		fmt.println("sdl_input_debug", "window_flags", sdl3.GetWindowFlags(window))
+	}
 	metrics: Window_Metrics
 	if !read_window_metrics(window, &metrics) { fail("initial application window metrics unavailable") }
 	formats := sdl3.GPUShaderFormat{.SPIRV, .DXIL, .MSL}
@@ -851,6 +890,13 @@ Run :: proc(application: Application, smoke := false) {
 	device := sdl3.CreateGPUDevice(formats, false, gpu_driver_name)
 	if device == nil { fail("SDL_CreateGPUDevice failed") }
 	defer sdl3.DestroyGPUDevice(device)
+	selected_driver := sdl3.GetGPUDeviceDriver(device)
+	fmt.println("gpu_driver_requested", gpu_driver_name, "gpu_driver_selected", selected_driver)
+	when ODIN_OS == .Darwin {
+		if selected_driver == nil || string(selected_driver) != "metal" {
+			fail("macOS SDL_GPU did not select the requested Metal driver")
+		}
+	}
 	if !sdl3.ClaimWindowForGPUDevice(device, window) { fail("SDL_ClaimWindowForGPUDevice failed") }
 	defer sdl3.ReleaseWindowFromGPUDevice(device, window)
 	if !sdl3.SetGPUAllowedFramesInFlight(device, 3) { fail("SDL_SetGPUAllowedFramesInFlight failed") }
@@ -869,7 +915,11 @@ Run :: proc(application: Application, smoke := false) {
 	surface_renderer, surface_ok := native_surface_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
 	if !surface_ok { fail("application GPU surface pipeline initialization failed") }
 	defer native_surface_destroy(&surface_renderer)
-	run_application_loop(window, device, &rt, &text_renderer, &surface_renderer, &metrics, application, smoke)
+	// Metal/text/surface setup can briefly return focus to the launching
+	// terminal on macOS. Raise again only after the application is ready so a
+	// visible-but-inert window is not handed to the user.
+	if !sdl3.RaiseWindow(window) { fail("SDL_RaiseWindow failed after host initialization") }
+	run_application_loop(window, device, &rt, &text_renderer, &surface_renderer, &metrics, application, smoke, input_debug)
 }
 
 RunFoundation :: proc() {
@@ -890,6 +940,7 @@ RunFoundation :: proc() {
 	if !sdl3.SetHint(sdl3.HINT_IME_IMPLEMENTED_UI, "composition") {
 		fail("SDL_IME_IMPLEMENTED_UI hint could not be set")
 	}
+	configure_platform_activation()
 	if !sdl3.Init(sdl3.INIT_VIDEO) {
 		fail("SDL_Init failed")
 	}
@@ -905,6 +956,9 @@ RunFoundation :: proc() {
 		fail("SDL_CreateWindow failed")
 	}
 	defer sdl3.DestroyWindow(window)
+	if !sdl3.RaiseWindow(window) {
+		fail("SDL_RaiseWindow failed")
+	}
 
 	metrics: Window_Metrics
 	if !read_window_metrics(window, &metrics) {
