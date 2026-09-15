@@ -632,6 +632,25 @@ native_font_path :: proc() -> string {
 	}
 }
 
+configure_platform_activation :: proc() {
+	when ODIN_OS == .Darwin {
+		// A bare executable launched from a terminal can create a visible SDL
+		// window without becoming the active macOS application. That leaves the
+		// retained UI looking healthy while keyboard and mouse events continue to
+		// go to the launching application. Make the host's foreground policy
+		// explicit before SDL initializes its Cocoa application object.
+		if !sdl3.SetHint(sdl3.HINT_MAC_BACKGROUND_APP, "0") {
+			fail("SDL_MAC_BACKGROUND_APP hint could not be set")
+		}
+		if !sdl3.SetHint(sdl3.HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "1") {
+			fail("SDL_WINDOW_ACTIVATE_WHEN_SHOWN hint could not be set")
+		}
+		if !sdl3.SetHint(sdl3.HINT_WINDOW_ACTIVATE_WHEN_RAISED, "1") {
+			fail("SDL_WINDOW_ACTIVATE_WHEN_RAISED hint could not be set")
+		}
+	}
+}
+
 wait_and_retire_oldest :: proc(
 	device: ^sdl3.GPUDevice,
 	in_flight: ^[dynamic]Native_In_Flight,
@@ -828,6 +847,7 @@ Run :: proc(application: Application, smoke := false) {
 	if !sdl3.SetHint(sdl3.HINT_IME_IMPLEMENTED_UI, "composition") {
 		fail("SDL_IME_IMPLEMENTED_UI hint could not be set")
 	}
+	configure_platform_activation()
 	if !sdl3.Init(sdl3.INIT_VIDEO) { fail("SDL_Init failed") }
 	defer sdl3.Quit()
 	title := application.title
@@ -841,6 +861,7 @@ Run :: proc(application: Application, smoke := false) {
 	window := sdl3.CreateWindow(title_cstring, c.int(width), c.int(height), sdl3.WindowFlags{.RESIZABLE, .HIGH_PIXEL_DENSITY})
 	if window == nil { fail("SDL_CreateWindow failed") }
 	defer sdl3.DestroyWindow(window)
+	if !sdl3.RaiseWindow(window) { fail("SDL_RaiseWindow failed") }
 	metrics: Window_Metrics
 	if !read_window_metrics(window, &metrics) { fail("initial application window metrics unavailable") }
 	formats := sdl3.GPUShaderFormat{.SPIRV, .DXIL, .MSL}
@@ -895,6 +916,7 @@ RunFoundation :: proc() {
 	if !sdl3.SetHint(sdl3.HINT_IME_IMPLEMENTED_UI, "composition") {
 		fail("SDL_IME_IMPLEMENTED_UI hint could not be set")
 	}
+	configure_platform_activation()
 	if !sdl3.Init(sdl3.INIT_VIDEO) {
 		fail("SDL_Init failed")
 	}
@@ -910,6 +932,9 @@ RunFoundation :: proc() {
 		fail("SDL_CreateWindow failed")
 	}
 	defer sdl3.DestroyWindow(window)
+	if !sdl3.RaiseWindow(window) {
+		fail("SDL_RaiseWindow failed")
+	}
 
 	metrics: Window_Metrics
 	if !read_window_metrics(window, &metrics) {
