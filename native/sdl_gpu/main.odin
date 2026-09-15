@@ -262,6 +262,30 @@ native_text_modifier :: proc(mod: sdl3.Keymod, mask: sdl3.Keymod) -> bool {
 	return (mod & mask) != sdl3.Keymod{}
 }
 
+native_text_primary_modifier :: proc(mod: sdl3.Keymod) -> bool {
+	when ODIN_OS == .Darwin {
+		return native_text_modifier(mod, sdl3.KMOD_GUI)
+	} else {
+		return native_text_modifier(mod, sdl3.KMOD_CTRL)
+	}
+}
+
+native_text_word_modifier :: proc(mod: sdl3.Keymod) -> bool {
+	when ODIN_OS == .Darwin {
+		return native_text_modifier(mod, sdl3.KMOD_ALT)
+	} else {
+		return native_text_modifier(mod, sdl3.KMOD_CTRL)
+	}
+}
+
+native_text_line_modifier :: proc(mod: sdl3.Keymod) -> bool {
+	when ODIN_OS == .Darwin {
+		return native_text_modifier(mod, sdl3.KMOD_GUI)
+	} else {
+		return false
+	}
+}
+
 native_text_apply_key_edit :: proc(
 	rt: ^alicorn.Runtime,
 	node: alicorn.Node_ID,
@@ -293,8 +317,9 @@ native_text_apply_key_navigation :: proc(
 	field, ok := rt.nodes[node]
 	if !ok || !field.active || field.kind != .Text_Field || field.composition.active { return false }
 	shift := native_text_modifier(mod, sdl3.KMOD_SHIFT)
-	primary := native_text_modifier(mod, sdl3.KMOD_CTRL) || native_text_modifier(mod, sdl3.KMOD_GUI)
-	word := primary || native_text_modifier(mod, sdl3.KMOD_ALT)
+	primary := native_text_primary_modifier(mod)
+	word := native_text_word_modifier(mod)
+	line := native_text_line_modifier(mod)
 	selection_nonempty := field.selection_anchor.byte != field.selection_focus.byte
 	target := field.caret.byte
 	handled := true
@@ -306,6 +331,11 @@ native_text_apply_key_navigation :: proc(
 			if field.selection_anchor.byte > field.selection_focus.byte {
 				target = field.selection_focus.byte if direction < 0 else field.selection_anchor.byte
 			}
+		} else if line {
+			target = 0 if direction < 0 else len(field.text)
+			_ = alicorn.set_text_caret(rt, node, target)
+			if telemetry != nil { telemetry.text_navigation_key_events += 1 }
+			return true
 		} else if !shift {
 			command: alicorn.Text_Command = .Move_Left if direction < 0 else .Move_Right
 			if word { command = .Move_Word_Left if direction < 0 else .Move_Word_Right }
@@ -315,6 +345,8 @@ native_text_apply_key_navigation :: proc(
 				if word { telemetry.text_word_key_events += 1 }
 			}
 			return true
+		} else if line {
+			target = 0 if direction < 0 else len(field.text)
 		} else if word {
 			position := alicorn.text_move_word(field.text, alicorn.Text_Position{target, .Leading}, direction)
 			target = position.byte
@@ -415,9 +447,7 @@ pump_events :: proc(
 				}
 			} else if node, ok := rt.nodes[rt.focused]; ok && node.active && node.kind == .Text_Field && !node.composition.active {
 				handled := true
-				word_modifier := native_text_modifier(event.key.mod, sdl3.KMOD_CTRL) ||
-					native_text_modifier(event.key.mod, sdl3.KMOD_GUI) ||
-					native_text_modifier(event.key.mod, sdl3.KMOD_ALT)
+				word_modifier := native_text_word_modifier(event.key.mod)
 				switch event.key.key {
 				case sdl3.K_BACKSPACE:
 					native_text_apply_key_edit(rt, rt.focused, .Backspace, word_modifier, app_text, application, telemetry)
