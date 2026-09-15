@@ -1,6 +1,11 @@
 # Examples
 
 ```powershell
+odin build examples/hello -out:out/hello.exe
+odin build examples/counter -out:out/counter.exe
+odin build examples/text_input -out:out/text_input.exe
+odin build examples/keyed_list -out:out/keyed_list.exe
+odin build examples/advanced_identity -out:out/advanced_identity.exe
 odin build examples/identity_torture -out:out/identity_torture.exe
 odin build examples/crucible -out:out/crucible.exe
 odin build benchmarks -out:out/alicorn_benchmarks.exe

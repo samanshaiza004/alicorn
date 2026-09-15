@@ -4,19 +4,15 @@ import "core:fmt"
 import "core:os"
 import alicorn "../../runtime"
 
-ROOT :: alicorn.Source_Site{"identity_torture/render.odin", 1, 1, "root"}
-ITEM :: alicorn.Source_Site{"identity_torture/render.odin", 10, 1, "item_component"}
-CONTROL :: alicorn.Source_Site{"identity_torture/render.odin", 11, 1, "item_control"}
-
 render :: proc(rt: ^alicorn.Runtime, keys: []string) -> map[string]alicorn.Node_ID {
 	ids := make(map[string]alicorn.Node_ID)
 	alicorn.invalidate_root(rt, "identity torture operation")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return ids }
-	alicorn.container_begin(&ui, .Root, ROOT, label="torture")
+	alicorn.container_begin(&ui, .Root, label="torture")
 	for key in keys {
-		if alicorn.key_scope_begin(&ui, key, ITEM) {
-			id, _ := alicorn.button(&ui, fmt.aprintf("stateful %s", key), CONTROL, style=alicorn.Layout_Style{.Column, -1, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+		if alicorn.key_scope_begin(&ui, alicorn.key_string(key)) {
+			id := alicorn.text(&ui, fmt.aprintf("stateful %s", key), style=alicorn.Layout_Style{.Column, -1, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
 			ids[key] = id
 			alicorn.key_scope_end(&ui)
 		}

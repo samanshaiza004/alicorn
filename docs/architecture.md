@@ -27,7 +27,8 @@ Source location alone is still not enough to identify repeated data.
 
 ## Reconciliation and invalidation
 
-Each retained node tracks description, layout, paint and composite dirtiness,
+Each retained node tracks description, layout, paint and composite dirtiness in
+an Odin `bit_set`,
 plus the reason recorded for the latest invalidation. It owns an ordered
 `children` array, and the runtime owns a retained `top_level` list. Reconcile
 updates only the direct child list of explicitly described parents. A reuse
@@ -81,6 +82,14 @@ Editable text runs disable Runa's discretionary `liga`, `clig` and `calt`
 features. This is a narrow mitigation for the vendored Runa cluster-index bug
 after ligation; static labels retain the normal feature set. Mandatory shaping
 features remain enabled.
+
+Runtime-owned allocation is split into a persistent allocator wrapper and a
+scratch arena. `Runtime_Config` chooses the backing allocators at construction;
+the runtime captures those values and does not consult a later ambient
+`context.allocator` for retained destruction. Frame and reconciliation scratch
+is reset by Alicorn at its own frame boundary. `Runtime_Allocation_Stats`
+counts requested bytes and calls for these runtime-owned wrappers only; it is
+not a process-memory or GPU-memory measurement.
 
 ## Regions and explicit invalidation
 

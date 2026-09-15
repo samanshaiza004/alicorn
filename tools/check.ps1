@@ -24,7 +24,12 @@ $targets = @(
     @('benchmarks', 'out\alicorn_benchmarks.exe'),
     @('examples\identity_torture', 'out\identity_torture.exe'),
     @('examples\crucible', 'out\crucible.exe'),
-    @('examples\runa_text', 'out\runa_text.exe')
+    @('examples\runa_text', 'out\runa_text.exe'),
+    @('examples\hello', 'out\hello.exe'),
+    @('examples\counter', 'out\counter.exe'),
+    @('examples\text_input', 'out\text_input.exe'),
+    @('examples\keyed_list', 'out\keyed_list.exe'),
+    @('examples\advanced_identity', 'out\advanced_identity.exe')
 )
 foreach ($target in $targets) {
     & $Odin build $target[0] -out:$target[1]

@@ -7,6 +7,11 @@ project record.
 
 ## Start here
 
+- [Five-minute tutorial](guide/tutorial.md) — build a first UI with ordinary Odin.
+- [Mental model](guide/mental-model.md) — the few concepts behind retained execution.
+- [Canonical API](guide/api.md) — the public calls most applications should use.
+- [Odin for Alicorn](guide/odin-for-alicorn.md) — Odin features encountered naturally.
+- [Advanced identity and allocation](guide/advanced.md) — escape hatches and ownership.
 - [Overview](overview.md) — what Alicorn is, why it exists, and the design bets.
 - [Thesis](thesis.md) — the short statement the foundation is trying to prove.
 - [Architecture](architecture.md) — the mechanics that are actually implemented.

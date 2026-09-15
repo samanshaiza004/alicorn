@@ -32,6 +32,12 @@ Native_In_Flight :: struct {
 	texture: ^sdl3.GPUTexture,
 }
 
+#assert(offset_of(Native_Text_Vertex, position) == 0)
+#assert(offset_of(Native_Text_Vertex, color) == size_of([3]f32))
+#assert(offset_of(Native_Text_Vertex, uv) == size_of([3]f32) + size_of([4]f32))
+#assert(size_of(Native_Text_Vertex) == size_of([9]f32))
+#assert(size_of(Native_Text_Uniforms) == size_of([32]f32))
+
 Native_UI_Nodes :: struct {
 	field:   alicorn.Node_ID,
 	surface: alicorn.Node_ID,
@@ -409,15 +415,12 @@ render_native_ui :: proc(rt: ^alicorn.Runtime, frame: u64, value := NATIVE_TEXT_
 	)
 	field := alicorn.text_field(&ui, value, style=alicorn.Layout_Style{.Column, -1, 32, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
 	alicorn.button(&ui, "GPU frame", style=alicorn.Layout_Style{.Column, 180, 32, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
-	surface := alicorn.custom_surface(&ui, "animated-surface", frame, alicorn.Rect{0, 0, 280, 120}, 560, 240, 2, style_source())
+	surface := alicorn.custom_surface(&ui, "animated-surface", frame, alicorn.Rect{0, 0, 280, 120}, 560, 240, 2)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	return Native_UI_Nodes{field, surface}
 }
 
-style_source :: proc() -> alicorn.Source_Site {
-	return alicorn.caller_site("custom_surface")
-}
 
 make_color_target :: proc(texture: ^sdl3.GPUTexture, color: sdl3.FColor, cycle: bool) -> sdl3.GPUColorTargetInfo {
 	return sdl3.GPUColorTargetInfo{
@@ -634,7 +637,7 @@ native_font_path :: proc() -> string {
 
 wait_and_retire_oldest :: proc(
 	device: ^sdl3.GPUDevice,
-	in_flight: ^[dynamic]Native_In_Flight,
+	in_flight: ^[dynamic; 3]Native_In_Flight,
 	query_before_wait_true, query_after_wait_true, wait_count: ^int,
 ) -> bool {
 	if len(in_flight) == 0 { return true }
@@ -693,8 +696,7 @@ run_application_loop :: proc(
 	composition_events := 0
 	text_input_active := false
 	text_input_owner: alicorn.Node_ID = 0
-	in_flight := make([dynamic]Native_In_Flight, 0, 3)
-	defer delete(in_flight)
+	in_flight: [dynamic; 3]Native_In_Flight
 	retired := 0
 	max_in_flight := 0
 	query_before_wait_true := 0
@@ -989,8 +991,7 @@ RunFoundation :: proc() {
 		fail("GPU text offscreen readback found no glyph coverage")
 	}
 
-	in_flight := make([dynamic]Native_In_Flight, 0, 3)
-	defer delete(in_flight)
+	in_flight: [dynamic; 3]Native_In_Flight
 	quit_requested := false
 	logical_resize_events := 0
 	pixel_resize_events := 0
