@@ -196,7 +196,7 @@ text_engine_destroy :: proc(engine: ^Text_Engine) {
 	engine^ = {}
 }
 
-text_engine_glyph :: proc(engine: ^Text_Engine, glyph_id: runa.Glyph_ID, size: f32, subpixel_bucket: u8 = 0, hint: bool = true) -> (slot: runa.Atlas_Slot, drawable, ok: bool) {
+text_engine_glyph :: proc(engine: ^Text_Engine, glyph_id: runa.Glyph_ID, size: f32, subpixel_bucket: u8 = 0, hint: bool = true, scratch_allocator := context.temp_allocator) -> (slot: runa.Atlas_Slot, drawable, ok: bool) {
 	if !engine.font_loaded || size <= 0 { return }
 	is_color := runa.font_has_color_layers(&engine.font, glyph_id)
 	key := Glyph_Resource_Key{
@@ -213,7 +213,10 @@ text_engine_glyph :: proc(engine: ^Text_Engine, glyph_id: runa.Glyph_ID, size: f
 	}
 	engine.glyph_cache_misses += 1
 	err: runa.Error
+	previous_temp_allocator := context.temp_allocator
+	context.temp_allocator = scratch_allocator
 	slot, err = runa.raster_glyph(&engine.font, glyph_id, size, key.subpixel_bucket, &engine.atlas, allocator=engine.allocator, hint=hint)
+	context.temp_allocator = previous_temp_allocator
 	if err != .None { return runa.Atlas_Slot{}, false, false }
 	engine.glyphs[key] = slot
 	engine.glyph_rasterizations += 1
@@ -576,9 +579,9 @@ text_run_line_caret_points :: proc(run: ^Text_Run, line_index: int, points: ^[dy
 	append_text_caret_point(points, Text_Caret_Point{Text_Position{line.byte_end, .Trailing}, line_index, line.width})
 }
 
-text_run_position_x :: proc(run: ^Text_Run, line_index: int, position: Text_Position) -> (x: f32, found: bool) {
+text_run_position_x :: proc(run: ^Text_Run, line_index: int, position: Text_Position, scratch_allocator := context.temp_allocator) -> (x: f32, found: bool) {
 	if run == nil || line_index < 0 || line_index >= len(run.lines) { return }
-	points := make([dynamic]Text_Caret_Point, 0, 32, context.temp_allocator)
+	points := make([dynamic]Text_Caret_Point, 0, 32, scratch_allocator)
 	text_run_line_caret_points(run, line_index, &points)
 	normalized := text_position_normalize(run, position)
 	for point in points {
@@ -594,11 +597,11 @@ text_run_position_x :: proc(run: ^Text_Run, line_index: int, position: Text_Posi
 	return line.x, false
 }
 
-text_run_caret_geometry :: proc(run: ^Text_Run, position: Text_Position) -> Text_Caret_Geometry {
+text_run_caret_geometry :: proc(run: ^Text_Run, position: Text_Position, scratch_allocator := context.temp_allocator) -> Text_Caret_Geometry {
 	if run == nil || len(run.lines) == 0 { return Text_Caret_Geometry{} }
 	normalized := text_position_normalize(run, position)
 	line_index := text_run_line_for_byte(run, normalized)
-	x, found := text_run_position_x(run, line_index, normalized)
+	x, found := text_run_position_x(run, line_index, normalized, scratch_allocator)
 	if !found { return Text_Caret_Geometry{} }
 	line := run.lines[line_index]
 	return Text_Caret_Geometry{
@@ -609,10 +612,10 @@ text_run_caret_geometry :: proc(run: ^Text_Run, position: Text_Position) -> Text
 	}
 }
 
-text_run_hit_test :: proc(run: ^Text_Run, x, y: f32) -> Text_Position {
+text_run_hit_test :: proc(run: ^Text_Run, x, y: f32, scratch_allocator := context.temp_allocator) -> Text_Position {
 	if run == nil || len(run.lines) == 0 { return Text_Position{} }
 	line_index := text_run_line_for_y(run, y)
-	points := make([dynamic]Text_Caret_Point, 0, 32, context.temp_allocator)
+	points := make([dynamic]Text_Caret_Point, 0, 32, scratch_allocator)
 	text_run_line_caret_points(run, line_index, &points)
 	if len(points) == 0 { return Text_Position{run.lines[line_index].byte_start, .Leading} }
 	best := points[0]
@@ -641,7 +644,7 @@ text_run_extreme_caret_point :: proc(points: []Text_Caret_Point, want_min: bool)
 	return
 }
 
-text_run_selection_rects :: proc(run: ^Text_Run, start, end: Text_Position, allocator := context.allocator) -> [dynamic]Text_Selection_Rect {
+text_run_selection_rects :: proc(run: ^Text_Run, start, end: Text_Position, allocator := context.allocator, scratch_allocator := context.temp_allocator) -> [dynamic]Text_Selection_Rect {
 	result := make([dynamic]Text_Selection_Rect, 0, 4, allocator)
 	if run == nil || len(run.lines) == 0 { return result }
 	normalized_start := text_position_normalize(run, start)
@@ -656,10 +659,10 @@ text_run_selection_rects :: proc(run: ^Text_Run, start, end: Text_Position, allo
 		left: f32 = line.x
 		right := line.width
 		if line_start > line.byte_start {
-			left, _ = text_run_position_x(run, line_index, Text_Position{line_start, .Leading})
+			left, _ = text_run_position_x(run, line_index, Text_Position{line_start, .Leading}, scratch_allocator)
 		}
 		if line_end < line.byte_end {
-			right, _ = text_run_position_x(run, line_index, Text_Position{line_end, .Trailing})
+			right, _ = text_run_position_x(run, line_index, Text_Position{line_end, .Trailing}, scratch_allocator)
 		}
 		if right < left { left, right = right, left }
 		if right > left {
@@ -695,8 +698,8 @@ text_word_range :: struct {
 // text_word_ranges uses Runa's UAX #29 word iterator rather than code-point
 // heuristics. Runa emits separator runs as ranges too, which lets command
 // movement skip punctuation and whitespace while retaining Unicode behavior.
-text_word_ranges :: proc(value: string) -> [dynamic]text_word_range {
-	ranges := make([dynamic]text_word_range, 0, 16, context.temp_allocator)
+text_word_ranges :: proc(value: string, scratch_allocator := context.temp_allocator) -> [dynamic]text_word_range {
+	ranges := make([dynamic]text_word_range, 0, 16, scratch_allocator)
 	it := runa.word_iter_make(value)
 	for {
 		start, end, ok := runa.word_iter_next(&it)
@@ -729,10 +732,10 @@ text_word_range_is_separator :: proc(value: string, range: text_word_range) -> b
 	return true
 }
 
-text_move_word :: proc(value: string, position: Text_Position, delta: int) -> Text_Position {
+text_move_word :: proc(value: string, position: Text_Position, delta: int, scratch_allocator := context.temp_allocator) -> Text_Position {
 	normalized := Text_Position{grapheme_floor_boundary(value, position.byte), position.affinity}
 	if delta == 0 || len(value) == 0 { return normalized }
-	ranges := text_word_ranges(value)
+	ranges := text_word_ranges(value, scratch_allocator)
 	byte := normalized.byte
 	steps := delta
 	for steps < 0 {
@@ -779,13 +782,13 @@ text_move_word :: proc(value: string, position: Text_Position, delta: int) -> Te
 	return Text_Position{grapheme_floor_boundary(value, byte), .Leading}
 }
 
-text_run_move_visual :: proc(run: ^Text_Run, position: Text_Position, direction: int) -> Text_Position {
+text_run_move_visual :: proc(run: ^Text_Run, position: Text_Position, direction: int, scratch_allocator := context.temp_allocator) -> Text_Position {
 	if run == nil || direction == 0 || len(run.lines) == 0 { return text_position_normalize(run, position) }
 	normalized := text_position_normalize(run, position)
 	line_index := text_run_line_for_byte(run, normalized)
-	points := make([dynamic]Text_Caret_Point, 0, 32, context.temp_allocator)
+	points := make([dynamic]Text_Caret_Point, 0, 32, scratch_allocator)
 	text_run_line_caret_points(run, line_index, &points)
-	origin_x, found := text_run_position_x(run, line_index, normalized)
+	origin_x, found := text_run_position_x(run, line_index, normalized, scratch_allocator)
 	if !found || len(points) == 0 { return normalized }
 	chosen := normalized
 	chosen_x := origin_x
@@ -804,22 +807,25 @@ text_run_move_visual :: proc(run: ^Text_Run, position: Text_Position, direction:
 	}
 	if has_choice { return text_position_normalize(run, chosen) }
 	if direction < 0 && line_index > 0 {
-		previous := make([dynamic]Text_Caret_Point, 0, 32, context.temp_allocator)
+		previous := make([dynamic]Text_Caret_Point, 0, 32, scratch_allocator)
 		text_run_line_caret_points(run, line_index-1, &previous)
 		if point, ok := text_run_extreme_caret_point(previous[:], false); ok { return point.position }
 	} else if direction > 0 && line_index+1 < len(run.lines) {
-		next := make([dynamic]Text_Caret_Point, 0, 32, context.temp_allocator)
+		next := make([dynamic]Text_Caret_Point, 0, 32, scratch_allocator)
 		text_run_line_caret_points(run, line_index+1, &next)
 		if point, ok := text_run_extreme_caret_point(next[:], true); ok { return point.position }
 	}
 	return normalized
 }
 
-text_layout :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0) -> (width, height: f32, glyphs: int, ok: bool) {
+text_layout :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, scratch_allocator := context.temp_allocator) -> (width, height: f32, glyphs: int, ok: bool) {
 	if !engine.font_loaded || size <= 0 { return }
 	stack := runa.Font_Stack{&engine.font}
 	opts := runa.Paragraph_Opts{fonts=stack, size=size, direction=.Auto, align=.Start, max_width=max_width}
+	previous_temp_allocator := context.temp_allocator
+	context.temp_allocator = scratch_allocator
 	lines, err := runa.layout_paragraph(value, opts, &engine.cache, allocator=engine.allocator)
+	context.temp_allocator = previous_temp_allocator
 	if err != .None { return }
 	defer {
 		for i := 0; i < len(lines); i += 1 { runa.line_destroy(&lines[i], engine.allocator) }
@@ -834,14 +840,14 @@ text_layout :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f
 	return
 }
 
-text_shape :: proc(engine: ^Text_Engine, value: string, changed: bool) {
+text_shape :: proc(engine: ^Text_Engine, value: string, changed: bool, scratch_allocator := context.temp_allocator) {
 	if !engine.font_loaded {
 		if engine.available {
 			if changed { engine.shaped_runs += 1 } else { engine.cache_hits += 1 }
 		}
 		return
 	}
-	_, _, _, ok := text_layout(engine, value, 16)
+	_, _, _, ok := text_layout(engine, value, 16, scratch_allocator=scratch_allocator)
 	if !ok { return }
 	if changed { engine.shaped_runs += 1 } else { engine.cache_hits += 1 }
 }

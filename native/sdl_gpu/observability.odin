@@ -284,9 +284,12 @@ native_write_diagnostics :: proc(
     "focused_node": %d,
     "gpu_surface_updates": %d,
     "gpu_surface_frames_consumed": %d,
+    "presentation_revision": %d,
+    "submitted_revision": %d,
+    "frame_needs_submission": %t,
     "debug_bounds": %t
   }},
-`, len(rt.nodes), len(rt.display), u64(rt.focused), rt.stats.surface_updates, rt.stats.surface_frames_consumed, options.debug_bounds)
+`, len(rt.nodes), len(rt.display), u64(rt.focused), rt.stats.surface_updates, rt.stats.surface_frames_consumed, rt.presentation_revision, rt.submitted_revision, alicorn.frame_needs_submission(rt), options.debug_bounds)
 	strings.write_string(&builder, `  "notes": [
     "timing values are host wall-clock measurements in nanoseconds",
     "runtime allocation telemetry excludes application allocations, GPU memory, driver memory, and OS working set",

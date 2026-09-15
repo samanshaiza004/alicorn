@@ -102,7 +102,7 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	// realized row may begin above the viewport when the scroll position is
 	// between row boundaries; the retained clip on the list protects the
 	// surrounding UI while preserving continuous motion.
-	main_offset: f32 = -parent.scroll_offset_y if parent.kind == .Virtual_List else 0
+	main_offset: f32 = -parent.layout_scroll_offset_y if parent.kind == .Virtual_List else 0
 	for id in children {
 		child := rt.nodes[id]
 		old_bounds := child.bounds

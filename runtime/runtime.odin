@@ -231,6 +231,10 @@ Description :: struct {
 	surface_pixel_height: int,
 	surface_dpi_scale: f32,
 	scroll_offset_y: f32,
+	// The logical scroll position remains authoritative for application state
+	// and scrollbar calculations. Virtualized lists use this residual offset
+	// to place only the realized rows after preceding rows were omitted.
+	layout_scroll_offset_y: f32,
 }
 
 Pending_Kind :: enum {
@@ -283,6 +287,7 @@ Node :: struct {
 	surface_pixel_height: int,
 	surface_dpi_scale: f32,
 	scroll_offset_y: f32,
+	layout_scroll_offset_y: f32,
 	surface_revision: u64,
 	surface_samples: [dynamic]f32,
 	bounds:      Rect,
@@ -393,6 +398,12 @@ Runtime :: struct {
 	// deliberately separate from invalidated so hover can repaint without
 	// re-running application code.
 	presentation_pending: bool,
+	// presentation_revision identifies the newest retained display state. A
+	// native host acknowledges it only after a successful GPU submission;
+	// keeping the two generations separate preserves pending work when a
+	// swapchain has no drawable texture for a loop iteration.
+	presentation_revision: u64,
+	submitted_revision:    u64,
 	frame_open:  bool,
 	hard_error:  bool,
 	diagnostic:  string,
@@ -638,16 +649,38 @@ request_presentation :: proc(rt: ^Runtime, reason := "retained presentation chan
 	record_trace(rt, .Invalidation, 0, reason)
 }
 
+advance_presentation_revision :: proc(rt: ^Runtime) {
+	rt.presentation_revision += 1
+	if rt.presentation_revision == 0 {
+		// Keep zero available as the initial generation and force a pending
+		// acknowledgement after the practically unreachable u64 wraparound.
+		rt.presentation_revision = 1
+		rt.submitted_revision = 0
+	}
+}
+
 presentation_needs_frame :: proc(rt: ^Runtime) -> bool {
 	return rt.presentation_pending
 }
 
 frame_needs_submission :: proc(rt: ^Runtime) -> bool {
-	return rt.invalidated || rt.presentation_pending || rt.surface_frame_pending
+	return rt.presentation_revision != rt.submitted_revision || rt.surface_frame_pending
+}
+
+// frame_submission_succeeded is the native-host acknowledgement boundary.
+// It must be called only after the command buffer has been submitted
+// successfully. In particular, a nil swapchain texture is not an
+// acknowledgement: the revision remains pending so the host can retry.
+frame_submission_succeeded :: proc(rt: ^Runtime) {
+	rt.submitted_revision = rt.presentation_revision
 }
 
 presentation_frame_consumed :: proc(rt: ^Runtime) {
+	// Keep the existing API as a compatibility spelling for hosts that used it
+	// as their post-submit acknowledgement. New hosts should call the more
+	// explicit frame_submission_succeeded procedure.
 	rt.presentation_pending = false
+	frame_submission_succeeded(rt)
 }
 
 invalidate_region :: proc(rt: ^Runtime, key: string, revision: u64, reason := "explicit region invalidation") {
@@ -739,7 +772,7 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	record_trace(rt, .Reconcile, 0, message)
 }
 
-emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, region_revision: u64 = 0, is_region := false, focusable := false, surface_kind := GPU_Surface_Kind.Waveform, surface_pixel_width: int = 0, surface_pixel_height: int = 0, surface_dpi_scale: f32 = 1, paint_background := true, scroll_offset_y: f32 = 0) -> Node_ID {
+emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, region_revision: u64 = 0, is_region := false, focusable := false, surface_kind := GPU_Surface_Kind.Waveform, surface_pixel_width: int = 0, surface_pixel_height: int = 0, surface_dpi_scale: f32 = 1, paint_background := true, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1) -> Node_ID {
 	rt := ui.runtime
 	parent_node := current_node_parent(ui)
 	parent_identity := current_identity_parent(ui)
@@ -758,6 +791,8 @@ emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text :=
 		identity_key_u64 = rt.identity_key_u64[len(rt.identity_key_u64)-1]
 		identity_key_numeric = rt.identity_key_numeric[len(rt.identity_key_numeric)-1]
 	}
+	effective_layout_scroll_offset_y := layout_scroll_offset_y
+	if effective_layout_scroll_offset_y < 0 { effective_layout_scroll_offset_y = scroll_offset_y }
 	description := Description{
 		id=id, parent=parent_node, site=source, key=key, explicit_key=explicit_key,
 		kind=kind, label=label, text=text, style=style, color=color, paint_background=paint_background,
@@ -766,7 +801,7 @@ emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text :=
 		identity_key_u64=identity_key_u64, identity_key_numeric=identity_key_numeric,
 		surface_kind=surface_kind, surface_pixel_width=surface_pixel_width,
 		surface_pixel_height=surface_pixel_height, surface_dpi_scale=surface_dpi_scale,
-		scroll_offset_y=scroll_offset_y,
+		scroll_offset_y=scroll_offset_y, layout_scroll_offset_y=effective_layout_scroll_offset_y,
 	}
 	append(&rt.pending, Pending_Item{.Description, description, 0})
 	rt.stats.descriptions_emitted += 1
@@ -774,7 +809,7 @@ emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text :=
 	return id
 }
 
-emit_key :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := DEFAULT_COLOR, state_bits: u64 = 0, selected := false, disabled := false, region_revision: u64 = 0, is_region := false, focusable := false, surface_kind := GPU_Surface_Kind.Waveform, surface_pixel_width: int = 0, surface_pixel_height: int = 0, surface_dpi_scale: f32 = 1, paint_background := true, scroll_offset_y: f32 = 0) -> Node_ID {
+emit_key :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := DEFAULT_COLOR, state_bits: u64 = 0, selected := false, disabled := false, region_revision: u64 = 0, is_region := false, focusable := false, surface_kind := GPU_Surface_Kind.Waveform, surface_pixel_width: int = 0, surface_pixel_height: int = 0, surface_dpi_scale: f32 = 1, paint_background := true, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1) -> Node_ID {
 	rt := ui.runtime
 	parent_node := current_node_parent(ui)
 	parent_identity := current_identity_parent(ui)
@@ -813,6 +848,8 @@ emit_key :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", tex
 		identity_key_pair = value
 		key_kind = 3
 	}
+	effective_layout_scroll_offset_y := layout_scroll_offset_y
+	if effective_layout_scroll_offset_y < 0 { effective_layout_scroll_offset_y = scroll_offset_y }
 	description := Description{
 		id=id, parent=parent_node, site=source, key=key_string_value, explicit_key=ui_key_is_explicit(key),
 		identity_key_kind=key_kind, identity_key_pair=identity_key_pair,
@@ -822,7 +859,7 @@ emit_key :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", tex
 		identity_key_u64=identity_key_u64, identity_key_numeric=identity_key_numeric,
 		surface_kind=surface_kind, surface_pixel_width=surface_pixel_width,
 		surface_pixel_height=surface_pixel_height, surface_dpi_scale=surface_dpi_scale,
-		scroll_offset_y=scroll_offset_y,
+		scroll_offset_y=scroll_offset_y, layout_scroll_offset_y=effective_layout_scroll_offset_y,
 	}
 	append(&rt.pending, Pending_Item{.Description, description, 0})
 	rt.stats.descriptions_emitted += 1
@@ -916,10 +953,10 @@ key_scope_end :: proc(ui: ^UI) {
 	pop_identity_scope(ui.runtime)
 }
 
-container_begin_ex :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, paint_value: u64 = 0, focusable := false, loc := #caller_location, scroll_offset_y: f32 = 0) -> Node_ID {
+container_begin_ex :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, paint_value: u64 = 0, focusable := false, loc := #caller_location, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1) -> Node_ID {
 	resolved_source := resolve_source(source, "container", loc)
 	resolved_color, paints := resolve_container_color(kind, color)
-	id := emit(ui, kind, resolved_source, label=label, key=key, explicit_key=explicit_key, style=style, color=resolved_color, paint_value=paint_value, focusable=focusable, paint_background=paints, scroll_offset_y=scroll_offset_y)
+	id := emit(ui, kind, resolved_source, label=label, key=key, explicit_key=explicit_key, style=style, color=resolved_color, paint_value=paint_value, focusable=focusable, paint_background=paints, scroll_offset_y=scroll_offset_y, layout_scroll_offset_y=layout_scroll_offset_y)
 	if id != 0 {
 		append(&ui.runtime.stack, id)
 		push_identity_scope(ui.runtime, id, "", 0)
@@ -947,9 +984,9 @@ transparent_container_end :: proc(ui: ^UI) {
 	if len(ui.runtime.stack) > 0 { pop(&ui.runtime.stack) }
 }
 
-container_ex :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, body: proc(), label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, paint_value: u64 = 0, focusable := false, loc := #caller_location, scroll_offset_y: f32 = 0) -> Node_ID {
+container_ex :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, body: proc(), label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, paint_value: u64 = 0, focusable := false, loc := #caller_location, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1) -> Node_ID {
 	resolved_source := resolve_source(source, "container", loc)
-	id := container_begin_ex(ui, kind, resolved_source, label, key, explicit_key, style, color, paint_value, focusable, scroll_offset_y=scroll_offset_y)
+	id := container_begin_ex(ui, kind, resolved_source, label, key, explicit_key, style, color, paint_value, focusable, scroll_offset_y=scroll_offset_y, layout_scroll_offset_y=layout_scroll_offset_y)
 	if id == 0 { return 0 }
 	body()
 	container_end(ui)
@@ -961,10 +998,10 @@ root_ex :: proc(ui: ^UI, source := Source_Site{}, body: proc(), style := DEFAULT
 	return container_ex(ui, .Root, resolved_source, body, label="root", style=style)
 }
 
-container_begin_simple :: proc(ui: ^UI, kind: Node_Kind, label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, state_bits: u64 = 0, selected := false, disabled := false, focusable := false, loc := #caller_location, scroll_offset_y: f32 = 0) -> Node_ID {
+container_begin_simple :: proc(ui: ^UI, kind: Node_Kind, label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, state_bits: u64 = 0, selected := false, disabled := false, focusable := false, loc := #caller_location, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1) -> Node_ID {
 	resolved_source := resolve_source(Source_Site{}, "container", loc)
 	resolved_color, paints := resolve_container_color(kind, color)
-	id := emit_key(ui, kind, resolved_source, label=label, key=key, style=style, color=resolved_color, state_bits=state_bits, selected=selected, disabled=disabled, focusable=focusable && !disabled, paint_background=paints, scroll_offset_y=scroll_offset_y)
+	id := emit_key(ui, kind, resolved_source, label=label, key=key, style=style, color=resolved_color, state_bits=state_bits, selected=selected, disabled=disabled, focusable=focusable && !disabled, paint_background=paints, scroll_offset_y=scroll_offset_y, layout_scroll_offset_y=layout_scroll_offset_y)
 	if id != 0 {
 		append(&ui.runtime.stack, id)
 		push_identity_scope(ui.runtime, id, "", 0)
@@ -972,8 +1009,8 @@ container_begin_simple :: proc(ui: ^UI, kind: Node_Kind, label := "", key: UI_Ke
 	return id
 }
 
-container_simple :: proc(ui: ^UI, kind: Node_Kind, body: proc(), label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, loc := #caller_location, scroll_offset_y: f32 = 0) -> Node_ID {
-	id := container_begin_simple(ui, kind, label, key, style, color, 0, false, false, false, loc, scroll_offset_y)
+container_simple :: proc(ui: ^UI, kind: Node_Kind, body: proc(), label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, loc := #caller_location, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1) -> Node_ID {
+	id := container_begin_simple(ui, kind, label, key, style, color, 0, false, false, false, loc, scroll_offset_y, layout_scroll_offset_y)
 	if id == 0 { return 0 }
 	body()
 	container_end(ui)
@@ -984,8 +1021,8 @@ root_simple :: proc(ui: ^UI, body: proc(), style := DEFAULT_STYLE, loc := #calle
 	return container_simple(ui, .Root, body, label="root", style=style, loc=loc)
 }
 
-container_begin :: proc(ui: ^UI, kind: Node_Kind, label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, state_bits: u64 = 0, selected := false, disabled := false, focusable := false, loc := #caller_location, scroll_offset_y: f32 = 0) -> Node_ID {
-	return container_begin_simple(ui, kind, label, key, style, color, state_bits, selected, disabled, focusable, loc, scroll_offset_y)
+container_begin :: proc(ui: ^UI, kind: Node_Kind, label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, state_bits: u64 = 0, selected := false, disabled := false, focusable := false, loc := #caller_location, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1) -> Node_ID {
+	return container_begin_simple(ui, kind, label, key, style, color, state_bits, selected, disabled, focusable, loc, scroll_offset_y, layout_scroll_offset_y)
 }
 
 container :: proc(ui: ^UI, kind: Node_Kind, body: proc(), label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, loc := #caller_location) -> Node_ID {
@@ -1109,6 +1146,7 @@ Virtual_List_Metrics :: struct {
 	content_height: f32,
 	max_scroll_y:   f32,
 	offset_y:       f32,
+	leading_offset_y: f32,
 }
 
 // virtual_list_metrics is the shared fixed-height scroll calculation. It
@@ -1125,6 +1163,7 @@ virtual_list_metrics :: proc(item_count: int, scroll_y, viewport_height, row_hei
 	result.last = int((result.offset_y+viewport_height) / row_height) + 1
 	if result.last > item_count { result.last = item_count }
 	if result.last < result.first+1 { result.last = result.first+1 }
+	result.leading_offset_y = result.offset_y - f32(result.first)*row_height
 	return result
 }
 
@@ -1137,7 +1176,7 @@ virtual_list_ex :: proc(ui: ^UI, item_count: int, scroll_y, viewport_height, row
 	first, last = metrics.first, metrics.last
 	if first == last { return }
 	style := Layout_Style{.Column, -1, viewport_height, 0, -1, 0, -1, 0, 0, 0, .Stretch, true}
-	container_begin_ex(ui, .Virtual_List, source, label="virtual-list", style=style, scroll_offset_y=metrics.offset_y)
+	container_begin_ex(ui, .Virtual_List, source, label="virtual-list", style=style, scroll_offset_y=metrics.offset_y, layout_scroll_offset_y=metrics.leading_offset_y)
 	for i := first; i < last; i += 1 {
 		if key_scope_begin_ex(ui, item_key(i), source) {
 			row(ui, i)
@@ -1153,7 +1192,7 @@ virtual_list_simple :: proc(ui: ^UI, item_count: int, scroll_y, viewport_height,
 	first, last = metrics.first, metrics.last
 	if first == last { return }
 	style := Layout_Style{.Column, -1, viewport_height, 0, -1, 0, -1, 0, 0, 0, .Stretch, true}
-	container_begin_simple(ui, .Virtual_List, label="virtual-list", style=style, loc=loc, scroll_offset_y=metrics.offset_y)
+	container_begin_simple(ui, .Virtual_List, label="virtual-list", style=style, loc=loc, scroll_offset_y=metrics.offset_y, layout_scroll_offset_y=metrics.leading_offset_y)
 	for i := first; i < last; i += 1 {
 		if key_scope_begin_key(ui, item_key(i), Source_Site{}, loc) {
 			row(ui, i)

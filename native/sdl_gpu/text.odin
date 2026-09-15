@@ -272,7 +272,7 @@ native_text_mesh_fingerprint :: proc(display: []alicorn.Display_Command, scale_x
 	return h
 }
 
-native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []alicorn.Display_Command, scale_x, scale_y: f32) -> bool {
+native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []alicorn.Display_Command, scale_x, scale_y: f32, scratch_allocator := context.temp_allocator) -> bool {
 	fingerprint := native_text_mesh_fingerprint(display, scale_x, scale_y)
 	text_command_count: u64 = 0
 	for command in display {
@@ -318,7 +318,7 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 			physical_y := (command.bounds.y + glyph.y) * scale_y
 			snapped_x, subpixel_bucket := native_text_snap_x(physical_x)
 			snapped_y := native_text_snap_y(physical_y)
-			slot, drawable, glyph_ok := alicorn.text_engine_glyph(&renderer.runtime.text_engine, glyph.glyph_id, raster_size, subpixel_bucket)
+			slot, drawable, glyph_ok := alicorn.text_engine_glyph(&renderer.runtime.text_engine, glyph.glyph_id, raster_size, subpixel_bucket, scratch_allocator=scratch_allocator)
 			if !glyph_ok || !drawable { continue }
 			slot_view := runa.atlas_slot_view(slot)
 			x0 := snapped_x + slot_view.Bearing[0]
@@ -347,19 +347,19 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 	return true
 }
 
-native_text_sync_atlas :: proc(renderer: ^Native_Text_Renderer, command: ^sdl3.GPUCommandBuffer) -> bool {
-	snapshot := runa.atlas_dirty_snapshot(&renderer.runtime.text_engine.atlas, context.temp_allocator)
+native_text_sync_atlas :: proc(renderer: ^Native_Text_Renderer, command: ^sdl3.GPUCommandBuffer, scratch_allocator := context.temp_allocator) -> bool {
+	snapshot := runa.atlas_dirty_snapshot(&renderer.runtime.text_engine.atlas, scratch_allocator)
 	if len(snapshot) == 0 { return true }
 	for dirty in snapshot {
 		view, ok := runa.atlas_page_view(&renderer.runtime.text_engine.atlas, dirty.Page_Index, dirty.Is_Color)
-		if !ok { delete(snapshot, context.temp_allocator); return false }
+		if !ok { delete(snapshot, scratch_allocator); return false }
 		page := native_text_page(renderer, dirty.Page_Index, dirty.Is_Color)
 		if page == nil {
 			texture := sdl3.CreateGPUTexture(renderer.device, sdl3.GPUTextureCreateInfo{
 				type=.D2, format=.R8G8B8A8_UNORM, usage=sdl3.GPUTextureUsageFlags{.SAMPLER},
 				width=sdl3.Uint32(view.Width), height=sdl3.Uint32(view.Height), layer_count_or_depth=1, num_levels=1, sample_count=._1,
 			})
-			if texture == nil { delete(snapshot, context.temp_allocator); return false }
+			if texture == nil { delete(snapshot, scratch_allocator); return false }
 			append(&renderer.pages, Native_Atlas_Page{dirty.Page_Index, dirty.Is_Color, view.Width, view.Height, texture})
 			page = &renderer.pages[len(renderer.pages)-1]
 		}
@@ -371,7 +371,7 @@ native_text_sync_atlas :: proc(renderer: ^Native_Text_Renderer, command: ^sdl3.G
 		upload_height := int(view.Height)
 		upload_bytes := upload_width * upload_height * 4
 		mapped := sdl3.MapGPUTransferBuffer(renderer.device, renderer.atlas_transfer, true)
-		if mapped == nil || upload_bytes > 4*1024*1024 { delete(snapshot, context.temp_allocator); return false }
+		if mapped == nil || upload_bytes > 4*1024*1024 { delete(snapshot, scratch_allocator); return false }
 		destination := cast([^]u8)mapped
 		for y in 0..<upload_height {
 			src_row := y * upload_width
@@ -394,7 +394,7 @@ native_text_sync_atlas :: proc(renderer: ^Native_Text_Renderer, command: ^sdl3.G
 		}
 		sdl3.UnmapGPUTransferBuffer(renderer.device, renderer.atlas_transfer)
 		copy_pass := sdl3.BeginGPUCopyPass(command)
-		if copy_pass == nil { delete(snapshot, context.temp_allocator); return false }
+		if copy_pass == nil { delete(snapshot, scratch_allocator); return false }
 		source := sdl3.GPUTextureTransferInfo{transfer_buffer=renderer.atlas_transfer, offset=0, pixels_per_row=sdl3.Uint32(upload_width), rows_per_layer=sdl3.Uint32(upload_height)}
 		destination_region := sdl3.GPUTextureRegion{texture=page.texture, mip_level=0, layer=0, x=0, y=0, z=0, w=sdl3.Uint32(view.Width), h=sdl3.Uint32(view.Height), d=1}
 		sdl3.UploadToGPUTexture(copy_pass, source, destination_region, true)
@@ -403,7 +403,7 @@ native_text_sync_atlas :: proc(renderer: ^Native_Text_Renderer, command: ^sdl3.G
 		renderer.atlas_upload_bytes += u64(upload_bytes)
 		append(&renderer.pending_dirty, dirty)
 	}
-	delete(snapshot, context.temp_allocator)
+	delete(snapshot, scratch_allocator)
 	return true
 }
 

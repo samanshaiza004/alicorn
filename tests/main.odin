@@ -169,6 +169,11 @@ virtual_row :: proc(ui: ^alicorn.UI, index: int) {
 	alicorn.text_ex(ui, fmt.tprintf("row %d", index), S_VROW)
 }
 
+virtual_geometry_row :: proc(ui: ^alicorn.UI, index: int) {
+	style := alicorn.Layout_Style{.Column, -1, 20, 0, -1, 0, -1, 0, 0, 0, .Stretch, true}
+	_, _ = alicorn.button_ex(ui, fmt.tprintf("row-%d", index), S_VROW, style=style)
+}
+
 virtual_item_key :: proc(index: int) -> string {
 	return fmt.tprintf("item-%d", index)
 }
@@ -189,6 +194,23 @@ render_virtual :: proc(rt: ^alicorn.Runtime, scroll: f32) {
 	alicorn.virtual_list_ex(&ui, 1_000_000, scroll, 200, 20, S_VLIST, virtual_item_key, virtual_row)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
+}
+
+render_virtual_geometry :: proc(rt: ^alicorn.Runtime, scroll: f32) -> map[string]alicorn.Node_ID {
+	alicorn.invalidate_root(rt, "test virtual geometry")
+	ui, build := alicorn.begin_frame(rt)
+	ids := make(map[string]alicorn.Node_ID)
+	if !build { return ids }
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="virtual-geometry-root")
+	alicorn.virtual_list_ex(&ui, 100, scroll, 200, 20, S_VLIST, virtual_item_key, virtual_geometry_row)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	for id in rt.order {
+		if node, ok := rt.nodes[id]; ok && node.kind == .Button && node.identity_key != "" {
+			ids[node.identity_key] = id
+		}
+	}
+	return ids
 }
 
 render_virtual_data :: proc(rt: ^alicorn.Runtime, keys: []string, scroll: f32) -> map[string]alicorn.Node_ID {
@@ -884,13 +906,32 @@ test_ergonomic_identity :: proc(state: ^Test_State) {
 	alicorn.destroy_runtime(&rt)
 }
 
+test_structure_layout_invalidation :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 200})
+	empty_values := []int{}
+	first := render_keyed(&rt, []string{"a", "b", "c"}, empty_values, false, false)
+	expect(state, rt.nodes[first["a"]].bounds.y == 0 && rt.nodes[first["b"]].bounds.y == 24 && rt.nodes[first["c"]].bounds.y == 48, "initial keyed rows must be laid out in declaration order")
+
+	reordered := render_keyed(&rt, []string{"c", "a", "b"}, empty_values, false, false)
+	expect(state, rt.nodes[reordered["c"]].bounds.y == 0 && rt.nodes[reordered["a"]].bounds.y == 24 && rt.nodes[reordered["b"]].bounds.y == 48, "reordering children must recompute retained geometry")
+	hit := alicorn.hit_test(&rt, rt.nodes[reordered["c"]].bounds.x+4, rt.nodes[reordered["c"]].bounds.y+12)
+	expect(state, hit == reordered["c"], "hit testing must follow reordered child geometry")
+
+	removed := render_keyed(&rt, []string{"c", "b"}, empty_values, false, false)
+	expect(state, rt.nodes[removed["c"]].bounds.y == 0 && rt.nodes[removed["b"]].bounds.y == 24, "removing a child must close the retained layout gap")
+	expect(state, alicorn.hit_test(&rt, rt.nodes[removed["b"]].bounds.x+4, rt.nodes[removed["b"]].bounds.y+12) == removed["b"], "hit testing must follow removal-adjusted geometry")
+	expect(state, alicorn.hit_test(&rt, 4, 60) == 0, "removed child must not remain hit-testable at its old position")
+	alicorn.destroy_runtime(&rt)
+}
+
 test_virtualization_and_gpu :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 800, 600})
 	metrics := alicorn.virtual_list_metrics(100, 12.5, 100, 20)
 	expect(state, metrics.first == 0 && metrics.last == 6, "virtual metrics include the partially visible leading row")
 	expect(state, metrics.offset_y == 12.5 && metrics.max_scroll_y == 1900, "virtual metrics preserve fractional scroll and use the real viewport")
+	expect(state, metrics.leading_offset_y == 12.5, "virtual metrics expose the residual leading offset")
 	clamped_metrics := alicorn.virtual_list_metrics(100, 9999, 100, 20)
-	expect(state, clamped_metrics.offset_y == clamped_metrics.max_scroll_y && clamped_metrics.first == 95, "virtual metrics clamp to the content end")
+	expect(state, clamped_metrics.offset_y == clamped_metrics.max_scroll_y && clamped_metrics.first == 95 && clamped_metrics.leading_offset_y == 0, "virtual metrics clamp to the content end")
 	render_virtual(&rt, 0)
 	expect(state, len(rt.nodes) <= 14, "million logical rows must retain only viewport-scale nodes")
 	first_count := len(rt.nodes)
@@ -906,6 +947,25 @@ test_virtualization_and_gpu :: proc(state: ^Test_State) {
 		expect(state, rt.nodes[id].local_counter == 900+len(key), fmt.tprintf("virtual row identity moved for %s", key))
 	}
 	expect(state, rt.selected == ids["k3"] && rt.nodes[ids["k3"]].selected, "virtual selection follows logical row identity")
+	geometry_scrolls := []f32{0, 12, 24, 240, 1800}
+	for scroll in geometry_scrolls {
+		geometry_ids := render_virtual_geometry(&rt, scroll)
+		geometry := alicorn.virtual_list_metrics(100, scroll, 200, 20)
+		list_id := alicorn.Node_ID(0)
+		for id in rt.order {
+			if node, ok := rt.nodes[id]; ok && node.kind == .Virtual_List {
+				list_id = id
+				break
+			}
+		}
+		list := rt.nodes[list_id]
+		first_id := geometry_ids[fmt.tprintf("item-%d", geometry.first)]
+		expect(state, rt.nodes[first_id].bounds.y == list.bounds.y-geometry.leading_offset_y, fmt.tprintf("virtual first row position at scroll %.1f", scroll))
+		hit_index := geometry.first+1
+		hit_id := geometry_ids[fmt.tprintf("item-%d", hit_index)]
+		hit_y := rt.nodes[hit_id].bounds.y + 10
+		expect(state, alicorn.hit_test(&rt, list.bounds.x+4, hit_y) == hit_id, fmt.tprintf("virtual hit testing at scroll %.1f", scroll))
+	}
 	gpu := alicorn.new_gpu_backend()
 	for i := 0; i < 10000; i += 1 {
 		command := alicorn.gpu_begin_commands(&gpu)
@@ -987,6 +1047,36 @@ test_presentation_invalidation :: proc(state: ^Test_State) {
 	expect(state, ready, "presentation-only wake must open a retained frame")
 	if ready { alicorn.end_presentation_frame(&presentation_ui) }
 	expect(state, !alicorn.presentation_needs_frame(&rt), "flushing presentation work must consume its pending wake")
+	alicorn.destroy_runtime(&rt)
+}
+
+test_presentation_submission_lifecycle :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
+	render_single_button(&rt)
+	first_revision := rt.presentation_revision
+	expect(state, first_revision != rt.submitted_revision, "a reconciled display must remain pending until native submission succeeds")
+	expect(state, alicorn.frame_needs_submission(&rt), "a reconciled display must request its first submission")
+
+	// Simulate a swapchain acquisition that returns no drawable texture. The
+	// host must leave the revision pending so its next loop iteration retries.
+	expect(state, alicorn.frame_needs_submission(&rt), "an unavailable initial swapchain must leave the surface-less display pending")
+	alicorn.frame_submission_succeeded(&rt)
+	expect(state, !alicorn.frame_needs_submission(&rt), "successful submission must consume the retained display revision")
+	alicorn.invalidate_root(&rt, "submission retry test")
+	ui, build := alicorn.begin_frame(&rt)
+	if build {
+		alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="retry-root")
+		alicorn.text_ex(&ui, "updated", S_EXTRA)
+		alicorn.container_end(&ui)
+		alicorn.end_frame(&ui)
+	}
+	second_revision := rt.presentation_revision
+	expect(state, second_revision != first_revision, "a later retained rebuild must advance the presentation revision")
+	expect(state, alicorn.frame_needs_submission(&rt), "a later retained rebuild must remain pending")
+	expect(state, alicorn.frame_needs_submission(&rt), "an unavailable swapchain must not consume pending work")
+	alicorn.frame_submission_succeeded(&rt)
+	expect(state, !alicorn.frame_needs_submission(&rt), "the retry must clear pending work only after submission")
+
 	alicorn.destroy_runtime(&rt)
 }
 
@@ -1164,6 +1254,8 @@ test_gpu_surface_contract :: proc(state: ^Test_State) {
 	expect(state, ok && ctx.logical_bounds.w == 240 && ctx.logical_bounds.h == 80, "surface context must retain laid-out logical bounds")
 	expect(state, ok && ctx.pixel_width == 480 && ctx.pixel_height == 160 && ctx.dpi_scale == 2, "surface context must retain physical extent and DPI")
 	expect(state, ok && ctx.clip.w == 240 && ctx.clip.h == 80, "surface context must expose an effective clip bounded to the surface")
+	alicorn.frame_submission_succeeded(&rt)
+	expect(state, !alicorn.frame_needs_submission(&rt), "initial surface description must be acknowledged only after a successful submission")
 	samples := []f32{0.1, 0.4, 0.8, 0.2}
 	before := rt.stats
 	expect(state, alicorn.gpu_surface_update(&rt, id, 1, samples[:]), "explicit surface revision update must succeed")
@@ -1174,6 +1266,8 @@ test_gpu_surface_contract :: proc(state: ^Test_State) {
 	expect(state, rt.stats.frames_built == before.frames_built && rt.stats.reconcile_nodes_visited == before.reconcile_nodes_visited && rt.stats.layout_nodes_visited == before.layout_nodes_visited && rt.stats.paint_nodes_visited == before.paint_nodes_visited, "surface-only update must leave ordinary frame work untouched")
 	alicorn.gpu_surface_frame_consumed(&rt)
 	expect(state, !alicorn.gpu_surface_needs_frame(&rt), "successful surface submission must consume the pending frame")
+	alicorn.frame_submission_succeeded(&rt)
+	expect(state, !alicorn.frame_needs_submission(&rt), "successful surface submission must acknowledge the presentation revision")
 	// A later root wake with the same description must not roll back the
 	// independently updated retained surface revision or its copied samples.
 	render_gpu_surface(&rt, true, 0)
@@ -1237,11 +1331,13 @@ main :: proc() {
 	test_interaction_regressions(&state)
 	test_disabled_button_semantics(&state)
 	test_ergonomic_identity(&state)
+	test_structure_layout_invalidation(&state)
 	test_virtualization_and_gpu(&state)
 	test_layout_geometry(&state)
 	test_text_intrinsic_layout_invalidation(&state)
 	test_container_paint_defaults(&state)
 	test_presentation_invalidation(&state)
+	test_presentation_submission_lifecycle(&state)
 	test_text_geometry(&state)
 	test_gpu_text_resource_boundary(&state)
 	test_retained_text_product_lifetime(&state)

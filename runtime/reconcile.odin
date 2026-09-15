@@ -47,6 +47,12 @@ description_hash :: proc(d: Description) -> u64 {
 
 layout_hash :: proc(d: Description) -> u64 {
 	h := hash_mix(hash_style(d.style), u64(d.parent))
+	// Scrolling changes realized child geometry even when the description and
+	// child set remain otherwise identical. Keep both the logical offset and
+	// the residual layout offset in this dependency: the former is the public
+	// scroll position and the latter is the value used by virtualized layout.
+	h = hash_mix(h, u64(transmute(u32)d.scroll_offset_y))
+	h = hash_mix(h, u64(transmute(u32)d.layout_scroll_offset_y))
 	// Text participates in intrinsic measurement. A description can otherwise
 	// look layout-identical while a changing label/value moves its siblings.
 	#partial switch d.kind {
@@ -154,6 +160,7 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	node.surface_pixel_height = d.surface_pixel_height
 	node.surface_dpi_scale = d.surface_dpi_scale
 	node.scroll_offset_y = d.scroll_offset_y
+	node.layout_scroll_offset_y = d.layout_scroll_offset_y
 	// A direct surface update owns the high-frequency revision. A later root
 	// wake with the same description must not roll it back; a changed
 	// description revision is an explicit replacement and is authoritative.
@@ -396,6 +403,12 @@ reconcile :: proc(rt: ^Runtime) {
 			}
 			clear(&parent.children)
 			for child in wanted { append(&parent.children, child) }
+			// Child membership and order are layout inputs. Mark this parent and
+			// its ancestors so retained layout cannot preserve stale positions
+			// after keyed reorder, insertion, or removal.
+			dirty_set(&parent.dirty, .Layout, true)
+			dirty_set(&parent.dirty, .Composite, true)
+			mark_layout_ancestors(rt, parent_id)
 			structure_changed = true
 		}
 	}
@@ -438,6 +451,7 @@ reconcile :: proc(rt: ^Runtime) {
 	rt.frame_open = false
 	rt.invalidated = false
 	rt.presentation_pending = false
+	advance_presentation_revision(rt)
 	rt.stats.frame += 1
 	delete(focus_lineage)
 	record_trace(rt, .Reconcile, 0, fmt.tprintf("frame %d reconciled", rt.stats.frame))
@@ -454,6 +468,7 @@ end_presentation_frame :: proc(ui: ^UI) {
 	update_paint(rt)
 	rt.frame_open = false
 	rt.presentation_pending = false
+	advance_presentation_revision(rt)
 	rt.stats.frame += 1
 	record_trace(rt, .Composite, 0, "retained presentation frame flushed")
 }

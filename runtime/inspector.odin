@@ -14,7 +14,7 @@ inspect :: proc(rt: ^Runtime) -> string {
 	fmt.sbprintf(&sb, "focused: %d selected: %d captured: %d\n", rt.focused, rt.selected, rt.captured_node)
 	fmt.sbprintf(&sb, "retained nodes: %d\n", len(rt.nodes))
 	fmt.sbprintf(&sb, "last invalidation: %s\n", rt.last_invalidation_reason)
-	fmt.sbprintf(&sb, "frame: %d built=%d idle=%d regions-skipped=%d subtrees-reused=%d adjacency-rebuilds=%d surface-updates=%d surface-pending=%t\n", rt.stats.frame, rt.stats.frames_built, rt.stats.idle_frames, rt.stats.regions_skipped, rt.stats.retained_subtrees_reused, rt.stats.adjacency_rebuilds, rt.stats.surface_updates, rt.surface_frame_pending)
+	fmt.sbprintf(&sb, "frame: %d built=%d idle=%d regions-skipped=%d subtrees-reused=%d adjacency-rebuilds=%d surface-updates=%d surface-pending=%t presentation=%d submitted=%d\n", rt.stats.frame, rt.stats.frames_built, rt.stats.idle_frames, rt.stats.regions_skipped, rt.stats.retained_subtrees_reused, rt.stats.adjacency_rebuilds, rt.stats.surface_updates, rt.surface_frame_pending, rt.presentation_revision, rt.submitted_revision)
 	fmt.sbprintf(&sb, "work: reconcile=%d layout=%d paint=%d compose=%d created=%d retired=%d\n", rt.stats.reconcile_nodes_visited, rt.stats.layout_nodes_visited, rt.stats.paint_nodes_visited, rt.stats.composition_nodes_visited, rt.stats.nodes_created, rt.stats.nodes_retired)
 	for id in rt.order {
 		node, ok := rt.nodes[id]

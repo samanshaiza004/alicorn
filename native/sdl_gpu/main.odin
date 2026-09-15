@@ -7,6 +7,7 @@ package alicorn_sdl_gpu
 // and asynchronous resource retirement.
 import "core:fmt"
 import "core:math"
+import "core:mem"
 import "core:os"
 import "core:c"
 import "core:strings"
@@ -29,6 +30,34 @@ Window_Metrics :: struct {
 
 Native_In_Flight :: struct {
 	fence: ^sdl3.GPUFence,
+}
+
+// Native host work uses its own resettable arena. This keeps atlas snapshots
+// and other renderer-side temporary products out of the caller's ambient
+// temporary allocator; application callbacks retain their original context.
+Native_Host_Scratch :: struct {
+	backing:  mem.Allocator,
+	arena:    ^mem.Dynamic_Arena,
+	allocator: mem.Allocator,
+}
+
+native_host_scratch_make :: proc(backing := context.allocator) -> Native_Host_Scratch {
+	scratch := Native_Host_Scratch{backing=backing}
+	scratch.arena = new(mem.Dynamic_Arena, allocator=backing)
+	mem.dynamic_arena_init(scratch.arena, block_allocator=backing, array_allocator=backing)
+	scratch.allocator = mem.dynamic_arena_allocator(scratch.arena)
+	return scratch
+}
+
+native_host_scratch_reset :: proc(scratch: ^Native_Host_Scratch) {
+	if scratch != nil && scratch.arena != nil { mem.dynamic_arena_reset(scratch.arena) }
+}
+
+native_host_scratch_destroy :: proc(scratch: ^Native_Host_Scratch) {
+	if scratch == nil || scratch.arena == nil { return }
+	mem.dynamic_arena_destroy(scratch.arena)
+	free(scratch.arena, allocator=scratch.backing)
+	scratch^ = {}
 }
 
 #assert(offset_of(Native_Text_Vertex, position) == 0)
@@ -225,13 +254,18 @@ sync_text_input_focus :: proc(
 	}
 }
 
-adopt_text_change :: proc(app_text: ^string, change: alicorn.Text_Change) {
+adopt_text_change :: proc(app_text: ^string, rt: ^alicorn.Runtime, change: alicorn.Text_Change) {
+	// Text_Change.text is a runtime-owned product. Copy it into the host's
+	// ordinary application state before releasing it through the allocator that
+	// created it; never transfer the runtime allocation across this boundary.
 	if change.changed {
-		if len(app_text^) > 0 { delete(app_text^) }
-		app_text^ = change.text
-	} else if len(change.text) > 0 {
-		delete(change.text)
+		copy, err := strings.clone(change.text)
+		if err == nil {
+			if len(app_text^) > 0 { delete(app_text^) }
+			app_text^ = copy
+		}
 	}
+	if len(change.text) > 0 { delete(change.text, rt.persistent_allocator) }
 }
 
 native_dispatch_text_change :: proc(
@@ -247,14 +281,14 @@ native_dispatch_text_change :: proc(
 	}
 	if application != nil {
 		if application.on_text_change != nil {
-			// The callback owns the returned text, just as it did for committed
-			// TEXT_INPUT before keyboard edits shared this dispatch path.
+			// The callback borrows the runtime-owned text for the duration of the
+			// call. It must clone any value it keeps; the host releases the product
+			// through rt.persistent_allocator after the callback returns.
 			application.on_text_change(application.state, rt, change)
-		} else if len(change.text) > 0 {
-			delete(change.text, rt.persistent_allocator)
 		}
+		if len(change.text) > 0 { delete(change.text, rt.persistent_allocator) }
 	} else {
-		adopt_text_change(app_text, change)
+		adopt_text_change(app_text, rt, change)
 	}
 }
 
@@ -348,7 +382,7 @@ native_text_apply_key_navigation :: proc(
 		} else if line {
 			target = 0 if direction < 0 else len(field.text)
 		} else if word {
-			position := alicorn.text_move_word(field.text, alicorn.Text_Position{target, .Leading}, direction)
+			position := alicorn.text_move_word(field.text, alicorn.Text_Position{target, .Leading}, direction, rt.scratch_allocator)
 			target = position.byte
 		} else {
 			position := alicorn.text_move_logical(field.text, alicorn.Text_Position{target, .Leading}, direction)
@@ -626,9 +660,10 @@ draw_display_list :: proc(
 	logical_to_pixel_x, logical_to_pixel_y: f32,
 	skip_root := false,
 	debug_bounds := false,
+	scratch_allocator := context.temp_allocator,
 ) -> bool {
-	if !native_text_rebuild_mesh(text_renderer, display, logical_to_pixel_x, logical_to_pixel_y) { return false }
-	if !native_text_sync_atlas(text_renderer, command) { return false }
+	if !native_text_rebuild_mesh(text_renderer, display, logical_to_pixel_x, logical_to_pixel_y, scratch_allocator) { return false }
+	if !native_text_sync_atlas(text_renderer, command, scratch_allocator) { return false }
 	if !native_text_upload_vertices(text_renderer, command) { return false }
 	if !native_solid_build(solid_renderer, display, logical_to_pixel_x, logical_to_pixel_y, swap_w, swap_h, skip_root) { return false }
 	debug_draw_start := len(solid_renderer.draws)
@@ -694,6 +729,7 @@ native_text_readback_probe :: proc(
 	solid_renderer: ^Native_Solid_Renderer,
 	display: []alicorn.Display_Command,
 	width, height: sdl3.Uint32,
+	scratch_allocator := context.temp_allocator,
 ) -> (ok: bool, non_background: int) {
 	if width == 0 || height == 0 { return false, 0 }
 	if !sdl3.GPUTextureSupportsFormat(device, text_renderer.swapchain_format, .D2, sdl3.GPUTextureUsageFlags{.COLOR_TARGET}) {
@@ -717,7 +753,7 @@ native_text_readback_probe :: proc(
 		sdl3.ReleaseGPUTexture(device, probe_texture)
 		return false, 0
 	}
-	if !draw_display_list(command, probe_texture, width, height, text_renderer, surface_renderer, solid_renderer, display, 1, 1, false) {
+	if !draw_display_list(command, probe_texture, width, height, text_renderer, surface_renderer, solid_renderer, display, 1, 1, false, scratch_allocator=scratch_allocator) {
 		_ = sdl3.CancelGPUCommandBuffer(command)
 		sdl3.ReleaseGPUTransferBuffer(device, download)
 		sdl3.ReleaseGPUTexture(device, probe_texture)
@@ -802,6 +838,7 @@ native_capture_display_ppm :: proc(
 	scale_x, scale_y: f32,
 	path: string,
 	debug_bounds := false,
+	scratch_allocator := context.temp_allocator,
 ) -> bool {
 	if width == 0 || height == 0 { return false }
 	if !sdl3.GPUTextureSupportsFormat(device, text_renderer.swapchain_format, .D2, sdl3.GPUTextureUsageFlags{.COLOR_TARGET}) {
@@ -818,7 +855,7 @@ native_capture_display_ppm :: proc(
 	defer sdl3.ReleaseGPUTransferBuffer(device, download)
 	command := sdl3.AcquireGPUCommandBuffer(device)
 	if command == nil { return false }
-	if !draw_display_list(command, texture, width, height, text_renderer, surface_renderer, solid_renderer, display, scale_x, scale_y, debug_bounds=debug_bounds) {
+	if !draw_display_list(command, texture, width, height, text_renderer, surface_renderer, solid_renderer, display, scale_x, scale_y, debug_bounds=debug_bounds, scratch_allocator=scratch_allocator) {
 		_ = sdl3.CancelGPUCommandBuffer(command)
 		return false
 	}
@@ -975,6 +1012,8 @@ run_application_loop :: proc(
 	timing := Native_Host_Timing{}
 	diagnostics := native_parse_diagnostics_options()
 	debug_bounds := diagnostics.debug_bounds
+	host_scratch := native_host_scratch_make()
+	defer native_host_scratch_destroy(&host_scratch)
 
 	platform_text := ""
 	start := time.now()
@@ -986,6 +1025,7 @@ run_application_loop :: proc(
 
 	last_tick := time.now()
 	for !quit_requested {
+		native_host_scratch_reset(&host_scratch)
 		frame_start := time.now()
 		event_start := time.now()
 		pump_events(
@@ -1026,16 +1066,14 @@ run_application_loop :: proc(
 		// Interaction-only invalidation updates retained paint without asking the
 		// application to rebuild its procedural description. Flush that retained
 		// presentation before submitting the next GPU frame.
-		presentation_flushed := false
 		if !rt.invalidated && alicorn.presentation_needs_frame(rt) {
 			presentation_ui, ready := alicorn.begin_presentation_frame(rt)
 			if ready {
 				alicorn.end_presentation_frame(&presentation_ui)
-				presentation_flushed = true
 			}
 		}
 
-		if alicorn.frame_needs_submission(rt) || presentation_flushed {
+		if alicorn.frame_needs_submission(rt) {
 			if len(in_flight) >= 2 {
 				if !wait_and_retire_oldest(device, &in_flight, &query_before_wait_true, &query_after_wait_true, &wait_count, &timing) {
 					fail("SDL application fence retirement failed")
@@ -1064,6 +1102,7 @@ run_application_loop :: proc(
 				text_renderer, surface_renderer, solid_renderer, rt.display[:],
 				logical_to_pixel_x, logical_to_pixel_y,
 				debug_bounds=debug_bounds,
+				scratch_allocator=host_scratch.allocator,
 			) {
 				_ = sdl3.CancelGPUCommandBuffer(command)
 				fail("SDL application display-list draw failed")
@@ -1079,7 +1118,10 @@ run_application_loop :: proc(
 			native_text_commit_submission(text_renderer)
 			native_surface_commit_submission(surface_renderer)
 			alicorn.gpu_surface_frame_consumed(rt)
-			if presentation_flushed { alicorn.presentation_frame_consumed(rt) }
+			// A retained frame remains pending until this successful submit
+			// acknowledgement. In particular, a nil swapchain texture above
+			// cancels the command and deliberately leaves the revision pending.
+			alicorn.frame_submission_succeeded(rt)
 			submitted += 1
 			timing.gpu_submissions += 1
 			rt.stats.gpu_submits += 1
@@ -1309,6 +1351,8 @@ RunFoundation :: proc() {
 		fail("SDL_SetGPUAllowedFramesInFlight failed")
 	}
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, f32(metrics.logical_width), f32(metrics.logical_height)})
+	host_scratch := native_host_scratch_make()
+	defer native_host_scratch_destroy(&host_scratch)
 
 	font_data, font_err := os.read_entire_file_from_path(native_font_path(), context.allocator)
 	if font_err != nil {
@@ -1348,6 +1392,7 @@ RunFoundation :: proc() {
 		rt.display[:],
 		sdl3.Uint32(metrics.logical_width),
 		sdl3.Uint32(metrics.logical_height),
+		scratch_allocator=host_scratch.allocator,
 	)
 	if !readback_ok {
 		fmt.println("GPU text readback probe failed", "non_background", readback_non_background, "display_commands", len(rt.display))
@@ -1452,6 +1497,7 @@ RunFoundation :: proc() {
 	// The following 300 iterations then drain before each resize and retire each
 	// resized frame before the next resize, matching SDL's swapchain lifecycle.
 	for step := -3; step < frame_limit; step += 1 {
+		native_host_scratch_reset(&host_scratch)
 		if step >= 0 && !manual_ime && !surface_stress {
 			for len(in_flight) > 0 {
 				if !wait_and_retire_oldest(device, &in_flight, &query_before_wait_true, &query_after_wait_true, &wait_count) {
@@ -1576,7 +1622,7 @@ RunFoundation :: proc() {
 		metrics.pixel_height = int(swap_h)
 		logical_to_pixel_x := f32(swap_w) / f32(metrics.logical_width)
 		logical_to_pixel_y := f32(swap_h) / f32(metrics.logical_height)
-		if !draw_display_list(command, swapchain, swap_w, swap_h, &text_renderer, &surface_renderer, &solid_renderer, rt.display[:], logical_to_pixel_x, logical_to_pixel_y) {
+		if !draw_display_list(command, swapchain, swap_w, swap_h, &text_renderer, &surface_renderer, &solid_renderer, rt.display[:], logical_to_pixel_x, logical_to_pixel_y, scratch_allocator=host_scratch.allocator) {
 			_ = sdl3.CancelGPUCommandBuffer(command)
 			fail("Alicorn retained display-list pass failed")
 		}
@@ -1588,6 +1634,7 @@ RunFoundation :: proc() {
 			native_text_commit_submission(&text_renderer)
 			native_surface_commit_submission(&surface_renderer)
 			if surface_stress { alicorn.gpu_surface_frame_consumed(&rt) }
+			alicorn.frame_submission_succeeded(&rt)
 		submitted += 1
 		rt.stats.gpu_submits += 1
 		if len(in_flight) > max_in_flight { max_in_flight = len(in_flight) }

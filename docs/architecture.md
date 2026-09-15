@@ -135,8 +135,10 @@ invalidates only the field's interaction paint. It never changes `Node.text`.
 
 `SDL_EVENT_TEXT_INPUT` is the commit boundary. The runtime sends the committed
 string through the ordinary insertion/editing path, replacing the captured
-selection once, then clears the composition. The application receives an
-owned `Text_Change` and copies it into its ordinary Odin state before the next
+selection once, then clears the composition. The application callback borrows
+the runtime-owned `Text_Change.text` for the duration of the call, clones it
+into ordinary Odin state if needed, and lets the host release the runtime
+product through the runtime's captured persistent allocator before the next
 description. Empty editing text cancels; focus loss, pointer placement and
 node retirement also cancel deterministically.
 
@@ -175,7 +177,10 @@ identity, logical bounds, physical extent, DPI scale and initial revision.
 samples into node-owned storage, records a bounded structural trace event and
 sets a compositor-frame-pending bit. It does not invalidate the root or queue
 ordinary description/layout/paint work. `gpu_surface_frame_consumed` clears
-that bit after a successful native submission.
+that bit after a successful native submission. Retained display products also
+carry a monotonic `presentation_revision`; native hosts acknowledge the latest
+revision only after a successful GPU submission, so a missing swapchain
+drawable leaves the frame pending for a later retry.
 
 The first native implementation is a 512-sample waveform. Its SDL adapter
 owns a dedicated pipeline, sampler, white texture, vertex buffer and transfer

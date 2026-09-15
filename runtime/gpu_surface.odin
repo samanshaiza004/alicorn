@@ -32,6 +32,7 @@ gpu_surface_update :: proc(rt: ^Runtime, id: Node_ID, revision: u64, samples: []
 	}
 	node.surface_revision = revision
 	rt.surface_frame_pending = true
+	advance_presentation_revision(rt)
 	rt.stats.surface_updates += 1
 	record_trace_literal(rt, .Invalidation, id, "explicit GPU surface revision update")
 	return true

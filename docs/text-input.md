@@ -24,10 +24,12 @@ and remembers the committed anchor/focus range that the composition replaces.
 The committed field text does not change during `TEXT_EDITING` updates.
 
 `TEXT_INPUT` is the commit boundary. Alicorn replaces the captured committed
-range through the ordinary text-editing path and returns an owned
-`Text_Change`. The application copies that result into its ordinary Odin state
-before the next description. This keeps IME state out of application-owned
-buffers and avoids a second hidden text model.
+range through the ordinary text-editing path and returns a runtime-owned
+`Text_Change`. A native host callback borrows `change.text` for the duration of
+the callback and must clone it into application-owned state if it keeps the
+value. The host releases the returned string through the runtime's captured
+persistent allocator after the callback returns. This keeps IME state out of
+application-owned buffers and avoids a second hidden text model.
 
 ## Lifetime and cancellation
 
@@ -84,10 +86,10 @@ selection before moving.
 
 Committed edits all use the same `Text_Change` ownership path, whether they
 come from `TEXT_INPUT`, Backspace, Delete, or a word deletion. A changed result
-is handed to the application's text-change callback; a no-op result is still
-released by the host. Caret and selection movement only requests a retained
-presentation frame, so it does not make the application rebuild its
-description.
+is handed to the application's text-change callback as a borrowed runtime
+product; a no-op result is still released by the host. Caret and selection
+movement only requests a retained presentation frame, so it does not make the
+application rebuild its description.
 
 Operating-system key repeat remains event-driven. If several repeat events
 arrive while a host is busy, the runtime processes them in order; native

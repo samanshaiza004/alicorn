@@ -99,7 +99,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 				node.pressed = true
 				invalidate_interaction_paint(rt, node.id, "press began")
 				if node.kind == .Text_Field && node.text_run_valid {
-					position := text_run_hit_test(&node.text_run, event.x-node.bounds.x, event.y-node.bounds.y)
+					position := text_run_hit_test(&node.text_run, event.x-node.bounds.x, event.y-node.bounds.y, rt.scratch_allocator)
 					node.caret = position
 					node.selection_anchor = position
 					node.selection_focus = position
@@ -282,10 +282,10 @@ process_text_command :: proc(rt: ^Runtime, id: Node_ID, command: Text_Command) -
 		position := text_move_logical(node.text, node.caret, 1)
 		_ = set_text_position(rt, id, position)
 	case .Move_Word_Left:
-		position := text_move_word(node.text, node.caret, -1)
+		position := text_move_word(node.text, node.caret, -1, rt.scratch_allocator)
 		_ = set_text_position(rt, id, position)
 	case .Move_Word_Right:
-		position := text_move_word(node.text, node.caret, 1)
+		position := text_move_word(node.text, node.caret, 1, rt.scratch_allocator)
 		_ = set_text_position(rt, id, position)
 	case .Delete_Backward:
 		return process_text_edit(rt, id, Text_Edit{.Backspace, ""})
@@ -298,9 +298,9 @@ process_text_command :: proc(rt: ^Runtime, id: Node_ID, command: Text_Command) -
 		caret := grapheme_floor_boundary(node.text, node.caret.byte)
 		start, end := caret, caret
 		if command == .Delete_Word_Backward {
-			start = text_move_word(node.text, Text_Position{caret, node.caret.affinity}, -1).byte
+			start = text_move_word(node.text, Text_Position{caret, node.caret.affinity}, -1, rt.scratch_allocator).byte
 		} else {
-			end = text_move_word(node.text, Text_Position{caret, node.caret.affinity}, 1).byte
+			end = text_move_word(node.text, Text_Position{caret, node.caret.affinity}, 1, rt.scratch_allocator).byte
 		}
 		if start != end {
 			node.selection_anchor = Text_Position{start, .Leading}
@@ -316,9 +316,9 @@ text_field_caret_geometry :: proc(rt: ^Runtime, id: Node_ID) -> Text_Caret_Geome
 	if !ok || !node.active || node.kind != .Text_Field || !node.text_run_valid {
 		return Text_Caret_Geometry{}
 	}
-	geometry := text_run_caret_geometry(&node.text_run, node.caret)
+	geometry := text_run_caret_geometry(&node.text_run, node.caret, rt.scratch_allocator)
 	if node.composition.active && node.composition_run_valid {
-		geometry = text_run_caret_geometry(&node.composition_run, text_composition_visual_position(node))
+		geometry = text_run_caret_geometry(&node.composition_run, text_composition_visual_position(node), rt.scratch_allocator)
 	}
 	geometry.rect.x += node.bounds.x
 	geometry.rect.y += node.bounds.y
@@ -330,7 +330,7 @@ text_field_hit_test :: proc(rt: ^Runtime, id: Node_ID, x, y: f32) -> Text_Positi
 	if !ok || !node.active || node.kind != .Text_Field || !node.text_run_valid {
 		return Text_Position{}
 	}
-	return text_run_hit_test(&node.text_run, x-node.bounds.x, y-node.bounds.y)
+	return text_run_hit_test(&node.text_run, x-node.bounds.x, y-node.bounds.y, rt.scratch_allocator)
 }
 
 text_field_selection_rects :: proc(rt: ^Runtime, id: Node_ID, allocator := context.allocator) -> [dynamic]Text_Selection_Rect {
@@ -343,6 +343,7 @@ text_field_selection_rects :: proc(rt: ^Runtime, id: Node_ID, allocator := conte
 		node.selection_anchor,
 		node.selection_focus,
 		allocator,
+		rt.scratch_allocator,
 	)
 	for &selection in result {
 		selection.rect.x += node.bounds.x

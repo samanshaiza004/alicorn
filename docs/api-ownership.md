@@ -58,6 +58,13 @@ state are routed through the captured persistent allocator. The caller may
 change ambient `context.allocator` after construction without changing these
 ownership rules.
 
+Runtime text caret, hit-test, selection, word-navigation, and paragraph-layout
+work receives the runtime scratch allocator at its internal call sites. Public
+text helpers retain an optional scratch-allocator parameter for callers that
+need the same bounded lifetime. Native hosts likewise use a host-owned scratch
+arena for renderer snapshots and reset it once per host iteration; neither
+boundary resets the application's ambient temporary allocator.
+
 `Runtime_Allocation_Stats` reports requested allocation calls and requested
 bytes for these runtime-owned wrappers. It does not report RSS, committed
 pages, allocator metadata, GPU memory, driver residency, or application-side

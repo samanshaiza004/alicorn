@@ -48,6 +48,8 @@ update_paint :: proc(rt: ^Runtime) {
 						&node.text_run,
 						node.selection_anchor,
 						node.selection_focus,
+						allocator=rt.scratch_allocator,
+						scratch_allocator=rt.scratch_allocator,
 					)
 					for selected in selection {
 						bounds := selected.rect
@@ -70,6 +72,8 @@ update_paint :: proc(rt: ^Runtime) {
 						&node.composition_run,
 						Text_Position{preedit_start, .Leading},
 						Text_Position{preedit_end, .Trailing},
+						allocator=rt.scratch_allocator,
+						scratch_allocator=rt.scratch_allocator,
 					)
 					for selected in selection {
 						bounds := selected.rect

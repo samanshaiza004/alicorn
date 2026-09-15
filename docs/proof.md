@@ -366,8 +366,10 @@ download buffer. Process-wide GPU allocator telemetry remains uncertain.
 - Implementation: `Text_Composition` is owned by the retained text-field node.
   The native adapter copies SDL `TEXT_EDITING` and `TEXT_INPUT` strings at
   event processing time. Editing events update a temporary projected
-  `Text_Run`; committed events use the ordinary text-edit path and return an
-  owned `Text_Change` for the application to copy.
+  `Text_Run`; committed events use the ordinary text-edit path and return a
+  runtime-owned `Text_Change` for the application callback to copy. The host
+  releases the returned string through the runtime's captured persistent
+  allocator after the callback returns.
 - Test: `test_text_input_composition` covers UTF-8 character-index conversion,
   preedit non-mutation, repeated updates, reverse selection replacement,
   empty-preedit cancellation, focus transfer and composing-node retirement.
