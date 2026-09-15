@@ -80,6 +80,9 @@ Process enumeration runs at roughly 4 Hz. The graph history and
 tick at display cadence, but the monitor does not submit duplicate graph
 points between samples. A surface update copies its samples into runtime-owned
 storage and does not invalidate or rebuild the ordinary procedural description.
+The visible-row viewport uses the shared fixed-height virtual-list metrics,
+including its fractional leading offset, and the monitor draws a proportional
+scrollbar thumb beside the clipped list.
 
 The table reports working set (`WS`) and private committed memory
 (`PRIVATE`) separately. Working set includes resident shared pages, while the
@@ -107,7 +110,7 @@ surface_updates 11
 surface_frames 11
 submissions 11
 retired 11
-max_frames_in_flight 3
+max_frames_in_flight 2
 query_failures 781
 ```
 
@@ -121,14 +124,17 @@ monitor proof.
 
 - Windows is the only implemented sampler. Other hosts render an empty but
   buildable app boundary until a platform sampler is added.
-- The visible-row viewport is fixed-height and uses whole-row scroll steps.
+- The visible-row viewport is fixed-height and virtualized with fractional
+  scroll offsets. The scrollbar is currently a visual position indicator, not
+  a drag target.
 - The reusable host is intentionally small and experimental; it is not a
   complete cross-platform application shell.
 - CPU and memory values are sampled data, not a system-wide accounting proof.
 - No process termination, tree view, icons, GPU metrics, settings, or
   accessibility projection has been added.
-- The app has no dedicated dogfood performance report yet; runtime counters
-  and the native smoke summary are the first evidence surface.
+- The process sampler still runs synchronously on the UI thread. Use the
+  paused/unpaused typing comparison and captured stage maximums before moving
+  sampling to an application-owned worker.
 
 ## Next application-driven work
 
