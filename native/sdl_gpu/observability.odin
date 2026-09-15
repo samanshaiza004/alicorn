@@ -111,6 +111,11 @@ native_write_diagnostics :: proc(
 	text_events: ^Native_Text_Event_Telemetry = nil,
 ) -> bool {
 	if (!options.enabled && !options.capture_requested) || options.captured { return false }
+	// A capture is meant to explain a presented frame. The host may spend
+	// several idle/event-only iterations between application build and the
+	// first submission, especially when a surface tick is cadence-driven. Do
+	// not freeze a misleading zero-GPU snapshot in that window.
+	if timing.gpu_submissions == 0 { return false }
 	if !options.capture_requested && time.duration_nanoseconds(time.since(started)) < i64(options.capture_after_ns) { return false }
 	if err := os.make_directory_all(options.capture_dir); err != nil { return false }
 
