@@ -75,7 +75,9 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 				}
 			}
 			rt.last_hovered = target
-			invalidate_root(rt, "hover target changed")
+			// Hover only changes retained presentation state. The application
+			// description remains valid and must not be rebuilt just to repaint
+			// the old and new hover targets.
 		}
 	} else if event.kind == .Down {
 		if rt.captured_node != 0 {

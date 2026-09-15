@@ -35,6 +35,7 @@ description_hash :: proc(d: Description) -> u64 {
 	h = hash_mix(h, u64(d.kind))
 	h = hash_mix(h, d.paint_value)
 	h = hash_mix(h, hash_color(d.color))
+	h = hash_mix(h, u64(d.paint_background ? 1 : 0))
 	h = hash_mix(h, d.region_revision)
 	h = hash_mix(h, u64(d.surface_kind))
 	h = hash_mix(h, u64(d.surface_pixel_width))
@@ -44,7 +45,16 @@ description_hash :: proc(d: Description) -> u64 {
 }
 
 layout_hash :: proc(d: Description) -> u64 {
-	return hash_mix(hash_style(d.style), u64(d.parent))
+	h := hash_mix(hash_style(d.style), u64(d.parent))
+	// Text participates in intrinsic measurement. A description can otherwise
+	// look layout-identical while a changing label/value moves its siblings.
+	#partial switch d.kind {
+	case .Button:
+		h = hash_mix(h, hash_string(d.label))
+	case .Text, .Text_Field:
+		h = hash_mix(h, hash_string(d.text))
+	}
+	return h
 }
 
 paint_hash :: proc(d: Description) -> u64 {
@@ -123,6 +133,7 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	node.kind = d.kind
 	node.style = d.style
 	node.color = d.color
+	node.paint_background = d.paint_background
 	surface_description_changed := node.paint_value != d.paint_value
 	node.paint_value = d.paint_value
 	node.region_revision = d.region_revision
@@ -182,6 +193,7 @@ invalidate_interaction_paint :: proc(rt: ^Runtime, id: Node_ID, reason := "inter
 	if len(node.last_reason) > 0 { delete(node.last_reason, rt.persistent_allocator) }
 	node.last_reason = owned(reason, rt.persistent_allocator)
 	queue_paint(rt, id)
+	request_presentation(rt, reason)
 	record_trace(rt, .Invalidation, id, reason)
 }
 
@@ -322,7 +334,12 @@ reconcile :: proc(rt: ^Runtime) {
 			new_layout_hash := layout_hash(d)
 			new_paint_hash := paint_hash(d)
 			description_changed := node.description_hash != new_desc_hash
-			layout_changed := node.layout_hash != new_layout_hash
+			text_changed := node.text != d.text || (d.kind == .Button && node.label != d.label)
+			// Text/labels are included in layout_hash because they contribute
+			// intrinsic size. Keep this explicit at the reconciliation boundary so
+			// the invariant remains true even if layout hashing is later split by
+			// product type.
+			layout_changed := node.layout_hash != new_layout_hash || text_changed
 			paint_changed := node.paint_hash != new_paint_hash
 			copy_node_description(rt, node, d)
 			node.description_hash = new_desc_hash
@@ -418,9 +435,25 @@ reconcile :: proc(rt: ^Runtime) {
 	update_paint(rt)
 	rt.frame_open = false
 	rt.invalidated = false
+	rt.presentation_pending = false
 	rt.stats.frame += 1
 	delete(focus_lineage)
 	record_trace(rt, .Reconcile, 0, fmt.tprintf("frame %d reconciled", rt.stats.frame))
+}
+
+end_presentation_frame :: proc(ui: ^UI) {
+	rt := ui.runtime
+	if !rt.frame_open || rt.invalidated {
+		return
+	}
+	// Interaction-only frames do not have descriptions to reconcile. Existing
+	// bounds, text products, and child adjacency remain authoritative; only the
+	// retained paint queue and display list are flushed.
+	update_paint(rt)
+	rt.frame_open = false
+	rt.presentation_pending = false
+	rt.stats.frame += 1
+	record_trace(rt, .Composite, 0, "retained presentation frame flushed")
 }
 
 destroy_runtime :: proc(rt: ^Runtime) {

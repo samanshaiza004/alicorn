@@ -205,6 +205,7 @@ Description :: struct {
 	text:        string,
 	style:       Layout_Style,
 	color:       Color,
+	paint_background: bool,
 	paint_value: u64,
 	region_revision: u64,
 	region:      bool,
@@ -243,6 +244,7 @@ Node :: struct {
 	text:        string,
 	style:       Layout_Style,
 	color:       Color,
+	paint_background: bool,
 	paint_value: u64,
 	region_revision: u64,
 	region:      bool,
@@ -373,6 +375,11 @@ Runtime :: struct {
 	paint_queue: [dynamic]Node_ID,
 	composition_rebuild: bool,
 	invalidated: bool,
+	// presentation_pending means retained interaction/presentation work is
+	// ready to submit, but the application description is still valid. It is
+	// deliberately separate from invalidated so hover can repaint without
+	// re-running application code.
+	presentation_pending: bool,
 	frame_open:  bool,
 	hard_error:  bool,
 	diagnostic:  string,
@@ -405,6 +412,25 @@ DEFAULT_STYLE :: Layout_Style{
 }
 
 DEFAULT_COLOR :: Color{0.78, 0.82, 0.90, 1.0}
+
+// Container APIs use this sentinel to distinguish an omitted background from
+// an explicitly requested color. Root resolves the omitted value to
+// DEFAULT_COLOR; ordinary layout containers remain non-painting by default.
+NO_BACKGROUND_COLOR :: Color{0, 0, 0, 0}
+
+color_equal :: proc(a, b: Color) -> bool {
+	return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a
+}
+
+resolve_container_color :: proc(kind: Node_Kind, color: Color) -> (resolved: Color, paints: bool) {
+	if color_equal(color, NO_BACKGROUND_COLOR) {
+		if kind == .Root {
+			return DEFAULT_COLOR, true
+		}
+		return color, false
+	}
+	return color, true
+}
 
 site :: proc(file: string, line, column: int, component: string) -> Source_Site {
 	return Source_Site{file, line, column, component}
@@ -591,6 +617,26 @@ invalidate_root :: proc(rt: ^Runtime, reason := "explicit root invalidation") {
 	record_trace(rt, .Invalidation, 0, reason)
 }
 
+// request_presentation wakes the retained presentation path without making
+// the application re-emit its description. It is intended for hover, focus,
+// caret, selection, and other interaction-only visual changes.
+request_presentation :: proc(rt: ^Runtime, reason := "retained presentation changed") {
+	rt.presentation_pending = true
+	record_trace(rt, .Invalidation, 0, reason)
+}
+
+presentation_needs_frame :: proc(rt: ^Runtime) -> bool {
+	return rt.presentation_pending
+}
+
+frame_needs_submission :: proc(rt: ^Runtime) -> bool {
+	return rt.invalidated || rt.presentation_pending || rt.surface_frame_pending
+}
+
+presentation_frame_consumed :: proc(rt: ^Runtime) {
+	rt.presentation_pending = false
+}
+
 invalidate_region :: proc(rt: ^Runtime, key: string, revision: u64, reason := "explicit region invalidation") {
 	// Region revisions are carried by the next description. The key is included
 	// in the trace so the invalidation remains structurally inspectable.
@@ -624,6 +670,20 @@ begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
 	// next frame begins. update_paint clears the queue after consuming it;
 	// clearing it here would discard focus/caret/selection repaint requests.
 	rt.stats.frames_built += 1
+	return ui, true
+}
+
+// begin_presentation_frame opens a retained-only frame. It never clears or
+// reconstructs pending application descriptions, so end_presentation_frame
+// cannot accidentally retire the tree. Hosts may use this when an interaction
+// update needs paint/composition work but no application callback is needed.
+begin_presentation_frame :: proc(rt: ^Runtime) -> (ui: UI, ready: bool) {
+	ui = UI{runtime = rt}
+	if rt.invalidated || !rt.presentation_pending || rt.frame_open {
+		return ui, false
+	}
+	runtime_scratch_reset(rt)
+	rt.frame_open = true
 	return ui, true
 }
 
@@ -666,7 +726,7 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	record_trace(rt, .Reconcile, 0, message)
 }
 
-emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, region_revision: u64 = 0, is_region := false, focusable := false, surface_kind := GPU_Surface_Kind.Waveform, surface_pixel_width: int = 0, surface_pixel_height: int = 0, surface_dpi_scale: f32 = 1) -> Node_ID {
+emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, region_revision: u64 = 0, is_region := false, focusable := false, surface_kind := GPU_Surface_Kind.Waveform, surface_pixel_width: int = 0, surface_pixel_height: int = 0, surface_dpi_scale: f32 = 1, paint_background := true) -> Node_ID {
 	rt := ui.runtime
 	parent_node := current_node_parent(ui)
 	parent_identity := current_identity_parent(ui)
@@ -687,7 +747,7 @@ emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text :=
 	}
 	description := Description{
 		id=id, parent=parent_node, site=source, key=key, explicit_key=explicit_key,
-		kind=kind, label=label, text=text, style=style, color=color,
+		kind=kind, label=label, text=text, style=style, color=color, paint_background=paint_background,
 		paint_value=paint_value, region_revision=region_revision, region=is_region,
 		focusable=focusable, identity_key=identity_key,
 		identity_key_u64=identity_key_u64, identity_key_numeric=identity_key_numeric,
@@ -700,7 +760,7 @@ emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text :=
 	return id
 }
 
-emit_key :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := DEFAULT_COLOR, state_bits: u64 = 0, selected := false, disabled := false, region_revision: u64 = 0, is_region := false, focusable := false, surface_kind := GPU_Surface_Kind.Waveform, surface_pixel_width: int = 0, surface_pixel_height: int = 0, surface_dpi_scale: f32 = 1) -> Node_ID {
+emit_key :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := DEFAULT_COLOR, state_bits: u64 = 0, selected := false, disabled := false, region_revision: u64 = 0, is_region := false, focusable := false, surface_kind := GPU_Surface_Kind.Waveform, surface_pixel_width: int = 0, surface_pixel_height: int = 0, surface_dpi_scale: f32 = 1, paint_background := true) -> Node_ID {
 	rt := ui.runtime
 	parent_node := current_node_parent(ui)
 	parent_identity := current_identity_parent(ui)
@@ -742,7 +802,7 @@ emit_key :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", tex
 	description := Description{
 		id=id, parent=parent_node, site=source, key=key_string_value, explicit_key=ui_key_is_explicit(key),
 		identity_key_kind=key_kind, identity_key_pair=identity_key_pair,
-		kind=kind, label=label, text=text, style=style, color=color,
+		kind=kind, label=label, text=text, style=style, color=color, paint_background=paint_background,
 		paint_value=state_bits, region_revision=region_revision, region=is_region,
 		focusable=focusable, selected=selected, disabled=disabled, identity_key=identity_key,
 		identity_key_u64=identity_key_u64, identity_key_numeric=identity_key_numeric,
@@ -841,9 +901,10 @@ key_scope_end :: proc(ui: ^UI) {
 	pop_identity_scope(ui.runtime)
 }
 
-container_begin_ex :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, focusable := false, loc := #caller_location) -> Node_ID {
+container_begin_ex :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, paint_value: u64 = 0, focusable := false, loc := #caller_location) -> Node_ID {
 	resolved_source := resolve_source(source, "container", loc)
-	id := emit(ui, kind, resolved_source, label=label, key=key, explicit_key=explicit_key, style=style, color=color, paint_value=paint_value, focusable=focusable)
+	resolved_color, paints := resolve_container_color(kind, color)
+	id := emit(ui, kind, resolved_source, label=label, key=key, explicit_key=explicit_key, style=style, color=resolved_color, paint_value=paint_value, focusable=focusable, paint_background=paints)
 	if id != 0 {
 		append(&ui.runtime.stack, id)
 		push_identity_scope(ui.runtime, id, "", 0)
@@ -859,9 +920,10 @@ container_end :: proc(ui: ^UI) {
 // A structural wrapper can be made identity-transparent when a caller wants a
 // keyed item's descendants to survive that wrapper being introduced or
 // removed. The retained hierarchy still records the wrapper for layout.
-transparent_container_begin :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, focusable := false, loc := #caller_location) -> Node_ID {
+transparent_container_begin :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, paint_value: u64 = 0, focusable := false, loc := #caller_location) -> Node_ID {
 	resolved_source := resolve_source(source, "container", loc)
-	id := emit(ui, kind, resolved_source, label=label, key=key, explicit_key=explicit_key, style=style, color=color, paint_value=paint_value, focusable=focusable)
+	resolved_color, paints := resolve_container_color(kind, color)
+	id := emit(ui, kind, resolved_source, label=label, key=key, explicit_key=explicit_key, style=style, color=resolved_color, paint_value=paint_value, focusable=focusable, paint_background=paints)
 	if id != 0 { append(&ui.runtime.stack, id) }
 	return id
 }
@@ -870,7 +932,7 @@ transparent_container_end :: proc(ui: ^UI) {
 	if len(ui.runtime.stack) > 0 { pop(&ui.runtime.stack) }
 }
 
-container_ex :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, body: proc(), label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, focusable := false, loc := #caller_location) -> Node_ID {
+container_ex :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, body: proc(), label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, paint_value: u64 = 0, focusable := false, loc := #caller_location) -> Node_ID {
 	resolved_source := resolve_source(source, "container", loc)
 	id := container_begin_ex(ui, kind, resolved_source, label, key, explicit_key, style, color, paint_value, focusable)
 	if id == 0 { return 0 }
@@ -884,9 +946,10 @@ root_ex :: proc(ui: ^UI, source := Source_Site{}, body: proc(), style := DEFAULT
 	return container_ex(ui, .Root, resolved_source, body, label="root", style=style)
 }
 
-container_begin_simple :: proc(ui: ^UI, kind: Node_Kind, label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := DEFAULT_COLOR, state_bits: u64 = 0, selected := false, disabled := false, focusable := false, loc := #caller_location) -> Node_ID {
+container_begin_simple :: proc(ui: ^UI, kind: Node_Kind, label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, state_bits: u64 = 0, selected := false, disabled := false, focusable := false, loc := #caller_location) -> Node_ID {
 	resolved_source := resolve_source(Source_Site{}, "container", loc)
-	id := emit_key(ui, kind, resolved_source, label=label, key=key, style=style, color=color, state_bits=state_bits, selected=selected, disabled=disabled, focusable=focusable && !disabled)
+	resolved_color, paints := resolve_container_color(kind, color)
+	id := emit_key(ui, kind, resolved_source, label=label, key=key, style=style, color=resolved_color, state_bits=state_bits, selected=selected, disabled=disabled, focusable=focusable && !disabled, paint_background=paints)
 	if id != 0 {
 		append(&ui.runtime.stack, id)
 		push_identity_scope(ui.runtime, id, "", 0)
@@ -894,7 +957,7 @@ container_begin_simple :: proc(ui: ^UI, kind: Node_Kind, label := "", key: UI_Ke
 	return id
 }
 
-container_simple :: proc(ui: ^UI, kind: Node_Kind, body: proc(), label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := DEFAULT_COLOR, loc := #caller_location) -> Node_ID {
+container_simple :: proc(ui: ^UI, kind: Node_Kind, body: proc(), label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, loc := #caller_location) -> Node_ID {
 	id := container_begin_simple(ui, kind, label, key, style, color, 0, false, false, false, loc)
 	if id == 0 { return 0 }
 	body()
@@ -906,11 +969,11 @@ root_simple :: proc(ui: ^UI, body: proc(), style := DEFAULT_STYLE, loc := #calle
 	return container_simple(ui, .Root, body, label="root", style=style, loc=loc)
 }
 
-container_begin :: proc(ui: ^UI, kind: Node_Kind, label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := DEFAULT_COLOR, state_bits: u64 = 0, selected := false, disabled := false, focusable := false, loc := #caller_location) -> Node_ID {
+container_begin :: proc(ui: ^UI, kind: Node_Kind, label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, state_bits: u64 = 0, selected := false, disabled := false, focusable := false, loc := #caller_location) -> Node_ID {
 	return container_begin_simple(ui, kind, label, key, style, color, state_bits, selected, disabled, focusable, loc)
 }
 
-container :: proc(ui: ^UI, kind: Node_Kind, body: proc(), label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := DEFAULT_COLOR, loc := #caller_location) -> Node_ID {
+container :: proc(ui: ^UI, kind: Node_Kind, body: proc(), label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, loc := #caller_location) -> Node_ID {
 	return container_simple(ui, kind, body, label, key, style, color, loc)
 }
 

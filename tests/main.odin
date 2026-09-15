@@ -360,6 +360,19 @@ render_canonical_button :: proc(rt: ^alicorn.Runtime, state := alicorn.Button_St
 	return
 }
 
+render_text_growth_pair :: proc(rt: ^alicorn.Runtime, first, second: string) -> (first_id, second_id: alicorn.Node_ID) {
+	alicorn.invalidate_root(rt, "test text intrinsic growth")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	row_style := alicorn.Layout_Style{.Row, -1, 40, 0, -1, 0, -1, 0, 0, 0, .Stretch, false}
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, style=row_style)
+	first_id = alicorn.text_ex(&ui, first, S_TEXT_A)
+	second_id = alicorn.text_ex(&ui, second, S_TEXT_B)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return
+}
+
 test_identity_and_ambiguity :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 800, 500})
 	keys := []string{"a", "b", "c", "d"}
@@ -892,6 +905,55 @@ test_layout_geometry :: proc(state: ^Test_State) {
 	alicorn.destroy_runtime(&rt)
 }
 
+test_text_intrinsic_layout_invalidation :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 80})
+	first, second := render_text_growth_pair(&rt, "CPU 0.0%", "System memory 0 MB")
+	first_layout_hash := rt.nodes[first].layout_hash
+	before_updates := rt.stats.layout_updates
+	first, second = render_text_growth_pair(&rt, "CPU 100.0%", "System memory 12.7 GB / 32.0 GB")
+	expect(state, rt.nodes[first].layout_hash != first_layout_hash, "text growth must change the retained layout product")
+	expect(state, rt.stats.layout_updates > before_updates, "text growth must revisit layout rather than only repainting")
+	expect(state, rt.nodes[second].bounds.x >= rt.nodes[first].bounds.x+rt.nodes[first].bounds.w, "text siblings must remain laid out after a dynamic value grows")
+	alicorn.destroy_runtime(&rt)
+}
+
+test_container_paint_defaults :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
+	alicorn.invalidate_root(&rt, "test container paint defaults")
+	ui, build := alicorn.begin_frame(&rt)
+	if build {
+		alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="root")
+		layout_only := alicorn.container_begin_ex(&ui, .Container, S_WRAP, label="layout-only")
+		alicorn.container_end(&ui)
+		colored := alicorn.container_begin_ex(&ui, .Container, S_EXTRA, label="colored", color=alicorn.Color{0.1, 0.2, 0.3, 1})
+		alicorn.container_end(&ui)
+		alicorn.container_end(&ui)
+		alicorn.end_frame(&ui)
+		expect(state, len(rt.nodes[rt.top_level[0]].paint) == 1, "root must retain its default background paint")
+		expect(state, len(rt.nodes[layout_only].paint) == 0, "layout-only containers must not emit a background paint command")
+		expect(state, len(rt.nodes[colored].paint) == 1, "explicitly colored containers must retain a background paint command")
+	}
+	alicorn.destroy_runtime(&rt)
+}
+
+test_presentation_invalidation :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
+	id, _ := render_single_button(&rt)
+	frames_before := rt.stats.frames_built
+	rt.invalidated = false
+	node := rt.nodes[id]
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, node.bounds.x+2, node.bounds.y+2, 0})
+	expect(state, !rt.invalidated, "hover must not invalidate the application description")
+	expect(state, alicorn.presentation_needs_frame(&rt), "hover must request a retained presentation frame")
+	_, build := alicorn.begin_frame(&rt)
+	expect(state, !build && rt.stats.frames_built == frames_before, "presentation-only wake must not rebuild the application description")
+	presentation_ui, ready := alicorn.begin_presentation_frame(&rt)
+	expect(state, ready, "presentation-only wake must open a retained frame")
+	if ready { alicorn.end_presentation_frame(&presentation_ui) }
+	expect(state, !alicorn.presentation_needs_frame(&rt), "flushing presentation work must consume its pending wake")
+	alicorn.destroy_runtime(&rt)
+}
+
 test_text_geometry :: proc(state: ^Test_State) {
 	run := make_geometry_run()
 	defer alicorn.text_run_destroy(&run)
@@ -1140,6 +1202,9 @@ main :: proc() {
 	test_ergonomic_identity(&state)
 	test_virtualization_and_gpu(&state)
 	test_layout_geometry(&state)
+	test_text_intrinsic_layout_invalidation(&state)
+	test_container_paint_defaults(&state)
+	test_presentation_invalidation(&state)
 	test_text_geometry(&state)
 	test_gpu_text_resource_boundary(&state)
 	test_retained_text_product_lifetime(&state)

@@ -84,7 +84,14 @@ update_paint :: proc(rt: ^Runtime) {
 					delete(selection)
 				}
 			}
-			if node.kind == .Button {
+			if node.kind == .Root || node.kind == .Container || node.kind == .Virtual_List || node.kind == .Virtual_Row {
+				// Layout containers are non-painting unless the caller explicitly
+				// supplied a background. This keeps structural wrappers from
+				// producing accidental rectangles in the compositor.
+				if node.paint_background {
+					append(&node.paint, Display_Command{node.id, node.kind, node.bounds, node.clip, "", node.color})
+				}
+			} else if node.kind == .Button {
 				button_color := Color{0.15, 0.25, 0.42, 1}
 				if node.hovered { button_color = Color{0.20, 0.34, 0.54, 1} }
 				if node.pressed { button_color = Color{0.24, 0.42, 0.68, 1} }
