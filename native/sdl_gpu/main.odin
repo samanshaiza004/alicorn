@@ -242,6 +242,15 @@ pump_events :: proc(
 ) {
 	event: sdl3.Event
 	for sdl3.PollEvent(&event) {
+		if manual_log {
+			if event.type == .WINDOW_FOCUS_GAINED {
+				fmt.println("sdl_event", "WINDOW_FOCUS_GAINED")
+			} else if event.type == .WINDOW_FOCUS_LOST {
+				fmt.println("sdl_event", "WINDOW_FOCUS_LOST")
+			} else if event.type == .MOUSE_BUTTON_DOWN || event.type == .MOUSE_BUTTON_UP {
+				fmt.println("sdl_event", "MOUSE_BUTTON", "x", event.button.x, "y", event.button.y, "button", event.button.button, "down", event.button.down)
+			}
+		}
 		if event.type == .QUIT || event.type == .WINDOW_CLOSE_REQUESTED {
 			quit_requested^ = true
 		}
@@ -702,6 +711,7 @@ run_application_loop :: proc(
 	metrics: ^Window_Metrics,
 	application: Application,
 	smoke := false,
+	manual_log := false,
 ) {
 	application_instance := application
 	quit_requested := false
@@ -733,6 +743,7 @@ run_application_loop :: proc(
 			window, rt, metrics, &quit_requested,
 			&logical_resize_events, &pixel_resize_events, &scale_events,
 			&text_input_events, &composition_events, &platform_text,
+			manual_log=manual_log,
 			application=&application_instance,
 		)
 		if quit_requested { break }
@@ -844,6 +855,10 @@ run_application_loop :: proc(
 // Run owns the complete SDL3/SDL_GPU application shell for external dogfood
 // programs. The app supplies only its state pointer and ordinary callbacks.
 Run :: proc(application: Application, smoke := false) {
+	input_debug := false
+	for argument in os.args {
+		if argument == "--input-debug" { input_debug = true }
+	}
 	if !sdl3.SetHint(sdl3.HINT_IME_IMPLEMENTED_UI, "composition") {
 		fail("SDL_IME_IMPLEMENTED_UI hint could not be set")
 	}
@@ -862,6 +877,9 @@ Run :: proc(application: Application, smoke := false) {
 	if window == nil { fail("SDL_CreateWindow failed") }
 	defer sdl3.DestroyWindow(window)
 	if !sdl3.RaiseWindow(window) { fail("SDL_RaiseWindow failed") }
+	if input_debug {
+		fmt.println("sdl_input_debug", "window_flags", sdl3.GetWindowFlags(window))
+	}
 	metrics: Window_Metrics
 	if !read_window_metrics(window, &metrics) { fail("initial application window metrics unavailable") }
 	formats := sdl3.GPUShaderFormat{.SPIRV, .DXIL, .MSL}
@@ -895,7 +913,7 @@ Run :: proc(application: Application, smoke := false) {
 	surface_renderer, surface_ok := native_surface_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
 	if !surface_ok { fail("application GPU surface pipeline initialization failed") }
 	defer native_surface_destroy(&surface_renderer)
-	run_application_loop(window, device, &rt, &text_renderer, &surface_renderer, &metrics, application, smoke)
+	run_application_loop(window, device, &rt, &text_renderer, &surface_renderer, &metrics, application, smoke, input_debug)
 }
 
 RunFoundation :: proc() {
