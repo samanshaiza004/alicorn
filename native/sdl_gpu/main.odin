@@ -276,6 +276,7 @@ pump_events :: proc(
 			}
 			if event.key.key == sdl3.K_F11 && debug_bounds != nil {
 				debug_bounds^ = !debug_bounds^
+				alicorn.request_presentation(rt)
 				fmt.println("alicorn_diagnostics", "debug_bounds", debug_bounds^)
 			}
 			modifier_key := false
