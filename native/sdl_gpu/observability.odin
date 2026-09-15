@@ -12,6 +12,7 @@ NATIVE_DIAGNOSTIC_FRAME_SAMPLES :: 240
 
 Native_Diagnostics_Options :: struct {
 	enabled:             bool,
+	debug_bounds:        bool,
 	capture_requested:   bool,
 	capture_after_ns:    u64,
 	capture_dir:         string,
@@ -64,6 +65,10 @@ native_parse_diagnostics_options :: proc() -> Native_Diagnostics_Options {
 	for argument in os.args {
 		if argument == "--diagnostics" {
 			options.enabled = true
+			continue
+		}
+		if argument == "--debug-bounds" {
+			options.debug_bounds = true
 			continue
 		}
 		capture_after_prefix := "--capture-after="
@@ -162,9 +167,10 @@ native_write_diagnostics :: proc(
     "display_commands": %d,
     "focused_node": %d,
     "gpu_surface_updates": %d,
-    "gpu_surface_frames_consumed": %d
+    "gpu_surface_frames_consumed": %d,
+    "debug_bounds": %t
   }},
-`, len(rt.nodes), len(rt.display), u64(rt.focused), rt.stats.surface_updates, rt.stats.surface_frames_consumed)
+`, len(rt.nodes), len(rt.display), u64(rt.focused), rt.stats.surface_updates, rt.stats.surface_frames_consumed, options.debug_bounds)
 	strings.write_string(&builder, `  "notes": [
     "timing values are host wall-clock measurements in nanoseconds",
     "runtime allocation telemetry excludes application allocations, GPU memory, driver memory, and OS working set",

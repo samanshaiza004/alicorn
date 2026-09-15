@@ -160,6 +160,42 @@ native_solid_build :: proc(
 	return true
 }
 
+// Append a diagnostic-only bounds overlay after the application display list.
+// These quads are deliberately not retained in Alicorn: they are host
+// inspection geometry and disappear when the diagnostic mode is disabled.
+native_solid_append_debug_bounds :: proc(
+	renderer: ^Native_Solid_Renderer,
+	display: []alicorn.Display_Command,
+	scale_x, scale_y: f32,
+	target_w, target_h: sdl3.Uint32,
+	skip_root := false,
+) {
+	color := [4]f32{1.0, 0.78, 0.16, 0.72}
+	for draw in display {
+		if skip_root && draw.kind == .Root { continue }
+		left := draw.bounds.x * scale_x
+		top := draw.bounds.y * scale_y
+		right := (draw.bounds.x + draw.bounds.w) * scale_x
+		bottom := (draw.bounds.y + draw.bounds.h) * scale_y
+		if left < 0 { left = 0 }
+		if top < 0 { top = 0 }
+		if right > f32(target_w) { right = f32(target_w) }
+		if bottom > f32(target_h) { bottom = f32(target_h) }
+		if right <= left || bottom <= top { continue }
+		thickness := f32(1)
+		if scale_x > thickness { thickness = scale_x }
+		if scale_y > thickness { thickness = scale_y }
+		if len(renderer.vertices) + 24 > MAX_SOLID_VERTICES { return }
+		first := sdl3.Uint32(len(renderer.vertices))
+		native_solid_append_quad(&renderer.vertices, left, top, right, min(top+thickness, bottom), color)
+		native_solid_append_quad(&renderer.vertices, left, max(bottom-thickness, top), right, bottom, color)
+		native_solid_append_quad(&renderer.vertices, left, top, min(left+thickness, right), bottom, color)
+		native_solid_append_quad(&renderer.vertices, max(right-thickness, left), top, right, bottom, color)
+		append(&renderer.draws, Native_Solid_Draw{first, 24})
+	}
+	renderer.upload_pending = len(renderer.vertices) > 0
+}
+
 native_solid_prepare_white_texture :: proc(renderer: ^Native_Solid_Renderer, command: ^sdl3.GPUCommandBuffer) -> bool {
 	if renderer.white_initialized { return true }
 	target := sdl3.GPUColorTargetInfo{

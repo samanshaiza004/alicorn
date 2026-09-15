@@ -245,6 +245,7 @@ pump_events :: proc(
 	manual_log := false,
 	application: ^Application = nil,
 	diagnostics_capture_requested: ^bool = nil,
+	debug_bounds: ^bool = nil,
 ) {
 	event: sdl3.Event
 	for sdl3.PollEvent(&event) {
@@ -272,6 +273,10 @@ pump_events :: proc(
 			if event.key.key == sdl3.K_F12 && diagnostics_capture_requested != nil {
 				diagnostics_capture_requested^ = true
 				fmt.println("alicorn_diagnostics", "capture_requested", "F12")
+			}
+			if event.key.key == sdl3.K_F11 && debug_bounds != nil {
+				debug_bounds^ = !debug_bounds^
+				fmt.println("alicorn_diagnostics", "debug_bounds", debug_bounds^)
 			}
 			modifier_key := false
 			switch event.key.key {
@@ -455,11 +460,16 @@ draw_display_list :: proc(
 	display: []alicorn.Display_Command,
 	logical_to_pixel_x, logical_to_pixel_y: f32,
 	skip_root := false,
+	debug_bounds := false,
 ) -> bool {
 	if !native_text_rebuild_mesh(text_renderer, display, logical_to_pixel_x, logical_to_pixel_y) { return false }
 	if !native_text_sync_atlas(text_renderer, command) { return false }
 	if !native_text_upload_vertices(text_renderer, command) { return false }
 	if !native_solid_build(solid_renderer, display, logical_to_pixel_x, logical_to_pixel_y, swap_w, swap_h, skip_root) { return false }
+	debug_draw_start := len(solid_renderer.draws)
+	if debug_bounds {
+		native_solid_append_debug_bounds(solid_renderer, display, logical_to_pixel_x, logical_to_pixel_y, swap_w, swap_h, skip_root)
+	}
 	if len(solid_renderer.vertices) > 0 {
 		if !native_solid_prepare_white_texture(solid_renderer, command) { return false }
 		if !native_solid_upload(solid_renderer, command) { return false }
@@ -495,6 +505,11 @@ draw_display_list :: proc(
 			display_index += 1
 		}
 		if !native_solid_render_batch(solid_renderer, command, swapchain, swap_w, swap_h, solid_renderer.draws[batch_start:display_index]) {
+			return false
+		}
+	}
+	if debug_bounds && len(solid_renderer.draws) > debug_draw_start {
+		if !native_solid_render_batch(solid_renderer, command, swapchain, swap_w, swap_h, solid_renderer.draws[debug_draw_start:]) {
 			return false
 		}
 	}
@@ -621,6 +636,7 @@ native_capture_display_ppm :: proc(
 	width, height: sdl3.Uint32,
 	scale_x, scale_y: f32,
 	path: string,
+	debug_bounds := false,
 ) -> bool {
 	if width == 0 || height == 0 { return false }
 	if !sdl3.GPUTextureSupportsFormat(device, text_renderer.swapchain_format, .D2, sdl3.GPUTextureUsageFlags{.COLOR_TARGET}) {
@@ -637,7 +653,7 @@ native_capture_display_ppm :: proc(
 	defer sdl3.ReleaseGPUTransferBuffer(device, download)
 	command := sdl3.AcquireGPUCommandBuffer(device)
 	if command == nil { return false }
-	if !draw_display_list(command, texture, width, height, text_renderer, surface_renderer, solid_renderer, display, scale_x, scale_y) {
+	if !draw_display_list(command, texture, width, height, text_renderer, surface_renderer, solid_renderer, display, scale_x, scale_y, debug_bounds=debug_bounds) {
 		_ = sdl3.CancelGPUCommandBuffer(command)
 		return false
 	}
@@ -790,6 +806,7 @@ run_application_loop :: proc(
 	submitted := 0
 	timing := Native_Host_Timing{}
 	diagnostics := native_parse_diagnostics_options()
+	debug_bounds := diagnostics.debug_bounds
 
 	platform_text := ""
 	start := time.now()
@@ -810,6 +827,7 @@ run_application_loop :: proc(
 			manual_log=manual_log,
 			application=&application_instance,
 			diagnostics_capture_requested=&diagnostics.capture_requested,
+			debug_bounds=&debug_bounds,
 		)
 		timing.event_pump_ns += u64(time.duration_nanoseconds(time.since(event_start)))
 		if quit_requested { break }
@@ -876,6 +894,7 @@ run_application_loop :: proc(
 				command, swapchain, swap_w, swap_h,
 				text_renderer, surface_renderer, solid_renderer, rt.display[:],
 				logical_to_pixel_x, logical_to_pixel_y,
+				debug_bounds=debug_bounds,
 			) {
 				_ = sdl3.CancelGPUCommandBuffer(command)
 				fail("SDL application display-list draw failed")
@@ -909,6 +928,7 @@ run_application_loop :: proc(
 				f32(metrics.pixel_width) / f32(metrics.logical_width),
 				f32(metrics.pixel_height) / f32(metrics.logical_height),
 				screenshot_path,
+				debug_bounds=debug_bounds,
 			) {
 				fmt.println("alicorn_diagnostics", "screenshot", screenshot_path)
 			} else {

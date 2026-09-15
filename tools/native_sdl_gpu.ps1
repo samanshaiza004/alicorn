@@ -3,6 +3,7 @@ param(
     [switch]$ManualIme,
     [switch]$SurfaceStress,
     [switch]$Diagnostics,
+    [switch]$DebugBounds,
     [int]$CaptureAfter = 2,
     [string]$CaptureDir = 'out\diagnostics'
 )
@@ -58,5 +59,6 @@ if ($Diagnostics) {
     $arguments += "--capture-after=$CaptureAfter"
     $arguments += "--capture-dir=$CaptureDir"
 }
+if ($DebugBounds) { $arguments += '--debug-bounds' }
 & .\out\alicorn_sdl_gpu.exe @arguments
 exit $LASTEXITCODE

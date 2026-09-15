@@ -13,6 +13,8 @@ Build or run a host with:
 .\tools\native_sdl_gpu.ps1 -Diagnostics -CaptureAfter 2 -CaptureDir out\diagnostics
 ```
 
+Add `-DebugBounds` to start with the retained-node bounds overlay enabled.
+
 For an application using the reusable native host, the equivalent command-line
 arguments are:
 
@@ -41,6 +43,10 @@ captures at the next safe presentation boundary. This keeps the application
 responsible for its own state while the host records the retained runtime and
 native submission state around it.
 
+Press `F11` to toggle retained-node bounds. The bounds are drawn by the native
+solid-quad diagnostic path and do not enter the application's retained display
+list. The same mode can be enabled at startup with `--debug-bounds`.
+
 ## What the numbers mean
 
 Timing values are host wall-clock measurements in nanoseconds. Frame samples
@@ -57,8 +63,8 @@ text and custom surfaces remain ordering boundaries.
 
 ## Current boundary
 
-The current native seam provides capture artifacts and retained-tree inspection.
-A graphical debug overlay and input replay format are intentionally separate
-follow-up work. The artifacts are preferred for reproducible reports because
-they preserve the measurements and identity data instead of relying only on a
-screen recording.
+The current native seam provides capture artifacts, retained-tree inspection,
+and a bounds overlay. An input replay format is intentionally separate follow-up
+work. The artifacts are preferred for reproducible reports because they
+preserve the measurements and identity data instead of relying only on a screen
+recording.
