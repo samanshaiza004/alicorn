@@ -849,6 +849,13 @@ Run :: proc(application: Application, smoke := false) {
 	device := sdl3.CreateGPUDevice(formats, false, gpu_driver_name)
 	if device == nil { fail("SDL_CreateGPUDevice failed") }
 	defer sdl3.DestroyGPUDevice(device)
+	selected_driver := sdl3.GetGPUDeviceDriver(device)
+	fmt.println("gpu_driver_requested", gpu_driver_name, "gpu_driver_selected", selected_driver)
+	when ODIN_OS == .Darwin {
+		if selected_driver == nil || string(selected_driver) != "metal" {
+			fail("macOS SDL_GPU did not select the requested Metal driver")
+		}
+	}
 	if !sdl3.ClaimWindowForGPUDevice(device, window) { fail("SDL_ClaimWindowForGPUDevice failed") }
 	defer sdl3.ReleaseWindowFromGPUDevice(device, window)
 	if !sdl3.SetGPUAllowedFramesInFlight(device, 3) { fail("SDL_SetGPUAllowedFramesInFlight failed") }
