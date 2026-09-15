@@ -64,7 +64,7 @@ Application_Build_Proc :: proc(
 ) -> alicorn.Node_ID
 Application_Text_Change_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, change: alicorn.Text_Change)
 Application_Key_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, key: Application_Key) -> bool
-Application_Scroll_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, delta_y: f32)
+Application_Scroll_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Scroll_Event)
 Application_Tick_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
 
 // Application is the intended public boundary for a small native Alicorn
@@ -396,8 +396,21 @@ pump_events :: proc(
 	debug_bounds: ^bool = nil,
 	telemetry: ^Native_Text_Event_Telemetry = nil,
 ) {
+	if telemetry != nil { telemetry.events_this_pump = 0 }
 	event: sdl3.Event
 	for sdl3.PollEvent(&event) {
+		if telemetry != nil {
+			event_timestamp: u64 = 0
+			#partial switch event.type {
+			case .KEY_DOWN, .KEY_UP: event_timestamp = u64(event.key.timestamp)
+			case .TEXT_INPUT: event_timestamp = u64(event.text.timestamp)
+			case .TEXT_EDITING: event_timestamp = u64(event.edit.timestamp)
+			case .MOUSE_MOTION: event_timestamp = u64(event.motion.timestamp)
+			case .MOUSE_BUTTON_DOWN, .MOUSE_BUTTON_UP: event_timestamp = u64(event.button.timestamp)
+			case .MOUSE_WHEEL: event_timestamp = u64(event.wheel.timestamp)
+			}
+			if event_timestamp != 0 { native_note_input_event(telemetry, event_timestamp) }
+		}
 		if manual_log {
 			if event.type == .WINDOW_FOCUS_GAINED {
 				fmt.println("sdl_event", "WINDOW_FOCUS_GAINED")
@@ -415,7 +428,21 @@ pump_events :: proc(
 		}
 		if application != nil && event.type == .MOUSE_WHEEL {
 			if application.on_scroll != nil {
-				application.on_scroll(application.state, rt, event.wheel.y)
+				direction := 1 if event.wheel.direction == sdl3.MouseWheelDirection.FLIPPED else 0
+				delta_x := event.wheel.x
+				delta_y := event.wheel.y
+				if direction != 0 {
+					delta_x = -delta_x
+					delta_y = -delta_y
+				}
+				application.on_scroll(application.state, rt, alicorn.Scroll_Event{
+					delta_x=delta_x,
+					delta_y=delta_y,
+					ticks_x=int(event.wheel.integer_x),
+					ticks_y=int(event.wheel.integer_y),
+					x=event.wheel.mouse_x,
+					y=event.wheel.mouse_y,
+				})
 			}
 		}
 		if event.type == .KEY_DOWN && event.key.down {
@@ -555,6 +582,7 @@ pump_events :: proc(
 			}
 		}
 	}
+	if telemetry != nil { native_finish_input_pump(telemetry) }
 }
 
 render_native_ui :: proc(rt: ^alicorn.Runtime, frame: u64, value := NATIVE_TEXT_BASE) -> Native_UI_Nodes {
@@ -878,11 +906,13 @@ wait_and_retire_oldest :: proc(
 	fences := [1]^sdl3.GPUFence{old.fence}
 	wait_start := time.now()
 	if !sdl3.WaitForGPUFences(device, true, &fences[0], 1) {
-		if timing != nil { timing.fence_wait_ns += u64(time.duration_nanoseconds(time.since(wait_start))) }
+		if timing != nil {
+			native_timing_accumulate(&timing.fence_wait_ns, &timing.fence_wait_max_ns, u64(time.duration_nanoseconds(time.since(wait_start))) )
+		}
 		return false
 	}
 	if timing != nil {
-		timing.fence_wait_ns += u64(time.duration_nanoseconds(time.since(wait_start)))
+		native_timing_accumulate(&timing.fence_wait_ns, &timing.fence_wait_max_ns, u64(time.duration_nanoseconds(time.since(wait_start))) )
 		timing.fence_waits += 1
 	}
 	wait_count^ += 1
@@ -951,7 +981,7 @@ run_application_loop :: proc(
 	alicorn.invalidate_root(rt, "SDL application initial frame")
 	build_start := time.now()
 	_ = application.build(application.state, rt, metrics.logical_width, metrics.logical_height, metrics.display_scale)
-	timing.application_build_ns += u64(time.duration_nanoseconds(time.since(build_start)))
+	native_timing_accumulate(&timing.application_build_ns, &timing.application_build_max_ns, u64(time.duration_nanoseconds(time.since(build_start))) )
 	sync_text_input_focus(window, rt, &text_input_active, &text_input_owner)
 
 	last_tick := time.now()
@@ -968,7 +998,7 @@ run_application_loop :: proc(
 			debug_bounds=&debug_bounds,
 			telemetry=&text_events,
 		)
-		timing.event_pump_ns += u64(time.duration_nanoseconds(time.since(event_start)))
+		native_timing_accumulate(&timing.event_pump_ns, &timing.event_pump_max_ns, u64(time.duration_nanoseconds(time.since(event_start))) )
 		if quit_requested { break }
 
 		now := time.now()
@@ -980,7 +1010,7 @@ run_application_loop :: proc(
 			if application.on_tick != nil {
 				tick_start := time.now()
 				application.on_tick(application.state, rt)
-				timing.application_tick_ns += u64(time.duration_nanoseconds(time.since(tick_start)))
+				native_timing_accumulate(&timing.application_tick_ns, &timing.application_tick_max_ns, u64(time.duration_nanoseconds(time.since(tick_start))) )
 			}
 			last_tick = now
 		}
@@ -989,7 +1019,7 @@ run_application_loop :: proc(
 			alicorn.invalidate_root(rt, "SDL application wake")
 			build_start = time.now()
 			_ = application.build(application.state, rt, metrics.logical_width, metrics.logical_height, metrics.display_scale)
-			timing.application_build_ns += u64(time.duration_nanoseconds(time.since(build_start)))
+			native_timing_accumulate(&timing.application_build_ns, &timing.application_build_max_ns, u64(time.duration_nanoseconds(time.since(build_start))) )
 			sync_text_input_focus(window, rt, &text_input_active, &text_input_owner)
 		}
 
@@ -1038,10 +1068,10 @@ run_application_loop :: proc(
 				_ = sdl3.CancelGPUCommandBuffer(command)
 				fail("SDL application display-list draw failed")
 			}
-			timing.gpu_encode_ns += u64(time.duration_nanoseconds(time.since(encode_start)))
+			native_timing_accumulate(&timing.gpu_encode_ns, &timing.gpu_encode_max_ns, u64(time.duration_nanoseconds(time.since(encode_start))) )
 			submit_start := time.now()
 			fence := sdl3.SubmitGPUCommandBufferAndAcquireFence(command)
-			timing.gpu_submit_ns += u64(time.duration_nanoseconds(time.since(submit_start)))
+			native_timing_accumulate(&timing.gpu_submit_ns, &timing.gpu_submit_max_ns, u64(time.duration_nanoseconds(time.since(submit_start))) )
 			if fence == nil {
 				fail("SDL application submission failed")
 			}
@@ -1053,6 +1083,7 @@ run_application_loop :: proc(
 			submitted += 1
 			timing.gpu_submissions += 1
 			rt.stats.gpu_submits += 1
+			native_note_input_submission(&text_events)
 			if len(in_flight) > max_in_flight { max_in_flight = len(in_flight) }
 		}
 		if !rt.invalidated && !alicorn.frame_needs_submission(rt) {
@@ -1104,6 +1135,10 @@ run_application_loop :: proc(
 		"text_navigation_key_events", text_events.text_navigation_key_events,
 		"text_selection_key_events", text_events.text_selection_key_events,
 		"text_word_key_events", text_events.text_word_key_events,
+		"events_per_pump_max", text_events.events_per_pump_max,
+		"oldest_event_age_max_ns", text_events.oldest_event_age_max_ns,
+		"input_to_submit_p95_ns", native_timing_percentile(text_events.input_to_submit_samples[:], 0.95),
+		"input_to_submit_max_ns", text_events.input_to_submit_max_ns,
 		"text_mesh_rebuilds", text_renderer.mesh_rebuilds,
 		"text_mesh_cache_hits", text_renderer.mesh_cache_hits,
 		"text_vertex_uploads", text_renderer.vertex_uploads,
@@ -1111,6 +1146,10 @@ run_application_loop :: proc(
 		"gpu_encode_ns", timing.gpu_encode_ns,
 		"gpu_submit_ns", timing.gpu_submit_ns,
 		"fence_wait_ns", timing.fence_wait_ns,
+		"application_tick_max_ns", timing.application_tick_max_ns,
+		"application_build_max_ns", timing.application_build_max_ns,
+		"gpu_encode_max_ns", timing.gpu_encode_max_ns,
+		"fence_wait_max_ns", timing.fence_wait_max_ns,
 	)
 }
 

@@ -119,8 +119,11 @@ chosen, otherwise the first active focusable node in retained order is chosen.
 
 Virtual lists require an item-key callback. The visible range is fixed-height
 and bounded to the viewport; row identity follows the callback's logical key,
-not the row's viewport index. Fractional scroll offset and persistent offscreen
-selection storage remain future scale work.
+not the row's viewport index. The shared metrics calculation clamps against
+the actual viewport and preserves the fractional leading offset, so realized
+rows move continuously while the retained list clip protects surrounding UI.
+Scroll physics, pointer-drag scrollbar interaction, and persistent offscreen
+selection storage remain outside this small primitive.
 
 ## Committed text input and composition
 
