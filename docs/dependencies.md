@@ -4,7 +4,9 @@ The verification environment used for this foundation snapshot is:
 
 - Odin `dev-2026-09-nightly:a2fb372`;
 - SDL3 package from the Odin SDK vendor collection, with `SDL3.lib` and
-  `SDL3.dll` available on Windows;
+  `SDL3.dll` available on Windows. The validated Darwin native host requires
+  the linked SDL3 runtime to be exactly `3.4.16` and reports/fails fast on a
+  different version; the tested machine used the arm64 Homebrew package;
 - Runa: vendored under `third_party/Runa` at commit
   `4dd00c541c374938b192e23dc2efa983748a92ab` (the upstream 1.3.1 line:
   Thai word-break dictionary is opt-in). Alicorn uses the default

@@ -134,6 +134,17 @@ pointer_from_sdl :: proc(event: sdl3.Event) -> (value: alicorn.Pointer_Event, ok
 	return alicorn.Pointer_Event{}, false
 }
 
+poll_sdl_event :: proc(event: ^sdl3.Event) -> bool {
+	when ODIN_OS == .Darwin {
+		// The Darwin host pumps AppKit explicitly above. PeepEvents retrieves
+		// only what SDL has already translated, so it cannot re-enter the
+		// blocking SDL_PollEvent -> Cocoa path.
+		return sdl3.PeepEvents(event, 1, .GETEVENT, sdl3.EventType.FIRST, sdl3.EventType.LAST) > 0
+	} else {
+		return sdl3.PollEvent(event)
+	}
+}
+
 validate_pointer_coordinates :: proc() {
 	// This is intentionally a native-adapter regression check: a fractional
 	// logical coordinate must reach Alicorn unchanged, with no Retina scaling.
@@ -398,7 +409,10 @@ pump_events :: proc(
 ) {
 	if telemetry != nil { telemetry.events_this_pump = 0 }
 	event: sdl3.Event
-	for sdl3.PollEvent(&event) {
+	when ODIN_OS == .Darwin {
+		pump_platform_events()
+	}
+	for poll_sdl_event(&event) {
 		if telemetry != nil {
 			event_timestamp: u64 = 0
 			#partial switch event.type {
@@ -985,6 +999,7 @@ run_application_loop :: proc(
 	sync_text_input_focus(window, rt, &text_input_active, &text_input_owner)
 
 	last_tick := time.now()
+	last_focus_log := start
 	for !quit_requested {
 		frame_start := time.now()
 		event_start := time.now()
@@ -1002,6 +1017,18 @@ run_application_loop :: proc(
 		if quit_requested { break }
 
 		now := time.now()
+		when ODIN_OS == .Darwin {
+			if manual_log && time.duration_nanoseconds(time.since(last_focus_log)) >= 1_000_000_000 {
+				focus := darwin_focus_state(window)
+				fmt.println(
+					"darwin_focus",
+					"app_active", focus.app_active,
+					"key_window", focus.key_window,
+					"sdl_input_focus", focus.input_focus,
+				)
+				last_focus_log = now
+			}
+		}
 		if smoke && time.duration_nanoseconds(time.since(start)) >= 3_000_000_000 {
 			quit_requested = true
 			continue
@@ -1166,6 +1193,18 @@ Run :: proc(application: Application, smoke := false) {
 	configure_platform_activation()
 	if !sdl3.Init(sdl3.INIT_VIDEO) { fail("SDL_Init failed") }
 	defer sdl3.Quit()
+	linked_sdl_version := sdl3.GetVersion()
+	fmt.println(
+		"sdl3_version",
+		sdl3.VERSIONNUM_MAJOR(linked_sdl_version),
+		sdl3.VERSIONNUM_MINOR(linked_sdl_version),
+		sdl3.VERSIONNUM_MICRO(linked_sdl_version),
+	)
+	when ODIN_OS == .Darwin {
+		if linked_sdl_version != sdl3.VERSIONNUM(3, 4, 16) {
+			fail("macOS requires SDL3 3.4.16")
+		}
+	}
 	title := application.title
 	if title == "" { title = "Alicorn application" }
 	width := application.width
