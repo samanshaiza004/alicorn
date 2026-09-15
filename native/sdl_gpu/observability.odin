@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:os"
 import "core:sort"
 import "core:strconv"
+import "core:strings"
 import "core:time"
 import alicorn "../../runtime"
 
@@ -103,7 +104,10 @@ native_write_diagnostics :: proc(
 	p99 := native_timing_percentile(timing.frame_samples[:], 0.99)
 	average := u64(0)
 	if timing.frames > 0 { average = timing.frame_ns_total / timing.frames }
-	json := fmt.tprintf(`{{
+	builder, builder_err := strings.builder_make()
+	if builder_err != nil { return false }
+	defer strings.builder_destroy(&builder)
+	fmt.sbprintf(&builder, `{{
   "schema": 1,
   "kind": "alicorn-native-diagnostics",
   "gpu_driver": "%s",
@@ -115,7 +119,10 @@ native_write_diagnostics :: proc(
     "pixel_density": %.4f,
     "display_scale": %.4f
   }},
-  "timing_ns": {{
+`, gpu_driver,
+		metrics.logical_width, metrics.logical_height, metrics.pixel_width, metrics.pixel_height,
+		metrics.pixel_density, metrics.display_scale)
+	fmt.sbprintf(&builder, `  "timing_ns": {{
     "frames": %d,
     "event_pump": %d,
     "application_build": %d,
@@ -129,7 +136,10 @@ native_write_diagnostics :: proc(
     "frame_p99": %d,
     "frame_max": %d
   }},
-  "gpu": {{
+`, timing.frames, timing.event_pump_ns, timing.application_build_ns, timing.application_tick_ns,
+		timing.gpu_encode_ns, timing.gpu_submit_ns, timing.fence_wait_ns, average,
+		p50, p95, p99, timing.frame_ns_max)
+	fmt.sbprintf(&builder, `  "gpu": {{
     "submissions": %d,
     "fence_waits": %d,
     "text_shape_calls": %d,
@@ -142,31 +152,26 @@ native_write_diagnostics :: proc(
     "solid_batches": %d,
     "solid_vertices_uploaded": %d
   }},
-  "runtime": {{
+`, timing.gpu_submissions, timing.fence_waits,
+		rt.text_engine.shape_calls, rt.text_engine.glyph_cache_hits, rt.text_engine.glyph_cache_misses,
+		len(text_renderer.pages), surface_renderer.encodes, surface_renderer.vertex_uploads,
+		solid_renderer.batches, solid_renderer.vertices_uploaded)
+	fmt.sbprintf(&builder, `  "runtime": {{
     "retained_nodes": %d,
     "display_commands": %d,
     "focused_node": %d,
     "gpu_surface_updates": %d,
     "gpu_surface_frames_consumed": %d
   }},
-  "notes": [
+`, len(rt.nodes), len(rt.display), u64(rt.focused), rt.stats.surface_updates, rt.stats.surface_frames_consumed)
+	strings.write_string(&builder, `  "notes": [
     "timing values are host wall-clock measurements in nanoseconds",
     "runtime allocation telemetry excludes application allocations, GPU memory, driver memory, and OS working set",
     "solid rectangles are batched only within contiguous display-list runs; text and custom surfaces remain ordering boundaries"
   ]
-}}
-`, gpu_driver,
-		metrics.logical_width, metrics.logical_height, metrics.pixel_width, metrics.pixel_height,
-		metrics.pixel_density, metrics.display_scale,
-		timing.frames, timing.event_pump_ns, timing.application_build_ns, timing.application_tick_ns,
-		timing.gpu_encode_ns, timing.gpu_submit_ns, timing.fence_wait_ns, average,
-		p50, p95, p99, timing.frame_ns_max,
-		timing.gpu_submissions, timing.fence_waits,
-		rt.text_engine.shape_calls, rt.text_engine.glyph_cache_hits, rt.text_engine.glyph_cache_misses,
-		len(text_renderer.pages), surface_renderer.encodes, surface_renderer.vertex_uploads,
-		solid_renderer.batches, solid_renderer.vertices_uploaded,
-		len(rt.nodes), len(rt.display), u64(rt.focused), rt.stats.surface_updates, rt.stats.surface_frames_consumed,
-	)
+}
+`)
+	json := strings.to_string(builder)
 	path := fmt.tprintf("%s/diagnostics.json", options.capture_dir)
 	if err := os.write_entire_file(path, json); err != nil { return false }
 	options.captured = true
