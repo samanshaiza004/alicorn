@@ -135,11 +135,11 @@ render_tree_numeric :: proc(rt: ^alicorn.Runtime, count: int, changed: int, reve
 	alicorn.invalidate_root(rt, "benchmark root frame")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return }
-	alicorn.container_begin(&ui, .Root, ROOT, label="benchmark")
+	alicorn.container_begin_ex(&ui, .Root, ROOT, label="benchmark")
 	for n := 0; n < count; n += 1 {
 		i := reverse ? count-1-n : n
 		if alicorn.key_scope_u64(&ui, u64(i), NODE) {
-			alicorn.text(&ui, "node", NODE, paint_value=u64(i == changed))
+			alicorn.text_ex(&ui, "node", NODE, paint_value=u64(i == changed))
 			alicorn.key_scope_end(&ui)
 		}
 	}
@@ -151,11 +151,11 @@ render_tree_formatted :: proc(rt: ^alicorn.Runtime, count: int) {
 	alicorn.invalidate_root(rt, "benchmark formatted-key frame")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return }
-	alicorn.container_begin(&ui, .Root, ROOT, label="formatted")
+	alicorn.container_begin_ex(&ui, .Root, ROOT, label="formatted")
 	for i := 0; i < count; i += 1 {
 		key := fmt.aprintf("%d", i)
-		if alicorn.key_scope_begin(&ui, key, NODE) {
-			alicorn.text(&ui, "node", NODE)
+		if alicorn.key_scope_begin_ex(&ui, key, NODE) {
+			alicorn.text_ex(&ui, "node", NODE)
 			alicorn.key_scope_end(&ui)
 		}
 		delete(key)
@@ -168,8 +168,8 @@ render_regional :: proc(rt: ^alicorn.Runtime, revisions: []u64, changed_value: u
 	alicorn.invalidate_root(rt, "benchmark regional frame")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return }
-	alicorn.container_begin(&ui, .Root, ROOT, label="regional")
-	alicorn.text(&ui, "toolbar", NODE, paint_value=changed_value)
+	alicorn.container_begin_ex(&ui, .Root, ROOT, label="regional")
+	alicorn.text_ex(&ui, "toolbar", NODE, paint_value=changed_value)
 	for i := 0; i < len(revisions); i += 1 {
 		if !alicorn.key_scope_u64(&ui, u64(i), REGION_SCOPE) { continue }
 		id, reused := alicorn.region_begin(&ui, "region", revisions[i], REGION)
@@ -178,7 +178,7 @@ render_regional :: proc(rt: ^alicorn.Runtime, revisions: []u64, changed_value: u
 			start := len(rt.pending)
 			for j := 0; j < 100; j += 1 {
 				if alicorn.key_scope_u64(&ui, u64(j), REGION_NODE) {
-					alicorn.text(&ui, "region-node", REGION_NODE, paint_value=revisions[i])
+					alicorn.text_ex(&ui, "region-node", REGION_NODE, paint_value=revisions[i])
 					alicorn.key_scope_end(&ui)
 				}
 			}
@@ -194,8 +194,8 @@ render_large_region :: proc(rt: ^alicorn.Runtime, revision: u64, sibling_value: 
 	alicorn.invalidate_root(rt, "benchmark large-region frame")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return }
-	alicorn.container_begin(&ui, .Root, ROOT, label="large-region")
-	alicorn.text(&ui, "unrelated sibling", NODE, paint_value=sibling_value)
+	alicorn.container_begin_ex(&ui, .Root, ROOT, label="large-region")
+	alicorn.text_ex(&ui, "unrelated sibling", NODE, paint_value=sibling_value)
 	if alicorn.key_scope_u64(&ui, 1, LARGE_SCOPE) {
 		id, reused := alicorn.region_begin(&ui, "large", revision, LARGE_REGION)
 		if id != 0 && !reused {
@@ -203,7 +203,7 @@ render_large_region :: proc(rt: ^alicorn.Runtime, revision: u64, sibling_value: 
 			start := len(rt.pending)
 			for i := 0; i < 10_000; i += 1 {
 				if alicorn.key_scope_u64(&ui, u64(i), REGION_NODE) {
-					alicorn.text(&ui, "large-node", REGION_NODE)
+					alicorn.text_ex(&ui, "large-node", REGION_NODE)
 					alicorn.key_scope_end(&ui)
 				}
 			}
@@ -219,10 +219,10 @@ render_order :: proc(rt: ^alicorn.Runtime, order: []int) {
 	alicorn.invalidate_root(rt, "benchmark structural frame")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return }
-	alicorn.container_begin(&ui, .Root, ROOT, label="structural")
+	alicorn.container_begin_ex(&ui, .Root, ROOT, label="structural")
 	for value in order {
 		if alicorn.key_scope_u64(&ui, u64(value), NODE) {
-			alicorn.text(&ui, "node", NODE)
+			alicorn.text_ex(&ui, "node", NODE)
 			alicorn.key_scope_end(&ui)
 		}
 	}
@@ -231,7 +231,7 @@ render_order :: proc(rt: ^alicorn.Runtime, order: []int) {
 }
 
 render_virtual_row :: proc(ui: ^alicorn.UI, index: int) {
-	alicorn.text(ui, "row", ROW, paint_value=u64(index))
+	alicorn.text_ex(ui, "row", ROW, paint_value=u64(index))
 }
 
 render_virtual_key :: proc(index: int) -> string {
@@ -242,8 +242,8 @@ render_virtual :: proc(rt: ^alicorn.Runtime, scroll: f32) {
 	alicorn.invalidate_root(rt, "benchmark virtual scroll")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return }
-	alicorn.container_begin(&ui, .Root, ROOT)
-	alicorn.virtual_list(&ui, 1_000_000, scroll, 400, 20, ROW, render_virtual_key, render_virtual_row)
+	alicorn.container_begin_ex(&ui, .Root, ROOT)
+	alicorn.virtual_list_ex(&ui, 1_000_000, scroll, 400, 20, ROW, render_virtual_key, render_virtual_row)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 }
@@ -252,7 +252,7 @@ render_surface :: proc(rt: ^alicorn.Runtime, revision: u64) -> alicorn.Node_ID {
 	alicorn.invalidate_root(rt, "benchmark surface description")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return 0 }
-	alicorn.container_begin(&ui, .Root, ROOT, label="surface-root")
+	alicorn.container_begin_ex(&ui, .Root, ROOT, label="surface-root")
 	id := alicorn.custom_surface(&ui, "waveform", revision, alicorn.Rect{0, 0, 640, 240}, 1280, 480, 2, SURFACE)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)

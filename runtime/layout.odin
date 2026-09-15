@@ -79,8 +79,8 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		if node_has_text_product(child.kind) {
 			constraint := layout_text_constraint(parent, child, cross_size)
 			if prepare_text_run_node(rt, child, constraint) {
-				child.dirty.paint = true
-				child.dirty.composite = true
+				dirty_set(&child.dirty, .Paint, true)
+				dirty_set(&child.dirty, .Composite, true)
 				queue_paint(rt, id)
 			}
 		}
@@ -89,6 +89,7 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	grow: f32 = 0
 	for id in children {
 		rt.stats.layout_nodes_visited += 1
+		rt.stats.stage_visits[.Layout] += 1
 		child := rt.nodes[id]
 		if child.style.grow > 0 {
 			grow += child.style.grow
@@ -125,20 +126,20 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		bounds_changed := !same_rect(old_bounds, child.bounds)
 		clip_changed := !same_rect(old_clip, child.clip)
 		if bounds_changed || clip_changed {
-			child.dirty.layout = true
-			child.dirty.paint = true
-			child.dirty.composite = true
+			dirty_set(&child.dirty, .Layout, true)
+			dirty_set(&child.dirty, .Paint, true)
+			dirty_set(&child.dirty, .Composite, true)
 			queue_paint(rt, id)
 			rt.stats.layout_updates += 1
 			record_trace(rt, .Layout, id, "layout hash or parent bounds changed")
-		} else if child.dirty.layout {
+		} else if dirty_has(child.dirty, .Layout) {
 			rt.stats.layout_updates += 1
 			record_trace(rt, .Layout, id, "layout hash changed")
 		}
-		if bounds_changed || clip_changed || child.dirty.layout {
+		if bounds_changed || clip_changed || dirty_has(child.dirty, .Layout) {
 			layout_children(rt, id)
 		}
-		child.dirty.layout = false
+		dirty_set(&child.dirty, .Layout, false)
 		main_offset += main + parent.style.gap
 	}
 }
@@ -148,20 +149,21 @@ layout_tree :: proc(rt: ^Runtime) {
 		node, ok := rt.nodes[id]
 		if !ok || !node.active { continue }
 		rt.stats.layout_nodes_visited += 1
+		rt.stats.stage_visits[.Layout] += 1
 		if node.parent == 0 {
 			old := node.bounds
 			node.bounds = rt.viewport
 			node.clip = rt.viewport
 			if !same_rect(old, node.bounds) {
-				node.dirty.layout = true
-				node.dirty.paint = true
-				node.dirty.composite = true
+				dirty_set(&node.dirty, .Layout, true)
+				dirty_set(&node.dirty, .Paint, true)
+				dirty_set(&node.dirty, .Composite, true)
 				queue_paint(rt, id)
 			}
-			if !same_rect(old, node.bounds) || node.dirty.layout {
+			if !same_rect(old, node.bounds) || dirty_has(node.dirty, .Layout) {
 				layout_children(rt, id)
 			}
-			node.dirty.layout = false
+			dirty_set(&node.dirty, .Layout, false)
 		}
 	}
 }

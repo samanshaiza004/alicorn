@@ -1,6 +1,8 @@
+#+vet explicit-allocators
 package alicorn
 
 import "core:fmt"
+import "core:mem"
 
 hash_style :: proc(style: Layout_Style) -> u64 {
 	h: u64 = 1469598103934665603
@@ -48,6 +50,8 @@ layout_hash :: proc(d: Description) -> u64 {
 paint_hash :: proc(d: Description) -> u64 {
 	h := description_hash(d)
 	h = hash_mix(h, u64(d.focusable ? 1 : 0))
+	h = hash_mix(h, u64(d.selected ? 1 : 0))
+	h = hash_mix(h, u64(d.disabled ? 1 : 0))
 	return h
 }
 
@@ -55,37 +59,41 @@ same_rect :: proc(a, b: Rect) -> bool {
 	return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h
 }
 
-mark_dirty :: proc(node: ^Node, reason: string, description, layout, paint, composite: bool) {
-	previous_paint := node.dirty.paint
-	previous_composite := node.dirty.composite
-	node.dirty = Dirty_Stages{description, layout, paint || previous_paint, composite || previous_composite}
+mark_dirty :: proc(node: ^Node, reason: string, description, layout, paint, composite: bool, allocator := context.allocator) {
+	previous_paint := dirty_has(node.dirty, .Paint)
+	previous_composite := dirty_has(node.dirty, .Composite)
+	node.dirty = {}
+	dirty_set(&node.dirty, .Description, description)
+	dirty_set(&node.dirty, .Layout, layout)
+	dirty_set(&node.dirty, .Paint, paint || previous_paint)
+	dirty_set(&node.dirty, .Composite, composite || previous_composite)
 	if !previous_paint {
-		if len(node.last_reason) > 0 { delete(node.last_reason) }
-		node.last_reason = owned(reason)
+		if len(node.last_reason) > 0 { delete(node.last_reason, allocator) }
+		node.last_reason = owned(reason, allocator)
 	}
 }
 
-replace_owned :: proc(destination: ^string, value: string) {
+replace_owned :: proc(destination: ^string, value: string, allocator := context.allocator) {
 	if destination^ == value { return }
-	if len(destination^) > 0 { delete(destination^) }
-	destination^ = owned(value)
+	if len(destination^) > 0 { delete(destination^, allocator) }
+	destination^ = owned(value, allocator)
 }
 
-replace_site :: proc(destination: ^Source_Site, value: Source_Site) {
-	replace_owned(&destination.file, value.file)
-	replace_owned(&destination.component, value.component)
+replace_site :: proc(destination: ^Source_Site, value: Source_Site, allocator := context.allocator) {
+	replace_owned(&destination.file, value.file, allocator)
+	replace_owned(&destination.component, value.component, allocator)
 	destination.line = value.line
 	destination.column = value.column
 }
 
-release_node_strings :: proc(node: ^Node) {
-	if len(node.site.file) > 0 { delete(node.site.file) }
-	if len(node.site.component) > 0 { delete(node.site.component) }
-	if len(node.key) > 0 { delete(node.key) }
-	if len(node.label) > 0 { delete(node.label) }
-	if len(node.text) > 0 { delete(node.text) }
-	if len(node.identity_key) > 0 { delete(node.identity_key) }
-	if len(node.last_reason) > 0 { delete(node.last_reason) }
+release_node_strings :: proc(node: ^Node, allocator := context.allocator) {
+	if len(node.site.file) > 0 { delete(node.site.file, allocator) }
+	if len(node.site.component) > 0 { delete(node.site.component, allocator) }
+	if len(node.key) > 0 { delete(node.key, allocator) }
+	if len(node.label) > 0 { delete(node.label, allocator) }
+	if len(node.text) > 0 { delete(node.text, allocator) }
+	if len(node.identity_key) > 0 { delete(node.identity_key, allocator) }
+	if len(node.last_reason) > 0 { delete(node.last_reason, allocator) }
 	node.site = Source_Site{}
 	node.key, node.label, node.text, node.identity_key, node.last_reason = "", "", "", "", ""
 }
@@ -94,7 +102,7 @@ node_has_text_product :: proc(kind: Node_Kind) -> bool {
 	return kind == .Text || kind == .Text_Field || kind == .Button
 }
 
-copy_node_description :: proc(node: ^Node, d: Description) {
+copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	// Runtime-owned copies are important: a generic description may borrow a
 	// caller's string for only the duration of this procedure.
 	label_changed := d.kind == .Button && node.label != d.label
@@ -105,12 +113,12 @@ copy_node_description :: proc(node: ^Node, d: Description) {
 		node.text_run_valid = false
 	}
 	if text_changed || kind_changed || !node_has_text_product(d.kind) {
-		clear_text_composition(node)
+		clear_text_composition(node, rt.persistent_allocator)
 	}
-	replace_site(&node.site, d.site)
-	replace_owned(&node.key, d.key)
-	replace_owned(&node.label, d.label)
-	replace_owned(&node.text, d.text)
+	replace_site(&node.site, d.site, rt.persistent_allocator)
+	replace_owned(&node.key, d.key, rt.persistent_allocator)
+	replace_owned(&node.label, d.label, rt.persistent_allocator)
+	replace_owned(&node.text, d.text, rt.persistent_allocator)
 	node.parent = d.parent
 	node.kind = d.kind
 	node.style = d.style
@@ -119,7 +127,16 @@ copy_node_description :: proc(node: ^Node, d: Description) {
 	node.paint_value = d.paint_value
 	node.region_revision = d.region_revision
 	node.region = d.region
-	node.focusable = d.focusable
+	node.focusable = d.focusable && !d.disabled
+	node.disabled = d.disabled
+	// `selected` is both an application-declared visual state and the runtime's
+	// explicit selection projection. Preserve the runtime selection owner when
+	// the procedural description does not mention selection, while allowing a
+	// description to opt a node into the selected visual state.
+	node.selected = d.selected || rt.selected == node.id
+	node.explicit_key = d.explicit_key
+	node.identity_key_kind = d.identity_key_kind
+	node.identity_key_pair = d.identity_key_pair
 	node.surface_kind = d.surface_kind
 	node.surface_pixel_width = d.surface_pixel_width
 	node.surface_pixel_height = d.surface_pixel_height
@@ -133,13 +150,20 @@ copy_node_description :: proc(node: ^Node, d: Description) {
 	if node.kind != .Custom_Surface {
 		clear(&node.surface_samples)
 	}
-	replace_owned(&node.identity_key, d.identity_key)
+	replace_owned(&node.identity_key, d.identity_key, rt.persistent_allocator)
 	node.identity_key_u64 = d.identity_key_u64
 	node.identity_key_numeric = d.identity_key_numeric
 	if text_changed {
 		node.caret = Text_Position{len(d.text), .Leading}
 		node.selection_anchor = node.caret
 		node.selection_focus = node.caret
+	}
+	if d.disabled {
+		node.hovered = false
+		node.pressed = false
+		if rt.focused == node.id { rt.focused = 0 }
+		if rt.captured_node == node.id { rt.captured_node = 0 }
+		if rt.activation_node == node.id { rt.activation_node = 0 }
 	}
 }
 
@@ -153,10 +177,10 @@ queue_paint :: proc(rt: ^Runtime, id: Node_ID) {
 invalidate_interaction_paint :: proc(rt: ^Runtime, id: Node_ID, reason := "interaction visual state changed") {
 	node, ok := rt.nodes[id]
 	if !ok || !node.active { return }
-	node.dirty.paint = true
-	node.dirty.composite = true
-	if len(node.last_reason) > 0 { delete(node.last_reason) }
-	node.last_reason = owned(reason)
+	dirty_set(&node.dirty, .Paint, true)
+	dirty_set(&node.dirty, .Composite, true)
+	if len(node.last_reason) > 0 { delete(node.last_reason, rt.persistent_allocator) }
+	node.last_reason = owned(reason, rt.persistent_allocator)
 	queue_paint(rt, id)
 	record_trace(rt, .Invalidation, id, reason)
 }
@@ -166,8 +190,8 @@ mark_layout_ancestors :: proc(rt: ^Runtime, id: Node_ID) {
 	for current != 0 {
 		node, ok := rt.nodes[current]
 		if !ok { break }
-		node.dirty.layout = true
-		node.dirty.composite = true
+		dirty_set(&node.dirty, .Layout, true)
+		dirty_set(&node.dirty, .Composite, true)
 		current = node.parent
 	}
 }
@@ -205,14 +229,14 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	if id == rt.captured_node { rt.captured_node = 0 }
 	if id == rt.selected { rt.selected = 0 }
 	delete_key(&rt.nodes, id)
-	for command in node.paint { if len(command.text) > 0 { delete(command.text) } }
+	for command in node.paint { if len(command.text) > 0 { delete(command.text, rt.persistent_allocator) } }
 	delete(node.paint)
 	delete(node.children)
 	delete(node.surface_samples)
 	text_run_destroy(&node.text_run)
-	clear_text_composition(node)
-	release_node_strings(node)
-	free(node)
+	clear_text_composition(node, rt.persistent_allocator)
+	release_node_strings(node, rt.persistent_allocator)
+	free(node, allocator=rt.persistent_allocator)
 	rt.stats.nodes_retired += 1
 	record_trace(rt, .Retire, id, "retained subtree disappeared")
 }
@@ -237,7 +261,7 @@ rebuild_order :: proc(rt: ^Runtime) {
 
 reconcile :: proc(rt: ^Runtime) {
 	previous_focus := rt.focused
-	focus_lineage := make([dynamic]Node_ID, 0)
+	focus_lineage := make([dynamic]Node_ID, 0, allocator=rt.scratch_allocator)
 	if previous_focus != 0 {
 		current := previous_focus
 		for current != 0 {
@@ -248,9 +272,9 @@ reconcile :: proc(rt: ^Runtime) {
 		}
 	}
 
-	desired := make(map[Node_ID]bool)
-	reused_roots := make(map[Node_ID]bool)
-	buckets := make([dynamic]Desired_Children, 0)
+	desired := make(map[Node_ID]bool, allocator=rt.scratch_allocator)
+	reused_roots := make(map[Node_ID]bool, allocator=rt.scratch_allocator)
+	buckets := make([dynamic]Desired_Children, 0, allocator=rt.scratch_allocator)
 	for item in rt.pending {
 		switch item.kind {
 		case .Description:
@@ -258,7 +282,7 @@ reconcile :: proc(rt: ^Runtime) {
 			desired[d.id] = true
 			index := desired_children_index(buckets[:], d.parent)
 			if index < 0 {
-				append(&buckets, Desired_Children{d.parent, make([dynamic]Node_ID, 0)})
+				append(&buckets, Desired_Children{d.parent, make([dynamic]Node_ID, 0, allocator=rt.scratch_allocator)})
 				index = len(buckets)-1
 			}
 			append(&buckets[index].children, d.id)
@@ -274,18 +298,22 @@ reconcile :: proc(rt: ^Runtime) {
 		if item.kind != .Description { continue }
 		d := item.description
 		rt.stats.reconcile_nodes_visited += 1
+		rt.stats.stage_visits[.Reconcile] += 1
 		node, exists := rt.nodes[d.id]
 		if !exists {
-			node = new(Node)
+			node = new(Node, allocator=rt.persistent_allocator)
 			node.id = d.id
 			node.display_index = -1
+			node.children = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
+			node.paint = make([dynamic]Display_Command, 0, allocator=rt.persistent_allocator)
+			node.surface_samples = make([dynamic]f32, 0, allocator=rt.persistent_allocator)
 			rt.nodes[d.id] = node
 			rt.stats.nodes_created += 1
-			copy_node_description(node, d)
+			copy_node_description(rt, node, d)
 			node.description_hash = description_hash(d)
 			node.layout_hash = layout_hash(d)
 			node.paint_hash = paint_hash(d)
-			mark_dirty(node, "new retained node", true, true, true, true)
+			mark_dirty(node, "new retained node", true, true, true, true, rt.persistent_allocator)
 			queue_paint(rt, d.id)
 			mark_layout_ancestors(rt, d.id)
 			record_trace(rt, .Reconcile, d.id, "new retained node")
@@ -296,13 +324,13 @@ reconcile :: proc(rt: ^Runtime) {
 			description_changed := node.description_hash != new_desc_hash
 			layout_changed := node.layout_hash != new_layout_hash
 			paint_changed := node.paint_hash != new_paint_hash
-			copy_node_description(node, d)
+			copy_node_description(rt, node, d)
 			node.description_hash = new_desc_hash
 			node.layout_hash = new_layout_hash
 			node.paint_hash = new_paint_hash
 			reason := "description reused"
 			if description_changed { reason = "description changed" }
-			mark_dirty(node, reason, description_changed, layout_changed, paint_changed || layout_changed, false)
+			mark_dirty(node, reason, description_changed, layout_changed, paint_changed || layout_changed, false, rt.persistent_allocator)
 			if layout_changed { mark_layout_ancestors(rt, d.id) }
 			if description_changed || layout_changed || paint_changed {
 				queue_paint(rt, d.id)
@@ -332,7 +360,7 @@ reconcile :: proc(rt: ^Runtime) {
 	// Reconcile only the direct child list of explicitly described parents.
 	// A reused region is an atomic unit here, so its descendants do not enter
 	// this loop.
-	processed_parents := make(map[Node_ID]bool)
+	processed_parents := make(map[Node_ID]bool, allocator=rt.scratch_allocator)
 	for item in rt.pending {
 		if item.kind != .Description { continue }
 		parent_id := item.description.id
@@ -397,14 +425,14 @@ reconcile :: proc(rt: ^Runtime) {
 
 destroy_runtime :: proc(rt: ^Runtime) {
 	for _, node in rt.nodes {
-		for command in node.paint { if len(command.text) > 0 { delete(command.text) } }
+		for command in node.paint { if len(command.text) > 0 { delete(command.text, rt.persistent_allocator) } }
 		delete(node.paint)
 		delete(node.children)
 		delete(node.surface_samples)
 		text_run_destroy(&node.text_run)
-		clear_text_composition(node)
-		release_node_strings(node)
-		free(node)
+		clear_text_composition(node, rt.persistent_allocator)
+		release_node_strings(node, rt.persistent_allocator)
+		free(node, allocator=rt.persistent_allocator)
 	}
 	delete(rt.nodes)
 	delete(rt.order)
@@ -417,13 +445,39 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.identity_labels)
 	delete(rt.identity_key_u64)
 	delete(rt.identity_key_numeric)
+	delete(rt.identity_key_kind)
+	delete(rt.identity_key_pair)
 	delete(rt.paint_queue)
-	for entry in rt.trace.events { if entry.reason_owned && len(entry.reason) > 0 { delete(entry.reason) } }
+	for entry in rt.trace.events { if entry.reason_owned && len(entry.reason) > 0 { delete(entry.reason, rt.persistent_allocator) } }
 	delete(rt.trace.events)
 	delete(rt.display)
 	text_engine_destroy(&rt.text_engine)
-	if len(rt.last_invalidation_reason) > 0 { delete(rt.last_invalidation_reason) }
-	if len(rt.diagnostic) > 0 { delete(rt.diagnostic) }
+	if rt.scratch_arena != nil {
+		mem.dynamic_arena_destroy(rt.scratch_arena)
+		free(rt.scratch_arena, allocator=rt.persistent_allocator)
+		rt.scratch_arena = nil
+	}
+	if rt.scratch_allocator_state != nil {
+		free(rt.scratch_allocator_state, allocator=rt.persistent_allocator)
+		rt.scratch_allocator_state = nil
+	}
+	if len(rt.last_invalidation_reason) > 0 { delete(rt.last_invalidation_reason, rt.persistent_allocator) }
+	if len(rt.diagnostic) > 0 { delete(rt.diagnostic, rt.persistent_allocator) }
+	if rt.persistent_allocator_state != nil {
+		free(rt.persistent_allocator_state, allocator=rt.persistent_backing_allocator)
+		rt.persistent_allocator_state = nil
+	}
+	// The runtime has released every retained allocation by this point. The
+	// allocator wrapper cannot always reconstruct exact resize deltas from an
+	// arbitrary backing allocator, so close the per-runtime requested-byte
+	// lifetime explicitly at the ownership boundary.
+	if rt.allocation_stats != nil {
+		rt.allocation_stats.persistent_requested_bytes_live = 0
+	}
+	if rt.allocation_stats_owned && rt.allocation_stats != nil {
+		free(rt.allocation_stats, allocator=rt.persistent_backing_allocator)
+	}
+	rt.allocation_stats = nil
 }
 
 focus_fallback :: proc(rt: ^Runtime, lineage: []Node_ID) -> Node_ID {

@@ -1,6 +1,7 @@
 package main
 
 import "core:fmt"
+import "core:mem"
 import "core:os"
 import "core:strings"
 import alicorn "../runtime"
@@ -43,16 +44,16 @@ render_keyed :: proc(rt: ^alicorn.Runtime, keys: []string, values: []int, extra,
 	alicorn.invalidate_root(rt, "test structural render")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return ids }
-	alicorn.container_begin(&ui, .Root, S_ROOT, label="root", style=alicorn.Layout_Style{.Column, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="root", style=alicorn.Layout_Style{.Column, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
 	if extra {
-		alicorn.text(&ui, "extra", S_EXTRA)
+		alicorn.text_ex(&ui, "extra", S_EXTRA)
 	}
 	if wrapper {
 		alicorn.transparent_container_begin(&ui, .Container, S_WRAP, label="wrapper")
 	}
 	for i := 0; i < len(keys); i += 1 {
-		if alicorn.key_scope_begin(&ui, keys[i], S_ROW) {
-			id, _ := alicorn.button(&ui, keys[i], S_BUTTON, style=alicorn.Layout_Style{.Column, -1, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false}, paint_value=u64(values[i] if i < len(values) else 0))
+		if alicorn.key_scope_begin_ex(&ui, keys[i], S_ROW) {
+			id, _ := alicorn.button_ex(&ui, keys[i], S_BUTTON, style=alicorn.Layout_Style{.Column, -1, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false}, paint_value=u64(values[i] if i < len(values) else 0))
 			ids[keys[i]] = id
 			alicorn.key_scope_end(&ui)
 		}
@@ -70,10 +71,10 @@ render_numeric_keyed :: proc(rt: ^alicorn.Runtime, keys: []u64, values: []int) -
 	alicorn.invalidate_root(rt, "test numeric keyed render")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return ids }
-	alicorn.container_begin(&ui, .Root, S_ROOT, label="numeric-root")
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="numeric-root")
 	for key, i in keys {
 		if alicorn.key_scope_u64(&ui, key, S_ROW) {
-			id, _ := alicorn.button(&ui, fmt.tprintf("n%d", key), S_BUTTON, style=alicorn.Layout_Style{.Column, -1, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false}, paint_value=u64(values[i] if i < len(values) else 0))
+			id, _ := alicorn.button_ex(&ui, fmt.tprintf("n%d", key), S_BUTTON, style=alicorn.Layout_Style{.Column, -1, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false}, paint_value=u64(values[i] if i < len(values) else 0))
 			ids[key] = id
 			alicorn.key_scope_end(&ui)
 		}
@@ -87,12 +88,12 @@ render_region :: proc(rt: ^alicorn.Runtime, revision: u64, body_counter: ^int) {
 	alicorn.invalidate_root(rt, "test region render")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return }
-	alicorn.container_begin(&ui, .Root, S_ROOT, label="root")
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="root")
 	id, reused := alicorn.region_begin(&ui, "static", revision, S_REGION)
 	if id != 0 && !reused {
 		start := len(rt.pending)
 		body_counter^ += 1
-		alicorn.text(&ui, "cached body", alicorn.site("tests/render.odin", 41, 1, "cached_body"))
+		alicorn.text_ex(&ui, "cached body", alicorn.site("tests/render.odin", 41, 1, "cached_body"))
 		alicorn.region_end(&ui, id, false, start)
 	}
 	alicorn.container_end(&ui)
@@ -103,20 +104,20 @@ render_stress_region :: proc(rt: ^alicorn.Runtime, revision: u64, include_region
 	alicorn.invalidate_root(rt, "test retained subtree stress")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return 0 }
-	alicorn.container_begin(&ui, .Root, S_ROOT, label="stress-root")
-	sibling, _ := alicorn.button(&ui, "fallback", S_REGION_STRESS_SIBLING, style=alicorn.Layout_Style{.Column, 160, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
-	if include_region && alicorn.key_scope_begin(&ui, "retained", S_REGION_STRESS_SCOPE) {
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="stress-root")
+	sibling, _ := alicorn.button_ex(&ui, "fallback", S_REGION_STRESS_SIBLING, style=alicorn.Layout_Style{.Column, 160, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	if include_region && alicorn.key_scope_begin_ex(&ui, "retained", S_REGION_STRESS_SCOPE) {
 		id, reused := alicorn.region_begin(&ui, "body", revision, S_REGION_STRESS)
 		if id != 0 && !reused {
 			body_counter^ += 1
 			start := len(rt.pending)
 			if alicorn.key_scope_u64(&ui, 0, S_REGION_STRESS_NODE) {
-				alicorn.button(&ui, "focused descendant", S_REGION_STRESS_NODE, style=alicorn.Layout_Style{.Column, 180, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+				alicorn.button_ex(&ui, "focused descendant", S_REGION_STRESS_NODE, style=alicorn.Layout_Style{.Column, 180, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
 				alicorn.key_scope_end(&ui)
 			}
 			for i := 1; i < 256; i += 1 {
 				if alicorn.key_scope_u64(&ui, u64(i), S_REGION_STRESS_NODE) {
-					alicorn.text(&ui, "retained descendant", S_REGION_STRESS_NODE)
+					alicorn.text_ex(&ui, "retained descendant", S_REGION_STRESS_NODE)
 					alicorn.key_scope_end(&ui)
 				}
 			}
@@ -134,7 +135,7 @@ render_region_collection :: proc(rt: ^alicorn.Runtime, order: []u64, enabled: []
 	alicorn.invalidate_root(rt, "test region collection")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return roots }
-	alicorn.container_begin(&ui, .Root, S_ROOT, label="region-collection")
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="region-collection")
 	for key in order {
 		if key >= u64(len(enabled)) || !enabled[key] { continue }
 		if !alicorn.key_scope_u64(&ui, key, S_REGION_STRESS_SCOPE) { continue }
@@ -144,14 +145,14 @@ render_region_collection :: proc(rt: ^alicorn.Runtime, order: []u64, enabled: []
 			body_counter^ += 1
 			start := len(rt.pending)
 			if alicorn.key_scope_u64(&ui, 0, S_REGION_STRESS_NODE) {
-				alicorn.button(&ui, "region-state", S_REGION_STRESS_NODE, style=alicorn.Layout_Style{.Column, 120, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false}, paint_value=key)
+				alicorn.button_ex(&ui, "region-state", S_REGION_STRESS_NODE, style=alicorn.Layout_Style{.Column, 120, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false}, paint_value=key)
 				alicorn.key_scope_end(&ui)
 			}
 			if nested && key == 0 {
 				nested_id, nested_reused := alicorn.region_begin(&ui, "nested", revisions[key], S_REGION_STRESS_NESTED)
 				if nested_id != 0 && !nested_reused {
 					nested_start := len(rt.pending)
-					alicorn.text(&ui, "nested-state", S_REGION_STRESS_NODE)
+					alicorn.text_ex(&ui, "nested-state", S_REGION_STRESS_NODE)
 					alicorn.region_end(&ui, nested_id, false, nested_start)
 				}
 			}
@@ -165,7 +166,7 @@ render_region_collection :: proc(rt: ^alicorn.Runtime, order: []u64, enabled: []
 }
 
 virtual_row :: proc(ui: ^alicorn.UI, index: int) {
-	alicorn.text(ui, fmt.tprintf("row %d", index), S_VROW)
+	alicorn.text_ex(ui, fmt.tprintf("row %d", index), S_VROW)
 }
 
 virtual_item_key :: proc(index: int) -> string {
@@ -177,15 +178,15 @@ virtual_data_key :: proc(index: int) -> string {
 }
 
 virtual_data_row :: proc(ui: ^alicorn.UI, index: int) {
-	alicorn.text(ui, virtual_keys[index], S_VROW)
+	alicorn.text_ex(ui, virtual_keys[index], S_VROW)
 }
 
 render_virtual :: proc(rt: ^alicorn.Runtime, scroll: f32) {
 	alicorn.invalidate_root(rt, "test virtual scroll")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return }
-	alicorn.container_begin(&ui, .Root, S_ROOT, label="root")
-	alicorn.virtual_list(&ui, 1_000_000, scroll, 200, 20, S_VLIST, virtual_item_key, virtual_row)
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="root")
+	alicorn.virtual_list_ex(&ui, 1_000_000, scroll, 200, 20, S_VLIST, virtual_item_key, virtual_row)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 }
@@ -196,8 +197,8 @@ render_virtual_data :: proc(rt: ^alicorn.Runtime, keys: []string, scroll: f32) -
 	ui, build := alicorn.begin_frame(rt)
 	ids := make(map[string]alicorn.Node_ID)
 	if !build { return ids }
-	alicorn.container_begin(&ui, .Root, S_ROOT, label="virtual-data-root")
-	alicorn.virtual_list(&ui, len(keys), scroll, 200, 20, S_VLIST, virtual_data_key, virtual_data_row)
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="virtual-data-root")
+	alicorn.virtual_list_ex(&ui, len(keys), scroll, 200, 20, S_VLIST, virtual_data_key, virtual_data_row)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	for id in rt.order {
@@ -212,8 +213,8 @@ render_single_button :: proc(rt: ^alicorn.Runtime) -> (id: alicorn.Node_ID, clic
 	alicorn.invalidate_root(rt, "test button frame")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return }
-	alicorn.container_begin(&ui, .Root, S_ROOT, label="button-root")
-	id, clicked = alicorn.button(&ui, "button", S_BUTTON, style=alicorn.Layout_Style{.Column, 100, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="button-root")
+	id, clicked = alicorn.button_ex(&ui, "button", S_BUTTON, style=alicorn.Layout_Style{.Column, 100, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	return
@@ -223,8 +224,8 @@ render_text_field :: proc(rt: ^alicorn.Runtime, value: string) -> alicorn.Node_I
 	alicorn.invalidate_root(rt, "test text field frame")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return 0 }
-	alicorn.container_begin(&ui, .Root, S_ROOT, label="text-field-root")
-	id := alicorn.text_field(&ui, value, alicorn.site("tests/edit.odin", 2, 1, "query"))
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="text-field-root")
+	id := alicorn.text_field_ex(&ui, value, alicorn.site("tests/edit.odin", 2, 1, "query"))
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	return id
@@ -234,9 +235,9 @@ render_two_text_fields :: proc(rt: ^alicorn.Runtime) -> (first, second: alicorn.
 	alicorn.invalidate_root(rt, "test two text fields")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return }
-	alicorn.container_begin(&ui, .Root, S_ROOT, label="two-text-fields")
-	first = alicorn.text_field(&ui, "first", S_TEXT_A)
-	second = alicorn.text_field(&ui, "second", S_TEXT_B)
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="two-text-fields")
+	first = alicorn.text_field_ex(&ui, "first", S_TEXT_A)
+	second = alicorn.text_field_ex(&ui, "second", S_TEXT_B)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	return
@@ -246,9 +247,9 @@ render_optional_text_field :: proc(rt: ^alicorn.Runtime, include: bool) -> alico
 	alicorn.invalidate_root(rt, "test optional composition field")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return 0 }
-	alicorn.container_begin(&ui, .Root, S_ROOT, label="optional-text-field")
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="optional-text-field")
 	id: alicorn.Node_ID
-	if include { id = alicorn.text_field(&ui, "retained", S_TEXT_A) }
+	if include { id = alicorn.text_field_ex(&ui, "retained", S_TEXT_A) }
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	return id
@@ -282,10 +283,10 @@ render_focus_ancestor :: proc(rt: ^alicorn.Runtime, include_child: bool) -> alic
 	alicorn.invalidate_root(rt, "test focus ancestor")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return 0 }
-	alicorn.container_begin(&ui, .Root, S_ROOT, label="focus-root")
-	parent := alicorn.container_begin(&ui, .Container, S_WRAP, label="focus-parent", focusable=true, style=alicorn.Layout_Style{.Column, 120, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="focus-root")
+	parent := alicorn.container_begin_ex(&ui, .Container, S_WRAP, label="focus-parent", focusable=true, style=alicorn.Layout_Style{.Column, 120, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
 	if include_child {
-		child, _ := alicorn.button(&ui, "child", S_BUTTON, style=alicorn.Layout_Style{.Column, 100, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+		child, _ := alicorn.button_ex(&ui, "child", S_BUTTON, style=alicorn.Layout_Style{.Column, 100, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
 		parent = child
 	}
 	alicorn.container_end(&ui)
@@ -298,9 +299,9 @@ render_clipped :: proc(rt: ^alicorn.Runtime) -> alicorn.Node_ID {
 	alicorn.invalidate_root(rt, "test clipping")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return 0 }
-	alicorn.container_begin(&ui, .Root, S_ROOT, label="clip-root")
-	alicorn.container_begin(&ui, .Container, S_WRAP, label="clip-parent", style=alicorn.Layout_Style{.Column, 50, 50, 0, -1, 0, -1, 0, 0, 0, .Stretch, true})
-	child, _ := alicorn.button(&ui, "oversized", S_BUTTON, style=alicorn.Layout_Style{.Column, 100, 100, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="clip-root")
+	alicorn.container_begin_ex(&ui, .Container, S_WRAP, label="clip-parent", style=alicorn.Layout_Style{.Column, 50, 50, 0, -1, 0, -1, 0, 0, 0, .Stretch, true})
+	child, _ := alicorn.button_ex(&ui, "oversized", S_BUTTON, style=alicorn.Layout_Style{.Column, 100, 100, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
 	alicorn.container_end(&ui)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
@@ -308,7 +309,7 @@ render_clipped :: proc(rt: ^alicorn.Runtime) -> alicorn.Node_ID {
 }
 
 ergonomic_row :: proc(ui: ^alicorn.UI, label: string) -> alicorn.Node_ID {
-	id, _ := alicorn.button(ui, label, key=label, explicit_key=true, style=alicorn.Layout_Style{.Column, 100, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	id, _ := alicorn.button_ex(ui, label, key=label, explicit_key=true, style=alicorn.Layout_Style{.Column, 100, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
 	return id
 }
 
@@ -319,7 +320,7 @@ render_ergonomic :: proc(rt: ^alicorn.Runtime, keys: []string) -> map[string]ali
 	if !build { return ids }
 	alicorn.container_begin(&ui, .Root, label="ergonomic-root")
 	for key in keys {
-		if alicorn.component_begin(&ui, key) {
+		if alicorn.component_begin(&ui, alicorn.key_string(key)) {
 			ids[key] = ergonomic_row(&ui, key)
 			alicorn.component_end(&ui)
 		}
@@ -327,6 +328,36 @@ render_ergonomic :: proc(rt: ^alicorn.Runtime, keys: []string) -> map[string]ali
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	return ids
+}
+
+emit_canonical_key :: proc(ui: ^alicorn.UI, key: alicorn.UI_Key) -> alicorn.Node_ID {
+	return alicorn.text(ui, "same structural site", key=key)
+}
+
+render_key_variants :: proc(rt: ^alicorn.Runtime, keys: []alicorn.UI_Key) -> []alicorn.Node_ID {
+	alicorn.invalidate_root(rt, "test typed key variants")
+	ui, build := alicorn.begin_frame(rt)
+	ids := make([]alicorn.Node_ID, len(keys))
+	if !build { return ids }
+	alicorn.container_begin(&ui, .Root, label="typed-key-root")
+	for key, i in keys { ids[i] = emit_canonical_key(&ui, key) }
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return ids
+}
+
+render_canonical_button :: proc(rt: ^alicorn.Runtime, state := alicorn.Button_State{}) -> (id: alicorn.Node_ID, clicked: bool) {
+	alicorn.invalidate_root(rt, "test canonical button")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin(&ui, .Root, label="canonical-button-root")
+	clicked = alicorn.button(&ui, "canonical", state=state)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	for candidate in rt.order {
+		if node, ok := rt.nodes[candidate]; ok && node.kind == .Button { id = candidate; break }
+	}
+	return
 }
 
 test_identity_and_ambiguity :: proc(state: ^Test_State) {
@@ -351,9 +382,9 @@ test_identity_and_ambiguity :: proc(state: ^Test_State) {
 	alicorn.invalidate_root(&rt, "test ambiguity")
 	ui, build := alicorn.begin_frame(&rt)
 	if build {
-		alicorn.container_begin(&ui, .Root, S_ROOT)
-		alicorn.button(&ui, "one", S_BUTTON)
-		alicorn.button(&ui, "two", S_BUTTON)
+		alicorn.container_begin_ex(&ui, .Root, S_ROOT)
+		alicorn.button_ex(&ui, "one", S_BUTTON)
+		alicorn.button_ex(&ui, "two", S_BUTTON)
 		alicorn.container_end(&ui)
 		alicorn.end_frame(&ui)
 	}
@@ -363,9 +394,9 @@ test_identity_and_ambiguity :: proc(state: ^Test_State) {
 	alicorn.invalidate_root(&rt, "duplicate key test")
 	ui, build = alicorn.begin_frame(&rt)
 	if build {
-		alicorn.container_begin(&ui, .Root, S_ROOT)
-		if alicorn.key_scope_begin(&ui, "same", S_ROW) { alicorn.text(&ui, "one", S_BUTTON); alicorn.key_scope_end(&ui) }
-		if alicorn.key_scope_begin(&ui, "same", S_ROW) { alicorn.text(&ui, "two", S_BUTTON); alicorn.key_scope_end(&ui) }
+		alicorn.container_begin_ex(&ui, .Root, S_ROOT)
+		if alicorn.key_scope_begin_ex(&ui, "same", S_ROW) { alicorn.text_ex(&ui, "one", S_BUTTON); alicorn.key_scope_end(&ui) }
+		if alicorn.key_scope_begin_ex(&ui, "same", S_ROW) { alicorn.text_ex(&ui, "two", S_BUTTON); alicorn.key_scope_end(&ui) }
 		alicorn.container_end(&ui)
 		alicorn.end_frame(&ui)
 	}
@@ -387,13 +418,34 @@ test_identity_and_ambiguity :: proc(state: ^Test_State) {
 	alicorn.invalidate_root(&rt, "duplicate numeric key test")
 	ui, build = alicorn.begin_frame(&rt)
 	if build {
-		alicorn.container_begin(&ui, .Root, S_ROOT)
-		if alicorn.key_scope_u64(&ui, 7, S_ROW) { alicorn.text(&ui, "one", S_BUTTON); alicorn.key_scope_end(&ui) }
-		if alicorn.key_scope_u64(&ui, 7, S_ROW) { alicorn.text(&ui, "two", S_BUTTON); alicorn.key_scope_end(&ui) }
+		alicorn.container_begin_ex(&ui, .Root, S_ROOT)
+		if alicorn.key_scope_u64(&ui, 7, S_ROW) { alicorn.text_ex(&ui, "one", S_BUTTON); alicorn.key_scope_end(&ui) }
+		if alicorn.key_scope_u64(&ui, 7, S_ROW) { alicorn.text_ex(&ui, "two", S_BUTTON); alicorn.key_scope_end(&ui) }
 		alicorn.container_end(&ui)
 		alicorn.end_frame(&ui)
 	}
 	expect(state, rt.hard_error, "duplicate numeric keys must be a hard diagnostic")
+	alicorn.destroy_runtime(&rt)
+}
+
+test_typed_key_variants :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 200})
+	keys := []alicorn.UI_Key{
+		alicorn.UI_Unkeyed{},
+		alicorn.key_string(""),
+		alicorn.key_u64(0),
+		alicorn.key_pair(0, 0),
+		alicorn.key_string("same"),
+		alicorn.key_u64(1),
+		alicorn.key_pair(0, 1),
+	}
+	ids := render_key_variants(&rt, keys)
+	for i := 0; i < len(ids); i += 1 {
+		expect(state, ids[i] != 0, fmt.tprintf("typed key variant %d must emit a node", i))
+		for j := i+1; j < len(ids); j += 1 {
+			expect(state, ids[i] != ids[j], fmt.tprintf("typed key variants %d and %d must remain distinct", i, j))
+		}
+	}
 	alicorn.destroy_runtime(&rt)
 }
 
@@ -478,6 +530,11 @@ test_regions_and_stages :: proc(state: ^Test_State) {
 	expect(state, rt.stats.adjacency_rebuilds == adjacency_before, "unchanged structure must reuse retained adjacency")
 	report := alicorn.inspect(&rt)
 	expect(state, len(report) > 100 && len(alicorn.trace_snapshot(&rt)) > 0, "inspector and bounded trace must expose structural work")
+	expect(state, rt.stats.stage_visits[.Description] > 0, "description stage visits must be counted")
+	expect(state, rt.stats.stage_visits[.Reconcile] > 0, "reconcile stage visits must be counted")
+	expect(state, rt.stats.stage_visits[.Layout] > 0, "layout stage visits must be counted")
+	expect(state, rt.stats.stage_visits[.Paint] > 0, "paint stage visits must be counted")
+	expect(state, rt.stats.stage_visits[.Composite] > 0, "composite stage visits must be counted")
 	alicorn.destroy_runtime(&rt)
 }
 
@@ -598,8 +655,8 @@ test_focus_and_editing :: proc(state: ^Test_State) {
 	alicorn.invalidate_root(&rt, "test text field")
 	ui, build := alicorn.begin_frame(&rt)
 	if build {
-		alicorn.container_begin(&ui, .Root, S_ROOT)
-		field := alicorn.text_field(&ui, "abc", alicorn.site("tests/edit.odin", 1, 1, "query"))
+		alicorn.container_begin_ex(&ui, .Root, S_ROOT)
+		field := alicorn.text_field_ex(&ui, "abc", alicorn.site("tests/edit.odin", 1, 1, "query"))
 		alicorn.container_end(&ui)
 		alicorn.end_frame(&ui)
 		change := alicorn.process_text_edit(&rt, field, alicorn.Text_Edit{.Backspace, ""})
@@ -691,8 +748,8 @@ test_interaction_paint_invalidation :: proc(state: ^Test_State) {
 	expect(state, alicorn.focus(&rt, id), "text field must accept focus")
 	ui, build := alicorn.begin_frame(&rt)
 	if build {
-		alicorn.container_begin(&ui, .Root, S_ROOT)
-		field := alicorn.text_field(&ui, "caret", alicorn.site("tests/edit.odin", 2, 1, "query"))
+		alicorn.container_begin_ex(&ui, .Root, S_ROOT)
+		field := alicorn.text_field_ex(&ui, "caret", alicorn.site("tests/edit.odin", 2, 1, "query"))
 		alicorn.container_end(&ui)
 		alicorn.end_frame(&ui)
 		expect(state, field == id, "focus repaint frame must preserve field identity")
@@ -702,8 +759,8 @@ test_interaction_paint_invalidation :: proc(state: ^Test_State) {
 	alicorn.set_text_selection(&rt, id, 5, 1)
 	ui, build = alicorn.begin_frame(&rt)
 	if build {
-		alicorn.container_begin(&ui, .Root, S_ROOT)
-		alicorn.text_field(&ui, "caret", alicorn.site("tests/edit.odin", 2, 1, "query"))
+		alicorn.container_begin_ex(&ui, .Root, S_ROOT)
+		alicorn.text_field_ex(&ui, "caret", alicorn.site("tests/edit.odin", 2, 1, "query"))
 		alicorn.container_end(&ui)
 		alicorn.end_frame(&ui)
 	}
@@ -749,6 +806,21 @@ test_interaction_regressions :: proc(state: ^Test_State) {
 	clipped_node := rt.nodes[clipped]
 	expect(state, alicorn.hit_test(&rt, clipped_node.bounds.x+10, clipped_node.bounds.y+10) == clipped, "visible clipped child should hit")
 	expect(state, alicorn.hit_test(&rt, clipped_node.bounds.x+75, clipped_node.bounds.y+10) == 0, "clipped child must not hit outside effective clip")
+	alicorn.destroy_runtime(&rt)
+}
+
+test_disabled_button_semantics :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 200})
+	id, _ := render_canonical_button(&rt)
+	node := rt.nodes[id]
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, node.bounds.x+2, node.bounds.y+2, 1})
+	expect(state, rt.captured_node == id, "enabled button must capture pointer down")
+	_, _ = render_canonical_button(&rt, alicorn.Button_State{disabled=true})
+	expect(state, rt.captured_node == 0 && !rt.nodes[id].pressed, "disabling a captured button must clear press state")
+	expect(state, alicorn.hit_test(&rt, node.bounds.x+2, node.bounds.y+2) == 0, "disabled button must not hit-test")
+	expect(state, !alicorn.focus(&rt, id), "disabled button must not receive focus")
+	_, clicked := render_canonical_button(&rt, alicorn.Button_State{disabled=true})
+	expect(state, !clicked, "disabled button must not activate from keyboard or pointer state")
 	alicorn.destroy_runtime(&rt)
 }
 
@@ -803,11 +875,11 @@ test_layout_geometry :: proc(state: ^Test_State) {
 	ui, build := alicorn.begin_frame(&rt)
 	if build {
 		row_style := alicorn.Layout_Style{.Row, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, false}
-		alicorn.container_begin(&ui, .Root, S_ROOT, style=row_style)
+		alicorn.container_begin_ex(&ui, .Root, S_ROOT, style=row_style)
 		fixed := alicorn.Layout_Style{.Column, 30, 20, 0, -1, 0, -1, 0, 0, 0, .Stretch, false}
 		grow := alicorn.Layout_Style{.Column, -1, 20, 0, -1, 0, -1, 1, 0, 0, .Stretch, false}
-		fixed_id, _ := alicorn.button(&ui, "fixed", S_LAYOUT_A, style=fixed)
-		grow_id := alicorn.text(&ui, "grow", S_LAYOUT_B, style=grow)
+		fixed_id, _ := alicorn.button_ex(&ui, "fixed", S_LAYOUT_A, style=fixed)
+		grow_id := alicorn.text_ex(&ui, "grow", S_LAYOUT_B, style=grow)
 		alicorn.container_end(&ui)
 		alicorn.end_frame(&ui)
 		expect(state, rt.nodes[fixed_id].bounds.w == 30, "fixed row child width")
@@ -974,10 +1046,10 @@ render_gpu_surface :: proc(rt: ^alicorn.Runtime, show: bool, revision: u64) -> a
 	alicorn.invalidate_root(rt, "test GPU surface description")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return 0 }
-	alicorn.container_begin(&ui, .Root, S_ROOT, label="surface-root")
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="surface-root")
 	id: alicorn.Node_ID = 0
 	if show {
-		id = alicorn.gpu_surface(&ui, "waveform", revision, alicorn.Rect{10, 12, 240, 80}, 480, 160, 2, S_SURFACE)
+		id = alicorn.gpu_surface_ex(&ui, "waveform", revision, alicorn.Rect{10, 12, 240, 80}, 480, 160, 2, S_SURFACE)
 	}
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
@@ -1014,9 +1086,45 @@ test_gpu_surface_contract :: proc(state: ^Test_State) {
 	alicorn.destroy_runtime(&rt)
 }
 
+test_runtime_allocator_ownership :: proc(state: ^Test_State) {
+	base_allocator := context.allocator
+	tracking: mem.Tracking_Allocator
+	mem.tracking_allocator_init(&tracking, base_allocator)
+	defer mem.tracking_allocator_destroy(&tracking)
+
+	stats := alicorn.Runtime_Allocation_Stats{}
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120}, alicorn.Runtime_Config{
+		persistent_allocator = base_allocator,
+		scratch_backing_allocator = base_allocator,
+		trace_capacity = 32,
+		allocation_stats = &stats,
+	})
+	// Deliberately change the ambient allocator after construction. Runtime
+	// allocations and destruction must continue through their captured owners.
+	context.allocator = mem.tracking_allocator(&tracking)
+	alicorn.invalidate_root(&rt, "allocator ownership test")
+	ui, build := alicorn.begin_frame(&rt)
+	if build {
+		alicorn.container_begin(&ui, .Root, label="allocator-root")
+		alicorn.text(&ui, "retained allocation")
+		alicorn.container_end(&ui)
+		alicorn.end_frame(&ui)
+	}
+	expect(state, len(tracking.allocation_map) == 0, "runtime must not allocate through a later ambient allocator")
+	expect(state, stats.persistent_alloc_calls > 0 && stats.persistent_requested_bytes_peak > 0, "persistent requested-byte telemetry must record retained work")
+	expect(state, stats.scratch_alloc_calls > 0 && stats.scratch_requested_bytes_peak > 0, "scratch requested-byte telemetry must record frame work")
+	expect(state, stats.scratch_resets > 0 && stats.scratch_requested_bytes_epoch > 0, "runtime-owned scratch arena must reset at the frame boundary")
+	// Keep the changed ambient allocator active while destroying the runtime.
+	alicorn.destroy_runtime(&rt)
+	expect(state, len(tracking.allocation_map) == 0, "runtime destruction must release through the original allocator")
+	expect(state, stats.persistent_requested_bytes_live == 0, "persistent requested-byte live total must return to zero")
+	context.allocator = base_allocator
+}
+
 main :: proc() {
 	state: Test_State
 	test_identity_and_ambiguity(&state)
+	test_typed_key_variants(&state)
 	test_property_sequences(&state)
 	test_regions_and_stages(&state)
 	test_retained_subtree_reuse(&state)
@@ -1026,6 +1134,7 @@ main :: proc() {
 	test_text_input_composition(&state)
 	test_interaction_paint_invalidation(&state)
 	test_interaction_regressions(&state)
+	test_disabled_button_semantics(&state)
 	test_ergonomic_identity(&state)
 	test_virtualization_and_gpu(&state)
 	test_layout_geometry(&state)
@@ -1034,6 +1143,7 @@ main :: proc() {
 	test_retained_text_product_lifetime(&state)
 	test_runtime_edit_invalidates_text_product(&state)
 	test_gpu_surface_contract(&state)
+	test_runtime_allocator_ownership(&state)
 	if state.failures == 0 {
 		fmt.println("Alicorn foundation tests: PASS")
 		return

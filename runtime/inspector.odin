@@ -24,7 +24,7 @@ inspect :: proc(rt: ^Runtime) -> string {
 		} else {
 			fmt.sbprintf(&sb, "Node: %d parent=%d kind=%v source=%s:%d:%d component=%s key=%q scope=%q bounds=(%.1f,%.1f %.1fx%.1f)\n", node.id, node.parent, node.kind, node.site.file, node.site.line, node.site.column, node.site.component, node.key, node.identity_key, node.bounds.x, node.bounds.y, node.bounds.w, node.bounds.h)
 		}
-		fmt.sbprintf(&sb, "  description: %s layout: %s paint: %s composite: %s\n", stage_word(node.dirty.description), stage_word(node.dirty.layout), stage_word(node.dirty.paint), stage_word(node.dirty.composite))
+		fmt.sbprintf(&sb, "  description: %s layout: %s paint: %s composite: %s\n", stage_word(dirty_has(node.dirty, .Description)), stage_word(dirty_has(node.dirty, .Layout)), stage_word(dirty_has(node.dirty, .Paint)), stage_word(dirty_has(node.dirty, .Composite)))
 		if node.kind == .Custom_Surface {
 			fmt.sbprintf(&sb, "  surface: revision=%d samples=%d pixels=%dx%d dpi=%.2f clip=(%.1f,%.1f %.1fx%.1f)\n", node.surface_revision, len(node.surface_samples), node.surface_pixel_width, node.surface_pixel_height, node.surface_dpi_scale, node.clip.x, node.clip.y, node.clip.w, node.clip.h)
 		}

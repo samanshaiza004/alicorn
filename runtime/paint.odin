@@ -7,9 +7,10 @@ rebuild_display :: proc(rt: ^Runtime) {
 		if !ok || !node.active { continue }
 		node.display_index = -1
 		for command in node.paint {
-			if node.display_index < 0 { node.display_index = len(rt.display) }
+		if node.display_index < 0 { node.display_index = len(rt.display) }
 			append(&rt.display, command)
 			rt.stats.composition_nodes_visited += 1
+			rt.stats.stage_visits[.Composite] += 1
 		}
 	}
 	rt.stats.composite_updates += 1
@@ -26,11 +27,12 @@ update_paint :: proc(rt: ^Runtime) {
 		node.paint_queued = false
 		if !node.active { continue }
 		rt.stats.paint_nodes_visited += 1
-		if node.dirty.paint || len(node.paint) == 0 {
+		rt.stats.stage_visits[.Paint] += 1
+		if dirty_has(node.dirty, .Paint) || len(node.paint) == 0 {
 			if node.kind == .Text_Field && node.composition.active {
 				prepare_text_composition_node(rt, node)
 			}
-			for command in node.paint { if len(command.text) > 0 { delete(command.text) } }
+			for command in node.paint { if len(command.text) > 0 { delete(command.text, rt.persistent_allocator) } }
 			clear(&node.paint)
 			display_text := node.label if node.label != "" else node.text
 			display_kind := node.kind
@@ -88,9 +90,9 @@ update_paint :: proc(rt: ^Runtime) {
 				if node.pressed { button_color = Color{0.24, 0.42, 0.68, 1} }
 				if node.selected { button_color = Color{0.27, 0.48, 0.70, 1} }
 				append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", button_color})
-				append(&node.paint, Display_Command{node.id, .Text, node.bounds, node.clip, owned(display_text), Color{0.90, 0.95, 1.0, 1.0}})
+						append(&node.paint, Display_Command{node.id, .Text, node.bounds, node.clip, owned(display_text, rt.persistent_allocator), Color{0.90, 0.95, 1.0, 1.0}})
 			} else {
-				append(&node.paint, Display_Command{node.id, display_kind, node.bounds, node.clip, owned(display_text), node.color})
+				append(&node.paint, Display_Command{node.id, display_kind, node.bounds, node.clip, owned(display_text, rt.persistent_allocator), node.color})
 			}
 			if node.kind == .Text_Field && rt.focused == node.id {
 				caret := text_field_caret_geometry(rt, node.id)
@@ -107,20 +109,21 @@ update_paint :: proc(rt: ^Runtime) {
 				}
 			}
 			rt.stats.paint_updates += 1
-			node.dirty.composite = true
+			dirty_set(&node.dirty, .Composite, true)
 			record_trace(rt, .Paint, id, node.last_reason)
 		}
 		if !rt.composition_rebuild && node.display_index >= 0 && len(node.paint) == 1 {
 			rt.display[node.display_index] = node.paint[0]
 			rt.stats.composition_nodes_visited += 1
+			rt.stats.stage_visits[.Composite] += 1
 			rt.stats.composite_updates += 1
 			record_trace(rt, .Composite, id, "retained display command updated")
 		} else {
 			rt.composition_rebuild = true
 		}
-		node.dirty.description = false
-		node.dirty.paint = false
-		node.dirty.composite = false
+		dirty_set(&node.dirty, .Description, false)
+		dirty_set(&node.dirty, .Paint, false)
+		dirty_set(&node.dirty, .Composite, false)
 	}
 	clear(&rt.paint_queue)
 	if rt.composition_rebuild {

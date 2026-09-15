@@ -1,9 +1,41 @@
 package alicorn
 
 import "core:fmt"
+import "core:mem"
 import "core:strings"
 
 Node_ID :: distinct u64
+
+UI_Unkeyed :: struct {}
+
+UI_Key_Pair :: struct {
+	first:  u64,
+	second: u64,
+}
+
+// UI_Key is the public identity value for repeated runtime data. The explicit
+// unkeyed variant keeps the zero value safe and makes empty strings and zero
+// numeric keys valid, distinct explicit identities.
+UI_Key :: union #no_nil {
+	UI_Unkeyed,
+	string,
+	u64,
+	UI_Key_Pair,
+}
+
+key_string :: proc(value: string) -> UI_Key { return value }
+key_u64    :: proc(value: u64) -> UI_Key { return value }
+key_pair   :: proc(first, second: u64) -> UI_Key { return UI_Key_Pair{first, second} }
+
+ui_key_is_explicit :: proc(key: UI_Key) -> bool {
+	switch value in key {
+	case UI_Unkeyed:
+		return false
+	case string, u64, UI_Key_Pair:
+		return true
+	}
+	return false
+}
 
 Node_Kind :: enum {
 	Root,
@@ -83,6 +115,11 @@ Text_Edit :: struct {
 	text: string,
 }
 
+Button_State :: struct {
+	selected: bool,
+	disabled: bool,
+}
+
 // Text_Composition is transient interaction state owned by one retained text
 // field. Its text is an owned copy of the platform preedit string and is never
 // silently written into the application's committed value. The replacement
@@ -112,11 +149,47 @@ Display_Command :: struct {
 	color:  Color,
 }
 
-Dirty_Stages :: struct {
-	description: bool,
-	layout:      bool,
-	paint:       bool,
-	composite:   bool,
+Dirty_Stage :: enum {
+	Description,
+	Layout,
+	Paint,
+	Composite,
+}
+
+Dirty_Stages :: distinct bit_set[Dirty_Stage; u8]
+
+dirty_has :: proc(dirty: Dirty_Stages, stage: Dirty_Stage) -> bool {
+	return stage in dirty
+}
+
+dirty_set :: proc(dirty: ^Dirty_Stages, stage: Dirty_Stage, value: bool) {
+	if value { dirty^ += {stage} } else { dirty^ -= {stage} }
+}
+
+Runtime_Stage :: enum {
+	Description,
+	Reconcile,
+	Layout,
+	Paint,
+	Composite,
+}
+
+Runtime_Allocation_Stats :: struct {
+	persistent_alloc_calls:          u64,
+	persistent_free_calls:           u64,
+	persistent_requested_bytes_live: i64,
+	persistent_requested_bytes_peak: i64,
+	scratch_alloc_calls:             u64,
+	scratch_requested_bytes_epoch:   u64,
+	scratch_requested_bytes_peak:    u64,
+	scratch_resets:                  u64,
+}
+
+Runtime_Config :: struct {
+	persistent_allocator:      mem.Allocator,
+	scratch_backing_allocator: mem.Allocator,
+	trace_capacity:            int,
+	allocation_stats:          ^Runtime_Allocation_Stats,
 }
 
 Description :: struct {
@@ -125,6 +198,8 @@ Description :: struct {
 	site:        Source_Site,
 	key:         string,
 	explicit_key: bool,
+	identity_key_kind: u8,
+	identity_key_pair: UI_Key_Pair,
 	kind:        Node_Kind,
 	label:       string,
 	text:        string,
@@ -134,6 +209,8 @@ Description :: struct {
 	region_revision: u64,
 	region:      bool,
 	focusable:   bool,
+	selected:    bool,
+	disabled:    bool,
 	identity_key: string,
 	identity_key_u64: u64,
 	identity_key_numeric: bool,
@@ -160,6 +237,7 @@ Node :: struct {
 	children:    [dynamic]Node_ID,
 	site:        Source_Site,
 	key:         string,
+	explicit_key: bool,
 	kind:        Node_Kind,
 	label:       string,
 	text:        string,
@@ -170,6 +248,7 @@ Node :: struct {
 	region:      bool,
 	region_cached: bool,
 	focusable:   bool,
+	disabled:    bool,
 	active:      bool,
 	present:     bool,
 	hovered:     bool,
@@ -183,6 +262,8 @@ Node :: struct {
 	identity_key: string,
 	identity_key_u64: u64,
 	identity_key_numeric: bool,
+	identity_key_kind: u8,
+	identity_key_pair: UI_Key_Pair,
 	surface_kind: GPU_Surface_Kind,
 	surface_pixel_width: int,
 	surface_pixel_height: int,
@@ -248,6 +329,7 @@ Frame_Stats :: struct {
 	layout_nodes_visited: u64,
 	paint_nodes_visited: u64,
 	composition_nodes_visited: u64,
+	stage_visits:      [Runtime_Stage]u64,
 	layout_updates:    u64,
 	paint_updates:     u64,
 	composite_updates:  u64,
@@ -259,6 +341,15 @@ Frame_Stats :: struct {
 }
 
 Runtime :: struct {
+	persistent_backing_allocator: mem.Allocator,
+	persistent_allocator:      mem.Allocator,
+	scratch_backing_allocator: mem.Allocator,
+	scratch_arena:             ^mem.Dynamic_Arena,
+	scratch_allocator:         mem.Allocator,
+	allocation_stats:          ^Runtime_Allocation_Stats,
+	allocation_stats_owned:    bool,
+	persistent_allocator_state: ^Runtime_Allocator_State,
+	scratch_allocator_state:    ^Runtime_Allocator_State,
 	nodes:       map[Node_ID]^Node,
 	order:       [dynamic]Node_ID,
 	top_level:   [dynamic]Node_ID,
@@ -270,6 +361,8 @@ Runtime :: struct {
 	identity_labels: [dynamic]string,
 	identity_key_u64: [dynamic]u64,
 	identity_key_numeric: [dynamic]bool,
+	identity_key_kind: [dynamic]u8,
+	identity_key_pair: [dynamic]UI_Key_Pair,
 	viewport:    Rect,
 	focused:     Node_ID,
 	selected:    Node_ID,
@@ -326,27 +419,61 @@ resolve_source :: proc(source: Source_Site, component: string, loc := #caller_lo
 	return Source_Site{loc.file_path, int(loc.line), int(loc.column), component}
 }
 
-new_runtime :: proc(viewport: Rect, trace_capacity := 256) -> Runtime {
-	capacity := trace_capacity
+new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
+	persistent_backing_allocator := config.persistent_allocator
+	if persistent_backing_allocator.procedure == nil {
+		persistent_backing_allocator = context.allocator
+	}
+	scratch_backing_allocator := config.scratch_backing_allocator
+	if scratch_backing_allocator.procedure == nil {
+		scratch_backing_allocator = persistent_backing_allocator
+	}
+	capacity := config.trace_capacity
 	if capacity < 1 { capacity = 1 }
+	stats := config.allocation_stats
+	stats_owned := false
+	if stats == nil {
+		stats = new(Runtime_Allocation_Stats, allocator=persistent_backing_allocator)
+		stats_owned = true
+	}
+	persistent_state := new(Runtime_Allocator_State, allocator=persistent_backing_allocator)
+	persistent_state^ = Runtime_Allocator_State{backing=persistent_backing_allocator, stats=stats, scratch=false}
 	rt := Runtime{
-		nodes = make(map[Node_ID]^Node),
-		order = make([dynamic]Node_ID, 0),
-		top_level = make([dynamic]Node_ID, 0),
-		pending = make([dynamic]Pending_Item, 0),
-		seen = make(map[Node_ID]bool),
-		identity_scopes = make(map[Node_ID]bool),
-		stack = make([dynamic]Node_ID, 0),
-		identity_stack = make([dynamic]Node_ID, 0),
-		identity_labels = make([dynamic]string, 0),
-		identity_key_u64 = make([dynamic]u64, 0),
-		identity_key_numeric = make([dynamic]bool, 0),
-		paint_queue = make([dynamic]Node_ID, 0),
+		persistent_backing_allocator = persistent_backing_allocator,
+		persistent_allocator = runtime_allocator(persistent_state),
+		scratch_backing_allocator = scratch_backing_allocator,
+		allocation_stats = stats,
+		allocation_stats_owned = stats_owned,
+		persistent_allocator_state = persistent_state,
 		viewport = viewport,
 		invalidated = true,
-		trace = Trace_Ring{events = make([dynamic]Trace_Event, capacity)},
-		text_engine = new_text_engine("runtime text", false),
 	}
+	rt.scratch_arena = new(mem.Dynamic_Arena, allocator=rt.persistent_allocator)
+	mem.dynamic_arena_init(rt.scratch_arena, block_allocator=scratch_backing_allocator, array_allocator=rt.persistent_allocator)
+	rt.scratch_allocator_state = new(Runtime_Allocator_State, allocator=rt.persistent_allocator)
+	rt.scratch_allocator_state^ = Runtime_Allocator_State{
+		backing=mem.dynamic_arena_allocator(rt.scratch_arena),
+		stats=stats,
+		scratch=true,
+	}
+	rt.scratch_allocator = runtime_allocator(rt.scratch_allocator_state)
+	rt.nodes = make(map[Node_ID]^Node, allocator=rt.persistent_allocator)
+	rt.order = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
+	rt.top_level = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
+	rt.pending = make([dynamic]Pending_Item, 0, allocator=rt.persistent_allocator)
+	rt.seen = make(map[Node_ID]bool, allocator=rt.persistent_allocator)
+	rt.identity_scopes = make(map[Node_ID]bool, allocator=rt.persistent_allocator)
+	rt.stack = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
+	rt.identity_stack = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
+	rt.identity_labels = make([dynamic]string, 0, allocator=rt.persistent_allocator)
+	rt.identity_key_u64 = make([dynamic]u64, 0, allocator=rt.persistent_allocator)
+	rt.identity_key_numeric = make([dynamic]bool, 0, allocator=rt.persistent_allocator)
+	rt.identity_key_kind = make([dynamic]u8, 0, allocator=rt.persistent_allocator)
+	rt.identity_key_pair = make([dynamic]UI_Key_Pair, 0, allocator=rt.persistent_allocator)
+	rt.paint_queue = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
+	rt.display = make([dynamic]Display_Command, 0, allocator=rt.persistent_allocator)
+	rt.trace = Trace_Ring{events = make([dynamic]Trace_Event, capacity, allocator=rt.persistent_allocator)}
+	rt.text_engine = new_text_engine("runtime text", false, rt.persistent_allocator)
 	return rt
 }
 
@@ -392,19 +519,51 @@ identity_hash_u64 :: proc(parent: Node_ID, source: Source_Site, key: u64) -> Nod
 	return Node_ID(h)
 }
 
-owned :: proc(value: string) -> string {
+identity_hash_key :: proc(parent: Node_ID, source: Source_Site, key: UI_Key) -> Node_ID {
+	h := u64(1469598103934665603)
+	h = hash_mix(h, u64(parent))
+	h = hash_mix(h, hash_string(source.file))
+	h = hash_mix(h, u64(source.line))
+	h = hash_mix(h, u64(source.column))
+	h = hash_mix(h, hash_string(source.component))
+	switch value in key {
+	case UI_Unkeyed:
+		h = hash_mix(h, 0)
+	case string:
+		h = hash_mix(h, 1)
+		h = hash_mix(h, hash_string(value))
+	case u64:
+		h = hash_mix(h, 2)
+		h = hash_mix(h, value)
+	case UI_Key_Pair:
+		h = hash_mix(h, 3)
+		h = hash_mix(h, value.first)
+		h = hash_mix(h, value.second)
+	}
+	if h == 0 { h = 1 }
+	return Node_ID(h)
+}
+
+owned :: proc(value: string, allocator := context.allocator) -> string {
 	if value == "" {
 		return ""
 	}
-	copy, _ := strings.clone(value)
+	copy, _ := strings.clone(value, allocator)
+	return copy
+}
+
+owned_with_allocator :: proc(value: string, allocator: mem.Allocator) -> string {
+	if value == "" { return "" }
+	copy, err := strings.clone(value, allocator)
+	if err != nil { return "" }
 	return copy
 }
 
 record_trace :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reason: string) {
 	rt.trace.sequence += 1
-	entry := Trace_Event{sequence=rt.trace.sequence, kind=kind, node=node, reason=owned(reason), reason_owned=true}
+	entry := Trace_Event{sequence=rt.trace.sequence, kind=kind, node=node, reason=owned_with_allocator(reason, rt.persistent_allocator), reason_owned=true}
 	old := &rt.trace.events[rt.trace.next]
-	if old.reason_owned && len(old.reason) > 0 { delete(old.reason) }
+	if old.reason_owned && len(old.reason) > 0 { delete(old.reason, rt.persistent_allocator) }
 	rt.trace.events[rt.trace.next] = entry
 	rt.trace.next = (rt.trace.next + 1) % len(rt.trace.events)
 	if rt.trace.count < len(rt.trace.events) {
@@ -419,7 +578,7 @@ record_trace_literal :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reas
 	rt.trace.sequence += 1
 	entry := Trace_Event{sequence=rt.trace.sequence, kind=kind, node=node, reason=reason, reason_owned=false}
 	old := &rt.trace.events[rt.trace.next]
-	if old.reason_owned && len(old.reason) > 0 { delete(old.reason) }
+	if old.reason_owned && len(old.reason) > 0 { delete(old.reason, rt.persistent_allocator) }
 	rt.trace.events[rt.trace.next] = entry
 	rt.trace.next = (rt.trace.next + 1) % len(rt.trace.events)
 	if rt.trace.count < len(rt.trace.events) { rt.trace.count += 1 }
@@ -427,8 +586,8 @@ record_trace_literal :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reas
 
 invalidate_root :: proc(rt: ^Runtime, reason := "explicit root invalidation") {
 	rt.invalidated = true
-	if len(rt.last_invalidation_reason) > 0 { delete(rt.last_invalidation_reason) }
-	rt.last_invalidation_reason = owned(reason)
+	if len(rt.last_invalidation_reason) > 0 { delete(rt.last_invalidation_reason, rt.persistent_allocator) }
+	rt.last_invalidation_reason = owned(reason, rt.persistent_allocator)
 	record_trace(rt, .Invalidation, 0, reason)
 }
 
@@ -436,8 +595,8 @@ invalidate_region :: proc(rt: ^Runtime, key: string, revision: u64, reason := "e
 	// Region revisions are carried by the next description. The key is included
 	// in the trace so the invalidation remains structurally inspectable.
 	rt.invalidated = true
-	if len(rt.last_invalidation_reason) > 0 { delete(rt.last_invalidation_reason) }
-	rt.last_invalidation_reason = owned(fmt.tprintf("region %s revision %d: %s", key, revision, reason))
+	if len(rt.last_invalidation_reason) > 0 { delete(rt.last_invalidation_reason, rt.persistent_allocator) }
+	rt.last_invalidation_reason = owned(fmt.tprintf("region %s revision %d: %s", key, revision, reason), rt.persistent_allocator)
 	record_trace(rt, .Invalidation, 0, rt.last_invalidation_reason)
 }
 
@@ -447,6 +606,9 @@ begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
 		rt.stats.idle_frames += 1
 		return ui, false
 	}
+	// Scratch reset is performed after the previous frame has closed; keep the
+	// first frame path minimal while the arena is still empty.
+	runtime_scratch_reset(rt)
 	rt.frame_open = true
 	clear(&rt.pending)
 	clear(&rt.seen)
@@ -456,6 +618,8 @@ begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
 	clear(&rt.identity_labels)
 	clear(&rt.identity_key_u64)
 	clear(&rt.identity_key_numeric)
+	clear(&rt.identity_key_kind)
+	clear(&rt.identity_key_pair)
 	// Interaction invalidation may have queued a retained node before the
 	// next frame begins. update_paint clears the queue after consuming it;
 	// clearing it here would discard focus/caret/selection repaint requests.
@@ -477,9 +641,28 @@ current_identity_parent :: proc(ui: ^UI) -> Node_ID {
 	return ui.runtime.identity_stack[len(ui.runtime.identity_stack)-1]
 }
 
+push_identity_scope :: proc(rt: ^Runtime, id: Node_ID, label: string, kind: u8, numeric: u64 = 0, pair := UI_Key_Pair{}) {
+	append(&rt.identity_stack, id)
+	append(&rt.identity_labels, label)
+	append(&rt.identity_key_u64, numeric)
+	append(&rt.identity_key_numeric, kind == 2)
+	append(&rt.identity_key_kind, kind)
+	append(&rt.identity_key_pair, pair)
+}
+
+pop_identity_scope :: proc(rt: ^Runtime) {
+	if len(rt.identity_stack) > 0 { pop(&rt.identity_stack) }
+	if len(rt.identity_labels) > 0 { pop(&rt.identity_labels) }
+	if len(rt.identity_key_u64) > 0 { pop(&rt.identity_key_u64) }
+	if len(rt.identity_key_numeric) > 0 { pop(&rt.identity_key_numeric) }
+	if len(rt.identity_key_kind) > 0 { pop(&rt.identity_key_kind) }
+	if len(rt.identity_key_pair) > 0 { pop(&rt.identity_key_pair) }
+}
+
 append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	rt.hard_error = true
-	rt.diagnostic = owned(message)
+	if len(rt.diagnostic) > 0 { delete(rt.diagnostic, rt.persistent_allocator) }
+	rt.diagnostic = owned(message, rt.persistent_allocator)
 	record_trace(rt, .Reconcile, 0, message)
 }
 
@@ -513,16 +696,72 @@ emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text :=
 	}
 	append(&rt.pending, Pending_Item{.Description, description, 0})
 	rt.stats.descriptions_emitted += 1
+	rt.stats.stage_visits[.Description] += 1
+	return id
+}
+
+emit_key :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := DEFAULT_COLOR, state_bits: u64 = 0, selected := false, disabled := false, region_revision: u64 = 0, is_region := false, focusable := false, surface_kind := GPU_Surface_Kind.Waveform, surface_pixel_width: int = 0, surface_pixel_height: int = 0, surface_dpi_scale: f32 = 1) -> Node_ID {
+	rt := ui.runtime
+	parent_node := current_node_parent(ui)
+	parent_identity := current_identity_parent(ui)
+	id := identity_hash_key(parent_identity, source, key)
+	if rt.seen[id] {
+		kind_text := ui_key_is_explicit(key) ? "duplicate key" : "repeated unkeyed sibling"
+		append_diagnostic(rt, fmt.tprintf("%s at %s:%d:%d component=%s; add a unique key", kind_text, source.file, source.line, source.column, source.component))
+		return 0
+	}
+	rt.seen[id] = true
+	identity_key := ""
+	identity_key_u64: u64 = 0
+	identity_key_numeric := false
+	identity_key_kind: u8 = 0
+	identity_key_pair := UI_Key_Pair{}
+	if len(rt.identity_labels) > 0 { identity_key = rt.identity_labels[len(rt.identity_labels)-1] }
+	if len(rt.identity_key_u64) > 0 {
+		identity_key_u64 = rt.identity_key_u64[len(rt.identity_key_u64)-1]
+		identity_key_numeric = rt.identity_key_numeric[len(rt.identity_key_numeric)-1]
+		identity_key_kind = rt.identity_key_kind[len(rt.identity_key_kind)-1]
+		identity_key_pair = rt.identity_key_pair[len(rt.identity_key_pair)-1]
+	}
+	key_string_value := ""
+	key_kind: u8 = 0
+	switch value in key {
+	case UI_Unkeyed:
+		key_kind = 0
+	case string:
+		key_string_value = value
+		key_kind = 1
+	case u64:
+		identity_key_u64 = value
+		identity_key_numeric = true
+		key_kind = 2
+	case UI_Key_Pair:
+		identity_key_pair = value
+		key_kind = 3
+	}
+	description := Description{
+		id=id, parent=parent_node, site=source, key=key_string_value, explicit_key=ui_key_is_explicit(key),
+		identity_key_kind=key_kind, identity_key_pair=identity_key_pair,
+		kind=kind, label=label, text=text, style=style, color=color,
+		paint_value=state_bits, region_revision=region_revision, region=is_region,
+		focusable=focusable, selected=selected, disabled=disabled, identity_key=identity_key,
+		identity_key_u64=identity_key_u64, identity_key_numeric=identity_key_numeric,
+		surface_kind=surface_kind, surface_pixel_width=surface_pixel_width,
+		surface_pixel_height=surface_pixel_height, surface_dpi_scale=surface_dpi_scale,
+	}
+	append(&rt.pending, Pending_Item{.Description, description, 0})
+	rt.stats.descriptions_emitted += 1
+	rt.stats.stage_visits[.Description] += 1
 	return id
 }
 
 key_scope :: proc(ui: ^UI, key: string, source: Source_Site, body: proc()) {
-	if !key_scope_begin(ui, key, source) { return }
+	if !key_scope_begin_ex(ui, key, source) { return }
 	body()
 	key_scope_end(ui)
 }
 
-key_scope_begin :: proc(ui: ^UI, key: string, source := Source_Site{}, loc := #caller_location) -> bool {
+key_scope_begin_ex :: proc(ui: ^UI, key: string, source := Source_Site{}, loc := #caller_location) -> bool {
 	rt := ui.runtime
 	resolved_source := resolve_source(source, "key_scope", loc)
 	parent := current_identity_parent(ui)
@@ -532,11 +771,35 @@ key_scope_begin :: proc(ui: ^UI, key: string, source := Source_Site{}, loc := #c
 		return false
 	}
 	rt.identity_scopes[id] = true
-	append(&rt.identity_stack, id)
-	append(&rt.identity_labels, key)
-	append(&rt.identity_key_u64, 0)
-	append(&rt.identity_key_numeric, false)
+	push_identity_scope(rt, id, key, 1)
 	return true
+}
+
+key_scope_begin_key :: proc(ui: ^UI, key: UI_Key, source := Source_Site{}, loc := #caller_location) -> bool {
+	rt := ui.runtime
+	resolved_source := resolve_source(source, "key_scope", loc)
+	parent := current_identity_parent(ui)
+	id := identity_hash_key(parent, resolved_source, key)
+	if rt.identity_scopes[id] {
+		append_diagnostic(rt, fmt.tprintf("duplicate key scope at %s:%d:%d component=%s", resolved_source.file, resolved_source.line, resolved_source.column, resolved_source.component))
+		return false
+	}
+	rt.identity_scopes[id] = true
+	switch value in key {
+	case UI_Unkeyed:
+		push_identity_scope(rt, id, "", 0)
+	case string:
+		push_identity_scope(rt, id, value, 1)
+	case u64:
+		push_identity_scope(rt, id, "", 2, value)
+	case UI_Key_Pair:
+		push_identity_scope(rt, id, "", 3, pair=value)
+	}
+	return true
+}
+
+key_scope_begin :: proc(ui: ^UI, key: UI_Key, loc := #caller_location) -> bool {
+	return key_scope_begin_key(ui, key, Source_Site{}, loc)
 }
 
 // key_scope_u64 is the allocation-free typed-key path used by large keyed
@@ -551,18 +814,23 @@ key_scope_u64 :: proc(ui: ^UI, key: u64, source := Source_Site{}, loc := #caller
 		return false
 	}
 	rt.identity_scopes[id] = true
-	append(&rt.identity_stack, id)
-	append(&rt.identity_labels, "")
-	append(&rt.identity_key_u64, key)
-	append(&rt.identity_key_numeric, true)
+	push_identity_scope(rt, id, "", 2, key)
 	return true
 }
 
 // component_begin creates an invocation scope from the actual application
 // call site. It is the ergonomic boundary for reusable helpers that need
 // distinct identity even when their widget call sites are shared.
-component_begin :: proc(ui: ^UI, key: string, loc := #caller_location) -> bool {
-	return key_scope_begin(ui, key, resolve_source(Source_Site{}, "component", loc))
+component_begin_key :: proc(ui: ^UI, key: UI_Key, loc := #caller_location) -> bool {
+	return key_scope_begin_key(ui, key, resolve_source(Source_Site{}, "component", loc))
+}
+
+component_begin_ex :: proc(ui: ^UI, key: string, loc := #caller_location) -> bool {
+	return key_scope_begin_ex(ui, key, resolve_source(Source_Site{}, "component", loc))
+}
+
+component_begin :: proc(ui: ^UI, key: UI_Key, loc := #caller_location) -> bool {
+	return component_begin_key(ui, key, loc)
 }
 
 component_end :: proc(ui: ^UI) {
@@ -570,31 +838,22 @@ component_end :: proc(ui: ^UI) {
 }
 
 key_scope_end :: proc(ui: ^UI) {
-	if len(ui.runtime.identity_stack) > 0 { pop(&ui.runtime.identity_stack) }
-	if len(ui.runtime.identity_labels) > 0 { pop(&ui.runtime.identity_labels) }
-	if len(ui.runtime.identity_key_u64) > 0 { pop(&ui.runtime.identity_key_u64) }
-	if len(ui.runtime.identity_key_numeric) > 0 { pop(&ui.runtime.identity_key_numeric) }
+	pop_identity_scope(ui.runtime)
 }
 
-container_begin :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, focusable := false, loc := #caller_location) -> Node_ID {
+container_begin_ex :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, focusable := false, loc := #caller_location) -> Node_ID {
 	resolved_source := resolve_source(source, "container", loc)
 	id := emit(ui, kind, resolved_source, label=label, key=key, explicit_key=explicit_key, style=style, color=color, paint_value=paint_value, focusable=focusable)
 	if id != 0 {
 		append(&ui.runtime.stack, id)
-		append(&ui.runtime.identity_stack, id)
-		append(&ui.runtime.identity_labels, "")
-		append(&ui.runtime.identity_key_u64, 0)
-		append(&ui.runtime.identity_key_numeric, false)
+		push_identity_scope(ui.runtime, id, "", 0)
 	}
 	return id
 }
 
 container_end :: proc(ui: ^UI) {
 	if len(ui.runtime.stack) > 0 { pop(&ui.runtime.stack) }
-	if len(ui.runtime.identity_stack) > 0 { pop(&ui.runtime.identity_stack) }
-	if len(ui.runtime.identity_labels) > 0 { pop(&ui.runtime.identity_labels) }
-	if len(ui.runtime.identity_key_u64) > 0 { pop(&ui.runtime.identity_key_u64) }
-	if len(ui.runtime.identity_key_numeric) > 0 { pop(&ui.runtime.identity_key_numeric) }
+	pop_identity_scope(ui.runtime)
 }
 
 // A structural wrapper can be made identity-transparent when a caller wants a
@@ -611,21 +870,55 @@ transparent_container_end :: proc(ui: ^UI) {
 	if len(ui.runtime.stack) > 0 { pop(&ui.runtime.stack) }
 }
 
-container :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, body: proc(), label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, focusable := false, loc := #caller_location) -> Node_ID {
+container_ex :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, body: proc(), label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, focusable := false, loc := #caller_location) -> Node_ID {
 	resolved_source := resolve_source(source, "container", loc)
-	id := container_begin(ui, kind, resolved_source, label, key, explicit_key, style, color, paint_value, focusable)
+	id := container_begin_ex(ui, kind, resolved_source, label, key, explicit_key, style, color, paint_value, focusable)
 	if id == 0 { return 0 }
 	body()
 	container_end(ui)
 	return id
 }
 
-root :: proc(ui: ^UI, source := Source_Site{}, body: proc(), style := DEFAULT_STYLE, loc := #caller_location) -> Node_ID {
+root_ex :: proc(ui: ^UI, source := Source_Site{}, body: proc(), style := DEFAULT_STYLE, loc := #caller_location) -> Node_ID {
 	resolved_source := resolve_source(source, "root", loc)
-	return container(ui, .Root, resolved_source, body, label="root", style=style)
+	return container_ex(ui, .Root, resolved_source, body, label="root", style=style)
 }
 
-button :: proc(ui: ^UI, label: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, paint_value: u64 = 0, loc := #caller_location) -> (id: Node_ID, clicked: bool) {
+container_begin_simple :: proc(ui: ^UI, kind: Node_Kind, label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := DEFAULT_COLOR, state_bits: u64 = 0, selected := false, disabled := false, focusable := false, loc := #caller_location) -> Node_ID {
+	resolved_source := resolve_source(Source_Site{}, "container", loc)
+	id := emit_key(ui, kind, resolved_source, label=label, key=key, style=style, color=color, state_bits=state_bits, selected=selected, disabled=disabled, focusable=focusable && !disabled)
+	if id != 0 {
+		append(&ui.runtime.stack, id)
+		push_identity_scope(ui.runtime, id, "", 0)
+	}
+	return id
+}
+
+container_simple :: proc(ui: ^UI, kind: Node_Kind, body: proc(), label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := DEFAULT_COLOR, loc := #caller_location) -> Node_ID {
+	id := container_begin_simple(ui, kind, label, key, style, color, 0, false, false, false, loc)
+	if id == 0 { return 0 }
+	body()
+	container_end(ui)
+	return id
+}
+
+root_simple :: proc(ui: ^UI, body: proc(), style := DEFAULT_STYLE, loc := #caller_location) -> Node_ID {
+	return container_simple(ui, .Root, body, label="root", style=style, loc=loc)
+}
+
+container_begin :: proc(ui: ^UI, kind: Node_Kind, label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := DEFAULT_COLOR, state_bits: u64 = 0, selected := false, disabled := false, focusable := false, loc := #caller_location) -> Node_ID {
+	return container_begin_simple(ui, kind, label, key, style, color, state_bits, selected, disabled, focusable, loc)
+}
+
+container :: proc(ui: ^UI, kind: Node_Kind, body: proc(), label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := DEFAULT_COLOR, loc := #caller_location) -> Node_ID {
+	return container_simple(ui, kind, body, label, key, style, color, loc)
+}
+
+root :: proc(ui: ^UI, body: proc(), style := DEFAULT_STYLE, loc := #caller_location) -> Node_ID {
+	return root_simple(ui, body, style, loc)
+}
+
+button_ex :: proc(ui: ^UI, label: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, paint_value: u64 = 0, loc := #caller_location) -> (id: Node_ID, clicked: bool) {
 	resolved_source := resolve_source(source, "button", loc)
 	id = emit(ui, .Button, resolved_source, label=label, key=key, explicit_key=explicit_key, style=style, paint_value=paint_value, focusable=true)
 	if id != 0 && ui.runtime.activation_node == id && ui.runtime.activation_sequence > 0 {
@@ -639,14 +932,50 @@ button :: proc(ui: ^UI, label: string, source := Source_Site{}, key := "", expli
 	return
 }
 
-text :: proc(ui: ^UI, value: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, paint_value: u64 = 0, loc := #caller_location) -> Node_ID {
+text_ex :: proc(ui: ^UI, value: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, paint_value: u64 = 0, loc := #caller_location) -> Node_ID {
 	resolved_source := resolve_source(source, "text", loc)
 	return emit(ui, .Text, resolved_source, text=value, key=key, explicit_key=explicit_key, style=style, paint_value=paint_value)
 }
 
-text_field :: proc(ui: ^UI, value: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, loc := #caller_location) -> Node_ID {
+text_field_ex :: proc(ui: ^UI, value: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, loc := #caller_location) -> Node_ID {
 	resolved_source := resolve_source(source, "text_field", loc)
 	return emit(ui, .Text_Field, resolved_source, text=value, key=key, explicit_key=explicit_key, style=style, focusable=true)
+}
+
+button_simple :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, state := Button_State{}, loc := #caller_location) -> bool {
+	resolved_source := resolve_source(Source_Site{}, "button", loc)
+	paint_state: u64 = 0
+	if state.selected { paint_state |= 1 }
+	if state.disabled { paint_state |= 2 }
+	id := emit_key(ui, .Button, resolved_source, label=label, key=key, style=style, state_bits=paint_state, selected=state.selected, disabled=state.disabled, focusable=!state.disabled)
+	if id == 0 || state.disabled { return false }
+	if ui.runtime.activation_node == id && ui.runtime.activation_sequence > 0 {
+		if node, ok := ui.runtime.nodes[id]; ok && node.last_consumed_activation < ui.runtime.activation_sequence {
+			node.last_consumed_activation = ui.runtime.activation_sequence
+			return true
+		}
+	}
+	return false
+}
+
+text_simple :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location) -> Node_ID {
+	return emit_key(ui, .Text, resolve_source(Source_Site{}, "text", loc), text=value, key=key, style=style)
+}
+
+text_field_simple :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location) -> Node_ID {
+	return emit_key(ui, .Text_Field, resolve_source(Source_Site{}, "text_field", loc), text=value, key=key, style=style, focusable=true)
+}
+
+button :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, state := Button_State{}, loc := #caller_location) -> bool {
+	return button_simple(ui, label, key, style, state, loc)
+}
+
+text :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location) -> Node_ID {
+	return text_simple(ui, value, key, style, loc)
+}
+
+text_field :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location) -> Node_ID {
+	return text_field_simple(ui, value, key, style, loc)
 }
 
 region_begin :: proc(ui: ^UI, key: string, revision: u64, source := Source_Site{}, style := DEFAULT_STYLE, loc := #caller_location) -> (id: Node_ID, reused: bool) {
@@ -667,23 +996,17 @@ region_begin :: proc(ui: ^UI, key: string, revision: u64, source := Source_Site{
 		return id, true
 	}
 	append(&rt.stack, id)
-	append(&rt.identity_stack, id)
-	append(&rt.identity_labels, "")
-	append(&rt.identity_key_u64, 0)
-	append(&rt.identity_key_numeric, false)
+	push_identity_scope(rt, id, "", 0)
 	return id, false
 }
 
 region_end :: proc(ui: ^UI, id: Node_ID, reused: bool, start: int) {
 	if reused || id == 0 { return }
 	pop(&ui.runtime.stack)
-	pop(&ui.runtime.identity_stack)
-	pop(&ui.runtime.identity_labels)
-	pop(&ui.runtime.identity_key_u64)
-	pop(&ui.runtime.identity_key_numeric)
+	pop_identity_scope(ui.runtime)
 }
 
-region :: proc(ui: ^UI, key: string, revision: u64, source := Source_Site{}, body: proc(), style := DEFAULT_STYLE, loc := #caller_location) -> Node_ID {
+region_ex :: proc(ui: ^UI, key: string, revision: u64, source := Source_Site{}, body: proc(), style := DEFAULT_STYLE, loc := #caller_location) -> Node_ID {
 	resolved_source := resolve_source(source, "region", loc)
 	id, reused := region_begin(ui, key, revision, resolved_source, style)
 	if !reused && id != 0 {
@@ -694,12 +1017,20 @@ region :: proc(ui: ^UI, key: string, revision: u64, source := Source_Site{}, bod
 	return id
 }
 
+region_simple :: proc(ui: ^UI, key: string, revision: u64, body: proc(), style := DEFAULT_STYLE, loc := #caller_location) -> Node_ID {
+	return region_ex(ui, key, revision, Source_Site{}, body, style, loc)
+}
+
+region :: proc(ui: ^UI, key: string, revision: u64, body: proc(), style := DEFAULT_STYLE, loc := #caller_location) -> Node_ID {
+	return region_simple(ui, key, revision, body, style, loc)
+}
+
 // virtual_list requires a logical item key. Viewport position is not identity:
 // callers must return the same key for an item when it moves in the source data.
 // The fixed-height proof currently returns a visible range and does not apply
 // fractional pixel offset to row geometry; callers should treat that as an
 // explicit limitation until scroll anchoring is added.
-virtual_list :: proc(ui: ^UI, item_count: int, scroll_y, viewport_height, row_height: f32, source: Source_Site, item_key: proc(index: int) -> string, row: proc(ui: ^UI, index: int)) -> (first, last: int) {
+virtual_list_ex :: proc(ui: ^UI, item_count: int, scroll_y, viewport_height, row_height: f32, source: Source_Site, item_key: proc(index: int) -> string, row: proc(ui: ^UI, index: int)) -> (first, last: int) {
 	if item_count <= 0 || row_height <= 0 || viewport_height <= 0 {
 		return 0, 0
 	}
@@ -708,15 +1039,37 @@ virtual_list :: proc(ui: ^UI, item_count: int, scroll_y, viewport_height, row_he
 	if first >= item_count { first = item_count - 1 }
 	last = int((scroll_y + viewport_height) / row_height) + 1
 	if last > item_count { last = item_count }
-	container_begin(ui, .Virtual_List, source, label="virtual-list", style=Layout_Style{.Column, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, true})
+	container_begin_ex(ui, .Virtual_List, source, label="virtual-list", style=Layout_Style{.Column, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, true})
 	for i := first; i < last; i += 1 {
-		if key_scope_begin(ui, item_key(i), source) {
+		if key_scope_begin_ex(ui, item_key(i), source) {
 			row(ui, i)
 			key_scope_end(ui)
 		}
 	}
 	container_end(ui)
 	return
+}
+
+virtual_list_simple :: proc(ui: ^UI, item_count: int, scroll_y, viewport_height, row_height: f32, item_key: proc(index: int) -> UI_Key, row: proc(ui: ^UI, index: int), loc := #caller_location) -> (first, last: int) {
+	if item_count <= 0 || row_height <= 0 || viewport_height <= 0 { return 0, 0 }
+	first = int(scroll_y / row_height)
+	if first < 0 { first = 0 }
+	if first >= item_count { first = item_count - 1 }
+	last = int((scroll_y + viewport_height) / row_height) + 1
+	if last > item_count { last = item_count }
+	container_begin_simple(ui, .Virtual_List, label="virtual-list", style=Layout_Style{.Column, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, true}, loc=loc)
+	for i := first; i < last; i += 1 {
+		if key_scope_begin_key(ui, item_key(i), Source_Site{}, loc) {
+			row(ui, i)
+			key_scope_end(ui)
+		}
+	}
+	container_end(ui)
+	return
+}
+
+virtual_list :: proc(ui: ^UI, item_count: int, scroll_y, viewport_height, row_height: f32, item_key: proc(index: int) -> UI_Key, row: proc(ui: ^UI, index: int), loc := #caller_location) -> (first, last: int) {
+	return virtual_list_simple(ui, item_count, scroll_y, viewport_height, row_height, item_key, row, loc)
 }
 
 custom_surface :: proc(ui: ^UI, surface_key: string, frame: u64, logical_bounds: Rect, pixel_width, pixel_height: int, dpi_scale: f32, source := Source_Site{}, loc := #caller_location) -> Node_ID {
@@ -730,6 +1083,14 @@ custom_surface :: proc(ui: ^UI, surface_key: string, frame: u64, logical_bounds:
 // gpu_surface is the explicit public name for the retained surface contract;
 // custom_surface remains as the compatibility spelling used by the first
 // native fixture.
-gpu_surface :: proc(ui: ^UI, surface_key: string, revision: u64, logical_bounds: Rect, pixel_width, pixel_height: int, dpi_scale: f32, source := Source_Site{}, loc := #caller_location) -> Node_ID {
+gpu_surface_ex :: proc(ui: ^UI, surface_key: string, revision: u64, logical_bounds: Rect, pixel_width, pixel_height: int, dpi_scale: f32, source := Source_Site{}, loc := #caller_location) -> Node_ID {
 	return custom_surface(ui, surface_key, revision, logical_bounds, pixel_width, pixel_height, dpi_scale, source, loc)
+}
+
+gpu_surface_simple :: proc(ui: ^UI, surface_key: string, revision: u64, logical_bounds: Rect, pixel_width, pixel_height: int, dpi_scale: f32, loc := #caller_location) -> Node_ID {
+	return custom_surface(ui, surface_key, revision, logical_bounds, pixel_width, pixel_height, dpi_scale, Source_Site{}, loc)
+}
+
+gpu_surface :: proc(ui: ^UI, surface_key: string, revision: u64, logical_bounds: Rect, pixel_width, pixel_height: int, dpi_scale: f32, loc := #caller_location) -> Node_ID {
+	return gpu_surface_simple(ui, surface_key, revision, logical_bounds, pixel_width, pixel_height, dpi_scale, loc)
 }

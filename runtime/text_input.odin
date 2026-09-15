@@ -40,8 +40,8 @@ text_composition_range :: proc(composition: Text_Composition, value_length: int)
 	return
 }
 
-text_composition_destroy :: proc(composition: ^Text_Composition) {
-	if len(composition.text) > 0 { delete(composition.text) }
+text_composition_destroy :: proc(composition: ^Text_Composition, allocator := context.allocator) {
+	if len(composition.text) > 0 { delete(composition.text, allocator) }
 	composition^ = Text_Composition{}
 }
 
@@ -52,9 +52,9 @@ text_composition_run_destroy :: proc(node: ^Node) {
 	}
 }
 
-clear_text_composition :: proc(node: ^Node) -> bool {
+clear_text_composition :: proc(node: ^Node, allocator := context.allocator) -> bool {
 	was_active := node.composition.active || node.composition_run_valid
-	text_composition_destroy(&node.composition)
+	text_composition_destroy(&node.composition, allocator)
 	text_composition_run_destroy(node)
 	return was_active
 }
@@ -66,7 +66,7 @@ clear_text_composition :: proc(node: ^Node) -> bool {
 cancel_text_composition :: proc(rt: ^Runtime, id: Node_ID, reason := "text composition canceled") -> bool {
 	node, ok := rt.nodes[id]
 	if !ok || !node.active || node.kind != .Text_Field { return false }
-	if !clear_text_composition(node) { return false }
+	if !clear_text_composition(node, rt.persistent_allocator) { return false }
 	invalidate_interaction_paint(rt, id, reason)
 	invalidate_root(rt, reason)
 	return true
@@ -101,7 +101,7 @@ prepare_text_composition_node :: proc(rt: ^Runtime, node: ^Node) -> bool {
 	}
 	max_width := node.text_run.max_width if node.text_run_valid else node.style.width
 	value := text_composition_visual_value(node)
-	defer { if len(value) > 0 { delete(value) } }
+	defer { if len(value) > 0 { delete(value, rt.persistent_allocator) } }
 	if node.composition_run_valid &&
 		node.composition_run.font_generation == rt.text_engine.font_generation &&
 		node.composition_run.max_width == max_width &&
@@ -110,7 +110,7 @@ prepare_text_composition_node :: proc(rt: ^Runtime, node: ^Node) -> bool {
 	}
 	text_composition_run_destroy(node)
 	if !rt.text_engine.font_loaded { return false }
-	run, ok := text_run_build(&rt.text_engine, value, 16, max_width, editable=true)
+	run, ok := text_run_build(&rt.text_engine, value, 16, max_width, editable=true, allocator=rt.persistent_allocator, scratch_allocator=rt.scratch_allocator)
 	if !ok { return false }
 	node.composition_run = run
 	node.composition_run_valid = true
@@ -137,8 +137,8 @@ process_text_editing :: proc(rt: ^Runtime, id: Node_ID, text: string, start_char
 		node.composition.replace_focus = node.selection_focus
 		node.composition.active = true
 	}
-	if len(node.composition.text) > 0 { delete(node.composition.text) }
-	node.composition.text = owned(text)
+	if len(node.composition.text) > 0 { delete(node.composition.text, rt.persistent_allocator) }
+	node.composition.text = owned(text, rt.persistent_allocator)
 	if start_char < 0 {
 		node.composition.selection_start = len(text)
 		node.composition.selection_end = len(text)
@@ -167,7 +167,7 @@ process_text_input :: proc(rt: ^Runtime, id: Node_ID, text: string) -> Text_Chan
 	}
 	if len(text) == 0 && node.composition.active {
 		cancel_text_composition(rt, id, "empty committed text canceled composition")
-		return Text_Change{id, owned(node.text), false}
+		return Text_Change{id, owned(node.text, rt.persistent_allocator), false}
 	}
 	if node.composition.active {
 		replace_anchor := node.composition.replace_anchor
@@ -175,7 +175,7 @@ process_text_input :: proc(rt: ^Runtime, id: Node_ID, text: string) -> Text_Chan
 		node.selection_anchor = replace_anchor
 		node.selection_focus = replace_focus
 		change := process_text_edit(rt, id, Text_Edit{.Insert, text})
-		if clear_text_composition(node) {
+		if clear_text_composition(node, rt.persistent_allocator) {
 			invalidate_interaction_paint(rt, id, "text composition committed")
 			invalidate_root(rt, "text composition committed")
 		}

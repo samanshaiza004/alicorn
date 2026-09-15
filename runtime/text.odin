@@ -1,3 +1,4 @@
+#+vet explicit-allocators
 package alicorn
 
 import "core:mem"
@@ -9,6 +10,7 @@ import runa "../third_party/Runa"
 // rasterization. Runa is the foundation provider; its atlas remains behind
 // this GUI-facing abstraction.
 Text_Engine :: struct {
+	allocator:      mem.Allocator,
 	name:          string,
 	available:     bool,
 	shaped_runs:   u64,
@@ -115,22 +117,23 @@ Text_Run :: struct {
 	allocator:      mem.Allocator,
 }
 
-new_text_engine :: proc(name := "unconfigured", available := false) -> Text_Engine {
+new_text_engine :: proc(name := "unconfigured", available := false, allocator := context.allocator) -> Text_Engine {
 	return Text_Engine{
-		name=owned(name), available=available,
-		cache=runa.cache_make(), cache_initialized=true,
-		atlas=runa.atlas_make(1024, 1024), atlas_initialized=true,
-		glyphs=make(map[Glyph_Resource_Key]runa.Atlas_Slot),
+		allocator=allocator,
+		name=owned_with_allocator(name, allocator), available=available,
+		cache=runa.cache_make(allocator), cache_initialized=true,
+		atlas=runa.atlas_make(1024, 1024, allocator), atlas_initialized=true,
+		glyphs=make(map[Glyph_Resource_Key]runa.Atlas_Slot, allocator=allocator),
 	}
 }
 
 text_engine_load_font :: proc(engine: ^Text_Engine, data: []u8) -> bool {
 	if len(data) == 0 { return false }
-	copy_data := make([]u8, len(data))
+	copy_data := make([]u8, len(data), engine.allocator)
 	copy(copy_data, data)
-	font, err := runa.font_load(copy_data)
+	font, err := runa.font_load(copy_data, engine.allocator)
 	if err != .None {
-		delete(copy_data)
+		delete(copy_data, engine.allocator)
 		return false
 	}
 	if engine.cache_initialized {
@@ -144,15 +147,15 @@ text_engine_load_font :: proc(engine: ^Text_Engine, data: []u8) -> bool {
 	}
 	if engine.font_loaded {
 		runa.font_destroy(&engine.font)
-		delete(engine.font_data)
+		delete(engine.font_data, engine.allocator)
 	}
 	engine.font_data = copy_data
 	engine.font = font
-	engine.cache = runa.cache_make()
+	engine.cache = runa.cache_make(engine.allocator)
 	engine.cache_initialized = true
-	engine.atlas = runa.atlas_make(1024, 1024)
+	engine.atlas = runa.atlas_make(1024, 1024, engine.allocator)
 	engine.atlas_initialized = true
-	engine.glyphs = make(map[Glyph_Resource_Key]runa.Atlas_Slot)
+	engine.glyphs = make(map[Glyph_Resource_Key]runa.Atlas_Slot, allocator=engine.allocator)
 	engine.font_generation += 1
 	engine.font_loaded = true
 	engine.available = true
@@ -172,8 +175,8 @@ text_engine_destroy :: proc(engine: ^Text_Engine) {
 	if engine.font_loaded {
 		runa.font_destroy(&engine.font)
 	}
-	delete(engine.font_data)
-	if len(engine.name) > 0 { delete(engine.name) }
+	delete(engine.font_data, engine.allocator)
+	if len(engine.name) > 0 { delete(engine.name, engine.allocator) }
 	engine^ = {}
 }
 
@@ -194,7 +197,7 @@ text_engine_glyph :: proc(engine: ^Text_Engine, glyph_id: runa.Glyph_ID, size: f
 	}
 	engine.glyph_cache_misses += 1
 	err: runa.Error
-	slot, err = runa.raster_glyph(&engine.font, glyph_id, size, key.subpixel_bucket, &engine.atlas, hint=hint)
+	slot, err = runa.raster_glyph(&engine.font, glyph_id, size, key.subpixel_bucket, &engine.atlas, allocator=engine.allocator, hint=hint)
 	if err != .None { return runa.Atlas_Slot{}, false, false }
 	engine.glyphs[key] = slot
 	engine.glyph_rasterizations += 1
@@ -209,7 +212,7 @@ text_run_destroy :: proc(run: ^Text_Run) {
 		delete(run.glyphs)
 		delete(run.lines)
 	} else {
-		if len(run.value) > 0 { delete(run.value) }
+		if len(run.value) > 0 { delete(run.value, context.allocator) }
 		delete(run.glyphs)
 		delete(run.lines)
 	}
@@ -240,7 +243,7 @@ text_min_int :: proc(a, b: int) -> int {
 // size. Physical glyph rasterization is deliberately deferred to the native
 // renderer so a window can move between DPI scales without changing logical
 // layout.
-text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, editable: bool = false, allocator := context.allocator) -> (run: Text_Run, ok: bool) {
+text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, editable: bool = false, allocator := context.allocator, scratch_allocator := context.temp_allocator) -> (run: Text_Run, ok: bool) {
 	if !engine.font_loaded || size <= 0 { return }
 	stack := runa.Font_Stack{&engine.font}
 	disable_features: bit_set[runa.Feature] = {}
@@ -251,7 +254,10 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 		disable_features = {.Ligatures, .Contextual_Ligatures, .Contextual_Alternates}
 	}
 	opts := runa.Paragraph_Opts{fonts=stack, size=size, direction=.Auto, align=.Start, max_width=max_width, disable_features=disable_features}
+	previous_temp_allocator := context.temp_allocator
+	context.temp_allocator = scratch_allocator
 	lines, err := runa.layout_paragraph(value, opts, &engine.cache, allocator=allocator)
+	context.temp_allocator = previous_temp_allocator
 	if err != .None { return }
 	defer {
 		for i := 0; i < len(lines); i += 1 { runa.line_destroy(&lines[i], allocator) }
@@ -271,7 +277,7 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 	// cluster. The next distinct shaped cluster therefore defines its source
 	// range; this is more useful for caret/selection geometry than assuming
 	// that every glyph maps one-to-one to a grapheme.
-	cluster_starts := make([dynamic]int, 0, 32, context.temp_allocator)
+	cluster_starts := make([dynamic]int, 0, 32, scratch_allocator)
 	for line in lines {
 		for glyph in line.glyphs {
 			start := int(glyph.cluster)
@@ -388,7 +394,7 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 		return false
 	}
 	if node.text_run_valid { text_run_destroy(&node.text_run) }
-	run, built := text_run_build(&rt.text_engine, text_value, 16, requested_width, editable=node.kind == .Text_Field)
+	run, built := text_run_build(&rt.text_engine, text_value, 16, requested_width, editable=node.kind == .Text_Field, allocator=rt.persistent_allocator, scratch_allocator=rt.scratch_allocator)
 	if built {
 		node.text_run = run
 		node.text_run_valid = true
@@ -704,11 +710,11 @@ text_layout :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f
 	if !engine.font_loaded || size <= 0 { return }
 	stack := runa.Font_Stack{&engine.font}
 	opts := runa.Paragraph_Opts{fonts=stack, size=size, direction=.Auto, align=.Start, max_width=max_width}
-	lines, err := runa.layout_paragraph(value, opts, &engine.cache)
+	lines, err := runa.layout_paragraph(value, opts, &engine.cache, allocator=engine.allocator)
 	if err != .None { return }
 	defer {
-		for i := 0; i < len(lines); i += 1 { runa.line_destroy(&lines[i]) }
-		delete(lines)
+		for i := 0; i < len(lines); i += 1 { runa.line_destroy(&lines[i], engine.allocator) }
+		delete(lines, engine.allocator)
 	}
 	for line in lines {
 		if line.width > width { width = line.width }

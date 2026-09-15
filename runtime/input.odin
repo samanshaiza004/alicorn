@@ -5,7 +5,7 @@ import "core:fmt"
 hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
 		id := rt.order[i]
-		if node, ok := rt.nodes[id]; ok && node.active && rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
+		if node, ok := rt.nodes[id]; ok && node.active && !node.disabled && rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
 			if node.kind == .Button || node.kind == .Text_Field || node.kind == .Custom_Surface {
 				return id
 			}
@@ -24,7 +24,7 @@ focus :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 		return true
 	}
 	if previous != 0 {
-		if old, old_ok := rt.nodes[previous]; old_ok && clear_text_composition(old) {
+		if old, old_ok := rt.nodes[previous]; old_ok && clear_text_composition(old, rt.persistent_allocator) {
 			invalidate_interaction_paint(rt, previous, "text composition canceled on focus loss")
 		}
 	}
@@ -90,7 +90,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 				// Pointer placement is an explicit cancellation boundary for a
 				// platform preedit. The next hit test must use committed text
 				// geometry, not the temporary composition projection.
-				if node.kind == .Text_Field && clear_text_composition(node) {
+				if node.kind == .Text_Field && clear_text_composition(node, rt.persistent_allocator) {
 					invalidate_interaction_paint(rt, node.id, "text composition canceled by pointer")
 				}
 				node.pressed = true
@@ -137,12 +137,12 @@ invalidate_text_product :: proc(rt: ^Runtime, node: ^Node, reason := "retained t
 		node.text_run_generation += 1
 	}
 	text_composition_run_destroy(node)
-	node.dirty.layout = true
-	node.dirty.paint = true
-	node.dirty.composite = true
+	dirty_set(&node.dirty, .Layout, true)
+	dirty_set(&node.dirty, .Paint, true)
+	dirty_set(&node.dirty, .Composite, true)
 	mark_layout_ancestors(rt, node.id)
-	if len(node.last_reason) > 0 { delete(node.last_reason) }
-	node.last_reason = owned(reason)
+	if len(node.last_reason) > 0 { delete(node.last_reason, rt.persistent_allocator) }
+	node.last_reason = owned(reason, rt.persistent_allocator)
 	queue_paint(rt, node.id)
 }
 
@@ -190,14 +190,14 @@ process_text_edit :: proc(rt: ^Runtime, id: Node_ID, edit: Text_Edit) -> Text_Ch
 	} else if start != end || edit.kind == .Insert {
 		old_text := node.text
 		node.text = fmt.aprintf("%s%s%s", old_text[:start], edit.text, old_text[end:])
-		if len(old_text) > 0 { delete(old_text) }
+		if len(old_text) > 0 { delete(old_text, rt.persistent_allocator) }
 		node.caret = Text_Position{start + len(edit.text), .Leading}
 		node.selection_anchor = node.caret
 		node.selection_focus = node.caret
 		change.changed = start != end || len(edit.text) > 0
 		invalidate_text_product(rt, node, "runtime text value changed")
 	}
-	change.text = owned(node.text)
+	change.text = owned(node.text, rt.persistent_allocator)
 	if change.changed {
 		invalidate_interaction_paint(rt, node.id, "text edit caret changed")
 		invalidate_root(rt, "text edit")
