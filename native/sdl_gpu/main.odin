@@ -245,6 +245,154 @@ adopt_text_change :: proc(app_text: ^string, change: alicorn.Text_Change) {
 	}
 }
 
+native_dispatch_text_change :: proc(
+	app_text: ^string,
+	application: ^Application,
+	rt: ^alicorn.Runtime,
+	change: alicorn.Text_Change,
+	telemetry: ^Native_Text_Event_Telemetry = nil,
+) {
+	if telemetry != nil {
+		telemetry.text_change_dispatches += 1
+		if change.changed { telemetry.text_changes += 1 }
+	}
+	if application != nil {
+		if application.on_text_change != nil {
+			// The callback owns the returned text, just as it did for committed
+			// TEXT_INPUT before keyboard edits shared this dispatch path.
+			application.on_text_change(application.state, rt, change)
+		} else if len(change.text) > 0 {
+			delete(change.text, rt.persistent_allocator)
+		}
+	} else {
+		adopt_text_change(app_text, change)
+	}
+}
+
+native_text_modifier :: proc(mod: sdl3.Keymod, mask: sdl3.Keymod) -> bool {
+	return (mod & mask) != sdl3.Keymod{}
+}
+
+native_text_primary_modifier :: proc(mod: sdl3.Keymod) -> bool {
+	when ODIN_OS == .Darwin {
+		return native_text_modifier(mod, sdl3.KMOD_GUI)
+	} else {
+		return native_text_modifier(mod, sdl3.KMOD_CTRL)
+	}
+}
+
+native_text_word_modifier :: proc(mod: sdl3.Keymod) -> bool {
+	when ODIN_OS == .Darwin {
+		return native_text_modifier(mod, sdl3.KMOD_ALT)
+	} else {
+		return native_text_modifier(mod, sdl3.KMOD_CTRL)
+	}
+}
+
+native_text_line_modifier :: proc(mod: sdl3.Keymod) -> bool {
+	when ODIN_OS == .Darwin {
+		return native_text_modifier(mod, sdl3.KMOD_GUI)
+	} else {
+		return false
+	}
+}
+
+native_text_apply_key_edit :: proc(
+	rt: ^alicorn.Runtime,
+	node: alicorn.Node_ID,
+	kind: alicorn.Text_Edit_Kind,
+	word: bool,
+	app_text: ^string,
+	application: ^Application,
+	telemetry: ^Native_Text_Event_Telemetry = nil,
+) -> bool {
+	field, ok := rt.nodes[node]
+	if !ok || !field.active || field.kind != .Text_Field || field.composition.active { return false }
+	if telemetry != nil { telemetry.text_edit_key_events += 1 }
+	command: alicorn.Text_Command = .Delete_Backward if kind == .Backspace else .Delete_Forward
+	if word {
+		command = .Delete_Word_Backward if kind == .Backspace else .Delete_Word_Forward
+	}
+	change := alicorn.process_text_command(rt, node, command)
+	native_dispatch_text_change(app_text, application, rt, change, telemetry)
+	return true
+}
+
+native_text_apply_key_navigation :: proc(
+	rt: ^alicorn.Runtime,
+	node: alicorn.Node_ID,
+	key: sdl3.Keycode,
+	mod: sdl3.Keymod,
+	telemetry: ^Native_Text_Event_Telemetry = nil,
+) -> bool {
+	field, ok := rt.nodes[node]
+	if !ok || !field.active || field.kind != .Text_Field || field.composition.active { return false }
+	shift := native_text_modifier(mod, sdl3.KMOD_SHIFT)
+	primary := native_text_primary_modifier(mod)
+	word := native_text_word_modifier(mod)
+	line := native_text_line_modifier(mod)
+	selection_nonempty := field.selection_anchor.byte != field.selection_focus.byte
+	target := field.caret.byte
+	handled := true
+	switch key {
+	case sdl3.K_LEFT, sdl3.K_RIGHT:
+		direction := -1 if key == sdl3.K_LEFT else 1
+		if !shift && selection_nonempty {
+			target = field.selection_anchor.byte if direction < 0 else field.selection_focus.byte
+			if field.selection_anchor.byte > field.selection_focus.byte {
+				target = field.selection_focus.byte if direction < 0 else field.selection_anchor.byte
+			}
+		} else if line {
+			target = 0 if direction < 0 else len(field.text)
+			_ = alicorn.set_text_caret(rt, node, target)
+			if telemetry != nil { telemetry.text_navigation_key_events += 1 }
+			return true
+		} else if !shift {
+			command: alicorn.Text_Command = .Move_Left if direction < 0 else .Move_Right
+			if word { command = .Move_Word_Left if direction < 0 else .Move_Word_Right }
+			_ = alicorn.process_text_command(rt, node, command)
+			if telemetry != nil {
+				telemetry.text_navigation_key_events += 1
+				if word { telemetry.text_word_key_events += 1 }
+			}
+			return true
+		} else if line {
+			target = 0 if direction < 0 else len(field.text)
+		} else if word {
+			position := alicorn.text_move_word(field.text, alicorn.Text_Position{target, .Leading}, direction)
+			target = position.byte
+		} else {
+			position := alicorn.text_move_logical(field.text, alicorn.Text_Position{target, .Leading}, direction)
+			target = position.byte
+		}
+	case sdl3.K_HOME:
+		target = 0
+	case sdl3.K_END:
+		target = len(field.text)
+	case sdl3.K_A:
+		if !primary { handled = false }
+		if handled {
+			_ = alicorn.set_text_selection(rt, node, 0, len(field.text))
+			if telemetry != nil { telemetry.text_selection_key_events += 1 }
+			return true
+		}
+	case:
+		handled = false
+	}
+	if !handled { return false }
+	if shift {
+		_ = alicorn.set_text_selection(rt, node, field.selection_anchor.byte, target)
+		if telemetry != nil { telemetry.text_selection_key_events += 1 }
+	} else {
+		_ = alicorn.set_text_caret(rt, node, target)
+	}
+	if telemetry != nil {
+		telemetry.text_navigation_key_events += 1
+		if word { telemetry.text_word_key_events += 1 }
+	}
+	return true
+}
+
 pump_events :: proc(
 	window: ^sdl3.Window,
 	rt: ^alicorn.Runtime,
@@ -257,6 +405,7 @@ pump_events :: proc(
 	application: ^Application = nil,
 	diagnostics_capture_requested: ^bool = nil,
 	debug_bounds: ^bool = nil,
+	telemetry: ^Native_Text_Event_Telemetry = nil,
 ) {
 	event: sdl3.Event
 	when ODIN_OS == .Darwin {
@@ -312,19 +461,14 @@ pump_events :: proc(
 				}
 			} else if node, ok := rt.nodes[rt.focused]; ok && node.active && node.kind == .Text_Field && !node.composition.active {
 				handled := true
+				word_modifier := native_text_word_modifier(event.key.mod)
 				switch event.key.key {
 				case sdl3.K_BACKSPACE:
-					adopt_text_change(app_text, alicorn.process_text_edit(rt, rt.focused, alicorn.Text_Edit{.Backspace, ""}))
+					native_text_apply_key_edit(rt, rt.focused, .Backspace, word_modifier, app_text, application, telemetry)
 				case sdl3.K_DELETE:
-					adopt_text_change(app_text, alicorn.process_text_edit(rt, rt.focused, alicorn.Text_Edit{.Delete, ""}))
-				case sdl3.K_LEFT:
-					position := alicorn.text_move_logical(node.text, node.caret, -1)
-					_ = alicorn.set_text_caret(rt, rt.focused, position.byte)
-				case sdl3.K_RIGHT:
-					position := alicorn.text_move_logical(node.text, node.caret, 1)
-					_ = alicorn.set_text_caret(rt, rt.focused, position.byte)
+					native_text_apply_key_edit(rt, rt.focused, .Delete, word_modifier, app_text, application, telemetry)
 				case:
-					handled = false
+					handled = native_text_apply_key_navigation(rt, rt.focused, event.key.key, event.key.mod, telemetry)
 				}
 				if manual_log && handled {
 					fmt.println("alicorn_key_handled", "key", event.key.key, "text", app_text^)
@@ -386,15 +530,7 @@ pump_events :: proc(
 			}
 			if event.text.text != nil {
 				change := alicorn.process_text_input(rt, rt.focused, string(event.text.text))
-				if application != nil {
-					if application.on_text_change != nil {
-						application.on_text_change(application.state, rt, change)
-					} else if len(change.text) > 0 {
-						delete(change.text)
-					}
-				} else {
-					adopt_text_change(app_text, change)
-				}
+				native_dispatch_text_change(app_text, application, rt, change, telemetry)
 				if manual_log && application == nil { fmt.println("alicorn_after_TEXT_INPUT", "text", app_text^) }
 			}
 		case .TEXT_EDITING:
@@ -810,6 +946,7 @@ run_application_loop :: proc(
 	scale_events := 0
 	text_input_events := 0
 	composition_events := 0
+	text_events := Native_Text_Event_Telemetry{}
 	text_input_active := false
 	text_input_owner: alicorn.Node_ID = 0
 	in_flight: [dynamic; 3]Native_In_Flight
@@ -843,6 +980,7 @@ run_application_loop :: proc(
 			application=&application_instance,
 			diagnostics_capture_requested=&diagnostics.capture_requested,
 			debug_bounds=&debug_bounds,
+			telemetry=&text_events,
 		)
 		timing.event_pump_ns += u64(time.duration_nanoseconds(time.since(event_start)))
 		if quit_requested { break }
@@ -935,7 +1073,7 @@ run_application_loop :: proc(
 			sdl3.Delay(1)
 		}
 		native_timing_add_frame(&timing, u64(time.duration_nanoseconds(time.since(frame_start))))
-		if native_write_diagnostics(&diagnostics, start, gpu_driver, metrics^, rt, text_renderer, surface_renderer, solid_renderer, &timing) {
+		if native_write_diagnostics(&diagnostics, start, gpu_driver, metrics^, rt, text_renderer, surface_renderer, solid_renderer, &timing, &text_events) {
 			screenshot_path := fmt.tprintf("%s/screenshot.ppm", diagnostics.capture_dir)
 			if native_capture_display_ppm(
 				device, text_renderer, surface_renderer, solid_renderer, rt.display[:],
@@ -974,6 +1112,15 @@ run_application_loop :: proc(
 		"scale_events", scale_events,
 		"text_input_events", text_input_events,
 		"composition_events", composition_events,
+		"text_change_dispatches", text_events.text_change_dispatches,
+		"text_changes", text_events.text_changes,
+		"text_edit_key_events", text_events.text_edit_key_events,
+		"text_navigation_key_events", text_events.text_navigation_key_events,
+		"text_selection_key_events", text_events.text_selection_key_events,
+		"text_word_key_events", text_events.text_word_key_events,
+		"text_mesh_rebuilds", text_renderer.mesh_rebuilds,
+		"text_mesh_cache_hits", text_renderer.mesh_cache_hits,
+		"text_vertex_uploads", text_renderer.vertex_uploads,
 		"frame_p95_ns", native_timing_percentile(timing.frame_samples[:], 0.95),
 		"gpu_encode_ns", timing.gpu_encode_ns,
 		"gpu_submit_ns", timing.gpu_submit_ns,

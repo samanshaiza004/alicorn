@@ -3,6 +3,8 @@ package alicorn
 
 import "core:mem"
 import "core:strings"
+import "core:unicode"
+import "core:unicode/utf8"
 import runa "../third_party/Runa"
 
 // Text_Engine is intentionally a narrow seam. The runtime owns GUI concerns
@@ -79,6 +81,20 @@ Text_Affinity :: enum {
 Text_Position :: struct {
 	byte:     int,
 	affinity: Text_Affinity,
+}
+
+// Text_Command is the platform-neutral editing vocabulary. Hosts translate
+// their key and modifier events into these semantic operations; the runtime
+// owns the word and grapheme rules behind them.
+Text_Command :: enum {
+	Move_Left,
+	Move_Right,
+	Move_Word_Left,
+	Move_Word_Right,
+	Delete_Backward,
+	Delete_Forward,
+	Delete_Word_Backward,
+	Delete_Word_Forward,
 }
 
 Text_Caret_Geometry :: struct {
@@ -654,7 +670,9 @@ text_run_selection_rects :: proc(run: ^Text_Run, start, end: Text_Position, allo
 }
 
 text_move_logical :: proc(value: string, position: Text_Position, delta: int) -> Text_Position {
-	byte := position.byte
+	normalized := Text_Position{grapheme_floor_boundary(value, position.byte), position.affinity}
+	if delta == 0 { return normalized }
+	byte := normalized.byte
 	steps := delta
 	if steps < 0 {
 		for steps < 0 {
@@ -666,6 +684,97 @@ text_move_logical :: proc(value: string, position: Text_Position, delta: int) ->
 			byte = grapheme_ceil_boundary(value, byte+1)
 			steps -= 1
 		}
+	}
+	return Text_Position{grapheme_floor_boundary(value, byte), .Leading}
+}
+
+text_word_range :: struct {
+	start, end: int,
+}
+
+// text_word_ranges uses Runa's UAX #29 word iterator rather than code-point
+// heuristics. Runa emits separator runs as ranges too, which lets command
+// movement skip punctuation and whitespace while retaining Unicode behavior.
+text_word_ranges :: proc(value: string) -> [dynamic]text_word_range {
+	ranges := make([dynamic]text_word_range, 0, 16, context.temp_allocator)
+	it := runa.word_iter_make(value)
+	for {
+		start, end, ok := runa.word_iter_next(&it)
+		if !ok { break }
+		append(&ranges, text_word_range{start, end})
+	}
+	return ranges
+}
+
+// Runa intentionally returns every UAX word segment, including whitespace
+// and punctuation. Those non-word segments are separators for editor-style
+// Ctrl+arrow semantics. The ASCII test covers the host keyboard vocabulary;
+// non-ASCII segments remain word-like so scripts, combining text, and emoji
+// are never split by a byte-level shortcut.
+text_word_range_is_separator :: proc(value: string, range: text_word_range) -> bool {
+	if range.end <= range.start { return true }
+	for i := range.start; i < range.end; {
+		r, size := utf8.decode_rune_in_string(value[i:])
+		if size <= 0 { return true }
+		if unicode.is_letter(r) || unicode.is_digit(r) || unicode.is_combining(r) || r == '_' {
+			return false
+		}
+		if !unicode.is_space(r) && !unicode.is_punct(r) && r >= 0x80 && !unicode.is_control(r) {
+			// Keep non-ASCII symbols (notably emoji) as navigable word
+			// units; Runa's grapheme iterator still protects their extent.
+			return false
+		}
+		i += size
+	}
+	return true
+}
+
+text_move_word :: proc(value: string, position: Text_Position, delta: int) -> Text_Position {
+	normalized := Text_Position{grapheme_floor_boundary(value, position.byte), position.affinity}
+	if delta == 0 || len(value) == 0 { return normalized }
+	ranges := text_word_ranges(value)
+	byte := normalized.byte
+	steps := delta
+	for steps < 0 {
+		if byte <= 0 { break }
+		candidate := -1
+		for range, i in ranges {
+			if byte <= range.start { break }
+			candidate = i
+			if byte <= range.end { break }
+		}
+		if candidate < 0 { byte = 0; break }
+		// Ctrl/Option-Left lands at the beginning of the current word when
+		// the caret is inside it or at its trailing edge. At a word's
+		// leading edge, it skips separators and lands at the prior word.
+		if byte == ranges[candidate].start { candidate -= 1 }
+		for candidate >= 0 && text_word_range_is_separator(value, ranges[candidate]) {
+			candidate -= 1
+		}
+		byte = 0 if candidate < 0 else ranges[candidate].start
+		steps += 1
+	}
+	for steps > 0 {
+		if byte >= len(value) { break }
+		candidate := -1
+		for range, i in ranges {
+			if byte < range.end {
+				candidate = i
+				break
+			}
+		}
+		if candidate < 0 { byte = len(value); break }
+		// Ctrl/Option-Right lands at the beginning of the next word. Skip
+		// the current word (or the separator containing the caret), then
+		// skip all separator ranges before the next word.
+		if !text_word_range_is_separator(value, ranges[candidate]) {
+			candidate += 1
+		}
+		for candidate < len(ranges) && text_word_range_is_separator(value, ranges[candidate]) {
+			candidate += 1
+		}
+		byte = len(value) if candidate >= len(ranges) else ranges[candidate].start
+		steps -= 1
 	}
 	return Text_Position{grapheme_floor_boundary(value, byte), .Leading}
 }

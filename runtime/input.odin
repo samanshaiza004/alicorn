@@ -1,6 +1,7 @@
 package alicorn
 
-import "core:fmt"
+import "core:mem"
+import "core:strings"
 
 hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
@@ -148,6 +149,15 @@ invalidate_text_product :: proc(rt: ^Runtime, node: ^Node, reason := "retained t
 	queue_paint(rt, node.id)
 }
 
+text_replace_owned :: proc(value, insert: string, start, end: int, allocator: mem.Allocator) -> string {
+	result_length := len(value) - (end-start) + len(insert)
+	builder := strings.builder_make(0, result_length, allocator)
+	strings.write_string(&builder, value[:start])
+	strings.write_string(&builder, insert)
+	strings.write_string(&builder, value[end:])
+	return strings.to_string(builder)
+}
+
 process_text_edit :: proc(rt: ^Runtime, id: Node_ID, edit: Text_Edit) -> Text_Change {
 	change := Text_Change{id, "", false}
 	node, ok := rt.nodes[id]
@@ -187,13 +197,13 @@ process_text_edit :: proc(rt: ^Runtime, id: Node_ID, edit: Text_Edit) -> Text_Ch
 		node.selection_focus = node.caret
 		if caret_changed {
 			invalidate_interaction_paint(rt, node.id, "empty text edit normalized caret")
-			invalidate_root(rt, "empty text edit normalized caret")
 		}
 	} else if start != end || edit.kind == .Insert {
 		old_text := node.text
-		node.text = fmt.aprintf("%s%s%s", old_text[:start], edit.text, old_text[end:])
+		node.text = text_replace_owned(old_text, edit.text, start, end, rt.persistent_allocator)
 		if len(old_text) > 0 { delete(old_text, rt.persistent_allocator) }
-		node.caret = Text_Position{start + len(edit.text), .Leading}
+		caret := grapheme_ceil_boundary(node.text, start+len(edit.text))
+		node.caret = Text_Position{caret, .Leading}
 		node.selection_anchor = node.caret
 		node.selection_focus = node.caret
 		change.changed = start != end || len(edit.text) > 0
@@ -211,32 +221,94 @@ process_text_edit :: proc(rt: ^Runtime, id: Node_ID, edit: Text_Edit) -> Text_Ch
 // byte offsets are normalized to Runa's UAX #29 grapheme boundaries before
 // they are retained, so callers cannot create a caret in the middle of UTF-8
 // or an extended grapheme cluster.
-set_text_caret :: proc(rt: ^Runtime, id: Node_ID, byte_index: int) -> bool {
+set_text_position :: proc(rt: ^Runtime, id: Node_ID, position: Text_Position) -> bool {
 	node, ok := rt.nodes[id]
 	if !ok || !node.active || node.kind != .Text_Field { return false }
-	caret := grapheme_floor_boundary(node.text, byte_index)
-	node.caret = Text_Position{caret, .Leading}
-	node.selection_anchor = node.caret
-	node.selection_focus = node.caret
-	invalidate_interaction_paint(rt, id, "text caret changed")
-	invalidate_root(rt, "text caret changed")
+	caret := grapheme_floor_boundary(node.text, position.byte)
+	next := Text_Position{caret, position.affinity}
+	changed := node.caret != next || node.selection_anchor != next || node.selection_focus != next
+	node.caret = next
+	node.selection_anchor = next
+	node.selection_focus = next
+	if changed {
+		invalidate_interaction_paint(rt, id, "text caret changed")
+	}
 	return true
+}
+
+set_text_caret :: proc(rt: ^Runtime, id: Node_ID, byte_index: int) -> bool {
+	return set_text_position(rt, id, Text_Position{byte_index, .Leading})
 }
 
 set_text_selection :: proc(rt: ^Runtime, id: Node_ID, start, end: int) -> bool {
 	node, ok := rt.nodes[id]
 	if !ok || !node.active || node.kind != .Text_Field { return false }
+	anchor: Text_Position
+	focus_position: Text_Position
 	if start <= end {
-		node.selection_anchor = Text_Position{grapheme_floor_boundary(node.text, start), .Leading}
-		node.selection_focus = Text_Position{grapheme_ceil_boundary(node.text, end), .Trailing}
+		anchor = Text_Position{grapheme_floor_boundary(node.text, start), .Leading}
+		focus_position = Text_Position{grapheme_ceil_boundary(node.text, end), .Trailing}
 	} else {
-		node.selection_anchor = Text_Position{grapheme_ceil_boundary(node.text, start), .Trailing}
-		node.selection_focus = Text_Position{grapheme_floor_boundary(node.text, end), .Leading}
+		anchor = Text_Position{grapheme_ceil_boundary(node.text, start), .Trailing}
+		focus_position = Text_Position{grapheme_floor_boundary(node.text, end), .Leading}
 	}
-	node.caret = node.selection_focus
-	invalidate_interaction_paint(rt, id, "text selection changed")
-	invalidate_root(rt, "text selection changed")
+	changed := node.selection_anchor != anchor || node.selection_focus != focus_position || node.caret != focus_position
+	node.selection_anchor = anchor
+	node.selection_focus = focus_position
+	node.caret = focus_position
+	if changed {
+		invalidate_interaction_paint(rt, id, "text selection changed")
+	}
 	return true
+}
+
+// process_text_command is the platform-neutral command boundary. It keeps
+// host key maps out of the runtime while making word behavior identical on
+// every platform. Movement changes only retained interaction presentation;
+// deletion delegates to the existing edit path so application text changes
+// keep the established Text_Change contract.
+process_text_command :: proc(rt: ^Runtime, id: Node_ID, command: Text_Command) -> Text_Change {
+	change := Text_Change{id, "", false}
+	node, ok := rt.nodes[id]
+	if !ok || !node.active || node.kind != .Text_Field || !focus(rt, id) {
+		return change
+	}
+
+	switch command {
+	case .Move_Left:
+		position := text_move_logical(node.text, node.caret, -1)
+		_ = set_text_position(rt, id, position)
+	case .Move_Right:
+		position := text_move_logical(node.text, node.caret, 1)
+		_ = set_text_position(rt, id, position)
+	case .Move_Word_Left:
+		position := text_move_word(node.text, node.caret, -1)
+		_ = set_text_position(rt, id, position)
+	case .Move_Word_Right:
+		position := text_move_word(node.text, node.caret, 1)
+		_ = set_text_position(rt, id, position)
+	case .Delete_Backward:
+		return process_text_edit(rt, id, Text_Edit{.Backspace, ""})
+	case .Delete_Forward:
+		return process_text_edit(rt, id, Text_Edit{.Delete, ""})
+	case .Delete_Word_Backward, .Delete_Word_Forward:
+		if node.selection_anchor.byte != node.selection_focus.byte {
+			return process_text_edit(rt, id, Text_Edit{.Backspace, ""})
+		}
+		caret := grapheme_floor_boundary(node.text, node.caret.byte)
+		start, end := caret, caret
+		if command == .Delete_Word_Backward {
+			start = text_move_word(node.text, Text_Position{caret, node.caret.affinity}, -1).byte
+		} else {
+			end = text_move_word(node.text, Text_Position{caret, node.caret.affinity}, 1).byte
+		}
+		if start != end {
+			node.selection_anchor = Text_Position{start, .Leading}
+			node.selection_focus = Text_Position{end, .Trailing}
+			return process_text_edit(rt, id, Text_Edit{.Delete, ""})
+		}
+	}
+	return change
 }
 
 text_field_caret_geometry :: proc(rt: ^Runtime, id: Node_ID) -> Text_Caret_Geometry {

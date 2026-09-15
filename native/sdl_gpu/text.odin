@@ -55,6 +55,10 @@ Native_Text_Renderer :: struct {
 	mesh_fingerprint: u64,
 	atlas_uploads: u64,
 	atlas_upload_bytes: u64,
+	mesh_rebuilds: u64,
+	mesh_cache_hits: u64,
+	mesh_text_commands: u64,
+	vertex_uploads: u64,
 }
 
 native_shader_supported :: proc(supported: sdl3.GPUShaderFormat, format: sdl3.GPUShaderFormat) -> bool {
@@ -245,17 +249,18 @@ native_text_snap_y :: proc(physical_y: f32) -> f32 {
 	return math.floor(physical_y + 0.5)
 }
 
-// The mesh fingerprint includes the complete ordered display state that can
-// affect text pixels. This deliberately catches removal, reorder, color,
-// bounds, clip and DPI changes; a later compositor generation can replace the
-// scan without changing the invalidation contract.
+// The mesh fingerprint includes only the ordered display state that can affect
+// text pixels. Solid and surface commands are intentionally excluded: their
+// changes must not invalidate the retained text vertex mesh.
 native_text_mesh_fingerprint :: proc(display: []alicorn.Display_Command, scale_x, scale_y: f32) -> u64 {
 	h: u64 = 1469598103934665603
-	h = native_text_hash_mix(h, u64(len(display)))
 	h = native_text_hash_mix(h, u64(transmute(u32)scale_x))
 	h = native_text_hash_mix(h, u64(transmute(u32)scale_y))
-	for command, index in display {
-		h = native_text_hash_mix(h, u64(index))
+	text_index: u64 = 0
+	for command in display {
+		if !native_text_is_text(command.kind) { continue }
+		h = native_text_hash_mix(h, text_index)
+		text_index += 1
 		h = native_text_hash_mix(h, u64(command.node))
 		h = native_text_hash_mix(h, u64(command.kind))
 		h = native_text_hash_rect(h, command.bounds)
@@ -263,13 +268,16 @@ native_text_mesh_fingerprint :: proc(display: []alicorn.Display_Command, scale_x
 		h = native_text_hash_color(h, command.color)
 		h = native_text_hash_mix(h, native_text_hash_string(command.text))
 	}
+	h = native_text_hash_mix(h, text_index)
 	return h
 }
 
 native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []alicorn.Display_Command, scale_x, scale_y: f32) -> bool {
 	fingerprint := native_text_mesh_fingerprint(display, scale_x, scale_y)
+	text_command_count: u64 = 0
 	for command in display {
 		if !native_text_is_text(command.kind) { continue }
+		text_command_count += 1
 		if node, found := renderer.runtime.nodes[command.node]; found {
 			generation := node.text_run_generation
 			if command.kind == .Text_Composition { generation = node.composition_run_generation }
@@ -280,7 +288,12 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 	// the retained run's atlas slots. Include the runtime text generation so a
 	// same-string font swap cannot leave old vertices resident.
 	fingerprint = native_text_hash_mix(fingerprint, renderer.runtime.text_engine.font_generation)
-	if renderer.mesh_valid && renderer.mesh_fingerprint == fingerprint { return true }
+	renderer.mesh_text_commands = text_command_count
+	if renderer.mesh_valid && renderer.mesh_fingerprint == fingerprint {
+		renderer.mesh_cache_hits += 1
+		return true
+	}
+	renderer.mesh_rebuilds += 1
 	clear(&renderer.vertices)
 	clear(&renderer.draws)
 	for command in display {
@@ -407,6 +420,7 @@ native_text_upload_vertices :: proc(renderer: ^Native_Text_Renderer, command: ^s
 	destination_region := sdl3.GPUBufferRegion{buffer=renderer.vertex_buffer, offset=0, size=sdl3.Uint32(len(renderer.vertices) * size_of(Native_Text_Vertex))}
 	sdl3.UploadToGPUBuffer(copy_pass, source, destination_region, true)
 	sdl3.EndGPUCopyPass(copy_pass)
+	renderer.vertex_uploads += 1
 	return true
 }
 
