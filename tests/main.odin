@@ -209,6 +209,15 @@ render_virtual_data :: proc(rt: ^alicorn.Runtime, keys: []string, scroll: f32) -
 	return ids
 }
 
+virtual_node_bounds :: proc(rt: ^alicorn.Runtime, kind: alicorn.Node_Kind, text: string) -> (bounds: alicorn.Rect, found: bool) {
+	for _, node in rt.nodes {
+		if node.kind == kind && node.text == text {
+			return node.bounds, true
+		}
+	}
+	return
+}
+
 render_single_button :: proc(rt: ^alicorn.Runtime) -> (id: alicorn.Node_ID, clicked: bool) {
 	alicorn.invalidate_root(rt, "test button frame")
 	ui, build := alicorn.begin_frame(rt)
@@ -891,11 +900,20 @@ test_virtualization_and_gpu :: proc(state: ^Test_State) {
 	expect(state, metrics.offset_y == 12.5 && metrics.max_scroll_y == 1900, "virtual metrics preserve fractional scroll and use the real viewport")
 	clamped_metrics := alicorn.virtual_list_metrics(100, 9999, 100, 20)
 	expect(state, clamped_metrics.offset_y == clamped_metrics.max_scroll_y && clamped_metrics.first == 95, "virtual metrics clamp to the content end")
+	expect(state, alicorn.virtual_list_metrics(100, 512, 100, 20).leading_offset_y == 12, "virtual metrics expose only the fractional leading offset")
 	render_virtual(&rt, 0)
 	expect(state, len(rt.nodes) <= 14, "million logical rows must retain only viewport-scale nodes")
 	first_count := len(rt.nodes)
 	render_virtual(&rt, 500000)
 	expect(state, len(rt.nodes) == first_count, "scrolling fixed-height virtual list keeps bounded node count")
+	render_virtual(&rt, 500)
+	list_bounds, list_found := virtual_node_bounds(&rt, .Virtual_List, "")
+	row_bounds, row_found := virtual_node_bounds(&rt, .Text, "row 25")
+	expect(state, list_found && row_found && row_bounds.y == list_bounds.y, "realized virtual row starts at the viewport on a row boundary")
+	render_virtual(&rt, 512)
+	list_bounds, list_found = virtual_node_bounds(&rt, .Virtual_List, "")
+	row_bounds, row_found = virtual_node_bounds(&rt, .Text, "row 25")
+	expect(state, list_found && row_found && row_bounds.y == list_bounds.y-12, "virtual row preserves only fractional scroll between row boundaries")
 	logical_keys := []string{"k0", "k1", "k2", "k3", "k4", "k5", "k6", "k7", "k8", "k9", "k10", "k11"}
 	ids := render_virtual_data(&rt, logical_keys, 0)
 	for key, id in ids { rt.nodes[id].local_counter = 900 + len(key) }

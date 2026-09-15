@@ -1109,6 +1109,7 @@ Virtual_List_Metrics :: struct {
 	content_height: f32,
 	max_scroll_y:   f32,
 	offset_y:       f32,
+	leading_offset_y: f32,
 }
 
 // virtual_list_metrics is the shared fixed-height scroll calculation. It
@@ -1125,6 +1126,10 @@ virtual_list_metrics :: proc(item_count: int, scroll_y, viewport_height, row_hei
 	result.last = int((result.offset_y+viewport_height) / row_height) + 1
 	if result.last > item_count { result.last = item_count }
 	if result.last < result.first+1 { result.last = result.first+1 }
+	// The caller realizes rows starting at `first`, so the layout container only
+	// needs the fractional remainder. Applying the full offset here would move
+	// the already-skipped rows a second time and create an oversized blank tail.
+	result.leading_offset_y = result.offset_y - f32(result.first) * row_height
 	return result
 }
 
@@ -1137,7 +1142,7 @@ virtual_list_ex :: proc(ui: ^UI, item_count: int, scroll_y, viewport_height, row
 	first, last = metrics.first, metrics.last
 	if first == last { return }
 	style := Layout_Style{.Column, -1, viewport_height, 0, -1, 0, -1, 0, 0, 0, .Stretch, true}
-	container_begin_ex(ui, .Virtual_List, source, label="virtual-list", style=style, scroll_offset_y=metrics.offset_y)
+	container_begin_ex(ui, .Virtual_List, source, label="virtual-list", style=style, scroll_offset_y=metrics.leading_offset_y)
 	for i := first; i < last; i += 1 {
 		if key_scope_begin_ex(ui, item_key(i), source) {
 			row(ui, i)
@@ -1153,7 +1158,7 @@ virtual_list_simple :: proc(ui: ^UI, item_count: int, scroll_y, viewport_height,
 	first, last = metrics.first, metrics.last
 	if first == last { return }
 	style := Layout_Style{.Column, -1, viewport_height, 0, -1, 0, -1, 0, 0, 0, .Stretch, true}
-	container_begin_simple(ui, .Virtual_List, label="virtual-list", style=style, loc=loc, scroll_offset_y=metrics.offset_y)
+	container_begin_simple(ui, .Virtual_List, label="virtual-list", style=style, loc=loc, scroll_offset_y=metrics.leading_offset_y)
 	for i := first; i < last; i += 1 {
 		if key_scope_begin_key(ui, item_key(i), Source_Site{}, loc) {
 			row(ui, i)

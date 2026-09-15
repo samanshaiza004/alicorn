@@ -47,6 +47,10 @@ description_hash :: proc(d: Description) -> u64 {
 
 layout_hash :: proc(d: Description) -> u64 {
 	h := hash_mix(hash_style(d.style), u64(d.parent))
+	// Virtualized containers use this value to position the currently realized
+	// rows. A fractional scroll movement is layout-visible even when the style
+	// and child descriptions are otherwise unchanged.
+	h = hash_mix(h, u64(transmute(u32)d.scroll_offset_y))
 	// Text participates in intrinsic measurement. A description can otherwise
 	// look layout-identical while a changing label/value moves its siblings.
 	#partial switch d.kind {
@@ -396,6 +400,10 @@ reconcile :: proc(rt: ^Runtime) {
 			}
 			clear(&parent.children)
 			for child in wanted { append(&parent.children, child) }
+			// Child order and membership are layout inputs. Mark the parent and its
+			// ancestors before layout_tree so retained children are repositioned
+			// after keyed rows reorder or the realized window changes.
+			mark_layout_ancestors(rt, parent_id)
 			structure_changed = true
 		}
 	}
