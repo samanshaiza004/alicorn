@@ -704,6 +704,41 @@ test_unicode_editing :: proc(state: ^Test_State) {
 	alicorn.destroy_runtime(&rt)
 }
 
+test_text_commands :: proc(state: ^Test_State) {
+	value := "hello, world 42"
+	word_left := alicorn.text_move_word(value, alicorn.Text_Position{len(value), .Trailing}, -1)
+	expect(state, word_left.byte == len("hello, world "), "word-left must use Runa boundaries and skip separators")
+	word_left = alicorn.text_move_word(value, word_left, -1)
+	expect(state, word_left.byte == len("hello, "), "repeated word-left must reach the prior word start")
+	word_right := alicorn.text_move_word(value, alicorn.Text_Position{0, .Leading}, 1)
+	expect(state, word_right.byte == len("hello, "), "word-right must reach the next word start")
+	word_right = alicorn.text_move_word(value, word_right, 1)
+	expect(state, word_right.byte == len("hello, world "), "repeated word-right must skip punctuation and whitespace")
+	preserved := alicorn.text_move_word("A👨‍👩‍👧", alicorn.Text_Position{2, .Trailing}, 0)
+	expect(state, preserved.byte == 1 && preserved.affinity == .Trailing, "word movement must normalize to a grapheme boundary without losing affinity")
+
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 200})
+	runtime_value := "hello, world"
+	id := render_text_field(&rt, runtime_value)
+	rt.invalidated = false
+	expect(state, alicorn.set_text_caret(&rt, id, len(runtime_value)), "caret command target must be editable")
+	expect(state, !rt.invalidated, "caret-only changes must not invalidate the application root")
+	expect(state, alicorn.process_text_command(&rt, id, .Move_Word_Left).changed == false && rt.nodes[id].caret.byte == len("hello, "), "word-left command must move the retained caret")
+	expect(state, alicorn.set_text_caret(&rt, id, len("hello, world")), "caret must move to a word end")
+	change := alicorn.process_text_command(&rt, id, .Delete_Word_Backward)
+	expect(state, change.changed && change.text == "hello, ", "word-backward deletion must remove one Runa word unit")
+	if len(change.text) > 0 { delete(change.text, rt.persistent_allocator) }
+	render_text_field(&rt, "hello, ")
+	expect(state, alicorn.set_text_caret(&rt, id, len("hello, ")), "caret must remain usable after a mutation")
+	change = alicorn.process_text_command(&rt, id, .Delete_Word_Backward)
+	expect(state, change.changed && change.text == "", "word-backward deletion must remove the prior word and separators")
+	if len(change.text) > 0 { delete(change.text, rt.persistent_allocator) }
+	rt.invalidated = false
+	expect(state, alicorn.set_text_selection(&rt, id, 0, 0), "selection setter must accept an empty range")
+	expect(state, !rt.invalidated, "selection-only changes must not invalidate the application root")
+	alicorn.destroy_runtime(&rt)
+}
+
 test_text_input_composition :: proc(state: ^Test_State) {
 	expect(state, alicorn.utf8_character_index_to_byte_offset("é世😀", 0) == 0, "SDL character index zero maps to byte zero")
 	expect(state, alicorn.utf8_character_index_to_byte_offset("é世😀", 1) == 2, "UTF-8 character index maps past a two-byte code point")
@@ -770,13 +805,9 @@ test_interaction_paint_invalidation :: proc(state: ^Test_State) {
 	expect(state, rt.stats.paint_updates > paint_before_focus, "focus change must queue an interaction repaint")
 	paint_before_focus = rt.stats.paint_updates
 	alicorn.set_text_selection(&rt, id, 5, 1)
-	ui, build = alicorn.begin_frame(&rt)
-	if build {
-		alicorn.container_begin_ex(&ui, .Root, S_ROOT)
-		alicorn.text_field_ex(&ui, "caret", alicorn.site("tests/edit.odin", 2, 1, "query"))
-		alicorn.container_end(&ui)
-		alicorn.end_frame(&ui)
-	}
+	ready: bool
+	ui, ready = alicorn.begin_presentation_frame(&rt)
+	if ready { alicorn.end_presentation_frame(&ui) }
 	expect(state, rt.stats.paint_updates > paint_before_focus, "selection change must queue an interaction repaint")
 	alicorn.destroy_runtime(&rt)
 }
@@ -1195,6 +1226,7 @@ main :: proc() {
 	test_region_identity_sequences(&state)
 	test_focus_and_editing(&state)
 	test_unicode_editing(&state)
+	test_text_commands(&state)
 	test_text_input_composition(&state)
 	test_interaction_paint_invalidation(&state)
 	test_interaction_regressions(&state)

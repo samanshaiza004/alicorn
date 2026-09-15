@@ -62,6 +62,39 @@ The native proof fixture also handles non-composition Backspace, Delete, and
 logical Left/Right movement from SDL key events. While a preedit is active,
 those keys are left for the IME rather than mutating committed text.
 
+## Editing commands
+
+The runtime exposes a small platform-neutral command vocabulary through
+`Text_Command`. Hosts translate their key conventions into these commands;
+the runtime owns grapheme and word boundaries.
+
+```odin
+Move_Left, Move_Right
+Move_Word_Left, Move_Word_Right
+Delete_Backward, Delete_Forward
+Delete_Word_Backward, Delete_Word_Forward
+```
+
+Word commands use Runa's Unicode word iterator and never split a grapheme.
+On Windows, Ctrl+Left/Right and Ctrl+Backspace/Delete are the usual word
+bindings. On macOS, the native adapter maps Option to word movement/deletion
+and Command to the platform's document/selection conventions. Shift extends
+the current selection, while an unmodified arrow collapses a non-empty
+selection before moving.
+
+Committed edits all use the same `Text_Change` ownership path, whether they
+come from `TEXT_INPUT`, Backspace, Delete, or a word deletion. A changed result
+is handed to the application's text-change callback; a no-op result is still
+released by the host. Caret and selection movement only requests a retained
+presentation frame, so it does not make the application rebuild its
+description.
+
+Operating-system key repeat remains event-driven. If several repeat events
+arrive while a host is busy, the runtime processes them in order; native
+diagnostics expose edit/navigation counts and text-mesh rebuild/cache-hit
+counters so repeat latency can be distinguished from application or GPU
+latency.
+
 On Windows, run `.\tools\native_sdl_gpu.ps1 -ManualIme` from a normal GUI
 session for a hands-on check. The runner bundles `SDL3.dll` and passes the
 manual-mode switch to the fixture. Manual mode keeps the window alive, redraws

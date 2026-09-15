@@ -34,6 +34,15 @@ Native_Host_Timing :: struct {
 	frame_samples:       [dynamic; NATIVE_DIAGNOSTIC_FRAME_SAMPLES]u64,
 }
 
+Native_Text_Event_Telemetry :: struct {
+	text_change_dispatches:    u64,
+	text_changes:              u64,
+	text_edit_key_events:      u64,
+	text_navigation_key_events: u64,
+	text_selection_key_events:  u64,
+	text_word_key_events:       u64,
+}
+
 native_timing_add_frame :: proc(timing: ^Native_Host_Timing, frame_ns: u64) {
 	timing.frames += 1
 	timing.frame_ns_total += frame_ns
@@ -99,6 +108,7 @@ native_write_diagnostics :: proc(
 	surface_renderer: ^Native_Surface_Renderer,
 	solid_renderer: ^Native_Solid_Renderer,
 	timing: ^Native_Host_Timing,
+	text_events: ^Native_Text_Event_Telemetry = nil,
 ) -> bool {
 	if (!options.enabled && !options.capture_requested) || options.captured { return false }
 	if !options.capture_requested && time.duration_nanoseconds(time.since(started)) < i64(options.capture_after_ns) { return false }
@@ -152,6 +162,10 @@ native_write_diagnostics :: proc(
     "text_glyph_cache_misses": %d,
     "text_rasterizations": %d,
     "text_atlas_pages": %d,
+    "text_mesh_rebuilds": %d,
+    "text_mesh_cache_hits": %d,
+    "text_mesh_commands": %d,
+    "text_vertex_uploads": %d,
     "surface_encodes": %d,
     "surface_vertex_uploads": %d,
     "solid_batches": %d,
@@ -160,8 +174,24 @@ native_write_diagnostics :: proc(
 `, timing.gpu_submissions, timing.fence_waits,
 		rt.text_engine.shape_calls, rt.text_engine.glyph_cache_hits, rt.text_engine.glyph_cache_misses,
 		rt.text_engine.glyph_rasterizations,
-		len(text_renderer.pages), surface_renderer.encodes, surface_renderer.vertex_uploads,
+		len(text_renderer.pages), text_renderer.mesh_rebuilds, text_renderer.mesh_cache_hits,
+		text_renderer.mesh_text_commands, text_renderer.vertex_uploads,
+		surface_renderer.encodes, surface_renderer.vertex_uploads,
 		solid_renderer.batches, solid_renderer.vertices_uploaded)
+	if text_events != nil {
+		fmt.sbprintf(&builder, `  "text_events": {{
+    "change_dispatches": %d,
+    "changes": %d,
+    "edit_key_events": %d,
+    "navigation_key_events": %d,
+    "selection_key_events": %d,
+    "word_key_events": %d
+  }},
+`, text_events.text_change_dispatches, text_events.text_changes,
+			text_events.text_edit_key_events, text_events.text_navigation_key_events,
+			text_events.text_selection_key_events,
+			text_events.text_word_key_events)
+	}
 	fmt.sbprintf(&builder, `  "runtime": {{
     "retained_nodes": %d,
     "display_commands": %d,
