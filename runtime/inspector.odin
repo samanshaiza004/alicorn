@@ -19,7 +19,9 @@ inspect :: proc(rt: ^Runtime) -> string {
 	for id in rt.order {
 		node, ok := rt.nodes[id]
 		if !ok { continue }
-		if node.identity_key_numeric {
+		if node.identity_key_kind == 3 {
+			fmt.sbprintf(&sb, "Node: %d parent=%d kind=%v source=%s:%d:%d component=%s key=%q scope_pair=(%d,%d) bounds=(%.1f,%.1f %.1fx%.1f)\n", node.id, node.parent, node.kind, node.site.file, node.site.line, node.site.column, node.site.component, node.key, node.identity_key_pair.first, node.identity_key_pair.second, node.bounds.x, node.bounds.y, node.bounds.w, node.bounds.h)
+		} else if node.identity_key_numeric {
 			fmt.sbprintf(&sb, "Node: %d parent=%d kind=%v source=%s:%d:%d component=%s key=%q scope_u64=%d bounds=(%.1f,%.1f %.1fx%.1f)\n", node.id, node.parent, node.kind, node.site.file, node.site.line, node.site.column, node.site.component, node.key, node.identity_key_u64, node.bounds.x, node.bounds.y, node.bounds.w, node.bounds.h)
 		} else {
 			fmt.sbprintf(&sb, "Node: %d parent=%d kind=%v source=%s:%d:%d component=%s key=%q scope=%q bounds=(%.1f,%.1f %.1fx%.1f)\n", node.id, node.parent, node.kind, node.site.file, node.site.line, node.site.column, node.site.component, node.key, node.identity_key, node.bounds.x, node.bounds.y, node.bounds.w, node.bounds.h)

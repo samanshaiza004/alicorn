@@ -813,10 +813,12 @@ test_disabled_button_semantics :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 200})
 	id, _ := render_canonical_button(&rt)
 	node := rt.nodes[id]
+	enabled_color := node.paint[0].color
 	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, node.bounds.x+2, node.bounds.y+2, 1})
 	expect(state, rt.captured_node == id, "enabled button must capture pointer down")
 	_, _ = render_canonical_button(&rt, alicorn.Button_State{disabled=true})
 	expect(state, rt.captured_node == 0 && !rt.nodes[id].pressed, "disabling a captured button must clear press state")
+	expect(state, rt.nodes[id].paint[0].color != enabled_color, "disabled button must change its paint state")
 	expect(state, alicorn.hit_test(&rt, node.bounds.x+2, node.bounds.y+2) == 0, "disabled button must not hit-test")
 	expect(state, !alicorn.focus(&rt, id), "disabled button must not receive focus")
 	_, clicked := render_canonical_button(&rt, alicorn.Button_State{disabled=true})

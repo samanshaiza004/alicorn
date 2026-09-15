@@ -89,8 +89,13 @@ update_paint :: proc(rt: ^Runtime) {
 				if node.hovered { button_color = Color{0.20, 0.34, 0.54, 1} }
 				if node.pressed { button_color = Color{0.24, 0.42, 0.68, 1} }
 				if node.selected { button_color = Color{0.27, 0.48, 0.70, 1} }
+				text_color := Color{0.90, 0.95, 1.0, 1.0}
+				if node.disabled {
+					button_color = Color{0.10, 0.13, 0.18, 1}
+					text_color = Color{0.48, 0.53, 0.62, 1.0}
+				}
 				append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", button_color})
-						append(&node.paint, Display_Command{node.id, .Text, node.bounds, node.clip, owned(display_text, rt.persistent_allocator), Color{0.90, 0.95, 1.0, 1.0}})
+				append(&node.paint, Display_Command{node.id, .Text, node.bounds, node.clip, owned(display_text, rt.persistent_allocator), text_color})
 			} else {
 				append(&node.paint, Display_Command{node.id, display_kind, node.bounds, node.clip, owned(display_text, rt.persistent_allocator), node.color})
 			}

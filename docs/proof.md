@@ -3,8 +3,9 @@
 This is the proof report for the retained-work gate. It records mechanics and
 measurements, not aspirations.
 
-Starting SHA: `3a889d0308ed8b0fa3c61c1a288a315809cbcd15` (verified against
-`origin/master` on 2026-09-14).
+Starting SHA for this retained-work gate: `3f1fcd76a8c1518bb6ba751f5bbde6da31d8880e`.
+The later Odin-native API and memory-ownership pass starts from that revision
+and is recorded in the repository history separately.
 
 ## Research findings
 

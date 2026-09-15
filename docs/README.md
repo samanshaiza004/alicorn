@@ -12,6 +12,7 @@ project record.
 - [Canonical API](guide/api.md) — the public calls most applications should use.
 - [Odin for Alicorn](guide/odin-for-alicorn.md) — Odin features encountered naturally.
 - [Advanced identity and allocation](guide/advanced.md) — escape hatches and ownership.
+- [API and ownership pass](api-ownership.md) — canonical calls, typed keys, and allocator lifetime.
 - [Overview](overview.md) — what Alicorn is, why it exists, and the design bets.
 - [Thesis](thesis.md) — the short statement the foundation is trying to prove.
 - [Architecture](architecture.md) — the mechanics that are actually implemented.
