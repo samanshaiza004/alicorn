@@ -134,6 +134,17 @@ pointer_from_sdl :: proc(event: sdl3.Event) -> (value: alicorn.Pointer_Event, ok
 	return alicorn.Pointer_Event{}, false
 }
 
+poll_sdl_event :: proc(event: ^sdl3.Event) -> bool {
+	when ODIN_OS == .Darwin {
+		// The Darwin host pumps AppKit explicitly above. PeepEvents retrieves
+		// only what SDL has already translated, so it cannot re-enter the
+		// blocking SDL_PollEvent -> Cocoa path.
+		return sdl3.PeepEvents(event, 1, .GETEVENT, sdl3.EventType.FIRST, sdl3.EventType.LAST) > 0
+	} else {
+		return sdl3.PollEvent(event)
+	}
+}
+
 validate_pointer_coordinates :: proc() {
 	// This is intentionally a native-adapter regression check: a fractional
 	// logical coordinate must reach Alicorn unchanged, with no Retina scaling.
@@ -248,7 +259,10 @@ pump_events :: proc(
 	debug_bounds: ^bool = nil,
 ) {
 	event: sdl3.Event
-	for sdl3.PollEvent(&event) {
+	when ODIN_OS == .Darwin {
+		pump_platform_events()
+	}
+	for poll_sdl_event(&event) {
 		if manual_log {
 			if event.type == .WINDOW_FOCUS_GAINED {
 				fmt.println("sdl_event", "WINDOW_FOCUS_GAINED")
