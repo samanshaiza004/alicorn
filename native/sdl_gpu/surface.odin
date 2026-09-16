@@ -58,12 +58,12 @@ native_surface_append_segment :: proc(vertices: ^[dynamic]Native_Text_Vertex, ax
 	ny := dx / length * half
 	if len(vertices^) + 6 > MAX_SURFACE_VERTICES { return false }
 	append(vertices,
-		native_surface_vertex(ax-nx, ay-ny, color),
-		native_surface_vertex(bx-nx, by-ny, color),
-		native_surface_vertex(bx+nx, by+ny, color),
-		native_surface_vertex(ax-nx, ay-ny, color),
-		native_surface_vertex(bx+nx, by+ny, color),
-		native_surface_vertex(ax+nx, ay+ny, color),
+		native_surface_vertex((ax-nx)*scale_x, (ay-ny)*scale_y, color),
+		native_surface_vertex((bx-nx)*scale_x, (by-ny)*scale_y, color),
+		native_surface_vertex((bx+nx)*scale_x, (by+ny)*scale_y, color),
+		native_surface_vertex((ax-nx)*scale_x, (ay-ny)*scale_y, color),
+		native_surface_vertex((bx+nx)*scale_x, (by+ny)*scale_y, color),
+		native_surface_vertex((ax+nx)*scale_x, (ay+ny)*scale_y, color),
 	)
 	return true
 }
