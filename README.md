@@ -68,7 +68,8 @@ dogfood application exercises the public API against live Windows process data.
 ## Try it
 
 You need Odin for the headless tests. The native fixture also needs SDL3 from
-the Odin distribution.
+the Odin distribution on Windows; the validated Darwin host requires SDL3
+`3.4.16`.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/check.ps1
