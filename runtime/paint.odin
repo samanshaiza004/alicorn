@@ -100,6 +100,7 @@ update_paint :: proc(rt: ^Runtime) {
 				if node.hovered { button_color = Color{0.20, 0.34, 0.54, 1} }
 				if node.pressed { button_color = Color{0.24, 0.42, 0.68, 1} }
 				if node.selected { button_color = Color{0.27, 0.48, 0.70, 1} }
+				if rt.focused == node.id { button_color = Color{0.34, 0.58, 0.86, 1} }
 				text_color := Color{0.90, 0.95, 1.0, 1.0}
 				if node.disabled {
 					button_color = Color{0.10, 0.13, 0.18, 1}

@@ -516,26 +516,41 @@ pump_events :: proc(
 				}
 				fmt.println("sdl_event", "KEY_DOWN", "key", event.key.key, "repeat", event.key.repeat, "composition_active", composition_active)
 			}
-			if event.key.key == sdl3.K_ESCAPE {
+			runtime_key_handled := false
+			if event.key.key == sdl3.K_TAB {
+				direction: alicorn.Focus_Direction = .Next
+				if native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) {
+					direction = .Previous
+				}
+				runtime_key_handled = alicorn.focus_traverse(rt, direction) != 0
+			} else if event.key.key == sdl3.K_RETURN || event.key.key == sdl3.K_KP_ENTER || event.key.key == sdl3.K_SPACE {
+				// Enter/Space activate a focused button through the same one-shot
+				// retained contract as pointer-up. Space remains an application
+				// command when focus belongs to a non-button control.
+				runtime_key_handled = alicorn.activate_focused(rt)
+			}
+			if !runtime_key_handled && event.key.key == sdl3.K_ESCAPE {
 				if alicorn.cancel_text_composition(rt, rt.focused, "Escape canceled text composition") {
 					if !sdl3.ClearComposition(window) { fail("SDL_ClearComposition failed for Escape") }
 				}
-			} else if node, ok := rt.nodes[rt.focused]; ok && node.active && node.kind == .Text_Field && !node.composition.active {
-				handled := true
-				word_modifier := native_text_word_modifier(event.key.mod)
-				switch event.key.key {
-				case sdl3.K_BACKSPACE:
-					native_text_apply_key_edit(rt, rt.focused, .Backspace, word_modifier, app_text, application, telemetry)
-				case sdl3.K_DELETE:
-					native_text_apply_key_edit(rt, rt.focused, .Delete, word_modifier, app_text, application, telemetry)
-				case:
-					handled = native_text_apply_key_navigation(rt, rt.focused, event.key.key, event.key.mod, telemetry)
-				}
-				if manual_log && handled {
-					fmt.println("alicorn_key_handled", "key", event.key.key, "text", app_text^)
+			} else if !runtime_key_handled {
+				if node, ok := rt.nodes[rt.focused]; ok && node.active && node.kind == .Text_Field && !node.composition.active {
+					handled := true
+					word_modifier := native_text_word_modifier(event.key.mod)
+					switch event.key.key {
+					case sdl3.K_BACKSPACE:
+						native_text_apply_key_edit(rt, rt.focused, .Backspace, word_modifier, app_text, application, telemetry)
+					case sdl3.K_DELETE:
+						native_text_apply_key_edit(rt, rt.focused, .Delete, word_modifier, app_text, application, telemetry)
+					case:
+						handled = native_text_apply_key_navigation(rt, rt.focused, event.key.key, event.key.mod, telemetry)
+					}
+					if manual_log && handled {
+						fmt.println("alicorn_key_handled", "key", event.key.key, "text", app_text^)
+					}
 				}
 			}
-			if application != nil {
+			if application != nil && !runtime_key_handled {
 				text_field_focused := false
 				if node, ok := rt.nodes[rt.focused]; ok {
 					text_field_focused = node.active && node.kind == .Text_Field

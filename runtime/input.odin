@@ -3,6 +3,11 @@ package alicorn
 import "core:mem"
 import "core:strings"
 
+Focus_Direction :: enum {
+	Next,
+	Previous,
+}
+
 hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
 		id := rt.order[i]
@@ -30,10 +35,62 @@ focus :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 		}
 	}
 	rt.focused = id
-	record_trace(rt, .Focus, id, "pointer focus owner assigned")
+	record_trace(rt, .Focus, id, "focus owner assigned")
 	invalidate_interaction_paint(rt, previous, "focus lost")
 	invalidate_interaction_paint(rt, id, "focus gained")
 	invalidate_root(rt, "focus owner changed")
+	return true
+}
+
+// focus_traverse moves focus through the retained preorder used by the
+// runtime. This keeps keyboard navigation independent of application-owned
+// widget objects while preserving the same keyed focus state as pointer input.
+focus_traverse :: proc(rt: ^Runtime, direction: Focus_Direction) -> Node_ID {
+	if len(rt.order) == 0 { return 0 }
+
+	step := 1
+	start := 0
+	if direction == .Previous {
+		step = -1
+		start = len(rt.order) - 1
+	}
+	if rt.focused != 0 {
+		for id, index in rt.order {
+			if id == rt.focused {
+				start = index + step
+				break
+			}
+		}
+	}
+
+	for offset := 0; offset < len(rt.order); offset += 1 {
+		index := start + offset*step
+		for index < 0 { index += len(rt.order) }
+		for index >= len(rt.order) { index -= len(rt.order) }
+		id := rt.order[index]
+		node, ok := rt.nodes[id]
+		if ok && node.active && node.focusable && !node.disabled {
+			if focus(rt, id) { return id }
+		}
+	}
+	return 0
+}
+
+// activate_focused feeds a keyboard activation through the same retained
+// button contract used by pointer-up. The button consumes this sequence during
+// the next description pass, so activation remains one-shot and application
+// code only observes its public clicked result.
+activate_focused :: proc(rt: ^Runtime) -> bool {
+	id := rt.focused
+	node, ok := rt.nodes[id]
+	if !ok || !node.active || !node.focusable || node.disabled || node.kind != .Button {
+		return false
+	}
+	rt.activation_sequence += 1
+	rt.activation_node = id
+	record_trace(rt, .Focus, id, "focused button activated")
+	invalidate_interaction_paint(rt, id, "focused button activated")
+	invalidate_root(rt, "focused button activated")
 	return true
 }
 

@@ -382,6 +382,26 @@ render_canonical_button :: proc(rt: ^alicorn.Runtime, state := alicorn.Button_St
 	return
 }
 
+render_keyboard_focus_order :: proc(rt: ^alicorn.Runtime) -> map[string]alicorn.Node_ID {
+	ids := make(map[string]alicorn.Node_ID)
+	alicorn.invalidate_root(rt, "test keyboard focus order")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return ids }
+	alicorn.container_begin(&ui, .Root, label="keyboard-focus-root")
+	ids["filter"] = alicorn.text_field(&ui, "", key=alicorn.key_string("filter"))
+	alicorn.button(&ui, "Sort CPU", key=alicorn.key_string("sort-cpu"))
+	alicorn.button(&ui, "Disabled", key=alicorn.key_string("disabled"), state=alicorn.Button_State{disabled=true})
+	alicorn.button(&ui, "Pause", key=alicorn.key_string("pause"))
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	for id in rt.order {
+		if node, ok := rt.nodes[id]; ok {
+			if node.kind == .Button { ids[node.label] = id }
+		}
+	}
+	return ids
+}
+
 render_text_growth_pair :: proc(rt: ^alicorn.Runtime, first, second: string) -> (first_id, second_id: alicorn.Node_ID) {
 	alicorn.invalidate_root(rt, "test text intrinsic growth")
 	ui, build := alicorn.begin_frame(rt)
@@ -697,6 +717,29 @@ test_focus_and_editing :: proc(state: ^Test_State) {
 		change := alicorn.process_text_edit(&rt, field, alicorn.Text_Edit{.Backspace, ""})
 		expect(state, change.changed && change.text == "ab", "basic retained text editing must produce an explicit app-state change")
 	}
+	alicorn.destroy_runtime(&rt)
+}
+
+test_keyboard_focus_and_activation :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 240})
+	ids := render_keyboard_focus_order(&rt)
+	expect(state, alicorn.focus_traverse(&rt, .Next) == ids["filter"], "Tab traversal must focus the first focusable node")
+	expect(state, alicorn.focus_traverse(&rt, .Next) == ids["Sort CPU"], "Tab traversal must move to the next focusable node")
+	expect(state, alicorn.focus_traverse(&rt, .Next) == ids["Pause"], "Tab traversal must skip disabled nodes")
+	expect(state, alicorn.focus_traverse(&rt, .Next) == ids["filter"], "Tab traversal must wrap to the first focusable node")
+	expect(state, alicorn.focus_traverse(&rt, .Previous) == ids["Pause"], "Shift-Tab traversal must wrap backward")
+	expect(state, !alicorn.focus(&rt, ids["Disabled"]), "disabled nodes must not receive keyboard focus")
+
+	rt.focused = 0
+	button_id, _ := render_canonical_button(&rt)
+	unfocused_color := rt.nodes[button_id].paint[0].color
+	expect(state, alicorn.focus(&rt, button_id), "button must accept keyboard focus")
+	expect(state, alicorn.activate_focused(&rt), "focused button must accept keyboard activation")
+	_, clicked := render_canonical_button(&rt)
+	expect(state, clicked, "focused button activation must reach the public button API")
+	_, clicked = render_canonical_button(&rt)
+	expect(state, !clicked, "focused button activation must be consumed exactly once")
+	expect(state, rt.nodes[button_id].paint[0].color != unfocused_color, "focused button must have a visible paint state")
 	alicorn.destroy_runtime(&rt)
 }
 
@@ -1324,6 +1367,7 @@ main :: proc() {
 	test_retained_subtree_reuse(&state)
 	test_region_identity_sequences(&state)
 	test_focus_and_editing(&state)
+	test_keyboard_focus_and_activation(&state)
 	test_unicode_editing(&state)
 	test_text_commands(&state)
 	test_text_input_composition(&state)
