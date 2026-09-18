@@ -1364,6 +1364,38 @@ test_gpu_surface_contract :: proc(state: ^Test_State) {
 	alicorn.destroy_runtime(&rt)
 }
 
+test_retained_scroll_region :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 160})
+	defer alicorn.destroy_runtime(&rt)
+	alicorn.invalidate_root(&rt, "scroll region test")
+	ui, build := alicorn.begin_frame(&rt)
+	expect(state, build, "scroll region test builds an initial description")
+	if build {
+		alicorn.container_begin(&ui, .Root, label="scroll-root")
+		region := alicorn.scroll_region_begin(&ui, key=alicorn.key_string("items"), viewport_height=60, content_height=400, line_height=20, style=alicorn.Layout_Style{.Column, -1, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, true})
+		metrics := alicorn.virtual_list_metrics(20, region.offset_y, region.viewport_height, 20)
+		alicorn.container_begin(&ui, .Virtual_List, label="items", style=alicorn.Layout_Style{.Column, -1, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, true}, scroll_offset_y=metrics.offset_y, layout_scroll_offset_y=metrics.leading_offset_y)
+		for i := metrics.first; i < metrics.last; i += 1 {
+			_ = alicorn.button(&ui, fmt.tprintf("item %d", i), key=alicorn.key_u64(u64(i)), style=alicorn.Layout_Style{.Row, -1, 20, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+		}
+		alicorn.container_end(&ui)
+		alicorn.scroll_region_end(&ui)
+		alicorn.container_end(&ui)
+		alicorn.end_frame(&ui)
+	}
+	region_id: alicorn.Node_ID = 0
+	for id in rt.order {
+		if node, ok := rt.nodes[id]; ok && node.kind == .Scroll_Region { region_id = id; break }
+	}
+	expect(state, region_id != 0, "scroll region retains a stable node")
+	if region_id != 0 {
+		node := rt.nodes[region_id]
+		handled := alicorn.process_scroll(&rt, alicorn.Scroll_Event{delta_y=-1, x=node.bounds.x+4, y=node.bounds.y+4})
+		expect(state, handled, "wheel input is claimed by the retained region under the pointer")
+		expect(state, alicorn.scroll_region_offset(&rt, region_id) == 20, "wheel input advances the region by its line height")
+	}
+}
+
 test_runtime_allocator_ownership :: proc(state: ^Test_State) {
 	base_allocator := context.allocator
 	tracking: mem.Tracking_Allocator
@@ -1429,6 +1461,7 @@ main :: proc() {
 	test_retained_text_product_lifetime(&state)
 	test_runtime_edit_invalidates_text_product(&state)
 	test_gpu_surface_contract(&state)
+	test_retained_scroll_region(&state)
 	test_runtime_allocator_ownership(&state)
 	if state.failures == 0 {
 		fmt.println("Alicorn foundation tests: PASS")
