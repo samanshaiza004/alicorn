@@ -474,6 +474,8 @@ pump_events :: proc(
 	wake_event: sdl3.EventType = .FIRST,
 	wake_event_enabled := false,
 	wait_for_event := false,
+	event_waits: ^u64 = nil,
+	wake_events: ^u64 = nil,
 ) {
 	if telemetry != nil { telemetry.events_this_pump = 0 }
 	event: sdl3.Event
@@ -482,6 +484,7 @@ pump_events :: proc(
 	}
 	has_event := false
 	if wait_for_event {
+		if event_waits != nil { event_waits^ += 1 }
 		has_event = sdl3.WaitEvent(&event)
 	} else {
 		has_event = poll_sdl_event(&event)
@@ -512,6 +515,7 @@ pump_events :: proc(
 			quit_requested^ = true
 		}
 		if application != nil && wake_event_enabled && event.type == wake_event {
+			if wake_events != nil { wake_events^ += 1 }
 			if application.on_wake != nil {
 				application.on_wake(application.state, rt)
 			}
@@ -1108,6 +1112,8 @@ run_application_loop :: proc(
 	last_tick := time.now()
 	last_focus_log := start
 	wait_for_event := false
+	event_waits: u64 = 0
+	wake_events: u64 = 0
 	for !quit_requested {
 		native_host_scratch_reset(&host_scratch)
 		frame_start := time.now()
@@ -1124,6 +1130,8 @@ run_application_loop :: proc(
 			wake_event=sdl3.EventType(wake_event_id),
 			wake_event_enabled=true,
 			wait_for_event=wait_for_event,
+			event_waits=&event_waits,
+			wake_events=&wake_events,
 		)
 		wait_for_event = false
 		native_timing_accumulate(&timing.event_pump_ns, &timing.event_pump_max_ns, u64(time.duration_nanoseconds(time.since(event_start))) )
@@ -1304,6 +1312,8 @@ run_application_loop :: proc(
 		"fence_wait_ns", timing.fence_wait_ns,
 		"application_tick_max_ns", timing.application_tick_max_ns,
 		"application_build_max_ns", timing.application_build_max_ns,
+		"event_waits", event_waits,
+		"application_wake_events", wake_events,
 		"gpu_encode_max_ns", timing.gpu_encode_max_ns,
 		"fence_wait_max_ns", timing.fence_wait_max_ns,
 	)
