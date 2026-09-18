@@ -97,6 +97,7 @@ Application_Scroll_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alic
 Application_Tick_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
 Application_Start_Proc :: proc(state: rawptr, waker: Application_Waker)
 Application_Wake_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
+Application_Stop_Proc :: proc(state: rawptr)
 
 // Application_Waker is an opaque, thread-safe request to wake the native
 // application loop. The application can retain and call it from a worker
@@ -126,6 +127,7 @@ Application :: struct {
 	on_tick:        Application_Tick_Proc,
 	on_start:       Application_Start_Proc,
 	on_wake:        Application_Wake_Proc,
+	on_stop:        Application_Stop_Proc,
 }
 
 Native_Application_Waker :: struct {
@@ -1255,6 +1257,13 @@ run_application_loop :: proc(
 	}
 
 	if !sdl3.WaitForGPUIdle(device) { fail("SDL application GPU idle wait failed") }
+	if application_instance.on_stop != nil {
+		// Stop worker threads while the host-owned waker state is still alive.
+		// This prevents a late worker completion from calling through a stack
+		// address after run_application_loop returns.
+		application_instance.on_stop(application_instance.state)
+	}
+	wake_state.active = false
 	for entry in in_flight {
 		sdl3.ReleaseGPUFence(device, entry.fence)
 		retired += 1
