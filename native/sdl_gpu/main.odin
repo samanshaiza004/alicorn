@@ -535,15 +535,19 @@ pump_events :: proc(
 			direction := 1 if event.wheel.direction == sdl3.MouseWheelDirection.FLIPPED else 0
 			delta_x := event.wheel.x
 			delta_y := event.wheel.y
+			ticks_x := int(event.wheel.integer_x)
+			ticks_y := int(event.wheel.integer_y)
 			if direction != 0 {
 				delta_x = -delta_x
 				delta_y = -delta_y
+				ticks_x = -ticks_x
+				ticks_y = -ticks_y
 			}
 			dispatched_to_scroll_region := alicorn.process_scroll(rt, alicorn.Scroll_Event{
 				delta_x=delta_x,
 				delta_y=delta_y,
-				ticks_x=int(event.wheel.integer_x),
-				ticks_y=int(event.wheel.integer_y),
+				ticks_x=ticks_x,
+				ticks_y=ticks_y,
 				x=event.wheel.mouse_x,
 				y=event.wheel.mouse_y,
 			})
@@ -551,8 +555,8 @@ pump_events :: proc(
 				application.on_scroll(application.state, rt, alicorn.Scroll_Event{
 					delta_x=delta_x,
 					delta_y=delta_y,
-					ticks_x=int(event.wheel.integer_x),
-					ticks_y=int(event.wheel.integer_y),
+					ticks_x=ticks_x,
+					ticks_y=ticks_y,
 					x=event.wheel.mouse_x,
 					y=event.wheel.mouse_y,
 				})
