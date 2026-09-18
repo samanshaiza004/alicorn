@@ -129,6 +129,12 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		if parent.style.clip { child.clip = rect_intersection(parent.clip, parent.bounds) } else { child.clip = parent.clip }
 		bounds_changed := !same_rect(old_bounds, child.bounds)
 		clip_changed := !same_rect(old_clip, child.clip)
+		if bounds_changed && child.kind == .Scroll_Region {
+			// The first layout pass resolves grow-based scroll regions. Ask for
+			// one follow-up description so virtualization uses that real viewport
+			// instead of the conservative pre-layout fallback.
+			rt.scroll_geometry_changed = true
+		}
 		if bounds_changed || clip_changed {
 			dirty_set(&child.dirty, .Layout, true)
 			dirty_set(&child.dirty, .Paint, true)

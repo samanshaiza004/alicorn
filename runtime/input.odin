@@ -20,6 +20,34 @@ hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 	return 0
 }
 
+scroll_region_hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
+	for i := len(rt.order)-1; i >= 0; i -= 1 {
+		id := rt.order[i]
+		if node, ok := rt.nodes[id]; ok && node.active && node.kind == .Scroll_Region &&
+			rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
+			return id
+		}
+	}
+	return 0
+}
+
+// process_scroll routes wheel input to the retained scroll region under the
+// pointer. Applications only receive scroll events that do not belong to an
+// Alicorn-owned region.
+process_scroll :: proc(rt: ^Runtime, event: Scroll_Event) -> bool {
+	id := scroll_region_hit_test(rt, event.x, event.y)
+	if id == 0 { return false }
+	node, ok := rt.nodes[id]
+	if !ok { return false }
+	delta := event.delta_y
+	if event.ticks_y != 0 { delta = f32(event.ticks_y) * 3 }
+	if delta == 0 { return true }
+	line_height := node.scroll_line_height
+	if line_height <= 0 { line_height = 24 }
+	_ = scroll_region_set_offset(rt, id, node.scroll_offset_y-delta*line_height, "scroll region wheel")
+	return true
+}
+
 focus :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 	node, ok := rt.nodes[id]
 	if !ok || !node.active || !node.focusable {

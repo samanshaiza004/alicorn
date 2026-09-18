@@ -532,14 +532,22 @@ pump_events :: proc(
 			alicorn.process_pointer(rt, pointer)
 		}
 		if application != nil && event.type == .MOUSE_WHEEL {
-			if application.on_scroll != nil {
-				direction := 1 if event.wheel.direction == sdl3.MouseWheelDirection.FLIPPED else 0
-				delta_x := event.wheel.x
-				delta_y := event.wheel.y
-				if direction != 0 {
-					delta_x = -delta_x
-					delta_y = -delta_y
-				}
+			direction := 1 if event.wheel.direction == sdl3.MouseWheelDirection.FLIPPED else 0
+			delta_x := event.wheel.x
+			delta_y := event.wheel.y
+			if direction != 0 {
+				delta_x = -delta_x
+				delta_y = -delta_y
+			}
+			dispatched_to_scroll_region := alicorn.process_scroll(rt, alicorn.Scroll_Event{
+				delta_x=delta_x,
+				delta_y=delta_y,
+				ticks_x=int(event.wheel.integer_x),
+				ticks_y=int(event.wheel.integer_y),
+				x=event.wheel.mouse_x,
+				y=event.wheel.mouse_y,
+			})
+			if !dispatched_to_scroll_region && application.on_scroll != nil {
 				application.on_scroll(application.state, rt, alicorn.Scroll_Event{
 					delta_x=delta_x,
 					delta_y=delta_y,

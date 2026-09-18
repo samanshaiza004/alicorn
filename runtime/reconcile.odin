@@ -42,6 +42,9 @@ description_hash :: proc(d: Description) -> u64 {
 	h = hash_mix(h, u64(d.surface_pixel_height))
 	h = hash_mix(h, u64(transmute(u32)d.surface_dpi_scale))
 	h = hash_mix(h, u64(transmute(u32)d.scroll_offset_y))
+	h = hash_mix(h, u64(transmute(u32)d.scroll_content_height))
+	h = hash_mix(h, u64(transmute(u32)d.scroll_viewport_height))
+	h = hash_mix(h, u64(transmute(u32)d.scroll_line_height))
 	return h
 }
 
@@ -161,6 +164,9 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	node.surface_dpi_scale = d.surface_dpi_scale
 	node.scroll_offset_y = d.scroll_offset_y
 	node.layout_scroll_offset_y = d.layout_scroll_offset_y
+	node.scroll_content_height = d.scroll_content_height
+	node.scroll_viewport_height = d.scroll_viewport_height
+	node.scroll_line_height = d.scroll_line_height
 	// A direct surface update owns the high-frequency revision. A later root
 	// wake with the same description must not roll it back; a changed
 	// description revision is an explicit replacement and is authoritative.
@@ -449,7 +455,8 @@ reconcile :: proc(rt: ^Runtime) {
 	layout_tree(rt)
 	update_paint(rt)
 	rt.frame_open = false
-	rt.invalidated = false
+	rt.invalidated = rt.scroll_geometry_changed
+	rt.scroll_geometry_changed = false
 	rt.presentation_pending = false
 	advance_presentation_revision(rt)
 	rt.stats.frame += 1
