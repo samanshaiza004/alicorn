@@ -1230,6 +1230,47 @@ test_gpu_text_resource_boundary :: proc(state: ^Test_State) {
 	delete(final_snapshot)
 }
 
+test_multiline_text_controls :: proc(state: ^Test_State) {
+	font_path := ""
+	when ODIN_OS == .Windows {
+		font_path = "C:/Windows/Fonts/segoeui.ttf"
+	} else when ODIN_OS == .Darwin {
+		font_path = "/System/Library/Fonts/SFNS.ttf"
+	} else {
+		font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+	}
+	font_data, err := os.read_entire_file_from_path(font_path, context.allocator)
+	if err != nil {
+		expect(state, false, "multiline text regression font must be available")
+		return
+	}
+	defer delete(font_data)
+	engine := alicorn.new_text_engine("multiline-test", allocator=context.allocator)
+	defer alicorn.text_engine_destroy(&engine)
+	expect(state, alicorn.text_engine_load_font(&engine, font_data), "multiline text regression font must load")
+	run, ok := alicorn.text_run_build(
+		&engine,
+		"first\nsecond",
+		16,
+		allocator=context.allocator,
+		scratch_allocator=context.temp_allocator,
+	)
+	if !ok {
+		expect(state, false, "multiline text must shape successfully")
+		return
+	}
+	defer alicorn.text_run_destroy(&run)
+	expect(state, len(run.lines) >= 2, "newline must advance to a second text line")
+	newline_glyph := false
+	for glyph in run.glyphs {
+		if glyph.cluster_start == 5 { newline_glyph = true; break }
+	}
+	expect(state, !newline_glyph, "newline must not produce a visible missing-glyph box")
+	if len(run.lines) >= 2 {
+		expect(state, run.lines[1].y > run.lines[0].y, "newline line geometry must advance vertically")
+	}
+}
+
 test_retained_text_product_lifetime :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
 	id := render_text_field(&rt, "retained")
@@ -1384,6 +1425,7 @@ main :: proc() {
 	test_presentation_submission_lifecycle(&state)
 	test_text_geometry(&state)
 	test_gpu_text_resource_boundary(&state)
+	test_multiline_text_controls(&state)
 	test_retained_text_product_lifetime(&state)
 	test_runtime_edit_invalidates_text_product(&state)
 	test_gpu_surface_contract(&state)

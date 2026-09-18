@@ -120,6 +120,21 @@ shape_run :: proc(in_: ^Shape_Inputs, opts: Shape_Run_Opts, text: string, size: 
 
 	byte_idx: u32 = 0
 	for r in text {
+		rune_byte_len: u32
+		if r < 0x80 { rune_byte_len = 1 }
+		else if r < 0x800 { rune_byte_len = 2 }
+		else if r < 0x10000 { rune_byte_len = 3 }
+		else { rune_byte_len = 4 }
+
+		// Hard line-break controls participate in paragraph layout, but
+		// they are not drawable glyphs. Sending LF/CR through cmap lookup
+		// produces a .notdef box in fonts that lack a visible control glyph.
+		// Keep their source offsets implicit for the line-break pass while
+		// leaving the shaped stream strictly drawable.
+		if r == '\n' || r == '\r' || r == 0x85 || r == 0x2028 || r == 0x2029 {
+			byte_idx += rune_byte_len
+			continue
+		}
 		gid := parse.cmap_lookup(in_.cmap, r)
 		append(&gids, gid)
 		append(&clusters, byte_idx)
@@ -128,10 +143,7 @@ shape_run :: proc(in_: ^Shape_Inputs, opts: Shape_Run_Opts, text: string, size: 
 
 		// Advance byte index by the UTF-8 length of the codepoint we
 		// just consumed.
-		if r < 0x80 { byte_idx += 1 }
-		else if r < 0x800 { byte_idx += 2 }
-		else if r < 0x10000 { byte_idx += 3 }
-		else { byte_idx += 4 }
+		byte_idx += rune_byte_len
 	}
 
 	// Stage 1b: Arabic / cursive-joining per-position substitution.

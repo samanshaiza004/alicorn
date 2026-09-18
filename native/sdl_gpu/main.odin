@@ -95,6 +95,21 @@ Application_Text_Change_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, change
 Application_Key_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, key: Application_Key) -> bool
 Application_Scroll_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Scroll_Event)
 Application_Tick_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
+Application_Start_Proc :: proc(state: rawptr, waker: Application_Waker)
+Application_Wake_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
+
+// Application_Waker is an opaque, thread-safe request to wake the native
+// application loop. The application can retain and call it from a worker
+// thread; the SDL host owns the actual event transport.
+Application_Wake_Callback :: proc(data: rawptr)
+Application_Waker :: struct {
+	data: rawptr,
+	wake: Application_Wake_Callback,
+}
+
+application_wake :: proc(waker: Application_Waker) {
+	if waker.wake != nil { waker.wake(waker.data) }
+}
 
 // Application is the intended public boundary for a small native Alicorn
 // program. State is borrowed by callbacks for the duration of Run; retained
@@ -109,6 +124,20 @@ Application :: struct {
 	on_key:         Application_Key_Proc,
 	on_scroll:      Application_Scroll_Proc,
 	on_tick:        Application_Tick_Proc,
+	on_start:       Application_Start_Proc,
+	on_wake:        Application_Wake_Proc,
+}
+
+Native_Application_Waker :: struct {
+	event_type: sdl3.EventType,
+	active:     bool,
+}
+
+native_application_wake :: proc(data: rawptr) {
+	state := cast(^Native_Application_Waker)data
+	if state == nil || !state.active { return }
+	event := sdl3.Event{type=state.event_type}
+	_ = sdl3.PushEvent(&event)
 }
 
 fail :: proc(message: string) -> ! {
@@ -440,13 +469,22 @@ pump_events :: proc(
 	diagnostics_capture_requested: ^bool = nil,
 	debug_bounds: ^bool = nil,
 	telemetry: ^Native_Text_Event_Telemetry = nil,
+	wake_event: sdl3.EventType = .FIRST,
+	wake_event_enabled := false,
+	wait_for_event := false,
 ) {
 	if telemetry != nil { telemetry.events_this_pump = 0 }
 	event: sdl3.Event
 	when ODIN_OS == .Darwin {
 		pump_platform_events()
 	}
-	for poll_sdl_event(&event) {
+	has_event := false
+	if wait_for_event {
+		has_event = sdl3.WaitEvent(&event)
+	} else {
+		has_event = poll_sdl_event(&event)
+	}
+	for has_event {
 		if telemetry != nil {
 			event_timestamp: u64 = 0
 			#partial switch event.type {
@@ -470,6 +508,11 @@ pump_events :: proc(
 		}
 		if event.type == .QUIT || event.type == .WINDOW_CLOSE_REQUESTED {
 			quit_requested^ = true
+		}
+		if application != nil && wake_event_enabled && event.type == wake_event {
+			if application.on_wake != nil {
+				application.on_wake(application.state, rt)
+			}
 		}
 		if pointer, ok := pointer_from_sdl(event); ok {
 			alicorn.process_pointer(rt, pointer)
@@ -644,6 +687,7 @@ pump_events :: proc(
 				fail("window metrics became unavailable after a window event")
 			}
 		}
+		has_event = poll_sdl_event(&event)
 	}
 	if telemetry != nil { native_finish_input_pump(telemetry) }
 }
@@ -1043,6 +1087,13 @@ run_application_loop :: proc(
 	debug_bounds := diagnostics.debug_bounds
 	host_scratch := native_host_scratch_make()
 	defer native_host_scratch_destroy(&host_scratch)
+	wake_event_id := sdl3.RegisterEvents(1)
+	if wake_event_id == 0 { fail("SDL_RegisterEvents failed for application wakeups") }
+	wake_state := Native_Application_Waker{event_type=sdl3.EventType(wake_event_id), active=true}
+	application_waker := Application_Waker{data=rawptr(&wake_state), wake=native_application_wake}
+	if application_instance.on_start != nil {
+		application_instance.on_start(application_instance.state, application_waker)
+	}
 
 	platform_text := ""
 	start := time.now()
@@ -1054,6 +1105,7 @@ run_application_loop :: proc(
 
 	last_tick := time.now()
 	last_focus_log := start
+	wait_for_event := false
 	for !quit_requested {
 		native_host_scratch_reset(&host_scratch)
 		frame_start := time.now()
@@ -1067,7 +1119,11 @@ run_application_loop :: proc(
 			diagnostics_capture_requested=&diagnostics.capture_requested,
 			debug_bounds=&debug_bounds,
 			telemetry=&text_events,
+			wake_event=sdl3.EventType(wake_event_id),
+			wake_event_enabled=true,
+			wait_for_event=wait_for_event,
 		)
+		wait_for_event = false
 		native_timing_accumulate(&timing.event_pump_ns, &timing.event_pump_max_ns, u64(time.duration_nanoseconds(time.since(event_start))) )
 		if quit_requested { break }
 
@@ -1171,7 +1227,14 @@ run_application_loop :: proc(
 			if len(in_flight) > max_in_flight { max_in_flight = len(in_flight) }
 		}
 		if !rt.invalidated && !alicorn.frame_needs_submission(rt) {
-			sdl3.Delay(1)
+			if !smoke && application_instance.on_tick == nil {
+				// An application with no tick callback has no reason to poll at
+				// display cadence. SDL waits until an OS event or a worker calls
+				// Application_Waker, preserving true idle for desktop apps.
+				wait_for_event = true
+			} else {
+				sdl3.Delay(1)
+			}
 		}
 		native_timing_add_frame(&timing, u64(time.duration_nanoseconds(time.since(frame_start))))
 		if native_write_diagnostics(&diagnostics, start, gpu_driver, metrics^, rt, text_renderer, surface_renderer, solid_renderer, &timing, &text_events) {
