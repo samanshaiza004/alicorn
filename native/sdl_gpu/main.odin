@@ -10,6 +10,7 @@ import "core:math"
 import "core:mem"
 import "core:os"
 import "core:c"
+import "core:strconv"
 import "core:strings"
 import "core:time"
 import alicorn "../../runtime"
@@ -476,6 +477,8 @@ pump_events :: proc(
 	wait_for_event := false,
 	event_waits: ^u64 = nil,
 	wake_events: ^u64 = nil,
+	wait_timeout_ms: sdl3.Sint32 = -1,
+	wait_timed_out: ^bool = nil,
 ) {
 	if telemetry != nil { telemetry.events_this_pump = 0 }
 	event: sdl3.Event
@@ -485,7 +488,12 @@ pump_events :: proc(
 	has_event := false
 	if wait_for_event {
 		if event_waits != nil { event_waits^ += 1 }
-		has_event = sdl3.WaitEvent(&event)
+		if wait_timeout_ms >= 0 {
+			has_event = sdl3.WaitEventTimeout(&event, wait_timeout_ms)
+		} else {
+			has_event = sdl3.WaitEvent(&event)
+		}
+		if !has_event && wait_timed_out != nil { wait_timed_out^ = true }
 	} else {
 		has_event = poll_sdl_event(&event)
 	}
@@ -1070,6 +1078,7 @@ run_application_loop :: proc(
 	smoke := false,
 	manual_log := false,
 	gpu_driver := "unknown",
+	idle_proof_seconds := 0,
 ) {
 	application_instance := application
 	quit_requested := false
@@ -1118,6 +1127,17 @@ run_application_loop :: proc(
 		native_host_scratch_reset(&host_scratch)
 		frame_start := time.now()
 		event_start := time.now()
+	wait_timed_out := false
+	wait_timeout_ms: sdl3.Sint32 = -1
+	if wait_for_event && idle_proof_seconds > 0 {
+		elapsed := time.duration_nanoseconds(time.since(start))
+		remaining := i64(idle_proof_seconds)*1_000_000_000 - elapsed
+		if remaining <= 0 {
+			quit_requested = true
+			continue
+		}
+		wait_timeout_ms = sdl3.Sint32((remaining + 999_999) / 1_000_000)
+	}
 		pump_events(
 			window, rt, metrics, &quit_requested,
 			&logical_resize_events, &pixel_resize_events, &scale_events,
@@ -1132,8 +1152,14 @@ run_application_loop :: proc(
 			wait_for_event=wait_for_event,
 			event_waits=&event_waits,
 			wake_events=&wake_events,
+			wait_timeout_ms=wait_timeout_ms,
+			wait_timed_out=&wait_timed_out,
 		)
 		wait_for_event = false
+		if wait_timed_out {
+			quit_requested = true
+			continue
+		}
 		native_timing_accumulate(&timing.event_pump_ns, &timing.event_pump_max_ns, u64(time.duration_nanoseconds(time.since(event_start))) )
 		if quit_requested { break }
 
@@ -1323,8 +1349,14 @@ run_application_loop :: proc(
 // programs. The app supplies only its state pointer and ordinary callbacks.
 Run :: proc(application: Application, smoke := false) {
 	input_debug := false
+	idle_proof_seconds := 0
 	for argument in os.args {
 		if argument == "--input-debug" { input_debug = true }
+		prefix := "--idle-proof-seconds="
+		if strings.has_prefix(argument, prefix) {
+			parsed, ok := strconv.parse_int(argument[len(prefix):])
+			if ok && parsed > 0 { idle_proof_seconds = int(parsed) }
+		}
 	}
 	if !sdl3.SetHint(sdl3.HINT_IME_IMPLEMENTED_UI, "composition") {
 		fail("SDL_IME_IMPLEMENTED_UI hint could not be set")
@@ -1402,7 +1434,7 @@ Run :: proc(application: Application, smoke := false) {
 	// terminal on macOS. Raise again only after the application is ready so a
 	// visible-but-inert window is not handed to the user.
 	if !sdl3.RaiseWindow(window) { fail("SDL_RaiseWindow failed after host initialization") }
-	run_application_loop(window, device, &rt, &text_renderer, &surface_renderer, &solid_renderer, &metrics, application, smoke, input_debug, string(selected_driver))
+	run_application_loop(window, device, &rt, &text_renderer, &surface_renderer, &solid_renderer, &metrics, application, smoke, input_debug, string(selected_driver), idle_proof_seconds=idle_proof_seconds)
 }
 
 RunFoundation :: proc() {
