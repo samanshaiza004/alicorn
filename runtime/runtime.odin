@@ -1086,7 +1086,12 @@ scroll_region_begin :: proc(
 	// the previous retained offset so a rebuild does not jump to the top.
 	offset := f32(0)
 	if previous, ok := rt.nodes[id]; ok {
-		if previous.bounds.h > 0 { resolved_viewport = previous.bounds.h }
+		// An explicit viewport is authoritative (useful for fixed layouts and
+		// resize tests). Grow-based regions pass zero and reuse the last
+		// resolved layout height until the new layout has run.
+		if viewport_height <= 0 && style.height < 0 && previous.bounds.h > 0 {
+			resolved_viewport = previous.bounds.h
+		}
 		offset = clampf(previous.scroll_offset_y, 0, maxf(content_height-resolved_viewport, 0))
 		max_scroll = maxf(content_height-resolved_viewport, 0)
 	}

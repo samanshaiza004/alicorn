@@ -1396,6 +1396,45 @@ test_retained_scroll_region :: proc(state: ^Test_State) {
 	}
 }
 
+render_scroll_pair :: proc(rt: ^alicorn.Runtime, viewport_height: f32) -> [2]alicorn.Node_ID {
+	ids: [2]alicorn.Node_ID
+	alicorn.invalidate_root(rt, "scroll pair test")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return ids }
+	alicorn.container_begin(&ui, .Root, label="scroll-pair-root", style=alicorn.Layout_Style{.Row, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	left := alicorn.scroll_region_begin(&ui, key=alicorn.key_string("left"), viewport_height=viewport_height, content_height=400, line_height=20, style=alicorn.Layout_Style{.Column, 100, viewport_height, 0, -1, 0, -1, 0, 0, 0, .Stretch, true})
+	ids[0] = left.id
+	alicorn.scroll_region_end(&ui)
+	right := alicorn.scroll_region_begin(&ui, key=alicorn.key_string("right"), viewport_height=viewport_height, content_height=400, line_height=20, style=alicorn.Layout_Style{.Column, 100, viewport_height, 0, -1, 0, -1, 0, 0, 0, .Stretch, true})
+	ids[1] = right.id
+	alicorn.scroll_region_end(&ui)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return ids
+}
+
+test_scroll_region_routing_and_clamp :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
+	defer alicorn.destroy_runtime(&rt)
+	ids := render_scroll_pair(&rt, 60)
+	left := rt.nodes[ids[0]]
+	right := rt.nodes[ids[1]]
+	left_before := alicorn.scroll_region_offset(&rt, ids[0])
+	right_before := alicorn.scroll_region_offset(&rt, ids[1])
+	expect(state, alicorn.process_scroll(&rt, alicorn.Scroll_Event{delta_y=-1, x=left.bounds.x+4, y=left.bounds.y+4}), "left region claims wheel input")
+	expect(state, alicorn.scroll_region_offset(&rt, ids[0]) == left_before+20 && alicorn.scroll_region_offset(&rt, ids[1]) == right_before, "wheel over left changes only left offset")
+	expect(state, alicorn.process_scroll(&rt, alicorn.Scroll_Event{delta_y=-1, x=right.bounds.x+4, y=right.bounds.y+4}), "right region claims wheel input")
+	expect(state, alicorn.scroll_region_offset(&rt, ids[1]) == right_before+20, "wheel over right changes only right offset")
+	expect(state, !alicorn.process_scroll(&rt, alicorn.Scroll_Event{delta_y=-1, x=280, y=20}), "wheel outside regions remains available to the application")
+	expect(state, alicorn.scroll_region_set_offset(&rt, ids[0], 999), "scroll region accepts a changed programmatic offset")
+	expect(state, alicorn.scroll_region_offset(&rt, ids[0]) == 340, "scroll region clamps to content minus viewport")
+	_ = alicorn.scroll_region_set_offset(&rt, ids[0], -1)
+	expect(state, alicorn.scroll_region_offset(&rt, ids[0]) == 0, "scroll region clamps negative offsets")
+	ids = render_scroll_pair(&rt, 100)
+	expect(state, alicorn.scroll_region_set_offset(&rt, ids[0], 999), "resized scroll region accepts a new offset")
+	expect(state, alicorn.scroll_region_offset(&rt, ids[0]) == 300, "resized viewport recomputes the maximum offset")
+}
+
 test_runtime_allocator_ownership :: proc(state: ^Test_State) {
 	base_allocator := context.allocator
 	tracking: mem.Tracking_Allocator
@@ -1462,6 +1501,7 @@ main :: proc() {
 	test_runtime_edit_invalidates_text_product(&state)
 	test_gpu_surface_contract(&state)
 	test_retained_scroll_region(&state)
+	test_scroll_region_routing_and_clamp(&state)
 	test_runtime_allocator_ownership(&state)
 	if state.failures == 0 {
 		fmt.println("Alicorn foundation tests: PASS")
