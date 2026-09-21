@@ -1413,6 +1413,31 @@ render_scroll_pair :: proc(rt: ^alicorn.Runtime, viewport_height: f32) -> [2]ali
 	return ids
 }
 
+render_horizontal_scroll :: proc(rt: ^alicorn.Runtime, viewport_width: f32) -> alicorn.Node_ID {
+	alicorn.invalidate_root(rt, "horizontal scroll test")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return 0 }
+	alicorn.container_begin(&ui, .Root, label="horizontal-scroll-root", style=alicorn.Layout_Style{.Column, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	region := alicorn.scroll_region_begin(
+		&ui,
+		key=alicorn.key_string("horizontal"),
+		viewport_width=viewport_width,
+		content_width=500,
+		line_width=10,
+		viewport_height=60,
+		content_height=60,
+		style=alicorn.Layout_Style{.Column, viewport_width, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, true},
+	)
+	id := region.id
+	alicorn.container_begin(&ui, .Virtual_List, label="horizontal-content", style=alicorn.Layout_Style{.Column, 500, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, true}, layout_scroll_offset_x=region.offset_x)
+	alicorn.text(&ui, "a very long line that must remain wider than the viewport", style=alicorn.Layout_Style{.Row, 500, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	alicorn.container_end(&ui)
+	alicorn.scroll_region_end(&ui)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return id
+}
+
 test_scroll_region_routing_and_clamp :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
 	defer alicorn.destroy_runtime(&rt)
@@ -1433,6 +1458,12 @@ test_scroll_region_routing_and_clamp :: proc(state: ^Test_State) {
 	ids = render_scroll_pair(&rt, 100)
 	expect(state, alicorn.scroll_region_set_offset(&rt, ids[0], 999), "resized scroll region accepts a new offset")
 	expect(state, alicorn.scroll_region_offset(&rt, ids[0]) == 300, "resized viewport recomputes the maximum offset")
+	horizontal := render_horizontal_scroll(&rt, 100)
+	horizontal_node := rt.nodes[horizontal]
+	expect(state, alicorn.process_scroll(&rt, alicorn.Scroll_Event{delta_x=-1, x=horizontal_node.bounds.x+4, y=horizontal_node.bounds.y+4}), "horizontal region claims horizontal wheel input")
+	expect(state, alicorn.scroll_region_offset_x(&rt, horizontal) == 10, "horizontal wheel changes the retained x offset")
+	expect(state, alicorn.scroll_region_set_offset_x(&rt, horizontal, 999), "horizontal region accepts a changed programmatic offset")
+	expect(state, alicorn.scroll_region_offset_x(&rt, horizontal) == 400, "horizontal region clamps to content minus viewport")
 }
 
 test_runtime_allocator_ownership :: proc(state: ^Test_State) {

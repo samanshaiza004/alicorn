@@ -42,9 +42,13 @@ description_hash :: proc(d: Description) -> u64 {
 	h = hash_mix(h, u64(d.surface_pixel_height))
 	h = hash_mix(h, u64(transmute(u32)d.surface_dpi_scale))
 	h = hash_mix(h, u64(transmute(u32)d.scroll_offset_y))
+	h = hash_mix(h, u64(transmute(u32)d.scroll_offset_x))
 	h = hash_mix(h, u64(transmute(u32)d.scroll_content_height))
 	h = hash_mix(h, u64(transmute(u32)d.scroll_viewport_height))
 	h = hash_mix(h, u64(transmute(u32)d.scroll_line_height))
+	h = hash_mix(h, u64(transmute(u32)d.scroll_content_width))
+	h = hash_mix(h, u64(transmute(u32)d.scroll_viewport_width))
+	h = hash_mix(h, u64(transmute(u32)d.scroll_line_width))
 	return h
 }
 
@@ -55,7 +59,9 @@ layout_hash :: proc(d: Description) -> u64 {
 	// the residual layout offset in this dependency: the former is the public
 	// scroll position and the latter is the value used by virtualized layout.
 	h = hash_mix(h, u64(transmute(u32)d.scroll_offset_y))
+	h = hash_mix(h, u64(transmute(u32)d.scroll_offset_x))
 	h = hash_mix(h, u64(transmute(u32)d.layout_scroll_offset_y))
+	h = hash_mix(h, u64(transmute(u32)d.layout_scroll_offset_x))
 	// Text participates in intrinsic measurement. A description can otherwise
 	// look layout-identical while a changing label/value moves its siblings.
 	#partial switch d.kind {
@@ -163,10 +169,15 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	node.surface_pixel_height = d.surface_pixel_height
 	node.surface_dpi_scale = d.surface_dpi_scale
 	node.scroll_offset_y = d.scroll_offset_y
+	node.scroll_offset_x = d.scroll_offset_x
 	node.layout_scroll_offset_y = d.layout_scroll_offset_y
+	node.layout_scroll_offset_x = d.layout_scroll_offset_x
 	node.scroll_content_height = d.scroll_content_height
 	node.scroll_viewport_height = d.scroll_viewport_height
 	node.scroll_line_height = d.scroll_line_height
+	node.scroll_content_width = d.scroll_content_width
+	node.scroll_viewport_width = d.scroll_viewport_width
+	node.scroll_line_width = d.scroll_line_width
 	// A direct surface update owns the high-frequency revision. A later root
 	// wake with the same description must not roll it back; a changed
 	// description revision is an explicit replacement and is authoritative.

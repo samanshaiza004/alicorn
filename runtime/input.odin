@@ -39,12 +39,20 @@ process_scroll :: proc(rt: ^Runtime, event: Scroll_Event) -> bool {
 	if id == 0 { return false }
 	node, ok := rt.nodes[id]
 	if !ok { return false }
-	delta := event.delta_y
-	if event.ticks_y != 0 { delta = f32(event.ticks_y) * 3 }
-	if delta == 0 { return true }
+	delta_y := event.delta_y
+	if event.ticks_y != 0 { delta_y = f32(event.ticks_y) * 3 }
+	delta_x := event.delta_x
+	if event.ticks_x != 0 { delta_x = f32(event.ticks_x) * 3 }
 	line_height := node.scroll_line_height
 	if line_height <= 0 { line_height = 24 }
-	_ = scroll_region_set_offset(rt, id, node.scroll_offset_y-delta*line_height, "scroll region wheel")
+	line_width := node.scroll_line_width
+	if line_width <= 0 { line_width = 24 }
+	if delta_y != 0 {
+		_ = scroll_region_set_offset(rt, id, node.scroll_offset_y-delta_y*line_height, "scroll region wheel")
+	}
+	if delta_x != 0 {
+		_ = scroll_region_set_offset_x(rt, id, node.scroll_offset_x-delta_x*line_width, "horizontal scroll region wheel")
+	}
 	return true
 }
 

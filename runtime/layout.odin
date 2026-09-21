@@ -102,7 +102,17 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	// realized row may begin above the viewport when the scroll position is
 	// between row boundaries; the retained clip on the list protects the
 	// surrounding UI while preserving continuous motion.
-	main_offset: f32 = -parent.layout_scroll_offset_y if parent.kind == .Virtual_List else 0
+	main_offset: f32 = 0
+	cross_offset: f32 = 0
+	if parent.kind == .Virtual_List {
+		if parent.style.direction == .Column {
+			main_offset = -parent.layout_scroll_offset_y
+			cross_offset = -parent.layout_scroll_offset_x
+		} else {
+			main_offset = -parent.layout_scroll_offset_x
+			cross_offset = -parent.layout_scroll_offset_y
+		}
+	}
 	for id in children {
 		child := rt.nodes[id]
 		old_bounds := child.bounds
@@ -113,14 +123,14 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		if parent.style.direction == .Row {
 			cross := child.style.height >= 0 ? child.style.height : cross_size
 			cross = clampf(cross, child.style.min_height, child.style.max_height)
-			cross_pos := inner.y
+			cross_pos := inner.y + cross_offset
 			if parent.style.align == .Center { cross_pos += (cross_size-cross)/2 }
 			if parent.style.align == .End { cross_pos += cross_size-cross }
 			child.bounds = Rect{inner.x+main_offset, cross_pos, clampf(main, child.style.min_width, child.style.max_width), cross}
 		} else {
 			cross := child.style.width >= 0 ? child.style.width : cross_size
 			cross = clampf(cross, child.style.min_width, child.style.max_width)
-			cross_pos := inner.x
+			cross_pos := inner.x + cross_offset
 			if parent.style.align == .Center { cross_pos += (cross_size-cross)/2 }
 			if parent.style.align == .End { cross_pos += cross_size-cross }
 			child.bounds = Rect{cross_pos, inner.y+main_offset, cross, clampf(main, child.style.min_height, child.style.max_height)}
