@@ -1118,7 +1118,8 @@ scroll_region_begin :: proc(
 	if id == 0 { return {} }
 	// A description is emitted before layout resolves the new bounds. Reuse
 	// the previous retained offset so a rebuild does not jump to the top.
-	offset := f32(0)
+	offset_y := f32(0)
+	offset_x := f32(0)
 	if previous, ok := rt.nodes[id]; ok {
 		// An explicit viewport is authoritative (useful for fixed layouts and
 		// resize tests). Grow-based regions pass zero and reuse the last
@@ -1129,22 +1130,23 @@ scroll_region_begin :: proc(
 		if viewport_width <= 0 && style.width < 0 && previous.bounds.w > 0 {
 			resolved_width = previous.bounds.w
 		}
-		offset = clampf(previous.scroll_offset_y, 0, maxf(content_height-resolved_viewport, 0))
+		offset_y = clampf(previous.scroll_offset_y, 0, maxf(content_height-resolved_viewport, 0))
+		offset_x = clampf(previous.scroll_offset_x, 0, maxf(content_width-resolved_width, 0))
 		max_scroll = maxf(content_height-resolved_viewport, 0)
 		max_scroll_x = maxf(content_width-resolved_width, 0)
 	}
 	last := len(rt.pending)-1
 	if last >= 0 && rt.pending[last].kind == .Description && rt.pending[last].description.id == id {
-		rt.pending[last].description.scroll_offset_y = offset
+		rt.pending[last].description.scroll_offset_y = offset_y
 		rt.pending[last].description.scroll_viewport_height = resolved_viewport
 		rt.pending[last].description.layout_scroll_offset_y = 0
-		rt.pending[last].description.scroll_offset_x = 0
+		rt.pending[last].description.scroll_offset_x = offset_x
 		rt.pending[last].description.scroll_viewport_width = resolved_width
 		rt.pending[last].description.layout_scroll_offset_x = 0
 	}
 	append(&rt.stack, id)
 	push_identity_scope(rt, id, "", 0)
-	return Scroll_Region_Handle{id, offset, 0, resolved_viewport, resolved_width, content_height, content_width, max_scroll, max_scroll_x}
+	return Scroll_Region_Handle{id, offset_y, offset_x, resolved_viewport, resolved_width, content_height, content_width, max_scroll, max_scroll_x}
 }
 
 scroll_region_end :: proc(ui: ^UI) {

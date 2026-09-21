@@ -1464,6 +1464,8 @@ test_scroll_region_routing_and_clamp :: proc(state: ^Test_State) {
 	expect(state, alicorn.scroll_region_offset_x(&rt, horizontal) == 10, "horizontal wheel changes the retained x offset")
 	expect(state, alicorn.scroll_region_set_offset_x(&rt, horizontal, 999), "horizontal region accepts a changed programmatic offset")
 	expect(state, alicorn.scroll_region_offset_x(&rt, horizontal) == 400, "horizontal region clamps to content minus viewport")
+	_ = render_horizontal_scroll(&rt, 100)
+	expect(state, alicorn.scroll_region_offset_x(&rt, horizontal) == 400, "horizontal offset survives the rebuild triggered by scrolling")
 }
 
 test_runtime_allocator_ownership :: proc(state: ^Test_State) {
