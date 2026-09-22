@@ -34,6 +34,9 @@ description_hash :: proc(d: Description) -> u64 {
 	h := hash_mix(hash_string(d.label), hash_string(d.text))
 	h = hash_mix(h, u64(d.kind))
 	h = hash_mix(h, u64(d.font))
+	if node_has_text_product(d.kind) {
+		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
+	}
 	h = hash_mix(h, d.paint_value)
 	h = hash_mix(h, hash_color(d.color))
 	h = hash_mix(h, u64(d.paint_background ? 1 : 0))
@@ -71,9 +74,11 @@ layout_hash :: proc(d: Description) -> u64 {
 	case .Button:
 		h = hash_mix(h, hash_string(d.label))
 		h = hash_mix(h, u64(d.font))
+		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
 	case .Text, .Text_Field:
 		h = hash_mix(h, hash_string(d.text))
 		h = hash_mix(h, u64(d.font))
+		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
 	}
 	return h
 }
@@ -139,8 +144,9 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	label_changed := d.kind == .Button && node.label != d.label
 	text_changed := node.text != d.text || label_changed
 	font_changed := node.font != d.font
+	weight_changed := effective_font_weight(node.text_style.font_weight) != effective_font_weight(d.text_style.font_weight)
 	kind_changed := node.kind != d.kind
-	if node.text_run_valid && (text_changed || font_changed || kind_changed || !node_has_text_product(d.kind)) {
+	if node.text_run_valid && (text_changed || font_changed || weight_changed || kind_changed || !node_has_text_product(d.kind)) {
 		text_run_destroy(&node.text_run)
 		node.text_run_valid = false
 	}
@@ -155,6 +161,7 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	node.kind = d.kind
 	node.style = d.style
 	node.font = d.font
+	node.text_style = d.text_style
 	node.color = d.color
 	node.paint_background = d.paint_background
 	surface_description_changed := node.paint_value != d.paint_value

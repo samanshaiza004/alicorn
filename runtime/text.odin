@@ -7,6 +7,15 @@ import "core:unicode"
 import "core:unicode/utf8"
 import runa "../third_party/Runa"
 
+FONT_WEIGHT_AXIS_TAG :: runa.Axis_Tag(0x77676874)
+
+Font_Weight_Axis :: struct {
+	available: bool,
+	tag:       runa.Axis_Tag,
+	min_value: f32,
+	max_value: f32,
+}
+
 // Text_Engine is intentionally a narrow seam. The runtime owns GUI concerns
 // while a provider owns shaping, bidi, segmentation, line breaking and glyph
 // rasterization. Runa is the foundation provider; its atlas remains behind
@@ -23,12 +32,16 @@ Text_Engine :: struct {
 	glyph_rasterizations: u64,
 	font_data:            []u8,
 	font:                 runa.Font,
+	font_weight_axis:     Font_Weight_Axis,
 	fallback_font_data:   []u8,
 	fallback_font:        runa.Font,
+	fallback_font_weight_axis: Font_Weight_Axis,
 	monospace_font_data: []u8,
 	monospace_font:       runa.Font,
+	monospace_font_weight_axis: Font_Weight_Axis,
 	monospace_fallback_font_data: []u8,
 	monospace_fallback_font:      runa.Font,
+	monospace_fallback_font_weight_axis: Font_Weight_Axis,
 	cache:                runa.Cache,
 	font_loaded:          bool,
 	fallback_font_loaded: bool,
@@ -54,6 +67,7 @@ Glyph_Resource_Key :: struct {
 	font_generation: u64,
 	font:           Font_Role,
 	font_source:    Text_Font_Source,
+	font_weight_bits: u32,
 	glyph_id:        runa.Glyph_ID,
 	size_bits:       u32,
 	subpixel_bucket: u8,
@@ -164,6 +178,7 @@ Text_Run :: struct {
 	font_generation: u64,
 	font:           Font_Role,
 	font_source:    Text_Font_Source,
+	font_weight:    f32,
 	ligatures_disabled: bool,
 	allocator:      mem.Allocator,
 }
@@ -187,6 +202,44 @@ text_engine_font :: proc(engine: ^Text_Engine, role: Font_Role) -> (font: ^runa.
 		return &engine.monospace_font, true
 	}
 	return &engine.font, engine.font_loaded
+}
+
+effective_font_weight :: proc(weight: f32) -> f32 {
+	// Zero-initialized Text_Style values occur in older aggregate callers; keep
+	// those equivalent to the documented regular default.
+	if weight <= 0 { return FONT_WEIGHT_REGULAR }
+	return weight
+}
+
+text_engine_weight_axis_for_font :: proc(font: ^runa.Font) -> Font_Weight_Axis {
+	for axis in runa.font_axes(font) {
+		if axis.tag == FONT_WEIGHT_AXIS_TAG {
+			return Font_Weight_Axis{true, axis.tag, axis.min_value, axis.max_value}
+		}
+	}
+	return {}
+}
+
+text_engine_weight_axis :: proc(engine: ^Text_Engine, role: Font_Role, source: Text_Font_Source) -> Font_Weight_Axis {
+	if role == .Monospace {
+		if source == .Fallback { return engine.monospace_fallback_font_weight_axis }
+		return engine.monospace_font_weight_axis
+	}
+	if source == .Fallback { return engine.fallback_font_weight_axis }
+	return engine.font_weight_axis
+}
+
+text_engine_apply_font_weight :: proc(font: ^runa.Font, axis: Font_Weight_Axis, weight: f32) -> bool {
+	runa.font_reset_variations(font)
+	if !axis.available { return false }
+	resolved := effective_font_weight(weight)
+	if resolved < axis.min_value { resolved = axis.min_value }
+	if resolved > axis.max_value { resolved = axis.max_value }
+	if runa.font_set_variation(font, axis.tag, resolved) != .None {
+		runa.font_reset_variations(font)
+		return false
+	}
+	return true
 }
 
 text_engine_fallback_font :: proc(engine: ^Text_Engine, role: Font_Role) -> (font: ^runa.Font, loaded: bool) {
@@ -242,6 +295,7 @@ text_engine_load_font_role :: proc(engine: ^Text_Engine, role: Font_Role, data: 
 		delete(copy_data, engine.allocator)
 		return false
 	}
+	weight_axis := text_engine_weight_axis_for_font(&font)
 	text_engine_reset_font_resources(engine)
 	switch role {
 	case .UI:
@@ -249,12 +303,14 @@ text_engine_load_font_role :: proc(engine: ^Text_Engine, role: Font_Role, data: 
 		delete(engine.font_data, engine.allocator)
 		engine.font_data = copy_data
 		engine.font = font
+		engine.font_weight_axis = weight_axis
 		engine.font_loaded = true
 	case .Monospace:
 		if engine.monospace_font_loaded { runa.font_destroy(&engine.monospace_font) }
 		delete(engine.monospace_font_data, engine.allocator)
 		engine.monospace_font_data = copy_data
 		engine.monospace_font = font
+		engine.monospace_font_weight_axis = weight_axis
 		engine.monospace_font_loaded = true
 	}
 	engine.font_generation += 1
@@ -274,6 +330,7 @@ text_engine_load_fallback_font_role :: proc(engine: ^Text_Engine, role: Font_Rol
 		delete(copy_data, engine.allocator)
 		return false
 	}
+	weight_axis := text_engine_weight_axis_for_font(&font)
 	text_engine_reset_font_resources(engine)
 	switch role {
 	case .UI:
@@ -281,12 +338,14 @@ text_engine_load_fallback_font_role :: proc(engine: ^Text_Engine, role: Font_Rol
 		delete(engine.fallback_font_data, engine.allocator)
 		engine.fallback_font_data = copy_data
 		engine.fallback_font = font
+		engine.fallback_font_weight_axis = weight_axis
 		engine.fallback_font_loaded = true
 	case .Monospace:
 		if engine.monospace_fallback_font_loaded { runa.font_destroy(&engine.monospace_fallback_font) }
 		delete(engine.monospace_fallback_font_data, engine.allocator)
 		engine.monospace_fallback_font_data = copy_data
 		engine.monospace_fallback_font = font
+		engine.monospace_fallback_font_weight_axis = weight_axis
 		engine.monospace_fallback_font_loaded = true
 	}
 	engine.font_generation += 1
@@ -324,14 +383,16 @@ text_engine_destroy :: proc(engine: ^Text_Engine) {
 	engine^ = {}
 }
 
-text_engine_glyph :: proc(engine: ^Text_Engine, glyph_id: runa.Glyph_ID, size: f32, subpixel_bucket: u8 = 0, hint: bool = true, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI, font_source := Text_Font_Source.Primary) -> (slot: runa.Atlas_Slot, drawable, ok: bool) {
+text_engine_glyph :: proc(engine: ^Text_Engine, glyph_id: runa.Glyph_ID, size: f32, subpixel_bucket: u8 = 0, hint: bool = true, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI, font_source := Text_Font_Source.Primary, font_weight: f32 = FONT_WEIGHT_REGULAR) -> (slot: runa.Atlas_Slot, drawable, ok: bool) {
 	font, loaded := text_engine_font_for_source(engine, font_role, font_source)
 	if !loaded || size <= 0 { return }
+	weight := effective_font_weight(font_weight)
 	is_color := runa.font_has_color_layers(font, glyph_id)
 	key := Glyph_Resource_Key{
 		font_generation = engine.font_generation,
 		font = font_role,
 		font_source = font_source,
+		font_weight_bits = transmute(u32)weight,
 		glyph_id = glyph_id,
 		size_bits = transmute(u32)size,
 		subpixel_bucket = subpixel_bucket & 3,
@@ -346,6 +407,8 @@ text_engine_glyph :: proc(engine: ^Text_Engine, glyph_id: runa.Glyph_ID, size: f
 	err: runa.Error
 	previous_temp_allocator := context.temp_allocator
 	context.temp_allocator = scratch_allocator
+	_ = text_engine_apply_font_weight(font, text_engine_weight_axis(engine, font_role, font_source), weight)
+	defer { runa.font_reset_variations(font) }
 	slot, err = runa.raster_glyph(font, glyph_id, size, key.subpixel_bucket, &engine.atlas, allocator=engine.allocator, hint=hint)
 	context.temp_allocator = previous_temp_allocator
 	if err != .None { return runa.Atlas_Slot{}, false, false }
@@ -493,10 +556,13 @@ text_tab_advance :: proc(line_x, space_advance: f32) -> f32 {
 // size. Physical glyph rasterization is deliberately deferred to the native
 // renderer so a window can move between DPI scales without changing logical
 // layout.
-text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, editable: bool = false, allocator := context.allocator, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI) -> (run: Text_Run, ok: bool) {
+text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, editable: bool = false, allocator := context.allocator, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI, font_weight: f32 = FONT_WEIGHT_REGULAR) -> (run: Text_Run, ok: bool) {
 	font_source := text_engine_choose_font_source(engine, font_role, value)
 	font, font_loaded := text_engine_font_for_source(engine, font_role, font_source)
 	if !font_loaded || size <= 0 { return }
+	resolved_font_weight := effective_font_weight(font_weight)
+	_ = text_engine_apply_font_weight(font, text_engine_weight_axis(engine, font_role, font_source), resolved_font_weight)
+	defer { runa.font_reset_variations(font) }
 	stack := runa.Font_Stack{font}
 	disable_features: bit_set[runa.Feature] = {}
 	if editable {
@@ -527,6 +593,7 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 	run.font_generation = engine.font_generation
 	run.font = font_role
 	run.font_source = font_source
+	run.font_weight = resolved_font_weight
 	run.ligatures_disabled = editable
 	run.allocator = allocator
 	// A ligature may collapse several source graphemes into one shaping
@@ -640,12 +707,14 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 		return false
 	}
 	requested_width := max_width
+	font_weight := effective_font_weight(node.text_style.font_weight)
 	if requested_width < 0 {
 		// For auto-width text, the parent layout pass owns the real wrapping
 		// constraint. Once that pass has produced a valid run, do not rebuild it
 		// here with the temporary unconstrained value on every root wake.
 		if node.style.width <= 0 && node.text_run_valid &&
-			node.text_run.font_generation == rt.text_engine.font_generation {
+			node.text_run.font_generation == rt.text_engine.font_generation &&
+			node.text_run.font_weight == font_weight {
 			return false
 		}
 		requested_width = 0
@@ -653,11 +722,12 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 	}
 	if node.text_run_valid &&
 		node.text_run.font_generation == rt.text_engine.font_generation &&
-		node.text_run.max_width == requested_width {
+		node.text_run.max_width == requested_width &&
+		node.text_run.font_weight == font_weight {
 		return false
 	}
 	if node.text_run_valid { text_run_destroy(&node.text_run) }
-	run, built := text_run_build(&rt.text_engine, text_value, 16, requested_width, editable=node.kind == .Text_Field, allocator=rt.persistent_allocator, scratch_allocator=rt.scratch_allocator, font_role=node.font)
+	run, built := text_run_build(&rt.text_engine, text_value, 16, requested_width, editable=node.kind == .Text_Field, allocator=rt.persistent_allocator, scratch_allocator=rt.scratch_allocator, font_role=node.font, font_weight=font_weight)
 	if built {
 		node.text_run = run
 		node.text_run_valid = true
@@ -1062,10 +1132,12 @@ text_run_move_visual :: proc(run: ^Text_Run, position: Text_Position, direction:
 	return normalized
 }
 
-text_layout :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI) -> (width, height: f32, glyphs: int, ok: bool) {
+text_layout :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI, font_weight: f32 = FONT_WEIGHT_REGULAR) -> (width, height: f32, glyphs: int, ok: bool) {
 	font_source := text_engine_choose_font_source(engine, font_role, value)
 	font, font_loaded := text_engine_font_for_source(engine, font_role, font_source)
 	if !font_loaded || size <= 0 { return }
+	_ = text_engine_apply_font_weight(font, text_engine_weight_axis(engine, font_role, font_source), font_weight)
+	defer { runa.font_reset_variations(font) }
 	stack := runa.Font_Stack{font}
 	opts := runa.Paragraph_Opts{fonts=stack, size=size, direction=.Auto, align=.Start, max_width=max_width}
 	normalized_value, source_spans := text_normalize_controls(value, scratch_allocator)

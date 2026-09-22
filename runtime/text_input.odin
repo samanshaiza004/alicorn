@@ -105,13 +105,14 @@ prepare_text_composition_node :: proc(rt: ^Runtime, node: ^Node) -> bool {
 	if node.composition_run_valid &&
 		node.composition_run.font_generation == rt.text_engine.font_generation &&
 		node.composition_run.max_width == max_width &&
+		node.composition_run.font_weight == effective_font_weight(node.text_style.font_weight) &&
 		node.composition_run.value == value {
 		return false
 	}
 	text_composition_run_destroy(node)
 	_, role_loaded := text_engine_font(&rt.text_engine, node.font)
 	if !role_loaded { return false }
-	run, ok := text_run_build(&rt.text_engine, value, 16, max_width, editable=true, allocator=rt.persistent_allocator, scratch_allocator=rt.scratch_allocator, font_role=node.font)
+	run, ok := text_run_build(&rt.text_engine, value, 16, max_width, editable=true, allocator=rt.persistent_allocator, scratch_allocator=rt.scratch_allocator, font_role=node.font, font_weight=node.text_style.font_weight)
 	if !ok { return false }
 	node.composition_run = run
 	node.composition_run_valid = true

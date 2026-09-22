@@ -18,6 +18,19 @@ alicorn.text_field(ui, app.filter)
 `text_field` return a `Node_ID` when the application needs to focus or inspect
 the emitted node; most applications can ignore that result.
 
+Text weight is separate from layout geometry and uses a `Text_Style` value.
+The default is regular (400); use the named constants for common hierarchy:
+
+```odin
+alicorn.text(&ui, "Changed files (6)", text_style=alicorn.Text_Style{
+	font_weight = alicorn.FONT_WEIGHT_SEMIBOLD,
+})
+```
+
+The bundled variable UI and monospace faces apply the requested OpenType
+`wght` axis. Text products and intrinsic layout are rebuilt when weight
+changes. A loaded static font without a `wght` axis stays at its native weight.
+
 ## Layout defaults
 
 `layout_style` is a small named-field constructor for the common case. It

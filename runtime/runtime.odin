@@ -150,6 +150,19 @@ Font_Role :: enum {
 	Monospace,
 }
 
+// Text_Style controls typography independently from Layout_Style. Font weight
+// is an OpenType `wght` user coordinate; 400 is the default regular face.
+Text_Style :: struct {
+	font_weight: f32,
+}
+
+FONT_WEIGHT_REGULAR :: f32(400)
+FONT_WEIGHT_MEDIUM :: f32(500)
+FONT_WEIGHT_SEMIBOLD :: f32(600)
+FONT_WEIGHT_BOLD :: f32(700)
+
+DEFAULT_TEXT_STYLE :: Text_Style{font_weight=FONT_WEIGHT_REGULAR}
+
 Button_State :: struct {
 	selected: bool,
 	disabled: bool,
@@ -239,6 +252,7 @@ Description :: struct {
 	label:       string,
 	text:        string,
 	font:        Font_Role,
+	text_style:  Text_Style,
 	style:       Layout_Style,
 	color:       Color,
 	paint_background: bool,
@@ -294,6 +308,7 @@ Node :: struct {
 	label:       string,
 	text:        string,
 	font:        Font_Role,
+	text_style:  Text_Style,
 	style:       Layout_Style,
 	color:       Color,
 	paint_background: bool,
@@ -853,7 +868,7 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	record_trace(rt, .Reconcile, 0, message)
 }
 
-	emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, region_revision: u64 = 0, is_region := false, focusable := false, surface_kind := GPU_Surface_Kind.Waveform, surface_pixel_width: int = 0, surface_pixel_height: int = 0, surface_dpi_scale: f32 = 1, paint_background := true, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1, scroll_content_height: f32 = 0, scroll_viewport_height: f32 = 0, scroll_line_height: f32 = 0, scroll_offset_x: f32 = 0, layout_scroll_offset_x: f32 = -1, scroll_content_width: f32 = 0, scroll_viewport_width: f32 = 0, scroll_line_width: f32 = 0, scroll_axes := Scroll_Axes.Both, scroll_axis_behavior := Scroll_Axis_Behavior.Auto_Lock, font := Font_Role.UI) -> Node_ID {
+	emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, region_revision: u64 = 0, is_region := false, focusable := false, surface_kind := GPU_Surface_Kind.Waveform, surface_pixel_width: int = 0, surface_pixel_height: int = 0, surface_dpi_scale: f32 = 1, paint_background := true, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1, scroll_content_height: f32 = 0, scroll_viewport_height: f32 = 0, scroll_line_height: f32 = 0, scroll_offset_x: f32 = 0, layout_scroll_offset_x: f32 = -1, scroll_content_width: f32 = 0, scroll_viewport_width: f32 = 0, scroll_line_width: f32 = 0, scroll_axes := Scroll_Axes.Both, scroll_axis_behavior := Scroll_Axis_Behavior.Auto_Lock, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE) -> Node_ID {
 	rt := ui.runtime
 	parent_node := current_node_parent(ui)
 	parent_identity := current_identity_parent(ui)
@@ -878,7 +893,7 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	if effective_layout_scroll_offset_x < 0 { effective_layout_scroll_offset_x = scroll_offset_x }
 	description := Description{
 		id=id, parent=parent_node, site=source, key=key, explicit_key=explicit_key,
-		kind=kind, label=label, text=text, font=font, style=style, color=color, paint_background=paint_background,
+		kind=kind, label=label, text=text, font=font, text_style=text_style, style=style, color=color, paint_background=paint_background,
 		paint_value=paint_value, region_revision=region_revision, region=is_region,
 		focusable=focusable, identity_key=identity_key,
 		identity_key_u64=identity_key_u64, identity_key_numeric=identity_key_numeric,
@@ -896,7 +911,7 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	return id
 }
 
-	emit_key :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := DEFAULT_COLOR, state_bits: u64 = 0, selected := false, disabled := false, region_revision: u64 = 0, is_region := false, focusable := false, surface_kind := GPU_Surface_Kind.Waveform, surface_pixel_width: int = 0, surface_pixel_height: int = 0, surface_dpi_scale: f32 = 1, paint_background := true, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1, scroll_content_height: f32 = 0, scroll_viewport_height: f32 = 0, scroll_line_height: f32 = 0, scroll_offset_x: f32 = 0, layout_scroll_offset_x: f32 = -1, scroll_content_width: f32 = 0, scroll_viewport_width: f32 = 0, scroll_line_width: f32 = 0, scroll_axes := Scroll_Axes.Both, scroll_axis_behavior := Scroll_Axis_Behavior.Auto_Lock, font := Font_Role.UI) -> Node_ID {
+	emit_key :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := DEFAULT_COLOR, state_bits: u64 = 0, selected := false, disabled := false, region_revision: u64 = 0, is_region := false, focusable := false, surface_kind := GPU_Surface_Kind.Waveform, surface_pixel_width: int = 0, surface_pixel_height: int = 0, surface_dpi_scale: f32 = 1, paint_background := true, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1, scroll_content_height: f32 = 0, scroll_viewport_height: f32 = 0, scroll_line_height: f32 = 0, scroll_offset_x: f32 = 0, layout_scroll_offset_x: f32 = -1, scroll_content_width: f32 = 0, scroll_viewport_width: f32 = 0, scroll_line_width: f32 = 0, scroll_axes := Scroll_Axes.Both, scroll_axis_behavior := Scroll_Axis_Behavior.Auto_Lock, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE) -> Node_ID {
 	rt := ui.runtime
 	parent_node := current_node_parent(ui)
 	parent_identity := current_identity_parent(ui)
@@ -942,7 +957,7 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	description := Description{
 		id=id, parent=parent_node, site=source, key=key_string_value, explicit_key=ui_key_is_explicit(key),
 		identity_key_kind=key_kind, identity_key_pair=identity_key_pair,
-		kind=kind, label=label, text=text, font=font, style=style, color=color, paint_background=paint_background,
+		kind=kind, label=label, text=text, font=font, text_style=text_style, style=style, color=color, paint_background=paint_background,
 		paint_value=state_bits, region_revision=region_revision, region=is_region,
 		focusable=focusable, selected=selected, disabled=disabled, identity_key=identity_key,
 		identity_key_u64=identity_key_u64, identity_key_numeric=identity_key_numeric,
@@ -1305,9 +1320,9 @@ virtual_list_ensure_visible :: proc(rt: ^Runtime, id: Node_ID, index: int, reaso
 	return scroll_region_set_offset(rt, id, next, reason)
 }
 
-button_ex :: proc(ui: ^UI, label: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, paint_value: u64 = 0, loc := #caller_location) -> (id: Node_ID, clicked: bool) {
+button_ex :: proc(ui: ^UI, label: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, paint_value: u64 = 0, loc := #caller_location, text_style := DEFAULT_TEXT_STYLE) -> (id: Node_ID, clicked: bool) {
 	resolved_source := resolve_source(source, "button", loc)
-	id = emit(ui, .Button, resolved_source, label=label, key=key, explicit_key=explicit_key, style=style, paint_value=paint_value, focusable=true)
+	id = emit(ui, .Button, resolved_source, label=label, key=key, explicit_key=explicit_key, style=style, paint_value=paint_value, focusable=true, text_style=text_style)
 	if id != 0 && ui.runtime.activation_node == id && ui.runtime.activation_sequence > 0 {
 		if node, ok := ui.runtime.nodes[id]; ok {
 			if node.last_consumed_activation < ui.runtime.activation_sequence {
@@ -1319,22 +1334,22 @@ button_ex :: proc(ui: ^UI, label: string, source := Source_Site{}, key := "", ex
 	return
 }
 
-text_ex :: proc(ui: ^UI, value: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, paint_value: u64 = 0, loc := #caller_location, font := Font_Role.UI) -> Node_ID {
+text_ex :: proc(ui: ^UI, value: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, paint_value: u64 = 0, loc := #caller_location, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE) -> Node_ID {
 	resolved_source := resolve_source(source, "text", loc)
-	return emit(ui, .Text, resolved_source, text=value, key=key, explicit_key=explicit_key, style=style, paint_value=paint_value, font=font)
+	return emit(ui, .Text, resolved_source, text=value, key=key, explicit_key=explicit_key, style=style, paint_value=paint_value, font=font, text_style=text_style)
 }
 
-text_field_ex :: proc(ui: ^UI, value: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI) -> Node_ID {
+text_field_ex :: proc(ui: ^UI, value: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE) -> Node_ID {
 	resolved_source := resolve_source(source, "text_field", loc)
-	return emit(ui, .Text_Field, resolved_source, text=value, key=key, explicit_key=explicit_key, style=style, focusable=true, font=font)
+	return emit(ui, .Text_Field, resolved_source, text=value, key=key, explicit_key=explicit_key, style=style, focusable=true, font=font, text_style=text_style)
 }
 
-button_simple :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, state := Button_State{}, loc := #caller_location) -> bool {
+button_simple :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, state := Button_State{}, loc := #caller_location, text_style := DEFAULT_TEXT_STYLE) -> bool {
 	resolved_source := resolve_source(Source_Site{}, "button", loc)
 	paint_state: u64 = 0
 	if state.selected { paint_state |= 1 }
 	if state.disabled { paint_state |= 2 }
-	id := emit_key(ui, .Button, resolved_source, label=label, key=key, style=style, state_bits=paint_state, selected=state.selected, disabled=state.disabled, focusable=!state.disabled)
+	id := emit_key(ui, .Button, resolved_source, label=label, key=key, style=style, state_bits=paint_state, selected=state.selected, disabled=state.disabled, focusable=!state.disabled, text_style=text_style)
 	if id == 0 || state.disabled { return false }
 	if ui.runtime.activation_node == id && ui.runtime.activation_sequence > 0 {
 		if node, ok := ui.runtime.nodes[id]; ok && node.last_consumed_activation < ui.runtime.activation_sequence {
@@ -1345,24 +1360,24 @@ button_simple :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style 
 	return false
 }
 
-text_simple :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI) -> Node_ID {
-	return emit_key(ui, .Text, resolve_source(Source_Site{}, "text", loc), text=value, key=key, style=style, font=font)
+text_simple :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE) -> Node_ID {
+	return emit_key(ui, .Text, resolve_source(Source_Site{}, "text", loc), text=value, key=key, style=style, font=font, text_style=text_style)
 }
 
-text_field_simple :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI) -> Node_ID {
-	return emit_key(ui, .Text_Field, resolve_source(Source_Site{}, "text_field", loc), text=value, key=key, style=style, focusable=true, font=font)
+text_field_simple :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE) -> Node_ID {
+	return emit_key(ui, .Text_Field, resolve_source(Source_Site{}, "text_field", loc), text=value, key=key, style=style, focusable=true, font=font, text_style=text_style)
 }
 
-button :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, state := Button_State{}, loc := #caller_location) -> bool {
-	return button_simple(ui, label, key, style, state, loc)
+button :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, state := Button_State{}, loc := #caller_location, text_style := DEFAULT_TEXT_STYLE) -> bool {
+	return button_simple(ui, label, key, style, state, loc, text_style)
 }
 
-text :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI) -> Node_ID {
-	return text_simple(ui, value, key, style, loc, font)
+text :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE) -> Node_ID {
+	return text_simple(ui, value, key, style, loc, font, text_style)
 }
 
-text_field :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI) -> Node_ID {
-	return text_field_simple(ui, value, key, style, loc, font)
+text_field :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE) -> Node_ID {
+	return text_field_simple(ui, value, key, style, loc, font, text_style)
 }
 
 region_begin :: proc(ui: ^UI, key: string, revision: u64, source := Source_Site{}, style := DEFAULT_STYLE, loc := #caller_location) -> (id: Node_ID, reused: bool) {

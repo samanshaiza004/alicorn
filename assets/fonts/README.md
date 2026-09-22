@@ -1,9 +1,9 @@
 # Bundled fonts
 
 Alicorn's native SDL/GPU host embeds these variable TrueType fonts as its
-default UI and monospace faces. The binaries are unmodified. The native host
-uses each font's default `wght` instance; selecting font weight from an
-application style is not yet supported.
+default UI and monospace faces. The binaries are unmodified. Their `wght`
+axes are selected through `Text_Style.font_weight` and are applied consistently
+to shaping, intrinsic layout, and glyph rasterization.
 
 Each family has its own OFL notice in this directory. Keep the corresponding
 license file with its font if distributing the font separately.

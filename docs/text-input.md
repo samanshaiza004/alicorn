@@ -41,16 +41,24 @@ Control bytes therefore never reach glyph rasterization or turn into a font's
 missing-glyph box; copy, editing, and application state still use the original
 bytes.
 
-Text and text fields accept a small font role:
+Text, text fields, and buttons accept a small font role plus an independent
+text style. The `font_weight` is the OpenType `wght` axis value, with regular
+(400) as the default:
 
 ```odin
 alicorn.text(&ui, source_line, font=.Monospace)
+alicorn.text(&ui, "Changed files", text_style=alicorn.Text_Style{
+	font_weight = alicorn.FONT_WEIGHT_SEMIBOLD,
+})
 ```
 
-The native SDL host loads a platform monospace font when one is available. If
-an application configures only the UI font, `.Monospace` uses that font until
-the role is loaded. Applications can load a role-specific face with
-`text_engine_load_font_role`.
+The native SDL host bundles Atkinson Hyperlegible Next for UI text and
+Atkinson Hyperlegible Mono for code. Their variable `wght` axis is applied to
+both shaping and glyph rasterization, so weight changes also update intrinsic
+measurements. Static fonts without that axis retain their native weight.
+Optional platform faces remain glyph fallbacks; they do not replace the
+bundled primary typography. Applications can load their own role-specific
+faces with `text_engine_load_font_role`.
 
 ## Lifetime and cancellation
 

@@ -321,7 +321,7 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 			physical_y := (command.bounds.y + glyph.y) * scale_y
 			snapped_x, subpixel_bucket := native_text_snap_x(physical_x)
 			snapped_y := native_text_snap_y(physical_y)
-			slot, drawable, glyph_ok := alicorn.text_engine_glyph(&renderer.runtime.text_engine, glyph.glyph_id, raster_size, subpixel_bucket, scratch_allocator=scratch_allocator, font_role=run.font, font_source=run.font_source)
+			slot, drawable, glyph_ok := alicorn.text_engine_glyph(&renderer.runtime.text_engine, glyph.glyph_id, raster_size, subpixel_bucket, scratch_allocator=scratch_allocator, font_role=run.font, font_source=run.font_source, font_weight=run.font_weight)
 			if !glyph_ok || !drawable { continue }
 			slot_view := runa.atlas_slot_view(slot)
 			x0 := snapped_x + slot_view.Bearing[0]

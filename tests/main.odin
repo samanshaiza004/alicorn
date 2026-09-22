@@ -256,6 +256,17 @@ render_text_field :: proc(rt: ^alicorn.Runtime, value: string) -> alicorn.Node_I
 	return id
 }
 
+render_weighted_text :: proc(rt: ^alicorn.Runtime, weight: f32) -> alicorn.Node_ID {
+	alicorn.invalidate_root(rt, "test retained font weight")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return 0 }
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="weighted-text-root")
+	id := alicorn.text(&ui, "Alicorn typography", text_style=alicorn.Text_Style{font_weight=weight})
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return id
+}
+
 render_two_text_fields :: proc(rt: ^alicorn.Runtime) -> (first, second: alicorn.Node_ID) {
 	alicorn.invalidate_root(rt, "test two text fields")
 	ui, build := alicorn.begin_frame(rt)
@@ -1426,10 +1437,20 @@ test_monospace_font_role :: proc(state: ^Test_State) {
 	mono_axes := runa.font_axes(&engine.monospace_font)
 	expect(state, len(ui_axes) > 0, "bundled UI font must expose its variable axes")
 	expect(state, len(mono_axes) > 0, "bundled monospace font must expose its variable axes")
+	weight_axis_found := false
+	for axis in ui_axes {
+		if axis.tag == runa.Axis_Tag(0x77676874) {
+			weight_axis_found = true
+			expect(state, axis.min_value <= alicorn.FONT_WEIGHT_REGULAR && axis.max_value >= alicorn.FONT_WEIGHT_SEMIBOLD, "UI wght axis must cover regular through semibold")
+		}
+	}
+	expect(state, weight_axis_found, "bundled UI face must expose the OpenType wght axis")
 	ui_run, ui_ok := alicorn.text_run_build(&engine, "iW", 16, allocator=context.allocator, font_role=.UI)
 	mono_run, mono_ok := alicorn.text_run_build(&engine, "iW", 16, allocator=context.allocator, font_role=.Monospace)
-	if ui_ok { defer alicorn.text_run_destroy(&ui_run) }
-	if mono_ok { defer alicorn.text_run_destroy(&mono_run) }
+	defer {
+		if ui_ok { alicorn.text_run_destroy(&ui_run) }
+		if mono_ok { alicorn.text_run_destroy(&mono_run) }
+	}
 	expect(state, ui_ok && mono_ok, "both font roles must shape text")
 	if ui_ok && mono_ok && len(ui_run.glyphs) == 2 && len(mono_run.glyphs) == 2 {
 		ui_delta := ui_run.glyphs[0].x_advance-ui_run.glyphs[1].x_advance
@@ -1440,6 +1461,41 @@ test_monospace_font_role :: proc(state: ^Test_State) {
 		expect(state, ui_delta > 0.1, "UI font should retain proportional glyph advances")
 		expect(state, mono_delta < 0.1, "bundled monospace role should use equal advances for i and W")
 	}
+	regular_run, regular_ok := alicorn.text_run_build(&engine, "Alicorn", 18, allocator=context.allocator, font_weight=alicorn.FONT_WEIGHT_REGULAR)
+	semibold_run, semibold_ok := alicorn.text_run_build(&engine, "Alicorn", 18, allocator=context.allocator, font_weight=alicorn.FONT_WEIGHT_SEMIBOLD)
+	defer {
+		if regular_ok { alicorn.text_run_destroy(&regular_run) }
+		if semibold_ok { alicorn.text_run_destroy(&semibold_run) }
+	}
+	expect(state, regular_ok && semibold_ok, "regular and semibold text runs must shape")
+	if regular_ok && semibold_ok {
+		expect(state, regular_run.font_weight == alicorn.FONT_WEIGHT_REGULAR, "regular run must retain its selected weight")
+		expect(state, semibold_run.font_weight == alicorn.FONT_WEIGHT_SEMIBOLD, "semibold run must retain its selected weight")
+	}
+	font_weight_glyph := runa.font_lookup_glyph(&engine.font, 'A')
+	runa.font_reset_variations(&engine.font)
+	regular_outline: runa.Outline
+	semibold_outline: runa.Outline
+	defer runa.outline_destroy(&regular_outline)
+	defer runa.outline_destroy(&semibold_outline)
+	regular_axis_err := runa.font_set_variation(&engine.font, runa.Axis_Tag(0x77676874), alicorn.FONT_WEIGHT_REGULAR)
+	regular_outline_err := runa.font_glyph_outline(&engine.font, font_weight_glyph, &regular_outline)
+	runa.font_reset_variations(&engine.font)
+	semibold_axis_err := runa.font_set_variation(&engine.font, runa.Axis_Tag(0x77676874), alicorn.FONT_WEIGHT_SEMIBOLD)
+	semibold_outline_err := runa.font_glyph_outline(&engine.font, font_weight_glyph, &semibold_outline)
+	runa.font_reset_variations(&engine.font)
+	outline_weight_differs := false
+	if regular_outline_err == .None && semibold_outline_err == .None && len(regular_outline.points) == len(semibold_outline.points) {
+		for point, i in regular_outline.points {
+			if point != semibold_outline.points[i] { outline_weight_differs = true; break }
+		}
+	}
+	expect(state, regular_axis_err == .None && semibold_axis_err == .None && outline_weight_differs, "wght axis must produce a distinct semibold outline")
+	glyph_cache_before := engine.glyph_cache_misses
+	_, _, regular_glyph_ok := alicorn.text_engine_glyph(&engine, font_weight_glyph, 18, font_weight=alicorn.FONT_WEIGHT_REGULAR)
+	_, _, semibold_glyph_ok := alicorn.text_engine_glyph(&engine, font_weight_glyph, 18, font_weight=alicorn.FONT_WEIGHT_SEMIBOLD)
+	expect(state, regular_glyph_ok && semibold_glyph_ok, "regular and semibold glyphs must rasterize")
+	expect(state, engine.glyph_cache_misses >= glyph_cache_before+2, "glyph cache identity must distinguish font weights")
 	fallback_generation := engine.font_generation
 	fallback_loaded := alicorn.text_engine_load_fallback_font_role(&engine, .UI, TEST_MONO_FONT_DATA)
 	expect(state, fallback_loaded && engine.fallback_font_loaded, "optional UI fallback face must load and remain independently owned")
@@ -1463,6 +1519,26 @@ test_public_monospace_font_role :: proc(state: ^Test_State) {
 		expect(state, false, "font-role description frame must build")
 	}
 	alicorn.destroy_runtime(&rt)
+}
+
+test_retained_text_weight :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
+	defer alicorn.destroy_runtime(&rt)
+	expect(state, alicorn.text_engine_load_font(&rt.text_engine, TEST_UI_FONT_DATA), "retained-weight test font must load")
+	regular_id := render_weighted_text(&rt, alicorn.FONT_WEIGHT_REGULAR)
+	regular_node, regular_found := rt.nodes[regular_id]
+	expect(state, regular_found && regular_node != nil && regular_node.text_run_valid, "regular text style must create a retained text product")
+	regular_layout_hash := regular_node.layout_hash if regular_found && regular_node != nil else 0
+	regular_run_generation := regular_node.text_run_generation if regular_found && regular_node != nil else 0
+	semibold_id := render_weighted_text(&rt, alicorn.FONT_WEIGHT_SEMIBOLD)
+	semibold_node, semibold_found := rt.nodes[semibold_id]
+	expect(state, semibold_id == regular_id, "changing weight must preserve retained text identity")
+	expect(state, semibold_found && semibold_node != nil && semibold_node.text_style.font_weight == alicorn.FONT_WEIGHT_SEMIBOLD, "retained node must adopt its new typography style")
+	if semibold_found && semibold_node != nil {
+		expect(state, semibold_node.text_run_valid && semibold_node.text_run.font_weight == alicorn.FONT_WEIGHT_SEMIBOLD, "weight changes must rebuild the text product with the selected instance")
+		expect(state, semibold_node.layout_hash != regular_layout_hash, "weight changes must invalidate intrinsic layout")
+		expect(state, semibold_node.text_run_generation > regular_run_generation, "weight changes must advance retained text generation")
+	}
 }
 
 test_retained_text_product_lifetime :: proc(state: ^Test_State) {
@@ -1822,6 +1898,7 @@ main :: proc() {
 	test_multiline_text_controls(&state)
 	test_monospace_font_role(&state)
 	test_public_monospace_font_role(&state)
+	test_retained_text_weight(&state)
 	test_retained_text_product_lifetime(&state)
 	test_runtime_edit_invalidates_text_product(&state)
 	test_gpu_surface_contract(&state)
