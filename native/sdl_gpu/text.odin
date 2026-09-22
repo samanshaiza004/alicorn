@@ -307,6 +307,9 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 		if !node.text_run_valid && command.kind != .Text_Composition { continue }
 		if command.kind == .Text_Composition && !node.composition_run_valid { continue }
 		for glyph in run.glyphs {
+			// Tabs and unsupported controls retain logical advance/caret geometry
+			// but must never reach the atlas or produce fallback glyphs.
+			if glyph.control_advance { continue }
 			if len(renderer.vertices) + 6 > MAX_TEXT_VERTICES { return false }
 			// Text_Run stores logical geometry only. Resolve the physical glyph
 			// resource at the current raster scale so moving a window to a Retina
@@ -318,7 +321,7 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 			physical_y := (command.bounds.y + glyph.y) * scale_y
 			snapped_x, subpixel_bucket := native_text_snap_x(physical_x)
 			snapped_y := native_text_snap_y(physical_y)
-			slot, drawable, glyph_ok := alicorn.text_engine_glyph(&renderer.runtime.text_engine, glyph.glyph_id, raster_size, subpixel_bucket, scratch_allocator=scratch_allocator)
+			slot, drawable, glyph_ok := alicorn.text_engine_glyph(&renderer.runtime.text_engine, glyph.glyph_id, raster_size, subpixel_bucket, scratch_allocator=scratch_allocator, font_role=run.font)
 			if !glyph_ok || !drawable { continue }
 			slot_view := runa.atlas_slot_view(slot)
 			x0 := snapped_x + slot_view.Bearing[0]

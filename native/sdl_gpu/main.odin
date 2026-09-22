@@ -1015,6 +1015,25 @@ native_font_path :: proc() -> string {
 	}
 }
 
+native_monospace_font_path :: proc() -> string {
+	when ODIN_OS == .Windows {
+		return "C:/Windows/Fonts/consola.ttf"
+	} else when ODIN_OS == .Darwin {
+		return "/System/Library/Fonts/SFNSMono.ttf"
+	} else {
+		return "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
+	}
+}
+
+native_load_optional_monospace_font :: proc(rt: ^alicorn.Runtime) -> bool {
+	path := native_monospace_font_path()
+	if !os.exists(path) { return false }
+	data, err := os.read_entire_file_from_path(path, context.allocator)
+	if err != nil { return false }
+	defer delete(data)
+	return alicorn.text_engine_load_font_role(&rt.text_engine, .Monospace, data)
+}
+
 configure_platform_activation :: proc() {
 	when ODIN_OS == .Darwin {
 		// A bare executable launched from a terminal can create a visible SDL
@@ -1446,6 +1465,7 @@ Run :: proc(application: Application, smoke := false) {
 		fail("application Runa font initialization failed")
 	}
 	delete(font_data)
+	_ = native_load_optional_monospace_font(&rt)
 	text_renderer, text_ok := native_text_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
 	if !text_ok { fail("application GPU text pipeline initialization failed") }
 	defer native_text_destroy(&text_renderer)
@@ -1556,6 +1576,7 @@ RunFoundation :: proc() {
 		fail("Runa font initialization failed")
 	}
 	delete(font_data)
+	_ = native_load_optional_monospace_font(&rt)
 	text_renderer, text_ok := native_text_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
 	if !text_ok {
 		fail("GPU text pipeline or atlas initialization failed")

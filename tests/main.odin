@@ -1269,6 +1269,236 @@ test_multiline_text_controls :: proc(state: ^Test_State) {
 	if len(run.lines) >= 2 {
 		expect(state, run.lines[1].y > run.lines[0].y, "newline line geometry must advance vertically")
 	}
+
+	tab_run, tab_ok := alicorn.text_run_build(
+		&engine,
+		"A\tB",
+		16,
+		allocator=context.allocator,
+		scratch_allocator=context.temp_allocator,
+	)
+	if !tab_ok {
+		expect(state, false, "tab text must shape successfully")
+		return
+	}
+	defer alicorn.text_run_destroy(&tab_run)
+	expect(state, tab_run.value == "A\tB", "control normalization must preserve the original source bytes")
+	tab_index := -1
+	a_index := -1
+	b_index := -1
+	for glyph, i in tab_run.glyphs {
+		if glyph.cluster_start == 0 { a_index = i }
+		if glyph.cluster_start == 1 && glyph.cluster_end == 2 {
+			tab_index = i
+			expect(state, glyph.control_advance, "tab must be retained as non-rendering advance geometry")
+		}
+		if glyph.cluster_start == 2 { b_index = i }
+	}
+	expect(state, a_index >= 0 && tab_index >= 0 && b_index >= 0, "tab and surrounding glyphs must map to their original UTF-8 byte positions")
+	if a_index >= 0 && tab_index >= 0 && b_index >= 0 {
+		tab := tab_run.glyphs[tab_index]
+		b := tab_run.glyphs[b_index]
+		expect(state, tab.x == tab_run.glyphs[a_index].x+tab_run.glyphs[a_index].x_advance, "tab begins at the preceding text advance")
+		expect(state, b.x == tab.x+tab.x_advance, "following text begins after the tab-stop advance")
+		expect(state, b.x > tab.x, "tab must advance to the next four-space stop")
+		caret_before := alicorn.text_run_caret_geometry(&tab_run, alicorn.Text_Position{1, .Leading})
+		caret_after := alicorn.text_run_caret_geometry(&tab_run, alicorn.Text_Position{2, .Leading})
+		expect(state, caret_before.valid && caret_after.valid && caret_after.rect.x == b.x, "tab source-byte caret positions must span the tab advance")
+		tab_selection := alicorn.text_run_selection_rects(&tab_run, alicorn.Text_Position{1, .Leading}, alicorn.Text_Position{2, .Trailing})
+		if len(tab_selection) == 1 {
+			selection_delta := tab_selection[0].rect.w-tab.x_advance
+			if selection_delta < 0 { selection_delta = -selection_delta }
+			expect(state, selection_delta < 0.01, "tab selection geometry must cover the tab advance")
+		} else {
+			expect(state, false, "selecting a tab must produce its visible advance rectangle")
+		}
+		delete(tab_selection)
+		hit := alicorn.text_run_hit_test(&tab_run, tab.x+tab.x_advance*0.75, 0)
+		expect(state, hit.byte == 2, "hit testing inside the tab advance must resolve to its trailing source boundary")
+	}
+	space_stop_width: f32 = 0
+	space_run, space_ok := alicorn.text_run_build(&engine, " ", 16, allocator=context.allocator)
+	if space_ok {
+		defer alicorn.text_run_destroy(&space_run)
+		if a_index >= 0 && b_index >= 0 && len(space_run.glyphs) == 1 {
+			space_stop := space_run.glyphs[0].x_advance * f32(alicorn.TEXT_TAB_WIDTH_SPACES)
+			space_stop_width = space_stop
+			line_x := tab_run.glyphs[a_index].x_advance
+			next_stop := f32(int(line_x/space_stop)+1) * space_stop
+			delta := tab_run.glyphs[b_index].x-next_stop
+			if delta < 0 { delta = -delta }
+			expect(state, delta < 0.01, "tab must place following text at the next four-space tab stop")
+		}
+	} else {
+		expect(state, false, "space metrics must shape for tab-stop verification")
+	}
+	metric_width, _, _, metrics_ok := alicorn.text_layout(&engine, "A\tB", 16)
+	if metrics_ok {
+		delta := metric_width-tab_run.width
+		if delta < 0 { delta = -delta }
+		expect(state, delta < 0.01, "measurement-only layout must use the same tab stops as retained text runs")
+	} else {
+		expect(state, false, "tab text metrics must shape successfully")
+	}
+
+	repeated_tabs := "foo\t\tbar"
+	repeated_run, repeated_ok := alicorn.text_run_build(&engine, repeated_tabs, 16, allocator=context.allocator)
+	if repeated_ok {
+		defer alicorn.text_run_destroy(&repeated_run)
+		expect(state, repeated_run.value == repeated_tabs, "repeated tabs must preserve source bytes")
+		tab_advances := 0
+		second_tab_advance: f32 = 0
+		for glyph in repeated_run.glyphs {
+			if glyph.control_advance {
+				tab_advances += 1
+				if tab_advances == 2 { second_tab_advance = glyph.x_advance }
+			}
+		}
+		expect(state, tab_advances == 2, "each repeated tab must produce non-rendering geometry")
+		if space_stop_width > 0 {
+			delta := second_tab_advance-space_stop_width
+			if delta < 0 { delta = -delta }
+			expect(state, delta < 0.01, "a tab beginning on a stop must advance to the following stop")
+		}
+	} else {
+		expect(state, false, "repeated tabs must shape successfully")
+	}
+
+	mixed_breaks := "a\r\nb\rc\nd"
+	break_run, breaks_ok := alicorn.text_run_build(
+		&engine,
+		mixed_breaks,
+		16,
+		allocator=context.allocator,
+		scratch_allocator=context.temp_allocator,
+	)
+	if !breaks_ok {
+		expect(state, false, "CR, CRLF, and LF text must shape successfully")
+		return
+	}
+	defer alicorn.text_run_destroy(&break_run)
+	expect(state, break_run.value == mixed_breaks, "line-break normalization must preserve the original CR and LF bytes")
+	expect(state, len(break_run.lines) == 4, "CR, CRLF, and LF must each produce one line break")
+	if len(break_run.lines) == 4 {
+		expect(state, break_run.lines[1].byte_start == 3, "CRLF must map the second line to its original byte offset")
+		expect(state, break_run.lines[2].byte_start == 5, "CR must map the third line to its original byte offset")
+		expect(state, break_run.lines[3].byte_start == 7, "LF must map the fourth line to its original byte offset")
+	}
+
+	controls := "A\x01B\x7fC"
+	control_run, controls_ok := alicorn.text_run_build(
+		&engine,
+		controls,
+		16,
+		allocator=context.allocator,
+		scratch_allocator=context.temp_allocator,
+	)
+	if !controls_ok {
+		expect(state, false, "unsupported C0 controls must be normalized before shaping")
+		return
+	}
+	defer alicorn.text_run_destroy(&control_run)
+	expect(state, control_run.value == controls, "C0 control handling must preserve application text")
+	control_advances := 0
+	for glyph in control_run.glyphs {
+		if glyph.control_advance { control_advances += 1 }
+	}
+	expect(state, control_advances == 2, "unsupported C0 controls must become non-rendering advances")
+	for glyph in control_run.glyphs {
+		if glyph.cluster_start == 1 || glyph.cluster_start == 3 {
+			expect(state, glyph.control_advance, "C0 source positions must map to the non-rendering advances")
+		}
+	}
+	c1_bytes := make([]u8, 4, context.allocator)
+	c1_bytes[0], c1_bytes[1], c1_bytes[2], c1_bytes[3] = 'A', 0xc2, 0x85, 'B'
+	c1_controls := string(c1_bytes)
+	defer delete(c1_bytes, context.allocator)
+	c1_run, c1_ok := alicorn.text_run_build(&engine, c1_controls, 16, allocator=context.allocator)
+	if c1_ok {
+		defer alicorn.text_run_destroy(&c1_run)
+		expect(state, c1_run.value == c1_controls, "C1 control normalization must preserve source bytes")
+		c1_advance := false
+		for glyph in c1_run.glyphs {
+			if glyph.cluster_start == 1 && glyph.cluster_end == 3 { c1_advance = glyph.control_advance }
+		}
+		expect(state, c1_advance, "C1 controls must become non-rendering advances")
+	} else {
+		expect(state, false, "C1 controls must normalize before shaping")
+	}
+}
+
+test_monospace_font_role :: proc(state: ^Test_State) {
+	ui_font_path := ""
+	mono_font_path := ""
+	when ODIN_OS == .Windows {
+		ui_font_path = "C:/Windows/Fonts/segoeui.ttf"
+		mono_font_path = "C:/Windows/Fonts/consola.ttf"
+	} else when ODIN_OS == .Darwin {
+		ui_font_path = "/System/Library/Fonts/SFNS.ttf"
+		mono_font_path = "/System/Library/Fonts/SFNSMono.ttf"
+	} else {
+		ui_font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+		mono_font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
+	}
+	ui_data, ui_err := os.read_entire_file_from_path(ui_font_path, context.allocator)
+	if ui_err != nil {
+		expect(state, false, "font-role regression UI font must be available")
+		return
+	}
+	defer delete(ui_data)
+	mono_data, mono_err := os.read_entire_file_from_path(mono_font_path, context.allocator)
+	mono_face_available := mono_err == nil
+	if !mono_face_available { mono_data = ui_data }
+	if mono_face_available { defer delete(mono_data) }
+	engine := alicorn.new_text_engine("font-role-test", allocator=context.allocator)
+	defer alicorn.text_engine_destroy(&engine)
+	expect(state, alicorn.text_engine_load_font(&engine, ui_data), "UI font role must load")
+	mono_loaded := alicorn.text_engine_load_font_role(&engine, .Monospace, mono_data)
+	if !mono_loaded && mono_face_available {
+		// Some system mono fonts are collections or CFF-only, which the current
+		// Runa parser does not accept. Exercise role routing with the known-good
+		// UI font while leaving the native host's optional face load unchanged.
+		mono_face_available = false
+		mono_loaded = alicorn.text_engine_load_font_role(&engine, .Monospace, ui_data)
+	}
+	expect(state, mono_loaded, "monospace font role must load")
+	ui_run, ui_ok := alicorn.text_run_build(&engine, "iW", 16, allocator=context.allocator, font_role=.UI)
+	mono_run, mono_ok := alicorn.text_run_build(&engine, "iW", 16, allocator=context.allocator, font_role=.Monospace)
+	if ui_ok { defer alicorn.text_run_destroy(&ui_run) }
+	if mono_ok { defer alicorn.text_run_destroy(&mono_run) }
+	expect(state, ui_ok && mono_ok, "both font roles must shape text")
+	if ui_ok && mono_ok && len(ui_run.glyphs) == 2 && len(mono_run.glyphs) == 2 {
+		ui_delta := ui_run.glyphs[0].x_advance-ui_run.glyphs[1].x_advance
+		mono_delta := mono_run.glyphs[0].x_advance-mono_run.glyphs[1].x_advance
+		if ui_delta < 0 { ui_delta = -ui_delta }
+		if mono_delta < 0 { mono_delta = -mono_delta }
+		expect(state, ui_run.font == .UI && mono_run.font == .Monospace, "text runs must retain the selected font role")
+		expect(state, ui_delta > 0.1, "UI font should retain proportional glyph advances")
+		if mono_face_available {
+			expect(state, mono_delta < 0.1, "monospace role should use equal advances for i and W")
+		} else {
+			expect(state, mono_delta == ui_delta, "unavailable monospace face should route through the loaded role font")
+		}
+	}
+}
+
+test_public_monospace_font_role :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
+	ui, build := alicorn.begin_frame(&rt)
+	if build {
+		alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="font-role-root")
+		id := alicorn.text(&ui, "source", font=.Monospace)
+		field_id := alicorn.text_field(&ui, "editable source", font=.Monospace)
+		alicorn.container_end(&ui)
+		alicorn.end_frame(&ui)
+		node, found := rt.nodes[id]
+		expect(state, found && node != nil && node.font == .Monospace, "public text API must retain the requested monospace role")
+		field, field_found := rt.nodes[field_id]
+		expect(state, field_found && field != nil && field.font == .Monospace, "public text-field API must retain the requested monospace role")
+	} else {
+		expect(state, false, "font-role description frame must build")
+	}
+	alicorn.destroy_runtime(&rt)
 }
 
 test_retained_text_product_lifetime :: proc(state: ^Test_State) {
@@ -1626,6 +1856,8 @@ main :: proc() {
 	test_text_geometry(&state)
 	test_gpu_text_resource_boundary(&state)
 	test_multiline_text_controls(&state)
+	test_monospace_font_role(&state)
+	test_public_monospace_font_role(&state)
 	test_retained_text_product_lifetime(&state)
 	test_runtime_edit_invalidates_text_product(&state)
 	test_gpu_surface_contract(&state)

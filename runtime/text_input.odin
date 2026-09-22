@@ -109,8 +109,9 @@ prepare_text_composition_node :: proc(rt: ^Runtime, node: ^Node) -> bool {
 		return false
 	}
 	text_composition_run_destroy(node)
-	if !rt.text_engine.font_loaded { return false }
-	run, ok := text_run_build(&rt.text_engine, value, 16, max_width, editable=true, allocator=rt.persistent_allocator, scratch_allocator=rt.scratch_allocator)
+	_, role_loaded := text_engine_font(&rt.text_engine, node.font)
+	if !role_loaded { return false }
+	run, ok := text_run_build(&rt.text_engine, value, 16, max_width, editable=true, allocator=rt.persistent_allocator, scratch_allocator=rt.scratch_allocator, font_role=node.font)
 	if !ok { return false }
 	node.composition_run = run
 	node.composition_run_valid = true

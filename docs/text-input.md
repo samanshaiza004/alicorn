@@ -31,6 +31,27 @@ value. The host releases the returned string through the runtime's captured
 persistent allocator after the callback returns. This keeps IME state out of
 application-owned buffers and avoids a second hidden text model.
 
+## Control characters and code text
+
+Alicorn sanitizes controls for shaping without changing the stored source
+string. LF, CRLF, and CR each create one line break. A tab advances to the next
+four-space stop and remains one source-byte range for caret, selection, and hit
+testing. Other C0/C1 control scalars receive a non-rendering space advance.
+Control bytes therefore never reach glyph rasterization or turn into a font's
+missing-glyph box; copy, editing, and application state still use the original
+bytes.
+
+Text and text fields accept a small font role:
+
+```odin
+alicorn.text(&ui, source_line, font=.Monospace)
+```
+
+The native SDL host loads a platform monospace font when one is available. If
+an application configures only the UI font, `.Monospace` uses that font until
+the role is loaded. Applications can load a role-specific face with
+`text_engine_load_font_role`.
+
 ## Lifetime and cancellation
 
 Composition is owned by the retained text-field node. Its string and projected

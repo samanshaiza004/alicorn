@@ -12,24 +12,27 @@ import runa "../third_party/Runa"
 // rasterization. Runa is the foundation provider; its atlas remains behind
 // this GUI-facing abstraction.
 Text_Engine :: struct {
-	allocator:      mem.Allocator,
-	name:          string,
-	available:     bool,
-	shaped_runs:   u64,
-	cache_hits:    u64,
-	shape_calls:   u64,
+	allocator:             mem.Allocator,
+	name:                  string,
+	available:             bool,
+	shaped_runs:           u64,
+	cache_hits:            u64,
+	shape_calls:           u64,
 	glyph_cache_hits: u64,
 	glyph_cache_misses: u64,
 	glyph_rasterizations: u64,
-	font_data:     []u8,
-	font:          runa.Font,
-	cache:         runa.Cache,
-	font_loaded:   bool,
-	cache_initialized: bool,
-	font_generation: u64,
-	atlas:         runa.Atlas,
-	atlas_initialized: bool,
-	glyphs:        map[Glyph_Resource_Key]runa.Atlas_Slot,
+	font_data:            []u8,
+	font:                 runa.Font,
+	monospace_font_data: []u8,
+	monospace_font:       runa.Font,
+	cache:                runa.Cache,
+	font_loaded:          bool,
+	monospace_font_loaded: bool,
+	cache_initialized:    bool,
+	font_generation:      u64,
+	atlas:                 runa.Atlas,
+	atlas_initialized:    bool,
+	glyphs:                map[Glyph_Resource_Key]runa.Atlas_Slot,
 }
 
 // Glyph_Resource_Key is the CPU-side identity of one rasterized glyph. It is
@@ -38,6 +41,7 @@ Text_Engine :: struct {
 // logical glyph resource identity.
 Glyph_Resource_Key :: struct {
 	font_generation: u64,
+	font:           Font_Role,
 	glyph_id:        runa.Glyph_ID,
 	size_bits:       u32,
 	subpixel_bucket: u8,
@@ -56,7 +60,24 @@ Text_Glyph :: struct {
 	y_offset:       f32,
 	line_index:     int,
 	level:          u8,
+	// Control whitespace keeps layout/editor geometry but is skipped by raster.
+	control_advance: bool,
 }
+
+Text_Source_Kind :: enum {
+	Text,
+	Tab,
+	Control,
+	Line_Break,
+}
+
+Text_Source_Span :: struct {
+	output_start, output_end: int,
+	source_start, source_end: int,
+	kind: Text_Source_Kind,
+}
+
+TEXT_TAB_WIDTH_SPACES :: 4
 
 Text_Line :: struct {
 	glyph_start: int,
@@ -129,6 +150,7 @@ Text_Run :: struct {
 	size:           f32,
 	max_width:      f32,
 	font_generation: u64,
+	font:           Font_Role,
 	ligatures_disabled: bool,
 	allocator:      mem.Allocator,
 }
@@ -144,6 +166,31 @@ new_text_engine :: proc(name := "unconfigured", available := false, allocator :=
 }
 
 text_engine_load_font :: proc(engine: ^Text_Engine, data: []u8) -> bool {
+	return text_engine_load_font_role(engine, .UI, data)
+}
+
+text_engine_font :: proc(engine: ^Text_Engine, role: Font_Role) -> (font: ^runa.Font, loaded: bool) {
+	if role == .Monospace && engine.monospace_font_loaded {
+		return &engine.monospace_font, true
+	}
+	return &engine.font, engine.font_loaded
+}
+
+text_engine_reset_font_resources :: proc(engine: ^Text_Engine) {
+	if engine.cache_initialized { runa.cache_destroy(&engine.cache) }
+	if engine.atlas_initialized { runa.atlas_destroy(&engine.atlas) }
+	if engine.glyphs != nil { delete(engine.glyphs) }
+	engine.cache = runa.cache_make(engine.allocator)
+	engine.cache_initialized = true
+	engine.atlas = runa.atlas_make(1024, 1024, engine.allocator)
+	engine.atlas_initialized = true
+	engine.glyphs = make(map[Glyph_Resource_Key]runa.Atlas_Slot, allocator=engine.allocator)
+}
+
+// text_engine_load_font_role installs a role-specific font. Replacing either
+// font clears shared Runa caches and atlas slots before destroying the old
+// font, so no cached shaping product can retain a dead font pointer.
+text_engine_load_font_role :: proc(engine: ^Text_Engine, role: Font_Role, data: []u8) -> bool {
 	if len(data) == 0 { return false }
 	copy_data := make([]u8, len(data), engine.allocator)
 	copy(copy_data, data)
@@ -152,28 +199,22 @@ text_engine_load_font :: proc(engine: ^Text_Engine, data: []u8) -> bool {
 		delete(copy_data, engine.allocator)
 		return false
 	}
-	if engine.cache_initialized {
-		runa.cache_destroy(&engine.cache)
-	}
-	if engine.atlas_initialized {
-		runa.atlas_destroy(&engine.atlas)
-	}
-	if engine.glyphs != nil {
-		delete(engine.glyphs)
-	}
-	if engine.font_loaded {
-		runa.font_destroy(&engine.font)
+	text_engine_reset_font_resources(engine)
+	switch role {
+	case .UI:
+		if engine.font_loaded { runa.font_destroy(&engine.font) }
 		delete(engine.font_data, engine.allocator)
+		engine.font_data = copy_data
+		engine.font = font
+		engine.font_loaded = true
+	case .Monospace:
+		if engine.monospace_font_loaded { runa.font_destroy(&engine.monospace_font) }
+		delete(engine.monospace_font_data, engine.allocator)
+		engine.monospace_font_data = copy_data
+		engine.monospace_font = font
+		engine.monospace_font_loaded = true
 	}
-	engine.font_data = copy_data
-	engine.font = font
-	engine.cache = runa.cache_make(engine.allocator)
-	engine.cache_initialized = true
-	engine.atlas = runa.atlas_make(1024, 1024, engine.allocator)
-	engine.atlas_initialized = true
-	engine.glyphs = make(map[Glyph_Resource_Key]runa.Atlas_Slot, allocator=engine.allocator)
 	engine.font_generation += 1
-	engine.font_loaded = true
 	engine.available = true
 	return true
 }
@@ -191,16 +232,22 @@ text_engine_destroy :: proc(engine: ^Text_Engine) {
 	if engine.font_loaded {
 		runa.font_destroy(&engine.font)
 	}
+	if engine.monospace_font_loaded {
+		runa.font_destroy(&engine.monospace_font)
+	}
 	delete(engine.font_data, engine.allocator)
+	delete(engine.monospace_font_data, engine.allocator)
 	if len(engine.name) > 0 { delete(engine.name, engine.allocator) }
 	engine^ = {}
 }
 
-text_engine_glyph :: proc(engine: ^Text_Engine, glyph_id: runa.Glyph_ID, size: f32, subpixel_bucket: u8 = 0, hint: bool = true, scratch_allocator := context.temp_allocator) -> (slot: runa.Atlas_Slot, drawable, ok: bool) {
-	if !engine.font_loaded || size <= 0 { return }
-	is_color := runa.font_has_color_layers(&engine.font, glyph_id)
+text_engine_glyph :: proc(engine: ^Text_Engine, glyph_id: runa.Glyph_ID, size: f32, subpixel_bucket: u8 = 0, hint: bool = true, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI) -> (slot: runa.Atlas_Slot, drawable, ok: bool) {
+	font, loaded := text_engine_font(engine, font_role)
+	if !loaded || size <= 0 { return }
+	is_color := runa.font_has_color_layers(font, glyph_id)
 	key := Glyph_Resource_Key{
 		font_generation = engine.font_generation,
+		font = font_role,
 		glyph_id = glyph_id,
 		size_bits = transmute(u32)size,
 		subpixel_bucket = subpixel_bucket & 3,
@@ -215,7 +262,7 @@ text_engine_glyph :: proc(engine: ^Text_Engine, glyph_id: runa.Glyph_ID, size: f
 	err: runa.Error
 	previous_temp_allocator := context.temp_allocator
 	context.temp_allocator = scratch_allocator
-	slot, err = runa.raster_glyph(&engine.font, glyph_id, size, key.subpixel_bucket, &engine.atlas, allocator=engine.allocator, hint=hint)
+	slot, err = runa.raster_glyph(font, glyph_id, size, key.subpixel_bucket, &engine.atlas, allocator=engine.allocator, hint=hint)
 	context.temp_allocator = previous_temp_allocator
 	if err != .None { return runa.Atlas_Slot{}, false, false }
 	engine.glyphs[key] = slot
@@ -256,15 +303,116 @@ text_min_int :: proc(a, b: int) -> int {
 	return b
 }
 
+// text_normalize_controls keeps the application string untouched and gives
+// Runa only printable text plus its supported line break. Tabs and remaining
+// C0/C1 controls become non-rendering space advances; CR and CRLF normalize
+// to one line break. Each output span remembers the source byte range so
+// caret, selection, and hit testing continue to use the original string.
+text_contains_control :: proc(value: string) -> bool {
+	for i := 0; i < len(value); i += 1 {
+		b := value[i]
+		if b < 0x20 || b == 0x7f { return true }
+		if b == 0xc2 && i+1 < len(value) && value[i+1] >= 0x80 && value[i+1] <= 0x9f { return true }
+	}
+	return false
+}
+
+text_normalize_controls :: proc(value: string, allocator := context.temp_allocator) -> (normalized: string, spans: [dynamic]Text_Source_Span) {
+	if !text_contains_control(value) { return value, nil }
+	builder := strings.builder_make(0, len(value), allocator)
+	spans = make([dynamic]Text_Source_Span, 0, len(value), allocator)
+	output_byte := 0
+	for source_byte := 0; source_byte < len(value); {
+		r, size := utf8.decode_rune_in_string(value[source_byte:])
+		if size <= 0 { size = 1 }
+		source_end := source_byte + size
+		kind := Text_Source_Kind.Text
+		output_size := size
+		switch r {
+		case '\r':
+			if source_end < len(value) && value[source_end] == '\n' { source_end += 1 }
+			strings.write_byte(&builder, '\n')
+			kind = .Line_Break
+			output_size = 1
+		case '\n':
+			strings.write_byte(&builder, '\n')
+			kind = .Line_Break
+			output_size = 1
+		case '\t':
+			strings.write_byte(&builder, ' ')
+			kind = .Tab
+			output_size = 1
+		case:
+			if unicode.is_control(r) {
+				strings.write_byte(&builder, ' ')
+				kind = .Control
+				output_size = 1
+			} else {
+				strings.write_string(&builder, value[source_byte:source_end])
+			}
+		}
+		append(&spans, Text_Source_Span{output_byte, output_byte+output_size, source_byte, source_end, kind})
+		output_byte += output_size
+		source_byte = source_end
+	}
+	normalized = strings.to_string(builder)
+	return
+}
+
+text_source_span_at :: proc(spans: []Text_Source_Span, output_byte, source_length: int) -> Text_Source_Span {
+	for span in spans {
+		if output_byte >= span.output_start && output_byte < span.output_end { return span }
+	}
+	return Text_Source_Span{output_byte, output_byte, source_length, source_length, .Text}
+}
+
+text_source_range_for_output :: proc(spans: []Text_Source_Span, output_start, output_end, source_length: int) -> (source_start, source_end: int, control_advance: bool, tab: bool) {
+	if len(spans) == 0 {
+		source_start = text_min_int(text_max_int(output_start, 0), source_length)
+		source_end = text_min_int(text_max_int(output_end, source_start), source_length)
+		return
+	}
+	source_start = source_length
+	source_end = 0
+	found := false
+	for span in spans {
+		if span.output_end <= output_start || span.output_start >= output_end { continue }
+		if !found || span.source_start < source_start { source_start = span.source_start }
+		if !found || span.source_end > source_end { source_end = span.source_end }
+		found = true
+		if span.kind == .Tab { tab = true }
+		if span.kind == .Tab || span.kind == .Control { control_advance = true }
+	}
+	if !found {
+		span := text_source_span_at(spans, output_start, source_length)
+		source_start, source_end = span.source_start, span.source_end
+		control_advance = span.kind == .Tab || span.kind == .Control
+		tab = span.kind == .Tab
+	}
+	return
+}
+
+text_tab_advance :: proc(line_x, space_advance: f32) -> f32 {
+	stop := space_advance * f32(TEXT_TAB_WIDTH_SPACES)
+	if stop <= 0 { return space_advance }
+	// Text advances are nonnegative in the visual line order returned by Runa.
+	// Advance to the next stop even when the current pen is already on one.
+	next_stop := f32(int(line_x / stop) + 1) * stop
+	advance := next_stop - line_x
+	if advance <= 0 { return stop }
+	return advance
+}
+
 // text_run_build shapes a complete paragraph and copies its logical geometry.
 // The returned product is safe to retain after Runa destroys its temporary
 // Line values. Coordinates are in the same logical units as the requested
 // size. Physical glyph rasterization is deliberately deferred to the native
 // renderer so a window can move between DPI scales without changing logical
 // layout.
-text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, editable: bool = false, allocator := context.allocator, scratch_allocator := context.temp_allocator) -> (run: Text_Run, ok: bool) {
-	if !engine.font_loaded || size <= 0 { return }
-	stack := runa.Font_Stack{&engine.font}
+text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, editable: bool = false, allocator := context.allocator, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI) -> (run: Text_Run, ok: bool) {
+	font, font_loaded := text_engine_font(engine, font_role)
+	if !font_loaded || size <= 0 { return }
+	stack := runa.Font_Stack{font}
 	disable_features: bit_set[runa.Feature] = {}
 	if editable {
 		// Runa documents a known cluster bookkeeping defect after GSUB
@@ -273,9 +421,11 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 		disable_features = {.Ligatures, .Contextual_Ligatures, .Contextual_Alternates}
 	}
 	opts := runa.Paragraph_Opts{fonts=stack, size=size, direction=.Auto, align=.Start, max_width=max_width, disable_features=disable_features}
+	normalized_value, source_spans := text_normalize_controls(value, scratch_allocator)
+	defer { delete(source_spans) }
 	previous_temp_allocator := context.temp_allocator
 	context.temp_allocator = scratch_allocator
-	lines, err := runa.layout_paragraph(value, opts, &engine.cache, allocator=allocator)
+	lines, err := runa.layout_paragraph(normalized_value, opts, &engine.cache, allocator=allocator)
 	context.temp_allocator = previous_temp_allocator
 	if err != .None { return }
 	defer {
@@ -290,6 +440,7 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 	run.size = size
 	run.max_width = max_width
 	run.font_generation = engine.font_generation
+	run.font = font_role
 	run.ligatures_disabled = editable
 	run.allocator = allocator
 	// A ligature may collapse several source graphemes into one shaping
@@ -315,31 +466,37 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 		line_byte_end := 0
 		pen_x: f32 = 0
 		for glyph in line.glyphs {
-			cluster_start := int(glyph.cluster)
-			cluster_end := text_cluster_end(cluster_start, cluster_starts[:], len(value))
+			output_start := int(glyph.cluster)
+			output_end := text_cluster_end(output_start, cluster_starts[:], len(normalized_value))
+			cluster_start, cluster_end, control_advance, tab := text_source_range_for_output(source_spans[:], output_start, output_end, len(value))
 			if cluster_start < line_byte_start { line_byte_start = cluster_start }
 			if cluster_end > line_byte_end { line_byte_end = cluster_end }
+			advance := glyph.x_advance
+			if tab { advance = text_tab_advance(pen_x, glyph.x_advance) }
 			append(&run.glyphs, Text_Glyph{
 				glyph_id=glyph.glyph_id,
 				cluster_start=cluster_start,
 				cluster_end=cluster_end,
 				x=pen_x + glyph.x_offset,
 				y=line_y + line.baseline + glyph.y_offset,
-				x_advance=glyph.x_advance,
+				x_advance=advance,
 				y_advance=glyph.y_advance,
 				x_offset=glyph.x_offset,
 				y_offset=glyph.y_offset,
 				line_index=line_index,
 				level=glyph.level,
+				control_advance=control_advance,
 			})
-			pen_x += glyph.x_advance
+			pen_x += advance
 		}
 		if len(line.glyphs) == 0 {
 			if line_index == 0 { line_byte_start = 0 }
 			else if line_index > 0 { line_byte_start = run.lines[line_index-1].byte_end }
 			line_byte_end = line_byte_start
 		}
-		if line.width > run.width { run.width = line.width }
+		line_width := line.width
+		if pen_x > line.width { line_width = pen_x }
+		if line_width > run.width { run.width = line_width }
 		append(&run.lines, Text_Line{
 			glyph_start=line_glyph_start,
 			glyph_end=len(run.glyphs),
@@ -347,7 +504,7 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 			byte_end=line_byte_end,
 			x=0,
 			y=line_y,
-			width=line.width,
+			width=line_width,
 			height=line.height,
 			baseline=line.baseline,
 		})
@@ -388,7 +545,8 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 		node.text_run_valid = false
 		node.text_run_generation += 1
 	}
-	if !rt.text_engine.font_loaded {
+	_, role_loaded := text_engine_font(&rt.text_engine, node.font)
+	if !role_loaded {
 		if node.text_run_valid {
 			text_run_destroy(&node.text_run)
 			node.text_run_valid = false
@@ -413,7 +571,7 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 		return false
 	}
 	if node.text_run_valid { text_run_destroy(&node.text_run) }
-	run, built := text_run_build(&rt.text_engine, text_value, 16, requested_width, editable=node.kind == .Text_Field, allocator=rt.persistent_allocator, scratch_allocator=rt.scratch_allocator)
+	run, built := text_run_build(&rt.text_engine, text_value, 16, requested_width, editable=node.kind == .Text_Field, allocator=rt.persistent_allocator, scratch_allocator=rt.scratch_allocator, font_role=node.font)
 	if built {
 		node.text_run = run
 		node.text_run_valid = true
@@ -443,7 +601,7 @@ prepare_text_runs :: proc(rt: ^Runtime) {
 }
 
 runa_cache_size :: proc(engine: ^Text_Engine) -> int {
-	if !engine.font_loaded { return 0 }
+	if !engine.font_loaded && !engine.monospace_font_loaded { return 0 }
 	return runa.cache_size(&engine.cache)
 }
 
@@ -818,13 +976,16 @@ text_run_move_visual :: proc(run: ^Text_Run, position: Text_Position, direction:
 	return normalized
 }
 
-text_layout :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, scratch_allocator := context.temp_allocator) -> (width, height: f32, glyphs: int, ok: bool) {
-	if !engine.font_loaded || size <= 0 { return }
-	stack := runa.Font_Stack{&engine.font}
+text_layout :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI) -> (width, height: f32, glyphs: int, ok: bool) {
+	font, font_loaded := text_engine_font(engine, font_role)
+	if !font_loaded || size <= 0 { return }
+	stack := runa.Font_Stack{font}
 	opts := runa.Paragraph_Opts{fonts=stack, size=size, direction=.Auto, align=.Start, max_width=max_width}
+	normalized_value, source_spans := text_normalize_controls(value, scratch_allocator)
+	defer { delete(source_spans) }
 	previous_temp_allocator := context.temp_allocator
 	context.temp_allocator = scratch_allocator
-	lines, err := runa.layout_paragraph(value, opts, &engine.cache, allocator=engine.allocator)
+	lines, err := runa.layout_paragraph(normalized_value, opts, &engine.cache, allocator=engine.allocator)
 	context.temp_allocator = previous_temp_allocator
 	if err != .None { return }
 	defer {
@@ -832,7 +993,16 @@ text_layout :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f
 		delete(lines, engine.allocator)
 	}
 	for line in lines {
-		if line.width > width { width = line.width }
+		line_width := line.width
+		pen_x: f32 = 0
+		for glyph in line.glyphs {
+			advance := glyph.x_advance
+			span := text_source_span_at(source_spans[:], int(glyph.cluster), len(value))
+			if span.kind == .Tab { advance = text_tab_advance(pen_x, glyph.x_advance) }
+			pen_x += advance
+		}
+		if pen_x > line_width { line_width = pen_x }
+		if line_width > width { width = line_width }
 		height += line.height
 		glyphs += len(line.glyphs)
 	}
