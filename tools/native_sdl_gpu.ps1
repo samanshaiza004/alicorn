@@ -2,6 +2,7 @@ param(
     [string]$Odin = $env:ALICORN_ODIN,
     [switch]$ManualIme,
     [switch]$SurfaceStress,
+    [switch]$SurfaceGeometryTest,
     [switch]$Diagnostics,
     [switch]$DebugBounds,
     [int]$CaptureAfter = 2,
@@ -54,6 +55,7 @@ Copy-Item -LiteralPath $sdl_dll -Destination 'out\SDL3.dll' -Force
 $arguments = @()
 if ($ManualIme) { $arguments += '--manual-ime' }
 if ($SurfaceStress) { $arguments += '--surface-stress' }
+if ($SurfaceGeometryTest) { $arguments += '--surface-geometry-test' }
 if ($Diagnostics) {
     $arguments += '--diagnostics'
     $arguments += "--capture-after=$CaptureAfter"

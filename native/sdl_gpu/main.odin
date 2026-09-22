@@ -1488,6 +1488,7 @@ RunFoundation :: proc() {
 	// on this main thread. No background event loop is introduced by the adapter.
 	manual_ime := false
 	surface_stress := false
+	surface_geometry_test := false
 	for argument in os.args {
 		if argument == "--manual-ime" {
 			manual_ime = true
@@ -1495,6 +1496,14 @@ RunFoundation :: proc() {
 		if argument == "--surface-stress" {
 			surface_stress = true
 		}
+		if argument == "--surface-geometry-test" {
+			surface_geometry_test = true
+		}
+	}
+	if surface_geometry_test {
+		if !native_surface_geometry_self_test() { fail("native GPU surface geometry tests failed") }
+		fmt.println("Alicorn SDL_GPU surface geometry tests: PASS")
+		return
 	}
 	// Alicorn renders the inline preedit and underline; the operating system
 	// continues to own candidate-list presentation.

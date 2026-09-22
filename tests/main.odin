@@ -1600,6 +1600,26 @@ render_gpu_surface :: proc(rt: ^alicorn.Runtime, show: bool, revision: u64) -> a
 	return id
 }
 
+render_geometry_surface :: proc(rt: ^alicorn.Runtime, show: bool, revision: u64) -> alicorn.Node_ID {
+	alicorn.invalidate_root(rt, "test retained geometry surface description")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return 0 }
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="geometry-root")
+	id: alicorn.Node_ID = 0
+	if show {
+		id = alicorn.gpu_geometry_surface(
+			&ui,
+			"dag",
+			revision,
+			alicorn.layout_style(grow=1, clip=true),
+			2,
+		)
+	}
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return id
+}
+
 test_gpu_surface_contract :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 160})
 	id := render_gpu_surface(&rt, true, 0)
@@ -1632,6 +1652,68 @@ test_gpu_surface_contract :: proc(state: ^Test_State) {
 	expect(state, !alicorn.gpu_surface_update(&rt, id, 2, samples[:]), "retired surface handles must reject updates")
 	expect(state, rt.focused == 0 && len(rt.nodes) == 1, "surface removal must retire its retained node")
 	alicorn.destroy_runtime(&rt)
+}
+
+test_gpu_geometry_surface_contract :: proc(state: ^Test_State) {
+	stats := alicorn.Runtime_Allocation_Stats{}
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 160}, alicorn.Runtime_Config{
+		persistent_allocator = context.allocator,
+		scratch_backing_allocator = context.allocator,
+		trace_capacity = 32,
+		allocation_stats = &stats,
+	})
+	id := render_geometry_surface(&rt, true, 0)
+	ctx, ok := alicorn.gpu_surface_context(&rt, id)
+	expect(state, ok && ctx.logical_bounds.w == 320 && ctx.logical_bounds.h == 160, "geometry surface bounds must come from flex layout")
+	expect(state, ok && ctx.pixel_width == 640 && ctx.pixel_height == 320 && ctx.dpi_scale == 2, "geometry surface pixel extent must derive from resolved layout bounds and DPI")
+	expect(state, ok && ctx.clip.w == 320 && ctx.clip.h == 160, "geometry surface must expose Alicorn's effective layout clip")
+
+	segments := [1]alicorn.GPU_Surface_Line_Segment{{
+		start={4, 6}, end={44, 26}, thickness=2, color={0.2, 0.8, 1, 1},
+	}}
+	circles := [1]alicorn.GPU_Surface_Filled_Circle{{center={44, 26}, radius=5, color={1, 0.4, 0.1, 1}}}
+	expect(state, alicorn.gpu_surface_update_geometry(&rt, id, 1, segments[:], circles[:]), "revisioned retained geometry update must succeed")
+	node := rt.nodes[id]
+	expect(state, node.surface_geometry_active && node.surface_revision == 1, "geometry update must switch the retained payload and revision")
+	expect(state, len(node.surface_segments) == 1 && len(node.surface_circles) == 1, "typed segments and circles must be retained")
+	segments[0].start.x = 999
+	circles[0].radius = 999
+	expect(state, node.surface_segments[0].start.x == 4 && node.surface_circles[0].radius == 5, "runtime must copy geometry instead of retaining application slices")
+	expect(state, !alicorn.gpu_surface_update_geometry(&rt, id, 1, segments[:], circles[:]), "equal geometry revisions must be rejected")
+	expect(state, alicorn.gpu_surface_needs_frame(&rt), "geometry update must request presentation")
+	updates_before := rt.stats.surface_geometry_updates
+	too_many: [1366]alicorn.GPU_Surface_Line_Segment
+	expect(state, !alicorn.gpu_surface_update_geometry(&rt, id, 2, too_many[:], nil), "geometry exceeding the shared 8192-vertex budget must be rejected")
+	expect(state, rt.stats.surface_geometry_overflow_rejections == 1 && rt.stats.surface_geometry_updates == updates_before, "overflow rejection must be observable without counting as an update")
+	expect(state, node.surface_revision == 1 && len(node.surface_segments) == 1 && len(node.surface_circles) == 1, "overflow rejection must preserve the prior complete geometry revision")
+	invalid := [1]alicorn.GPU_Surface_Line_Segment{{start={0, 0}, end={1, 1}, thickness=0, color={1, 1, 1, 1}}}
+	expect(state, !alicorn.gpu_surface_update_geometry(&rt, id, 2, invalid[:], nil), "non-positive segment thickness must be rejected")
+	expect(state, node.surface_revision == 1, "invalid geometry must not advance or replace the retained revision")
+
+	max_segments: [1365]alicorn.GPU_Surface_Line_Segment
+	for &segment, i in max_segments {
+		segment = alicorn.GPU_Surface_Line_Segment{start={f32(i), 0}, end={f32(i), 1}, thickness=1, color={0.5, 0.5, 0.5, 1}}
+	}
+	expect(state, alicorn.gpu_surface_update_geometry(&rt, id, 2, max_segments[:], nil), "geometry fitting the exact public primitive budget must be accepted")
+	expect(state, len(node.surface_segments) == 1365 && len(node.surface_circles) == 0, "accepted capacity-boundary geometry must remain complete")
+	expect(state, !alicorn.gpu_surface_update_geometry(&rt, id, 3, max_segments[:], circles[:]), "circle tessellation vertices must be included in overflow checks")
+	expect(state, rt.stats.surface_geometry_overflow_rejections == 2 && node.surface_revision == 2 && len(node.surface_segments) == 1365, "circle overflow must preserve the complete prior geometry")
+	live_with_geometry := stats.persistent_requested_bytes_live
+
+	// The original description revision is unchanged, so a procedural root wake
+	// must not erase the explicit geometry update.
+	render_geometry_surface(&rt, true, 0)
+	expect(state, node.surface_geometry_active && node.surface_revision == 2 && len(node.surface_segments) == 1365, "same description revision must preserve explicit geometry data")
+	// A new description revision is an authoritative replacement and clears old
+	// direct-update payloads while keeping the retained geometry surface kind.
+	render_geometry_surface(&rt, true, 2)
+	expect(state, node.surface_revision == 2 && node.surface_geometry_active && len(node.surface_segments) == 0, "new surface description revision must clear stale geometry payload")
+	render_geometry_surface(&rt, false, 0)
+	expect(state, !alicorn.gpu_surface_update_geometry(&rt, id, 3, nil, nil), "retired geometry handles must reject updates")
+	expect(state, len(rt.nodes) == 1, "geometry removal must retire the retained node and its arrays")
+	expect(state, stats.persistent_requested_bytes_live < live_with_geometry, "retiring the surface must release retained segment/circle storage")
+	alicorn.destroy_runtime(&rt)
+	expect(state, stats.persistent_requested_bytes_live == 0, "runtime destruction must release all retained geometry storage")
 }
 
 test_retained_scroll_region :: proc(state: ^Test_State) {
@@ -1855,8 +1937,11 @@ test_runtime_allocator_ownership :: proc(state: ^Test_State) {
 	if build {
 		alicorn.container_begin(&ui, .Root, label="allocator-root")
 		alicorn.text(&ui, "retained allocation")
+		geometry := alicorn.gpu_geometry_surface(&ui, "allocator-surface", 0, alicorn.layout_style(height=24))
 		alicorn.container_end(&ui)
 		alicorn.end_frame(&ui)
+		segment := [1]alicorn.GPU_Surface_Line_Segment{{start={0, 0}, end={10, 10}, thickness=1, color={1, 1, 1, 1}}}
+		expect(state, alicorn.gpu_surface_update_geometry(&rt, geometry, 1, segment[:], nil), "geometry backing storage must allocate through the runtime-owned persistent allocator")
 	}
 	expect(state, len(tracking.allocation_map) == 0, "runtime must not allocate through a later ambient allocator")
 	expect(state, stats.persistent_alloc_calls > 0 && stats.persistent_requested_bytes_peak > 0, "persistent requested-byte telemetry must record retained work")
@@ -1902,6 +1987,7 @@ main :: proc() {
 	test_retained_text_product_lifetime(&state)
 	test_runtime_edit_invalidates_text_product(&state)
 	test_gpu_surface_contract(&state)
+	test_gpu_geometry_surface_contract(&state)
 	test_retained_scroll_region(&state)
 	test_high_level_virtual_list_and_style_defaults(&state)
 	test_scroll_region_routing_and_clamp(&state)

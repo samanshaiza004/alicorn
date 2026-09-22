@@ -27,14 +27,91 @@ gpu_surface_update :: proc(rt: ^Runtime, id: Node_ID, revision: u64, samples: []
 		return false
 	}
 	clear(&node.surface_samples)
+	clear(&node.surface_segments)
+	clear(&node.surface_circles)
 	for sample in samples {
 		append(&node.surface_samples, sample)
 	}
+	node.surface_geometry_active = false
 	node.surface_revision = revision
 	rt.surface_frame_pending = true
 	advance_presentation_revision(rt)
 	rt.stats.surface_updates += 1
 	record_trace_literal(rt, .Invalidation, id, "explicit GPU surface revision update")
+	return true
+}
+
+gpu_surface_geometry_scalar_valid :: proc(value: f32) -> bool {
+	// Comparisons reject NaN and infinity while keeping this validation
+	// independent of backend math helpers.
+	return value == value && value >= -10_000_000 && value <= 10_000_000
+}
+
+gpu_surface_geometry_color_valid :: proc(color: Color) -> bool {
+	return color.r >= 0 && color.r <= 1 && color.g >= 0 && color.g <= 1 && color.b >= 0 && color.b <= 1 && color.a >= 0 && color.a <= 1
+}
+
+gpu_surface_geometry_valid :: proc(segments: []GPU_Surface_Line_Segment, circles: []GPU_Surface_Filled_Circle) -> bool {
+	for segment in segments {
+		if !gpu_surface_geometry_scalar_valid(segment.start.x) || !gpu_surface_geometry_scalar_valid(segment.start.y) ||
+		   !gpu_surface_geometry_scalar_valid(segment.end.x) || !gpu_surface_geometry_scalar_valid(segment.end.y) ||
+		   !gpu_surface_geometry_scalar_valid(segment.thickness) || segment.thickness <= 0 ||
+		   !gpu_surface_geometry_color_valid(segment.color) {
+			return false
+		}
+	}
+	for circle in circles {
+		if !gpu_surface_geometry_scalar_valid(circle.center.x) || !gpu_surface_geometry_scalar_valid(circle.center.y) ||
+		   !gpu_surface_geometry_scalar_valid(circle.radius) || circle.radius <= 0 ||
+		   !gpu_surface_geometry_color_valid(circle.color) {
+			return false
+		}
+	}
+	return true
+}
+
+gpu_surface_geometry_fits :: proc(segment_count, circle_count: int) -> bool {
+	if segment_count < 0 || circle_count < 0 || GPU_SURFACE_MAX_VERTICES < 0 { return false }
+	remaining := GPU_SURFACE_MAX_VERTICES
+	if segment_count > remaining / 6 { return false }
+	remaining -= segment_count * 6
+	circle_vertices := GPU_SURFACE_CIRCLE_SEGMENTS * 3
+	return circle_count <= remaining / circle_vertices
+}
+
+// gpu_surface_update_geometry copies surface-local logical geometry into the
+// runtime's persistent allocator. Updates are atomic: equal revisions,
+// invalid primitives, and meshes exceeding GPU_SURFACE_MAX_VERTICES return
+// false without replacing the currently displayed payload. Colors are
+// normalized RGBA; segment thickness and circle radius are positive logical
+// units. Circles are rendered as deterministic 16-triangle fans.
+gpu_surface_update_geometry :: proc(
+	rt: ^Runtime,
+	id: Node_ID,
+	revision: u64,
+	segments: []GPU_Surface_Line_Segment,
+	circles: []GPU_Surface_Filled_Circle,
+) -> bool {
+	node, ok := rt.nodes[id]
+	if !ok || node == nil || !node.active || node.kind != .Custom_Surface { return false }
+	if node.surface_revision == revision { return false }
+	if !gpu_surface_geometry_fits(len(segments), len(circles)) {
+		rt.stats.surface_geometry_overflow_rejections += 1
+		return false
+	}
+	if !gpu_surface_geometry_valid(segments, circles) { return false }
+	clear(&node.surface_segments)
+	clear(&node.surface_circles)
+	clear(&node.surface_samples)
+	for segment in segments { append(&node.surface_segments, segment) }
+	for circle in circles { append(&node.surface_circles, circle) }
+	node.surface_geometry_active = true
+	node.surface_revision = revision
+	rt.surface_frame_pending = true
+	advance_presentation_revision(rt)
+	rt.stats.surface_updates += 1
+	rt.stats.surface_geometry_updates += 1
+	record_trace_literal(rt, .Invalidation, id, "explicit GPU surface geometry revision update")
 	return true
 }
 
@@ -50,6 +127,12 @@ gpu_surface_context :: proc(rt: ^Runtime, id: Node_ID) -> (ctx: GPU_Surface_Cont
 		dpi_scale=node.surface_dpi_scale,
 		clip=rect_intersection(node.clip, node.bounds),
 		revision=node.surface_revision,
+	}
+	if node.surface_geometry_active || node.surface_kind == .Geometry {
+		ctx.pixel_width = int(node.bounds.w * node.surface_dpi_scale + 0.5)
+		ctx.pixel_height = int(node.bounds.h * node.surface_dpi_scale + 0.5)
+		if ctx.pixel_width < 0 { ctx.pixel_width = 0 }
+		if ctx.pixel_height < 0 { ctx.pixel_height = 0 }
 	}
 	return ctx, true
 }

@@ -62,6 +62,50 @@ logical bounds, pixel width/height, DPI scale, effective clip, revision
 `gpu_surface_needs_frame` and `gpu_surface_frame_consumed` make scheduling
 observable without introducing a QoS or reactive system.
 
+### Retained typed geometry
+
+The waveform API above remains unchanged. A second constructor provides a
+layout-resolved surface for small retained 2D geometry:
+
+```odin
+surface := alicorn.gpu_geometry_surface(
+    &ui,
+    "commit-dag",
+    revision,
+    alicorn.layout_style(grow=1, clip=true),
+    dpi_scale,
+)
+
+segments := [1]alicorn.GPU_Surface_Line_Segment{{
+	start={4, 8}, end={28, 20}, thickness=2, color={0.3, 0.8, 1, 1},
+}}
+circles := [1]alicorn.GPU_Surface_Filled_Circle{{
+	center={28, 20}, radius=4, color={1, 0.7, 0.2, 1},
+}}
+alicorn.gpu_surface_update_geometry(&rt, surface, next_revision, segments[:], circles[:])
+```
+
+`Layout_Style` determines the surface's retained bounds and clipping through
+ordinary Alicorn layout; applications do not supply viewport coordinates.
+Points, thicknesses, and radii are logical units local to those resolved
+bounds. `gpu_surface_context` reports those bounds and derives physical pixel
+extent from layout size and DPI for geometry surfaces. Geometry surfaces are
+transparent by default: the renderer emits no backing quad, making the surface
+suitable as an overlay/gutter alongside ordinary UI. The original waveform
+surface retains its dark background.
+
+The runtime copies both typed slices with its persistent allocator. The update
+is atomic and revisioned: invalid geometry, a repeated revision, or geometry
+that would exceed the shared `GPU_SURFACE_MAX_VERTICES` limit (8,192 vertices)
+returns `false` and leaves the previous payload intact. Geometry surfaces are
+transparent and consume no background vertices; the waveform background quad
+remains within the same backend buffer budget.
+Segments use six vertices; circles use deterministic 16-triangle fans. Colors
+are normalized RGBA, and thickness/radius must be positive. The SDL_GPU backend
+draws these triangles through the existing surface pipeline, display ordering,
+effective scissor, and frame scheduling; application code receives no GPU
+callback or command buffer.
+
 ## Chosen implementation
 
 The first backend surface is a 512-sample waveform. The retained node owns
@@ -75,6 +119,10 @@ without adding a shader compiler or a second artifact toolchain to the
 foundation gate. The surface still owns a separate pipeline and buffers, so
 its residency and upload counters are independent of text.
 
+The geometry payload shares this pipeline and buffer budget while retaining
+its own typed runtime-owned segments/circles. It does not alter waveform
+updates or introduce a general-purpose scene graph.
+
 The compositor keeps display order. A surface is encoded at its display-list
 position in a load-preserving render pass with an effective scissor. The
 runtime never gives application code a raw `SDL_GPURenderPass *` or command
@@ -84,6 +132,10 @@ buffer.
 
 - A surface update is explicit and revisioned.
 - Sample slices are copied before the update returns.
+- Geometry slices are copied before the update returns and released when the
+  retained node is retired or the runtime is destroyed.
+- Geometry overflow rejects the complete revision without truncation or a
+  partially rendered primitive.
 - A surface-only update does not execute `begin_frame`'s application
   description, reconciliation, layout, paint, or display-list rebuild.
 - A later root wake with the same surface description does not roll back a
@@ -103,6 +155,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\check.ps1
 powershell -ExecutionPolicy Bypass -File .\tools\bench.ps1
 powershell -ExecutionPolicy Bypass -File .\tools\native_sdl_gpu.ps1
 powershell -ExecutionPolicy Bypass -File .\tools\native_sdl_gpu.ps1 -SurfaceStress
+powershell -ExecutionPolicy Bypass -File .\tools\native_sdl_gpu.ps1 -SurfaceGeometryTest
 ```
 
 `-SurfaceStress` runs 1,200 surface revisions (120 Hz for ten seconds at the

@@ -54,7 +54,14 @@ Node_Kind :: enum {
 
 GPU_Surface_Kind :: enum {
 	Waveform,
+	Geometry,
 }
+
+// Geometry surfaces share the native SDL_GPU triangle budget. Transparent
+// geometry emits no background vertices; a segment uses six vertices and a
+// filled circle uses 16 fan triangles (48 vertices).
+GPU_SURFACE_MAX_VERTICES :: 8192
+GPU_SURFACE_CIRCLE_SEGMENTS :: 16
 
 // GPU_Surface_Context is the backend-neutral placement contract. The runtime
 // owns these values; a backend must not infer them from the window or retain an
@@ -92,6 +99,25 @@ Rect :: struct {
 
 Color :: struct {
 	r, g, b, a: f32,
+}
+
+// GPU_Surface_Point is expressed in logical coordinates local to the resolved
+// bounds of its geometry surface.
+GPU_Surface_Point :: struct {
+	x, y: f32,
+}
+
+GPU_Surface_Line_Segment :: struct {
+	start:     GPU_Surface_Point,
+	end:       GPU_Surface_Point,
+	thickness: f32,
+	color:     Color,
+}
+
+GPU_Surface_Filled_Circle :: struct {
+	center: GPU_Surface_Point,
+	radius: f32,
+	color:  Color,
 }
 
 Source_Site :: struct {
@@ -351,6 +377,9 @@ Node :: struct {
 	scroll_axis_behavior: Scroll_Axis_Behavior,
 	surface_revision: u64,
 	surface_samples: [dynamic]f32,
+	surface_geometry_active: bool,
+	surface_segments: [dynamic]GPU_Surface_Line_Segment,
+	surface_circles: [dynamic]GPU_Surface_Filled_Circle,
 	bounds:      Rect,
 	clip:        Rect,
 	dirty:       Dirty_Stages,
@@ -419,6 +448,8 @@ Frame_Stats :: struct {
 	gpu_submits:       u64,
 	surface_updates:  u64,
 	surface_frames_consumed: u64,
+	surface_geometry_updates: u64,
+	surface_geometry_overflow_rejections: u64,
 }
 
 Runtime :: struct {
@@ -1590,4 +1621,53 @@ gpu_surface_simple :: proc(ui: ^UI, surface_key: string, revision: u64, logical_
 
 gpu_surface :: proc(ui: ^UI, surface_key: string, revision: u64, logical_bounds: Rect, pixel_width, pixel_height: int, dpi_scale: f32, loc := #caller_location) -> Node_ID {
 	return gpu_surface_simple(ui, surface_key, revision, logical_bounds, pixel_width, pixel_height, dpi_scale, loc)
+}
+
+// gpu_geometry_surface_ex creates a retained colored-geometry surface whose
+// bounds are resolved by Alicorn layout. Geometry update coordinates are
+// logical units local to the resulting bounds. Pixel extent is derived from
+// the resolved bounds and dpi_scale when queried through gpu_surface_context.
+gpu_geometry_surface_ex :: proc(
+	ui: ^UI,
+	surface_key: string,
+	revision: u64,
+	style: Layout_Style,
+	dpi_scale: f32 = 1,
+	source := Source_Site{},
+	loc := #caller_location,
+) -> Node_ID {
+	resolved_source := resolve_source(source, "gpu_geometry_surface", loc)
+	return emit(
+		ui, .Custom_Surface, resolved_source,
+		label=surface_key,
+	key=surface_key,
+	explicit_key=true,
+	style=style,
+	paint_value=revision,
+	color=Color{0.08, 0.14, 0.24, 1},
+	surface_kind=.Geometry,
+	surface_dpi_scale=dpi_scale,
+	)
+}
+
+gpu_geometry_surface_simple :: proc(
+	ui: ^UI,
+	surface_key: string,
+	revision: u64,
+	style: Layout_Style,
+	dpi_scale: f32 = 1,
+	loc := #caller_location,
+) -> Node_ID {
+	return gpu_geometry_surface_ex(ui, surface_key, revision, style, dpi_scale, Source_Site{}, loc)
+}
+
+gpu_geometry_surface :: proc(
+	ui: ^UI,
+	surface_key: string,
+	revision: u64,
+	style: Layout_Style,
+	dpi_scale: f32 = 1,
+	loc := #caller_location,
+) -> Node_ID {
+	return gpu_geometry_surface_simple(ui, surface_key, revision, style, dpi_scale, loc)
 }

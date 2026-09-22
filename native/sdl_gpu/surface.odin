@@ -5,7 +5,7 @@ import "core:c"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
-MAX_SURFACE_VERTICES :: 8192
+MAX_SURFACE_VERTICES :: alicorn.GPU_SURFACE_MAX_VERTICES
 
 Native_Surface_Renderer :: struct {
 	device: ^sdl3.GPUDevice,
@@ -31,6 +31,10 @@ native_surface_mix :: proc(h, value: u64) -> u64 {
 
 native_surface_color :: proc(r, g, b, a: f32) -> [4]f32 {
 	return [4]f32{r, g, b, a}
+}
+
+native_surface_color_from :: proc(color: alicorn.Color) -> [4]f32 {
+	return native_surface_color(color.r, color.g, color.b, color.a)
 }
 
 native_surface_vertex :: proc(x, y: f32, color: [4]f32) -> Native_Text_Vertex {
@@ -66,6 +70,111 @@ native_surface_append_segment :: proc(vertices: ^[dynamic]Native_Text_Vertex, ax
 		native_surface_vertex((ax+nx)*scale_x, (ay+ny)*scale_y, color),
 	)
 	return true
+}
+
+native_surface_append_circle :: proc(vertices: ^[dynamic]Native_Text_Vertex, cx, cy, scale_x, scale_y, radius: f32, color: [4]f32) -> bool {
+	vertex_count := alicorn.GPU_SURFACE_CIRCLE_SEGMENTS * 3
+	if len(vertices^) + vertex_count > MAX_SURFACE_VERTICES { return false }
+	for i in 0..<alicorn.GPU_SURFACE_CIRCLE_SEGMENTS {
+		a0 := f32(i) * 6.283185307179586 / f32(alicorn.GPU_SURFACE_CIRCLE_SEGMENTS)
+		a1 := f32(i+1) * 6.283185307179586 / f32(alicorn.GPU_SURFACE_CIRCLE_SEGMENTS)
+		x0 := cx + math.cos(a0)*radius
+		y0 := cy + math.sin(a0)*radius
+		x1 := cx + math.cos(a1)*radius
+		y1 := cy + math.sin(a1)*radius
+		append(vertices,
+			native_surface_vertex(cx*scale_x, cy*scale_y, color),
+			native_surface_vertex(x0*scale_x, y0*scale_y, color),
+			native_surface_vertex(x1*scale_x, y1*scale_y, color),
+		)
+	}
+	return true
+}
+
+native_surface_append_geometry :: proc(
+	vertices: ^[dynamic]Native_Text_Vertex,
+	bounds: alicorn.Rect,
+	scale_x, scale_y: f32,
+	segments: []alicorn.GPU_Surface_Line_Segment,
+	circles: []alicorn.GPU_Surface_Filled_Circle,
+) -> bool {
+	for segment in segments {
+		ax := bounds.x + segment.start.x
+		ay := bounds.y + segment.start.y
+		bx := bounds.x + segment.end.x
+		by := bounds.y + segment.end.y
+		if !native_surface_append_segment(vertices, ax, ay, bx, by, scale_x, scale_y, segment.thickness, native_surface_color_from(segment.color)) {
+			return false
+		}
+	}
+	for circle in circles {
+		cx := bounds.x + circle.center.x
+		cy := bounds.y + circle.center.y
+		if !native_surface_append_circle(vertices, cx, cy, scale_x, scale_y, circle.radius, native_surface_color_from(circle.color)) {
+			return false
+		}
+	}
+	return true
+}
+
+native_surface_geometry_self_test :: proc() -> bool {
+	vertices := make([dynamic]Native_Text_Vertex, 0, 128, allocator=context.temp_allocator)
+	defer delete(vertices)
+	segments := [1]alicorn.GPU_Surface_Line_Segment{{
+		start={2, 3}, end={12, 3}, thickness=2, color={1, 0, 0, 1},
+	}}
+	circles := [1]alicorn.GPU_Surface_Filled_Circle{{center={20, 10}, radius=4, color={0, 1, 0, 1}}}
+	if !native_surface_append_geometry(&vertices, alicorn.Rect{100, 50, 40, 30}, 2, 2, segments[:], circles[:]) { return false }
+	if len(vertices) != 6+alicorn.GPU_SURFACE_CIRCLE_SEGMENTS*3 { return false }
+	// Surface-local coordinates are translated by the resolved surface origin,
+	// then scaled to physical pixels for the GPU vertex buffer.
+	if vertices[0].position[0] < 200 || vertices[0].position[0] > 204 { return false }
+	if vertices[0].position[1] < 104 || vertices[0].position[1] > 106 { return false }
+	if vertices[0].color[0] != 1 || vertices[0].color[1] != 0 || vertices[0].color[2] != 0 || vertices[0].color[3] != 1 { return false }
+	if vertices[6].position[0] != 240 || vertices[6].position[1] != 120 { return false }
+	if vertices[7].position[0] < 247 || vertices[7].position[0] > 249 || vertices[7].position[1] != 120 { return false }
+	if vertices[6].color[0] != 0 || vertices[6].color[1] != 1 || vertices[6].color[2] != 0 || vertices[6].color[3] != 1 { return false }
+
+	clear(&vertices)
+	for _ in 0..<MAX_SURFACE_VERTICES-47 { append(&vertices, Native_Text_Vertex{}) }
+	previous_len := len(vertices)
+	if native_surface_append_circle(&vertices, 0, 0, 1, 1, 1, native_surface_color(1, 1, 1, 1)) { return false }
+	if len(vertices) != previous_len { return false } // no partial primitive on overflow
+
+	// Exercise the complete retained-node -> native-mesh path without needing
+	// an SDL device. The live backend uses this same mesh builder before upload.
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 120, 80})
+	defer alicorn.destroy_runtime(&rt)
+	alicorn.invalidate_root(&rt, "native geometry mesh test")
+	ui, build := alicorn.begin_frame(&rt)
+	if !build { return false }
+	alicorn.container_begin(&ui, .Root, label="native-geometry-root")
+	surface := alicorn.gpu_geometry_surface(&ui, "native-geometry", 0, alicorn.layout_style(width=80, height=50), 2)
+	waveform := alicorn.gpu_surface(&ui, "native-waveform", 0, alicorn.Rect{0, 0, 80, 50}, 160, 100, 2)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	if !alicorn.gpu_surface_update_geometry(&rt, surface, 1, segments[:], circles[:]) { return false }
+	samples := [2]f32{0.1, 0.9}
+	if !alicorn.gpu_surface_update(&rt, waveform, 1, samples[:]) { return false }
+
+	renderer := Native_Surface_Renderer{
+		runtime=&rt,
+		vertices=make([dynamic]Native_Text_Vertex, 0, 128, allocator=context.temp_allocator),
+	}
+	defer delete(renderer.vertices)
+	if !native_surface_rebuild_mesh(&renderer, surface, 2, 2) { return false }
+	if len(renderer.vertices) != 6+alicorn.GPU_SURFACE_CIRCLE_SEGMENTS*3 { return false }
+	first_fingerprint := renderer.mesh_fingerprint
+	changed := [1]alicorn.GPU_Surface_Line_Segment{{
+		start={8, 3}, end={18, 13}, thickness=2, color={1, 0, 0, 1},
+	}}
+	if !alicorn.gpu_surface_update_geometry(&rt, surface, 2, changed[:], circles[:]) { return false }
+	if !native_surface_rebuild_mesh(&renderer, surface, 2, 2) { return false }
+	if renderer.mesh_fingerprint == first_fingerprint || len(renderer.vertices) != 6+alicorn.GPU_SURFACE_CIRCLE_SEGMENTS*3 { return false }
+	// Geometry surfaces are transparent by default, while the original waveform
+	// mesh retains its opaque dark background quad.
+	if !native_surface_rebuild_mesh(&renderer, waveform, 2, 2) { return false }
+	return len(renderer.vertices) == 12 && renderer.vertices[0].color[0] == 0.08 && renderer.vertices[0].color[1] == 0.14 && renderer.vertices[0].color[2] == 0.24
 }
 
 native_surface_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTextureFormat, runtime: ^alicorn.Runtime) -> (renderer: Native_Surface_Renderer, ok: bool) {
@@ -140,16 +249,27 @@ native_surface_rebuild_mesh :: proc(renderer: ^Native_Surface_Renderer, id: alic
 	node, ok := renderer.runtime.nodes[id]
 	if !ok || node == nil || !node.active || node.kind != .Custom_Surface { return false }
 	h: u64 = 1469598103934665603
+	h = native_surface_mix(h, u64(id))
 	h = native_surface_mix(h, u64(node.surface_revision))
 	h = native_surface_mix(h, u64(len(node.surface_samples)))
+	h = native_surface_mix(h, u64(node.surface_geometry_active ? 1 : 0))
+	h = native_surface_mix(h, u64(len(node.surface_segments)))
+	h = native_surface_mix(h, u64(len(node.surface_circles)))
 	h = native_surface_mix(h, u64(transmute(u32)scale_x))
 	h = native_surface_mix(h, u64(transmute(u32)scale_y))
 	h = native_surface_mix(h, native_text_hash_rect(h, node.bounds))
 	h = native_surface_mix(h, native_text_hash_rect(h, node.clip))
 	if renderer.mesh_valid && renderer.mesh_fingerprint == h { return true }
 	clear(&renderer.vertices)
-	native_surface_append_quad(&renderer.vertices, node.bounds.x, node.bounds.y, node.bounds.x+node.bounds.w, node.bounds.y+node.bounds.h, scale_x, scale_y, native_surface_color(0.08, 0.14, 0.24, 1))
-	if len(node.surface_samples) > 1 {
+	geometry_surface := node.surface_geometry_active || node.surface_kind == .Geometry
+	if !geometry_surface {
+		native_surface_append_quad(&renderer.vertices, node.bounds.x, node.bounds.y, node.bounds.x+node.bounds.w, node.bounds.y+node.bounds.h, scale_x, scale_y, native_surface_color(0.08, 0.14, 0.24, 1))
+	}
+	if node.surface_geometry_active {
+		if !native_surface_append_geometry(&renderer.vertices, node.bounds, scale_x, scale_y, node.surface_segments[:], node.surface_circles[:]) {
+			return false
+		}
+	} else if len(node.surface_samples) > 1 {
 		line_color := native_surface_color(0.30, 0.88, 0.96, 1)
 		for i := 0; i+1 < len(node.surface_samples); i += 1 {
 			a := node.surface_samples[i]
