@@ -1446,6 +1446,21 @@ test_high_level_virtual_list_and_style_defaults :: proc(state: ^Test_State) {
 	if list_id != 0 {
 		node := rt.nodes[list_id]
 		expect(state, node.scroll_content_height == 160 && node.scroll_viewport_height == 60, "high-level virtual list owns content and viewport geometry")
+		content_id := alicorn.Node_ID(0)
+		for id, child in rt.nodes {
+			if child.parent == list_id && child.kind == .Virtual_List { content_id = id; break }
+		}
+		expect(state, content_id != 0, "high-level virtual list retains its content viewport")
+		if content_id != 0 {
+			content := rt.nodes[content_id]
+			expect(state, content.bounds.h == node.scroll_viewport_height, "virtual content height matches the resolved viewport")
+			expect(state, content.clip.h == node.scroll_viewport_height, "virtual content clip covers the resolved viewport")
+		}
+		if text_id, ok := ids_a[u64(10)]; ok {
+			row := rt.nodes[text_id]
+			expect(state, row.bounds.h == 20, "fixed-height virtual row keeps its requested height")
+			expect(state, row.clip.h == node.scroll_viewport_height, "virtual row clip is not reduced to the intrinsic fallback height")
+		}
 		expect(state, alicorn.virtual_list_ensure_visible(&rt, list_id, 6), "high-level virtual list can ensure a logical row is visible")
 		expect(state, alicorn.scroll_region_offset(&rt, list_id) == 80, "ensure-visible uses retained row geometry")
 	}

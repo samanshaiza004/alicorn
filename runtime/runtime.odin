@@ -1479,7 +1479,11 @@ virtual_list_begin :: proc(
 	)
 	if scroll.id == 0 { return {} }
 	metrics := virtual_list_metrics(item_count, scroll.offset_y, scroll.viewport_height, row_height)
-	content_style := layout_style(width=-1, height=-1, clip=true)
+	// The content node is clipped to the resolved scroll viewport. Give it
+	// that same height explicitly: an unconstrained Column child otherwise
+	// falls back to intrinsic_main's default 24 logical pixels, which clips
+	// taller rows differently across displays with different pixel densities.
+	content_style := layout_style(width=-1, height=scroll.viewport_height, clip=true)
 	if content_width > 0 { content_style.width = content_width }
 	container_begin(
 		ui,
