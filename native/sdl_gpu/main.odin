@@ -84,6 +84,7 @@ Application_Key :: enum {
 	Command_2,
 	Command_3,
 	Toggle,
+	Open_Repository,
 }
 
 Application_Build_Proc :: proc(
@@ -97,6 +98,7 @@ Application_Key_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, key: Applicati
 Application_Scroll_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Scroll_Event)
 Application_Tick_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
 Application_Start_Proc :: proc(state: rawptr, waker: Application_Waker)
+Application_Services_Proc :: proc(state: rawptr, services: Application_Services)
 Application_Wake_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
 Application_Stop_Proc :: proc(state: rawptr)
 
@@ -126,7 +128,9 @@ Application :: struct {
 	on_key:         Application_Key_Proc,
 	on_scroll:      Application_Scroll_Proc,
 	on_tick:        Application_Tick_Proc,
+	on_services:    Application_Services_Proc,
 	on_start:       Application_Start_Proc,
+	on_dialog:      Application_Dialog_Proc,
 	on_wake:        Application_Wake_Proc,
 	on_stop:        Application_Stop_Proc,
 }
@@ -636,6 +640,12 @@ pump_events :: proc(
 					case sdl3.K_2: application_key = .Command_2
 					case sdl3.K_3: application_key = .Command_3
 					case sdl3.K_SPACE: application_key = .Toggle
+					case sdl3.K_O:
+						if native_text_primary_modifier(event.key.mod) {
+							application_key = .Open_Repository
+						} else {
+							handled = false
+						}
 					case: handled = false
 					}
 					if handled && application.on_key != nil && application.on_key(application.state, rt, application_key) {
@@ -1118,6 +1128,11 @@ run_application_loop :: proc(
 	if wake_event_id == 0 { fail("SDL_RegisterEvents failed for application wakeups") }
 	wake_state := Native_Application_Waker{event_type=sdl3.EventType(wake_event_id), active=true}
 	application_waker := Application_Waker{data=rawptr(&wake_state), wake=native_application_wake}
+	dialog_bridge := native_dialog_bridge_make(window, application_waker)
+	defer native_dialog_bridge_release(dialog_bridge)
+	if application_instance.on_services != nil {
+		application_instance.on_services(application_instance.state, Application_Services{dialogs=Dialog_Service{handle=rawptr(dialog_bridge)}})
+	}
 	if application_instance.on_start != nil {
 		application_instance.on_start(application_instance.state, application_waker)
 	}
@@ -1167,6 +1182,7 @@ run_application_loop :: proc(
 			wait_timeout_ms=wait_timeout_ms,
 			wait_timed_out=&wait_timed_out,
 		)
+		native_dialog_dispatch(dialog_bridge, &application_instance, rt)
 		wait_for_event = false
 		if wait_timed_out {
 			quit_requested = true
@@ -1303,6 +1319,7 @@ run_application_loop :: proc(
 	}
 
 	if !sdl3.WaitForGPUIdle(device) { fail("SDL application GPU idle wait failed") }
+	native_dialog_bridge_shutdown(dialog_bridge)
 	if application_instance.on_stop != nil {
 		// Stop worker threads while the host-owned waker state is still alive.
 		// This prevents a late worker completion from calling through a stack
