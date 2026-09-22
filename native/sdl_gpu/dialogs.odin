@@ -5,7 +5,7 @@ package alicorn_sdl_gpu
 // owns the copy-and-wake bridge that returns results to the main loop.
 import "core:c"
 import "core:mem"
-import "core:runtime"
+import "base:runtime"
 import "core:strings"
 import "core:sync"
 import alicorn "../../runtime"
@@ -73,7 +73,13 @@ Dialog_Message_Request :: struct {
 // and paths are borrowed only for the duration of Application.on_dialog; an
 // application must clone any value it keeps.
 Dialog_Service :: struct {
-	handle: rawptr,
+	handle:  rawptr,
+	backend: Dialog_Service_Backend,
+}
+
+Dialog_Service_Backend :: enum {
+	Native,
+	Fake,
 }
 
 Application_Services :: struct {
@@ -81,6 +87,22 @@ Application_Services :: struct {
 }
 
 Application_Dialog_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, result: ^File_Dialog_Result)
+
+// Dialog_Fake_Backend is a headless test service. It exercises the same
+// accepted/cancelled/error callback shape and one-dialog busy policy without
+// opening an OS panel. Complete it from the test/application thread with
+// Dialog_Fake_Complete.
+Dialog_Fake_Backend :: struct {
+	allocator:       mem.Allocator,
+	active:          bool,
+	request_count:   int,
+	busy_rejections: int,
+	pending_id:      Dialog_ID,
+	pending_kind:    File_Dialog_Kind,
+	callback:        Application_Dialog_Proc,
+	callback_state:  rawptr,
+	callback_runtime: ^alicorn.Runtime,
+}
 
 Native_Dialog_String :: struct {
 	bytes: []byte,
@@ -309,6 +331,18 @@ native_dialog_build_request :: proc(bridge: ^Native_Dialog_Bridge, request: File
 // native file dialog is already active. The request is copied before SDL sees
 // it, so every string/filter remains valid until the asynchronous callback.
 ShowFileDialog :: proc(service: Dialog_Service, request: File_Dialog_Request) -> bool {
+	if service.backend == .Fake {
+		fake := cast(^Dialog_Fake_Backend)service.handle
+		if fake == nil || fake.callback == nil || fake.active {
+			if fake != nil && fake.active { fake.busy_rejections += 1 }
+			return false
+		}
+		fake.active = true
+		fake.request_count += 1
+		fake.pending_id = request.id
+		fake.pending_kind = request.kind
+		return true
+	}
 	bridge := cast(^Native_Dialog_Bridge)service.handle
 	if bridge == nil { return false }
 	sync.mutex_lock(&bridge.mutex)
@@ -334,6 +368,38 @@ ShowFileDialog :: proc(service: Dialog_Service, request: File_Dialog_Request) ->
 	case .Open_Folder: type = .OPENFOLDER
 	}
 	sdl3.ShowFileDialogWithProperties(type, native_dialog_file_callback, rawptr(native), native.props)
+	return true
+}
+
+Dialog_Fake_Service :: proc(
+	fake: ^Dialog_Fake_Backend,
+	callback: Application_Dialog_Proc,
+	state: rawptr,
+	rt: ^alicorn.Runtime,
+	allocator := context.allocator,
+) -> Dialog_Service {
+	if fake == nil { return {} }
+	fake^ = Dialog_Fake_Backend{
+		allocator=allocator,
+		callback=callback,
+		callback_state=state,
+		callback_runtime=rt,
+	}
+	return Dialog_Service{handle=rawptr(fake), backend=.Fake}
+}
+
+Dialog_Fake_Complete :: proc(fake: ^Dialog_Fake_Backend, status: Dialog_Status, path := "", error := "") -> bool {
+	if fake == nil || !fake.active || fake.callback == nil { return false }
+	fake.active = false
+	result := File_Dialog_Result{id=fake.pending_id, status=status, selected_filter=-1}
+	result.paths = make([dynamic]string, 0, allocator=fake.allocator)
+	if len(path) > 0 {
+		copy, clone_err := strings.clone(path, fake.allocator)
+		if clone_err == nil { append(&result.paths, copy) }
+	}
+	if len(error) > 0 { result.error, _ = strings.clone(error, fake.allocator) }
+	fake.callback(fake.callback_state, fake.callback_runtime, &result)
+	native_dialog_result_destroy(&result, fake.allocator)
 	return true
 }
 
