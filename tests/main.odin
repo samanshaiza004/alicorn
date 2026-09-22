@@ -1400,6 +1400,64 @@ test_retained_scroll_region :: proc(state: ^Test_State) {
 	}
 }
 
+render_high_level_virtual_list :: proc(rt: ^alicorn.Runtime, keys: []u64) -> (list_id: alicorn.Node_ID, ids: map[u64]alicorn.Node_ID) {
+	ids = make(map[u64]alicorn.Node_ID)
+	alicorn.invalidate_root(rt, "high-level virtual list test")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin(&ui, .Root, label="high-level-list-root", style=alicorn.layout_style(clip=true))
+	list := alicorn.virtual_list_begin(
+		&ui,
+		len(keys),
+		20,
+		key=alicorn.key_string("items"),
+		style=alicorn.layout_style(height=60),
+	)
+	list_id = list.scroll.id
+	for position := list.first; position < list.last; position += 1 {
+		key := keys[position]
+		if alicorn.component_begin(&ui, alicorn.key_u64(key)) {
+			ids[key] = alicorn.text(&ui, fmt.tprintf("item %d", key), style=alicorn.layout_style(height=20))
+			alicorn.component_end(&ui)
+		}
+	}
+	alicorn.virtual_list_end(&ui, list)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return
+}
+
+test_high_level_virtual_list_and_style_defaults :: proc(state: ^Test_State) {
+	style := alicorn.layout_style(.Row, width=100, height=30, grow=1, padding=4, gap=8, clip=true)
+	expect(state, style.direction == .Row && style.width == 100 && style.height == 30, "layout_style names the ordinary row dimensions")
+	expect(state, style.min_width == 0 && style.max_width == -1 && style.min_height == 0 && style.max_height == -1, "layout_style preserves default constraints")
+	expect(state, style.grow == 1 && style.padding == 4 && style.gap == 8 && style.align == .Stretch && style.clip, "layout_style preserves named layout behavior")
+
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
+	defer alicorn.destroy_runtime(&rt)
+	keys_a := []u64{10, 20, 30, 40, 50, 60, 70, 80}
+	_, ids_a := render_high_level_virtual_list(&rt, keys_a)
+	list_id := alicorn.Node_ID(0)
+	for id, node in rt.nodes {
+		if node.kind == .Scroll_Region && node.label == "virtual-list" { list_id = id; break }
+	}
+	expect(state, list_id != 0, "high-level virtual list retains a scroll region")
+	expect(state, len(ids_a) <= 4, "high-level virtual list realizes only the visible row frontier")
+	if list_id != 0 {
+		node := rt.nodes[list_id]
+		expect(state, node.scroll_content_height == 160 && node.scroll_viewport_height == 60, "high-level virtual list owns content and viewport geometry")
+		expect(state, alicorn.virtual_list_ensure_visible(&rt, list_id, 6), "high-level virtual list can ensure a logical row is visible")
+		expect(state, alicorn.scroll_region_offset(&rt, list_id) == 80, "ensure-visible uses retained row geometry")
+	}
+	keys_b := []u64{40, 30, 20, 10, 50, 60, 70, 80}
+	_, ids_b := render_high_level_virtual_list(&rt, keys_b)
+	for key, id in ids_b {
+		if old, ok := ids_a[key]; ok {
+			expect(state, old == id, "logical keys preserve retained row identity under reorder")
+		}
+	}
+}
+
 render_both_scroll :: proc(rt: ^alicorn.Runtime) -> alicorn.Node_ID {
 	alicorn.invalidate_root(rt, "both-axis scroll test")
 	ui, build := alicorn.begin_frame(rt)
@@ -1557,6 +1615,7 @@ main :: proc() {
 	test_runtime_edit_invalidates_text_product(&state)
 	test_gpu_surface_contract(&state)
 	test_retained_scroll_region(&state)
+	test_high_level_virtual_list_and_style_defaults(&state)
 	test_scroll_region_routing_and_clamp(&state)
 	test_runtime_allocator_ownership(&state)
 	if state.failures == 0 {

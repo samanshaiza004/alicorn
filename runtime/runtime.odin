@@ -473,6 +473,40 @@ DEFAULT_STYLE :: Layout_Style{
 	clip = false,
 }
 
+// layout_style starts from Alicorn's ordinary layout defaults and lets an
+// application name only the values that express its intent. It is a
+// constructor, not a second styling language: advanced callers can still use
+// Layout_Style directly when they need every field.
+layout_style :: proc(
+	direction: Layout_Direction = .Column,
+	width: f32 = -1,
+	height: f32 = -1,
+	min_width: f32 = 0,
+	max_width: f32 = -1,
+	min_height: f32 = 0,
+	max_height: f32 = -1,
+	grow: f32 = 0,
+	padding: f32 = 0,
+	gap: f32 = 0,
+	align: Align = .Stretch,
+	clip: bool = false,
+) -> Layout_Style {
+	return Layout_Style{
+		direction = direction,
+		width = width,
+		height = height,
+		min_width = min_width,
+		max_width = max_width,
+		min_height = min_height,
+		max_height = max_height,
+		grow = grow,
+		padding = padding,
+		gap = gap,
+		align = align,
+		clip = clip,
+	}
+}
+
 DEFAULT_COLOR :: Color{0.78, 0.82, 0.90, 1.0}
 
 // Container APIs use this sentinel to distinguish an omitted background from
@@ -1189,6 +1223,30 @@ scroll_region_offset_x :: proc(rt: ^Runtime, id: Node_ID) -> f32 {
 	return 0
 }
 
+// scroll_region_state exposes the retained geometry needed by event handlers
+// and other explicit application commands. It does not expose the retained
+// node or transfer ownership of any runtime state.
+scroll_region_state :: proc(rt: ^Runtime, id: Node_ID) -> Scroll_Region_Handle {
+	if node, ok := rt.nodes[id]; ok && node.kind == .Scroll_Region {
+		viewport_height := node.scroll_viewport_height
+		if viewport_height <= 0 { viewport_height = node.bounds.h }
+		viewport_width := node.scroll_viewport_width
+		if viewport_width <= 0 { viewport_width = node.bounds.w }
+		return Scroll_Region_Handle{
+			id = id,
+			offset_y = node.scroll_offset_y,
+			offset_x = node.scroll_offset_x,
+			viewport_height = viewport_height,
+			viewport_width = viewport_width,
+			content_height = node.scroll_content_height,
+			content_width = node.scroll_content_width,
+			max_scroll_y = maxf(node.scroll_content_height-viewport_height, 0),
+			max_scroll_x = maxf(node.scroll_content_width-viewport_width, 0),
+		}
+	}
+	return {}
+}
+
 scroll_region_set_offset :: proc(rt: ^Runtime, id: Node_ID, offset_y: f32, reason := "scroll region offset changed") -> bool {
 	node, ok := rt.nodes[id]
 	if !ok || !node.active || node.kind != .Scroll_Region { return false }
@@ -1214,6 +1272,28 @@ scroll_region_set_offset_x :: proc(rt: ^Runtime, id: Node_ID, offset_x: f32, rea
 	node.layout_scroll_offset_x = next
 	invalidate_root(rt, reason)
 	return true
+}
+
+// virtual_list_ensure_visible is the intent-level companion to
+// virtual_list_begin. The retained region already knows its fixed row height
+// and viewport, so selection/navigation code need not duplicate scroll math.
+virtual_list_ensure_visible :: proc(rt: ^Runtime, id: Node_ID, index: int, reason := "virtual list selection visibility changed") -> bool {
+	node, ok := rt.nodes[id]
+	if !ok || !node.active || node.kind != .Scroll_Region || index < 0 { return false }
+	row_height := node.scroll_line_height
+	if row_height <= 0 { return false }
+	viewport := node.scroll_viewport_height
+	if viewport <= 0 { viewport = node.bounds.h }
+	if viewport <= 0 { return false }
+	top := f32(index) * row_height
+	bottom := top + row_height
+	next := node.scroll_offset_y
+	if top < next {
+		next = top
+	} else if bottom > next+viewport {
+		next = bottom-viewport
+	}
+	return scroll_region_set_offset(rt, id, next, reason)
 }
 
 button_ex :: proc(ui: ^UI, label: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, paint_value: u64 = 0, loc := #caller_location) -> (id: Node_ID, clicked: bool) {
@@ -1348,6 +1428,77 @@ virtual_list_metrics :: proc(item_count: int, scroll_y, viewport_height, row_hei
 	if result.last < result.first+1 { result.last = result.first+1 }
 	result.leading_offset_y = result.offset_y - f32(result.first)*row_height
 	return result
+}
+
+// Virtual_List_Handle is the resolved, current-description view of a retained
+// fixed-row list. The application owns row data and logical keys; Alicorn owns
+// the retained scroll offset and returns only the range that needs emission.
+Virtual_List_Handle :: struct {
+	scroll: Scroll_Region_Handle,
+	first:  int,
+	last:   int,
+}
+
+// virtual_list_begin composes the common retained scroll-region and
+// fixed-height virtualization path. It opens both the scroll region and its
+// clipped virtual-list content container; call virtual_list_end after emitting
+// rows. The range is bounded to visible/frontier work and remains valid for
+// fractional scroll offsets.
+virtual_list_begin :: proc(
+	ui: ^UI,
+	item_count: int,
+	row_height: f32,
+	key: UI_Key = UI_Unkeyed{},
+	style := DEFAULT_STYLE,
+	content_width: f32 = 0,
+	line_width: f32 = 24,
+	color := NO_BACKGROUND_COLOR,
+	label := "virtual-list",
+	loc := #caller_location,
+	axes := Scroll_Axes.Vertical,
+	axis_behavior := Scroll_Axis_Behavior.Auto_Lock,
+) -> Virtual_List_Handle {
+	if item_count < 0 || row_height <= 0 { return {} }
+	region_style := style
+	region_style.direction = .Column
+	region_style.clip = true
+	content_height := f32(item_count) * row_height
+	scroll := scroll_region_begin(
+		ui,
+		key=key,
+		content_height=content_height,
+		line_height=row_height,
+		content_width=content_width,
+		line_width=line_width,
+		style=region_style,
+		color=color,
+		label=label,
+		loc=loc,
+		axes=axes,
+		axis_behavior=axis_behavior,
+	)
+	if scroll.id == 0 { return {} }
+	metrics := virtual_list_metrics(item_count, scroll.offset_y, scroll.viewport_height, row_height)
+	content_style := layout_style(width=-1, height=-1, clip=true)
+	if content_width > 0 { content_style.width = content_width }
+	container_begin(
+		ui,
+		.Virtual_List,
+		label=label,
+		style=content_style,
+		loc=loc,
+		scroll_offset_y=metrics.offset_y,
+		layout_scroll_offset_y=metrics.leading_offset_y,
+		scroll_offset_x=scroll.offset_x,
+		layout_scroll_offset_x=scroll.offset_x,
+	)
+	return Virtual_List_Handle{scroll=scroll, first=metrics.first, last=metrics.last}
+}
+
+virtual_list_end :: proc(ui: ^UI, list: Virtual_List_Handle) {
+	if list.scroll.id == 0 { return }
+	container_end(ui)
+	scroll_region_end(ui)
 }
 
 // virtual_list requires a logical item key. Viewport position is not identity:

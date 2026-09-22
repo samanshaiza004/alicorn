@@ -47,3 +47,22 @@ the application.
 
 Applications that need end-to-end memory accounting should track their own
 samplers and data separately.
+
+## Explainable retained work
+
+When a runtime result is surprising, the existing read-only diagnostics answer
+the first questions without changing the application model:
+
+```odin
+fmt.println(alicorn.inspect(&rt))
+for event in alicorn.trace_snapshot(&rt) {
+	fmt.println(event.kind, event.node, event.reason)
+}
+```
+
+The inspector includes source sites, logical identity, bounds and clip state,
+dirty stages, focus/selection, retained-node counts, stage visits, and the
+latest invalidation reason. The bounded trace shows the sequence of invalidation
+and stage events. Native hosts can also capture the same products as
+`inspector.txt` and `diagnostics.json`; diagnostics are opt-in and do not add
+work to an idle application.

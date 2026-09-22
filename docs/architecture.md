@@ -117,13 +117,21 @@ interaction state, separate from frame presence.
 When the focused node disappears, the nearest active focusable ancestor is
 chosen, otherwise the first active focusable node in retained order is chosen.
 
-Virtual lists require an item-key callback. The visible range is fixed-height
-and bounded to the viewport; row identity follows the callback's logical key,
-not the row's viewport index. The shared metrics calculation clamps against
-the actual viewport and preserves the fractional leading offset, so realized
-rows move continuously while the retained list clip protects surrounding UI.
-Scroll physics, pointer-drag scrollbar interaction, and persistent offscreen
-selection storage remain outside this small primitive.
+`virtual_list_begin/end` is the common fixed-row path. It composes a retained
+scroll region with the shared visible-range calculation and returns only the
+range that the application should emit. Row identity remains application-owned:
+the application wraps each realized row in `component_begin` or
+`key_scope_begin` with a stable logical key, not a viewport index. The runtime
+owns the retained offset, resolved viewport, clipping, and fractional leading
+offset, so realized rows move continuously without the application copying
+viewport products into its model. `virtual_list_ensure_visible` provides the
+explicit selection/navigation operation for this fixed-row contract.
+
+The lower-level `scroll_region_begin`, `virtual_list_metrics`, and
+`container_begin` APIs remain available for custom scrollbars, variable-height
+content, canvases, and unusual two-dimensional layouts. Scroll physics,
+pointer-drag scrollbar interaction, and persistent offscreen selection storage
+remain outside this small primitive.
 
 ## Committed text input and composition
 
