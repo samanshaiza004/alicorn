@@ -110,14 +110,30 @@ Pointer_Event :: struct {
 }
 
 // Scroll_Event preserves both precise device deltas and whole wheel ticks.
-// Hosts normalize their platform direction before handing the event to an
-// application; the application decides how many logical pixels a tick means.
+// The precise deltas are authoritative for scrolling. Whole ticks remain
+// available to diagnostics and applications that explicitly need coarse
+// wheel semantics.
 Scroll_Event :: struct {
 	delta_x: f32,
 	delta_y: f32,
 	ticks_x: int,
 	ticks_y: int,
 	x, y:    f32,
+}
+
+// Scroll_Axes describes which directions a retained region accepts. A region
+// that accepts both directions can choose whether small perpendicular motion
+// is suppressed for code/list-style scrolling or preserved for a free-form
+// canvas.
+Scroll_Axes :: enum {
+	Vertical,
+	Horizontal,
+	Both,
+}
+
+Scroll_Axis_Behavior :: enum {
+	Auto_Lock,
+	Free,
 }
 
 Text_Edit_Kind :: enum { Insert, Backspace, Delete }
@@ -239,6 +255,8 @@ Description :: struct {
 	scroll_content_width: f32,
 	scroll_viewport_width: f32,
 	scroll_line_width: f32,
+	scroll_axes: Scroll_Axes,
+	scroll_axis_behavior: Scroll_Axis_Behavior,
 	// The logical scroll position remains authoritative for application state
 	// and scrollbar calculations. Virtualized lists use this residual offset
 	// to place only the realized rows after preceding rows were omitted.
@@ -305,6 +323,8 @@ Node :: struct {
 	scroll_content_width: f32,
 	scroll_viewport_width: f32,
 	scroll_line_width: f32,
+	scroll_axes: Scroll_Axes,
+	scroll_axis_behavior: Scroll_Axis_Behavior,
 	surface_revision: u64,
 	surface_samples: [dynamic]f32,
 	bounds:      Rect,
@@ -790,7 +810,7 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	record_trace(rt, .Reconcile, 0, message)
 }
 
-	emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, region_revision: u64 = 0, is_region := false, focusable := false, surface_kind := GPU_Surface_Kind.Waveform, surface_pixel_width: int = 0, surface_pixel_height: int = 0, surface_dpi_scale: f32 = 1, paint_background := true, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1, scroll_content_height: f32 = 0, scroll_viewport_height: f32 = 0, scroll_line_height: f32 = 0, scroll_offset_x: f32 = 0, layout_scroll_offset_x: f32 = -1, scroll_content_width: f32 = 0, scroll_viewport_width: f32 = 0, scroll_line_width: f32 = 0) -> Node_ID {
+	emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, region_revision: u64 = 0, is_region := false, focusable := false, surface_kind := GPU_Surface_Kind.Waveform, surface_pixel_width: int = 0, surface_pixel_height: int = 0, surface_dpi_scale: f32 = 1, paint_background := true, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1, scroll_content_height: f32 = 0, scroll_viewport_height: f32 = 0, scroll_line_height: f32 = 0, scroll_offset_x: f32 = 0, layout_scroll_offset_x: f32 = -1, scroll_content_width: f32 = 0, scroll_viewport_width: f32 = 0, scroll_line_width: f32 = 0, scroll_axes := Scroll_Axes.Both, scroll_axis_behavior := Scroll_Axis_Behavior.Auto_Lock) -> Node_ID {
 	rt := ui.runtime
 	parent_node := current_node_parent(ui)
 	parent_identity := current_identity_parent(ui)
@@ -825,6 +845,7 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 		layout_scroll_offset_y=effective_layout_scroll_offset_y, layout_scroll_offset_x=effective_layout_scroll_offset_x,
 		scroll_content_height=scroll_content_height, scroll_viewport_height=scroll_viewport_height, scroll_line_height=scroll_line_height,
 		scroll_content_width=scroll_content_width, scroll_viewport_width=scroll_viewport_width, scroll_line_width=scroll_line_width,
+		scroll_axes=scroll_axes, scroll_axis_behavior=scroll_axis_behavior,
 	}
 	append(&rt.pending, Pending_Item{.Description, description, 0})
 	rt.stats.descriptions_emitted += 1
@@ -832,7 +853,7 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	return id
 }
 
-	emit_key :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := DEFAULT_COLOR, state_bits: u64 = 0, selected := false, disabled := false, region_revision: u64 = 0, is_region := false, focusable := false, surface_kind := GPU_Surface_Kind.Waveform, surface_pixel_width: int = 0, surface_pixel_height: int = 0, surface_dpi_scale: f32 = 1, paint_background := true, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1, scroll_content_height: f32 = 0, scroll_viewport_height: f32 = 0, scroll_line_height: f32 = 0, scroll_offset_x: f32 = 0, layout_scroll_offset_x: f32 = -1, scroll_content_width: f32 = 0, scroll_viewport_width: f32 = 0, scroll_line_width: f32 = 0) -> Node_ID {
+	emit_key :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := DEFAULT_COLOR, state_bits: u64 = 0, selected := false, disabled := false, region_revision: u64 = 0, is_region := false, focusable := false, surface_kind := GPU_Surface_Kind.Waveform, surface_pixel_width: int = 0, surface_pixel_height: int = 0, surface_dpi_scale: f32 = 1, paint_background := true, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1, scroll_content_height: f32 = 0, scroll_viewport_height: f32 = 0, scroll_line_height: f32 = 0, scroll_offset_x: f32 = 0, layout_scroll_offset_x: f32 = -1, scroll_content_width: f32 = 0, scroll_viewport_width: f32 = 0, scroll_line_width: f32 = 0, scroll_axes := Scroll_Axes.Both, scroll_axis_behavior := Scroll_Axis_Behavior.Auto_Lock) -> Node_ID {
 	rt := ui.runtime
 	parent_node := current_node_parent(ui)
 	parent_identity := current_identity_parent(ui)
@@ -888,6 +909,7 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 		layout_scroll_offset_y=effective_layout_scroll_offset_y, layout_scroll_offset_x=effective_layout_scroll_offset_x,
 		scroll_content_height=scroll_content_height, scroll_viewport_height=scroll_viewport_height, scroll_line_height=scroll_line_height,
 		scroll_content_width=scroll_content_width, scroll_viewport_width=scroll_viewport_width, scroll_line_width=scroll_line_width,
+		scroll_axes=scroll_axes, scroll_axis_behavior=scroll_axis_behavior,
 	}
 	append(&rt.pending, Pending_Item{.Description, description, 0})
 	rt.stats.descriptions_emitted += 1
@@ -1089,6 +1111,8 @@ scroll_region_begin :: proc(
 	color := NO_BACKGROUND_COLOR,
 	label := "scroll-region",
 	loc := #caller_location,
+	axes := Scroll_Axes.Both,
+	axis_behavior := Scroll_Axis_Behavior.Auto_Lock,
 ) -> Scroll_Region_Handle {
 	rt := ui.runtime
 	resolved_source := resolve_source(Source_Site{}, "scroll_region", loc)
@@ -1114,6 +1138,8 @@ scroll_region_begin :: proc(
 		scroll_content_width=content_width,
 		scroll_viewport_width=resolved_width,
 		scroll_line_width=line_width,
+		scroll_axes=axes,
+		scroll_axis_behavior=axis_behavior,
 	)
 	if id == 0 { return {} }
 	// A description is emitted before layout resolves the new bounds. Reuse

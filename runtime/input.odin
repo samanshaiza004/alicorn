@@ -39,10 +39,22 @@ process_scroll :: proc(rt: ^Runtime, event: Scroll_Event) -> bool {
 	if id == 0 { return false }
 	node, ok := rt.nodes[id]
 	if !ok { return false }
+	// SDL's floating-point values carry precise trackpad motion. The integer
+	// fields are accumulated whole ticks, not a higher-quality replacement;
+	// using them here creates large discontinuities on precise devices.
 	delta_y := event.delta_y
-	if event.ticks_y != 0 { delta_y = f32(event.ticks_y) * 3 }
 	delta_x := event.delta_x
-	if event.ticks_x != 0 { delta_x = f32(event.ticks_x) * 3 }
+	if node.scroll_axes == .Vertical {
+		delta_x = 0
+	} else if node.scroll_axes == .Horizontal {
+		delta_y = 0
+	} else if node.scroll_axis_behavior == .Auto_Lock && delta_x != 0 && delta_y != 0 {
+		if abs(delta_x) > abs(delta_y) {
+			delta_y = 0
+		} else {
+			delta_x = 0
+		}
+	}
 	line_height := node.scroll_line_height
 	if line_height <= 0 { line_height = 24 }
 	line_width := node.scroll_line_width

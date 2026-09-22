@@ -1390,10 +1390,29 @@ test_retained_scroll_region :: proc(state: ^Test_State) {
 	expect(state, region_id != 0, "scroll region retains a stable node")
 	if region_id != 0 {
 		node := rt.nodes[region_id]
+		handled_precise := alicorn.process_scroll(&rt, alicorn.Scroll_Event{delta_y=-0.1, ticks_y=-1, x=node.bounds.x+4, y=node.bounds.y+4})
+		expect(state, handled_precise, "precise wheel input is claimed by the retained region")
+		expect(state, alicorn.scroll_region_offset(&rt, region_id) == 2, "precise delta remains authoritative over accumulated ticks")
+		_ = alicorn.scroll_region_set_offset(&rt, region_id, 0)
 		handled := alicorn.process_scroll(&rt, alicorn.Scroll_Event{delta_y=-1, x=node.bounds.x+4, y=node.bounds.y+4})
 		expect(state, handled, "wheel input is claimed by the retained region under the pointer")
 		expect(state, alicorn.scroll_region_offset(&rt, region_id) == 20, "wheel input advances the region by its line height")
 	}
+}
+
+render_both_scroll :: proc(rt: ^alicorn.Runtime) -> alicorn.Node_ID {
+	alicorn.invalidate_root(rt, "both-axis scroll test")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return 0 }
+	alicorn.container_begin(&ui, .Root, label="both-axis-scroll-root", style=alicorn.Layout_Style{.Column, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	region := alicorn.scroll_region_begin(&ui, key=alicorn.key_string("both-axis"), viewport_width=100, content_width=500, line_width=10, viewport_height=60, content_height=400, line_height=20, style=alicorn.Layout_Style{.Column, 100, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, true}, axes=.Both, axis_behavior=.Auto_Lock)
+	alicorn.container_begin(&ui, .Virtual_List, label="both-axis-content", style=alicorn.Layout_Style{.Column, 500, 400, 0, -1, 0, -1, 0, 0, 0, .Stretch, true}, layout_scroll_offset_y=region.offset_y, layout_scroll_offset_x=region.offset_x)
+	alicorn.text(&ui, "two dimensional content", style=alicorn.Layout_Style{.Row, 500, 400, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	alicorn.container_end(&ui)
+	alicorn.scroll_region_end(&ui)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return region.id
 }
 
 render_scroll_pair :: proc(rt: ^alicorn.Runtime, viewport_height: f32) -> [2]alicorn.Node_ID {
@@ -1466,6 +1485,10 @@ test_scroll_region_routing_and_clamp :: proc(state: ^Test_State) {
 	expect(state, alicorn.scroll_region_offset_x(&rt, horizontal) == 400, "horizontal region clamps to content minus viewport")
 	_ = render_horizontal_scroll(&rt, 100)
 	expect(state, alicorn.scroll_region_offset_x(&rt, horizontal) == 400, "horizontal offset survives the rebuild triggered by scrolling")
+	both := render_both_scroll(&rt)
+	both_node := rt.nodes[both]
+	expect(state, alicorn.process_scroll(&rt, alicorn.Scroll_Event{delta_x=-1, delta_y=-1, x=both_node.bounds.x+4, y=both_node.bounds.y+4}), "two-axis region claims diagonal wheel input")
+	expect(state, alicorn.scroll_region_offset(&rt, both) == 20 && alicorn.scroll_region_offset_x(&rt, both) == 0, "auto-lock keeps an equal diagonal gesture on one axis")
 }
 
 test_runtime_allocator_ownership :: proc(state: ^Test_State) {
