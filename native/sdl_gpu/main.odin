@@ -536,17 +536,13 @@ pump_events :: proc(
 			alicorn.process_pointer(rt, pointer)
 		}
 		if application != nil && event.type == .MOUSE_WHEEL {
-			direction := 1 if event.wheel.direction == sdl3.MouseWheelDirection.FLIPPED else 0
 			delta_x := event.wheel.x
 			delta_y := event.wheel.y
 			ticks_x := int(event.wheel.integer_x)
 			ticks_y := int(event.wheel.integer_y)
-			if direction != 0 {
-				delta_x = -delta_x
-				delta_y = -delta_y
-				ticks_x = -ticks_x
-				ticks_y = -ticks_y
-			}
+			// SDL already reports the platform's chosen scroll direction. Keep
+			// precise deltas and the native natural-scroll preference intact;
+			// retained regions apply their own logical offset convention.
 			dispatched_to_scroll_region := alicorn.process_scroll(rt, alicorn.Scroll_Event{
 				delta_x=delta_x,
 				delta_y=delta_y,

@@ -11,10 +11,12 @@ odin build examples/crucible -out:out/crucible.exe
 odin build benchmarks -out:out/alicorn_benchmarks.exe
 ```
 
-`identity_torture` is intentionally headless and runs 5,000 randomized
-structural operations. `crucible` is the minimal eight-track state/LOD/
-invalidation exercise; it prints the inspector instead of hiding the proof in
-a large demo. `runa_text <font.ttf>` loads a caller-provided font through the
+`keyed_list` is the compact collection example: it uses
+`virtual_list_begin/end`, emits only the visible fixed-row range, and keeps
+logical item keys in ordinary Odin code. `identity_torture` is intentionally
+headless and runs 5,000 randomized structural operations. `crucible` is the
+minimal eight-track state/LOD/invalidation exercise; it prints the inspector
+instead of hiding the proof in a large demo. `runa_text <font.ttf>` loads a caller-provided font through the
 Runa adapter, lays out the same paragraph twice, and reports the stable cache
 entry count. The PowerShell wrapper is
 `powershell -File tools/runa.ps1 -Font C:\Windows\Fonts\segoeui.ttf`.

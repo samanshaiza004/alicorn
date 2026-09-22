@@ -49,6 +49,8 @@ description_hash :: proc(d: Description) -> u64 {
 	h = hash_mix(h, u64(transmute(u32)d.scroll_content_width))
 	h = hash_mix(h, u64(transmute(u32)d.scroll_viewport_width))
 	h = hash_mix(h, u64(transmute(u32)d.scroll_line_width))
+	h = hash_mix(h, u64(d.scroll_axes))
+	h = hash_mix(h, u64(d.scroll_axis_behavior))
 	return h
 }
 
@@ -178,6 +180,8 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	node.scroll_content_width = d.scroll_content_width
 	node.scroll_viewport_width = d.scroll_viewport_width
 	node.scroll_line_width = d.scroll_line_width
+	node.scroll_axes = d.scroll_axes
+	node.scroll_axis_behavior = d.scroll_axis_behavior
 	// A direct surface update owns the high-frequency revision. A later root
 	// wake with the same description must not roll it back; a changed
 	// description revision is an explicit replacement and is authoritative.
