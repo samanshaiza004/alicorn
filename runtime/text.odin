@@ -23,16 +23,27 @@ Text_Engine :: struct {
 	glyph_rasterizations: u64,
 	font_data:            []u8,
 	font:                 runa.Font,
+	fallback_font_data:   []u8,
+	fallback_font:        runa.Font,
 	monospace_font_data: []u8,
 	monospace_font:       runa.Font,
+	monospace_fallback_font_data: []u8,
+	monospace_fallback_font:      runa.Font,
 	cache:                runa.Cache,
 	font_loaded:          bool,
+	fallback_font_loaded: bool,
 	monospace_font_loaded: bool,
+	monospace_fallback_font_loaded: bool,
 	cache_initialized:    bool,
 	font_generation:      u64,
 	atlas:                 runa.Atlas,
 	atlas_initialized:    bool,
 	glyphs:                map[Glyph_Resource_Key]runa.Atlas_Slot,
+}
+
+Text_Font_Source :: enum u8 {
+	Primary,
+	Fallback,
 }
 
 // Glyph_Resource_Key is the CPU-side identity of one rasterized glyph. It is
@@ -42,6 +53,7 @@ Text_Engine :: struct {
 Glyph_Resource_Key :: struct {
 	font_generation: u64,
 	font:           Font_Role,
+	font_source:    Text_Font_Source,
 	glyph_id:        runa.Glyph_ID,
 	size_bits:       u32,
 	subpixel_bucket: u8,
@@ -151,6 +163,7 @@ Text_Run :: struct {
 	max_width:      f32,
 	font_generation: u64,
 	font:           Font_Role,
+	font_source:    Text_Font_Source,
 	ligatures_disabled: bool,
 	allocator:      mem.Allocator,
 }
@@ -174,6 +187,36 @@ text_engine_font :: proc(engine: ^Text_Engine, role: Font_Role) -> (font: ^runa.
 		return &engine.monospace_font, true
 	}
 	return &engine.font, engine.font_loaded
+}
+
+text_engine_fallback_font :: proc(engine: ^Text_Engine, role: Font_Role) -> (font: ^runa.Font, loaded: bool) {
+	if role == .Monospace {
+		return &engine.monospace_fallback_font, engine.monospace_fallback_font_loaded
+	}
+	return &engine.fallback_font, engine.fallback_font_loaded
+}
+
+text_engine_font_for_source :: proc(engine: ^Text_Engine, role: Font_Role, source: Text_Font_Source) -> (font: ^runa.Font, loaded: bool) {
+	if source == .Fallback {
+		if font, ok := text_engine_fallback_font(engine, role); ok { return font, true }
+	}
+	return text_engine_font(engine, role)
+}
+
+// Use a platform/application fallback face for a run if the primary face is
+// missing any codepoint that the fallback can render. Keeping each run on one
+// face avoids losing face identity in retained glyph geometry; mixed-face
+// shaping remains a future text-engine improvement.
+text_engine_choose_font_source :: proc(engine: ^Text_Engine, role: Font_Role, value: string) -> Text_Font_Source {
+	primary, primary_loaded := text_engine_font(engine, role)
+	fallback, fallback_loaded := text_engine_fallback_font(engine, role)
+	if !primary_loaded || !fallback_loaded { return .Primary }
+	for r in value {
+		if runa.font_lookup_glyph(primary, r) == 0 && runa.font_lookup_glyph(fallback, r) != 0 {
+			return .Fallback
+		}
+	}
+	return .Primary
 }
 
 text_engine_reset_font_resources :: proc(engine: ^Text_Engine) {
@@ -219,6 +262,38 @@ text_engine_load_font_role :: proc(engine: ^Text_Engine, role: Font_Role, data: 
 	return true
 }
 
+// text_engine_load_fallback_font_role installs a per-role fallback face.
+// Fallbacks are deliberately separate from the bundled primary faces so apps
+// can provide only the script coverage they need.
+text_engine_load_fallback_font_role :: proc(engine: ^Text_Engine, role: Font_Role, data: []u8) -> bool {
+	if len(data) == 0 { return false }
+	copy_data := make([]u8, len(data), engine.allocator)
+	copy(copy_data, data)
+	font, err := runa.font_load(copy_data, engine.allocator)
+	if err != .None {
+		delete(copy_data, engine.allocator)
+		return false
+	}
+	text_engine_reset_font_resources(engine)
+	switch role {
+	case .UI:
+		if engine.fallback_font_loaded { runa.font_destroy(&engine.fallback_font) }
+		delete(engine.fallback_font_data, engine.allocator)
+		engine.fallback_font_data = copy_data
+		engine.fallback_font = font
+		engine.fallback_font_loaded = true
+	case .Monospace:
+		if engine.monospace_fallback_font_loaded { runa.font_destroy(&engine.monospace_fallback_font) }
+		delete(engine.monospace_fallback_font_data, engine.allocator)
+		engine.monospace_fallback_font_data = copy_data
+		engine.monospace_fallback_font = font
+		engine.monospace_fallback_font_loaded = true
+	}
+	engine.font_generation += 1
+	engine.available = true
+	return true
+}
+
 text_engine_destroy :: proc(engine: ^Text_Engine) {
 	if engine.cache_initialized {
 		runa.cache_destroy(&engine.cache)
@@ -235,19 +310,28 @@ text_engine_destroy :: proc(engine: ^Text_Engine) {
 	if engine.monospace_font_loaded {
 		runa.font_destroy(&engine.monospace_font)
 	}
+	if engine.fallback_font_loaded {
+		runa.font_destroy(&engine.fallback_font)
+	}
+	if engine.monospace_fallback_font_loaded {
+		runa.font_destroy(&engine.monospace_fallback_font)
+	}
 	delete(engine.font_data, engine.allocator)
+	delete(engine.fallback_font_data, engine.allocator)
 	delete(engine.monospace_font_data, engine.allocator)
+	delete(engine.monospace_fallback_font_data, engine.allocator)
 	if len(engine.name) > 0 { delete(engine.name, engine.allocator) }
 	engine^ = {}
 }
 
-text_engine_glyph :: proc(engine: ^Text_Engine, glyph_id: runa.Glyph_ID, size: f32, subpixel_bucket: u8 = 0, hint: bool = true, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI) -> (slot: runa.Atlas_Slot, drawable, ok: bool) {
-	font, loaded := text_engine_font(engine, font_role)
+text_engine_glyph :: proc(engine: ^Text_Engine, glyph_id: runa.Glyph_ID, size: f32, subpixel_bucket: u8 = 0, hint: bool = true, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI, font_source := Text_Font_Source.Primary) -> (slot: runa.Atlas_Slot, drawable, ok: bool) {
+	font, loaded := text_engine_font_for_source(engine, font_role, font_source)
 	if !loaded || size <= 0 { return }
 	is_color := runa.font_has_color_layers(font, glyph_id)
 	key := Glyph_Resource_Key{
 		font_generation = engine.font_generation,
 		font = font_role,
+		font_source = font_source,
 		glyph_id = glyph_id,
 		size_bits = transmute(u32)size,
 		subpixel_bucket = subpixel_bucket & 3,
@@ -410,7 +494,8 @@ text_tab_advance :: proc(line_x, space_advance: f32) -> f32 {
 // renderer so a window can move between DPI scales without changing logical
 // layout.
 text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, editable: bool = false, allocator := context.allocator, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI) -> (run: Text_Run, ok: bool) {
-	font, font_loaded := text_engine_font(engine, font_role)
+	font_source := text_engine_choose_font_source(engine, font_role, value)
+	font, font_loaded := text_engine_font_for_source(engine, font_role, font_source)
 	if !font_loaded || size <= 0 { return }
 	stack := runa.Font_Stack{font}
 	disable_features: bit_set[runa.Feature] = {}
@@ -441,6 +526,7 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 	run.max_width = max_width
 	run.font_generation = engine.font_generation
 	run.font = font_role
+	run.font_source = font_source
 	run.ligatures_disabled = editable
 	run.allocator = allocator
 	// A ligature may collapse several source graphemes into one shaping
@@ -977,7 +1063,8 @@ text_run_move_visual :: proc(run: ^Text_Run, position: Text_Position, direction:
 }
 
 text_layout :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI) -> (width, height: f32, glyphs: int, ok: bool) {
-	font, font_loaded := text_engine_font(engine, font_role)
+	font_source := text_engine_choose_font_source(engine, font_role, value)
+	font, font_loaded := text_engine_font_for_source(engine, font_role, font_source)
 	if !font_loaded || size <= 0 { return }
 	stack := runa.Font_Stack{font}
 	opts := runa.Paragraph_Opts{fonts=stack, size=size, direction=.Auto, align=.Start, max_width=max_width}

@@ -7,6 +7,9 @@ import "core:strings"
 import alicorn "../runtime"
 import runa "../third_party/Runa"
 
+TEST_UI_FONT_DATA :: #load("../assets/fonts/AtkinsonHyperlegibleNext-Variable.ttf")
+TEST_MONO_FONT_DATA :: #load("../assets/fonts/AtkinsonHyperlegibleMono-Variable.ttf")
+
 S_ROOT :: alicorn.Source_Site{"tests/render.odin", 1, 1, "root"}
 S_ROW :: alicorn.Source_Site{"tests/render.odin", 10, 1, "track_row"}
 S_BUTTON :: alicorn.Source_Site{"tests/render.odin", 11, 5, "mute_button"}
@@ -1231,23 +1234,9 @@ test_gpu_text_resource_boundary :: proc(state: ^Test_State) {
 }
 
 test_multiline_text_controls :: proc(state: ^Test_State) {
-	font_path := ""
-	when ODIN_OS == .Windows {
-		font_path = "C:/Windows/Fonts/segoeui.ttf"
-	} else when ODIN_OS == .Darwin {
-		font_path = "/System/Library/Fonts/SFNS.ttf"
-	} else {
-		font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-	}
-	font_data, err := os.read_entire_file_from_path(font_path, context.allocator)
-	if err != nil {
-		expect(state, false, "multiline text regression font must be available")
-		return
-	}
-	defer delete(font_data)
 	engine := alicorn.new_text_engine("multiline-test", allocator=context.allocator)
 	defer alicorn.text_engine_destroy(&engine)
-	expect(state, alicorn.text_engine_load_font(&engine, font_data), "multiline text regression font must load")
+	expect(state, alicorn.text_engine_load_font(&engine, TEST_UI_FONT_DATA), "bundled UI font must load for multiline regression")
 	run, ok := alicorn.text_run_build(
 		&engine,
 		"first\nsecond",
@@ -1428,40 +1417,15 @@ test_multiline_text_controls :: proc(state: ^Test_State) {
 }
 
 test_monospace_font_role :: proc(state: ^Test_State) {
-	ui_font_path := ""
-	mono_font_path := ""
-	when ODIN_OS == .Windows {
-		ui_font_path = "C:/Windows/Fonts/segoeui.ttf"
-		mono_font_path = "C:/Windows/Fonts/consola.ttf"
-	} else when ODIN_OS == .Darwin {
-		ui_font_path = "/System/Library/Fonts/SFNS.ttf"
-		mono_font_path = "/System/Library/Fonts/SFNSMono.ttf"
-	} else {
-		ui_font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-		mono_font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
-	}
-	ui_data, ui_err := os.read_entire_file_from_path(ui_font_path, context.allocator)
-	if ui_err != nil {
-		expect(state, false, "font-role regression UI font must be available")
-		return
-	}
-	defer delete(ui_data)
-	mono_data, mono_err := os.read_entire_file_from_path(mono_font_path, context.allocator)
-	mono_face_available := mono_err == nil
-	if !mono_face_available { mono_data = ui_data }
-	if mono_face_available { defer delete(mono_data) }
 	engine := alicorn.new_text_engine("font-role-test", allocator=context.allocator)
 	defer alicorn.text_engine_destroy(&engine)
-	expect(state, alicorn.text_engine_load_font(&engine, ui_data), "UI font role must load")
-	mono_loaded := alicorn.text_engine_load_font_role(&engine, .Monospace, mono_data)
-	if !mono_loaded && mono_face_available {
-		// Some system mono fonts are collections or CFF-only, which the current
-		// Runa parser does not accept. Exercise role routing with the known-good
-		// UI font while leaving the native host's optional face load unchanged.
-		mono_face_available = false
-		mono_loaded = alicorn.text_engine_load_font_role(&engine, .Monospace, ui_data)
-	}
-	expect(state, mono_loaded, "monospace font role must load")
+	expect(state, alicorn.text_engine_load_font(&engine, TEST_UI_FONT_DATA), "bundled UI font role must load")
+	mono_loaded := alicorn.text_engine_load_font_role(&engine, .Monospace, TEST_MONO_FONT_DATA)
+	expect(state, mono_loaded, "bundled monospace font role must load")
+	ui_axes := runa.font_axes(&engine.font)
+	mono_axes := runa.font_axes(&engine.monospace_font)
+	expect(state, len(ui_axes) > 0, "bundled UI font must expose its variable axes")
+	expect(state, len(mono_axes) > 0, "bundled monospace font must expose its variable axes")
 	ui_run, ui_ok := alicorn.text_run_build(&engine, "iW", 16, allocator=context.allocator, font_role=.UI)
 	mono_run, mono_ok := alicorn.text_run_build(&engine, "iW", 16, allocator=context.allocator, font_role=.Monospace)
 	if ui_ok { defer alicorn.text_run_destroy(&ui_run) }
@@ -1474,12 +1438,12 @@ test_monospace_font_role :: proc(state: ^Test_State) {
 		if mono_delta < 0 { mono_delta = -mono_delta }
 		expect(state, ui_run.font == .UI && mono_run.font == .Monospace, "text runs must retain the selected font role")
 		expect(state, ui_delta > 0.1, "UI font should retain proportional glyph advances")
-		if mono_face_available {
-			expect(state, mono_delta < 0.1, "monospace role should use equal advances for i and W")
-		} else {
-			expect(state, mono_delta == ui_delta, "unavailable monospace face should route through the loaded role font")
-		}
+		expect(state, mono_delta < 0.1, "bundled monospace role should use equal advances for i and W")
 	}
+	fallback_generation := engine.font_generation
+	fallback_loaded := alicorn.text_engine_load_fallback_font_role(&engine, .UI, TEST_MONO_FONT_DATA)
+	expect(state, fallback_loaded && engine.fallback_font_loaded, "optional UI fallback face must load and remain independently owned")
+	expect(state, engine.font_generation > fallback_generation, "loading a fallback face must invalidate retained font resources")
 }
 
 test_public_monospace_font_role :: proc(state: ^Test_State) {

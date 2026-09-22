@@ -1000,11 +1000,10 @@ native_capture_display_ppm :: proc(
 	return true
 }
 
-native_font_path :: proc() -> string {
+native_ui_fallback_font_path :: proc() -> string {
 	when ODIN_OS == .Windows {
-		// Segoe UI is a good Latin default but is not a reliable source for
-		// Japanese glyphs. Prefer the installed open Noto Sans JP variable font
-		// for this native proof; fall back to Segoe UI on minimal Windows images.
+		// Keep the previous broad Windows fallback for Japanese and other glyphs
+		// outside the bundled Latin-focused default face.
 		japanese_font := "C:/Windows/Fonts/NotoSansJP-VF.ttf"
 		if os.exists(japanese_font) { return japanese_font }
 		return "C:/Windows/Fonts/segoeui.ttf"
@@ -1015,7 +1014,7 @@ native_font_path :: proc() -> string {
 	}
 }
 
-native_monospace_font_path :: proc() -> string {
+native_monospace_fallback_font_path :: proc() -> string {
 	when ODIN_OS == .Windows {
 		return "C:/Windows/Fonts/consola.ttf"
 	} else when ODIN_OS == .Darwin {
@@ -1025,13 +1024,22 @@ native_monospace_font_path :: proc() -> string {
 	}
 }
 
-native_load_optional_monospace_font :: proc(rt: ^alicorn.Runtime) -> bool {
-	path := native_monospace_font_path()
+native_load_optional_fallback_font :: proc(rt: ^alicorn.Runtime, role: alicorn.Font_Role, path: string) -> bool {
 	if !os.exists(path) { return false }
 	data, err := os.read_entire_file_from_path(path, context.allocator)
 	if err != nil { return false }
 	defer delete(data)
-	return alicorn.text_engine_load_font_role(&rt.text_engine, .Monospace, data)
+	return alicorn.text_engine_load_fallback_font_role(&rt.text_engine, role, data)
+}
+
+native_load_default_fonts :: proc(rt: ^alicorn.Runtime) -> bool {
+	if !alicorn.text_engine_load_font(&rt.text_engine, NATIVE_UI_FONT_DATA) { return false }
+	if !alicorn.text_engine_load_font_role(&rt.text_engine, .Monospace, NATIVE_MONO_FONT_DATA) { return false }
+	// System faces are optional, script-oriented fallbacks; they do not alter
+	// the bundled primary typography for text the default face can render.
+	_ = native_load_optional_fallback_font(rt, .UI, native_ui_fallback_font_path())
+	_ = native_load_optional_fallback_font(rt, .Monospace, native_monospace_fallback_font_path())
+	return true
 }
 
 configure_platform_activation :: proc() {
@@ -1458,14 +1466,7 @@ Run :: proc(application: Application, smoke := false) {
 	if !sdl3.SetGPUAllowedFramesInFlight(device, 2) { fail("SDL_SetGPUAllowedFramesInFlight failed") }
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, f32(metrics.logical_width), f32(metrics.logical_height)})
 	defer alicorn.destroy_runtime(&rt)
-	font_data, font_err := os.read_entire_file_from_path(native_font_path(), context.allocator)
-	if font_err != nil { fail("application font could not be loaded") }
-	if !alicorn.text_engine_load_font(&rt.text_engine, font_data) {
-		delete(font_data)
-		fail("application Runa font initialization failed")
-	}
-	delete(font_data)
-	_ = native_load_optional_monospace_font(&rt)
+	if !native_load_default_fonts(&rt) { fail("application bundled Runa fonts could not be initialized") }
 	text_renderer, text_ok := native_text_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
 	if !text_ok { fail("application GPU text pipeline initialization failed") }
 	defer native_text_destroy(&text_renderer)
@@ -1567,16 +1568,9 @@ RunFoundation :: proc() {
 	host_scratch := native_host_scratch_make()
 	defer native_host_scratch_destroy(&host_scratch)
 
-	font_data, font_err := os.read_entire_file_from_path(native_font_path(), context.allocator)
-	if font_err != nil {
-		fail("GPU text font could not be loaded from the platform font path")
+	if !native_load_default_fonts(&rt) {
+		fail("GPU bundled Runa fonts could not be initialized")
 	}
-	if !alicorn.text_engine_load_font(&rt.text_engine, font_data) {
-		delete(font_data)
-		fail("Runa font initialization failed")
-	}
-	delete(font_data)
-	_ = native_load_optional_monospace_font(&rt)
 	text_renderer, text_ok := native_text_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
 	if !text_ok {
 		fail("GPU text pipeline or atlas initialization failed")
