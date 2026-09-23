@@ -19,6 +19,8 @@ project record.
 - [Proof report](proof.md) — tests, measurements, limitations, and verdicts.
 - [Native observability](observability.md) — CLI/F12 diagnostics, timings,
   retained inspection, and dependency-free screenshot captures.
+- [Scroll and split dogfood gate](scroll-split-gate.md) — retained scrollbars,
+  resizable panes, Windows evidence, and remaining macOS interaction checks.
 
 ## Runtime foundations
 
