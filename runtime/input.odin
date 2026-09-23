@@ -66,17 +66,39 @@ cancel_pointer_capture :: proc(rt: ^Runtime) -> bool {
 	captured := rt.captured_node
 	dragging := rt.scrollbar_drag_node != 0
 	if captured == 0 && !dragging { return false }
-	if node, ok := rt.nodes[captured]; ok && node.pressed {
-		node.pressed = false
-		invalidate_interaction_paint(rt, captured, "pointer capture canceled by host")
+	if node, ok := rt.nodes[captured]; ok {
+		if node.pressed {
+			node.pressed = false
+			invalidate_interaction_paint(rt, captured, "pointer capture canceled by host")
+		}
+		if node.kind == .Split_Handle {
+			if owner, owner_ok := rt.nodes[node.split_owner]; owner_ok { owner.split_dragging = false }
+		}
 	}
 	rt.captured_node = 0
 	rt.scrollbar_drag_node = 0
+	rt.activation_node = 0
+	if rt.last_hovered == captured {
+		if node, ok := rt.nodes[captured]; ok {
+			node.hovered = false
+			invalidate_interaction_paint(rt, captured, "hover cleared with pointer capture")
+		}
+		rt.last_hovered = 0
+	}
 	record_trace_literal(rt, .Pointer, captured, "pointer capture canceled by host")
 	return true
 }
 
 hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
+	// Split dividers get priority over pane descendants because their expanded
+	// grab area intentionally overlaps both adjacent panes.
+	for i := len(rt.order)-1; i >= 0; i -= 1 {
+		id := rt.order[i]
+		if node, ok := rt.nodes[id]; ok && node.active && node.kind == .Split_Handle &&
+			rect_contains(node.hit_bounds, x, y) && rect_contains(node.clip, x, y) {
+			return id
+		}
+	}
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
 		id := rt.order[i]
 		if node, ok := rt.nodes[id]; ok && node.active && !node.disabled && rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
@@ -86,6 +108,26 @@ hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 		}
 	}
 	return 0
+}
+
+split_drag_coordinate :: proc(node: ^Node, x, y: f32) -> f32 {
+	return x if node.split_axis == .Horizontal else y
+}
+
+update_split_drag :: proc(rt: ^Runtime, handle: ^Node, x, y: f32) {
+	owner, ok := rt.nodes[handle.split_owner]
+	if !ok || !owner.active { return }
+	total := owner.bounds.w if owner.split_axis == .Horizontal else owner.bounds.h
+	total -= 2 * owner.style.padding
+	if total < 0 { total = 0 }
+	coordinate := split_drag_coordinate(handle, x, y)
+	requested := owner.split_drag_start_position + coordinate-owner.split_drag_start_coordinate
+	next := split_clamp_position(total, handle.split_handle_size, requested, owner.split_min_first, owner.split_min_second)
+	if next == owner.split_position { return }
+	owner.split_position = next
+	mark_layout_ancestors(rt, owner.id)
+	request_presentation(rt, "split divider dragged")
+	record_trace(rt, .Pointer, handle.id, "retained split position changed")
 }
 
 scroll_region_hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
@@ -275,28 +317,33 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 		}
 	}
 	if event.kind == .Move {
-		if target != rt.last_hovered {
+		hover_target := target
+		if captured, ok := rt.nodes[rt.captured_node]; ok && captured.active && captured.kind == .Split_Handle {
+			hover_target = captured.id
+			update_split_drag(rt, captured, event.x, event.y)
+		}
+		if hover_target != rt.last_hovered {
 			if rt.last_hovered != 0 {
 				if old, ok := rt.nodes[rt.last_hovered]; ok {
 					old.hovered = false
 					invalidate_interaction_paint(rt, old.id, "hover lost")
 				}
 			}
-			if target != 0 {
-				if next, ok := rt.nodes[target]; ok {
+			if hover_target != 0 {
+				if next, ok := rt.nodes[hover_target]; ok {
 					next.hovered = true
 					invalidate_interaction_paint(rt, next.id, "hover gained")
 				}
 			}
-			rt.last_hovered = target
+			rt.last_hovered = hover_target
 			// Hover only changes retained presentation state. The application
 			// description remains valid and must not be rebuilt just to repaint
 			// the old and new hover targets.
 		}
 	} else if event.kind == .Down {
 		if target != 0 {
-			focus(rt, target)
 			if node, ok := rt.nodes[target]; ok {
+				if node.kind != .Split_Handle { focus(rt, target) }
 				// Pointer placement is an explicit cancellation boundary for a
 				// platform preedit. The next hit test must use committed text
 				// geometry, not the temporary composition projection.
@@ -305,6 +352,13 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 				}
 				node.pressed = true
 				invalidate_interaction_paint(rt, node.id, "press began")
+				if node.kind == .Split_Handle {
+					if owner, owner_ok := rt.nodes[node.split_owner]; owner_ok {
+						owner.split_dragging = true
+						owner.split_drag_start_position = owner.split_position
+						owner.split_drag_start_coordinate = split_drag_coordinate(node, event.x, event.y)
+					}
+				}
 				if node.kind == .Text_Field && node.text_run_valid {
 					position := text_run_hit_test(&node.text_run, event.x-node.bounds.x, event.y-node.bounds.y, rt.scratch_allocator)
 					node.caret = position
@@ -318,24 +372,47 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 		}
 		rt.activation_node = 0
 		record_trace(rt, .Pointer, target, "pointer down hit retained node")
-		invalidate_root(rt, "pointer down")
+		if node, ok := rt.nodes[target]; !ok || node.kind != .Split_Handle {
+			invalidate_root(rt, "pointer down")
+		}
 	} else if event.kind == .Up {
 		captured := rt.captured_node
 		if captured != 0 {
 			if node, ok := rt.nodes[captured]; ok {
+				if node.kind == .Split_Handle { update_split_drag(rt, node, event.x, event.y) }
 				node.pressed = false
 				invalidate_interaction_paint(rt, node.id, "press ended")
+				if node.kind == .Split_Handle {
+					if owner, owner_ok := rt.nodes[node.split_owner]; owner_ok { owner.split_dragging = false }
+				}
 			}
 			rt.captured_node = 0
 		}
-		if captured != 0 && captured == target {
+		captured_is_split := false
+		if node, ok := rt.nodes[captured]; ok { captured_is_split = node.kind == .Split_Handle }
+		if captured_is_split && captured != target {
+			if rt.last_hovered != 0 {
+				if previous, ok := rt.nodes[rt.last_hovered]; ok {
+					previous.hovered = false
+					invalidate_interaction_paint(rt, previous.id, "split pointer released outside hover target")
+				}
+			}
+			if target != 0 {
+				if next, ok := rt.nodes[target]; ok {
+					next.hovered = true
+					invalidate_interaction_paint(rt, target, "pointer target after split release")
+				}
+			}
+			rt.last_hovered = target
+		}
+		if !captured_is_split && captured != 0 && captured == target {
 			rt.activation_sequence += 1
 			rt.activation_node = captured
 		} else {
 			rt.activation_node = 0
 		}
 		record_trace(rt, .Pointer, target, "pointer up hit retained node")
-		invalidate_root(rt, "pointer up")
+		if !captured_is_split { invalidate_root(rt, "pointer up") }
 	}
 	return target
 }

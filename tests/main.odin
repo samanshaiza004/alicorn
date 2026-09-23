@@ -2145,6 +2145,127 @@ test_scrollbar_interaction :: proc(state: ^Test_State) {
 	expect(state, rt.scrollbar_drag_node == 0, "horizontal drag capture releases outside the window")
 }
 
+Split_Test_Nodes :: struct {
+	split: alicorn.Split_Handle,
+	first: alicorn.Node_ID,
+	divider: alicorn.Node_ID,
+	second: alicorn.Node_ID,
+}
+
+render_split_test :: proc(rt: ^alicorn.Runtime, axis: alicorn.Split_Axis, initial, min_first, min_second: f32) -> Split_Test_Nodes {
+	result: Split_Test_Nodes
+	alicorn.invalidate_root(rt, "split test render")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return result }
+	alicorn.container_begin(&ui, .Root, label="split-root", style=alicorn.layout_style(direction=.Column, grow=1, clip=true))
+	result.split = alicorn.split_begin(&ui, key=alicorn.key_string("main-split"), axis=axis, initial=initial, min_first=min_first, min_second=min_second)
+	result.first = alicorn.split_first_begin(&ui, result.split)
+	alicorn.text(&ui, "first pane")
+	alicorn.split_first_end(&ui, result.split)
+	result.divider = alicorn.split_divider(&ui, result.split)
+	result.second = alicorn.split_second_begin(&ui, result.split)
+	alicorn.text(&ui, "second pane")
+	alicorn.split_second_end(&ui, result.split)
+	alicorn.split_end(&ui, result.split)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return result
+}
+
+render_nested_split_test :: proc(rt: ^alicorn.Runtime) -> (outer, inner: alicorn.Split_Handle, outer_divider, inner_divider: alicorn.Node_ID) {
+	alicorn.invalidate_root(rt, "nested split test render")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin(&ui, .Root, label="nested-split-root", style=alicorn.layout_style(direction=.Column, grow=1, clip=true))
+	outer = alicorn.split_begin(&ui, key=alicorn.key_string("outer"), axis=.Horizontal, initial=210, min_first=100, min_second=180)
+	_ = alicorn.split_first_begin(&ui, outer)
+	alicorn.text(&ui, "left")
+	alicorn.split_first_end(&ui, outer)
+	outer_divider = alicorn.split_divider(&ui, outer)
+	_ = alicorn.split_second_begin(&ui, outer)
+	inner = alicorn.split_begin(&ui, key=alicorn.key_string("inner"), axis=.Vertical, initial=90, min_first=40, min_second=40, style=alicorn.layout_style(grow=1, clip=true))
+	_ = alicorn.split_first_begin(&ui, inner)
+	alicorn.text(&ui, "top")
+	alicorn.split_first_end(&ui, inner)
+	inner_divider = alicorn.split_divider(&ui, inner)
+	_ = alicorn.split_second_begin(&ui, inner)
+	alicorn.text(&ui, "bottom")
+	alicorn.split_second_end(&ui, inner)
+	alicorn.split_end(&ui, inner)
+	alicorn.split_second_end(&ui, outer)
+	alicorn.split_end(&ui, outer)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return outer, inner, outer_divider, inner_divider
+}
+
+test_retained_split_drag_and_clamp :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 600, 320})
+	defer alicorn.destroy_runtime(&rt)
+	nodes := render_split_test(&rt, .Horizontal, 200, 150, 200)
+	parent := rt.nodes[nodes.split.id]
+	handle := rt.nodes[nodes.divider]
+	first := rt.nodes[nodes.first]
+	second := rt.nodes[nodes.second]
+	expect(state, first.bounds.w == 200 && second.bounds.w == 398, "horizontal split allocates preferred first size and remaining second pane")
+	expect(state, handle.bounds.w == 2 && handle.hit_bounds.w == 10, "visible split divider stays thin and hit target is expanded")
+	// The pointer is just outside the visible two-pixel divider, inside the
+	// expanded hit region.
+	start_x := handle.bounds.x - 3
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, start_x, 80, 1})
+	expect(state, rt.captured_node == nodes.divider && parent.split_dragging, "pointer down captures the retained split divider")
+	expect(state, !rt.invalidated, "split pointer down does not invalidate the application description")
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, 999, 80, 0})
+	expect(state, parent.split_position == 398, "dragging beyond the window clamps to the second-pane minimum")
+	expect(state, !rt.invalidated, "split drag moves remain retained presentation work")
+	ui, ready := alicorn.begin_presentation_frame(&rt)
+	if ready { alicorn.end_presentation_frame(&ui) }
+	expect(state, first.bounds.w == 398 && second.bounds.w == 200, "retained-only presentation lays out panes during a drag")
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, 999, 500, 1})
+	expect(state, rt.captured_node == 0 && !parent.split_dragging, "pointer release outside the window ends the captured drag")
+	expect(state, !handle.hovered && rt.last_hovered == 0, "release outside clears the divider hover state")
+	expect(state, !rt.invalidated, "split release outside does not trigger app-level pointer handling")
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, first.bounds.x+first.bounds.w-3, 40, 1})
+	rt.viewport.w = 400
+	nodes = render_split_test(&rt, .Horizontal, 40, 150, 200)
+	parent = rt.nodes[nodes.split.id]
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, 500, 40, 0})
+	expect(state, parent.split_position == 198 && rt.captured_node == nodes.divider, "resize during capture reclamps drag and preserves capture")
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, 500, 40, 1})
+
+	rt.viewport.w = 400
+	nodes = render_split_test(&rt, .Horizontal, 40, 150, 200)
+	parent = rt.nodes[nodes.split.id]
+	first = rt.nodes[nodes.first]
+	second = rt.nodes[nodes.second]
+	expect(state, parent.split_position == 198 && first.bounds.w == 198 && second.bounds.w == 200, "window resize reclamps retained position to pane minima")
+	rt.viewport.w = 60
+	nodes = render_split_test(&rt, .Horizontal, 40, 150, 200)
+	first = rt.nodes[nodes.first]
+	second = rt.nodes[nodes.second]
+	expect(state, first.bounds.w >= 0 && second.bounds.w >= 0 && first.bounds.w+second.bounds.w+rt.nodes[nodes.divider].bounds.w == 60, "tiny window keeps split geometry nonnegative and inside bounds")
+}
+
+test_split_axis_nested_identity_and_cancel :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 520, 360})
+	defer alicorn.destroy_runtime(&rt)
+	vertical := render_split_test(&rt, .Vertical, 120, 80, 100)
+	expect(state, rt.nodes[vertical.first].bounds.h == 120 && rt.nodes[vertical.second].bounds.h == 238, "vertical split allocates along the y axis")
+	outer, inner, outer_divider, inner_divider := render_nested_split_test(&rt)
+	expect(state, outer.id != inner.id && outer_divider != inner_divider, "nested split keys retain distinct parent and divider identities")
+	rt.nodes[outer.id].split_position = 275
+	rt.nodes[inner.id].split_position = 155
+	outer2, inner2, outer_divider2, inner_divider2 := render_nested_split_test(&rt)
+	expect(state, outer.id == outer2.id && inner.id == inner2.id && outer_divider == outer_divider2 && inner_divider == inner_divider2, "nested split identities survive description rebuild")
+	expect(state, rt.nodes[outer.id].split_position == 275 && rt.nodes[inner.id].split_position == 155, "nested split positions persist independently")
+	handle := rt.nodes[inner_divider]
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, handle.bounds.x+3, handle.bounds.y+1, 1})
+	owner := rt.nodes[inner.id]
+	expect(state, owner.split_dragging && rt.captured_node == inner_divider, "nested divider begins its own retained drag")
+	alicorn.cancel_pointer_capture(&rt)
+	expect(state, rt.captured_node == 0 && !owner.split_dragging && !rt.nodes[inner_divider].pressed, "host capture cancellation clears the active split drag")
+}
+
 test_runtime_allocator_ownership :: proc(state: ^Test_State) {
 	base_allocator := context.allocator
 	tracking: mem.Tracking_Allocator
@@ -2223,6 +2344,8 @@ main :: proc() {
 	test_scroll_region_routing_and_clamp(&state)
 	test_scrollbar_layout_projection(&state)
 	test_scrollbar_interaction(&state)
+	test_retained_split_drag_and_clamp(&state)
+	test_split_axis_nested_identity_and_cancel(&state)
 	test_runtime_allocator_ownership(&state)
 	if state.failures == 0 {
 		fmt.println("Alicorn foundation tests: PASS")

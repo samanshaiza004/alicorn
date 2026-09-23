@@ -78,6 +78,11 @@ layout_hash :: proc(d: Description) -> u64 {
 	h = hash_mix(h, u64(transmute(u32)d.scroll_viewport_height))
 	h = hash_mix(h, u64(d.scroll_axes))
 	h = hash_mix(h, u64(d.scrollbar_policy))
+	h = hash_mix(h, u64(d.split_axis))
+	h = hash_mix(h, u64(transmute(u32)d.split_min_first))
+	h = hash_mix(h, u64(transmute(u32)d.split_min_second))
+	h = hash_mix(h, u64(transmute(u32)d.split_handle_size))
+	h = hash_mix(h, u64(transmute(u32)d.split_hit_size))
 	// Text participates in intrinsic measurement. A description can otherwise
 	// look layout-identical while a changing label/value moves its siblings.
 	#partial switch d.kind {
@@ -208,6 +213,15 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	node.scroll_axes = d.scroll_axes
 	node.scroll_axis_behavior = d.scroll_axis_behavior
 	node.scrollbar_policy = d.scrollbar_policy
+	if kind_changed && d.kind == .Split {
+		node.split_position = d.split_position
+	}
+	node.split_axis = d.split_axis
+	node.split_min_first = d.split_min_first
+	node.split_min_second = d.split_min_second
+	node.split_owner = d.split_owner
+	node.split_handle_size = d.split_handle_size
+	node.split_hit_size = d.split_hit_size
 	// A direct surface update owns the high-frequency revision. A later root
 	// wake with the same description must not roll it back; a changed
 	// description revision is an explicit replacement and is authoritative.
@@ -264,6 +278,7 @@ invalidate_interaction_paint :: proc(rt: ^Runtime, id: Node_ID, reason := "inter
 }
 
 mark_layout_ancestors :: proc(rt: ^Runtime, id: Node_ID) {
+	rt.layout_pending = true
 	current := id
 	for current != 0 {
 		node, ok := rt.nodes[current]
@@ -304,7 +319,12 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	}
 	if id == rt.focused { rt.focused = 0 }
 	if id == rt.last_hovered { rt.last_hovered = 0 }
-	if id == rt.captured_node { rt.captured_node = 0 }
+	if id == rt.captured_node {
+		if node.kind == .Split_Handle {
+			if owner, owner_ok := rt.nodes[node.split_owner]; owner_ok { owner.split_dragging = false }
+		}
+		rt.captured_node = 0
+	}
 	if id == rt.selected { rt.selected = 0 }
 	delete_key(&rt.nodes, id)
 	for command in node.paint { if len(command.text) > 0 { delete(command.text, rt.persistent_allocator) } }
@@ -384,6 +404,7 @@ reconcile :: proc(rt: ^Runtime) {
 			node = new(Node, allocator=rt.persistent_allocator)
 			node.id = d.id
 			node.display_index = -1
+			node.hit_bounds = {}
 			node.children = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 			node.paint = make([dynamic]Display_Command, 0, allocator=rt.persistent_allocator)
 			node.surface_samples = make([dynamic]f32, 0, allocator=rt.persistent_allocator)
@@ -525,8 +546,9 @@ end_presentation_frame :: proc(ui: ^UI) {
 		return
 	}
 	// Interaction-only frames do not have descriptions to reconcile. Existing
-	// bounds, text products, and child adjacency remain authoritative; only the
-	// retained paint queue and display list are flushed.
+	// child adjacency remains authoritative; pending retained layout and paint
+	// work are flushed without rerunning application code.
+	if rt.layout_pending { layout_tree(rt) }
 	update_paint(rt)
 	rt.frame_open = false
 	rt.presentation_pending = false

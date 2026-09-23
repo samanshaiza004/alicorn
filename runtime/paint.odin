@@ -131,6 +131,11 @@ update_paint :: proc(rt: ^Runtime) {
 				}
 				append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", button_color})
 				append(&node.paint, Display_Command{node.id, .Text, node.bounds, text_clip, owned(display_text, rt.persistent_allocator), text_color})
+			} else if node.kind == .Split_Handle {
+				handle_color := Color{0.20, 0.24, 0.31, 1}
+				if node.hovered { handle_color = Color{0.35, 0.53, 0.72, 1} }
+				if node.pressed { handle_color = Color{0.42, 0.66, 0.90, 1} }
+				append(&node.paint, Display_Command{node.id, .Split_Handle, node.bounds, node.clip, "", handle_color})
 			} else {
 				text_clip := node.clip
 				if node.text_style.overflow != .Wrap {

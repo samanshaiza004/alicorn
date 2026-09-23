@@ -145,6 +145,79 @@ layout_text_constraint :: proc(parent: ^Node, child: ^Node, cross_size: f32) -> 
 	return clampf(constraint, child.style.min_width, child.style.max_width)
 }
 
+split_clamp_position :: proc(total, thickness, requested, min_first, min_second: f32) -> f32 {
+	available := maxf(total-maxf(thickness, 1), 0)
+	minimum_sum := maxf(min_first, 0) + maxf(min_second, 0)
+	if available >= minimum_sum {
+		return clampf(requested, maxf(min_first, 0), available-maxf(min_second, 0))
+	}
+	if minimum_sum > 0 { return available * maxf(min_first, 0) / minimum_sum }
+	return clampf(requested, 0, available)
+}
+
+layout_split_children :: proc(rt: ^Runtime, parent: ^Node, inner: Rect, children: []Node_ID) {
+	if len(children) != 3 { return }
+	axis := parent.split_axis
+	total := inner.w if axis == .Horizontal else inner.h
+	thickness := clampf(rt.nodes[children[1]].split_handle_size, 1, total)
+	available := maxf(total-thickness, 0)
+	// When the window is smaller than both minima, preserve their ratio and
+	// keep all geometry nonnegative. Normal-size layouts enforce both mins.
+	first := split_clamp_position(total, thickness, parent.split_position, parent.split_min_first, parent.split_min_second)
+	parent.split_position = first
+	second := maxf(available-first, 0)
+	hit_size := minf(total, maxf(rt.nodes[children[1]].split_hit_size, thickness))
+	hit_offset := clampf(first+(thickness-hit_size)*0.5, 0, total-hit_size)
+	for id, index in children {
+		rt.stats.layout_nodes_visited += 1
+		rt.stats.stage_visits[.Layout] += 1
+		child := rt.nodes[id]
+		old_bounds := child.bounds
+		old_hit_bounds := child.hit_bounds
+		main_offset := f32(0)
+		main_size := first
+		if index == 1 {
+			main_offset = first
+			main_size = thickness
+		} else if index == 2 {
+			main_offset = first + thickness
+			main_size = second
+		}
+		if axis == .Horizontal {
+			child.bounds = Rect{inner.x+main_offset, inner.y, main_size, inner.h}
+			child.hit_bounds = child.bounds
+			if index == 1 {
+				child.bounds = Rect{inner.x+first, inner.y, thickness, inner.h}
+				child.hit_bounds = Rect{inner.x+hit_offset, inner.y, hit_size, inner.h}
+			}
+		} else {
+			child.bounds = Rect{inner.x, inner.y+main_offset, inner.w, main_size}
+			child.hit_bounds = child.bounds
+			if index == 1 {
+				child.bounds = Rect{inner.x, inner.y+first, inner.w, thickness}
+				child.hit_bounds = Rect{inner.x, inner.y+hit_offset, inner.w, hit_size}
+			}
+		}
+		old_clip := child.clip
+		if parent.style.clip { child.clip = rect_intersection(parent.clip, parent.bounds) } else { child.clip = parent.clip }
+		bounds_changed := !same_rect(old_bounds, child.bounds)
+		hit_changed := !same_rect(old_hit_bounds, child.hit_bounds)
+		clip_changed := !same_rect(old_clip, child.clip)
+		if bounds_changed || hit_changed || clip_changed {
+			dirty_set(&child.dirty, .Layout, true)
+			dirty_set(&child.dirty, .Paint, true)
+			dirty_set(&child.dirty, .Composite, true)
+			queue_paint(rt, id)
+			rt.stats.layout_updates += 1
+			record_trace(rt, .Layout, id, "split pane bounds changed")
+		}
+		if bounds_changed || clip_changed || dirty_has(child.dirty, .Layout) {
+			layout_children(rt, id)
+		}
+		dirty_set(&child.dirty, .Layout, false)
+	}
+}
+
 layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	parent, ok := rt.nodes[parent_id]
 	if !ok { return }
@@ -188,6 +261,10 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	if count == 0 { return }
 	if inner.w < 0 { inner.w = 0 }
 	if inner.h < 0 { inner.h = 0 }
+	if parent.kind == .Split && len(children) == 3 {
+		layout_split_children(rt, parent, inner, children[:])
+		return
+	}
 	main_size := parent.style.direction == .Row ? inner.w : inner.h
 	cross_size := parent.style.direction == .Row ? inner.h : inner.w
 	gap_total := parent.style.gap * f32(count-1)
@@ -311,4 +388,5 @@ layout_tree :: proc(rt: ^Runtime) {
 			dirty_set(&node.dirty, .Layout, false)
 		}
 	}
+	rt.layout_pending = false
 }

@@ -52,8 +52,12 @@ Node_Kind :: enum {
 	Scrollbar_Track,
 	Scrollbar_Thumb,
 	Scrollbar_Corner,
+	Split,
+	Split_Handle,
 	Custom_Surface,
 }
+
+Split_Axis :: enum { Horizontal, Vertical }
 
 GPU_Surface_Kind :: enum {
 	Waveform,
@@ -324,6 +328,13 @@ Description :: struct {
 	scroll_axes: Scroll_Axes,
 	scroll_axis_behavior: Scroll_Axis_Behavior,
 	scrollbar_policy: Scrollbar_Policy,
+	split_axis: Split_Axis,
+	split_position: f32,
+	split_min_first: f32,
+	split_min_second: f32,
+	split_owner: Node_ID,
+	split_handle_size: f32,
+	split_hit_size: f32,
 	// The logical scroll position remains authoritative for application state
 	// and scrollbar calculations. Virtualized lists use this residual offset
 	// to place only the realized rows after preceding rows were omitted.
@@ -403,12 +414,23 @@ Node :: struct {
 	scrollbar_vertical_thumb: Rect,
 	scrollbar_horizontal_track: Rect,
 	scrollbar_horizontal_thumb: Rect,
+	split_axis: Split_Axis,
+	split_position: f32,
+	split_min_first: f32,
+	split_min_second: f32,
+	split_owner: Node_ID,
+	split_handle_size: f32,
+	split_hit_size: f32,
+	split_drag_start_position: f32,
+	split_drag_start_coordinate: f32,
+	split_dragging: bool,
 	surface_revision: u64,
 	surface_samples: [dynamic]f32,
 	surface_geometry_active: bool,
 	surface_segments: [dynamic]GPU_Surface_Line_Segment,
 	surface_circles: [dynamic]GPU_Surface_Filled_Circle,
 	bounds:      Rect,
+	hit_bounds:  Rect,
 	clip:        Rect,
 	dirty:       Dirty_Stages,
 	last_reason: string,
@@ -517,6 +539,7 @@ Runtime :: struct {
 	paint_queue: [dynamic]Node_ID,
 	composition_rebuild: bool,
 	invalidated: bool,
+	layout_pending: bool,
 	// presentation_pending means retained interaction/presentation work is
 	// ready to submit, but the application description is still valid. It is
 	// deliberately separate from invalidated so hover can repaint without
@@ -1199,6 +1222,92 @@ container_begin :: proc(ui: ^UI, kind: Node_Kind, label := "", key: UI_Key = UI_
 container :: proc(ui: ^UI, kind: Node_Kind, body: proc(), label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, loc := #caller_location) -> Node_ID {
 	return container_simple(ui, kind, body, label, key, style, color, loc)
 }
+
+// Split_Handle is a lightweight description-time handle for one retained
+// two-pane split. Its position and drag state live on the keyed runtime node.
+Split_Handle :: struct {
+	id:       Node_ID,
+	axis:     Split_Axis,
+	position: f32,
+}
+
+DEFAULT_SPLIT_STYLE :: Layout_Style{.Column, -1, -1, 0, -1, 0, -1, 1, 0, 0, .Stretch, true}
+SPLIT_DIVIDER_MIN_THICKNESS :: 1.0
+SPLIT_DIVIDER_MAX_THICKNESS :: 4.0
+SPLIT_DIVIDER_MIN_HIT_SIZE :: 8.0
+SPLIT_DIVIDER_MAX_HIT_SIZE :: 12.0
+
+// split_begin opens a keyed split container. Compose two panes with
+// split_first_begin/end and split_second_begin/end, placing split_divider
+// between them, then close the split with split_end. The preferred position
+// seeds new retained state; later application builds preserve the user's drag.
+split_begin :: proc(
+	ui: ^UI,
+	key: UI_Key,
+	axis: Split_Axis,
+	initial: f32,
+	min_first: f32 = 0,
+	min_second: f32 = 0,
+	style := DEFAULT_SPLIT_STYLE,
+	label := "split",
+	loc := #caller_location,
+) -> Split_Handle {
+	split_style := style
+	split_style.direction = .Row if axis == .Horizontal else .Column
+	source := resolve_source(Source_Site{}, "split", loc)
+	id := emit_key(ui, .Split, source, label=label, key=key, style=split_style, paint_background=false)
+	if id == 0 { return {} }
+	item := &ui.runtime.pending[len(ui.runtime.pending)-1].description
+	item.split_axis = axis
+	item.split_position = maxf(initial, 0)
+	item.split_min_first = maxf(min_first, 0)
+	item.split_min_second = maxf(min_second, 0)
+	append(&ui.runtime.stack, id)
+	push_identity_scope(ui.runtime, id, "", 0)
+	position := item.split_position
+	if previous, ok := ui.runtime.nodes[id]; ok && previous.kind == .Split {
+		position = previous.split_position
+	}
+	return Split_Handle{id, axis, position}
+}
+
+split_first_begin :: proc(ui: ^UI, split: Split_Handle) -> Node_ID {
+	return container_begin_simple(
+		ui, .Container, label="split-first", key=key_string("first"),
+		style=layout_style(grow=1, clip=true),
+	)
+}
+
+split_first_end :: proc(ui: ^UI, split: Split_Handle) { container_end(ui) }
+
+split_second_begin :: proc(ui: ^UI, split: Split_Handle) -> Node_ID {
+	return container_begin_simple(
+		ui, .Container, label="split-second", key=key_string("second"),
+		style=layout_style(grow=1, clip=true),
+	)
+}
+
+split_second_end :: proc(ui: ^UI, split: Split_Handle) { container_end(ui) }
+
+// split_divider inserts the runtime-owned interaction target between the two
+// panes. Visual thickness is kept narrow while hit_size makes it easy to grab.
+split_divider :: proc(ui: ^UI, split: Split_Handle, thickness: f32 = 2, hit_size: f32 = 10, loc := #caller_location) -> Node_ID {
+	if split.id == 0 { return 0 }
+	visible_thickness := clampf(thickness, SPLIT_DIVIDER_MIN_THICKNESS, SPLIT_DIVIDER_MAX_THICKNESS)
+	interaction_size := clampf(hit_size, SPLIT_DIVIDER_MIN_HIT_SIZE, SPLIT_DIVIDER_MAX_HIT_SIZE)
+	style := layout_style(width=visible_thickness, height=-1) if split.axis == .Horizontal else layout_style(width=-1, height=visible_thickness)
+	id := emit_key(ui, .Split_Handle, resolve_source(Source_Site{}, "split_divider", loc), label="split-divider", key=key_string("divider"), style=style)
+	if id != 0 {
+		description := &ui.runtime.pending[len(ui.runtime.pending)-1].description
+		description.split_owner = split.id
+		description.split_axis = split.axis
+		description.split_handle_size = visible_thickness
+		description.split_hit_size = maxf(interaction_size, visible_thickness)
+	}
+	return id
+}
+
+split_end :: proc(ui: ^UI, split: Split_Handle) { container_end(ui) }
 
 root :: proc(ui: ^UI, body: proc(), style := DEFAULT_STYLE, loc := #caller_location) -> Node_ID {
 	return root_simple(ui, body, style, loc)
