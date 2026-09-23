@@ -2361,6 +2361,48 @@ render_split_virtual_test :: proc(rt: ^alicorn.Runtime, axis := alicorn.Split_Ax
 	return
 }
 
+render_split_geometry_test :: proc(rt: ^alicorn.Runtime) -> (divider, surface: alicorn.Node_ID) {
+	alicorn.invalidate_root(rt, "split geometry surface test")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin(&ui, .Root, label="split-geometry-root", style=alicorn.layout_style(.Row, grow=1, clip=true))
+	split := alicorn.split_begin(&ui, key=alicorn.key_string("split-geometry"), axis=.Horizontal, initial=120, min_first=60, min_second=60, style=alicorn.layout_style(grow=1, clip=true))
+	alicorn.split_first_begin(&ui, split)
+	alicorn.text(&ui, "sidebar")
+	alicorn.split_first_end(&ui, split)
+	divider = alicorn.split_divider(&ui, split)
+	alicorn.split_second_begin(&ui, split)
+	surface = alicorn.gpu_geometry_surface(&ui, "resizable-geometry", 0, alicorn.layout_style(grow=1, clip=true))
+	alicorn.split_second_end(&ui, split)
+	alicorn.split_end(&ui, split)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return
+}
+
+test_geometry_surface_resize_invalidation :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 400, 200})
+	defer alicorn.destroy_runtime(&rt)
+	divider, surface := render_split_geometry_test(&rt)
+	before, before_ok := alicorn.gpu_surface_context(&rt, surface)
+	expect(state, before_ok && before.logical_bounds.w == 278, "initial split geometry surface resolves its app-authored width")
+	handle := rt.nodes[divider]
+	x, y := handle.bounds.x+handle.bounds.w/2, handle.bounds.y+handle.bounds.h/2
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, x, y, 1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, x+40, y, 0})
+	ui, ready := alicorn.begin_presentation_frame(&rt)
+	if ready { alicorn.end_presentation_frame(&ui) }
+	after, after_ok := alicorn.gpu_surface_context(&rt, surface)
+	expect(state, after_ok && after.logical_bounds.w == 238, "retained splitter drag updates the geometry surface bounds")
+	expect(state, rt.invalidated, "geometry surface extent change requests one app description rebuild")
+	frames_before_rebuild := rt.stats.frames_built
+	_, rebuilt_surface := render_split_geometry_test(&rt)
+	expect(state, rt.stats.frames_built == frames_before_rebuild+1, "host can immediately rebuild the app-authored geometry projection after resize")
+	rebuilt, rebuilt_ok := alicorn.gpu_surface_context(&rt, rebuilt_surface)
+	expect(state, rebuilt_ok && rebuilt.logical_bounds.w == after.logical_bounds.w, "rebuilt geometry surface preserves the resized coordinate space")
+	expect(state, !rt.invalidated, "geometry surface resize invalidation is consumed by the rebuilt description")
+}
+
 test_split_virtual_viewport_followup :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 400, 400})
 	defer alicorn.destroy_runtime(&rt)
@@ -2395,6 +2437,8 @@ test_split_virtual_viewport_followup :: proc(state: ^Test_State) {
 	horizontal_ui, horizontal_ready := alicorn.begin_presentation_frame(&horizontal_rt)
 	if horizontal_ready { alicorn.end_presentation_frame(&horizontal_ui) }
 	expect(state, !horizontal_rt.invalidated, "width-only split drag keeps fixed-row virtualization presentation-local")
+
+	test_geometry_surface_resize_invalidation(state)
 }
 
 test_runtime_allocator_ownership :: proc(state: ^Test_State) {

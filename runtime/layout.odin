@@ -349,6 +349,13 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		} else if parent.style.clip { child.clip = rect_intersection(parent.clip, parent.bounds) } else { child.clip = parent.clip }
 		bounds_changed := !same_rect(old_bounds, child.bounds)
 		clip_changed := !same_rect(old_clip, child.clip)
+		if bounds_changed && child.kind == .Custom_Surface && child.surface_kind == .Geometry &&
+			(old_bounds.w != child.bounds.w || old_bounds.h != child.bounds.h) {
+			// Geometry is authored in this surface's logical coordinate space.
+			// Retained-only layout can move it freely, but a changed extent needs
+			// one app description rebuild to regenerate the projection.
+			rt.geometry_surface_bounds_changed = true
+		}
 		if bounds_changed && child.kind == .Scroll_Region {
 			// The first layout pass resolves grow-based scroll regions. Ask for
 			// one follow-up description so virtualization uses that real viewport

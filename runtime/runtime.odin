@@ -571,8 +571,13 @@ Runtime :: struct {
 	surface_frame_pending: bool,
 	scroll_geometry_changed: bool,
 	// A retained-only pane resize can change how many fixed-height rows a
-	// virtual list must describe. Width-only changes stay presentation-local.
+	// virtual list must describe. Geometry surfaces separately invalidate on
+	// extent changes because their payload coordinates are app-authored.
 	virtual_viewport_changed: bool,
+	// Geometry payloads are projected in application-authored logical bounds.
+	// A retained-only resize must request one description rebuild so the app
+	// can reproject; translating a surface does not change that projection.
+	geometry_surface_bounds_changed: bool,
 }
 
 UI :: struct {
