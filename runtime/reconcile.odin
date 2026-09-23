@@ -36,6 +36,7 @@ description_hash :: proc(d: Description) -> u64 {
 	h = hash_mix(h, u64(d.font))
 	if node_has_text_product(d.kind) {
 		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
+		h = hash_mix(h, u64(d.text_style.overflow))
 	}
 	h = hash_mix(h, d.paint_value)
 	h = hash_mix(h, hash_color(d.color))
@@ -75,10 +76,12 @@ layout_hash :: proc(d: Description) -> u64 {
 		h = hash_mix(h, hash_string(d.label))
 		h = hash_mix(h, u64(d.font))
 		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
+		h = hash_mix(h, u64(d.text_style.overflow))
 	case .Text, .Text_Field:
 		h = hash_mix(h, hash_string(d.text))
 		h = hash_mix(h, u64(d.font))
 		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
+		h = hash_mix(h, u64(d.text_style.overflow))
 	}
 	return h
 }
@@ -145,8 +148,9 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	text_changed := node.text != d.text || label_changed
 	font_changed := node.font != d.font
 	weight_changed := effective_font_weight(node.text_style.font_weight) != effective_font_weight(d.text_style.font_weight)
+	overflow_changed := node.text_style.overflow != d.text_style.overflow
 	kind_changed := node.kind != d.kind
-	if node.text_run_valid && (text_changed || font_changed || weight_changed || kind_changed || !node_has_text_product(d.kind)) {
+	if node.text_run_valid && (text_changed || font_changed || weight_changed || overflow_changed || kind_changed || !node_has_text_product(d.kind)) {
 		text_run_destroy(&node.text_run)
 		node.text_run_valid = false
 	}

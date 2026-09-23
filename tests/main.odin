@@ -1427,6 +1427,59 @@ test_multiline_text_controls :: proc(state: ^Test_State) {
 	}
 }
 
+test_text_ellipsis :: proc(state: ^Test_State) {
+	engine := alicorn.new_text_engine("ellipsis-test", allocator=context.allocator)
+	defer alicorn.text_engine_destroy(&engine)
+	expect(state, alicorn.text_engine_load_font(&engine, TEST_UI_FONT_DATA), "bundled UI font must load for ellipsis regression")
+	source := "origin/port/macos-history-6ca8c47"
+	full, full_ok := alicorn.text_run_build(&engine, source, 16, overflow=.Clip, allocator=context.allocator)
+	if !full_ok {
+		expect(state, false, "single-line source text must shape")
+		return
+	}
+	width := full.width * 0.62
+	alicorn.text_run_destroy(&full)
+	run, ok := alicorn.text_run_build_with_overflow(
+		&engine, source, 16, width,
+		context.allocator, context.temp_allocator,
+		.UI, alicorn.FONT_WEIGHT_REGULAR, .Ellipsis,
+	)
+	if !ok {
+		expect(state, false, "ellipsized text must shape successfully")
+		return
+	}
+	defer alicorn.text_run_destroy(&run)
+	expect(state, len(run.lines) == 1, "ellipsis overflow must remain single-line")
+	expect(state, run.value != source && strings.has_suffix(run.value, "…"), "overflowed text must end with an ellipsis")
+	expect(state, run.source_value_override && run.source_value == source, "ellipsized run must retain the original source value for invalidation")
+	expect(state, run.width <= width, "ellipsized text width must fit its assigned logical width")
+
+	unicode_source := "feature/👩‍💻-implementation-with-a-long-name"
+	unicode_full, unicode_full_ok := alicorn.text_run_build(&engine, unicode_source, 16, overflow=.Clip, allocator=context.allocator)
+	if !unicode_full_ok {
+		expect(state, false, "Unicode source text must shape")
+		return
+	}
+	unicode_width := unicode_full.width * 0.56
+	alicorn.text_run_destroy(&unicode_full)
+	unicode_run, unicode_ok := alicorn.text_run_build_with_overflow(
+		&engine, unicode_source, 16, unicode_width,
+		context.allocator, context.temp_allocator,
+		.UI, alicorn.FONT_WEIGHT_REGULAR, .Ellipsis,
+	)
+	if !unicode_ok {
+		expect(state, false, "Unicode ellipsis must shape successfully")
+		return
+	}
+	defer alicorn.text_run_destroy(&unicode_run)
+	if strings.has_suffix(unicode_run.value, "…") {
+		prefix_length := len(unicode_run.value)-len("…")
+		expect(state, alicorn.grapheme_floor_boundary(unicode_source, prefix_length) == prefix_length, "ellipsis must not split an extended grapheme cluster")
+	} else {
+		expect(state, false, "Unicode ellipsis must retain the terminal ellipsis")
+	}
+}
+
 test_monospace_font_role :: proc(state: ^Test_State) {
 	engine := alicorn.new_text_engine("font-role-test", allocator=context.allocator)
 	defer alicorn.text_engine_destroy(&engine)
@@ -1981,6 +2034,7 @@ main :: proc() {
 	test_text_geometry(&state)
 	test_gpu_text_resource_boundary(&state)
 	test_multiline_text_controls(&state)
+	test_text_ellipsis(&state)
 	test_monospace_font_role(&state)
 	test_public_monospace_font_role(&state)
 	test_retained_text_weight(&state)

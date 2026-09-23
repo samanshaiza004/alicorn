@@ -169,6 +169,8 @@ Text_Caret_Point :: struct {
 // actual DPI and raster policy.
 Text_Run :: struct {
 	value:          string,
+	source_value:   string,
+	source_value_override: bool,
 	glyphs:         [dynamic]Text_Glyph,
 	lines:          [dynamic]Text_Line,
 	width:          f32,
@@ -179,6 +181,7 @@ Text_Run :: struct {
 	font:           Font_Role,
 	font_source:    Text_Font_Source,
 	font_weight:    f32,
+	overflow:       Text_Overflow,
 	ligatures_disabled: bool,
 	allocator:      mem.Allocator,
 }
@@ -422,10 +425,12 @@ text_engine_glyph :: proc(engine: ^Text_Engine, glyph_id: runa.Glyph_ID, size: f
 text_run_destroy :: proc(run: ^Text_Run) {
 	if run.allocator.procedure != nil {
 		if len(run.value) > 0 { delete(run.value, run.allocator) }
+		if len(run.source_value) > 0 { delete(run.source_value, run.allocator) }
 		delete(run.glyphs)
 		delete(run.lines)
 	} else {
 		if len(run.value) > 0 { delete(run.value, context.allocator) }
+		if len(run.source_value) > 0 { delete(run.source_value, context.allocator) }
 		delete(run.glyphs)
 		delete(run.lines)
 	}
@@ -556,7 +561,7 @@ text_tab_advance :: proc(line_x, space_advance: f32) -> f32 {
 // size. Physical glyph rasterization is deliberately deferred to the native
 // renderer so a window can move between DPI scales without changing logical
 // layout.
-text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, editable: bool = false, allocator := context.allocator, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI, font_weight: f32 = FONT_WEIGHT_REGULAR) -> (run: Text_Run, ok: bool) {
+text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, editable: bool = false, allocator := context.allocator, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI, font_weight: f32 = FONT_WEIGHT_REGULAR, overflow := Text_Overflow.Wrap) -> (run: Text_Run, ok: bool) {
 	font_source := text_engine_choose_font_source(engine, font_role, value)
 	font, font_loaded := text_engine_font_for_source(engine, font_role, font_source)
 	if !font_loaded || size <= 0 { return }
@@ -571,7 +576,8 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 		// discretionary features that commonly collapse Latin source spans.
 		disable_features = {.Ligatures, .Contextual_Ligatures, .Contextual_Alternates}
 	}
-	opts := runa.Paragraph_Opts{fonts=stack, size=size, direction=.Auto, align=.Start, max_width=max_width, disable_features=disable_features}
+	wrap_width := max_width if overflow == .Wrap else 0
+	opts := runa.Paragraph_Opts{fonts=stack, size=size, direction=.Auto, align=.Start, max_width=wrap_width, disable_features=disable_features}
 	normalized_value, source_spans := text_normalize_controls(value, scratch_allocator)
 	defer { delete(source_spans) }
 	previous_temp_allocator := context.temp_allocator
@@ -594,6 +600,7 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 	run.font = font_role
 	run.font_source = font_source
 	run.font_weight = resolved_font_weight
+	run.overflow = overflow
 	run.ligatures_disabled = editable
 	run.allocator = allocator
 	// A ligature may collapse several source graphemes into one shaping
@@ -681,6 +688,141 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 	return
 }
 
+text_ellipsis_candidate :: proc(value: string, prefix_end: int, allocator: mem.Allocator) -> string {
+	ELLIPSIS := "…"
+	bytes := make([]u8, prefix_end+len(ELLIPSIS), allocator=allocator)
+	copy(bytes[:prefix_end], value[:prefix_end])
+	copy(bytes[prefix_end:], ELLIPSIS)
+	return string(bytes)
+}
+
+text_ellipsis_candidate_fits :: proc(
+	engine: ^Text_Engine,
+	value: string,
+	prefix_end: int,
+	max_width, size: f32,
+	font_role: Font_Role,
+	font_weight: f32,
+	scratch_allocator: mem.Allocator,
+	editable: bool = false,
+) -> bool {
+	candidate := text_ellipsis_candidate(value, prefix_end, scratch_allocator)
+	defer { delete(candidate, scratch_allocator) }
+	run, ok := text_run_build(
+		engine, candidate, size,
+		editable=editable,
+		allocator=scratch_allocator,
+		scratch_allocator=scratch_allocator,
+		font_role=font_role,
+		font_weight=font_weight,
+		overflow=.Clip,
+	)
+	if !ok { return false }
+	fits := run.width <= max_width
+	text_run_destroy(&run)
+	return fits
+}
+
+text_run_build_with_overflow :: proc(
+	engine: ^Text_Engine,
+	value: string,
+	size: f32,
+	max_width: f32,
+	allocator, scratch_allocator: mem.Allocator,
+	font_role: Font_Role,
+	font_weight: f32,
+	overflow: Text_Overflow,
+	editable: bool = false,
+) -> (run: Text_Run, ok: bool) {
+	if overflow != .Ellipsis {
+		return text_run_build(
+			engine, value, size, max_width,
+			editable=editable,
+			allocator=allocator,
+			scratch_allocator=scratch_allocator,
+			font_role=font_role,
+			font_weight=font_weight,
+			overflow=overflow,
+		)
+	}
+
+	// A single-line label treats a hard line break as omitted trailing content.
+	line_end := len(value)
+	for i in 0..<len(value) {
+		if value[i] == '\n' || value[i] == '\r' {
+			line_end = i
+			break
+		}
+	}
+	line_value := value[:line_end]
+	full, full_ok := text_run_build(
+		engine, line_value, size, max_width,
+		editable=editable,
+		allocator=allocator,
+		scratch_allocator=scratch_allocator,
+		font_role=font_role,
+		font_weight=font_weight,
+		overflow=.Clip,
+	)
+	if !full_ok { return }
+	if line_end == len(value) && (max_width <= 0 || full.width <= max_width) {
+		full.overflow = .Ellipsis
+		return full, true
+	}
+	text_run_destroy(&full)
+
+	ends := make([dynamic]int, 0, len(line_value)+1, scratch_allocator)
+	defer { delete(ends) }
+	append(&ends, 0)
+	iter := runa.grapheme_iter_make(line_value)
+	for {
+		_, hi, found := runa.grapheme_iter_next(&iter)
+		if !found { break }
+		append(&ends, hi)
+	}
+
+	// Fit the longest grapheme-safe prefix plus an ellipsis. Shaping candidate
+	// prefixes, rather than clipping glyphs by x-coordinate, keeps ligatures,
+	// combining marks and emoji clusters intact.
+	best := 0
+	low := 0
+	high := len(ends)
+	for high-low > 1 {
+		mid := (low+high)/2
+		if text_ellipsis_candidate_fits(
+			engine, line_value, ends[mid], max_width, size,
+			font_role, font_weight, scratch_allocator, editable,
+		) {
+			best = mid
+			low = mid
+		} else {
+			high = mid
+		}
+	}
+
+	display_value := text_ellipsis_candidate(line_value, ends[best], scratch_allocator)
+	defer { delete(display_value, scratch_allocator) }
+	run, ok = text_run_build(
+		engine, display_value, size, max_width,
+		editable=editable,
+		allocator=allocator,
+		scratch_allocator=scratch_allocator,
+		font_role=font_role,
+		font_weight=font_weight,
+		overflow=.Clip,
+	)
+	if !ok { return }
+	run.overflow = .Ellipsis
+	source_copy, err := strings.clone(value, allocator)
+	if err != nil {
+		text_run_destroy(&run)
+		return Text_Run{}, false
+	}
+	run.source_value = source_copy
+	run.source_value_override = true
+	return run, true
+}
+
 // prepare_text_runs materializes the platform-neutral text product before
 // layout. A node owns the product for as long as its retained identity lives;
 // the application never needs to retain a Runa object or a renderer handle.
@@ -690,10 +832,14 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 	if !node_has_text_product(node.kind) || !node.active { return false }
 	text_value := node.text
 	if node.kind == .Button { text_value = node.label }
+	text_overflow := node.text_style.overflow
+	if node.kind == .Text_Field { text_overflow = .Wrap }
 	// Runtime editing can update Node.text before the next application
 	// description is emitted. Never allow a logically valid-looking retained
 	// run for a different source value to reach layout or a native renderer.
-	if node.text_run_valid && node.text_run.value != text_value {
+	if node.text_run_valid && node.text_run.overflow == text_overflow &&
+		((node.text_run.source_value_override && node.text_run.source_value != text_value) ||
+		 (!node.text_run.source_value_override && node.text_run.value != text_value)) {
 		text_run_destroy(&node.text_run)
 		node.text_run_valid = false
 		node.text_run_generation += 1
@@ -714,7 +860,8 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 		// here with the temporary unconstrained value on every root wake.
 		if node.style.width <= 0 && node.text_run_valid &&
 			node.text_run.font_generation == rt.text_engine.font_generation &&
-			node.text_run.font_weight == font_weight {
+			node.text_run.font_weight == font_weight &&
+			node.text_run.overflow == text_overflow {
 			return false
 		}
 		requested_width = 0
@@ -723,11 +870,16 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 	if node.text_run_valid &&
 		node.text_run.font_generation == rt.text_engine.font_generation &&
 		node.text_run.max_width == requested_width &&
-		node.text_run.font_weight == font_weight {
+		node.text_run.font_weight == font_weight &&
+		node.text_run.overflow == text_overflow {
 		return false
 	}
 	if node.text_run_valid { text_run_destroy(&node.text_run) }
-	run, built := text_run_build(&rt.text_engine, text_value, 16, requested_width, editable=node.kind == .Text_Field, allocator=rt.persistent_allocator, scratch_allocator=rt.scratch_allocator, font_role=node.font, font_weight=font_weight)
+	run, built := text_run_build_with_overflow(
+		&rt.text_engine, text_value, 16, requested_width,
+		rt.persistent_allocator, rt.scratch_allocator,
+		node.font, font_weight, text_overflow, editable=node.kind == .Text_Field,
+	)
 	if built {
 		node.text_run = run
 		node.text_run_valid = true

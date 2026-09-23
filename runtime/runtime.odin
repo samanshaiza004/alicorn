@@ -176,10 +176,18 @@ Font_Role :: enum {
 	Monospace,
 }
 
-// Text_Style controls typography independently from Layout_Style. Font weight
-// is an OpenType `wght` user coordinate; 400 is the default regular face.
+Text_Overflow :: enum {
+	Wrap,
+	Clip,
+	Ellipsis,
+}
+
+// Text_Style controls typography and single-line overflow independently from
+// Layout_Style. Font weight is an OpenType `wght` user coordinate; 400 is the
+// default regular face. Wrap remains the backwards-compatible default.
 Text_Style :: struct {
 	font_weight: f32,
+	overflow:    Text_Overflow,
 }
 
 FONT_WEIGHT_REGULAR :: f32(400)
