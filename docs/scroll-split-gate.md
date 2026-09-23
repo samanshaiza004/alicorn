@@ -26,6 +26,12 @@ tiny-window clamping, retained drag presentation, and virtual-list viewport
 follow-up. Scope's full Go/Caliber/Odin build and `go test ./...` pass;
 History's self-test passes against its pinned Alicorn submodule. Native
 Direct3D12 smoke runs of both applications exit successfully.
+The pinned runtime revision `cc0274b` also passed the
+[macOS foundation headless workflow](https://github.com/samanshaiza004/alicorn/actions/runs/35817462206)
+and the corresponding
+[Windows foundation workflow](https://github.com/samanshaiza004/alicorn/actions/runs/35817462213).
+This is cross-platform
+core/build evidence, not a substitute for physical macOS interaction.
 
 Separate 30-second stationary runs after loading reported:
 
