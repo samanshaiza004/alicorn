@@ -128,10 +128,14 @@ viewport products into its model. `virtual_list_ensure_visible` provides the
 explicit selection/navigation operation for this fixed-row contract.
 
 The lower-level `scroll_region_begin`, `virtual_list_metrics`, and
-`container_begin` APIs remain available for custom scrollbars, variable-height
-content, canvases, and unusual two-dimensional layouts. Scroll physics,
-pointer-drag scrollbar interaction, and persistent offscreen selection storage
-remain outside this small primitive.
+`container_begin` APIs remain available for variable-height content, canvases,
+and unusual two-dimensional layouts. Solid scrollbars project the retained
+scroll extent into a reserved viewport strip; auto visibility, both-axis
+corner reservation, thumb drag, and track paging are runtime-owned. Scroll
+physics and persistent offscreen selection storage remain outside this small
+primitive. A keyed `split_begin/end` similarly retains pane position and owns
+the divider's enlarged hit target and pointer drag without waking application
+description or crossing an application backend.
 
 ## Committed text input and composition
 

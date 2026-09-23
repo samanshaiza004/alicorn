@@ -89,6 +89,7 @@ list := alicorn.virtual_list_begin(
 	24,
 	key=alicorn.key_string("files"),
 	style=alicorn.layout_style(grow=1, clip=true),
+	scrollbars=.Auto,
 )
 for position := list.first; position < list.last; position += 1 {
 	file := app.files[position]
@@ -101,11 +102,43 @@ alicorn.virtual_list_end(ui, list)
 ```
 
 This does not evaluate every logical item and does not retain a row callback or
-application pointer. For a custom canvas, variable-height collection, custom
-scrollbar, or unusual two-dimensional layout, keep using
+application pointer. Auto scrollbars are solid and reserve space from the
+effective viewport; both axes, thumb dragging, and track-click paging are
+runtime-owned. Use `.Hidden` or `.Always` only when the application needs a
+different visibility policy. For a custom canvas, variable-height collection,
+or unusual two-dimensional layout, keep using
 `scroll_region_begin`, `virtual_list_metrics`, and `container_begin` directly.
 `virtual_list_ensure_visible` is the explicit navigation helper for fixed-row
 selection.
+
+## Resizable panes
+
+A split owns its divider position under its key. Applications provide two
+panes and minimum sizes; pointer capture, drag clamping, and the wider hit
+target belong to the runtime. Nest splits to make three or more panes:
+
+```odin
+split := alicorn.split_begin(
+	ui,
+	key=alicorn.key_string("sidebar-main"),
+	axis=.Horizontal,
+	initial=240,
+	min_first=150,
+	min_second=300,
+	style=alicorn.layout_style(grow=1, clip=true),
+)
+alicorn.split_first_begin(ui, split)
+render_sidebar(ui)
+alicorn.split_first_end(ui, split)
+alicorn.split_divider(ui, split)
+alicorn.split_second_begin(ui, split)
+render_main(ui)
+alicorn.split_second_end(ui, split)
+alicorn.split_end(ui, split)
+```
+
+Use `.Vertical` to stack panes. Drag state stays in Alicorn; it is not an
+application model value or a foreign-backend command.
 
 ## Progressive disclosure
 
