@@ -114,8 +114,15 @@ state. Pointer up activates only when it hits the captured node; releasing
 outside cancels. Activation carries a monotonic event sequence and is consumed
 by the matching button exactly once; hover, capture and pressed state are
 interaction state, separate from frame presence.
+Button labels use `Button_Content_Style`, independently from container
+`Layout_Style.padding`; action labels are centered with modest insets by
+default, while row buttons can request leading alignment and custom insets.
 When the focused node disappears, the nearest active focusable ancestor is
-chosen, otherwise the first active focusable node in retained order is chosen.
+chosen. If focus was inside a `.Virtual_List` and no focusable ancestor
+survives, focus is cleared because list rows are transient and selecting an
+unrelated global control is surprising. For ordinary removals with no virtual
+list in the focused node's ancestry, the first active focusable node in
+retained order remains the fallback.
 
 `virtual_list_begin/end` is the common fixed-row path. It composes a retained
 scroll region with the shared visible-range calculation and returns only the

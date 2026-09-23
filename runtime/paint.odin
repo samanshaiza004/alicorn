@@ -115,22 +115,58 @@ update_paint :: proc(rt: ^Runtime) {
 					append(&node.paint, Display_Command{node.id, node.kind, node.bounds, node.clip, "", node.color})
 				}
 			} else if node.kind == .Button {
-				text_clip := node.clip
-				if node.text_style.overflow != .Wrap {
-					text_clip = rect_intersection(node.clip, node.bounds)
+				padding_x := maxf(node.button_content_style.padding_x, 0)
+				padding_y := maxf(node.button_content_style.padding_y, 0)
+				content_bounds := Rect{
+					node.bounds.x + padding_x,
+					node.bounds.y + padding_y,
+					maxf(node.bounds.w - 2*padding_x, 0),
+					maxf(node.bounds.h - 2*padding_y, 0),
 				}
+				text_bounds := content_bounds
+				if node.text_run_valid {
+					#partial switch node.button_content_style.horizontal {
+					case .Center:
+						text_bounds.x += (content_bounds.w-node.text_run.width)/2
+					case .End:
+						text_bounds.x += content_bounds.w-node.text_run.width
+					}
+					#partial switch node.button_content_style.vertical {
+					case .Center:
+						text_bounds.y += (content_bounds.h-node.text_run.height)/2
+					case .End:
+						text_bounds.y += content_bounds.h-node.text_run.height
+					}
+				}
+				text_clip := rect_intersection(node.clip, content_bounds)
 				button_color := Color{0.15, 0.25, 0.42, 1}
-				if node.hovered { button_color = Color{0.20, 0.34, 0.54, 1} }
-				if node.pressed { button_color = Color{0.24, 0.42, 0.68, 1} }
 				if node.selected { button_color = Color{0.27, 0.48, 0.70, 1} }
-				if rt.focused == node.id { button_color = Color{0.34, 0.58, 0.86, 1} }
+				if node.pressed {
+					button_color = Color{0.24, 0.42, 0.68, 1}
+					if node.selected { button_color = Color{0.36, 0.62, 0.86, 1} }
+				} else if node.hovered {
+					button_color = Color{0.20, 0.34, 0.54, 1}
+					if node.selected { button_color = Color{0.33, 0.57, 0.80, 1} }
+				}
 				text_color := Color{0.90, 0.95, 1.0, 1.0}
 				if node.disabled {
 					button_color = Color{0.10, 0.13, 0.18, 1}
 					text_color = Color{0.48, 0.53, 0.62, 1.0}
 				}
 				append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", button_color})
-				append(&node.paint, Display_Command{node.id, .Text, node.bounds, text_clip, owned(display_text, rt.persistent_allocator), text_color})
+				if rt.focused == node.id && !node.disabled {
+					// Focus is an independent outline so it remains visible without
+					// replacing the selected, hover, or pressed fill.
+					focus_color := Color{0.76, 0.86, 1.0, 1}
+					focus_x := min(1.5, node.bounds.w / 2)
+					focus_y := min(1.5, node.bounds.h / 2)
+					append(&node.paint, Display_Command{node.id, .Button, Rect{node.bounds.x, node.bounds.y, node.bounds.w, focus_y}, node.clip, "", focus_color})
+					append(&node.paint, Display_Command{node.id, .Button, Rect{node.bounds.x, node.bounds.y + node.bounds.h - focus_y, node.bounds.w, focus_y}, node.clip, "", focus_color})
+					interior_h := max(0, node.bounds.h - focus_y*2)
+					append(&node.paint, Display_Command{node.id, .Button, Rect{node.bounds.x, node.bounds.y + focus_y, focus_x, interior_h}, node.clip, "", focus_color})
+					append(&node.paint, Display_Command{node.id, .Button, Rect{node.bounds.x + node.bounds.w - focus_x, node.bounds.y + focus_y, focus_x, interior_h}, node.clip, "", focus_color})
+				}
+				append(&node.paint, Display_Command{node.id, .Text, text_bounds, text_clip, owned(display_text, rt.persistent_allocator), text_color})
 			} else if node.kind == .Split_Handle {
 				handle_color := Color{0.20, 0.24, 0.31, 1}
 				if node.hovered { handle_color = Color{0.35, 0.53, 0.72, 1} }

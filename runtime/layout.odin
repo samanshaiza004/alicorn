@@ -123,14 +123,20 @@ scroll_bar_geometry :: proc(
 }
 
 intrinsic_main :: proc(node: ^Node, direction: Layout_Direction) -> f32 {
+	padding_x: f32 = 0
+	padding_y: f32 = 0
+	if node.kind == .Button {
+		padding_x = maxf(node.button_content_style.padding_x, 0)
+		padding_y = maxf(node.button_content_style.padding_y, 0)
+	}
 	if direction == .Row {
 		if node.style.width >= 0 { return node.style.width }
-		if node.text_run_valid { return node.text_run.width }
-		return 80
+		if node.text_run_valid { return node.text_run.width + 2*padding_x }
+		return 80 + 2*padding_x
 	}
 	if node.style.height >= 0 { return node.style.height }
-	if node.text_run_valid { return node.text_run.height }
-	return 24
+	if node.text_run_valid { return node.text_run.height + 2*padding_y }
+	return 24 + 2*padding_y
 }
 
 layout_text_constraint :: proc(parent: ^Node, child: ^Node, cross_size: f32) -> f32 {
@@ -142,7 +148,11 @@ layout_text_constraint :: proc(parent: ^Node, child: ^Node, cross_size: f32) -> 
 		constraint = cross_size
 	}
 	if constraint <= 0 { return 0 }
-	return clampf(constraint, child.style.min_width, child.style.max_width)
+	constraint = clampf(constraint, child.style.min_width, child.style.max_width)
+	if child.kind == .Button {
+		constraint = maxf(constraint-2*maxf(child.button_content_style.padding_x, 0), 0)
+	}
+	return constraint
 }
 
 split_clamp_position :: proc(total, thickness, requested, min_first, min_second: f32) -> f32 {

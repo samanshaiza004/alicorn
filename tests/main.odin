@@ -245,6 +245,55 @@ render_single_button :: proc(rt: ^alicorn.Runtime) -> (id: alicorn.Node_ID, clic
 	return
 }
 
+render_button_content :: proc(rt: ^alicorn.Runtime, content_style := alicorn.DEFAULT_BUTTON_CONTENT_STYLE) -> alicorn.Node_ID {
+	alicorn.invalidate_root(rt, "test button content layout")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return 0 }
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="button-content-root")
+	id, _ := alicorn.button_ex(
+		&ui,
+		"Action",
+		S_BUTTON,
+		style=alicorn.Layout_Style{.Column, 120, 32, 0, -1, 0, -1, 0, 0, 0, .Stretch, false},
+		content_style=content_style,
+	)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return id
+}
+
+virtual_focus_row :: proc(ui: ^alicorn.UI, index: int) {
+	_, _ = alicorn.button_ex(
+		ui,
+		fmt.tprintf("row %d", index),
+		S_VROW,
+		style=alicorn.Layout_Style{.Column, -1, 20, 0, -1, 0, -1, 0, 0, 0, .Stretch, false},
+	)
+}
+
+render_virtual_focus :: proc(rt: ^alicorn.Runtime, scroll: f32) -> (open_id, row_zero_id: alicorn.Node_ID) {
+	alicorn.invalidate_root(rt, "test virtual focus retirement")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="virtual-focus-root")
+	open_id, _ = alicorn.button_ex(
+		&ui,
+		"Open Trace",
+		S_BUTTON,
+		style=alicorn.Layout_Style{.Column, 128, 30, 0, -1, 0, -1, 0, 0, 0, .Stretch, false},
+	)
+	_, _ = alicorn.virtual_list_ex(&ui, 100, scroll, 60, 20, S_VLIST, virtual_item_key, virtual_focus_row)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	for id in rt.order {
+		if node, ok := rt.nodes[id]; ok && node.kind == .Button && node.label == "row 0" {
+			row_zero_id = id
+			break
+		}
+	}
+	return
+}
+
 render_text_field :: proc(rt: ^alicorn.Runtime, value: string) -> alicorn.Node_ID {
 	alicorn.invalidate_root(rt, "test text field frame")
 	ui, build := alicorn.begin_frame(rt)
@@ -753,8 +802,55 @@ test_keyboard_focus_and_activation :: proc(state: ^Test_State) {
 	expect(state, clicked, "focused button activation must reach the public button API")
 	_, clicked = render_canonical_button(&rt)
 	expect(state, !clicked, "focused button activation must be consumed exactly once")
-	expect(state, rt.nodes[button_id].paint[0].color != unfocused_color, "focused button must have a visible paint state")
+	focused_button := rt.nodes[button_id]
+	expect(state, focused_button.paint[0].color == unfocused_color, "focus must stay independent from the button fill")
+	expect(state, len(focused_button.paint) >= 6 && focused_button.paint[1].bounds.h <= 1.5, "focused button must have a separate visible outline")
 	alicorn.destroy_runtime(&rt)
+}
+
+test_button_states_and_content_layout :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 80})
+	expect(state, alicorn.text_engine_load_font(&rt.text_engine, TEST_UI_FONT_DATA), "button content layout test font must load")
+	id := render_button_content(&rt)
+	node := rt.nodes[id]
+	default_layout_hash := node.layout_hash
+	expect(state, node.text_run_valid && len(node.paint) == 2, "default button should retain a measured label and background/text commands")
+	if node.text_run_valid && len(node.paint) >= 2 {
+		label := node.paint[len(node.paint)-1]
+		content_width := node.bounds.w - 16
+		content_height := node.bounds.h - 8
+		expected_x := node.bounds.x + 8 + (content_width-node.text_run.width)/2
+		expected_y := node.bounds.y + 4 + (content_height-node.text_run.height)/2
+		expect(state, label.bounds.x == expected_x && label.bounds.y == expected_y, "default action button centers its label inside padded content")
+		expect(state, label.clip.x >= node.bounds.x+8 && label.clip.x+label.clip.w <= node.bounds.x+node.bounds.w-8, "button label clipping respects horizontal content insets")
+	}
+	custom := alicorn.button_content_style(horizontal=.Start, vertical=.Center, padding_x=3, padding_y=2)
+	custom_id := render_button_content(&rt, custom)
+	custom_node := rt.nodes[custom_id]
+	if custom_node.text_run_valid && len(custom_node.paint) >= 2 {
+		label := custom_node.paint[len(custom_node.paint)-1]
+		expected_y := custom_node.bounds.y + 2 + (custom_node.bounds.h-4-custom_node.text_run.height)/2
+		expect(state, label.bounds.x == custom_node.bounds.x+3 && label.bounds.y == expected_y, "button content style supports leading alignment and custom insets")
+		expect(state, custom_node.layout_hash != default_layout_hash, "button content inset participates in layout dependencies")
+	}
+	alicorn.destroy_runtime(&rt)
+
+	state_rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 80})
+	button_id, _ := render_canonical_button(&state_rt, alicorn.Button_State{selected=true})
+	initial_fill := state_rt.nodes[button_id].paint[0].color
+	node = state_rt.nodes[button_id]
+	alicorn.process_pointer(&state_rt, alicorn.Pointer_Event{.Move, node.bounds.x+2, node.bounds.y+2, 0})
+	_, _ = render_canonical_button(&state_rt, alicorn.Button_State{selected=true})
+	hover_fill := state_rt.nodes[button_id].paint[0].color
+	expect(state, hover_fill != initial_fill, "selected button hover must change its fill")
+	node = state_rt.nodes[button_id]
+	alicorn.process_pointer(&state_rt, alicorn.Pointer_Event{.Down, node.bounds.x+2, node.bounds.y+2, 1})
+	_, _ = render_canonical_button(&state_rt, alicorn.Button_State{selected=true})
+	pressed_node := state_rt.nodes[button_id]
+	pressed_fill := pressed_node.paint[0].color
+	expect(state, pressed_fill != hover_fill, "selected button press must remain distinct from selected hover")
+	expect(state, len(pressed_node.paint) >= 6 && pressed_node.paint[1].bounds.h <= 1.5, "focused button paints a separate thin outline")
+	alicorn.destroy_runtime(&state_rt)
 }
 
 test_unicode_editing :: proc(state: ^Test_State) {
@@ -1034,6 +1130,22 @@ test_virtualization_and_gpu :: proc(state: ^Test_State) {
 	expect(state, !gpu.command_open && gpu.resource_retirements > 0, "submitted GPU work must retire through fences")
 	expect(state, gpu.resource_retirements <= u64(gpu.next_fence), "GPU retirement bookkeeping must remain bounded")
 	expect(state, len(gpu.retirement_queue) == 0, "retired GPU queue must be compacted")
+	alicorn.destroy_runtime(&rt)
+}
+
+test_virtualized_focus_retirement :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 180})
+	open_id, row_id := render_virtual_focus(&rt, 0)
+	expect(state, open_id != 0 && row_id != 0, "virtual focus fixture emits both the unrelated action and first row")
+	row := rt.nodes[row_id]
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, row.bounds.x+4, row.bounds.y+4, 1})
+	expect(state, rt.focused == row_id, "pointer-down focuses the realized virtual row button")
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, row.bounds.x+4, row.bounds.y+4, 1})
+	_, _ = render_virtual_focus(&rt, 0)
+	expect(state, rt.focused == row_id, "a completed row click keeps focus on that row while it remains realized")
+	_, _ = render_virtual_focus(&rt, 240)
+	expect(state, rt.focused == 0, "retiring a focused virtual row clears focus instead of jumping to the first global control")
+	expect(state, rt.activation_node != open_id, "retiring a focused virtual row does not activate an unrelated action")
 	alicorn.destroy_runtime(&rt)
 }
 
@@ -2493,6 +2605,7 @@ main :: proc() {
 	test_region_identity_sequences(&state)
 	test_focus_and_editing(&state)
 	test_keyboard_focus_and_activation(&state)
+	test_button_states_and_content_layout(&state)
 	test_unicode_editing(&state)
 	test_text_commands(&state)
 	test_text_input_composition(&state)
@@ -2502,6 +2615,7 @@ main :: proc() {
 	test_ergonomic_identity(&state)
 	test_structure_layout_invalidation(&state)
 	test_virtualization_and_gpu(&state)
+	test_virtualized_focus_retirement(&state)
 	test_layout_geometry(&state)
 	test_text_intrinsic_layout_invalidation(&state)
 	test_container_paint_defaults(&state)

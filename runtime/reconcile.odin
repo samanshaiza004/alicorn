@@ -30,10 +30,22 @@ hash_color :: proc(color: Color) -> u64 {
 	return h
 }
 
+hash_button_content_style :: proc(style: Button_Content_Style) -> u64 {
+	h: u64 = 1469598103934665603
+	h = hash_mix(h, u64(style.horizontal))
+	h = hash_mix(h, u64(style.vertical))
+	h = hash_mix(h, u64(transmute(u32)style.padding_x))
+	h = hash_mix(h, u64(transmute(u32)style.padding_y))
+	return h
+}
+
 description_hash :: proc(d: Description) -> u64 {
 	h := hash_mix(hash_string(d.label), hash_string(d.text))
 	h = hash_mix(h, u64(d.kind))
 	h = hash_mix(h, u64(d.font))
+	if d.kind == .Button {
+		h = hash_mix(h, hash_button_content_style(d.button_content_style))
+	}
 	if node_has_text_product(d.kind) {
 		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
 		h = hash_mix(h, u64(d.text_style.overflow))
@@ -88,6 +100,8 @@ layout_hash :: proc(d: Description) -> u64 {
 	#partial switch d.kind {
 	case .Button:
 		h = hash_mix(h, hash_string(d.label))
+		h = hash_mix(h, u64(transmute(u32)d.button_content_style.padding_x))
+		h = hash_mix(h, u64(transmute(u32)d.button_content_style.padding_y))
 		h = hash_mix(h, u64(d.font))
 		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
 		h = hash_mix(h, u64(d.text_style.overflow))
@@ -180,6 +194,7 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	node.style = d.style
 	node.font = d.font
 	node.text_style = d.text_style
+	node.button_content_style = d.button_content_style
 	node.color = d.color
 	node.paint_background = d.paint_background
 	surface_description_changed := node.paint_value != d.paint_value
@@ -362,12 +377,14 @@ rebuild_order :: proc(rt: ^Runtime) {
 reconcile :: proc(rt: ^Runtime) {
 	previous_focus := rt.focused
 	focus_lineage := make([dynamic]Node_ID, 0, allocator=rt.scratch_allocator)
+	focus_was_in_virtual_list := false
 	if previous_focus != 0 {
 		current := previous_focus
 		for current != 0 {
 			append(&focus_lineage, current)
 			old, ok := rt.nodes[current]
 			if !ok { break }
+			if old.kind == .Virtual_List { focus_was_in_virtual_list = true }
 			current = old.parent
 		}
 	}
@@ -508,7 +525,7 @@ reconcile :: proc(rt: ^Runtime) {
 		if node, ok := rt.nodes[previous_focus]; ok && node.active && node.focusable {
 			rt.focused = previous_focus
 		} else {
-			rt.focused = focus_fallback(rt, focus_lineage[:])
+			rt.focused = focus_fallback(rt, focus_lineage[:], !focus_was_in_virtual_list)
 			if rt.focused != previous_focus {
 				record_trace(rt, .Focus, rt.focused, "focused node disappeared; deterministic fallback")
 			}
@@ -516,7 +533,7 @@ reconcile :: proc(rt: ^Runtime) {
 	}
 	if rt.focused != 0 {
 		if node, ok := rt.nodes[rt.focused]; !ok || !node.active || !node.focusable {
-			rt.focused = focus_fallback(rt, focus_lineage[:])
+			rt.focused = focus_fallback(rt, focus_lineage[:], !focus_was_in_virtual_list)
 		}
 	}
 	if rt.focused != previous_focus {
@@ -623,12 +640,16 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	rt.allocation_stats = nil
 }
 
-focus_fallback :: proc(rt: ^Runtime, lineage: []Node_ID) -> Node_ID {
+focus_fallback :: proc(rt: ^Runtime, lineage: []Node_ID, allow_global := true) -> Node_ID {
 	for i := 1; i < len(lineage); i += 1 {
 		if parent, ok := rt.nodes[lineage[i]]; ok && parent.active && parent.focusable {
 			return lineage[i]
 		}
 	}
+	// Virtualized descendants are transient. If one disappears, moving focus
+	// to the first unrelated control in the application is surprising; retain
+	// focus only through a surviving ancestor in that list's lineage.
+	if !allow_global { return 0 }
 	for id in rt.order {
 		if node, ok := rt.nodes[id]; ok && node.active && node.focusable {
 			return id
