@@ -2266,6 +2266,63 @@ test_split_axis_nested_identity_and_cancel :: proc(state: ^Test_State) {
 	expect(state, rt.captured_node == 0 && !owner.split_dragging && !rt.nodes[inner_divider].pressed, "host capture cancellation clears the active split drag")
 }
 
+render_split_virtual_test :: proc(rt: ^alicorn.Runtime, axis := alicorn.Split_Axis.Vertical) -> (divider: alicorn.Node_ID, last: int) {
+	alicorn.invalidate_root(rt, "vertical split virtual-list test")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin(&ui, .Root, label="virtual-split-root", style=alicorn.layout_style(direction=.Column, grow=1, clip=true))
+	split := alicorn.split_begin(&ui, key=alicorn.key_string("virtual-split"), axis=axis, initial=120, min_first=60, min_second=60)
+	_ = alicorn.split_first_begin(&ui, split)
+	list := alicorn.virtual_list_begin(&ui, 100, 20, key=alicorn.key_string("virtual-split-list"), style=alicorn.layout_style(grow=1, clip=true))
+	last = list.last
+	alicorn.virtual_list_end(&ui, list)
+	alicorn.split_first_end(&ui, split)
+	divider = alicorn.split_divider(&ui, split)
+	_ = alicorn.split_second_begin(&ui, split)
+	alicorn.text(&ui, "second pane")
+	alicorn.split_second_end(&ui, split)
+	alicorn.split_end(&ui, split)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return
+}
+
+test_split_virtual_viewport_followup :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 400, 400})
+	defer alicorn.destroy_runtime(&rt)
+	divider: alicorn.Node_ID
+	before: int
+	for _ in 0..<4 {
+		divider, before = render_split_virtual_test(&rt)
+		if !rt.invalidated { break }
+	}
+	handle := rt.nodes[divider]
+	x, y := handle.bounds.x+10, handle.bounds.y+handle.bounds.h/2
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, x, y, 1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, x, y+100, 0})
+	expect(state, !rt.invalidated, "vertical split drag remains presentation-local until retained layout resolves")
+	ui, ready := alicorn.begin_presentation_frame(&rt)
+	if ready { alicorn.end_presentation_frame(&ui) }
+	expect(state, rt.invalidated, "changed virtual-list viewport requests one follow-up description")
+	_, after := render_split_virtual_test(&rt)
+	expect(state, after > before, "follow-up description realizes rows exposed by the taller split pane")
+
+	horizontal_rt := alicorn.new_runtime(alicorn.Rect{0, 0, 400, 400})
+	defer alicorn.destroy_runtime(&horizontal_rt)
+	horizontal_divider: alicorn.Node_ID
+	for _ in 0..<4 {
+		horizontal_divider, _ = render_split_virtual_test(&horizontal_rt, .Horizontal)
+		if !horizontal_rt.invalidated { break }
+	}
+	horizontal_handle := horizontal_rt.nodes[horizontal_divider]
+	hx, hy := horizontal_handle.bounds.x+horizontal_handle.bounds.w/2, horizontal_handle.bounds.y+10
+	_ = alicorn.process_pointer(&horizontal_rt, alicorn.Pointer_Event{.Down, hx, hy, 1})
+	_ = alicorn.process_pointer(&horizontal_rt, alicorn.Pointer_Event{.Move, hx+50, hy, 0})
+	horizontal_ui, horizontal_ready := alicorn.begin_presentation_frame(&horizontal_rt)
+	if horizontal_ready { alicorn.end_presentation_frame(&horizontal_ui) }
+	expect(state, !horizontal_rt.invalidated, "width-only split drag keeps fixed-row virtualization presentation-local")
+}
+
 test_runtime_allocator_ownership :: proc(state: ^Test_State) {
 	base_allocator := context.allocator
 	tracking: mem.Tracking_Allocator
@@ -2346,6 +2403,7 @@ main :: proc() {
 	test_scrollbar_interaction(&state)
 	test_retained_split_drag_and_clamp(&state)
 	test_split_axis_nested_identity_and_cancel(&state)
+	test_split_virtual_viewport_followup(&state)
 	test_runtime_allocator_ownership(&state)
 	if state.failures == 0 {
 		fmt.println("Alicorn foundation tests: PASS")

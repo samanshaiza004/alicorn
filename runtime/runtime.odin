@@ -562,6 +562,9 @@ Runtime :: struct {
 	text_font_generation_seen: u64,
 	surface_frame_pending: bool,
 	scroll_geometry_changed: bool,
+	// A retained-only pane resize can change how many fixed-height rows a
+	// virtual list must describe. Width-only changes stay presentation-local.
+	virtual_viewport_changed: bool,
 }
 
 UI :: struct {

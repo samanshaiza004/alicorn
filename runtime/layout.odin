@@ -257,6 +257,14 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 			old_offset_x != parent.scroll_offset_x || old_offset_y != parent.scroll_offset_y {
 			rt.scroll_geometry_changed = true
 		}
+		if old_viewport.h != geometry.viewport.h || old_offset_y != parent.scroll_offset_y {
+			for child_id in children {
+				if child, ok := rt.nodes[child_id]; ok && child.kind == .Virtual_List {
+					rt.virtual_viewport_changed = true
+					break
+				}
+			}
+		}
 	}
 	if count == 0 { return }
 	if inner.w < 0 { inner.w = 0 }

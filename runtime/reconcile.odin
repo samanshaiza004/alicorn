@@ -533,6 +533,7 @@ reconcile :: proc(rt: ^Runtime) {
 	rt.frame_open = false
 	rt.invalidated = rt.scroll_geometry_changed
 	rt.scroll_geometry_changed = false
+	rt.virtual_viewport_changed = false
 	rt.presentation_pending = false
 	advance_presentation_revision(rt)
 	rt.stats.frame += 1
@@ -551,6 +552,9 @@ end_presentation_frame :: proc(ui: ^UI) {
 	if rt.layout_pending { layout_tree(rt) }
 	update_paint(rt)
 	rt.frame_open = false
+	rt.invalidated = rt.virtual_viewport_changed
+	rt.virtual_viewport_changed = false
+	rt.scroll_geometry_changed = false
 	rt.presentation_pending = false
 	advance_presentation_revision(rt)
 	rt.stats.frame += 1

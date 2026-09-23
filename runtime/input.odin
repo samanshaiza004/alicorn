@@ -90,6 +90,9 @@ cancel_pointer_capture :: proc(rt: ^Runtime) -> bool {
 }
 
 hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
+	// A solid scrollbar owns its reserved strip, including the portion that
+	// overlaps a split divider's deliberately enlarged grab target.
+	if scrollbar_hit_test(rt, x, y).node != 0 { return 0 }
 	// Split dividers get priority over pane descendants because their expanded
 	// grab area intentionally overlaps both adjacent panes.
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
