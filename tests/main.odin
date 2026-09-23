@@ -2386,6 +2386,10 @@ test_geometry_surface_resize_invalidation :: proc(state: ^Test_State) {
 	divider, surface := render_split_geometry_test(&rt)
 	before, before_ok := alicorn.gpu_surface_context(&rt, surface)
 	expect(state, before_ok && before.logical_bounds.w == 278, "initial split geometry surface resolves its app-authored width")
+	rt.viewport.w = 500
+	divider, surface = render_split_geometry_test(&rt)
+	window_resized, window_resize_ok := alicorn.gpu_surface_context(&rt, surface)
+	expect(state, window_resize_ok && window_resized.logical_bounds.w == 378, "window resize rebuilds geometry at the new resolved width")
 	handle := rt.nodes[divider]
 	x, y := handle.bounds.x+handle.bounds.w/2, handle.bounds.y+handle.bounds.h/2
 	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, x, y, 1})
@@ -2393,7 +2397,7 @@ test_geometry_surface_resize_invalidation :: proc(state: ^Test_State) {
 	ui, ready := alicorn.begin_presentation_frame(&rt)
 	if ready { alicorn.end_presentation_frame(&ui) }
 	after, after_ok := alicorn.gpu_surface_context(&rt, surface)
-	expect(state, after_ok && after.logical_bounds.w == 238, "retained splitter drag updates the geometry surface bounds")
+	expect(state, after_ok && after.logical_bounds.w == 338, "retained splitter drag updates the geometry surface bounds")
 	expect(state, rt.invalidated, "geometry surface extent change requests one app description rebuild")
 	frames_before_rebuild := rt.stats.frames_built
 	_, rebuilt_surface := render_split_geometry_test(&rt)
