@@ -134,12 +134,19 @@ Source_Site :: struct {
 	component: string,
 }
 
-Pointer_Kind :: enum { Move, Down, Up }
+Pointer_Kind :: enum { Move, Down, Up, Cancel }
 
 Pointer_Event :: struct {
 	kind:   Pointer_Kind,
 	x, y:   f32,
 	button: int,
+}
+
+Input_Modifiers :: struct {
+	shift:   bool,
+	control: bool,
+	alt:     bool,
+	super:   bool,
 }
 
 // Scroll_Event preserves both precise device deltas and whole wheel ticks.
@@ -152,6 +159,7 @@ Scroll_Event :: struct {
 	ticks_x: int,
 	ticks_y: int,
 	x, y:    f32,
+	modifiers: Input_Modifiers,
 }
 
 // Scroll_Axes describes which directions a retained region accepts. A region

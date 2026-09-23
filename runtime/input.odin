@@ -278,6 +278,10 @@ select :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 
 process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 	rt.stats.pointer_events += 1
+	if event.kind == .Cancel {
+		_ = cancel_pointer_capture(rt)
+		return 0
+	}
 	if scrollbar_handle_pointer(rt, event) {
 		return rt.scrollbar_drag_node if rt.scrollbar_drag_node != 0 else rt.captured_node
 	}

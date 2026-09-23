@@ -2108,7 +2108,7 @@ test_scrollbar_interaction :: proc(state: ^Test_State) {
 	expect(state, rt.scrollbar_drag_node == id && rt.captured_node == id, "thumb down captures the retained scroll region")
 	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, start_x, 500, 0})
 	expect(state, alicorn.scroll_region_offset(&rt, id) == node.scroll_content_height-node.scroll_viewport_height, "captured vertical drag outside the track clamps to the end")
-	expect(state, alicorn.cancel_pointer_capture(&rt), "host focus loss cancels active scrollbar pointer capture")
+	expect(state, alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Cancel}) == 0, "pointer cancellation is handled without a target")
 	expect(state, rt.scrollbar_drag_node == 0 && rt.captured_node == 0, "focus-loss cancellation clears both retained capture states")
 	before := alicorn.scroll_region_offset(&rt, id)
 	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, start_x, 0, 0})

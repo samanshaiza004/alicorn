@@ -80,6 +80,8 @@ Application_Key :: enum {
 	Down,
 	Page_Up,
 	Page_Down,
+	Home,
+	Fit_Selection,
 	Command_1,
 	Command_2,
 	Command_3,
@@ -95,6 +97,7 @@ Application_Build_Proc :: proc(
 ) -> alicorn.Node_ID
 Application_Text_Change_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, change: alicorn.Text_Change)
 Application_Key_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, key: Application_Key) -> bool
+Application_Pointer_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Pointer_Event, target: alicorn.Node_ID)
 Application_Scroll_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Scroll_Event)
 Application_Tick_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
 Application_Start_Proc :: proc(state: rawptr, waker: Application_Waker)
@@ -126,6 +129,7 @@ Application :: struct {
 	build:          Application_Build_Proc,
 	on_text_change: Application_Text_Change_Proc,
 	on_key:         Application_Key_Proc,
+	on_pointer:     Application_Pointer_Proc,
 	on_scroll:      Application_Scroll_Proc,
 	on_tick:        Application_Tick_Proc,
 	on_services:    Application_Services_Proc,
@@ -530,7 +534,11 @@ pump_events :: proc(
 			// SDL releases its automatic mouse capture when focus leaves the
 			// window. Drop the matching retained press/drag state as well so a
 			// later motion cannot resume an abandoned scrollbar or split drag.
-			alicorn.cancel_pointer_capture(rt)
+			captured := rt.captured_node
+			_ = alicorn.cancel_pointer_capture(rt)
+			if application != nil && application.on_pointer != nil {
+				application.on_pointer(application.state, rt, alicorn.Pointer_Event{kind=.Cancel}, captured)
+			}
 		}
 		if application != nil && wake_event_enabled && event.type == wake_event {
 			if wake_events != nil { wake_events^ += 1 }
@@ -539,13 +547,23 @@ pump_events :: proc(
 			}
 		}
 		if pointer, ok := pointer_from_sdl(event); ok {
-			alicorn.process_pointer(rt, pointer)
+			target := alicorn.process_pointer(rt, pointer)
+			if application != nil && application.on_pointer != nil {
+				application.on_pointer(application.state, rt, pointer, target)
+			}
 		}
 		if application != nil && event.type == .MOUSE_WHEEL {
 			delta_x := event.wheel.x
 			delta_y := event.wheel.y
 			ticks_x := int(event.wheel.integer_x)
 			ticks_y := int(event.wheel.integer_y)
+			mod := sdl3.GetModState()
+			modifiers := alicorn.Input_Modifiers{
+				shift=native_text_modifier(mod, sdl3.KMOD_SHIFT),
+				control=native_text_modifier(mod, sdl3.KMOD_CTRL),
+				alt=native_text_modifier(mod, sdl3.KMOD_ALT),
+				super=native_text_modifier(mod, sdl3.KMOD_GUI),
+			}
 			// SDL already reports the platform's chosen scroll direction. Keep
 			// precise deltas and the native natural-scroll preference intact;
 			// retained regions apply their own logical offset convention.
@@ -556,6 +574,7 @@ pump_events :: proc(
 				ticks_y=ticks_y,
 				x=event.wheel.mouse_x,
 				y=event.wheel.mouse_y,
+				modifiers=modifiers,
 			})
 			if !dispatched_to_scroll_region && application.on_scroll != nil {
 				application.on_scroll(application.state, rt, alicorn.Scroll_Event{
@@ -565,6 +584,7 @@ pump_events :: proc(
 					ticks_y=ticks_y,
 					x=event.wheel.mouse_x,
 					y=event.wheel.mouse_y,
+					modifiers=modifiers,
 				})
 			}
 		}
@@ -638,6 +658,8 @@ pump_events :: proc(
 					case sdl3.K_DOWN: application_key = .Down
 					case sdl3.K_PAGEUP: application_key = .Page_Up
 					case sdl3.K_PAGEDOWN: application_key = .Page_Down
+					case sdl3.K_HOME: application_key = .Home
+					case sdl3.K_F: application_key = .Fit_Selection
 					case sdl3.K_1: application_key = .Command_1
 					case sdl3.K_2: application_key = .Command_2
 					case sdl3.K_3: application_key = .Command_3
