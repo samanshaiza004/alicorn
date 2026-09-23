@@ -31,6 +31,28 @@ The bundled variable UI and monospace faces apply the requested OpenType
 `wght` axis. Text products and intrinsic layout are rebuilt when weight
 changes. A loaded static font without a `wght` axis stays at its native weight.
 
+Button labels default to one line with ellipsis; opt into wrapping explicitly
+for a deliberately multiline control. `Button_Content_Style` independently
+sets alignment and inner padding, while the parent layout owns the spacing
+around the button:
+
+```odin
+alicorn.button(
+	&ui,
+	file.name,
+	text_style=alicorn.Text_Style{overflow=.Ellipsis},
+	content_style=alicorn.button_content_style(
+		horizontal=.Start,
+		vertical=.Center,
+		padding_x=8,
+		padding_y=4,
+	),
+)
+```
+
+Use `text_style=alicorn.Text_Style{overflow=.Wrap}` only when the button's
+layout provides enough height for multiple lines.
+
 ## Layout defaults
 
 `layout_style` is a small named-field constructor for the common case. It

@@ -904,7 +904,9 @@ prepare_text_runs :: proc(rt: ^Runtime) {
 	}
 	for id in rt.paint_queue {
 		node, ok := rt.nodes[id]
-		if ok { prepare_text_run_node(rt, node) }
+		if ok && (!node.text_run_valid || dirty_has(node.dirty, .Layout)) {
+			prepare_text_run_node(rt, node)
+		}
 	}
 }
 

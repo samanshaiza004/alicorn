@@ -262,6 +262,76 @@ render_button_content :: proc(rt: ^alicorn.Runtime, content_style := alicorn.DEF
 	return id
 }
 
+render_fixed_label_button :: proc(rt: ^alicorn.Runtime) -> alicorn.Node_ID {
+	alicorn.invalidate_root(rt, "fixed single-line button test")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return 0 }
+	alicorn.container_begin(&ui, .Root, label="fixed-button-root")
+	id, _ := alicorn.button_ex(
+		&ui,
+		"← Overview",
+		S_BUTTON,
+		key="overview",
+		style=alicorn.layout_style(.Column, width=104, height=24),
+		content_style=alicorn.button_content_style(horizontal=.Start, vertical=.Center, padding_x=8, padding_y=0),
+	)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return id
+}
+
+Button_Label_Geometry :: struct {
+	text_value: string,
+	bounds: alicorn.Rect,
+	clip: alicorn.Rect,
+	run_width: f32,
+	run_height: f32,
+	run_generation: u64,
+	line_count: int,
+}
+
+capture_button_label_geometry :: proc(rt: ^alicorn.Runtime, id: alicorn.Node_ID) -> (geometry: Button_Label_Geometry, valid: bool) {
+	node, ok := rt.nodes[id]
+	if !ok || !node.text_run_valid { return {}, false }
+	geometry.text_value, _ = strings.clone(node.text_run.value)
+	geometry.run_width = node.text_run.width
+	geometry.run_height = node.text_run.height
+	geometry.run_generation = node.text_run_generation
+	geometry.line_count = len(node.text_run.lines)
+	for command in node.paint {
+		if command.kind == .Text {
+			geometry.bounds = command.bounds
+			geometry.clip = command.clip
+			return geometry, true
+		}
+	}
+	delete(geometry.text_value)
+	return {}, false
+}
+
+button_label_geometry_matches :: proc(rt: ^alicorn.Runtime, id: alicorn.Node_ID, expected: Button_Label_Geometry) -> bool {
+	node, ok := rt.nodes[id]
+	if !ok || !node.text_run_valid || node.text_run_generation != expected.run_generation { return false }
+	if node.text_run.value != expected.text_value || node.text_run.width != expected.run_width ||
+		node.text_run.height != expected.run_height || len(node.text_run.lines) != expected.line_count {
+		return false
+	}
+	for command in node.paint {
+		if command.kind == .Text {
+			return command.bounds.x == expected.bounds.x && command.bounds.y == expected.bounds.y &&
+				command.bounds.w == expected.bounds.w && command.bounds.h == expected.bounds.h &&
+				command.clip.x == expected.clip.x && command.clip.y == expected.clip.y &&
+				command.clip.w == expected.clip.w && command.clip.h == expected.clip.h
+		}
+	}
+	return false
+}
+
+expect_button_label_geometry_stable :: proc(state: ^Test_State, rt: ^alicorn.Runtime, id: alicorn.Node_ID, expected: Button_Label_Geometry, name: string) {
+	matches := button_label_geometry_matches(rt, id, expected)
+	expect(state, matches, fmt.tprintf("button label geometry and text product remain stable during %s", name))
+}
+
 virtual_focus_row :: proc(ui: ^alicorn.UI, index: int) {
 	_, _ = alicorn.button_ex(
 		ui,
@@ -851,6 +921,54 @@ test_button_states_and_content_layout :: proc(state: ^Test_State) {
 	expect(state, pressed_fill != hover_fill, "selected button press must remain distinct from selected hover")
 	expect(state, len(pressed_node.paint) >= 6 && pressed_node.paint[1].bounds.h <= 1.5, "focused button paints a separate thin outline")
 	alicorn.destroy_runtime(&state_rt)
+}
+
+test_button_label_geometry_stable_across_states :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 160, 60})
+	defer alicorn.destroy_runtime(&rt)
+	expect(state, alicorn.text_engine_load_font(&rt.text_engine, TEST_UI_FONT_DATA), "single-line button test font must load")
+	id := render_fixed_label_button(&rt)
+	node := rt.nodes[id]
+	expect(state, node.text_style.overflow == .Ellipsis, "button API defaults labels to single-line ellipsis")
+	expect(state, node.text_run_valid && len(node.text_run.lines) == 1, "fixed-height overview label shapes as one line")
+	if node.text_run_valid {
+		text_command_found := false
+		for command in node.paint {
+			if command.kind == .Text {
+				text_command_found = true
+				expect(state, command.bounds.y >= command.clip.y && command.bounds.y+node.text_run.height <= command.clip.y+command.clip.h, "single-line label glyphs fit vertically inside their content box")
+			}
+		}
+		expect(state, text_command_found, "fixed-height button retains a visible text draw command")
+	}
+	baseline, baseline_ok := capture_button_label_geometry(&rt, id)
+	expect(state, baseline_ok, "fixed-height button has a retained text paint command")
+	if !baseline_ok { return }
+	defer delete(baseline.text_value)
+
+	node = rt.nodes[id]
+	x, y := node.bounds.x+node.bounds.w/2, node.bounds.y+node.bounds.h/2
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, x, y, 0})
+	ui, ready := alicorn.begin_presentation_frame(&rt)
+	if ready { alicorn.end_presentation_frame(&ui) }
+	expect_button_label_geometry_stable(state, &rt, id, baseline, "hover")
+
+	expect(state, alicorn.focus(&rt, id), "fixed-height button accepts focus")
+	_ = render_fixed_label_button(&rt)
+	expect_button_label_geometry_stable(state, &rt, id, baseline, "focus")
+
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, x, y, 1})
+	_ = render_fixed_label_button(&rt)
+	expect_button_label_geometry_stable(state, &rt, id, baseline, "press")
+
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, x, y, 1})
+	_ = render_fixed_label_button(&rt)
+	expect_button_label_geometry_stable(state, &rt, id, baseline, "release")
+
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, 150, 55, 0})
+	ui, ready = alicorn.begin_presentation_frame(&rt)
+	if ready { alicorn.end_presentation_frame(&ui) }
+	expect_button_label_geometry_stable(state, &rt, id, baseline, "return to rest")
 }
 
 test_unicode_editing :: proc(state: ^Test_State) {
@@ -2608,6 +2726,7 @@ main :: proc() {
 	test_focus_and_editing(&state)
 	test_keyboard_focus_and_activation(&state)
 	test_button_states_and_content_layout(&state)
+	test_button_label_geometry_stable_across_states(&state)
 	test_unicode_editing(&state)
 	test_text_commands(&state)
 	test_text_input_composition(&state)

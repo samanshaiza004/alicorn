@@ -251,6 +251,9 @@ FONT_WEIGHT_SEMIBOLD :: f32(600)
 FONT_WEIGHT_BOLD :: f32(700)
 
 DEFAULT_TEXT_STYLE :: Text_Style{font_weight=FONT_WEIGHT_REGULAR}
+// Button labels are single-line controls by default. Callers that intentionally
+// need a multiline button can opt into Text_Overflow.Wrap explicitly.
+DEFAULT_BUTTON_TEXT_STYLE :: Text_Style{font_weight=FONT_WEIGHT_REGULAR, overflow=.Ellipsis}
 
 Button_State :: struct {
 	selected: bool,
@@ -1573,7 +1576,7 @@ virtual_list_ensure_visible :: proc(rt: ^Runtime, id: Node_ID, index: int, reaso
 	return scroll_region_set_offset(rt, id, next, reason)
 }
 
-button_ex :: proc(ui: ^UI, label: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, paint_value: u64 = 0, loc := #caller_location, text_style := DEFAULT_TEXT_STYLE, content_style := DEFAULT_BUTTON_CONTENT_STYLE) -> (id: Node_ID, clicked: bool) {
+button_ex :: proc(ui: ^UI, label: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, paint_value: u64 = 0, loc := #caller_location, text_style := DEFAULT_BUTTON_TEXT_STYLE, content_style := DEFAULT_BUTTON_CONTENT_STYLE) -> (id: Node_ID, clicked: bool) {
 	resolved_source := resolve_source(source, "button", loc)
 	id = emit(ui, .Button, resolved_source, label=label, key=key, explicit_key=explicit_key, style=style, paint_value=paint_value, focusable=true, text_style=text_style, button_content=content_style)
 	if id != 0 && ui.runtime.activation_node == id && ui.runtime.activation_sequence > 0 {
@@ -1597,7 +1600,7 @@ text_field_ex :: proc(ui: ^UI, value: string, source := Source_Site{}, key := ""
 	return emit(ui, .Text_Field, resolved_source, text=value, key=key, explicit_key=explicit_key, style=style, focusable=true, font=font, text_style=text_style)
 }
 
-button_simple :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, state := Button_State{}, loc := #caller_location, text_style := DEFAULT_TEXT_STYLE, content_style := DEFAULT_BUTTON_CONTENT_STYLE) -> bool {
+button_simple :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, state := Button_State{}, loc := #caller_location, text_style := DEFAULT_BUTTON_TEXT_STYLE, content_style := DEFAULT_BUTTON_CONTENT_STYLE) -> bool {
 	resolved_source := resolve_source(Source_Site{}, "button", loc)
 	paint_state: u64 = 0
 	if state.selected { paint_state |= 1 }
@@ -1621,7 +1624,7 @@ text_field_simple :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, st
 	return emit_key(ui, .Text_Field, resolve_source(Source_Site{}, "text_field", loc), text=value, key=key, style=style, focusable=true, font=font, text_style=text_style)
 }
 
-button :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, state := Button_State{}, loc := #caller_location, text_style := DEFAULT_TEXT_STYLE, content_style := DEFAULT_BUTTON_CONTENT_STYLE) -> bool {
+button :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, state := Button_State{}, loc := #caller_location, text_style := DEFAULT_BUTTON_TEXT_STYLE, content_style := DEFAULT_BUTTON_CONTENT_STYLE) -> bool {
 	return button_simple(ui, label, key, style, state, loc, text_style, content_style)
 }
 
