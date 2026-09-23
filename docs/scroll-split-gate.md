@@ -11,7 +11,10 @@
   Focus loss cancels capture. A vertical resize that exposes more virtual
   rows requests a follow-up description; width-only fixed-row drags stay
   presentation-local.
-- Scope and History use two nested splits for their three panes. Scope still
+- Scope and History use adjacent-neighbor nesting for their three panes:
+  `[left | center] | inspector`. The inner divider redistributes left/center;
+  the outer divider redistributes center/inspector. Split nesting is therefore
+  part of the intended interaction, not only a layout detail. Scope still
   requests backend event windows only on cache misses; pane and scrollbar
   coordinates do not cross Caliber. Monitor was left unchanged because its
   current layout did not require a split migration.
@@ -46,13 +49,32 @@ Windows UI automation identified both SDL windows, but its screenshot capture
 failed with `SetIsBorderRequired` (interface unsupported), so no visual drag
 claim is made from that tool.
 
-## Native interaction gate still to record
+A separate Windows Direct3D12 render capture used a generated trace with
+20,000 events across 80 tracks at 1440×900 logical/physical pixels. Both the
+track and event panes visibly rendered solid vertical tracks and thumbs; the
+track pane had a proportional thumb, while the very large event collection
+reached the configured minimum-thumb size. The virtual-list content widths
+were reduced by the reserved scrollbar strip, confirming that the bars do not
+cover row content. This verifies overflow projection and rendering, not pointer
+dragging. Scope currently enables vertical scrolling for those lists;
+horizontal bar geometry and interaction are covered by Alicorn's both-axis
+runtime tests, and History's patch list uses `.Both`. A fresh diagnostic build
+of History from its current source and pinned Alicorn submodule (`cc0274b`)
+also showed vertical bars on overflowing lists and a horizontal bar in the
+patch viewport: its resolved width was 436 logical pixels while the selected
+patch content was 720 pixels wide. The earlier ignored History executable was
+stale, so it was rebuilt before using this capture as evidence.
 
-On macOS, build Scope at its pinned Alicorn/Caliber revisions and History with
-its recursive Alicorn submodule. With a trace containing enough events and a
-History patch containing long lines, inspect the visible vertical/horizontal
-bars, drag both pane dividers, page a scrollbar track, drag each thumb to both
-ends, resize very narrow/wide, release a drag outside the window, and leave
-each app stationary after load. Record the machine, build revisions, observed
-behavior, and any errors here before treating cross-platform interaction as
-fully validated.
+## Native interaction gate
+
+The user reports that macOS testing of Scope and History passed: scrollbar and
+divider behavior matched Windows and worked as intended, including the
+interactions covered by the native smoke gate. This manual run preceded the
+three-pane nesting migration below; the runtime interaction itself is
+unchanged, while the new adjacent-pane topology is covered by Alicorn's
+headless geometry regression and History's layout self-test. No macOS machine
+identifier or exact local build hashes were supplied, so the platform result
+is recorded as user-confirmed rather than independently reproducible machine
+metadata. Windows native builds, application smokes, and GPU render captures
+are recorded above; Alicorn's headless tests cover thumb dragging, paging,
+release outside the window, focus-loss cancellation, and pane-split behavior.

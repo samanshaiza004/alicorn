@@ -115,26 +115,58 @@ selection.
 
 A split owns its divider position under its key. Applications provide two
 panes and minimum sizes; pointer capture, drag clamping, and the wider hit
-target belong to the runtime. Nest splits to make three or more panes:
+target belong to the runtime. Nest splits to make three or more panes. Nesting
+direction determines how each divider redistributes space. For three adjacent
+panes `A | B | C`, use `[A | B] | C` when each divider should resize only its
+immediate neighbors:
+
+```text
+[ A | B ] | C
+  ^       ^
+  A/B     B/C
+```
+
+With absolute split positions, `A | [B | C]` instead makes the `A/B`
+divider resize `A` against the whole right-hand group; the nested `B/C` split
+keeps its own position as that group changes size. Choose the nesting to match
+the intended resize behavior.
+
+For example, the adjacent-neighbor form is:
 
 ```odin
-split := alicorn.split_begin(
+outer := alicorn.split_begin(
 	ui,
-	key=alicorn.key_string("sidebar-main"),
+	key=alicorn.key_string("workspace-detail"),
+	axis=.Horizontal,
+	initial=740, // A + B
+	min_first=452,
+	min_second=280,
+	style=alicorn.layout_style(grow=1, clip=true),
+)
+alicorn.split_first_begin(ui, outer)
+inner := alicorn.split_begin(
+	ui,
+	key=alicorn.key_string("sidebar-content"),
 	axis=.Horizontal,
 	initial=240,
 	min_first=150,
 	min_second=300,
 	style=alicorn.layout_style(grow=1, clip=true),
 )
-alicorn.split_first_begin(ui, split)
-render_sidebar(ui)
-alicorn.split_first_end(ui, split)
-alicorn.split_divider(ui, split)
-alicorn.split_second_begin(ui, split)
-render_main(ui)
-alicorn.split_second_end(ui, split)
-alicorn.split_end(ui, split)
+alicorn.split_first_begin(ui, inner)
+render_sidebar(ui) // A
+alicorn.split_first_end(ui, inner)
+alicorn.split_divider(ui, inner)
+alicorn.split_second_begin(ui, inner)
+render_content(ui) // B
+alicorn.split_second_end(ui, inner)
+alicorn.split_end(ui, inner)
+alicorn.split_first_end(ui, outer)
+alicorn.split_divider(ui, outer)
+alicorn.split_second_begin(ui, outer)
+render_inspector(ui) // C
+alicorn.split_second_end(ui, outer)
+alicorn.split_end(ui, outer)
 ```
 
 Use `.Vertical` to stack panes. Drag state stays in Alicorn; it is not an

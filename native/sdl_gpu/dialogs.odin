@@ -21,6 +21,8 @@ File_Dialog_Kind :: enum {
 
 Dialog_Filter :: struct {
 	name:    string,
+	// SDL extension tokens, separated by semicolons (for example "json",
+	// "jpg;jpeg", or "*"). This is not a glob; do not include "*.".
 	pattern: string,
 }
 

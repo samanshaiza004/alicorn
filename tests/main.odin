@@ -2199,6 +2199,80 @@ render_nested_split_test :: proc(rt: ^alicorn.Runtime) -> (outer, inner: alicorn
 	return outer, inner, outer_divider, inner_divider
 }
 
+Adjacent_Three_Pane_Test_Nodes :: struct {
+	outer:         alicorn.Split_Handle,
+	inner:         alicorn.Split_Handle,
+	outer_divider: alicorn.Node_ID,
+	inner_divider: alicorn.Node_ID,
+	pane_a:        alicorn.Node_ID,
+	pane_b:        alicorn.Node_ID,
+	pane_c:        alicorn.Node_ID,
+}
+
+render_adjacent_three_pane_test :: proc(rt: ^alicorn.Runtime) -> Adjacent_Three_Pane_Test_Nodes {
+	result: Adjacent_Three_Pane_Test_Nodes
+	alicorn.invalidate_root(rt, "adjacent three pane split test render")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return result }
+	alicorn.container_begin(&ui, .Root, label="three-pane-root", style=alicorn.layout_style(direction=.Column, grow=1, clip=true))
+	result.outer = alicorn.split_begin(&ui, key=alicorn.key_string("workspace-detail"), axis=.Horizontal, initial=702, min_first=452, min_second=250, style=alicorn.layout_style(.Row, grow=1, clip=true))
+	_ = alicorn.split_first_begin(&ui, result.outer)
+	result.inner = alicorn.split_begin(&ui, key=alicorn.key_string("sidebar-content"), axis=.Horizontal, initial=300, min_first=150, min_second=200, style=alicorn.layout_style(.Row, grow=1, clip=true))
+	result.pane_a = alicorn.split_first_begin(&ui, result.inner)
+	alicorn.text(&ui, "pane A")
+	alicorn.split_first_end(&ui, result.inner)
+	result.inner_divider = alicorn.split_divider(&ui, result.inner)
+	result.pane_b = alicorn.split_second_begin(&ui, result.inner)
+	alicorn.text(&ui, "pane B")
+	alicorn.split_second_end(&ui, result.inner)
+	alicorn.split_end(&ui, result.inner)
+	alicorn.split_first_end(&ui, result.outer)
+	result.outer_divider = alicorn.split_divider(&ui, result.outer)
+	result.pane_c = alicorn.split_second_begin(&ui, result.outer)
+	alicorn.text(&ui, "pane C")
+	alicorn.split_second_end(&ui, result.outer)
+	alicorn.split_end(&ui, result.outer)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return result
+}
+
+test_adjacent_three_pane_split_redistribution :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 1000, 320})
+	defer alicorn.destroy_runtime(&rt)
+	nodes := render_adjacent_three_pane_test(&rt)
+	a := rt.nodes[nodes.pane_a].bounds.w
+	b := rt.nodes[nodes.pane_b].bounds.w
+	c := rt.nodes[nodes.pane_c].bounds.w
+	expect(state, a == 300 && b == 400 && c == 296, "three-pane adjacent split begins at the expected pane widths")
+
+	inner_handle := rt.nodes[nodes.inner_divider]
+	start_x := inner_handle.bounds.x + inner_handle.bounds.w/2
+	start_y := inner_handle.bounds.y + 20
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, start_x, start_y, 1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, start_x+50, start_y, 0})
+	ui, ready := alicorn.begin_presentation_frame(&rt)
+	if ready { alicorn.end_presentation_frame(&ui) }
+	a_after_inner := rt.nodes[nodes.pane_a].bounds.w
+	b_after_inner := rt.nodes[nodes.pane_b].bounds.w
+	c_after_inner := rt.nodes[nodes.pane_c].bounds.w
+	expect(state, a_after_inner == a+50 && b_after_inner == b-50 && c_after_inner == c, "first divider redistributes only pane A and B")
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, start_x+50, start_y, 1})
+
+	outer_handle := rt.nodes[nodes.outer_divider]
+	start_x = outer_handle.bounds.x + outer_handle.bounds.w/2
+	start_y = outer_handle.bounds.y + 20
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, start_x, start_y, 1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, start_x+40, start_y, 0})
+	ui, ready = alicorn.begin_presentation_frame(&rt)
+	if ready { alicorn.end_presentation_frame(&ui) }
+	a_after_outer := rt.nodes[nodes.pane_a].bounds.w
+	b_after_outer := rt.nodes[nodes.pane_b].bounds.w
+	c_after_outer := rt.nodes[nodes.pane_c].bounds.w
+	expect(state, a_after_outer == a_after_inner && b_after_outer == b_after_inner+40 && c_after_outer == c_after_inner-40, "second divider redistributes only pane B and C")
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, start_x+40, start_y, 1})
+}
+
 test_retained_split_drag_and_clamp :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 600, 320})
 	defer alicorn.destroy_runtime(&rt)
@@ -2402,6 +2476,7 @@ main :: proc() {
 	test_scrollbar_layout_projection(&state)
 	test_scrollbar_interaction(&state)
 	test_retained_split_drag_and_clamp(&state)
+	test_adjacent_three_pane_split_redistribution(&state)
 	test_split_axis_nested_identity_and_cancel(&state)
 	test_split_virtual_viewport_followup(&state)
 	test_runtime_allocator_ownership(&state)
