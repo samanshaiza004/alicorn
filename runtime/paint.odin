@@ -13,6 +13,25 @@ rebuild_display :: proc(rt: ^Runtime) {
 			rt.stats.stage_visits[.Composite] += 1
 		}
 	}
+	// Scrollbars are a retained overlay on top of every child paint command.
+	// Their reserved tracks sit outside scroll_viewport_bounds, while this clip
+	// preserves clipping by any ancestor container.
+	for id in rt.order {
+		node, ok := rt.nodes[id]
+		if !ok || !node.active || node.kind != .Scroll_Region { continue }
+		if node.scrollbar_vertical_visible {
+			append(&rt.display, Display_Command{node.id, .Scrollbar_Track, node.scrollbar_vertical_track, node.clip, "", Color{0.08, 0.10, 0.14, 1}})
+			append(&rt.display, Display_Command{node.id, .Scrollbar_Thumb, node.scrollbar_vertical_thumb, node.clip, "", Color{0.38, 0.48, 0.62, 1}})
+		}
+		if node.scrollbar_horizontal_visible {
+			append(&rt.display, Display_Command{node.id, .Scrollbar_Track, node.scrollbar_horizontal_track, node.clip, "", Color{0.08, 0.10, 0.14, 1}})
+			append(&rt.display, Display_Command{node.id, .Scrollbar_Thumb, node.scrollbar_horizontal_thumb, node.clip, "", Color{0.38, 0.48, 0.62, 1}})
+		}
+		if node.scrollbar_vertical_visible && node.scrollbar_horizontal_visible {
+			corner := Rect{node.scrollbar_vertical_track.x, node.scrollbar_horizontal_track.y, node.scrollbar_vertical_track.w, node.scrollbar_horizontal_track.h}
+			append(&rt.display, Display_Command{node.id, .Scrollbar_Corner, corner, node.clip, "", Color{0.06, 0.08, 0.11, 1}})
+		}
+	}
 	rt.stats.composite_updates += 1
 	rt.composition_rebuild = false
 	record_trace(rt, .Composite, 0, "retained display list rebuilt after structure change")
@@ -137,7 +156,7 @@ update_paint :: proc(rt: ^Runtime) {
 			dirty_set(&node.dirty, .Composite, true)
 			record_trace(rt, .Paint, id, node.last_reason)
 		}
-		if !rt.composition_rebuild && node.display_index >= 0 && len(node.paint) == 1 {
+		if !rt.composition_rebuild && node.kind != .Scroll_Region && node.display_index >= 0 && len(node.paint) == 1 {
 			rt.display[node.display_index] = node.paint[0]
 			rt.stats.composition_nodes_visited += 1
 			rt.stats.stage_visits[.Composite] += 1

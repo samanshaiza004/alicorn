@@ -1924,6 +1924,7 @@ render_horizontal_scroll :: proc(rt: ^alicorn.Runtime, viewport_width: f32) -> a
 		viewport_height=60,
 		content_height=60,
 		style=alicorn.Layout_Style{.Column, viewport_width, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, true},
+		axes=.Horizontal,
 	)
 	id := region.id
 	alicorn.container_begin(&ui, .Virtual_List, label="horizontal-content", style=alicorn.Layout_Style{.Column, 500, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, true}, layout_scroll_offset_x=region.offset_x)
@@ -1967,6 +1968,181 @@ test_scroll_region_routing_and_clamp :: proc(state: ^Test_State) {
 	both_node := rt.nodes[both]
 	expect(state, alicorn.process_scroll(&rt, alicorn.Scroll_Event{delta_x=-1, delta_y=-1, x=both_node.bounds.x+4, y=both_node.bounds.y+4}), "two-axis region claims diagonal wheel input")
 	expect(state, alicorn.scroll_region_offset(&rt, both) == 20 && alicorn.scroll_region_offset_x(&rt, both) == 0, "auto-lock keeps an equal diagonal gesture on one axis")
+}
+
+render_scrollbar_fixture :: proc(
+	rt: ^alicorn.Runtime,
+	content_width, content_height: f32,
+	axes: alicorn.Scroll_Axes,
+	policy := alicorn.Scrollbar_Policy.Auto,
+	outer_width: f32 = 100,
+	outer_height: f32 = 60,
+) -> (id: alicorn.Node_ID, handle: alicorn.Scroll_Region_Handle) {
+	alicorn.invalidate_root(rt, "scrollbar fixture")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin(&ui, .Root, label="scrollbar-root", style=alicorn.layout_style())
+	handle = alicorn.scroll_region_begin(
+		&ui,
+		key=alicorn.key_string("scrollbar-region"),
+		viewport_width=outer_width,
+		viewport_height=outer_height,
+		content_width=content_width,
+		content_height=content_height,
+		style=alicorn.layout_style(width=outer_width, height=outer_height, clip=true),
+		axes=axes,
+		scrollbars=policy,
+	)
+	id = handle.id
+	alicorn.container_begin(&ui, .Virtual_List, label="scrollbar-content", style=alicorn.layout_style(width=content_width, height=content_height, clip=true))
+	alicorn.text(&ui, "retained scroll content", style=alicorn.layout_style(width=content_width, height=24))
+	alicorn.container_end(&ui)
+	alicorn.scroll_region_end(&ui)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return
+}
+
+test_scrollbar_layout_projection :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
+	defer alicorn.destroy_runtime(&rt)
+
+	id, handle := render_scrollbar_fixture(&rt, 100, 200, .Vertical)
+	node := rt.nodes[id]
+	expect(state, handle.vertical_bar_visible && !handle.horizontal_bar_visible, "Auto shows only the overflowing enabled axis")
+	expect(state, handle.viewport_width == 88 && handle.viewport_height == 60, "vertical solid bar reserves width in the handle before virtualizing")
+	expect(state, node.scroll_viewport_bounds.w == 88 && node.scroll_viewport_bounds.h == 60, "resolved viewport excludes reserved vertical bar")
+	expect(state, node.scrollbar_vertical_track.h == 60 && node.scrollbar_vertical_thumb.h >= alicorn.SCROLLBAR_MIN_THUMB, "vertical bar has a persistent usable thumb")
+	content_id := node.children[0]
+	content := rt.nodes[content_id]
+	expect(state, content.clip.w == node.scroll_viewport_bounds.w && content.clip.h == node.scroll_viewport_bounds.h, "scroll content clip matches effective viewport")
+
+	// Horizontal overflow reserves the bottom strip, which makes the height
+	// overflow and therefore requires the vertical strip too.
+	id, handle = render_scrollbar_fixture(&rt, 101, 55, .Both)
+	node = rt.nodes[id]
+	expect(state, handle.horizontal_bar_visible && handle.vertical_bar_visible, "cross-axis overflow is solved to a stable two-bar layout")
+	expect(state, handle.viewport_width == 88 && handle.viewport_height == 48, "both bars reserve their solid corner from the effective viewport")
+	expect(state, node.scrollbar_vertical_track.h == 48 && node.scrollbar_horizontal_track.w == 88, "both scrollbar tracks stop before the shared corner")
+	corner_found := false
+	for command in rt.display {
+		if command.kind == .Scrollbar_Corner && command.bounds.x == node.scrollbar_vertical_track.x && command.bounds.y == node.scrollbar_horizontal_track.y {
+			corner_found = command.bounds.w == alicorn.SCROLLBAR_THICKNESS && command.bounds.h == alicorn.SCROLLBAR_THICKNESS
+		}
+	}
+	expect(state, corner_found, "two-axis bars retain an explicitly painted shared corner")
+	expect(state, node.scrollbar_vertical_thumb.h >= alicorn.SCROLLBAR_MIN_THUMB && node.scrollbar_horizontal_thumb.w >= alicorn.SCROLLBAR_MIN_THUMB, "both axes enforce the minimum usable thumb")
+	expect(state, node.scrollbar_vertical_thumb.h <= node.scrollbar_vertical_track.h && node.scrollbar_horizontal_thumb.w <= node.scrollbar_horizontal_track.w, "minimum thumb never exceeds a short track")
+
+	text_index, bar_index := -1, -1
+	for command, i in rt.display {
+		if command.kind == .Text && command.node != id { text_index = i }
+		if (command.kind == .Scrollbar_Track || command.kind == .Scrollbar_Thumb) && bar_index < 0 { bar_index = i }
+	}
+	expect(state, text_index >= 0 && bar_index > text_index, "scrollbar display commands are composed after content and remain visible")
+
+	id, handle = render_scrollbar_fixture(&rt, 99, 59, .Both)
+	node = rt.nodes[id]
+	expect(state, !handle.horizontal_bar_visible && !handle.vertical_bar_visible, "Auto hides bars when content fits the base viewport")
+	for command in rt.display {
+		expect(state, command.kind != .Scrollbar_Track && command.kind != .Scrollbar_Thumb && command.kind != .Scrollbar_Corner, "hidden Auto bars emit no geometry")
+	}
+
+	id, handle = render_scrollbar_fixture(&rt, 10, 10, .Both, .Always)
+	expect(state, handle.horizontal_bar_visible && handle.vertical_bar_visible, "Always displays enabled bars even when content fits")
+	expect(state, handle.max_scroll_x == 0 && handle.max_scroll_y == 0, "Always bars with fitting content remain non-scrollable")
+
+	// The high-level virtual list must use the reserved content viewport while
+	// it chooses its realized row interval, including the cross-axis case.
+	alicorn.invalidate_root(&rt, "scrollbar virtual list projection")
+	ui, build := alicorn.begin_frame(&rt)
+	list: alicorn.Virtual_List_Handle
+	if build {
+		alicorn.container_begin(&ui, .Root, label="scrollbar-vlist-root")
+		list = alicorn.virtual_list_begin(
+			&ui, 100, 2,
+			key=alicorn.key_string("scrollbar-vlist"),
+			style=alicorn.layout_style(width=100, height=60),
+			content_width=101,
+			axes=.Both,
+		)
+		alicorn.virtual_list_end(&ui, list)
+		alicorn.container_end(&ui)
+		alicorn.end_frame(&ui)
+	}
+	expect(state, list.scroll.viewport_width == 88 && list.scroll.viewport_height == 48, "virtual_list_begin returns the effective reserved viewport")
+	expect(state, list.last-list.first <= 25, "virtual list realization is bounded by its effective content viewport")
+
+	id, handle = render_scrollbar_fixture(&rt, 80, 45, .Both, .Auto, 70, 40)
+	expect(state, handle.horizontal_bar_visible && handle.vertical_bar_visible, "small viewport activates both auto bars")
+	_ = alicorn.scroll_region_set_offset(&rt, id, 999)
+	_ = alicorn.scroll_region_set_offset_x(&rt, id, 999)
+	id, handle = render_scrollbar_fixture(&rt, 80, 45, .Both, .Auto, 100, 60)
+	node = rt.nodes[id]
+	expect(state, !handle.horizontal_bar_visible && !handle.vertical_bar_visible, "resizing larger removes bars once content fits")
+	expect(state, alicorn.scroll_region_offset(&rt, id) == 0 && alicorn.scroll_region_offset_x(&rt, id) == 0, "resize reclamps both retained offsets to the new maxima")
+	expect(state, node.scroll_viewport_bounds.w == 100 && node.scroll_viewport_bounds.h == 60, "resized effective viewport returns all formerly reserved space")
+	id, handle = render_scrollbar_fixture(&rt, 100, 100, .Both, .Auto, 8, 8)
+	node = rt.nodes[id]
+	expect(state, handle.viewport_width == 0 && handle.viewport_height == 0, "tiny two-axis viewport retains zero effective dimensions without negative geometry")
+	_ = alicorn.scroll_region_set_offset(&rt, id, 999)
+	expect(state, alicorn.scroll_region_offset(&rt, id) == 100, "zero-sized resolved viewport still clamps against its true maximum")
+}
+
+test_scrollbar_interaction :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
+	defer alicorn.destroy_runtime(&rt)
+	id, _ := render_scrollbar_fixture(&rt, 100, 600, .Vertical)
+	node := rt.nodes[id]
+	track := node.scrollbar_vertical_track
+	thumb := node.scrollbar_vertical_thumb
+	expect(state, alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, track.x+track.w/2, track.y+track.h-1, 1}) == id, "vertical track click is claimed by the scroll region")
+	expect(state, alicorn.scroll_region_offset(&rt, id) == node.scroll_viewport_height, "vertical track click pages by one effective viewport")
+
+	// Build a fresh geometry at the top before testing pointer capture.
+	_, _ = render_scrollbar_fixture(&rt, 100, 600, .Vertical)
+	node = rt.nodes[id]
+	thumb = node.scrollbar_vertical_thumb
+	start_x, start_y := thumb.x+thumb.w/2, thumb.y+thumb.h/2
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, start_x, start_y, 1})
+	expect(state, rt.scrollbar_drag_node == id && rt.captured_node == id, "thumb down captures the retained scroll region")
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, start_x, 500, 0})
+	expect(state, alicorn.scroll_region_offset(&rt, id) == node.scroll_content_height-node.scroll_viewport_height, "captured vertical drag outside the track clamps to the end")
+	expect(state, alicorn.cancel_pointer_capture(&rt), "host focus loss cancels active scrollbar pointer capture")
+	expect(state, rt.scrollbar_drag_node == 0 && rt.captured_node == 0, "focus-loss cancellation clears both retained capture states")
+	before := alicorn.scroll_region_offset(&rt, id)
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, start_x, 0, 0})
+	expect(state, alicorn.scroll_region_offset(&rt, id) == before, "motion after focus-loss cancellation cannot continue dragging")
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, start_x, 500, 1})
+	expect(state, rt.scrollbar_drag_node == 0 && rt.captured_node == 0, "pointer release outside the bar ends capture")
+	before = alicorn.scroll_region_offset(&rt, id)
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, start_x, 0, 0})
+	expect(state, alicorn.scroll_region_offset(&rt, id) == before, "moves after outside release do not continue the drag")
+	_ = alicorn.scroll_region_set_offset(&rt, id, 0)
+	_, _ = render_scrollbar_fixture(&rt, 100, 600, .Vertical)
+	node = rt.nodes[id]
+	thumb = node.scrollbar_vertical_thumb
+	start_x, start_y = thumb.x+thumb.w/2, thumb.y+thumb.h/2
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, start_x, start_y, 1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, start_x, 500, 0})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, start_x, 500, 1})
+	expect(state, rt.scrollbar_drag_node == 0 && rt.captured_node == 0, "outside pointer-up releases an active drag capture")
+	expect(state, alicorn.scroll_region_offset(&rt, id) == node.scroll_content_height-node.scroll_viewport_height, "drag position remains clamped after outside release")
+
+	id, _ = render_scrollbar_fixture(&rt, 500, 55, .Both)
+	node = rt.nodes[id]
+	track_x, thumb_x := node.scrollbar_horizontal_track, node.scrollbar_horizontal_thumb
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, track_x.x+track_x.w-1, track_x.y+track_x.h/2, 1})
+	expect(state, alicorn.scroll_region_offset_x(&rt, id) == node.scroll_viewport_width, "horizontal track click pages by one effective viewport")
+	_, _ = render_scrollbar_fixture(&rt, 500, 55, .Both)
+	node = rt.nodes[id]
+	thumb_x = node.scrollbar_horizontal_thumb
+	start_x, start_y = thumb_x.x+thumb_x.w/2, thumb_x.y+thumb_x.h/2
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, start_x, start_y, 1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, 500, start_y, 0})
+	expect(state, alicorn.scroll_region_offset_x(&rt, id) == node.scroll_content_width-node.scroll_viewport_width, "captured horizontal drag clamps to the end")
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, 500, start_y, 1})
+	expect(state, rt.scrollbar_drag_node == 0, "horizontal drag capture releases outside the window")
 }
 
 test_runtime_allocator_ownership :: proc(state: ^Test_State) {
@@ -2045,6 +2221,8 @@ main :: proc() {
 	test_retained_scroll_region(&state)
 	test_high_level_virtual_list_and_style_defaults(&state)
 	test_scroll_region_routing_and_clamp(&state)
+	test_scrollbar_layout_projection(&state)
+	test_scrollbar_interaction(&state)
 	test_runtime_allocator_ownership(&state)
 	if state.failures == 0 {
 		fmt.println("Alicorn foundation tests: PASS")

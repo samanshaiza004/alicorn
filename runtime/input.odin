@@ -8,6 +8,74 @@ Focus_Direction :: enum {
 	Previous,
 }
 
+Scrollbar_Hit :: struct {
+	node: Node_ID,
+	axis: Scroll_Axis,
+	thumb: bool,
+}
+
+scrollbar_hit_test :: proc(rt: ^Runtime, x, y: f32) -> Scrollbar_Hit {
+	for i := len(rt.order)-1; i >= 0; i -= 1 {
+		id := rt.order[i]
+		node, ok := rt.nodes[id]
+		if !ok || !node.active || node.kind != .Scroll_Region || !rect_contains(node.clip, x, y) { continue }
+		if node.scrollbar_vertical_visible && rect_contains(node.scrollbar_vertical_track, x, y) {
+			return Scrollbar_Hit{id, .Vertical, rect_contains(node.scrollbar_vertical_thumb, x, y)}
+		}
+		if node.scrollbar_horizontal_visible && rect_contains(node.scrollbar_horizontal_track, x, y) {
+			return Scrollbar_Hit{id, .Horizontal, rect_contains(node.scrollbar_horizontal_thumb, x, y)}
+		}
+	}
+	return {}
+}
+
+scrollbar_handle_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> bool {
+	if rt.scrollbar_drag_node == 0 || event.kind != .Move && event.kind != .Up { return false }
+	id := rt.scrollbar_drag_node
+	node, ok := rt.nodes[id]
+	if event.kind == .Up || !ok || !node.active {
+		rt.scrollbar_drag_node = 0
+		rt.captured_node = 0
+		return true
+	}
+	if rt.scrollbar_drag_axis == .Vertical {
+		track := node.scrollbar_vertical_track
+		thumb := node.scrollbar_vertical_thumb
+		travel := track.h-thumb.h
+		max_scroll := maxf(node.scroll_content_height-node.scroll_viewport_height, 0)
+		if travel > 0 && max_scroll > 0 {
+			_ = scroll_region_set_offset(rt, id, rt.scrollbar_drag_offset_origin+(event.y-rt.scrollbar_drag_pointer_origin)/travel*max_scroll, "vertical scrollbar drag")
+		}
+	} else {
+		track := node.scrollbar_horizontal_track
+		thumb := node.scrollbar_horizontal_thumb
+		travel := track.w-thumb.w
+		max_scroll := maxf(node.scroll_content_width-node.scroll_viewport_width, 0)
+		if travel > 0 && max_scroll > 0 {
+			_ = scroll_region_set_offset_x(rt, id, rt.scrollbar_drag_offset_origin+(event.x-rt.scrollbar_drag_pointer_origin)/travel*max_scroll, "horizontal scrollbar drag")
+		}
+	}
+	return true
+}
+
+// cancel_pointer_capture is the host boundary for focus loss or native input
+// cancellation. SDL auto-captures mouse motion while a button is held, but a
+// focus transition can interrupt the matching pointer-up; clearing runtime
+// capture here prevents a scrollbar drag or pressed button from sticking.
+cancel_pointer_capture :: proc(rt: ^Runtime) -> bool {
+	captured := rt.captured_node
+	dragging := rt.scrollbar_drag_node != 0
+	if captured == 0 && !dragging { return false }
+	if node, ok := rt.nodes[captured]; ok && node.pressed {
+		node.pressed = false
+		invalidate_interaction_paint(rt, captured, "pointer capture canceled by host")
+	}
+	rt.captured_node = 0
+	rt.scrollbar_drag_node = 0
+	record_trace_literal(rt, .Pointer, captured, "pointer capture canceled by host")
+	return true
+}
+
 hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
 		id := rt.order[i]
@@ -165,7 +233,47 @@ select :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 
 process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 	rt.stats.pointer_events += 1
+	if scrollbar_handle_pointer(rt, event) {
+		return rt.scrollbar_drag_node if rt.scrollbar_drag_node != 0 else rt.captured_node
+	}
 	target := hit_test(rt, event.x, event.y)
+	if event.kind == .Down {
+		if rt.captured_node != 0 || rt.scrollbar_drag_node != 0 {
+			_ = cancel_pointer_capture(rt)
+		}
+		bar_hit := scrollbar_hit_test(rt, event.x, event.y)
+		if bar_hit.node != 0 {
+			node := rt.nodes[bar_hit.node]
+			if bar_hit.thumb {
+				rt.scrollbar_drag_node = bar_hit.node
+				rt.scrollbar_drag_axis = bar_hit.axis
+				if bar_hit.axis == .Vertical {
+					rt.scrollbar_drag_pointer_origin = event.y
+					rt.scrollbar_drag_offset_origin = node.scroll_offset_y
+				} else {
+					rt.scrollbar_drag_pointer_origin = event.x
+					rt.scrollbar_drag_offset_origin = node.scroll_offset_x
+				}
+				rt.captured_node = bar_hit.node
+				record_trace_literal(rt, .Pointer, bar_hit.node, "scrollbar thumb drag began")
+			} else if bar_hit.axis == .Vertical {
+				position := event.y
+				if position < node.scrollbar_vertical_thumb.y {
+					_ = scroll_region_set_offset(rt, bar_hit.node, node.scroll_offset_y-node.scroll_viewport_height, "vertical scrollbar page backward")
+				} else {
+					_ = scroll_region_set_offset(rt, bar_hit.node, node.scroll_offset_y+node.scroll_viewport_height, "vertical scrollbar page forward")
+				}
+			} else {
+				position := event.x
+				if position < node.scrollbar_horizontal_thumb.x {
+					_ = scroll_region_set_offset_x(rt, bar_hit.node, node.scroll_offset_x-node.scroll_viewport_width, "horizontal scrollbar page backward")
+				} else {
+					_ = scroll_region_set_offset_x(rt, bar_hit.node, node.scroll_offset_x+node.scroll_viewport_width, "horizontal scrollbar page forward")
+				}
+			}
+			return bar_hit.node
+		}
+	}
 	if event.kind == .Move {
 		if target != rt.last_hovered {
 			if rt.last_hovered != 0 {
@@ -186,12 +294,6 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 			// the old and new hover targets.
 		}
 	} else if event.kind == .Down {
-		if rt.captured_node != 0 {
-			if old, ok := rt.nodes[rt.captured_node]; ok {
-				old.pressed = false
-				invalidate_interaction_paint(rt, old.id, "press canceled")
-			}
-		}
 		if target != 0 {
 			focus(rt, target)
 			if node, ok := rt.nodes[target]; ok {

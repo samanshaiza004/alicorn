@@ -49,6 +49,9 @@ Node_Kind :: enum {
 	Virtual_List,
 	Virtual_Row,
 	Scroll_Region,
+	Scrollbar_Track,
+	Scrollbar_Thumb,
+	Scrollbar_Corner,
 	Custom_Surface,
 }
 
@@ -161,6 +164,13 @@ Scroll_Axis_Behavior :: enum {
 	Auto_Lock,
 	Free,
 }
+
+// Scrollbar_Policy controls the solid, layout-reserving bars retained by a
+// scroll region. Auto is the default and shows only bars needed by its content.
+Scrollbar_Policy :: enum { Hidden, Auto, Always }
+Scroll_Axis :: enum { Horizontal, Vertical }
+SCROLLBAR_THICKNESS :: f32(12)
+SCROLLBAR_MIN_THUMB :: f32(24)
 
 Text_Edit_Kind :: enum { Insert, Backspace, Delete }
 
@@ -313,6 +323,7 @@ Description :: struct {
 	scroll_line_width: f32,
 	scroll_axes: Scroll_Axes,
 	scroll_axis_behavior: Scroll_Axis_Behavior,
+	scrollbar_policy: Scrollbar_Policy,
 	// The logical scroll position remains authoritative for application state
 	// and scrollbar calculations. Virtualized lists use this residual offset
 	// to place only the realized rows after preceding rows were omitted.
@@ -383,6 +394,15 @@ Node :: struct {
 	scroll_line_width: f32,
 	scroll_axes: Scroll_Axes,
 	scroll_axis_behavior: Scroll_Axis_Behavior,
+	scrollbar_policy: Scrollbar_Policy,
+	scrollbar_vertical_visible: bool,
+	scrollbar_horizontal_visible: bool,
+	scroll_viewport_bounds: Rect,
+	scroll_geometry_resolved: bool,
+	scrollbar_vertical_track: Rect,
+	scrollbar_vertical_thumb: Rect,
+	scrollbar_horizontal_track: Rect,
+	scrollbar_horizontal_thumb: Rect,
 	surface_revision: u64,
 	surface_samples: [dynamic]f32,
 	surface_geometry_active: bool,
@@ -488,6 +508,10 @@ Runtime :: struct {
 	selected:    Node_ID,
 	last_hovered: Node_ID,
 	captured_node: Node_ID,
+	scrollbar_drag_node: Node_ID,
+	scrollbar_drag_axis: Scroll_Axis,
+	scrollbar_drag_pointer_origin: f32,
+	scrollbar_drag_offset_origin: f32,
 	activation_node: Node_ID,
 	activation_sequence: u64,
 	paint_queue: [dynamic]Node_ID,
@@ -1193,6 +1217,9 @@ Scroll_Region_Handle :: struct {
 	content_width:   f32,
 	max_scroll_y:    f32,
 	max_scroll_x:    f32,
+	viewport_bounds: Rect,
+	vertical_bar_visible: bool,
+	horizontal_bar_visible: bool,
 }
 
 scroll_region_begin :: proc(
@@ -1210,6 +1237,7 @@ scroll_region_begin :: proc(
 	loc := #caller_location,
 	axes := Scroll_Axes.Both,
 	axis_behavior := Scroll_Axis_Behavior.Auto_Lock,
+	scrollbars := Scrollbar_Policy.Auto,
 ) -> Scroll_Region_Handle {
 	rt := ui.runtime
 	resolved_source := resolve_source(Source_Site{}, "scroll_region", loc)
@@ -1224,6 +1252,10 @@ scroll_region_begin :: proc(
 		if style.width >= 0 { resolved_width = style.width }
 		if resolved_width <= 0 { resolved_width = 320 }
 	}
+	outer_height, outer_width := resolved_viewport, resolved_width
+	geometry := scroll_bar_geometry(Rect{0, 0, outer_width, outer_height}, content_width, content_height, style.padding, axes, scrollbars)
+	resolved_viewport = geometry.viewport.h
+	resolved_width = geometry.viewport.w
 	max_scroll := maxf(content_height-resolved_viewport, 0)
 	max_scroll_x := maxf(content_width-resolved_width, 0)
 	id := emit_key(
@@ -1239,6 +1271,10 @@ scroll_region_begin :: proc(
 		scroll_axis_behavior=axis_behavior,
 	)
 	if id == 0 { return {} }
+	last := len(rt.pending)-1
+	if last >= 0 && rt.pending[last].kind == .Description && rt.pending[last].description.id == id {
+		rt.pending[last].description.scrollbar_policy = scrollbars
+	}
 	// A description is emitted before layout resolves the new bounds. Reuse
 	// the previous retained offset so a rebuild does not jump to the top.
 	offset_y := f32(0)
@@ -1248,17 +1284,20 @@ scroll_region_begin :: proc(
 		// resize tests). Grow-based regions pass zero and reuse the last
 		// resolved layout height until the new layout has run.
 		if viewport_height <= 0 && style.height < 0 && previous.bounds.h > 0 {
-			resolved_viewport = previous.bounds.h
+			outer_height = previous.bounds.h
 		}
 		if viewport_width <= 0 && style.width < 0 && previous.bounds.w > 0 {
-			resolved_width = previous.bounds.w
+			outer_width = previous.bounds.w
 		}
+		geometry = scroll_bar_geometry(Rect{0, 0, outer_width, outer_height}, content_width, content_height, style.padding, axes, scrollbars, previous.scroll_offset_x, previous.scroll_offset_y)
+		resolved_viewport = geometry.viewport.h
+		resolved_width = geometry.viewport.w
 		offset_y = clampf(previous.scroll_offset_y, 0, maxf(content_height-resolved_viewport, 0))
 		offset_x = clampf(previous.scroll_offset_x, 0, maxf(content_width-resolved_width, 0))
 		max_scroll = maxf(content_height-resolved_viewport, 0)
 		max_scroll_x = maxf(content_width-resolved_width, 0)
 	}
-	last := len(rt.pending)-1
+	last = len(rt.pending)-1
 	if last >= 0 && rt.pending[last].kind == .Description && rt.pending[last].description.id == id {
 		rt.pending[last].description.scroll_offset_y = offset_y
 		rt.pending[last].description.scroll_viewport_height = resolved_viewport
@@ -1269,7 +1308,19 @@ scroll_region_begin :: proc(
 	}
 	append(&rt.stack, id)
 	push_identity_scope(rt, id, "", 0)
-	return Scroll_Region_Handle{id, offset_y, offset_x, resolved_viewport, resolved_width, content_height, content_width, max_scroll, max_scroll_x}
+	return Scroll_Region_Handle{
+		id=id,
+		offset_y=offset_y,
+		offset_x=offset_x,
+		viewport_height=resolved_viewport,
+		viewport_width=resolved_width,
+		content_height=content_height,
+		content_width=content_width,
+		max_scroll_y=max_scroll,
+		max_scroll_x=max_scroll_x,
+		vertical_bar_visible=geometry.vertical_visible,
+		horizontal_bar_visible=geometry.horizontal_visible,
+	}
 }
 
 scroll_region_end :: proc(ui: ^UI) {
@@ -1292,9 +1343,9 @@ scroll_region_offset_x :: proc(rt: ^Runtime, id: Node_ID) -> f32 {
 scroll_region_state :: proc(rt: ^Runtime, id: Node_ID) -> Scroll_Region_Handle {
 	if node, ok := rt.nodes[id]; ok && node.kind == .Scroll_Region {
 		viewport_height := node.scroll_viewport_height
-		if viewport_height <= 0 { viewport_height = node.bounds.h }
+		if viewport_height <= 0 && !node.scroll_geometry_resolved { viewport_height = node.bounds.h }
 		viewport_width := node.scroll_viewport_width
-		if viewport_width <= 0 { viewport_width = node.bounds.w }
+		if viewport_width <= 0 && !node.scroll_geometry_resolved { viewport_width = node.bounds.w }
 		return Scroll_Region_Handle{
 			id = id,
 			offset_y = node.scroll_offset_y,
@@ -1305,6 +1356,9 @@ scroll_region_state :: proc(rt: ^Runtime, id: Node_ID) -> Scroll_Region_Handle {
 			content_width = node.scroll_content_width,
 			max_scroll_y = maxf(node.scroll_content_height-viewport_height, 0),
 			max_scroll_x = maxf(node.scroll_content_width-viewport_width, 0),
+			viewport_bounds = node.scroll_viewport_bounds,
+			vertical_bar_visible = node.scrollbar_vertical_visible,
+			horizontal_bar_visible = node.scrollbar_horizontal_visible,
 		}
 	}
 	return {}
@@ -1314,7 +1368,7 @@ scroll_region_set_offset :: proc(rt: ^Runtime, id: Node_ID, offset_y: f32, reaso
 	node, ok := rt.nodes[id]
 	if !ok || !node.active || node.kind != .Scroll_Region { return false }
 	viewport := node.scroll_viewport_height
-	if viewport <= 0 { viewport = node.bounds.h }
+	if viewport <= 0 && !node.scroll_geometry_resolved { viewport = node.bounds.h }
 	max_scroll := maxf(node.scroll_content_height-viewport, 0)
 	next := clampf(offset_y, 0, max_scroll)
 	if next == node.scroll_offset_y { return false }
@@ -1327,7 +1381,7 @@ scroll_region_set_offset_x :: proc(rt: ^Runtime, id: Node_ID, offset_x: f32, rea
 	node, ok := rt.nodes[id]
 	if !ok || !node.active || node.kind != .Scroll_Region { return false }
 	viewport := node.scroll_viewport_width
-	if viewport <= 0 { viewport = node.bounds.w }
+	if viewport <= 0 && !node.scroll_geometry_resolved { viewport = node.bounds.w }
 	max_scroll := maxf(node.scroll_content_width-viewport, 0)
 	next := clampf(offset_x, 0, max_scroll)
 	if next == node.scroll_offset_x { return false }
@@ -1346,7 +1400,7 @@ virtual_list_ensure_visible :: proc(rt: ^Runtime, id: Node_ID, index: int, reaso
 	row_height := node.scroll_line_height
 	if row_height <= 0 { return false }
 	viewport := node.scroll_viewport_height
-	if viewport <= 0 { viewport = node.bounds.h }
+	if viewport <= 0 && !node.scroll_geometry_resolved { viewport = node.bounds.h }
 	if viewport <= 0 { return false }
 	top := f32(index) * row_height
 	bottom := top + row_height
@@ -1520,6 +1574,7 @@ virtual_list_begin :: proc(
 	loc := #caller_location,
 	axes := Scroll_Axes.Vertical,
 	axis_behavior := Scroll_Axis_Behavior.Auto_Lock,
+	scrollbars := Scrollbar_Policy.Auto,
 ) -> Virtual_List_Handle {
 	if item_count < 0 || row_height <= 0 { return {} }
 	region_style := style
@@ -1539,6 +1594,7 @@ virtual_list_begin :: proc(
 		loc=loc,
 		axes=axes,
 		axis_behavior=axis_behavior,
+		scrollbars=scrollbars,
 	)
 	if scroll.id == 0 { return {} }
 	metrics := virtual_list_metrics(item_count, scroll.offset_y, scroll.viewport_height, row_height)

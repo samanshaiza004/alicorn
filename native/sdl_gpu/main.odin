@@ -526,6 +526,12 @@ pump_events :: proc(
 		if event.type == .QUIT || event.type == .WINDOW_CLOSE_REQUESTED {
 			quit_requested^ = true
 		}
+		if event.type == .WINDOW_FOCUS_LOST {
+			// SDL releases its automatic mouse capture when focus leaves the
+			// window. Drop the matching retained press/drag state as well so a
+			// later motion cannot resume an abandoned scrollbar or split drag.
+			alicorn.cancel_pointer_capture(rt)
+		}
 		if application != nil && wake_event_enabled && event.type == wake_event {
 			if wake_events != nil { wake_events^ += 1 }
 			if application.on_wake != nil {

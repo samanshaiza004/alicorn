@@ -33,6 +33,95 @@ rect_intersection :: proc(a, b: Rect) -> Rect {
 	return Rect{left, top, right-left, bottom-top}
 }
 
+Scroll_Bar_Geometry :: struct {
+	viewport: Rect,
+	vertical_visible: bool,
+	horizontal_visible: bool,
+	vertical_track: Rect,
+	vertical_thumb: Rect,
+	horizontal_track: Rect,
+	horizontal_thumb: Rect,
+	corner: Rect,
+}
+
+scrollbar_thumb_rect :: proc(track: Rect, horizontal: bool, content, viewport, offset: f32) -> Rect {
+	track_length := track.h
+	track_start := track.y
+	if horizontal { track_length, track_start = track.w, track.x }
+	if track_length <= 0 { return Rect{} }
+	thumb_length := track_length
+	if content > viewport && content > 0 {
+		thumb_length = track_length * viewport / content
+		thumb_length = minf(track_length, maxf(SCROLLBAR_MIN_THUMB, thumb_length))
+	}
+	max_offset := maxf(content-viewport, 0)
+	thumb_start := track_start
+	if max_offset > 0 {
+		thumb_start += clampf(offset, 0, max_offset) / max_offset * (track_length-thumb_length)
+	}
+	if horizontal { return Rect{thumb_start, track.y, thumb_length, track.h} }
+	return Rect{track.x, thumb_start, track.w, thumb_length}
+}
+
+// scroll_bar_geometry resolves both axes together because reserving one bar
+// can make the other axis overflow. The viewport is the content clip after
+// padding and solid scrollbar reservation; the corner is left clear when both
+// bars are present.
+scroll_bar_geometry :: proc(
+	bounds: Rect,
+	content_width, content_height, padding: f32,
+	axes: Scroll_Axes,
+	policy: Scrollbar_Policy,
+	offset_x: f32 = 0,
+	offset_y: f32 = 0,
+) -> Scroll_Bar_Geometry {
+	base := Rect{
+		bounds.x+padding,
+		bounds.y+padding,
+		maxf(bounds.w-2*padding, 0),
+		maxf(bounds.h-2*padding, 0),
+	}
+	allow_x := axes == .Horizontal || axes == .Both
+	allow_y := axes == .Vertical || axes == .Both
+	vertical_thickness := minf(SCROLLBAR_THICKNESS, base.w)
+	horizontal_thickness := minf(SCROLLBAR_THICKNESS, base.h)
+	show_x := policy == .Always && allow_x
+	show_y := policy == .Always && allow_y
+	if policy == .Auto {
+		// Two passes are sufficient for the only dependency: a vertical bar
+		// reduces width and a horizontal bar reduces height.
+		for _ in 0..<3 {
+			view_w := maxf(base.w-(show_y ? vertical_thickness : 0), 0)
+			view_h := maxf(base.h-(show_x ? horizontal_thickness : 0), 0)
+			next_y := allow_y && content_height > view_h
+			next_x := allow_x && content_width > view_w
+			if next_x == show_x && next_y == show_y { break }
+			show_x, show_y = next_x, next_y
+		}
+	}
+	view := Rect{
+		base.x,
+		base.y,
+		maxf(base.w-(show_y ? vertical_thickness : 0), 0),
+		maxf(base.h-(show_x ? horizontal_thickness : 0), 0),
+	}
+	result := Scroll_Bar_Geometry{viewport=view, vertical_visible=show_y, horizontal_visible=show_x}
+	if show_y {
+		track_h := base.h-(show_x ? horizontal_thickness : 0)
+		result.vertical_track = Rect{base.x+base.w-vertical_thickness, base.y, vertical_thickness, maxf(track_h, 0)}
+		result.vertical_thumb = scrollbar_thumb_rect(result.vertical_track, false, content_height, view.h, offset_y)
+	}
+	if show_x {
+		track_w := base.w-(show_y ? vertical_thickness : 0)
+		result.horizontal_track = Rect{base.x, base.y+base.h-horizontal_thickness, maxf(track_w, 0), horizontal_thickness}
+		result.horizontal_thumb = scrollbar_thumb_rect(result.horizontal_track, true, content_width, view.w, offset_x)
+	}
+	if show_x && show_y {
+		result.corner = Rect{base.x+base.w-vertical_thickness, base.y+base.h-horizontal_thickness, vertical_thickness, horizontal_thickness}
+	}
+	return result
+}
+
 intrinsic_main :: proc(node: ^Node, direction: Layout_Direction) -> f32 {
 	if direction == .Row {
 		if node.style.width >= 0 { return node.style.width }
@@ -61,8 +150,42 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	if !ok { return }
 	children := parent.children[:]
 	count := len(children)
-	if count == 0 { return }
 	inner := Rect{parent.bounds.x + parent.style.padding, parent.bounds.y + parent.style.padding, parent.bounds.w - 2*parent.style.padding, parent.bounds.h - 2*parent.style.padding}
+	if parent.kind == .Scroll_Region {
+		geometry := scroll_bar_geometry(
+			parent.bounds,
+			parent.scroll_content_width,
+			parent.scroll_content_height,
+			parent.style.padding,
+			parent.scroll_axes,
+			parent.scrollbar_policy,
+			parent.scroll_offset_x,
+			parent.scroll_offset_y,
+		)
+		old_viewport := parent.scroll_viewport_bounds
+		old_vertical, old_horizontal := parent.scrollbar_vertical_visible, parent.scrollbar_horizontal_visible
+		old_offset_x, old_offset_y := parent.scroll_offset_x, parent.scroll_offset_y
+		parent.scroll_viewport_bounds = geometry.viewport
+		parent.scroll_geometry_resolved = true
+		parent.scrollbar_vertical_visible = geometry.vertical_visible
+		parent.scrollbar_horizontal_visible = geometry.horizontal_visible
+		parent.scrollbar_vertical_track = geometry.vertical_track
+		parent.scrollbar_vertical_thumb = geometry.vertical_thumb
+		parent.scrollbar_horizontal_track = geometry.horizontal_track
+		parent.scrollbar_horizontal_thumb = geometry.horizontal_thumb
+		parent.scroll_viewport_width = geometry.viewport.w
+		parent.scroll_viewport_height = geometry.viewport.h
+		parent.scroll_offset_x = clampf(parent.scroll_offset_x, 0, maxf(parent.scroll_content_width-geometry.viewport.w, 0))
+		parent.scroll_offset_y = clampf(parent.scroll_offset_y, 0, maxf(parent.scroll_content_height-geometry.viewport.h, 0))
+		parent.layout_scroll_offset_x = parent.scroll_offset_x
+		parent.layout_scroll_offset_y = parent.scroll_offset_y
+		inner = geometry.viewport
+		if !same_rect(old_viewport, geometry.viewport) || old_vertical != geometry.vertical_visible || old_horizontal != geometry.horizontal_visible ||
+			old_offset_x != parent.scroll_offset_x || old_offset_y != parent.scroll_offset_y {
+			rt.scroll_geometry_changed = true
+		}
+	}
+	if count == 0 { return }
 	if inner.w < 0 { inner.w = 0 }
 	if inner.h < 0 { inner.h = 0 }
 	main_size := parent.style.direction == .Row ? inner.w : inner.h
@@ -136,7 +259,9 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 			child.bounds = Rect{cross_pos, inner.y+main_offset, cross, clampf(main, child.style.min_height, child.style.max_height)}
 		}
 		old_clip := child.clip
-		if parent.style.clip { child.clip = rect_intersection(parent.clip, parent.bounds) } else { child.clip = parent.clip }
+		if parent.kind == .Scroll_Region {
+			child.clip = rect_intersection(parent.clip, parent.scroll_viewport_bounds)
+		} else if parent.style.clip { child.clip = rect_intersection(parent.clip, parent.bounds) } else { child.clip = parent.clip }
 		bounds_changed := !same_rect(old_bounds, child.bounds)
 		clip_changed := !same_rect(old_clip, child.clip)
 		if bounds_changed && child.kind == .Scroll_Region {

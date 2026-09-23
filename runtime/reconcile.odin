@@ -56,6 +56,7 @@ description_hash :: proc(d: Description) -> u64 {
 	h = hash_mix(h, u64(transmute(u32)d.scroll_line_width))
 	h = hash_mix(h, u64(d.scroll_axes))
 	h = hash_mix(h, u64(d.scroll_axis_behavior))
+	h = hash_mix(h, u64(d.scrollbar_policy))
 	return h
 }
 
@@ -69,6 +70,14 @@ layout_hash :: proc(d: Description) -> u64 {
 	h = hash_mix(h, u64(transmute(u32)d.scroll_offset_x))
 	h = hash_mix(h, u64(transmute(u32)d.layout_scroll_offset_y))
 	h = hash_mix(h, u64(transmute(u32)d.layout_scroll_offset_x))
+	// Scroll-region content extents and scrollbar policy affect both the
+	// reserved viewport and its descendant clipping, so they are layout inputs.
+	h = hash_mix(h, u64(transmute(u32)d.scroll_content_width))
+	h = hash_mix(h, u64(transmute(u32)d.scroll_content_height))
+	h = hash_mix(h, u64(transmute(u32)d.scroll_viewport_width))
+	h = hash_mix(h, u64(transmute(u32)d.scroll_viewport_height))
+	h = hash_mix(h, u64(d.scroll_axes))
+	h = hash_mix(h, u64(d.scrollbar_policy))
 	// Text participates in intrinsic measurement. A description can otherwise
 	// look layout-identical while a changing label/value moves its siblings.
 	#partial switch d.kind {
@@ -198,6 +207,7 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	node.scroll_line_width = d.scroll_line_width
 	node.scroll_axes = d.scroll_axes
 	node.scroll_axis_behavior = d.scroll_axis_behavior
+	node.scrollbar_policy = d.scrollbar_policy
 	// A direct surface update owns the high-frequency revision. A later root
 	// wake with the same description must not roll it back; a changed
 	// description revision is an explicit replacement and is authoritative.
