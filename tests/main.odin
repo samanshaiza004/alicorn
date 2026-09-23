@@ -1907,6 +1907,7 @@ test_retained_scroll_region :: proc(state: ^Test_State) {
 	expect(state, region_id != 0, "scroll region retains a stable node")
 	if region_id != 0 {
 		node := rt.nodes[region_id]
+		expect(state, len(node.paint) == 0, "transparent scroll region emits no background paint")
 		handled_precise := alicorn.process_scroll(&rt, alicorn.Scroll_Event{delta_y=-0.1, ticks_y=-1, x=node.bounds.x+4, y=node.bounds.y+4})
 		expect(state, handled_precise, "precise wheel input is claimed by the retained region")
 		expect(state, alicorn.scroll_region_offset(&rt, region_id) == 2, "precise delta remains authoritative over accumulated ticks")
@@ -2394,6 +2395,7 @@ test_retained_split_drag_and_clamp :: proc(state: ^Test_State) {
 	first := rt.nodes[nodes.first]
 	second := rt.nodes[nodes.second]
 	expect(state, first.bounds.w == 200 && second.bounds.w == 398, "horizontal split allocates preferred first size and remaining second pane")
+	expect(state, len(parent.paint) == 0, "structural split emits no background paint")
 	expect(state, handle.bounds.w == 2 && handle.hit_bounds.w == 10, "visible split divider stays thin and hit target is expanded")
 	// The pointer is just outside the visible two-pixel divider, inside the
 	// expanded hit region.
