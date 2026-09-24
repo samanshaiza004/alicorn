@@ -1,17 +1,10 @@
 param(
-    [string]$Odin = $env:ALICORN_ODIN
+    [string]$Odin
 )
 
-if (-not $Odin) { $Odin = 'C:\Users\saman\Documents\odin\dist\odin.exe' }
-if ([IO.Path]::IsPathRooted($Odin)) {
-    if (-not (Test-Path -LiteralPath $Odin)) { throw "Odin executable not found: $Odin. Set ALICORN_ODIN." }
-} else {
-    $command = Get-Command $Odin -ErrorAction SilentlyContinue
-    if (-not $command) { throw "Odin executable not found on PATH: $Odin. Set ALICORN_ODIN." }
-    $Odin = $command.Source
-}
-
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot\common.ps1"
+$Odin = Resolve-AlicornOdin -Requested $Odin
 New-Item -ItemType Directory -Force -Path 'out' | Out-Null
 
 # Odin's current CLI has no separate formatter command. `git diff --check` is

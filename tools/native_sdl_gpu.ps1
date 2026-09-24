@@ -1,5 +1,5 @@
 param(
-    [string]$Odin = $env:ALICORN_ODIN,
+    [string]$Odin,
     [switch]$ManualIme,
     [switch]$SurfaceStress,
     [switch]$SurfaceGeometryTest,
@@ -10,14 +10,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-if (-not $Odin) { $Odin = 'odin' }
-if ([IO.Path]::IsPathRooted($Odin)) {
-    if (-not (Test-Path -LiteralPath $Odin)) { throw "Odin executable not found: $Odin" }
-} else {
-    $command = Get-Command $Odin -ErrorAction SilentlyContinue
-    if (-not $command) { throw "Odin executable not found on PATH: $Odin" }
-    $Odin = $command.Source
-}
+. "$PSScriptRoot\common.ps1"
+$Odin = Resolve-AlicornOdin -Requested $Odin
 
 New-Item -ItemType Directory -Force -Path 'out' | Out-Null
 & $Odin build native\sdl_gpu_entry -out:out\alicorn_sdl_gpu.exe
