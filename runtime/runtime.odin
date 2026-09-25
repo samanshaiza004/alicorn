@@ -510,10 +510,34 @@ Cause_Kind :: enum {
 	Host_Event,
 }
 
+// Action_ID identifies an application-owned operation independently of the
+// input path that invoked it. Zero is reserved for events without an action.
+Action_ID :: distinct u32
+
+Action_Descriptor :: struct {
+	id:    Action_ID,
+	name:  string,
+	label: string,
+}
+
+// Action state is explicit application data. Updating it has no observable
+// side effects; applications publish it when their state changes.
+Action_State :: struct {
+	enabled: bool,
+	checked: bool,
+}
+
+Action_Entry :: struct {
+	descriptor: Action_Descriptor,
+	state:      Action_State,
+	name_owned: bool,
+	label_owned: bool,
+}
+
 Cause_Context :: struct {
 	id: u64,
 	kind: Cause_Kind,
-	command_id: u32,
+	action_id: Action_ID,
 }
 
 Cause_Scope :: struct {
@@ -524,7 +548,7 @@ Cause_Scope :: struct {
 
 Trace_Kind :: enum {
 	Cause,
-	Command,
+	Action,
 	Mutation,
 	Pointer,
 	Focus,
@@ -542,7 +566,7 @@ Trace_Event :: struct {
 	kind:     Trace_Kind,
 	cause_id: u64,
 	cause_kind: Cause_Kind,
-	command_id: u32,
+	action_id: Action_ID,
 	node:     Node_ID,
 	reason:   string,
 	reason_owned: bool,
@@ -637,6 +661,7 @@ Runtime :: struct {
 	last_invalidation_reason: string,
 	stats:       Frame_Stats,
 	trace:       Trace_Ring,
+	actions:     [dynamic]Action_Entry,
 	cause_sequence: u64,
 	active_cause: Cause_Context,
 	frame_cause: Cause_Context,
@@ -803,6 +828,7 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 	rt.paint_queue = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.display = make([dynamic]Display_Command, 0, allocator=rt.persistent_allocator)
 	rt.trace = Trace_Ring{events = make([dynamic]Trace_Event, capacity, allocator=rt.persistent_allocator)}
+	rt.actions = make([dynamic]Action_Entry, 0, allocator=rt.persistent_allocator)
 	rt.text_engine = new_text_engine("runtime text", false, rt.persistent_allocator)
 	return rt
 }
@@ -896,7 +922,7 @@ trace_current_cause :: proc(rt: ^Runtime) -> Cause_Context {
 
 record_trace_with_cause :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reason: string, cause: Cause_Context) {
 	rt.trace.sequence += 1
-	entry := Trace_Event{sequence=rt.trace.sequence, kind=kind, cause_id=cause.id, cause_kind=cause.kind, command_id=cause.command_id, node=node, reason=owned_with_allocator(reason, rt.persistent_allocator), reason_owned=true}
+	entry := Trace_Event{sequence=rt.trace.sequence, kind=kind, cause_id=cause.id, cause_kind=cause.kind, action_id=cause.action_id, node=node, reason=owned_with_allocator(reason, rt.persistent_allocator), reason_owned=true}
 	old := &rt.trace.events[rt.trace.next]
 	if old.reason_owned && len(old.reason) > 0 { delete(old.reason, rt.persistent_allocator) }
 	rt.trace.events[rt.trace.next] = entry
@@ -919,7 +945,7 @@ record_trace_literal :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reas
 
 record_trace_literal_with_cause :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reason: string, cause: Cause_Context) {
 	rt.trace.sequence += 1
-	entry := Trace_Event{sequence=rt.trace.sequence, kind=kind, cause_id=cause.id, cause_kind=cause.kind, command_id=cause.command_id, node=node, reason=reason, reason_owned=false}
+	entry := Trace_Event{sequence=rt.trace.sequence, kind=kind, cause_id=cause.id, cause_kind=cause.kind, action_id=cause.action_id, node=node, reason=reason, reason_owned=false}
 	old := &rt.trace.events[rt.trace.next]
 	if old.reason_owned && len(old.reason) > 0 { delete(old.reason, rt.persistent_allocator) }
 	rt.trace.events[rt.trace.next] = entry
@@ -927,17 +953,17 @@ record_trace_literal_with_cause :: proc(rt: ^Runtime, kind: Trace_Kind, node: No
 	if rt.trace.count < len(rt.trace.events) { rt.trace.count += 1 }
 }
 
-cause_begin :: proc(rt: ^Runtime, kind: Cause_Kind, reason: string, command_id: u32 = 0) -> Cause_Scope {
+cause_begin :: proc(rt: ^Runtime, kind: Cause_Kind, reason: string, action_id: Action_ID = Action_ID(0)) -> Cause_Scope {
 	previous := rt.active_cause
 	cause_ctx := trace_current_cause(rt)
 	if cause_ctx.id == 0 {
 		rt.cause_sequence += 1
 		if rt.cause_sequence == 0 { rt.cause_sequence = 1 }
-		cause_ctx = Cause_Context{id=rt.cause_sequence, kind=kind, command_id=command_id}
+		cause_ctx = Cause_Context{id=rt.cause_sequence, kind=kind, action_id=action_id}
 		rt.active_cause = cause_ctx
 		record_trace_with_cause(rt, .Cause, 0, reason, cause_ctx)
 	} else {
-		if cause_ctx.command_id == 0 && command_id != 0 { cause_ctx.command_id = command_id }
+		if cause_ctx.action_id == Action_ID(0) && action_id != Action_ID(0) { cause_ctx.action_id = action_id }
 		rt.active_cause = cause_ctx
 	}
 	return Cause_Scope{previous=previous, cause=cause_ctx}
@@ -982,24 +1008,67 @@ note_pending_work_cause :: proc(rt: ^Runtime, cause: Cause_Context) {
 	if rt.pending_work_cause.id != cause.id {
 		rt.pending_work_mixed = true
 		rt.pending_work_cause = Cause_Context{}
-	} else if cause.id != 0 && rt.pending_work_cause.command_id == 0 {
-		rt.pending_work_cause.command_id = cause.command_id
+	} else if cause.id != 0 && rt.pending_work_cause.action_id == Action_ID(0) {
+		rt.pending_work_cause.action_id = cause.action_id
 	}
 }
 
-trace_command :: proc(rt: ^Runtime, command_id: u32, label: string) {
+// action_update publishes an application's current action metadata and state
+// to this runtime. Action names are stable for an ID; labels and state may be
+// refreshed explicitly. Strings are copied so callers may use temporary data.
+action_update :: proc(rt: ^Runtime, descriptor: Action_Descriptor, state: Action_State) -> bool {
+	if descriptor.id == Action_ID(0) || len(descriptor.name) == 0 || len(descriptor.label) == 0 { return false }
+	for index := 0; index < len(rt.actions); index += 1 {
+		entry := &rt.actions[index]
+		if entry.descriptor.id != descriptor.id { continue }
+		if entry.descriptor.name != descriptor.name { return false }
+		if entry.descriptor.label != descriptor.label {
+			label_copy := owned_with_allocator(descriptor.label, rt.persistent_allocator)
+			if len(label_copy) == 0 { return false }
+			if entry.label_owned && len(entry.descriptor.label) > 0 { delete(entry.descriptor.label, rt.persistent_allocator) }
+			entry.descriptor.label = label_copy
+			entry.label_owned = true
+		}
+		entry.state = state
+		return true
+	}
+	name_copy := owned_with_allocator(descriptor.name, rt.persistent_allocator)
+	label_copy := owned_with_allocator(descriptor.label, rt.persistent_allocator)
+	if len(name_copy) == 0 || len(label_copy) == 0 {
+		if len(name_copy) > 0 { delete(name_copy, rt.persistent_allocator) }
+		if len(label_copy) > 0 { delete(label_copy, rt.persistent_allocator) }
+		return false
+	}
+	append(&rt.actions, Action_Entry{
+		descriptor=Action_Descriptor{id=descriptor.id, name=name_copy, label=label_copy},
+		state=state,
+		name_owned=true,
+		label_owned=true,
+	})
+	return true
+}
+
+action_lookup :: proc(rt: ^Runtime, id: Action_ID) -> (descriptor: Action_Descriptor, state: Action_State, found: bool) {
+	if id == Action_ID(0) { return }
+	for entry in rt.actions {
+		if entry.descriptor.id == id { return entry.descriptor, entry.state, true }
+	}
+	return
+}
+
+trace_action :: proc(rt: ^Runtime, action_id: Action_ID, label: string) {
 	cause_ctx := trace_current_cause(rt)
 	scope: Cause_Scope
 	if cause_ctx.id == 0 {
-		scope = cause_begin(rt, .Application, "application command")
+		scope = cause_begin(rt, .Application, "application action")
 		cause_ctx = scope.cause
 	}
-	cause_ctx.command_id = command_id
-	if rt.active_cause.id == cause_ctx.id { rt.active_cause.command_id = command_id }
-	if rt.frame_cause.id == cause_ctx.id { rt.frame_cause.command_id = command_id }
-	if rt.pending_work_cause.id == cause_ctx.id { rt.pending_work_cause.command_id = command_id }
-	if rt.pointer_gesture_cause.id == cause_ctx.id { rt.pointer_gesture_cause.command_id = command_id }
-	record_trace_with_cause(rt, .Command, 0, label, cause_ctx)
+	cause_ctx.action_id = action_id
+	if rt.active_cause.id == cause_ctx.id { rt.active_cause.action_id = action_id }
+	if rt.frame_cause.id == cause_ctx.id { rt.frame_cause.action_id = action_id }
+	if rt.pending_work_cause.id == cause_ctx.id { rt.pending_work_cause.action_id = action_id }
+	if rt.pointer_gesture_cause.id == cause_ctx.id { rt.pointer_gesture_cause.action_id = action_id }
+	record_trace_with_cause(rt, .Action, 0, label, cause_ctx)
 	if scope.cause.id != 0 { cause_end(rt, scope) }
 }
 
@@ -1066,8 +1135,8 @@ note_submission_cause :: proc(rt: ^Runtime, cause: Cause_Context) {
 	if rt.submission_cause.id != cause.id {
 		rt.submission_cause = Cause_Context{}
 		rt.submission_cause_mixed = true
-	} else if cause.id != 0 && rt.submission_cause.command_id == 0 {
-		rt.submission_cause.command_id = cause.command_id
+	} else if cause.id != 0 && rt.submission_cause.action_id == Action_ID(0) {
+		rt.submission_cause.action_id = cause.action_id
 	}
 }
 

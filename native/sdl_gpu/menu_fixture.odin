@@ -45,25 +45,25 @@ menu_fixture_command :: proc(state: rawptr, rt: ^alicorn.Runtime, command: Appli
 // native keyboard navigation, and semantic command delivery.
 RunMenuFixture :: proc() {
 	recent_items := [?]Application_Menu_Item{
-		{kind=.Command, command=Application_Command_ID(4), label="Trace A", enabled=true},
-		{kind=.Command, command=Application_Command_ID(5), label="Trace B", enabled=true},
+		{kind=.Command, command=Application_Command_ID(4), label="Trace A", state=alicorn.Action_State{enabled=true}},
+		{kind=.Command, command=Application_Command_ID(5), label="Trace B", state=alicorn.Action_State{enabled=true}},
 	}
 	file_items := [?]Application_Menu_Item{
-		{kind=.Command, command=Application_Command_ID(1), label="Open Trace…", enabled=true, shortcut=Application_Menu_Shortcut{'O', {.Primary}}},
-		{kind=.Submenu, label="Open Recent", enabled=true, items=recent_items[:]},
+		{kind=.Command, command=Application_Command_ID(1), label="Open Trace…", state=alicorn.Action_State{enabled=true}, shortcut=Application_Menu_Shortcut{'O', {.Primary}}},
+		{kind=.Submenu, label="Open Recent", state=alicorn.Action_State{enabled=true}, items=recent_items[:]},
 		{kind=.Separator},
-		{kind=.Command, command=Application_Command_ID(2), label="Save", enabled=false, shortcut=Application_Menu_Shortcut{'S', {.Primary}}},
-		{kind=.Command, command=Application_Command_ID(3), label="Follow Tail", enabled=true, checked=true},
+		{kind=.Command, command=Application_Command_ID(2), label="Save", state=alicorn.Action_State{enabled=false}, shortcut=Application_Menu_Shortcut{'S', {.Primary}}},
+		{kind=.Command, command=Application_Command_ID(3), label="Follow Tail", state=alicorn.Action_State{enabled=true, checked=true}},
 	}
 	edit_items := [?]Application_Menu_Item{
-		{kind=.Command, command=Application_Command_ID(6), label="Copy", enabled=true, shortcut=Application_Menu_Shortcut{'C', {.Primary}}},
-		{kind=.Command, command=Application_Command_ID(7), label="Paste", enabled=false, shortcut=Application_Menu_Shortcut{'V', {.Primary}}},
+		{kind=.Command, command=Application_Command_ID(6), label="Copy", state=alicorn.Action_State{enabled=true}, shortcut=Application_Menu_Shortcut{'C', {.Primary}}},
+		{kind=.Command, command=Application_Command_ID(7), label="Paste", state=alicorn.Action_State{enabled=false}, shortcut=Application_Menu_Shortcut{'V', {.Primary}}},
 	}
 	view_items := [?]Application_Menu_Item{
-		{kind=.Command, command=Application_Command_ID(8), label="Show Timeline", enabled=true, checked=true},
+		{kind=.Command, command=Application_Command_ID(8), label="Show Timeline", state=alicorn.Action_State{enabled=true, checked=true}},
 	}
 	help_items := [?]Application_Menu_Item{
-		{kind=.Command, command=Application_Command_ID(9), label="About Alicorn", enabled=true},
+		{kind=.Command, command=Application_Command_ID(9), label="About Alicorn", state=alicorn.Action_State{enabled=true}},
 	}
 	menus := [?]Application_Menu{
 		{label="File", items=file_items[:]},

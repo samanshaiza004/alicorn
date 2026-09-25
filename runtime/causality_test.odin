@@ -1,6 +1,7 @@
 package alicorn
 
 import "core:testing"
+import "core:strings"
 
 causality_test_build_root :: proc(ui: ^UI) {
 	container_begin_simple(ui, .Root, label="causality-test-root", key=key_string("causality-test-root"), style=layout_style())
@@ -14,7 +15,8 @@ test_cause_flows_through_command_invalidation_frame_and_submit :: proc(t: ^testi
 	defer destroy_runtime(&rt)
 
 	cause := cause_begin(&rt, .Keyboard, "F key")
-	trace_command(&rt, 17, "scope.fit_selection")
+	action_id := Action_ID(17)
+	trace_action(&rt, action_id, "Fit Selection")
 	trace_mutation(&rt, "Scope timeline viewport changed")
 	invalidate_root(&rt, "fit selection")
 	cause_end(&rt, cause)
@@ -30,29 +32,29 @@ test_cause_flows_through_command_invalidation_frame_and_submit :: proc(t: ^testi
 	defer delete(events)
 	found: [Trace_Kind]bool
 	for event in events {
-		if event.kind == .Command || event.kind == .Mutation || event.kind == .Invalidation ||
+		if event.kind == .Action || event.kind == .Mutation || event.kind == .Invalidation ||
 			event.kind == .Reconcile || event.kind == .Layout || event.kind == .Paint ||
 			event.kind == .Composite || event.kind == .Submit {
 			testing.expect(t, event.cause_id == cause.cause.id,
 				"command, mutation, invalidation, frame work, and submission should share one cause ID")
 			testing.expect(t, event.cause_kind == .Keyboard,
 				"the transaction should preserve its external keyboard origin")
-			testing.expect(t, event.command_id == 17,
-				"the opaque semantic command ID should flow through the rest of its frame")
+			testing.expect(t, event.action_id == action_id,
+				"the semantic action ID should flow through the rest of its frame")
 		}
 		found[event.kind] = true
 	}
 	expected_kinds := [8]Trace_Kind{
-		Trace_Kind.Command, Trace_Kind.Mutation, Trace_Kind.Invalidation, Trace_Kind.Reconcile,
+		Trace_Kind.Action, Trace_Kind.Mutation, Trace_Kind.Invalidation, Trace_Kind.Reconcile,
 		Trace_Kind.Layout, Trace_Kind.Paint, Trace_Kind.Composite, Trace_Kind.Submit,
 	}
 	for kind in expected_kinds {
 		testing.expect(t, found[kind], "the causal transaction should include every expected lifecycle stage")
 	}
 	for event in events {
-		if event.kind == .Command {
-			testing.expect(t, event.command_id == 17 && event.reason == "scope.fit_selection",
-				"semantic command records should preserve the opaque command ID and readable label")
+		if event.kind == .Action {
+			testing.expect(t, event.action_id == action_id && event.reason == "Fit Selection",
+				"semantic action records should preserve the action ID and readable label")
 		}
 	}
 
@@ -145,7 +147,7 @@ test_pointer_press_motion_release_share_cause_but_hover_motion_does_not_create_o
 
 	up := pointer_cause_begin(&rt, .Up)
 	testing.expect(t, up.cause.id == down_id, "pointer release should continue the press cause")
-	trace_command(&rt, 23, "scope.select_event")
+	trace_action(&rt, Action_ID(23), "Select Event")
 	record_trace(&rt, .Pointer, 9, "pointer up")
 	cause_end(&rt, up)
 
@@ -160,7 +162,7 @@ test_pointer_press_motion_release_share_cause_but_hover_motion_does_not_create_o
 	defer delete(events)
 	command_found := false
 	for event in events {
-		if event.kind == .Command {
+		if event.kind == .Action {
 			command_found = true
 			testing.expect(t, event.cause_id == down_id && event.cause_kind == .Pointer,
 				"a semantic command dispatched on pointer-up should link to the whole gesture")
@@ -224,4 +226,41 @@ test_unscoped_explicit_invalidation_creates_application_cause :: proc(t: ^testin
 				"programmatic invalidation should explain the frame it requested")
 		}
 	}
+}
+
+@(test)
+test_runtime_action_metadata_is_explicit_and_identity_is_stable :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 180}, Runtime_Config{trace_capacity=32})
+	defer destroy_runtime(&rt)
+
+	action_id := Action_ID(41)
+	descriptor := Action_Descriptor{id=action_id, name="scope.fit_selection", label="Fit Selection"}
+	initial_state := Action_State{enabled=true, checked=false}
+	testing.expect(t, action_update(&rt, descriptor, initial_state), "runtime should accept a valid application action")
+	stored_descriptor, stored_state, found := action_lookup(&rt, action_id)
+	testing.expect(t, found && stored_descriptor.name == "scope.fit_selection" && stored_descriptor.label == "Fit Selection",
+		"runtime should expose stable machine identity and readable label")
+	testing.expect(t, stored_state.enabled && !stored_state.checked, "runtime should expose explicit action state")
+
+	updated_state := Action_State{enabled=false, checked=true}
+	testing.expect(t, action_update(&rt, descriptor, updated_state), "application may explicitly publish changed state")
+	_, stored_state, found = action_lookup(&rt, action_id)
+	testing.expect(t, found && !stored_state.enabled && stored_state.checked,
+		"state refresh should not require hidden observation or polling")
+
+	changed_name := Action_Descriptor{id=action_id, name="scope.different_action", label="Fit Selection"}
+	testing.expect(t, !action_update(&rt, changed_name, updated_state), "one action ID must not silently change its stable machine name")
+	_, stored_state, found = action_lookup(&rt, action_id)
+	testing.expect(t, found && !stored_state.enabled && stored_state.checked,
+		"rejected descriptor changes must leave the published action intact")
+
+	cause := cause_begin(&rt, .Keyboard, "F key", action_id)
+	trace_action(&rt, action_id, descriptor.label)
+	cause_end(&rt, cause)
+	inspection := inspect(&rt)
+	defer delete(inspection)
+	testing.expect(t, strings.contains(inspection, "scope.fit_selection · Fit Selection"),
+		"runtime inspector should resolve causal action IDs to their metadata")
+	testing.expect(t, strings.contains(inspection, "enabled=false checked=true"),
+		"runtime inspector should report current enabled/checked state")
 }

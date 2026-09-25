@@ -96,10 +96,15 @@ height.
   genuinely dependent asynchronous step; unrelated completions need new IDs.
   `pointer_cause_begin` keeps pointer press, captured motion, and release
   together while leaving uncaptured hover motion ungrouped.
-- `trace_command` and `trace_mutation` attach semantic command IDs and readable
-  state-change reasons. `Trace_Event` carries `cause_id`, origin kind, and
-  command ID through runtime stages and successful host submission. IDs are
-  monotonic; trace history remains bounded by `Runtime_Config.trace_capacity`.
+- `Action_ID`, `Action_Descriptor`, and `Action_State` describe an
+  application-owned operation without moving its handler into Alicorn.
+  `action_update` explicitly publishes its stable machine name, readable label,
+  and current enabled/checked state; `action_lookup` reads that state without
+  polling or hidden reactivity. `trace_action` and `trace_mutation` attach the
+  action identity and readable state-change reasons. `Trace_Event` carries the
+  cause, origin, and action through runtime stages and successful host
+  submission. IDs are monotonic; trace history remains bounded by
+  `Runtime_Config.trace_capacity`.
   If distinct causes coalesce into one frame, its stage records are left
   unattributed rather than assigned to the most recent input.
 - `gpu_surface` / `gpu_surface_update` provide the current bounded custom

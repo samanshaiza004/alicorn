@@ -107,7 +107,7 @@ win32_menu_build_items :: proc(state: ^Win32_Menu_State, menu: win.HMENU, items:
 				return false
 			}
 			flags := WIN32_MF_POPUP
-			if !item.enabled { flags |= WIN32_MF_GRAYED }
+			if !item.state.enabled { flags |= WIN32_MF_GRAYED }
 			ok := win.AppendMenuW(menu, flags, win.UINT_PTR(uintptr(popup)), win.LPCWSTR(&wide[0]))
 			delete(wide, state.allocator)
 			if !ok {
@@ -120,8 +120,8 @@ win32_menu_build_items :: proc(state: ^Win32_Menu_State, menu: win.HMENU, items:
 			native_id := win.UINT(len(state.commands))
 			append(&state.commands, item.command)
 			flags := win.UINT(0)
-			if !item.enabled { flags |= WIN32_MF_GRAYED }
-			if item.checked { flags |= WIN32_MF_CHECKED }
+			if !item.state.enabled { flags |= WIN32_MF_GRAYED }
+			if item.state.checked { flags |= WIN32_MF_CHECKED }
 			label := item.label
 			if item.shortcut.key != 0 {
 				label = fmt.tprintf("%s\t%s", item.label, win32_menu_shortcut_label(item.shortcut))
@@ -141,11 +141,11 @@ win32_menu_refresh_state :: proc(state: ^Win32_Menu_State) {
 	if state == nil { return }
 	for binding in state.bindings {
 		flags := WIN32_MF_BYPOSITION
-		if !binding.item.enabled { flags |= WIN32_MF_GRAYED }
+		if !binding.item.state.enabled { flags |= WIN32_MF_GRAYED }
 		_ = win.EnableMenuItem(binding.menu, binding.position, flags)
 		if binding.is_command {
 			check := WIN32_MF_BYPOSITION
-			if binding.item.checked { check |= WIN32_MF_CHECKED }
+			if binding.item.state.checked { check |= WIN32_MF_CHECKED }
 			_ = CheckMenuItem(binding.menu, binding.position, check)
 		}
 	}
@@ -446,7 +446,7 @@ win32_menu_match_shortcut :: proc(items: []Application_Menu_Item, key: rune, act
 	for item in items {
 		if item.kind == .Submenu {
 			if command, found := win32_menu_match_shortcut(item.items, key, actual); found { return command, true }
-		} else if item.kind == .Command && item.enabled && item.shortcut.key != 0 {
+		} else if item.kind == .Command && item.state.enabled && item.shortcut.key != 0 {
 			expected := item.shortcut.modifiers
 			primary_down := native_text_modifier(actual, sdl3.KMOD_CTRL)
 			shift_down := native_text_modifier(actual, sdl3.KMOD_SHIFT)

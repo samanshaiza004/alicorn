@@ -104,9 +104,9 @@ application_key_can_preempt_text_field :: proc(key: Application_Key, composition
 	}
 }
 
-// Application_Command_ID is an application-owned semantic command. Native
-// menu item IDs stay private to the platform host.
-Application_Command_ID :: distinct u32
+// Application_Command_ID is a compatibility/transport alias for Alicorn's
+// runtime-visible Action_ID. Platform-native menu item IDs stay host-private.
+Application_Command_ID :: alicorn.Action_ID
 
 Application_Menu_Item_Kind :: enum {
 	Command,
@@ -132,15 +132,14 @@ Application_Menu_Shortcut :: struct {
 }
 
 // Menu descriptions are borrowed for the duration of Run. Labels and menu
-// structure are snapshotted at startup; enabled/checked fields are read from
+// structure are snapshotted at startup; Action_State is read from
 // the borrowed item storage whenever a native menu opens. Keep that storage
 // stable and update its state on the application thread.
 Application_Menu_Item :: struct {
 	kind:     Application_Menu_Item_Kind,
 	command:  Application_Command_ID,
 	label:    string,
-	enabled:  bool,
-	checked:  bool,
+	state:    alicorn.Action_State,
 	shortcut: Application_Menu_Shortcut,
 	items:    []Application_Menu_Item,
 }
@@ -222,9 +221,13 @@ Native_Menu_Runtime :: struct {
 
 native_menu_dispatch_command :: proc(menu: ^Native_Menu_Runtime, command: Application_Command_ID) {
 	if menu == nil || menu.application == nil || menu.application.on_menu_command == nil { return }
+	if menu.runtime != nil {
+		_, state, found := alicorn.action_lookup(menu.runtime, command)
+		if found && !state.enabled { return }
+	}
 	cause: alicorn.Cause_Scope
 	if menu.runtime != nil {
-		cause = alicorn.cause_begin(menu.runtime, .Native_Command, "native menu command", u32(command))
+		cause = alicorn.cause_begin(menu.runtime, .Native_Command, "native menu command", command)
 	}
 	menu.application.on_menu_command(menu.application.state, menu.runtime, command)
 	if menu.runtime != nil { alicorn.invalidate_root(menu.runtime, "application menu command") }

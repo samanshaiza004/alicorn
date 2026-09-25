@@ -16,6 +16,10 @@ inspect :: proc(rt: ^Runtime) -> string {
 	fmt.sbprintf(&sb, "last invalidation: %s\n", rt.last_invalidation_reason)
 	fmt.sbprintf(&sb, "frame: %d built=%d idle=%d regions-skipped=%d subtrees-reused=%d adjacency-rebuilds=%d surface-updates=%d geometry-updates=%d geometry-overflow-rejections=%d surface-pending=%t presentation=%d submitted=%d\n", rt.stats.frame, rt.stats.frames_built, rt.stats.idle_frames, rt.stats.regions_skipped, rt.stats.retained_subtrees_reused, rt.stats.adjacency_rebuilds, rt.stats.surface_updates, rt.stats.surface_geometry_updates, rt.stats.surface_geometry_overflow_rejections, rt.surface_frame_pending, rt.presentation_revision, rt.submitted_revision)
 	fmt.sbprintf(&sb, "work: reconcile=%d layout=%d paint=%d compose=%d created=%d retired=%d\n", rt.stats.reconcile_nodes_visited, rt.stats.layout_nodes_visited, rt.stats.paint_nodes_visited, rt.stats.composition_nodes_visited, rt.stats.nodes_created, rt.stats.nodes_retired)
+	fmt.sbprintln(&sb, "actions:")
+	for entry in rt.actions {
+		fmt.sbprintf(&sb, "  %s · %s (id=%d enabled=%t checked=%t)\n", entry.descriptor.name, entry.descriptor.label, u32(entry.descriptor.id), entry.state.enabled, entry.state.checked)
+	}
 	fmt.sbprintln(&sb, "recent trace:")
 	trace := trace_snapshot(rt)
 	defer delete(trace)
@@ -24,7 +28,16 @@ inspect :: proc(rt: ^Runtime) -> string {
 		if event.cause_id == 0 {
 			fmt.sbprintf(&sb, "  #%d %v cause=none node=%d %s\n", event.sequence, event.kind, event.node, event.reason)
 		} else {
-			fmt.sbprintf(&sb, "  #%d %v cause=#%d origin=%v command=%d node=%d %s\n", event.sequence, event.kind, event.cause_id, event.cause_kind, event.command_id, event.node, event.reason)
+			if event.action_id != Action_ID(0) {
+				descriptor, state, found := action_lookup(rt, event.action_id)
+				if found {
+					fmt.sbprintf(&sb, "  #%d %v cause=#%d origin=%v action=%s · %s (id=%d enabled=%t checked=%t) node=%d %s\n", event.sequence, event.kind, event.cause_id, event.cause_kind, descriptor.name, descriptor.label, u32(event.action_id), state.enabled, state.checked, event.node, event.reason)
+				} else {
+					fmt.sbprintf(&sb, "  #%d %v cause=#%d origin=%v action=%d node=%d %s\n", event.sequence, event.kind, event.cause_id, event.cause_kind, u32(event.action_id), event.node, event.reason)
+				}
+			} else {
+				fmt.sbprintf(&sb, "  #%d %v cause=#%d origin=%v node=%d %s\n", event.sequence, event.kind, event.cause_id, event.cause_kind, event.node, event.reason)
+			}
 		}
 	}
 	for id in rt.order {

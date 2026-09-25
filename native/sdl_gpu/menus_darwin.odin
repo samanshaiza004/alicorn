@@ -59,10 +59,10 @@ darwin_menu_refresh_state :: proc(state: ^Darwin_Menu_State, menu: ^NS.Menu) {
 		native_index := NS.Integer(binding.start_index+i)
 		native_item := NS.Menu_itemAtIndex(menu, native_index)
 		if native_item == nil { continue }
-		NS.MenuItem_setEnabled(native_item, description.enabled)
+		NS.MenuItem_setEnabled(native_item, description.state.enabled)
 		if description.kind == .Command {
 			value := NS.Integer(0)
-			if description.checked { value = 1 }
+			if description.state.checked { value = 1 }
 			darwin_menu_item_set_state(native_item, value)
 		}
 	}
@@ -170,7 +170,7 @@ darwin_menu_build_items :: proc(state: ^Darwin_Menu_State, menu: ^NS.Menu, items
 			if item == nil { NS.release(cast(^NS.Object)submenu); return false }
 			NS.MenuItem_setSubmenu(item, submenu)
 			NS.release(cast(^NS.Object)submenu)
-			NS.MenuItem_setEnabled(item, description.enabled)
+			NS.MenuItem_setEnabled(item, description.state.enabled)
 			if !darwin_menu_add_item(menu, item) { return false }
 		case .Command:
 			key := darwin_menu_key_string(description.shortcut.key)
@@ -183,8 +183,8 @@ darwin_menu_build_items :: proc(state: ^Darwin_Menu_State, menu: ^NS.Menu, items
 			)
 			if item == nil { return false }
 			NS.MenuItem_setTag(item, NS.Integer(u32(description.command)))
-			NS.MenuItem_setEnabled(item, description.enabled)
-			if description.checked { darwin_menu_item_set_state(item, 1) }
+			NS.MenuItem_setEnabled(item, description.state.enabled)
+			if description.state.checked { darwin_menu_item_set_state(item, 1) }
 			if !darwin_menu_add_item(menu, item) { return false }
 		}
 	}

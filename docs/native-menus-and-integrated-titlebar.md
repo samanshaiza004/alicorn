@@ -2,10 +2,13 @@
 
 This experiment adds a small semantic menu description to the SDL host. Menu
 trees are borrowed for `Run`; labels and structure are copied into native
-controls at startup, while enabled and checked fields are read from the
-borrowed item storage each time a menu opens. Applications receive their own
-`Application_Command_ID` in `on_menu_command`. SDL event handling, retained
-focus, and runtime nodes remain unaware of native menu handles and selectors.
+controls at startup, while each item's `Action_State` is read from the
+borrowed item storage each time a menu opens. `Application_Command_ID` is an
+alias of runtime `Action_ID`, so native menus transport the same semantic
+identity used by shortcuts, direct controls, and the command palette. The
+application remains responsible for dispatch and explicitly publishes action
+descriptors/state with `action_update`. SDL event handling, retained focus,
+and runtime nodes remain unaware of native menu handles and selectors.
 
 ## Platform verdict
 
@@ -47,11 +50,13 @@ application's File/Edit/View/Help menus.
 
 `Application.menus` is a slice of `Application_Menu`. Each menu has a label and
 items. An item is a command, separator, or recursively nested submenu. Command
-items carry an application-owned `Application_Command_ID`, enabled and checked
-state, and an optional shortcut. Applications may update enabled and checked
-fields between menu openings on the UI thread. Keep menu labels, ordering,
-slice lengths, and backing storage stable for the duration of `Run`; native
-controls snapshot that structure at startup. `Primary` means Ctrl on Windows
+items carry an `Application_Command_ID` (the same `Action_ID`), an explicit
+`Action_State`, and an optional shortcut. Publish the matching action metadata
+and state to the runtime with `action_update`; keep that state synchronized
+with the menu and guard app-owned dispatch as well. Applications may update
+the state between menu openings on the UI thread. Keep menu
+labels, ordering, slice lengths, and backing storage stable for the duration
+of `Run`; native controls snapshot that structure at startup. `Primary` means Ctrl on Windows
 and Command on macOS. Shift and Alt retain their names; `Super` means the
 Windows key on Windows and Control on macOS. Applications handle selected items with
 `Application.on_menu_command`.

@@ -54,10 +54,15 @@ This is explicit reuse, not automatic dependency tracking. A stale region
 revision can produce stale content.
 
 Runtime trace records can share a monotonic cause ID from input or another
-external action through command, invalidation, retained work, and GPU submit.
+external cause through semantic action, invalidation, retained work, and GPU submit.
 The ring stays bounded. When separate causes collapse into one pending frame,
 the frame's stage records are deliberately unassigned; the runtime does not
 guess which input was responsible. An idle runtime creates no causes.
+
+Applications publish stable action identity and explicit enabled/checked state
+to their Alicorn runtime. The application still owns dispatch and behavior;
+menus, shortcuts, direct controls, and palettes can share the same `Action_ID`
+without introducing a global command registry or reactive state system.
 
 ## Native and text boundaries
 

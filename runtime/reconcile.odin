@@ -616,6 +616,11 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.paint_queue)
 	for entry in rt.trace.events { if entry.reason_owned && len(entry.reason) > 0 { delete(entry.reason, rt.persistent_allocator) } }
 	delete(rt.trace.events)
+	for entry in rt.actions {
+		if entry.name_owned && len(entry.descriptor.name) > 0 { delete(entry.descriptor.name, rt.persistent_allocator) }
+		if entry.label_owned && len(entry.descriptor.label) > 0 { delete(entry.descriptor.label, rt.persistent_allocator) }
+	}
+	delete(rt.actions)
 	delete(rt.display)
 	text_engine_destroy(&rt.text_engine)
 	if rt.scratch_arena != nil {
