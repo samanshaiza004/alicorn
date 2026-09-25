@@ -10,6 +10,14 @@ modal_overlay_test_button :: proc(rt: ^Runtime, label: string) -> Node_ID {
 	return 0
 }
 
+modal_overlay_test_node :: proc(rt: ^Runtime, label: string) -> Node_ID {
+	for id in rt.order {
+		node, ok := rt.nodes[id]
+		if ok && node.label == label { return id }
+	}
+	return 0
+}
+
 @(test)
 test_modal_overlay_blocks_workspace_and_limits_focus :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 800, 600})
@@ -80,4 +88,55 @@ test_modal_overlay_blocks_workspace_and_limits_focus :: proc(t: ^testing.T) {
 	underlying_after := modal_overlay_test_button(&rt, "Underlying action")
 	testing.expect(t, underlying_after != 0 && hit_test(&rt, 10, 590) == underlying_after,
 		"removing the modal should reveal the still-retained workspace")
+}
+
+@(test)
+test_modal_overlay_explicit_panel_height_fits_eight_results :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 1440, 900})
+	defer destroy_runtime(&rt)
+
+	ui, should_build := begin_frame(&rt)
+	if !should_build { testing.expect(t, false, "new runtime should request its first description"); return }
+	container_begin_simple(&ui, .Root, label="palette-layout-root", key=key_string("palette-layout-root"), style=layout_style())
+	container_end(&ui)
+
+	modal_overlay_begin(
+		&ui,
+		key_string("palette-layout-overlay"),
+		style=layout_style(.Column, padding=48, align=.Center, clip=true),
+	)
+	panel_id := container_begin(
+		&ui,
+		.Container,
+		label="palette-layout-panel",
+		style=layout_style(.Column, width=680, height=384, padding=12, gap=6, clip=true),
+	)
+	container_begin(&ui, .Container, label="palette-layout-input-row", style=layout_style(.Row, height=40, gap=8, align=.Center))
+	text_field(&ui, "", key=key_string("palette-layout-query"), style=layout_style(.Row, height=40, grow=1))
+	container_end(&ui)
+	result_labels := [8]string{
+		"Palette result 0", "Palette result 1", "Palette result 2", "Palette result 3",
+		"Palette result 4", "Palette result 5", "Palette result 6", "Palette result 7",
+	}
+	for index in 0..<len(result_labels) {
+		button(&ui, result_labels[index], key=key_pair(u64(index+1), 3), style=layout_style(.Row, height=34))
+	}
+	container_end(&ui)
+	modal_overlay_end(&ui)
+	end_frame(&ui)
+
+	panel, panel_ok := rt.nodes[panel_id]
+	testing.expect(t, panel_ok, "palette panel should be retained")
+	if !panel_ok { return }
+	testing.expect(t, panel.bounds.w == 680 && panel.bounds.h == 384,
+		"an explicitly sized palette panel should keep its requested dimensions")
+	for label in result_labels {
+		id := modal_overlay_test_node(&rt, label)
+		row, row_ok := rt.nodes[id]
+		testing.expect(t, row_ok, "every result up to the visible-row limit should be retained")
+		if !row_ok { continue }
+		fully_inside_panel := row.bounds.y >= panel.bounds.y+12 && row.bounds.y+row.bounds.h <= panel.bounds.y+panel.bounds.h-12
+		testing.expect(t, row.bounds.h == 34 && fully_inside_panel,
+			"visible palette rows should fit completely inside the explicitly sized panel")
+	}
 }

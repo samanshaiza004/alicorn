@@ -77,7 +77,10 @@ diagnostics, not an implicit request to use position.
 workspace root has been closed. Its subtree paints above the workspace and
 owns hit testing, wheel input, and focus traversal while present. The app must
 handle dismissal and restore the focus owner it saved before opening the
-overlay. Use a stable key so retained input state survives rebuilds.
+overlay. Use a stable key so retained input state survives rebuilds. The
+overlay fills the viewport, but generic child containers do not auto-size to
+their descendants; transient panels need an explicit or application-computed
+height.
 
 ## Text, runtime, and presentation
 

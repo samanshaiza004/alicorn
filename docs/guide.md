@@ -82,7 +82,11 @@ For a transient modal surface such as a command picker, describe the normal
 workspace first, close its root, then add `modal_overlay_begin/end` as a second
 top-level root. It paints above the workspace and confines pointer, wheel, and
 tab-focus handling until omitted from a later description. The application
-still owns dismissal and focus restoration; see the API [reference](reference.md#transient-modal-surfaces).
+still owns dismissal and focus restoration. The overlay fills the viewport, but
+its child panels follow normal layout rules: generic containers do not size
+themselves to their descendants, so give transient panels an explicit or
+application-computed height. See the API
+[reference](reference.md#transient-modal-surfaces).
 
 ## When something looks wrong
 
