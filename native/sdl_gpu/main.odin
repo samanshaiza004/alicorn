@@ -89,6 +89,57 @@ Application_Key :: enum {
 	Open_Repository,
 }
 
+// Application_Command_ID is an application-owned semantic command. Native
+// menu item IDs stay private to the platform host.
+Application_Command_ID :: distinct u32
+
+Application_Menu_Item_Kind :: enum {
+	Command,
+	Separator,
+	Submenu,
+}
+
+Application_Menu_Modifier :: enum {
+	Primary,
+	Shift,
+	Alt,
+	Super,
+}
+
+Application_Menu_Modifiers :: distinct bit_set[Application_Menu_Modifier; u8]
+
+// A shortcut uses one printable key plus platform-neutral modifiers.
+// Primary means Ctrl on Windows and Command on macOS; Super maps to the
+// Windows key on Windows and Control on macOS.
+Application_Menu_Shortcut :: struct {
+	key:       rune,
+	modifiers: Application_Menu_Modifiers,
+}
+
+// Menu descriptions are borrowed for the duration of Run. Labels and menu
+// structure are snapshotted at startup; enabled/checked fields are read from
+// the borrowed item storage whenever a native menu opens. Keep that storage
+// stable and update its state on the application thread.
+Application_Menu_Item :: struct {
+	kind:     Application_Menu_Item_Kind,
+	command:  Application_Command_ID,
+	label:    string,
+	enabled:  bool,
+	checked:  bool,
+	shortcut: Application_Menu_Shortcut,
+	items:    []Application_Menu_Item,
+}
+
+Application_Menu :: struct {
+	label: string,
+	items: []Application_Menu_Item,
+}
+
+Window_Decoration_Mode :: enum {
+	System,
+	Integrated_Title_Bar,
+}
+
 Application_Build_Proc :: proc(
 	state: rawptr,
 	rt: ^alicorn.Runtime,
@@ -104,6 +155,7 @@ Application_Start_Proc :: proc(state: rawptr, waker: Application_Waker)
 Application_Services_Proc :: proc(state: rawptr, services: Application_Services)
 Application_Wake_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
 Application_Stop_Proc :: proc(state: rawptr)
+Application_Menu_Command_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, command: Application_Command_ID)
 
 // Application_Waker is an opaque, thread-safe request to wake the native
 // application loop. The application can retain and call it from a worker
@@ -122,21 +174,43 @@ application_wake :: proc(waker: Application_Waker) {
 // program. State is borrowed by callbacks for the duration of Run; retained
 // runtime nodes never store this pointer.
 Application :: struct {
-	state:          rawptr,
-	title:          string,
-	width:          int,
-	height:         int,
-	build:          Application_Build_Proc,
-	on_text_change: Application_Text_Change_Proc,
-	on_key:         Application_Key_Proc,
-	on_pointer:     Application_Pointer_Proc,
-	on_scroll:      Application_Scroll_Proc,
-	on_tick:        Application_Tick_Proc,
-	on_services:    Application_Services_Proc,
-	on_start:       Application_Start_Proc,
-	on_dialog:      Application_Dialog_Proc,
-	on_wake:        Application_Wake_Proc,
-	on_stop:        Application_Stop_Proc,
+	state:              rawptr,
+	title:              string,
+	width:              int,
+	height:             int,
+	menus:              []Application_Menu,
+	window_decorations: Window_Decoration_Mode,
+	build:              Application_Build_Proc,
+	on_text_change:     Application_Text_Change_Proc,
+	on_key:             Application_Key_Proc,
+	on_pointer:         Application_Pointer_Proc,
+	on_scroll:          Application_Scroll_Proc,
+	on_tick:            Application_Tick_Proc,
+	on_services:        Application_Services_Proc,
+	on_start:           Application_Start_Proc,
+	on_dialog:          Application_Dialog_Proc,
+	on_wake:            Application_Wake_Proc,
+	on_stop:            Application_Stop_Proc,
+	on_menu_command:    Application_Menu_Command_Proc,
+}
+
+// Native_Menu_Runtime is a host-owned bridge. Platform adapters keep HWND,
+// NSWindow, HMENU, NSMenu and selectors outside the application API.
+Native_Menu_Runtime :: struct {
+	window:          ^sdl3.Window,
+	application:     ^Application,
+	runtime:         ^alicorn.Runtime,
+	platform_data:   rawptr,
+	pending_command: Application_Command_ID,
+	has_pending:     bool,
+}
+
+native_menu_dispatch_command :: proc(menu: ^Native_Menu_Runtime, command: Application_Command_ID) {
+	if menu == nil || menu.application == nil { return }
+	if menu.application.on_menu_command != nil {
+		menu.application.on_menu_command(menu.application.state, menu.runtime, command)
+		if menu.runtime != nil { alicorn.invalidate_root(menu.runtime, "application menu command") }
+	}
 }
 
 Native_Application_Waker :: struct {
@@ -487,6 +561,7 @@ pump_events :: proc(
 	wake_events: ^u64 = nil,
 	wait_timeout_ms: sdl3.Sint32 = -1,
 	wait_timed_out: ^bool = nil,
+	native_menu: ^Native_Menu_Runtime = nil,
 ) {
 	if telemetry != nil { telemetry.events_this_pump = 0 }
 	event: sdl3.Event
@@ -589,6 +664,8 @@ pump_events :: proc(
 			}
 		}
 		if event.type == .KEY_DOWN && event.key.down {
+			menu_shortcut_handled := native_menu_try_shortcut(native_menu, int(event.key.key), event.key.mod)
+			runtime_key_handled := menu_shortcut_handled
 			if event.key.key == sdl3.K_F12 && diagnostics_capture_requested != nil {
 				diagnostics_capture_requested^ = true
 				fmt.println("alicorn_diagnostics", "capture_requested", "F12")
@@ -611,14 +688,13 @@ pump_events :: proc(
 				}
 				fmt.println("sdl_event", "KEY_DOWN", "key", event.key.key, "repeat", event.key.repeat, "composition_active", composition_active)
 			}
-			runtime_key_handled := false
-			if event.key.key == sdl3.K_TAB {
+			if !runtime_key_handled && event.key.key == sdl3.K_TAB {
 				direction: alicorn.Focus_Direction = .Next
 				if native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) {
 					direction = .Previous
 				}
 				runtime_key_handled = alicorn.focus_traverse(rt, direction) != 0
-			} else if event.key.key == sdl3.K_RETURN || event.key.key == sdl3.K_KP_ENTER || event.key.key == sdl3.K_SPACE {
+			} else if !runtime_key_handled && (event.key.key == sdl3.K_RETURN || event.key.key == sdl3.K_KP_ENTER || event.key.key == sdl3.K_SPACE) {
 				// Enter/Space activate a focused button through the same one-shot
 				// retained contract as pointer-up. Space remains an application
 				// command when focus belongs to a non-button control.
@@ -1152,8 +1228,12 @@ run_application_loop :: proc(
 	manual_log := false,
 	gpu_driver := "unknown",
 	idle_proof_seconds := 0,
+	native_menu: ^Native_Menu_Runtime = nil,
 ) {
 	application_instance := application
+	if native_menu != nil {
+		native_menu.runtime = rt
+	}
 	quit_requested := false
 	logical_resize_events := 0
 	pixel_resize_events := 0
@@ -1232,7 +1312,13 @@ run_application_loop :: proc(
 			wake_events=&wake_events,
 			wait_timeout_ms=wait_timeout_ms,
 			wait_timed_out=&wait_timed_out,
+			native_menu=native_menu,
 		)
+		if native_menu != nil {
+			if command, ok := native_menu_take_pending(native_menu); ok {
+				native_menu_dispatch_command(native_menu, command)
+			}
+		}
 		native_dialog_dispatch(dialog_bridge, &application_instance, rt)
 		wait_for_event = false
 		if wait_timed_out {
@@ -1467,6 +1553,12 @@ Run :: proc(application: Application, smoke := false) {
 	window := sdl3.CreateWindow(title_cstring, c.int(width), c.int(height), sdl3.WindowFlags{.RESIZABLE, .HIGH_PIXEL_DENSITY})
 	if window == nil { fail("SDL_CreateWindow failed") }
 	defer sdl3.DestroyWindow(window)
+	menu_application := application
+	native_menu := Native_Menu_Runtime{window=window, application=&menu_application}
+	defer native_menu_destroy(&native_menu)
+	if !native_menu_prepare(&native_menu) {
+		fail("native application menu or integrated title bar setup failed")
+	}
 	if !sdl3.RaiseWindow(window) { fail("SDL_RaiseWindow failed") }
 	if input_debug {
 		fmt.println("sdl_input_debug", "window_flags", sdl3.GetWindowFlags(window))
@@ -1508,7 +1600,7 @@ Run :: proc(application: Application, smoke := false) {
 	// terminal on macOS. Raise again only after the application is ready so a
 	// visible-but-inert window is not handed to the user.
 	if !sdl3.RaiseWindow(window) { fail("SDL_RaiseWindow failed after host initialization") }
-	run_application_loop(window, device, &rt, &text_renderer, &surface_renderer, &solid_renderer, &metrics, application, smoke, input_debug, string(selected_driver), idle_proof_seconds=idle_proof_seconds)
+	run_application_loop(window, device, &rt, &text_renderer, &surface_renderer, &solid_renderer, &metrics, application, smoke, input_debug, string(selected_driver), idle_proof_seconds=idle_proof_seconds, native_menu=&native_menu)
 }
 
 RunFoundation :: proc() {
