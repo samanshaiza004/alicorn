@@ -38,6 +38,7 @@ gpu_surface_update :: proc(rt: ^Runtime, id: Node_ID, revision: u64, samples: []
 	advance_presentation_revision(rt)
 	rt.stats.surface_updates += 1
 	record_trace_literal(rt, .Invalidation, id, "explicit GPU surface revision update")
+	note_submission_cause(rt, trace_current_cause(rt))
 	return true
 }
 
@@ -112,6 +113,7 @@ gpu_surface_update_geometry :: proc(
 	rt.stats.surface_updates += 1
 	rt.stats.surface_geometry_updates += 1
 	record_trace_literal(rt, .Invalidation, id, "explicit GPU surface geometry revision update")
+	note_submission_cause(rt, trace_current_cause(rt))
 	return true
 }
 

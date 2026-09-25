@@ -221,11 +221,14 @@ Native_Menu_Runtime :: struct {
 }
 
 native_menu_dispatch_command :: proc(menu: ^Native_Menu_Runtime, command: Application_Command_ID) {
-	if menu == nil || menu.application == nil { return }
-	if menu.application.on_menu_command != nil {
-		menu.application.on_menu_command(menu.application.state, menu.runtime, command)
-		if menu.runtime != nil { alicorn.invalidate_root(menu.runtime, "application menu command") }
+	if menu == nil || menu.application == nil || menu.application.on_menu_command == nil { return }
+	cause: alicorn.Cause_Scope
+	if menu.runtime != nil {
+		cause = alicorn.cause_begin(menu.runtime, .Native_Command, "native menu command", u32(command))
 	}
+	menu.application.on_menu_command(menu.application.state, menu.runtime, command)
+	if menu.runtime != nil { alicorn.invalidate_root(menu.runtime, "application menu command") }
+	if menu.runtime != nil { alicorn.cause_end(menu.runtime, cause) }
 }
 
 Native_Application_Waker :: struct {
@@ -625,24 +628,29 @@ pump_events :: proc(
 			// window. Drop the matching retained press/drag state as well so a
 			// later motion cannot resume an abandoned scrollbar or split drag.
 			captured := rt.captured_node
+			cancel_cause := alicorn.pointer_cause_begin(rt, .Cancel)
 			_ = alicorn.cancel_pointer_capture(rt)
 			if application != nil && application.on_pointer != nil {
 				application.on_pointer(application.state, rt, alicorn.Pointer_Event{kind=.Cancel}, captured)
 			}
+			alicorn.cause_end(rt, cancel_cause)
 		}
-		if application != nil && wake_event_enabled && event.type == wake_event {
+		if application != nil && application.on_wake != nil && wake_event_enabled && event.type == wake_event {
 			if wake_events != nil { wake_events^ += 1 }
-			if application.on_wake != nil {
-				application.on_wake(application.state, rt)
-			}
+			wake_cause := alicorn.cause_begin(rt, .Async_Wake, "application wake event")
+			application.on_wake(application.state, rt)
+			alicorn.cause_end(rt, wake_cause)
 		}
 		if pointer, ok := pointer_from_sdl(event); ok {
+			pointer_cause := alicorn.pointer_cause_begin(rt, pointer.kind)
 			target := alicorn.process_pointer(rt, pointer)
 			if application != nil && application.on_pointer != nil {
 				application.on_pointer(application.state, rt, pointer, target)
 			}
+			alicorn.cause_end(rt, pointer_cause)
 		}
 		if application != nil && event.type == .MOUSE_WHEEL {
+			scroll_cause := alicorn.cause_begin(rt, .Scroll, "mouse wheel")
 			delta_x := event.wheel.x
 			delta_y := event.wheel.y
 			ticks_x := int(event.wheel.integer_x)
@@ -677,8 +685,10 @@ pump_events :: proc(
 					modifiers=modifiers,
 				})
 			}
+			alicorn.cause_end(rt, scroll_cause)
 		}
 		if event.type == .KEY_DOWN && event.key.down {
+			key_cause := alicorn.cause_begin(rt, .Keyboard, "SDL key down")
 			menu_shortcut_handled := native_menu_try_shortcut(native_menu, int(event.key.key), event.key.mod)
 			runtime_key_handled := menu_shortcut_handled
 			// Let transient application UI intercept navigation and dismissal
@@ -810,10 +820,12 @@ pump_events :: proc(
 					}
 				}
 			}
+			alicorn.cause_end(rt, key_cause)
 		}
 
 		#partial switch event.type {
 		case .WINDOW_RESIZED:
+			host_cause := alicorn.cause_begin(rt, .Host_Event, "window resized")
 			// data1/data2 are logical window coordinates for this event.
 			metrics.logical_width = int(event.window.data1)
 			metrics.logical_height = int(event.window.data2)
@@ -821,19 +833,25 @@ pump_events :: proc(
 			rt.viewport.w = f32(metrics.logical_width)
 			rt.viewport.h = f32(metrics.logical_height)
 			alicorn.invalidate_root(rt, "SDL logical window size changed")
+			alicorn.cause_end(rt, host_cause)
 		case .WINDOW_PIXEL_SIZE_CHANGED, .WINDOW_METAL_VIEW_RESIZED:
+			host_cause := alicorn.cause_begin(rt, .Host_Event, "drawable size changed")
 			// data1/data2 are physical drawable pixels for these events. Do not
 			// feed them into the logical layout viewport.
 			metrics.pixel_width = int(event.window.data1)
 			metrics.pixel_height = int(event.window.data2)
 			pixel_resize_events^ += 1
 			alicorn.invalidate_root(rt, "SDL drawable size changed")
+			alicorn.cause_end(rt, host_cause)
 		case .WINDOW_DISPLAY_SCALE_CHANGED:
+			host_cause := alicorn.cause_begin(rt, .Host_Event, "display scale changed")
 			scale_events^ += 1
 			metrics.pixel_density = sdl3.GetWindowPixelDensity(window)
 			metrics.display_scale = sdl3.GetWindowDisplayScale(window)
 			alicorn.invalidate_root(rt, "SDL display scale changed")
+			alicorn.cause_end(rt, host_cause)
 		case .TEXT_INPUT:
+			text_cause := alicorn.cause_begin(rt, .Text_Input, "SDL text input")
 			text_input_events^ += 1
 			if manual_log {
 				raw_text := ""
@@ -845,7 +863,9 @@ pump_events :: proc(
 				native_dispatch_text_change(app_text, application, rt, change, telemetry)
 				if manual_log && application == nil { fmt.println("alicorn_after_TEXT_INPUT", "text", app_text^) }
 			}
+			alicorn.cause_end(rt, text_cause)
 		case .TEXT_EDITING:
+			composition_cause := alicorn.cause_begin(rt, .Text_Composition, "SDL text composition")
 			composition_events^ += 1
 			if manual_log {
 				raw_text := ""
@@ -870,6 +890,7 @@ pump_events :: proc(
 					}
 				}
 			}
+			alicorn.cause_end(rt, composition_cause)
 		}
 
 		if event.type == .WINDOW_RESIZED ||
@@ -1412,7 +1433,6 @@ run_application_loop :: proc(
 		}
 
 		if rt.invalidated {
-			alicorn.invalidate_root(rt, "SDL application wake")
 			build_start = time.now()
 			_ = application.build(application.state, rt, metrics.logical_width, metrics.logical_height, metrics.display_scale)
 			native_timing_accumulate(&timing.application_build_ns, &timing.application_build_max_ns, u64(time.duration_nanoseconds(time.since(build_start))) )

@@ -558,6 +558,9 @@ reconcile :: proc(rt: ^Runtime) {
 	rt.stats.frame += 1
 	delete(focus_lineage)
 	record_trace(rt, .Reconcile, 0, fmt.tprintf("frame %d reconciled", rt.stats.frame))
+	note_submission_cause(rt, rt.frame_cause)
+	if rt.invalidated { note_pending_work_cause(rt, rt.frame_cause) }
+	rt.frame_cause = Cause_Context{}
 }
 
 end_presentation_frame :: proc(ui: ^UI) {
@@ -579,6 +582,9 @@ end_presentation_frame :: proc(ui: ^UI) {
 	advance_presentation_revision(rt)
 	rt.stats.frame += 1
 	record_trace(rt, .Composite, 0, "retained presentation frame flushed")
+	note_submission_cause(rt, rt.frame_cause)
+	if rt.invalidated { note_pending_work_cause(rt, rt.frame_cause) }
+	rt.frame_cause = Cause_Context{}
 }
 
 destroy_runtime :: proc(rt: ^Runtime) {

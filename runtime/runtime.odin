@@ -497,7 +497,35 @@ Node :: struct {
 	paint_queued: bool,
 }
 
+Cause_Kind :: enum {
+	None,
+	Pointer,
+	Keyboard,
+	Text_Input,
+	Text_Composition,
+	Scroll,
+	Native_Command,
+	Async_Wake,
+	Application,
+	Host_Event,
+}
+
+Cause_Context :: struct {
+	id: u64,
+	kind: Cause_Kind,
+	command_id: u32,
+}
+
+Cause_Scope :: struct {
+	previous: Cause_Context,
+	cause: Cause_Context,
+	clear_pointer_gesture: bool,
+}
+
 Trace_Kind :: enum {
+	Cause,
+	Command,
+	Mutation,
 	Pointer,
 	Focus,
 	Invalidation,
@@ -505,12 +533,16 @@ Trace_Kind :: enum {
 	Layout,
 	Paint,
 	Composite,
+	Submit,
 	Retire,
 }
 
 Trace_Event :: struct {
 	sequence: u64,
 	kind:     Trace_Kind,
+	cause_id: u64,
+	cause_kind: Cause_Kind,
+	command_id: u32,
 	node:     Node_ID,
 	reason:   string,
 	reason_owned: bool,
@@ -605,6 +637,16 @@ Runtime :: struct {
 	last_invalidation_reason: string,
 	stats:       Frame_Stats,
 	trace:       Trace_Ring,
+	cause_sequence: u64,
+	active_cause: Cause_Context,
+	frame_cause: Cause_Context,
+	pending_work_cause: Cause_Context,
+	pending_work_seen: bool,
+	pending_work_mixed: bool,
+	pointer_gesture_cause: Cause_Context,
+	submission_cause: Cause_Context,
+	submission_cause_seen: bool,
+	submission_cause_mixed: bool,
 	display:     [dynamic]Display_Command,
 	text_engine: Text_Engine,
 	text_font_generation_seen: u64,
@@ -847,9 +889,14 @@ owned_with_allocator :: proc(value: string, allocator: mem.Allocator) -> string 
 	return copy
 }
 
-record_trace :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reason: string) {
+trace_current_cause :: proc(rt: ^Runtime) -> Cause_Context {
+	if rt.active_cause.id != 0 { return rt.active_cause }
+	return rt.frame_cause
+}
+
+record_trace_with_cause :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reason: string, cause: Cause_Context) {
 	rt.trace.sequence += 1
-	entry := Trace_Event{sequence=rt.trace.sequence, kind=kind, node=node, reason=owned_with_allocator(reason, rt.persistent_allocator), reason_owned=true}
+	entry := Trace_Event{sequence=rt.trace.sequence, kind=kind, cause_id=cause.id, cause_kind=cause.kind, command_id=cause.command_id, node=node, reason=owned_with_allocator(reason, rt.persistent_allocator), reason_owned=true}
 	old := &rt.trace.events[rt.trace.next]
 	if old.reason_owned && len(old.reason) > 0 { delete(old.reason, rt.persistent_allocator) }
 	rt.trace.events[rt.trace.next] = entry
@@ -859,12 +906,20 @@ record_trace :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reason: stri
 	}
 }
 
+record_trace :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reason: string) {
+	record_trace_with_cause(rt, kind, node, reason, trace_current_cause(rt))
+}
+
 // High-frequency retained products can use an immutable literal reason
 // without creating one heap string per update. The ring still bounds event
 // storage; only the ownership policy differs for this process-lifetime text.
 record_trace_literal :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reason: string) {
+	record_trace_literal_with_cause(rt, kind, node, reason, trace_current_cause(rt))
+}
+
+record_trace_literal_with_cause :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reason: string, cause: Cause_Context) {
 	rt.trace.sequence += 1
-	entry := Trace_Event{sequence=rt.trace.sequence, kind=kind, node=node, reason=reason, reason_owned=false}
+	entry := Trace_Event{sequence=rt.trace.sequence, kind=kind, cause_id=cause.id, cause_kind=cause.kind, command_id=cause.command_id, node=node, reason=reason, reason_owned=false}
 	old := &rt.trace.events[rt.trace.next]
 	if old.reason_owned && len(old.reason) > 0 { delete(old.reason, rt.persistent_allocator) }
 	rt.trace.events[rt.trace.next] = entry
@@ -872,11 +927,106 @@ record_trace_literal :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reas
 	if rt.trace.count < len(rt.trace.events) { rt.trace.count += 1 }
 }
 
+cause_begin :: proc(rt: ^Runtime, kind: Cause_Kind, reason: string, command_id: u32 = 0) -> Cause_Scope {
+	previous := rt.active_cause
+	cause_ctx := trace_current_cause(rt)
+	if cause_ctx.id == 0 {
+		rt.cause_sequence += 1
+		if rt.cause_sequence == 0 { rt.cause_sequence = 1 }
+		cause_ctx = Cause_Context{id=rt.cause_sequence, kind=kind, command_id=command_id}
+		rt.active_cause = cause_ctx
+		record_trace_with_cause(rt, .Cause, 0, reason, cause_ctx)
+	} else {
+		if cause_ctx.command_id == 0 && command_id != 0 { cause_ctx.command_id = command_id }
+		rt.active_cause = cause_ctx
+	}
+	return Cause_Scope{previous=previous, cause=cause_ctx}
+}
+
+cause_resume :: proc(rt: ^Runtime, cause_ctx: Cause_Context) -> Cause_Scope {
+	previous := rt.active_cause
+	if cause_ctx.id != 0 { rt.active_cause = cause_ctx }
+	return Cause_Scope{previous=previous, cause=cause_ctx}
+}
+
+cause_end :: proc(rt: ^Runtime, scope: Cause_Scope) {
+	rt.active_cause = scope.previous
+	if scope.clear_pointer_gesture { rt.pointer_gesture_cause = Cause_Context{} }
+}
+
+// pointer_cause_begin keeps a press/drag/release sequence under one cause ID.
+// Uncaptured motion remains presentation-only and does not manufacture causes.
+pointer_cause_begin :: proc(rt: ^Runtime, kind: Pointer_Kind) -> Cause_Scope {
+	if kind == .Down {
+		scope := cause_begin(rt, .Pointer, "pointer gesture")
+		rt.pointer_gesture_cause = scope.cause
+		return scope
+	}
+	if rt.pointer_gesture_cause.id != 0 {
+		scope := cause_resume(rt, rt.pointer_gesture_cause)
+		scope.clear_pointer_gesture = kind == .Up || kind == .Cancel
+		return scope
+	}
+	if kind == .Move { return Cause_Scope{previous=rt.active_cause, cause=rt.active_cause} }
+	return cause_begin(rt, .Pointer, "pointer gesture")
+}
+
+note_pending_work_cause :: proc(rt: ^Runtime, cause: Cause_Context) {
+	if rt.frame_open { return }
+	if !rt.pending_work_seen {
+		rt.pending_work_seen = true
+		rt.pending_work_cause = cause
+		return
+	}
+	if rt.pending_work_mixed { return }
+	if rt.pending_work_cause.id != cause.id {
+		rt.pending_work_mixed = true
+		rt.pending_work_cause = Cause_Context{}
+	} else if cause.id != 0 && rt.pending_work_cause.command_id == 0 {
+		rt.pending_work_cause.command_id = cause.command_id
+	}
+}
+
+trace_command :: proc(rt: ^Runtime, command_id: u32, label: string) {
+	cause_ctx := trace_current_cause(rt)
+	scope: Cause_Scope
+	if cause_ctx.id == 0 {
+		scope = cause_begin(rt, .Application, "application command")
+		cause_ctx = scope.cause
+	}
+	cause_ctx.command_id = command_id
+	if rt.active_cause.id == cause_ctx.id { rt.active_cause.command_id = command_id }
+	if rt.frame_cause.id == cause_ctx.id { rt.frame_cause.command_id = command_id }
+	if rt.pending_work_cause.id == cause_ctx.id { rt.pending_work_cause.command_id = command_id }
+	if rt.pointer_gesture_cause.id == cause_ctx.id { rt.pointer_gesture_cause.command_id = command_id }
+	record_trace_with_cause(rt, .Command, 0, label, cause_ctx)
+	if scope.cause.id != 0 { cause_end(rt, scope) }
+}
+
+trace_mutation :: proc(rt: ^Runtime, reason: string) {
+	cause_ctx := trace_current_cause(rt)
+	scope: Cause_Scope
+	if cause_ctx.id == 0 {
+		scope = cause_begin(rt, .Application, reason)
+		cause_ctx = scope.cause
+	}
+	record_trace_with_cause(rt, .Mutation, 0, reason, cause_ctx)
+	if scope.cause.id != 0 { cause_end(rt, scope) }
+}
+
 invalidate_root :: proc(rt: ^Runtime, reason := "explicit root invalidation") {
 	rt.invalidated = true
+	cause_ctx := trace_current_cause(rt)
+	scope: Cause_Scope
+	if cause_ctx.id == 0 {
+		scope = cause_begin(rt, .Application, reason)
+		cause_ctx = scope.cause
+	}
 	if len(rt.last_invalidation_reason) > 0 { delete(rt.last_invalidation_reason, rt.persistent_allocator) }
 	rt.last_invalidation_reason = owned(reason, rt.persistent_allocator)
-	record_trace(rt, .Invalidation, 0, reason)
+	record_trace_with_cause(rt, .Invalidation, 0, reason, cause_ctx)
+	note_pending_work_cause(rt, cause_ctx)
+	if scope.cause.id != 0 { cause_end(rt, scope) }
 }
 
 // request_presentation wakes the retained presentation path without making
@@ -885,6 +1035,7 @@ invalidate_root :: proc(rt: ^Runtime, reason := "explicit root invalidation") {
 request_presentation :: proc(rt: ^Runtime, reason := "retained presentation changed") {
 	rt.presentation_pending = true
 	record_trace(rt, .Invalidation, 0, reason)
+	note_pending_work_cause(rt, trace_current_cause(rt))
 }
 
 advance_presentation_revision :: proc(rt: ^Runtime) {
@@ -905,12 +1056,32 @@ frame_needs_submission :: proc(rt: ^Runtime) -> bool {
 	return rt.presentation_revision != rt.submitted_revision || rt.surface_frame_pending
 }
 
+note_submission_cause :: proc(rt: ^Runtime, cause: Cause_Context) {
+	if !rt.submission_cause_seen {
+		rt.submission_cause_seen = true
+		rt.submission_cause = cause
+		return
+	}
+	if rt.submission_cause_mixed { return }
+	if rt.submission_cause.id != cause.id {
+		rt.submission_cause = Cause_Context{}
+		rt.submission_cause_mixed = true
+	} else if cause.id != 0 && rt.submission_cause.command_id == 0 {
+		rt.submission_cause.command_id = cause.command_id
+	}
+}
+
 // frame_submission_succeeded is the native-host acknowledgement boundary.
 // It must be called only after the command buffer has been submitted
 // successfully. In particular, a nil swapchain texture is not an
 // acknowledgement: the revision remains pending so the host can retry.
 frame_submission_succeeded :: proc(rt: ^Runtime) {
 	rt.submitted_revision = rt.presentation_revision
+	cause := rt.submission_cause if !rt.submission_cause_mixed else Cause_Context{}
+	record_trace_with_cause(rt, .Submit, 0, "GPU frame submission acknowledged", cause)
+	rt.submission_cause = Cause_Context{}
+	rt.submission_cause_seen = false
+	rt.submission_cause_mixed = false
 }
 
 presentation_frame_consumed :: proc(rt: ^Runtime) {
@@ -925,9 +1096,17 @@ invalidate_region :: proc(rt: ^Runtime, key: string, revision: u64, reason := "e
 	// Region revisions are carried by the next description. The key is included
 	// in the trace so the invalidation remains structurally inspectable.
 	rt.invalidated = true
+	cause_ctx := trace_current_cause(rt)
+	scope: Cause_Scope
+	if cause_ctx.id == 0 {
+		scope = cause_begin(rt, .Application, reason)
+		cause_ctx = scope.cause
+	}
 	if len(rt.last_invalidation_reason) > 0 { delete(rt.last_invalidation_reason, rt.persistent_allocator) }
 	rt.last_invalidation_reason = owned(fmt.tprintf("region %s revision %d: %s", key, revision, reason), rt.persistent_allocator)
-	record_trace(rt, .Invalidation, 0, rt.last_invalidation_reason)
+	record_trace_with_cause(rt, .Invalidation, 0, rt.last_invalidation_reason, cause_ctx)
+	note_pending_work_cause(rt, cause_ctx)
+	if scope.cause.id != 0 { cause_end(rt, scope) }
 }
 
 begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
@@ -936,6 +1115,14 @@ begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
 		rt.stats.idle_frames += 1
 		return ui, false
 	}
+	if rt.pending_work_seen {
+		rt.frame_cause = rt.pending_work_cause if !rt.pending_work_mixed else Cause_Context{}
+	} else {
+		rt.frame_cause = Cause_Context{}
+	}
+	rt.pending_work_cause = Cause_Context{}
+	rt.pending_work_seen = false
+	rt.pending_work_mixed = false
 	// Scratch reset is performed after the previous frame has closed; keep the
 	// first frame path minimal while the arena is still empty.
 	runtime_scratch_reset(rt)
@@ -966,6 +1153,14 @@ begin_presentation_frame :: proc(rt: ^Runtime) -> (ui: UI, ready: bool) {
 	if rt.invalidated || !rt.presentation_pending || rt.frame_open {
 		return ui, false
 	}
+	if rt.pending_work_seen {
+		rt.frame_cause = rt.pending_work_cause if !rt.pending_work_mixed else Cause_Context{}
+	} else {
+		rt.frame_cause = Cause_Context{}
+	}
+	rt.pending_work_cause = Cause_Context{}
+	rt.pending_work_seen = false
+	rt.pending_work_mixed = false
 	runtime_scratch_reset(rt)
 	rt.frame_open = true
 	return ui, true

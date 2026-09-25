@@ -421,7 +421,9 @@ native_dialog_dispatch :: proc(bridge: ^Native_Dialog_Bridge, application: ^Appl
 		}
 		sync.mutex_unlock(&bridge.mutex)
 		if !have_result { break }
+		cause := alicorn.cause_begin(rt, .Async_Wake, "native file dialog completed")
 		application.on_dialog(application.state, rt, &result)
+		alicorn.cause_end(rt, cause)
 		native_dialog_result_destroy(&result, bridge.allocator)
 	}
 }

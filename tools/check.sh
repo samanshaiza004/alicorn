@@ -34,3 +34,4 @@ git diff --check
 "$ODIN" build examples/runa_text "-out:$OUT_DIR/runa_text"
 
 "$OUT_DIR/alicorn_tests"
+"$ODIN" test runtime

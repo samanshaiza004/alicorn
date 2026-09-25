@@ -32,5 +32,8 @@ foreach ($target in $targets) {
 & .\out\alicorn_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+& $Odin test runtime
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 & $Odin test native\sdl_gpu -out:out\alicorn_native_tests.exe
 exit $LASTEXITCODE

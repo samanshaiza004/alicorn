@@ -91,6 +91,17 @@ height.
   allocators when calling `new_runtime`.
 - `inspect(runtime)` and `trace_snapshot(runtime)` expose retained state and
   recent invalidation/stage events for diagnostics.
+- `cause_begin` / `cause_end` bracket an input, async completion, or other
+  external action. Use `cause_resume` only to continue a saved cause across a
+  genuinely dependent asynchronous step; unrelated completions need new IDs.
+  `pointer_cause_begin` keeps pointer press, captured motion, and release
+  together while leaving uncaptured hover motion ungrouped.
+- `trace_command` and `trace_mutation` attach semantic command IDs and readable
+  state-change reasons. `Trace_Event` carries `cause_id`, origin kind, and
+  command ID through runtime stages and successful host submission. IDs are
+  monotonic; trace history remains bounded by `Runtime_Config.trace_capacity`.
+  If distinct causes coalesce into one frame, its stage records are left
+  unattributed rather than assigned to the most recent input.
 - `gpu_surface` / `gpu_surface_update` provide the current bounded custom
   surface path. Keep GPU handles and rendering callbacks inside the host; the
   application supplies typed data, not SDL command buffers.
