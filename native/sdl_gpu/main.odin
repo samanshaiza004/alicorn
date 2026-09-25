@@ -87,6 +87,21 @@ Application_Key :: enum {
 	Command_3,
 	Toggle,
 	Open_Repository,
+	Open_Command_Palette,
+	Escape,
+	Return,
+}
+
+// These keys may be offered to an application before native text editing so a
+// focused text field can participate in transient UI such as a command picker.
+application_key_can_preempt_text_field :: proc(key: Application_Key, composition_active := false) -> bool {
+	if key == .Escape && composition_active { return false }
+	#partial switch key {
+	case .Up, .Down, .Page_Up, .Page_Down, .Open_Repository, .Open_Command_Palette, .Escape, .Return:
+		return true
+	case:
+		return false
+	}
 }
 
 // Application_Command_ID is an application-owned semantic command. Native
@@ -666,6 +681,42 @@ pump_events :: proc(
 		if event.type == .KEY_DOWN && event.key.down {
 			menu_shortcut_handled := native_menu_try_shortcut(native_menu, int(event.key.key), event.key.mod)
 			runtime_key_handled := menu_shortcut_handled
+			// Let transient application UI intercept navigation and dismissal
+			// while a text field owns focus. Returning false preserves the normal
+			// caret/composition behavior below.
+			if !runtime_key_handled && application != nil && application.on_key != nil {
+				text_field_focused := false
+				composition_active := false
+				if node, ok := rt.nodes[rt.focused]; ok {
+					text_field_focused = node.active && node.kind == .Text_Field
+					composition_active = node.composition.active
+				}
+				if text_field_focused {
+					application_key: Application_Key
+					mapped := true
+					switch event.key.key {
+					case sdl3.K_UP: application_key = .Up
+					case sdl3.K_DOWN: application_key = .Down
+					case sdl3.K_PAGEUP: application_key = .Page_Up
+					case sdl3.K_PAGEDOWN: application_key = .Page_Down
+					case sdl3.K_ESCAPE: application_key = .Escape
+					case sdl3.K_RETURN, sdl3.K_KP_ENTER: application_key = .Return
+					case sdl3.K_O:
+						if len(application.menus) == 0 && native_text_primary_modifier(event.key.mod) { application_key = .Open_Repository }
+						else { mapped = false }
+					case sdl3.K_P:
+						if len(application.menus) == 0 && native_text_primary_modifier(event.key.mod) && native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) {
+							application_key = .Open_Command_Palette
+						} else { mapped = false }
+					case: mapped = false
+					}
+					if mapped && application_key_can_preempt_text_field(application_key, composition_active) &&
+						application.on_key(application.state, rt, application_key) {
+						runtime_key_handled = true
+						alicorn.invalidate_root(rt, "application handled focused text-field key")
+					}
+				}
+			}
 			if event.key.key == sdl3.K_F12 && diagnostics_capture_requested != nil {
 				diagnostics_capture_requested^ = true
 				fmt.println("alicorn_diagnostics", "capture_requested", "F12")
@@ -740,8 +791,14 @@ pump_events :: proc(
 					case sdl3.K_2: application_key = .Command_2
 					case sdl3.K_3: application_key = .Command_3
 					case sdl3.K_SPACE: application_key = .Toggle
+					case sdl3.K_ESCAPE: application_key = .Escape
+					case sdl3.K_RETURN, sdl3.K_KP_ENTER: application_key = .Return
+					case sdl3.K_P:
+						if len(application.menus) == 0 && native_text_primary_modifier(event.key.mod) && native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) {
+							application_key = .Open_Command_Palette
+						} else { handled = false }
 					case sdl3.K_O:
-						if native_text_primary_modifier(event.key.mod) {
+						if len(application.menus) == 0 && native_text_primary_modifier(event.key.mod) {
 							application_key = .Open_Repository
 						} else {
 							handled = false

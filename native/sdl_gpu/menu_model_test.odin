@@ -29,6 +29,19 @@ test_menu_dispatch_preserves_semantic_command_id :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_application_can_preempt_text_field_navigation_and_dismissal :: proc(t: ^testing.T) {
+	interceptable_keys := [?]Application_Key{Application_Key.Up, Application_Key.Down, Application_Key.Page_Up, Application_Key.Page_Down, Application_Key.Open_Repository, Application_Key.Open_Command_Palette, Application_Key.Escape, Application_Key.Return}
+	for key in interceptable_keys {
+		testing.expect(t, application_key_can_preempt_text_field(key), "transient UI key should be offered before text-field handling")
+	}
+	normal_keys := [?]Application_Key{Application_Key.Home, Application_Key.Fit_Selection}
+	for key in normal_keys {
+		testing.expect(t, !application_key_can_preempt_text_field(key), "unrelated application key should retain normal routing")
+	}
+	testing.expect(t, !application_key_can_preempt_text_field(.Escape, true), "Escape must cancel active text composition before transient UI dismissal")
+}
+
+@(test)
 test_menu_description_supports_nested_items_and_states :: proc(t: ^testing.T) {
 	children := [?]Application_Menu_Item{
 		{kind=.Command, command=Application_Command_ID(7), label="Checked", enabled=true, checked=true},
