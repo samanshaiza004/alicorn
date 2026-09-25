@@ -107,7 +107,7 @@ update_paint :: proc(rt: ^Runtime) {
 					delete(selection)
 				}
 			}
-			if node.kind == .Root || node.kind == .Container || node.kind == .Virtual_List || node.kind == .Virtual_Row || node.kind == .Split || node.kind == .Scroll_Region {
+			if node.kind == .Root || node.kind == .Modal_Overlay || node.kind == .Container || node.kind == .Virtual_List || node.kind == .Virtual_Row || node.kind == .Split || node.kind == .Scroll_Region {
 				// Layout containers are non-painting unless the caller explicitly
 				// supplied a background. This keeps structural wrappers from
 				// producing accidental rectangles in the compositor.
@@ -139,13 +139,17 @@ update_paint :: proc(rt: ^Runtime) {
 					}
 				}
 				text_clip := rect_intersection(node.clip, content_bounds)
-				button_color := Color{0.15, 0.25, 0.42, 1}
+				quiet := (node.paint_value & 4) != 0
+				button_color := Color{0.08, 0.10, 0.14, 1}
+				if !quiet { button_color = Color{0.15, 0.25, 0.42, 1} }
 				if node.selected { button_color = Color{0.27, 0.48, 0.70, 1} }
 				if node.pressed {
-					button_color = Color{0.24, 0.42, 0.68, 1}
+					button_color = Color{0.15, 0.22, 0.32, 1}
+					if !quiet { button_color = Color{0.24, 0.42, 0.68, 1} }
 					if node.selected { button_color = Color{0.36, 0.62, 0.86, 1} }
 				} else if node.hovered {
-					button_color = Color{0.20, 0.34, 0.54, 1}
+					button_color = Color{0.12, 0.16, 0.23, 1}
+					if !quiet { button_color = Color{0.20, 0.34, 0.54, 1} }
 					if node.selected { button_color = Color{0.33, 0.57, 0.80, 1} }
 				}
 				text_color := Color{0.90, 0.95, 1.0, 1.0}

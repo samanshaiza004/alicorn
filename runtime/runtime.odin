@@ -39,6 +39,7 @@ ui_key_is_explicit :: proc(key: UI_Key) -> bool {
 
 Node_Kind :: enum {
 	Root,
+	Modal_Overlay,
 	Container,
 	Button,
 	Text,
@@ -258,6 +259,7 @@ DEFAULT_BUTTON_TEXT_STYLE :: Text_Style{font_weight=FONT_WEIGHT_REGULAR, overflo
 Button_State :: struct {
 	selected: bool,
 	disabled: bool,
+	quiet:    bool,
 }
 
 // Text_Composition is transient interaction state owned by one retained text
@@ -1277,6 +1279,52 @@ container :: proc(ui: ^UI, kind: Node_Kind, body: proc(), label := "", key: UI_K
 	return container_simple(ui, kind, body, label, key, style, color, loc)
 }
 
+// modal_overlay_begin starts a viewport-sized top-level layer. Describe the
+// ordinary application roots first, close them, then describe the overlay.
+// Its children paint above the workspace; pointer, wheel, and focus traversal
+// stay inside the overlay until it is removed from the next description.
+modal_overlay_begin :: proc(
+	ui: ^UI,
+	key: UI_Key,
+	style := DEFAULT_STYLE,
+	backdrop_color := Color{0.02, 0.025, 0.04, 0.68},
+	loc := #caller_location,
+) -> Node_ID {
+	if len(ui.runtime.stack) != 0 {
+		append_diagnostic(ui.runtime, "modal_overlay_begin must be called after closing the ordinary root")
+		return 0
+	}
+	return container_begin_simple(
+		ui,
+		.Modal_Overlay,
+		label="modal-overlay",
+		key=key,
+		style=style,
+		color=backdrop_color,
+		loc=loc,
+	)
+}
+
+modal_overlay_end :: proc(ui: ^UI) {
+	if len(ui.runtime.stack) == 0 {
+		append_diagnostic(ui.runtime, "modal_overlay_end called without an open modal overlay")
+		return
+	}
+	id := ui.runtime.stack[len(ui.runtime.stack)-1]
+	is_overlay := false
+	for item in ui.runtime.pending {
+		if item.kind == .Description && item.description.id == id && item.description.kind == .Modal_Overlay {
+			is_overlay = true
+			break
+		}
+	}
+	if !is_overlay {
+		append_diagnostic(ui.runtime, "modal_overlay_end must follow its overlay children")
+		return
+	}
+	container_end(ui)
+}
+
 // Split_Handle is a lightweight description-time handle for one retained
 // two-pane split. Its position and drag state live on the keyed runtime node.
 Split_Handle :: struct {
@@ -1605,6 +1653,7 @@ button_simple :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style 
 	paint_state: u64 = 0
 	if state.selected { paint_state |= 1 }
 	if state.disabled { paint_state |= 2 }
+	if state.quiet { paint_state |= 4 }
 	id := emit_key(ui, .Button, resolved_source, label=label, key=key, style=style, state_bits=paint_state, selected=state.selected, disabled=state.disabled, focusable=!state.disabled, text_style=text_style, button_content=content_style)
 	if id == 0 || state.disabled { return false }
 	if ui.runtime.activation_node == id && ui.runtime.activation_sequence > 0 {

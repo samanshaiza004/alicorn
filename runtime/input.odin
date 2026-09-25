@@ -14,11 +14,35 @@ Scrollbar_Hit :: struct {
 	thumb: bool,
 }
 
+modal_overlay_root :: proc(rt: ^Runtime) -> Node_ID {
+	for index := len(rt.top_level)-1; index >= 0; index -= 1 {
+		id := rt.top_level[index]
+		if node, ok := rt.nodes[id]; ok && node.active && node.kind == .Modal_Overlay {
+			return id
+		}
+	}
+	return 0
+}
+
+node_is_in_modal_overlay :: proc(rt: ^Runtime, id, overlay_id: Node_ID) -> bool {
+	if overlay_id == 0 { return true }
+	current := id
+	for current != 0 {
+		if current == overlay_id { return true }
+		node, ok := rt.nodes[current]
+		if !ok { return false }
+		current = node.parent
+	}
+	return false
+}
+
 scrollbar_hit_test :: proc(rt: ^Runtime, x, y: f32) -> Scrollbar_Hit {
+	modal_root := modal_overlay_root(rt)
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
 		id := rt.order[i]
 		node, ok := rt.nodes[id]
-		if !ok || !node.active || node.kind != .Scroll_Region || !rect_contains(node.clip, x, y) { continue }
+		if !ok || !node.active || node.kind != .Scroll_Region ||
+			!node_is_in_modal_overlay(rt, id, modal_root) || !rect_contains(node.clip, x, y) { continue }
 		if node.scrollbar_vertical_visible && rect_contains(node.scrollbar_vertical_track, x, y) {
 			return Scrollbar_Hit{id, .Vertical, rect_contains(node.scrollbar_vertical_thumb, x, y)}
 		}
@@ -90,6 +114,7 @@ cancel_pointer_capture :: proc(rt: ^Runtime) -> bool {
 }
 
 hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
+	modal_root := modal_overlay_root(rt)
 	// A solid scrollbar owns its reserved strip, including the portion that
 	// overlaps a split divider's deliberately enlarged grab target.
 	if scrollbar_hit_test(rt, x, y).node != 0 { return 0 }
@@ -98,17 +123,23 @@ hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
 		id := rt.order[i]
 		if node, ok := rt.nodes[id]; ok && node.active && node.kind == .Split_Handle &&
+			node_is_in_modal_overlay(rt, id, modal_root) &&
 			rect_contains(node.hit_bounds, x, y) && rect_contains(node.clip, x, y) {
 			return id
 		}
 	}
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
 		id := rt.order[i]
-		if node, ok := rt.nodes[id]; ok && node.active && !node.disabled && rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
+		if node, ok := rt.nodes[id]; ok && node.active && !node.disabled &&
+			node_is_in_modal_overlay(rt, id, modal_root) && rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
 			if node.kind == .Button || node.kind == .Text_Field || node.kind == .Custom_Surface {
 				return id
 			}
 		}
+	}
+	if overlay, ok := rt.nodes[modal_root]; ok && overlay.active &&
+		rect_contains(overlay.bounds, x, y) && rect_contains(overlay.clip, x, y) {
+		return modal_root
 	}
 	return 0
 }
@@ -134,9 +165,11 @@ update_split_drag :: proc(rt: ^Runtime, handle: ^Node, x, y: f32) {
 }
 
 scroll_region_hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
+	modal_root := modal_overlay_root(rt)
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
 		id := rt.order[i]
 		if node, ok := rt.nodes[id]; ok && node.active && node.kind == .Scroll_Region &&
+			node_is_in_modal_overlay(rt, id, modal_root) &&
 			rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
 			return id
 		}
@@ -149,7 +182,7 @@ scroll_region_hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 // Alicorn-owned region.
 process_scroll :: proc(rt: ^Runtime, event: Scroll_Event) -> bool {
 	id := scroll_region_hit_test(rt, event.x, event.y)
-	if id == 0 { return false }
+	if id == 0 { return modal_overlay_root(rt) != 0 }
 	node, ok := rt.nodes[id]
 	if !ok { return false }
 	// SDL's floating-point values carry precise trackpad motion. The integer
@@ -183,7 +216,7 @@ process_scroll :: proc(rt: ^Runtime, event: Scroll_Event) -> bool {
 
 focus :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 	node, ok := rt.nodes[id]
-	if !ok || !node.active || !node.focusable {
+	if !ok || !node.active || !node.focusable || !node_is_in_modal_overlay(rt, id, modal_overlay_root(rt)) {
 		return false
 	}
 	previous := rt.focused
@@ -208,6 +241,7 @@ focus :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 // widget objects while preserving the same keyed focus state as pointer input.
 focus_traverse :: proc(rt: ^Runtime, direction: Focus_Direction) -> Node_ID {
 	if len(rt.order) == 0 { return 0 }
+	modal_root := modal_overlay_root(rt)
 
 	step := 1
 	start := 0
@@ -230,7 +264,7 @@ focus_traverse :: proc(rt: ^Runtime, direction: Focus_Direction) -> Node_ID {
 		for index >= len(rt.order) { index -= len(rt.order) }
 		id := rt.order[index]
 		node, ok := rt.nodes[id]
-		if ok && node.active && node.focusable && !node.disabled {
+		if ok && node.active && node.focusable && !node.disabled && node_is_in_modal_overlay(rt, id, modal_root) {
 			if focus(rt, id) { return id }
 		}
 	}

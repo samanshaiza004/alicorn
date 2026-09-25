@@ -78,6 +78,12 @@ These APIs do not replace application state. In particular, Alicorn does not
 infer that a region changed: increment its revision when its logical content
 changes. See the [reference](reference.md) for the relevant APIs and details.
 
+For a transient modal surface such as a command picker, describe the normal
+workspace first, close its root, then add `modal_overlay_begin/end` as a second
+top-level root. It paints above the workspace and confines pointer, wheel, and
+tab-focus handling until omitted from a later description. The application
+still owns dismissal and focus restoration; see the API [reference](reference.md#transient-modal-surfaces).
+
 ## When something looks wrong
 
 Use the runtime inspector and trace to see identity, focus, bounds, invalidation

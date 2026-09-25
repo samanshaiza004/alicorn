@@ -70,6 +70,15 @@ diagnostics, not an implicit request to use position.
   Nest splits for additional panes; nesting direction determines how resizing
   propagates.
 
+## Transient modal surfaces
+
+`modal_overlay_begin(ui, key, style, backdrop_color)` and
+`modal_overlay_end(ui)` describe a viewport-sized modal root after the normal
+workspace root has been closed. Its subtree paints above the workspace and
+owns hit testing, wheel input, and focus traversal while present. The app must
+handle dismissal and restore the focus owner it saved before opening the
+overlay. Use a stable key so retained input state survives rebuilds.
+
 ## Text, runtime, and presentation
 
 - `Text_Style` and `Font_Role` choose text weight, overflow, and UI/monospace
