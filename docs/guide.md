@@ -62,6 +62,11 @@ Use `key_string`, `key_u64`, or `key_pair` to match the identity you already
 have. The call site identifies the kind of UI; the key identifies the data
 item.
 
+If keyboard operation must stay with a logical item while its row is
+virtualized or replaced by another presentation, use semantic focus; the
+[reference](reference.md#semantic-focus-in-virtualized-views) explains the
+small identity/binding API.
+
 ## Grow only when the app needs it
 
 Start with the root description. Add more specialized mechanisms for a real

@@ -356,6 +356,7 @@ Description :: struct {
 	region:      bool,
 	focusable:   bool,
 	selected:    bool,
+	semantic_id: Semantic_ID,
 	disabled:    bool,
 	identity_key: string,
 	identity_key_u64: u64,
@@ -427,6 +428,8 @@ Node :: struct {
 	hovered:     bool,
 	pressed:     bool,
 	selected:    bool,
+	semantic_id: Semantic_ID,
+	semantic_active: bool,
 	last_consumed_activation: u64,
 	caret:       Text_Position,
 	selection_anchor: Text_Position,
@@ -513,6 +516,20 @@ Cause_Kind :: enum {
 // Action_ID identifies an application-owned operation independently of the
 // input path that invoked it. Zero is reserved for events without an action.
 Action_ID :: distinct u32
+
+// Semantic_ID names an application entity independently from any retained
+// node that happens to present it. Namespace separates domains whose numeric
+// values may overlap; namespace zero is reserved for "no semantic entity".
+Semantic_ID :: struct {
+	namespace: u64,
+	value:     u64,
+}
+
+Semantic_Focus_State :: struct {
+	id:            Semantic_ID,
+	owner:         Node_ID,
+	realized_node: Node_ID,
+}
 
 Action_Descriptor :: struct {
 	id:    Action_ID,
@@ -632,6 +649,7 @@ Runtime :: struct {
 	viewport:    Rect,
 	focused:     Node_ID,
 	selected:    Node_ID,
+	semantic_focus: Semantic_Focus_State,
 	last_hovered: Node_ID,
 	captured_node: Node_ID,
 	scrollbar_drag_node: Node_ID,
@@ -1054,6 +1072,88 @@ action_lookup :: proc(rt: ^Runtime, id: Action_ID) -> (descriptor: Action_Descri
 		if entry.descriptor.id == id { return entry.descriptor, entry.state, true }
 	}
 	return
+}
+
+semantic_id_is_valid :: proc(id: Semantic_ID) -> bool {
+	return id.namespace != 0
+}
+
+// semantic_focus_state reports the independent logical focus identity, its
+// durable keyboard-focus owner, and the currently realized presentation node.
+semantic_focus_state :: proc(rt: ^Runtime) -> Semantic_Focus_State {
+	return rt.semantic_focus
+}
+
+// semantic_focus_set changes the logical entity being operated on without
+// changing keyboard focus or application selection. Bind that identity to a
+// described node with semantic_bind; reconciliation then updates realized_node
+// as the presentation appears and disappears.
+semantic_focus_set :: proc(rt: ^Runtime, id: Semantic_ID, owner: Node_ID) -> bool {
+	if !semantic_id_is_valid(id) { return semantic_focus_clear(rt) }
+	if rt.semantic_focus.id == id && rt.semantic_focus.owner == owner { return false }
+	rt.semantic_focus.id = id
+	rt.semantic_focus.owner = owner
+	refresh_semantic_focus_realization(rt)
+	record_trace(rt, .Focus, rt.semantic_focus.realized_node,
+		fmt.tprintf("semantic focus set namespace=%d value=%d owner=%d", id.namespace, id.value, owner))
+	return true
+}
+
+semantic_focus_clear :: proc(rt: ^Runtime) -> bool {
+	if rt.semantic_focus.id.namespace == 0 && rt.semantic_focus.owner == 0 && rt.semantic_focus.realized_node == 0 {
+		return false
+	}
+	previous := rt.semantic_focus.id
+	rt.semantic_focus = Semantic_Focus_State{}
+	refresh_semantic_focus_realization(rt)
+	record_trace(rt, .Focus, 0,
+		fmt.tprintf("semantic focus cleared namespace=%d value=%d", previous.namespace, previous.value))
+	return true
+}
+
+semantic_node_within_owner :: proc(rt: ^Runtime, id, owner: Node_ID) -> bool {
+	if owner == 0 { return false }
+	current := id
+	for current != 0 {
+		if current == owner { return true }
+		node, ok := rt.nodes[current]
+		if !ok { return false }
+		current = node.parent
+	}
+	return false
+}
+
+refresh_semantic_focus_realization :: proc(rt: ^Runtime) {
+	previous := rt.semantic_focus.realized_node
+	next := Node_ID(0)
+	fallback := Node_ID(0)
+	if semantic_id_is_valid(rt.semantic_focus.id) {
+		for id in rt.order {
+			node, ok := rt.nodes[id]
+			if !ok || !node.active || node.semantic_id != rt.semantic_focus.id { continue }
+			if fallback == 0 { fallback = id }
+			if semantic_node_within_owner(rt, id, rt.semantic_focus.owner) {
+				next = id
+				break
+			}
+		}
+		if next == 0 { next = fallback }
+	}
+	for id, node in rt.nodes {
+		should_be_active := id == next
+		if node.semantic_active != should_be_active {
+			node.semantic_active = should_be_active
+			invalidate_interaction_paint(rt, id, "semantic focus presentation changed")
+		}
+	}
+	rt.semantic_focus.realized_node = next
+	if previous != next {
+		if next == 0 && semantic_id_is_valid(rt.semantic_focus.id) {
+			record_trace(rt, .Focus, 0, "semantic focus has no realized presentation")
+		} else if next != 0 {
+			record_trace(rt, .Focus, next, "semantic focus presentation realized")
+		}
+	}
 }
 
 trace_action :: proc(rt: ^Runtime, action_id: Action_ID, label: string) {
@@ -1713,6 +1813,7 @@ scroll_region_begin :: proc(
 	axes := Scroll_Axes.Both,
 	axis_behavior := Scroll_Axis_Behavior.Auto_Lock,
 	scrollbars := Scrollbar_Policy.Auto,
+	focusable := false,
 ) -> Scroll_Region_Handle {
 	rt := ui.runtime
 	resolved_source := resolve_source(Source_Site{}, "scroll_region", loc)
@@ -1735,7 +1836,7 @@ scroll_region_begin :: proc(
 	max_scroll_x := maxf(content_width-resolved_width, 0)
 	id := emit_key(
 		ui, .Scroll_Region, resolved_source, label=label, key=key,
-		style=style, color=resolved_color, paint_background=paints,
+		style=style, color=resolved_color, paint_background=paints, focusable=focusable,
 		scroll_content_height=content_height,
 		scroll_viewport_height=resolved_viewport,
 		scroll_line_height=line_height,
@@ -1941,6 +2042,19 @@ button :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style := DEFA
 	return button_simple(ui, label, key, style, state, loc, text_style, content_style)
 }
 
+// semantic_bind associates the most recently described presentation node with
+// an application-owned logical identity. Call it immediately after describing
+// the widget; the identity is retained independently from that node's lifetime.
+semantic_bind :: proc(ui: ^UI, id: Semantic_ID) -> bool {
+	if !semantic_id_is_valid(id) { return false }
+	rt := ui.runtime
+	if len(rt.pending) == 0 { return false }
+	last := len(rt.pending)-1
+	if rt.pending[last].kind != .Description { return false }
+	rt.pending[last].description.semantic_id = id
+	return true
+}
+
 text :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE) -> Node_ID {
 	return text_simple(ui, value, key, style, loc, font, text_style)
 }
@@ -2051,6 +2165,7 @@ virtual_list_begin :: proc(
 	axes := Scroll_Axes.Vertical,
 	axis_behavior := Scroll_Axis_Behavior.Auto_Lock,
 	scrollbars := Scrollbar_Policy.Auto,
+	focusable := false,
 ) -> Virtual_List_Handle {
 	if item_count < 0 || row_height <= 0 { return {} }
 	region_style := style
@@ -2071,6 +2186,7 @@ virtual_list_begin :: proc(
 		axes=axes,
 		axis_behavior=axis_behavior,
 		scrollbars=scrollbars,
+		focusable=focusable,
 	)
 	if scroll.id == 0 { return {} }
 	metrics := virtual_list_metrics(item_count, scroll.offset_y, scroll.viewport_height, row_height)

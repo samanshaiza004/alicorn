@@ -1,5 +1,16 @@
 package alicorn
 
+append_focus_outline :: proc(node: ^Node, color: Color, thickness: f32) {
+	width := min(max(thickness, 0), node.bounds.w/2)
+	height := min(max(thickness, 0), node.bounds.h/2)
+	if width <= 0 || height <= 0 { return }
+	append(&node.paint, Display_Command{node.id, .Button, Rect{node.bounds.x, node.bounds.y, node.bounds.w, height}, node.clip, "", color})
+	append(&node.paint, Display_Command{node.id, .Button, Rect{node.bounds.x, node.bounds.y+node.bounds.h-height, node.bounds.w, height}, node.clip, "", color})
+	interior_height := max(0, node.bounds.h-height*2)
+	append(&node.paint, Display_Command{node.id, .Button, Rect{node.bounds.x, node.bounds.y+height, width, interior_height}, node.clip, "", color})
+	append(&node.paint, Display_Command{node.id, .Button, Rect{node.bounds.x+node.bounds.w-width, node.bounds.y+height, width, interior_height}, node.clip, "", color})
+}
+
 rebuild_display :: proc(rt: ^Runtime) {
 	clear(&rt.display)
 	for id in rt.order {
@@ -114,6 +125,9 @@ update_paint :: proc(rt: ^Runtime) {
 				if node.paint_background {
 					append(&node.paint, Display_Command{node.id, node.kind, node.bounds, node.clip, "", node.color})
 				}
+				if node.kind == .Scroll_Region && rt.focused == node.id {
+					append_focus_outline(node, Color{0.76, 0.86, 1.0, 1}, 1.5)
+				}
 			} else if node.kind == .Button {
 				padding_x := maxf(node.button_content_style.padding_x, 0)
 				padding_y := maxf(node.button_content_style.padding_y, 0)
@@ -158,17 +172,14 @@ update_paint :: proc(rt: ^Runtime) {
 					text_color = Color{0.48, 0.53, 0.62, 1.0}
 				}
 				append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", button_color})
+				if node.semantic_active {
+					append_focus_outline(node, Color{0.12, 0.78, 0.82, 1}, 1)
+				}
 				if rt.focused == node.id && !node.disabled {
 					// Focus is an independent outline so it remains visible without
 					// replacing the selected, hover, or pressed fill.
 					focus_color := Color{0.76, 0.86, 1.0, 1}
-					focus_x := min(1.5, node.bounds.w / 2)
-					focus_y := min(1.5, node.bounds.h / 2)
-					append(&node.paint, Display_Command{node.id, .Button, Rect{node.bounds.x, node.bounds.y, node.bounds.w, focus_y}, node.clip, "", focus_color})
-					append(&node.paint, Display_Command{node.id, .Button, Rect{node.bounds.x, node.bounds.y + node.bounds.h - focus_y, node.bounds.w, focus_y}, node.clip, "", focus_color})
-					interior_h := max(0, node.bounds.h - focus_y*2)
-					append(&node.paint, Display_Command{node.id, .Button, Rect{node.bounds.x, node.bounds.y + focus_y, focus_x, interior_h}, node.clip, "", focus_color})
-					append(&node.paint, Display_Command{node.id, .Button, Rect{node.bounds.x + node.bounds.w - focus_x, node.bounds.y + focus_y, focus_x, interior_h}, node.clip, "", focus_color})
+					append_focus_outline(node, focus_color, 1.5)
 				}
 				append(&node.paint, Display_Command{node.id, .Text, text_bounds, text_clip, owned(display_text, rt.persistent_allocator), text_color})
 			} else if node.kind == .Split_Handle {

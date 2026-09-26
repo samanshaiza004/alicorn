@@ -70,6 +70,22 @@ diagnostics, not an implicit request to use position.
   Nest splits for additional panes; nesting direction determines how resizing
   propagates.
 
+### Semantic focus in virtualized views
+
+Keyboard focus, application selection, and the logical entity being operated
+on are separate state. Use `Semantic_ID{namespace, value}` to identify an
+entity without tying it to a retained node. Set it with
+`semantic_focus_set(runtime, id, owner)`, then call `semantic_bind(ui, id)`
+immediately after describing a node that currently presents it. Use a stable,
+focusable ancestor as owner, such as a virtual list (`focusable=true`).
+
+When the bound row is virtualized away, the runtime retains the semantic ID,
+clears its realized node, and keeps keyboard focus at the list owner if focus was
+on that row. A later matching `semantic_bind` reconnects the presentation.
+`semantic_focus_clear` clears the logical identity; this does not change the
+application's selected item. `semantic_focus_state` and `inspect(runtime)` show
+the identity, owner, and current realization.
+
 ## Transient modal surfaces
 
 `modal_overlay_begin(ui, key, style, backdrop_color)` and

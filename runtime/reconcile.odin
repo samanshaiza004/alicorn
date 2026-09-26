@@ -208,6 +208,7 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	// the procedural description does not mention selection, while allowing a
 	// description to opt a node into the selected visual state.
 	node.selected = d.selected || rt.selected == node.id
+	node.semantic_id = d.semantic_id
 	node.explicit_key = d.explicit_key
 	node.identity_key_kind = d.identity_key_kind
 	node.identity_key_pair = d.identity_key_pair
@@ -376,6 +377,8 @@ rebuild_order :: proc(rt: ^Runtime) {
 
 reconcile :: proc(rt: ^Runtime) {
 	previous_focus := rt.focused
+	previous_semantic_realized := rt.semantic_focus.realized_node
+	previous_semantic_owner := rt.semantic_focus.owner
 	focus_lineage := make([dynamic]Node_ID, 0, allocator=rt.scratch_allocator)
 	focus_was_in_virtual_list := false
 	if previous_focus != 0 {
@@ -525,7 +528,21 @@ reconcile :: proc(rt: ^Runtime) {
 		if node, ok := rt.nodes[previous_focus]; ok && node.active && node.focusable {
 			rt.focused = previous_focus
 		} else {
-			rt.focused = focus_fallback(rt, focus_lineage[:], !focus_was_in_virtual_list)
+			rt.focused = 0
+			if previous_focus == previous_semantic_realized && previous_semantic_owner != 0 {
+				owner_in_lineage := false
+				for ancestor in focus_lineage {
+					if ancestor == previous_semantic_owner { owner_in_lineage = true; break }
+				}
+				owner, owner_ok := rt.nodes[previous_semantic_owner]
+				if owner_in_lineage && owner_ok && owner.active && owner.focusable &&
+					node_is_in_modal_overlay(rt, previous_semantic_owner, modal_overlay_root(rt)) {
+					rt.focused = previous_semantic_owner
+				}
+			}
+			if rt.focused == 0 {
+				rt.focused = focus_fallback(rt, focus_lineage[:], !focus_was_in_virtual_list)
+			}
 			if rt.focused != previous_focus {
 				record_trace(rt, .Focus, rt.focused, "focused node disappeared; deterministic fallback")
 			}
@@ -542,6 +559,11 @@ reconcile :: proc(rt: ^Runtime) {
 		// focus decoration appears on the very next frame.
 		invalidate_interaction_paint(rt, previous_focus, "focus visual state changed")
 		invalidate_interaction_paint(rt, rt.focused, "focus visual state changed")
+	}
+	refresh_semantic_focus_realization(rt)
+	if rt.semantic_focus.owner != 0 {
+		owner, owner_ok := rt.nodes[rt.semantic_focus.owner]
+		if !owner_ok || !owner.active { rt.semantic_focus.owner = 0 }
 	}
 
 	prepare_text_runs(rt)
