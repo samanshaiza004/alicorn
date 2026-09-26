@@ -75,6 +75,22 @@ The app keeps its count in an ordinary Odin struct. Its build procedure emits
 text and a button; when the button activates, the app updates that struct and
 emits the new count. That is enough to start building your own UI.
 
+## Explore the widget gallery
+
+The gallery is a runnable reference for Alicorn's checkbox and slider controls.
+It includes disabled states, stepped and continuous input, keyboard operation,
+and a negative slider range:
+
+```powershell
+.\tools\widget_gallery.ps1
+```
+
+```sh
+./tools/widget_gallery.sh
+```
+
+The app source is [`examples/widget_gallery/main.odin`](../examples/widget_gallery/main.odin).
+
 ## If Odin is not on `PATH`
 
 You can point a single command at the compiler instead:
