@@ -11,37 +11,46 @@ append_focus_outline :: proc(node: ^Node, color: Color, thickness: f32) {
 	append(&node.paint, Display_Command{node.id, .Button, Rect{node.bounds.x+node.bounds.w-width, node.bounds.y+height, width, interior_height}, node.clip, "", color})
 }
 
+append_scrollbar_display :: proc(rt: ^Runtime, node: ^Node) {
+	if node.kind != .Scroll_Region { return }
+	if node.scrollbar_vertical_visible {
+		append(&rt.display, Display_Command{node.id, .Scrollbar_Track, node.scrollbar_vertical_track, node.clip, "", Color{0.08, 0.10, 0.14, 1}})
+		append(&rt.display, Display_Command{node.id, .Scrollbar_Thumb, node.scrollbar_vertical_thumb, node.clip, "", Color{0.38, 0.48, 0.62, 1}})
+	}
+	if node.scrollbar_horizontal_visible {
+		append(&rt.display, Display_Command{node.id, .Scrollbar_Track, node.scrollbar_horizontal_track, node.clip, "", Color{0.08, 0.10, 0.14, 1}})
+		append(&rt.display, Display_Command{node.id, .Scrollbar_Thumb, node.scrollbar_horizontal_thumb, node.clip, "", Color{0.38, 0.48, 0.62, 1}})
+	}
+	if node.scrollbar_vertical_visible && node.scrollbar_horizontal_visible {
+		corner := Rect{node.scrollbar_vertical_track.x, node.scrollbar_horizontal_track.y, node.scrollbar_vertical_track.w, node.scrollbar_horizontal_track.h}
+		append(&rt.display, Display_Command{node.id, .Scrollbar_Corner, corner, node.clip, "", Color{0.06, 0.08, 0.11, 1}})
+	}
+}
+
+compose_subtree :: proc(rt: ^Runtime, id: Node_ID) {
+	node, ok := rt.nodes[id]
+	if !ok || !node.active { return }
+
+	node.display_index = -1
+	for command in node.paint {
+		if node.display_index < 0 { node.display_index = len(rt.display) }
+		append(&rt.display, command)
+		rt.stats.composition_nodes_visited += 1
+		rt.stats.stage_visits[.Composite] += 1
+	}
+	for child in node.children {
+		compose_subtree(rt, child)
+	}
+	// Scrollbars are local retained chrome: they paint above their scroll
+	// region's descendants, but remain below later siblings and top-level
+	// overlays such as modal command palettes.
+	append_scrollbar_display(rt, node)
+}
+
 rebuild_display :: proc(rt: ^Runtime) {
 	clear(&rt.display)
-	for id in rt.order {
-		node, ok := rt.nodes[id]
-		if !ok || !node.active { continue }
-		node.display_index = -1
-		for command in node.paint {
-		if node.display_index < 0 { node.display_index = len(rt.display) }
-			append(&rt.display, command)
-			rt.stats.composition_nodes_visited += 1
-			rt.stats.stage_visits[.Composite] += 1
-		}
-	}
-	// Scrollbars are a retained overlay on top of every child paint command.
-	// Their reserved tracks sit outside scroll_viewport_bounds, while this clip
-	// preserves clipping by any ancestor container.
-	for id in rt.order {
-		node, ok := rt.nodes[id]
-		if !ok || !node.active || node.kind != .Scroll_Region { continue }
-		if node.scrollbar_vertical_visible {
-			append(&rt.display, Display_Command{node.id, .Scrollbar_Track, node.scrollbar_vertical_track, node.clip, "", Color{0.08, 0.10, 0.14, 1}})
-			append(&rt.display, Display_Command{node.id, .Scrollbar_Thumb, node.scrollbar_vertical_thumb, node.clip, "", Color{0.38, 0.48, 0.62, 1}})
-		}
-		if node.scrollbar_horizontal_visible {
-			append(&rt.display, Display_Command{node.id, .Scrollbar_Track, node.scrollbar_horizontal_track, node.clip, "", Color{0.08, 0.10, 0.14, 1}})
-			append(&rt.display, Display_Command{node.id, .Scrollbar_Thumb, node.scrollbar_horizontal_thumb, node.clip, "", Color{0.38, 0.48, 0.62, 1}})
-		}
-		if node.scrollbar_vertical_visible && node.scrollbar_horizontal_visible {
-			corner := Rect{node.scrollbar_vertical_track.x, node.scrollbar_horizontal_track.y, node.scrollbar_vertical_track.w, node.scrollbar_horizontal_track.h}
-			append(&rt.display, Display_Command{node.id, .Scrollbar_Corner, corner, node.clip, "", Color{0.06, 0.08, 0.11, 1}})
-		}
+	for id in rt.top_level {
+		compose_subtree(rt, id)
 	}
 	rt.stats.composite_updates += 1
 	rt.composition_rebuild = false

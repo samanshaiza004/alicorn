@@ -2234,6 +2234,150 @@ render_scrollbar_fixture :: proc(
 	return
 }
 
+Modal_Scrollbar_Test_Nodes :: struct {
+	workspace:    alicorn.Node_ID,
+	overlay:      alicorn.Node_ID,
+	modal_panel:  alicorn.Node_ID,
+	modal_scroll: alicorn.Node_ID,
+	modal_inner_scroll: alicorn.Node_ID,
+	modal_text:   alicorn.Node_ID,
+	modal_sibling: alicorn.Node_ID,
+}
+
+render_modal_scrollbar_fixture :: proc(rt: ^alicorn.Runtime) -> Modal_Scrollbar_Test_Nodes {
+	result: Modal_Scrollbar_Test_Nodes
+	alicorn.invalidate_root(rt, "modal scrollbar composition fixture")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return result }
+	alicorn.container_begin(&ui, .Root, label="modal-scrollbar-workspace", style=alicorn.layout_style())
+	workspace := alicorn.scroll_region_begin(
+		&ui,
+		key=alicorn.key_string("workspace-scroll"),
+		viewport_width=100,
+		viewport_height=120,
+		content_width=100,
+		content_height=600,
+		style=alicorn.layout_style(width=100, height=120, clip=true),
+		axes=.Vertical,
+		label="workspace-scroll-region",
+	)
+	result.workspace = workspace.id
+	alicorn.container_begin(&ui, .Virtual_List, label="workspace-scroll-content", style=alicorn.layout_style(width=100, height=600, clip=true))
+	alicorn.text(&ui, "Workspace row", style=alicorn.layout_style(.Row, height=24))
+	alicorn.container_end(&ui)
+	alicorn.scroll_region_end(&ui)
+	alicorn.container_end(&ui)
+
+	result.overlay = alicorn.modal_overlay_begin(
+		&ui,
+		alicorn.key_string("scrollbar-overlay"),
+		style=alicorn.layout_style(.Column, align=.Center, clip=true),
+	)
+	result.modal_panel = alicorn.container_begin(
+		&ui,
+		.Container,
+		label="scrollbar-modal-panel",
+		style=alicorn.layout_style(width=240, height=170, padding=8, gap=4, clip=true),
+		color=alicorn.Color{0.06, 0.08, 0.12, 1},
+	)
+	alicorn.text(&ui, "Commands", style=alicorn.layout_style(.Row, height=20))
+	modal_scroll := alicorn.scroll_region_begin(
+		&ui,
+		key=alicorn.key_string("modal-scroll"),
+		viewport_width=120,
+		viewport_height=100,
+		content_width=120,
+		content_height=500,
+		style=alicorn.layout_style(width=120, height=100, clip=true),
+		axes=.Vertical,
+		label="modal-scroll-region",
+	)
+	result.modal_scroll = modal_scroll.id
+	alicorn.container_begin(&ui, .Virtual_List, label="modal-scroll-content", style=alicorn.layout_style(width=120, height=500, clip=true))
+	modal_inner_scroll := alicorn.scroll_region_begin(
+		&ui,
+		key=alicorn.key_string("modal-inner-scroll"),
+		viewport_width=60,
+		viewport_height=60,
+		content_width=60,
+		content_height=300,
+		style=alicorn.layout_style(width=60, height=60, clip=true),
+		axes=.Vertical,
+		label="modal-inner-scroll-region",
+	)
+	result.modal_inner_scroll = modal_inner_scroll.id
+	alicorn.container_begin(&ui, .Virtual_List, label="modal-inner-scroll-content", style=alicorn.layout_style(width=60, height=300, clip=true))
+	result.modal_text = alicorn.text(&ui, "Modal command row", style=alicorn.layout_style(.Row, height=24))
+	alicorn.container_end(&ui)
+	alicorn.scroll_region_end(&ui)
+	alicorn.container_end(&ui)
+	alicorn.scroll_region_end(&ui)
+	result.modal_sibling, _ = alicorn.button_ex(&ui, "After the list", style=alicorn.layout_style(.Row, width=120, height=24))
+	alicorn.container_end(&ui)
+	alicorn.modal_overlay_end(&ui)
+	alicorn.end_frame(&ui)
+	return result
+}
+
+test_modal_scrollbar_composition :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 200})
+	defer alicorn.destroy_runtime(&rt)
+	nodes := render_modal_scrollbar_fixture(&rt)
+	expect(state, nodes.workspace != 0 && nodes.overlay != 0 && nodes.modal_panel != 0 && nodes.modal_scroll != 0 && nodes.modal_inner_scroll != 0 && nodes.modal_text != 0 && nodes.modal_sibling != 0,
+		"workspace and modal scroll regions should both be retained")
+	if nodes.workspace == 0 || nodes.overlay == 0 || nodes.modal_panel == 0 || nodes.modal_scroll == 0 || nodes.modal_inner_scroll == 0 || nodes.modal_text == 0 || nodes.modal_sibling == 0 { return }
+
+	workspace_bar_index, backdrop_index := -1, -1
+	modal_panel_index := -1
+	modal_text_index, modal_inner_bar_index, modal_bar_index := -1, -1, -1
+	modal_sibling_index := -1
+	for command, index in rt.display {
+		if command.node == nodes.workspace && command.kind == .Scrollbar_Track && workspace_bar_index < 0 {
+			workspace_bar_index = index
+		}
+		if command.node == nodes.overlay && command.kind == .Modal_Overlay {
+			backdrop_index = index
+		}
+		if command.node == nodes.modal_panel && command.kind == .Container {
+			modal_panel_index = index
+		}
+		if command.node == nodes.modal_text && command.kind == .Text {
+			modal_text_index = index
+		}
+		if command.node == nodes.modal_inner_scroll && command.kind == .Scrollbar_Track && modal_inner_bar_index < 0 {
+			modal_inner_bar_index = index
+		}
+		if command.node == nodes.modal_scroll && command.kind == .Scrollbar_Track && modal_bar_index < 0 {
+			modal_bar_index = index
+		}
+		if command.node == nodes.modal_sibling && command.kind == .Button && modal_sibling_index < 0 {
+			modal_sibling_index = index
+		}
+	}
+	expect(state, workspace_bar_index >= 0 && backdrop_index > workspace_bar_index && modal_panel_index > backdrop_index,
+		"workspace scrollbar must compose below the modal backdrop and panel")
+	expect(state, modal_text_index >= 0 && modal_inner_bar_index > modal_text_index && modal_bar_index > modal_inner_bar_index,
+		"nested scrollbars must compose after their own content and in subtree order")
+	expect(state, modal_sibling_index > modal_bar_index,
+		"later modal siblings must compose above preceding scroll-region chrome")
+
+	workspace := rt.nodes[nodes.workspace]
+	hidden_x := workspace.scrollbar_vertical_track.x+workspace.scrollbar_vertical_track.w/2
+	hidden_y := workspace.scrollbar_vertical_track.y+workspace.scrollbar_vertical_track.h/2
+	target := alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, hidden_x, hidden_y, 1})
+	expect(state, target == nodes.overlay && rt.scrollbar_drag_node != nodes.workspace,
+		"pointer input over a covered workspace scrollbar must be consumed by the modal layer")
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=hidden_x, y=hidden_y, button=1})
+
+	modal := rt.nodes[nodes.modal_scroll]
+	modal_track := modal.scrollbar_vertical_track
+	modal_x := modal_track.x+modal_track.w/2
+	modal_y := modal_track.y+modal_track.h-1
+	target = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, modal_x, modal_y, 1})
+	expect(state, target == nodes.modal_scroll && alicorn.scroll_region_offset(&rt, nodes.modal_scroll) > 0,
+		"modal-owned scrollbar must remain interactive above modal content")
+}
+
 test_scrollbar_layout_projection :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
 	defer alicorn.destroy_runtime(&rt)
@@ -2757,6 +2901,7 @@ main :: proc() {
 	test_high_level_virtual_list_and_style_defaults(&state)
 	test_scroll_region_routing_and_clamp(&state)
 	test_scrollbar_layout_projection(&state)
+	test_modal_scrollbar_composition(&state)
 	test_scrollbar_interaction(&state)
 	test_retained_split_drag_and_clamp(&state)
 	test_adjacent_three_pane_split_redistribution(&state)
