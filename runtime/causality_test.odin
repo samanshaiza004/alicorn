@@ -200,6 +200,34 @@ test_async_completion_has_a_distinct_cause_through_submission :: proc(t: ^testin
 }
 
 @(test)
+test_scheduled_wake_is_a_distinct_cause_through_submission :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 180}, Runtime_Config{trace_capacity=48})
+	defer destroy_runtime(&rt)
+
+	wake := cause_begin(&rt, .Scheduled_Wake, "frequent monitor refresh")
+	trace_mutation(&rt, "monitor sample updated CPU history")
+	invalidate_root(&rt, "scheduled monitor sample")
+	cause_end(&rt, wake)
+
+	ui, should_build := begin_frame(&rt)
+	testing.expect(t, should_build, "scheduled completion should request a visible frame")
+	if !should_build { return }
+	causality_test_build_root(&ui)
+	end_frame(&ui)
+	frame_submission_succeeded(&rt)
+
+	events := trace_snapshot(&rt)
+	defer delete(events)
+	for event in events {
+		if event.kind == .Mutation || event.kind == .Invalidation || event.kind == .Reconcile ||
+			event.kind == .Layout || event.kind == .Paint || event.kind == .Composite || event.kind == .Submit {
+			testing.expect(t, event.cause_id == wake.cause.id && event.cause_kind == .Scheduled_Wake,
+				"scheduled refresh and resulting runtime work should share the scheduled cause")
+		}
+	}
+}
+
+@(test)
 test_unscoped_explicit_invalidation_creates_application_cause :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 320, 180}, Runtime_Config{trace_capacity=32})
 	defer destroy_runtime(&rt)

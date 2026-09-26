@@ -85,7 +85,8 @@ Dialog_Service_Backend :: enum {
 }
 
 Application_Services :: struct {
-	dialogs: Dialog_Service,
+	dialogs:   Dialog_Service,
+	scheduler: Application_Scheduler,
 }
 
 Application_Dialog_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, result: ^File_Dialog_Result)

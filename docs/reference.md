@@ -16,7 +16,16 @@ logical_height, dpi_scale) -> Node_ID`. A typical callback calls
 `begin_frame`, emits a `.Root` container and its children, then calls
 `end_frame`. Return early if `begin_frame` says there is no application build
 to do. Optional callbacks handle text changes, keys, pointer/scroll input,
-ticks, dialogs, worker wakeups, and lifecycle events.
+scheduled wakes, dialogs, worker wakeups, and lifecycle events.
+
+For periodic refreshes, read `Application_Services.scheduler` in
+`on_services`. `application_schedule_after` and
+`application_cancel_scheduled_wake` operate on one-shot `Frequent` and
+`Opportunistic` deadlines; rearm explicitly from `on_scheduled_wake`. These
+callbacks run on the UI thread. Opportunistic work is held until 150 ms after
+the last keyboard or pointer event. `application_scheduler_stats` exposes
+scheduled/coalesced counts, runs, deferrals, pending state, and maximum
+lateness. Prefer this over display-cadence `on_tick` for live data refresh.
 
 ## Frame and invalidation
 

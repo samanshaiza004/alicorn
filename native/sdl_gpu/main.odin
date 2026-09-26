@@ -168,8 +168,50 @@ Application_Tick_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
 Application_Start_Proc :: proc(state: rawptr, waker: Application_Waker)
 Application_Services_Proc :: proc(state: rawptr, services: Application_Services)
 Application_Wake_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
+Application_Scheduled_Wake_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, class: Scheduled_Wake_Class)
 Application_Stop_Proc :: proc(state: rawptr)
 Application_Menu_Command_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, command: Application_Command_ID)
+
+// Scheduled_Wake_Class distinguishes work that should run at a useful cadence
+// from lower-fidelity work that can wait until the user has been quiet.
+Scheduled_Wake_Class :: enum {Frequent, Opportunistic}
+
+Application_Schedule_After_Proc :: proc(data: rawptr, class: Scheduled_Wake_Class, delay_ns: u64) -> bool
+Application_Cancel_Scheduled_Proc :: proc(data: rawptr, class: Scheduled_Wake_Class) -> bool
+Application_Scheduler_Stats_Proc :: proc(data: rawptr) -> Application_Scheduler_Stats
+
+Application_Scheduler_Stats :: struct {
+	scheduled:               u64,
+	coalesced:               u64,
+	frequent_wakes:          u64,
+	opportunistic_wakes:     u64,
+	opportunistic_deferrals: u64,
+	maximum_lateness_ns:     u64,
+	frequent_pending:        bool,
+	opportunistic_pending:   bool,
+}
+
+// Application_Scheduler is a UI-thread-only service. It owns at most one
+// replaceable deadline for each class; it is deliberately not a task queue.
+Application_Scheduler :: struct {
+	data:         rawptr,
+	schedule:     Application_Schedule_After_Proc,
+	cancel:       Application_Cancel_Scheduled_Proc,
+	read_stats:   Application_Scheduler_Stats_Proc,
+}
+
+application_schedule_after :: proc(scheduler: Application_Scheduler, class: Scheduled_Wake_Class, delay_ns: u64) -> bool {
+	return scheduler.schedule != nil && scheduler.schedule(scheduler.data, class, delay_ns)
+}
+
+application_cancel_scheduled_wake :: proc(scheduler: Application_Scheduler, class: Scheduled_Wake_Class) -> bool {
+	return scheduler.cancel != nil && scheduler.cancel(scheduler.data, class)
+}
+
+application_scheduler_stats :: proc(scheduler: Application_Scheduler) -> Application_Scheduler_Stats {
+	if scheduler.read_stats != nil { return scheduler.read_stats(scheduler.data) }
+	return {}
+}
 
 // Application_Waker is an opaque, thread-safe request to wake the native
 // application loop. The application can retain and call it from a worker
@@ -204,6 +246,7 @@ Application :: struct {
 	on_start:           Application_Start_Proc,
 	on_dialog:          Application_Dialog_Proc,
 	on_wake:            Application_Wake_Proc,
+	on_scheduled_wake:  Application_Scheduled_Wake_Proc,
 	on_stop:            Application_Stop_Proc,
 	on_menu_command:    Application_Menu_Command_Proc,
 }
@@ -237,6 +280,66 @@ native_menu_dispatch_command :: proc(menu: ^Native_Menu_Runtime, command: Applic
 Native_Application_Waker :: struct {
 	event_type: sdl3.EventType,
 	active:     bool,
+}
+
+NATIVE_OPPORTUNISTIC_QUIET_NS :: u64(150_000_000)
+
+native_application_schedule_after :: proc(data: rawptr, class: Scheduled_Wake_Class, delay_ns: u64) -> bool {
+	return scheduled_wake_schedule(cast(^Native_Scheduled_Wake_State)data, class, u64(sdl3.GetTicksNS()), delay_ns)
+}
+
+native_application_cancel_scheduled :: proc(data: rawptr, class: Scheduled_Wake_Class) -> bool {
+	return scheduled_wake_cancel(cast(^Native_Scheduled_Wake_State)data, class)
+}
+
+native_application_scheduler_stats :: proc(data: rawptr) -> Application_Scheduler_Stats {
+	return scheduled_wake_read_stats(cast(^Native_Scheduled_Wake_State)data)
+}
+
+native_event_is_user_interaction :: proc(kind: sdl3.EventType) -> bool {
+	#partial switch kind {
+	case .KEY_DOWN, .KEY_UP, .TEXT_INPUT, .TEXT_EDITING,
+		.MOUSE_MOTION, .MOUSE_BUTTON_DOWN, .MOUSE_BUTTON_UP, .MOUSE_WHEEL:
+		return true
+	}
+	return false
+}
+
+native_dispatch_scheduled_wakes :: proc(
+	application: ^Application,
+	rt: ^alicorn.Runtime,
+	state: ^Native_Scheduled_Wake_State,
+	last_interaction_ns: u64,
+	timing: ^Native_Host_Timing,
+) {
+	if application == nil || state == nil || !state.active { return }
+	classes := [2]Scheduled_Wake_Class{.Frequent, .Opportunistic}
+	for class in classes {
+		now_ns := u64(sdl3.GetTicksNS())
+		if !scheduled_wake_is_due(state, class, now_ns) { continue }
+		index := scheduled_wake_class_index(class)
+		if class == .Opportunistic {
+			deferred_until, defer_work := scheduled_wake_defer_until_quiet(now_ns, last_interaction_ns, NATIVE_OPPORTUNISTIC_QUIET_NS)
+			if defer_work {
+				state.deadlines_ns[index] = deferred_until
+				state.stats.opportunistic_deferrals += 1
+				timing.opportunistic_deferrals += 1
+				continue
+			}
+		}
+		deadline_ns := state.deadlines_ns[index]
+		lateness_ns := u64(0)
+		if now_ns > deadline_ns { lateness_ns = now_ns-deadline_ns }
+		scheduled_wake_record_run(state, class, lateness_ns)
+		timing.scheduled_wakes += 1
+		timing.maximum_scheduled_lateness_ns = max(timing.maximum_scheduled_lateness_ns, lateness_ns)
+		if application.on_scheduled_wake != nil {
+			reason := class == .Frequent ? "frequent scheduled work" : "opportunistic scheduled work"
+			cause := alicorn.cause_begin(rt, .Scheduled_Wake, reason)
+			application.on_scheduled_wake(application.state, rt, class)
+			alicorn.cause_end(rt, cause)
+		}
+	}
 }
 
 native_application_wake :: proc(data: rawptr) {
@@ -583,6 +686,7 @@ pump_events :: proc(
 	wait_timeout_ms: sdl3.Sint32 = -1,
 	wait_timed_out: ^bool = nil,
 	native_menu: ^Native_Menu_Runtime = nil,
+	last_user_interaction_ns: ^u64 = nil,
 ) {
 	if telemetry != nil { telemetry.events_this_pump = 0 }
 	event: sdl3.Event
@@ -602,6 +706,9 @@ pump_events :: proc(
 		has_event = poll_sdl_event(&event)
 	}
 	for has_event {
+		if last_user_interaction_ns != nil && native_event_is_user_interaction(event.type) {
+			last_user_interaction_ns^ = u64(sdl3.GetTicksNS())
+		}
 		if telemetry != nil {
 			event_timestamp: u64 = 0
 			#partial switch event.type {
@@ -1340,10 +1447,20 @@ run_application_loop :: proc(
 	if wake_event_id == 0 { fail("SDL_RegisterEvents failed for application wakeups") }
 	wake_state := Native_Application_Waker{event_type=sdl3.EventType(wake_event_id), active=true}
 	application_waker := Application_Waker{data=rawptr(&wake_state), wake=native_application_wake}
+	scheduler_state := Native_Scheduled_Wake_State{active=true}
+	application_scheduler := Application_Scheduler{
+		data=rawptr(&scheduler_state),
+		schedule=native_application_schedule_after,
+		cancel=native_application_cancel_scheduled,
+		read_stats=native_application_scheduler_stats,
+	}
 	dialog_bridge := native_dialog_bridge_make(window, application_waker)
 	defer native_dialog_bridge_release(dialog_bridge)
 	if application_instance.on_services != nil {
-		application_instance.on_services(application_instance.state, Application_Services{dialogs=Dialog_Service{handle=rawptr(dialog_bridge)}})
+		application_instance.on_services(application_instance.state, Application_Services{
+			dialogs=Dialog_Service{handle=rawptr(dialog_bridge)},
+			scheduler=application_scheduler,
+		})
 	}
 	if application_instance.on_start != nil {
 		application_instance.on_start(application_instance.state, application_waker)
@@ -1360,6 +1477,7 @@ run_application_loop :: proc(
 	last_tick := time.now()
 	last_focus_log := start
 	wait_for_event := false
+	last_user_interaction_ns: u64 = 0
 	event_waits: u64 = 0
 	wake_events: u64 = 0
 	for !quit_requested {
@@ -1367,15 +1485,26 @@ run_application_loop :: proc(
 		frame_start := time.now()
 		event_start := time.now()
 	wait_timed_out := false
+		idle_proof_timeout := false
 	wait_timeout_ms: sdl3.Sint32 = -1
-	if wait_for_event && idle_proof_seconds > 0 {
-		elapsed := time.duration_nanoseconds(time.since(start))
-		remaining := i64(idle_proof_seconds)*1_000_000_000 - elapsed
-		if remaining <= 0 {
-			quit_requested = true
-			continue
+	if wait_for_event {
+		current_ns := u64(sdl3.GetTicksNS())
+		if next_deadline, found := scheduled_wake_next_deadline(&scheduler_state); found {
+			wait_timeout_ms = sdl3.Sint32(scheduled_wake_timeout_ms(next_deadline, current_ns))
 		}
-		wait_timeout_ms = sdl3.Sint32((remaining + 999_999) / 1_000_000)
+		if idle_proof_seconds > 0 {
+			elapsed := time.duration_nanoseconds(time.since(start))
+			remaining := i64(idle_proof_seconds)*1_000_000_000 - elapsed
+			if remaining <= 0 {
+				quit_requested = true
+				continue
+			}
+			idle_timeout_ms := u64((remaining + 999_999) / 1_000_000)
+			if wait_timeout_ms < 0 || idle_timeout_ms < u64(wait_timeout_ms) {
+				wait_timeout_ms = sdl3.Sint32(min(idle_timeout_ms, u64(0x7fff_ffff)))
+				idle_proof_timeout = true
+			}
+		}
 	}
 		pump_events(
 			window, rt, metrics, &quit_requested,
@@ -1394,6 +1523,7 @@ run_application_loop :: proc(
 			wait_timeout_ms=wait_timeout_ms,
 			wait_timed_out=&wait_timed_out,
 			native_menu=native_menu,
+			last_user_interaction_ns=&last_user_interaction_ns,
 		)
 		if native_menu != nil {
 			if command, ok := native_menu_take_pending(native_menu); ok {
@@ -1402,7 +1532,10 @@ run_application_loop :: proc(
 		}
 		native_dialog_dispatch(dialog_bridge, &application_instance, rt)
 		wait_for_event = false
-		if wait_timed_out {
+		if !quit_requested {
+			native_dispatch_scheduled_wakes(&application_instance, rt, &scheduler_state, last_user_interaction_ns, &timing)
+		}
+		if wait_timed_out && idle_proof_timeout {
 			quit_requested = true
 			continue
 		}
@@ -1426,12 +1559,10 @@ run_application_loop :: proc(
 			quit_requested = true
 			continue
 		}
-		if time.duration_nanoseconds(time.since(last_tick)) >= 16_666_667 {
-			if application.on_tick != nil {
-				tick_start := time.now()
-				application.on_tick(application.state, rt)
-				native_timing_accumulate(&timing.application_tick_ns, &timing.application_tick_max_ns, u64(time.duration_nanoseconds(time.since(tick_start))) )
-			}
+		if application_instance.on_tick != nil && time.duration_nanoseconds(time.since(last_tick)) >= 16_666_667 {
+			tick_start := time.now()
+			application_instance.on_tick(application_instance.state, rt)
+			native_timing_accumulate(&timing.application_tick_ns, &timing.application_tick_max_ns, u64(time.duration_nanoseconds(time.since(tick_start))) )
 			last_tick = now
 		}
 
@@ -1509,15 +1640,21 @@ run_application_loop :: proc(
 		}
 		if !rt.invalidated && !alicorn.frame_needs_submission(rt) {
 			if !smoke && application_instance.on_tick == nil {
-				// An application with no tick callback has no reason to poll at
-				// display cadence. SDL waits until an OS event or a worker calls
-				// Application_Waker, preserving true idle for desktop apps.
+				// Event-driven apps wait for either input, a worker wake, or their
+				// nearest scheduled deadline; there is no display-cadence tick.
 				wait_for_event = true
 			} else {
 				sdl3.Delay(1)
 			}
 		}
 		native_timing_add_frame(&timing, u64(time.duration_nanoseconds(time.since(frame_start))))
+		scheduler_stats := scheduled_wake_read_stats(&scheduler_state)
+		timing.frequent_wakes = scheduler_stats.frequent_wakes
+		timing.opportunistic_wakes = scheduler_stats.opportunistic_wakes
+		timing.scheduled_requests = scheduler_stats.scheduled
+		timing.schedule_coalesces = scheduler_stats.coalesced
+		timing.opportunistic_deferrals = scheduler_stats.opportunistic_deferrals
+		timing.maximum_scheduled_lateness_ns = scheduler_stats.maximum_lateness_ns
 		if native_write_diagnostics(&diagnostics, start, gpu_driver, metrics^, rt, text_renderer, surface_renderer, solid_renderer, &timing, &text_events) {
 			screenshot_path := fmt.tprintf("%s/screenshot.ppm", diagnostics.capture_dir)
 			if native_capture_display_ppm(
@@ -1543,6 +1680,8 @@ run_application_loop :: proc(
 		// address after run_application_loop returns.
 		application_instance.on_stop(application_instance.state)
 	}
+	scheduler_state.active = false
+	for &pending in scheduler_state.pending { pending = false }
 	wake_state.active = false
 	for entry in in_flight {
 		sdl3.ReleaseGPUFence(device, entry.fence)

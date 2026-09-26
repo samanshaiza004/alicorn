@@ -76,6 +76,15 @@ The host waits for events when idle. Worker completions can wake it through an
 opaque `Application_Waker`; the UI remains on the window thread. The runtime
 does not create application threads or observe external state.
 
+Applications that need delayed refreshes can use the host's two-slot
+`Application_Scheduler`. A slot is either `Frequent` or `Opportunistic`; each
+class owns one replaceable deadline, and callbacks run on the UI thread with a
+`Scheduled_Wake` cause. Opportunistic deadlines wait until 150 ms after the
+last keyboard or pointer input. The host sleeps until the next deadline or
+native event, and no callback rearms itself automatically, so canceling both
+slots returns the application to true idle. This is for bounded refresh
+cadences, not animations or general-purpose task queues.
+
 ## Boundaries and current scope
 
 The current surface API supports typed retained presentation data; it is not

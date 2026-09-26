@@ -509,6 +509,7 @@ Cause_Kind :: enum {
 	Scroll,
 	Native_Command,
 	Async_Wake,
+	Scheduled_Wake,
 	Application,
 	Host_Event,
 }
