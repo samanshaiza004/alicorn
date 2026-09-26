@@ -132,7 +132,7 @@ hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 		id := rt.order[i]
 		if node, ok := rt.nodes[id]; ok && node.active && !node.disabled &&
 			node_is_in_modal_overlay(rt, id, modal_root) && rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
-			if node.kind == .Button || node.kind == .Text_Field || node.kind == .Custom_Surface {
+			if node.kind == .Button || node.kind == .Checkbox || node.kind == .Slider || node.kind == .Text_Field || node.kind == .Custom_Surface {
 				return id
 			}
 		}
@@ -272,13 +272,12 @@ focus_traverse :: proc(rt: ^Runtime, direction: Focus_Direction) -> Node_ID {
 }
 
 // activate_focused feeds a keyboard activation through the same retained
-// button contract used by pointer-up. The button consumes this sequence during
-// the next description pass, so activation remains one-shot and application
-// code only observes its public clicked result.
+// contract used by pointer-up. Buttons and checkboxes consume this sequence
+// during the next description pass.
 activate_focused :: proc(rt: ^Runtime) -> bool {
 	id := rt.focused
 	node, ok := rt.nodes[id]
-	if !ok || !node.active || !node.focusable || node.disabled || node.kind != .Button {
+	if !ok || !node.active || !node.focusable || node.disabled || (node.kind != .Button && node.kind != .Checkbox) {
 		return false
 	}
 	rt.activation_sequence += 1
@@ -286,6 +285,45 @@ activate_focused :: proc(rt: ^Runtime) -> bool {
 	record_trace(rt, .Focus, id, "focused button activated")
 	invalidate_interaction_paint(rt, id, "focused button activated")
 	invalidate_root(rt, "focused button activated")
+	return true
+}
+
+slider_set_from_pointer :: proc(rt: ^Runtime, node: ^Node, x: f32) -> bool {
+	if node.kind != .Slider || node.disabled || node.control_maximum <= node.control_minimum { return false }
+	track_start := node.bounds.x + minf(8, node.bounds.w*0.25)
+	track_width := maxf(node.bounds.w - minf(16, node.bounds.w*0.5), 1)
+	position := clampf((x-track_start)/track_width, 0, 1)
+	next := slider_normalize(node.control_minimum+position*(node.control_maximum-node.control_minimum), node.control_minimum, node.control_maximum, node.control_step)
+	current := node.control_value
+	if node.control_pending { current = node.control_pending_value }
+	if current == next { return false }
+	node.control_pending = true
+	node.control_pending_value = next
+	record_trace(rt, .Mutation, node.id, "slider value changed by pointer")
+	invalidate_root(rt, "slider value changed by pointer")
+	return true
+}
+
+// adjust_focused_slider applies one keyboard step to the focused slider. A
+// continuous slider uses one percent of its range; arrows at a bound are
+// still consumed without reporting a value change.
+adjust_focused_slider :: proc(rt: ^Runtime, direction: int) -> bool {
+	if direction == 0 { return false }
+	node, ok := rt.nodes[rt.focused]
+	if !ok || !node.active || node.kind != .Slider || !node.focusable || node.disabled || node.control_maximum <= node.control_minimum {
+		return false
+	}
+	current := node.control_value
+	if node.control_pending { current = node.control_pending_value }
+	step := node.control_step
+	if step <= 0 { step = (node.control_maximum-node.control_minimum)/100 }
+	next := slider_normalize(current+f32(direction)*step, node.control_minimum, node.control_maximum, node.control_step)
+	if next != current {
+		node.control_pending = true
+		node.control_pending_value = next
+		record_trace(rt, .Mutation, node.id, "slider value changed by keyboard")
+		invalidate_root(rt, "slider value changed by keyboard")
+	}
 	return true
 }
 
@@ -362,6 +400,9 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 		if captured, ok := rt.nodes[rt.captured_node]; ok && captured.active && captured.kind == .Split_Handle {
 			hover_target = captured.id
 			update_split_drag(rt, captured, event.x, event.y)
+		} else if captured, ok := rt.nodes[rt.captured_node]; ok && captured.active && captured.kind == .Slider {
+			hover_target = captured.id
+			_ = slider_set_from_pointer(rt, captured, event.x)
 		}
 		if hover_target != rt.last_hovered {
 			if rt.last_hovered != 0 {
@@ -393,6 +434,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 				}
 				node.pressed = true
 				invalidate_interaction_paint(rt, node.id, "press began")
+				if node.kind == .Slider { _ = slider_set_from_pointer(rt, node, event.x) }
 				if node.kind == .Split_Handle {
 					if owner, owner_ok := rt.nodes[node.split_owner]; owner_ok {
 						owner.split_dragging = true
@@ -421,6 +463,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 		if captured != 0 {
 			if node, ok := rt.nodes[captured]; ok {
 				if node.kind == .Split_Handle { update_split_drag(rt, node, event.x, event.y) }
+				if node.kind == .Slider { _ = slider_set_from_pointer(rt, node, event.x) }
 				node.pressed = false
 				invalidate_interaction_paint(rt, node.id, "press ended")
 				if node.kind == .Split_Handle {
@@ -448,7 +491,11 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 		}
 		if !captured_is_split && captured != 0 && captured == target {
 			rt.activation_sequence += 1
-			rt.activation_node = captured
+			if node, ok := rt.nodes[captured]; ok && (node.kind == .Button || node.kind == .Checkbox) {
+				rt.activation_node = captured
+			} else {
+				rt.activation_node = 0
+			}
 		} else {
 			rt.activation_node = 0
 		}

@@ -831,7 +831,7 @@ text_run_build_with_overflow :: proc(
 prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) -> bool {
 	if !node_has_text_product(node.kind) || !node.active { return false }
 	text_value := node.text
-	if node.kind == .Button { text_value = node.label }
+	if node.kind == .Button || node.kind == .Checkbox || node.kind == .Slider { text_value = node.label }
 	text_overflow := node.text_style.overflow
 	if node.kind == .Text_Field { text_overflow = .Wrap }
 	// Runtime editing can update Node.text before the next application

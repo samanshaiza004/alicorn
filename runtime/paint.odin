@@ -191,6 +191,70 @@ update_paint :: proc(rt: ^Runtime) {
 					append_focus_outline(node, focus_color, 1.5)
 				}
 				append(&node.paint, Display_Command{node.id, .Text, text_bounds, text_clip, owned(display_text, rt.persistent_allocator), text_color})
+			} else if node.kind == .Checkbox {
+				box_size := minf(18, maxf(node.bounds.h-6, 12))
+				box := Rect{node.bounds.x+4, node.bounds.y+(node.bounds.h-box_size)*0.5, box_size, box_size}
+				box_color := Color{0.32, 0.38, 0.48, 1}
+				if node.disabled { box_color = Color{0.20, 0.23, 0.29, 1} }
+				if node.hovered && !node.disabled { box_color = Color{0.48, 0.60, 0.76, 1} }
+				if node.pressed && !node.disabled { box_color = Color{0.58, 0.70, 0.86, 1} }
+				append(&node.paint, Display_Command{node.id, .Button, box, node.clip, "", box_color})
+				inner := Rect{box.x+2, box.y+2, maxf(box.w-4, 0), maxf(box.h-4, 0)}
+				inner_color := Color{0.035, 0.045, 0.065, 1}
+				if node.paint_value&1 != 0 { inner_color = Color{0.20, 0.48, 0.76, 1} }
+				if node.disabled {
+					inner_color = Color{0.08, 0.09, 0.12, 1}
+					if node.paint_value&1 != 0 { inner_color = Color{0.18, 0.24, 0.31, 1} }
+				}
+				append(&node.paint, Display_Command{node.id, .Button, inner, node.clip, "", inner_color})
+				if node.paint_value&1 != 0 {
+					check_color := Color{0.94, 0.97, 1, 1}
+					append(&node.paint,
+						Display_Command{node.id, .Button, Rect{box.x+4, box.y+box.h*0.55, box.w*0.24, 2}, node.clip, "", check_color},
+						Display_Command{node.id, .Button, Rect{box.x+7, box.y+box.h*0.48, box.w*0.27, 2}, node.clip, "", check_color},
+						Display_Command{node.id, .Button, Rect{box.x+10, box.y+box.h*0.36, box.w*0.26, 2}, node.clip, "", check_color},
+					)
+				}
+				if rt.focused == node.id && !node.disabled {
+					append_focus_outline(node, Color{0.76, 0.86, 1.0, 1}, 1.5)
+				}
+				text_color := Color{0.88, 0.91, 0.96, 1}
+				if node.disabled { text_color = Color{0.48, 0.53, 0.62, 1} }
+				text_bounds := Rect{node.bounds.x+30, node.bounds.y, maxf(node.bounds.w-34, 0), node.bounds.h}
+				if node.text_run_valid { text_bounds.y += (text_bounds.h-node.text_run.height)*0.5 }
+				append(&node.paint, Display_Command{node.id, .Text, text_bounds, rect_intersection(node.clip, text_bounds), owned(display_text, rt.persistent_allocator), text_color})
+			} else if node.kind == .Slider {
+				text_color := Color{0.88, 0.91, 0.96, 1}
+				if node.disabled { text_color = Color{0.48, 0.53, 0.62, 1} }
+				label_bounds := Rect{node.bounds.x+8, node.bounds.y+1, maxf(node.bounds.w-16, 0), minf(maxf(node.bounds.h-14, 0), node.text_run.height)}
+				append(&node.paint, Display_Command{node.id, .Text, label_bounds, rect_intersection(node.clip, label_bounds), owned(display_text, rt.persistent_allocator), text_color})
+				track_x := node.bounds.x + minf(8, node.bounds.w*0.25)
+				track_width := maxf(node.bounds.w-minf(16, node.bounds.w*0.5), 1)
+				track_y := node.bounds.y + node.bounds.h - 8
+				track := Rect{track_x, track_y-2, track_width, 4}
+				fraction: f32 = 0
+				if node.control_maximum > node.control_minimum {
+					fraction = clampf((node.control_value-node.control_minimum)/(node.control_maximum-node.control_minimum), 0, 1)
+				}
+				thumb_x := track_x + fraction*track_width
+				track_color := Color{0.16, 0.20, 0.27, 1}
+				fill_color := Color{0.25, 0.54, 0.82, 1}
+				thumb_color := Color{0.78, 0.86, 0.96, 1}
+				if node.disabled {
+					fill_color = Color{0.23, 0.29, 0.36, 1}
+					thumb_color = Color{0.46, 0.50, 0.57, 1}
+				} else if node.hovered || node.pressed {
+					fill_color = Color{0.32, 0.66, 0.94, 1}
+					thumb_color = Color{0.94, 0.97, 1, 1}
+				}
+				append(&node.paint,
+					Display_Command{node.id, .Button, track, node.clip, "", track_color},
+					Display_Command{node.id, .Button, Rect{track_x, track_y-2, maxf(thumb_x-track_x, 0), 4}, node.clip, "", fill_color},
+					Display_Command{node.id, .Button, Rect{thumb_x-5, track_y-6, 10, 12}, node.clip, "", thumb_color},
+				)
+				if rt.focused == node.id && !node.disabled {
+					append_focus_outline(node, Color{0.76, 0.86, 1.0, 1}, 1.5)
+				}
 			} else if node.kind == .Split_Handle {
 				handle_color := Color{0.20, 0.24, 0.31, 1}
 				if node.hovered { handle_color = Color{0.35, 0.53, 0.72, 1} }

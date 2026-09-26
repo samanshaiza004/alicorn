@@ -131,10 +131,23 @@ intrinsic_main :: proc(node: ^Node, direction: Layout_Direction) -> f32 {
 	}
 	if direction == .Row {
 		if node.style.width >= 0 { return node.style.width }
+		if node.kind == .Checkbox {
+			if node.text_run_valid { return node.text_run.width + 36 }
+			return 116
+		}
+		if node.kind == .Slider { return 180 }
 		if node.text_run_valid { return node.text_run.width + 2*padding_x }
 		return 80 + 2*padding_x
 	}
 	if node.style.height >= 0 { return node.style.height }
+	if node.kind == .Checkbox {
+		if node.text_run_valid { return maxf(28, node.text_run.height+8) }
+		return 28
+	}
+	if node.kind == .Slider {
+		if node.text_run_valid { return maxf(44, node.text_run.height+24) }
+		return 44
+	}
 	if node.text_run_valid { return node.text_run.height + 2*padding_y }
 	return 24 + 2*padding_y
 }
@@ -151,6 +164,8 @@ layout_text_constraint :: proc(parent: ^Node, child: ^Node, cross_size: f32) -> 
 	constraint = clampf(constraint, child.style.min_width, child.style.max_width)
 	if child.kind == .Button {
 		constraint = maxf(constraint-2*maxf(child.button_content_style.padding_x, 0), 0)
+	} else if child.kind == .Checkbox {
+		constraint = maxf(constraint-36, 0)
 	}
 	return constraint
 }

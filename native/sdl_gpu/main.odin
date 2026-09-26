@@ -866,10 +866,13 @@ pump_events :: proc(
 				}
 				runtime_key_handled = alicorn.focus_traverse(rt, direction) != 0
 			} else if !runtime_key_handled && (event.key.key == sdl3.K_RETURN || event.key.key == sdl3.K_KP_ENTER || event.key.key == sdl3.K_SPACE) {
-				// Enter/Space activate a focused button through the same one-shot
-				// retained contract as pointer-up. Space remains an application
-				// command when focus belongs to a non-button control.
+				// Enter/Space activate focused buttons and checkboxes through the
+				// same one-shot retained contract as pointer-up.
 				runtime_key_handled = alicorn.activate_focused(rt)
+			} else if !runtime_key_handled && event.key.key == sdl3.K_LEFT {
+				runtime_key_handled = alicorn.adjust_focused_slider(rt, -1)
+			} else if !runtime_key_handled && event.key.key == sdl3.K_RIGHT {
+				runtime_key_handled = alicorn.adjust_focused_slider(rt, 1)
 			}
 			if !runtime_key_handled && event.key.key == sdl3.K_ESCAPE {
 				if alicorn.cancel_text_composition(rt, rt.focused, "Escape canceled text composition") {

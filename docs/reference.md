@@ -37,7 +37,15 @@ lateness. Prefer this over display-cadence `on_tick` for live data refresh.
 | `region_begin` / `region_end` | Reuse an unchanged described subtree using an application-owned revision. |
 
 The runtime does not watch Odin memory. A revision is a promise from the
-application: update it when the region's logical output changes.
+application: update it when the region's logical output changes. Revisions are
+monotonic: `invalidate_region` accepts an equal or greater revision and forces
+the matching live region instances to rebuild; a lower revision is rejected.
+Invalidating an unknown key is also rejected. The key must match a region that
+has already been described. If the same key is used in several component
+instances, invalidation applies to each matching instance. `region_begin` also
+rejects a revision lower than the retained high-water mark. These checks are
+always enabled, including release builds; `inspect(runtime)` exposes the hard
+error and its correction hint.
 
 ## Content and layout
 
@@ -45,6 +53,8 @@ application: update it when the region's logical output changes.
 | --- | --- |
 | `text` | Emit a text label. |
 | `button` | Emit an interactive button; returns `bool` when activated. |
+| `checkbox` | Emit a controlled checkbox; returns `{value, changed}`. |
+| `slider_f32` | Emit a controlled horizontal `f32` slider; returns `{value, changed}`. |
 | `text_field` | Emit an editable text field. The host reports committed edits through `on_text_change`. |
 | `container_begin` / `container_end` | Group children and define their layout. |
 | `layout_style` | Set direction, size constraints, growth, padding, gap, alignment, and clipping. |
@@ -53,6 +63,14 @@ application: update it when the region's logical output changes.
 
 The default layout direction is column. Use `.Row` for horizontal children;
 `grow` shares available space. Layout is in logical window coordinates.
+
+Checkboxes toggle by pointer, Enter, or Space. Sliders drag with the pointer
+and adjust with Left/Right when focused. A slider's `step=0` means continuous
+pointer input and one-percent-of-range keyboard steps; a positive step snaps to
+the nearest increment from the minimum. Both controls clamp values to their
+range and ignore input while disabled. They do not own application state:
+store the returned `value` when `changed` is true. Their default sizes are
+content-aware; set `Layout_Style` when a specific size is desired.
 
 ## Identity and repeated UI
 
@@ -65,7 +83,11 @@ The default layout direction is column. Use `.Row` for horizontal children;
 Use `component_begin` / `component_end` to scope reusable UI for a data item.
 Keys follow logical items through filtering, insertion, and reorder; indices
 and labels are not durable identities. Duplicate keys in one scope are
-diagnostics, not an implicit request to use position.
+diagnostics, not an implicit request to use position. A duplicate identity
+diagnostic reports the first and conflicting declaration, their call sites,
+keys, and enclosing scope path, with a suggested correction. These diagnostics
+are always enabled in all build configurations; they do not fall back to
+position-based identity.
 
 ## Collections and panes
 

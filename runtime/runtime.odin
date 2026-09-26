@@ -1,6 +1,7 @@
 package alicorn
 
 import "core:fmt"
+import "core:math"
 import "core:mem"
 import "core:strings"
 
@@ -42,6 +43,8 @@ Node_Kind :: enum {
 	Modal_Overlay,
 	Container,
 	Button,
+	Checkbox,
+	Slider,
 	Text,
 	Text_Field,
 	Text_Composition,
@@ -168,6 +171,24 @@ Source_Site :: struct {
 	component: string,
 }
 
+Identity_Declaration_Kind :: enum { Node, Key_Scope, Numeric_Key_Scope }
+
+// These records borrow call-site strings only until the current description
+// finishes. Formatting/allocation is deferred until an actual collision.
+Identity_Declaration :: struct {
+	source:          Source_Site,
+	parent:          Node_ID,
+	kind:            Identity_Declaration_Kind,
+	node_kind:       Node_Kind,
+	label:           string,
+	key:             UI_Key,
+	scope_depth:     int,
+	scope_key_kind:  u8,
+	scope_key_text:  string,
+	scope_key_u64:   u64,
+	scope_key_pair:  UI_Key_Pair,
+}
+
 Pointer_Kind :: enum { Move, Down, Up, Cancel }
 
 Pointer_Event :: struct {
@@ -262,6 +283,18 @@ Button_State :: struct {
 	quiet:    bool,
 }
 
+// Control_Change is the result of a controlled widget. The application owns
+// the value and should store `value` when `changed` is true.
+Control_Change_Bool :: struct {
+	value:   bool,
+	changed: bool,
+}
+
+Control_Change_F32 :: struct {
+	value:   f32,
+	changed: bool,
+}
+
 // Text_Composition is transient interaction state owned by one retained text
 // field. Its text is an owned copy of the platform preedit string and is never
 // silently written into the application's committed value. The replacement
@@ -352,6 +385,10 @@ Description :: struct {
 	color:       Color,
 	paint_background: bool,
 	paint_value: u64,
+	control_value: f32,
+	control_minimum: f32,
+	control_maximum: f32,
+	control_step: f32,
 	region_revision: u64,
 	region:      bool,
 	focusable:   bool,
@@ -418,6 +455,10 @@ Node :: struct {
 	color:       Color,
 	paint_background: bool,
 	paint_value: u64,
+	control_value: f32,
+	control_minimum: f32,
+	control_maximum: f32,
+	control_step: f32,
 	region_revision: u64,
 	region:      bool,
 	region_cached: bool,
@@ -431,6 +472,8 @@ Node :: struct {
 	semantic_id: Semantic_ID,
 	semantic_active: bool,
 	last_consumed_activation: u64,
+	control_pending: bool,
+	control_pending_value: f32,
 	caret:       Text_Position,
 	selection_anchor: Text_Position,
 	selection_focus:  Text_Position,
@@ -638,8 +681,8 @@ Runtime :: struct {
 	order:       [dynamic]Node_ID,
 	top_level:   [dynamic]Node_ID,
 	pending:     [dynamic]Pending_Item,
-	seen:        map[Node_ID]bool,
-	identity_scopes: map[Node_ID]bool,
+	seen:        map[Node_ID]Identity_Declaration,
+	identity_scopes: map[Node_ID]Identity_Declaration,
 	stack:       [dynamic]Node_ID,
 	identity_stack: [dynamic]Node_ID,
 	identity_labels: [dynamic]string,
@@ -835,8 +878,8 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 	rt.order = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.top_level = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.pending = make([dynamic]Pending_Item, 0, allocator=rt.persistent_allocator)
-	rt.seen = make(map[Node_ID]bool, allocator=rt.persistent_allocator)
-	rt.identity_scopes = make(map[Node_ID]bool, allocator=rt.persistent_allocator)
+	rt.seen = make(map[Node_ID]Identity_Declaration, allocator=rt.persistent_allocator)
+	rt.identity_scopes = make(map[Node_ID]Identity_Declaration, allocator=rt.persistent_allocator)
 	rt.stack = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.identity_stack = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.identity_labels = make([dynamic]string, 0, allocator=rt.persistent_allocator)
@@ -1263,8 +1306,35 @@ presentation_frame_consumed :: proc(rt: ^Runtime) {
 }
 
 invalidate_region :: proc(rt: ^Runtime, key: string, revision: u64, reason := "explicit region invalidation") {
-	// Region revisions are carried by the next description. The key is included
-	// in the trace so the invalidation remains structurally inspectable.
+	// Region keys are the public invalidation handle. Resolve only live regions
+	// with that label; silently accepting a typo would make the requested cache
+	// invalidation indistinguishable from a successful one.
+	match_count := 0
+	for _, node in rt.nodes {
+		if node.active && node.region && node.label == key { match_count += 1 }
+	}
+	if match_count == 0 {
+		append_diagnostic(rt, fmt.tprintf("invalidate_region could not find a live region named %q at revision %d.\nSuggestion: call it with the same key used by region_begin, after that region has been described at least once.", key, revision))
+		return
+	}
+	// A local region key can intentionally occur under several keyed component
+	// scopes. In that case this API invalidates every matching instance, but the
+	// requested revision must remain monotonic for every one of them.
+	for _, node in rt.nodes {
+		if !node.active || !node.region || node.label != key { continue }
+		if revision < node.region_revision {
+			append_diagnostic(rt, fmt.tprintf("invalidate_region revision regressed for %q.\n  retained region: %s:%d:%d component=%q scope=%q revision=%d\n  requested revision: %d\nSuggestion: keep region revisions monotonic; increment the application's revision when its logical output changes.", key, node.site.file, node.site.line, node.site.column, node.site.component, node.identity_key, node.region_revision, revision))
+			return
+		}
+	}
+	for _, node in rt.nodes {
+		if !node.active || !node.region || node.label != key { continue }
+		// Mark the region's high-water revision before the next build and clear
+		// its cache marker. region_begin will therefore reject a stale revision
+		// and rebuild when the application supplies the requested revision.
+		node.region_revision = revision
+		node.region_cached = false
+	}
 	rt.invalidated = true
 	cause_ctx := trace_current_cause(rt)
 	scope: Cause_Scope
@@ -1359,6 +1429,75 @@ push_identity_scope :: proc(rt: ^Runtime, id: Node_ID, label: string, kind: u8, 
 	append(&rt.identity_key_pair, pair)
 }
 
+identity_declaration :: proc(
+	rt: ^Runtime,
+	source: Source_Site,
+	key: UI_Key,
+	parent: Node_ID,
+	kind: Identity_Declaration_Kind,
+	node_kind: Node_Kind = .Root,
+	label := "",
+) -> Identity_Declaration {
+	result := Identity_Declaration{
+		source=source,
+		parent=parent,
+		kind=kind,
+		node_kind=node_kind,
+		label=label,
+		key=key,
+		scope_depth=len(rt.identity_stack),
+	}
+	if len(rt.identity_key_kind) > 0 {
+		last := len(rt.identity_key_kind)-1
+		result.scope_key_kind = rt.identity_key_kind[last]
+		result.scope_key_text = rt.identity_labels[last]
+		result.scope_key_u64 = rt.identity_key_u64[last]
+		result.scope_key_pair = rt.identity_key_pair[last]
+	}
+	return result
+}
+
+append_identity_key_text :: proc(sb: ^strings.Builder, key: UI_Key) {
+	switch value in key {
+	case UI_Unkeyed:
+		fmt.sbprintf(sb, "unkeyed")
+	case string:
+		fmt.sbprintf(sb, "string:%q", value)
+	case u64:
+		fmt.sbprintf(sb, "u64:%d", value)
+	case UI_Key_Pair:
+		fmt.sbprintf(sb, "pair:(%d,%d)", value.first, value.second)
+	}
+}
+
+identity_declaration_text :: proc(rt: ^Runtime, declaration: Identity_Declaration) -> string {
+	sb := strings.builder_make(0, 128, allocator=rt.scratch_allocator)
+	fmt.sbprintf(&sb, "%s:%d:%d component=%q declaration=%v",
+		declaration.source.file, declaration.source.line, declaration.source.column,
+		declaration.source.component, declaration.kind)
+	if declaration.kind == .Node {
+		fmt.sbprintf(&sb, " node-kind=%v label=%q", declaration.node_kind, declaration.label)
+	} else if declaration.label != "" {
+		fmt.sbprintf(&sb, " label=%q", declaration.label)
+	}
+	fmt.sbprintf(&sb, " identity-parent=%d scope-depth=%d scope-leaf=",
+		declaration.parent, declaration.scope_depth)
+	switch declaration.scope_key_kind {
+	case 1:
+		fmt.sbprintf(&sb, "string:%q", declaration.scope_key_text)
+	case 2:
+		fmt.sbprintf(&sb, "u64:%d", declaration.scope_key_u64)
+	case 3:
+		pair := declaration.scope_key_pair
+		fmt.sbprintf(&sb, "pair:(%d,%d)", pair.first, pair.second)
+	case:
+		fmt.sbprintf(&sb, "<root-or-node>")
+	}
+	fmt.sbprintf(&sb, " item-key=")
+	append_identity_key_text(&sb, declaration.key)
+	return strings.to_string(sb)
+}
+
 pop_identity_scope :: proc(rt: ^Runtime) {
 	if len(rt.identity_stack) > 0 { pop(&rt.identity_stack) }
 	if len(rt.identity_labels) > 0 { pop(&rt.identity_labels) }
@@ -1380,12 +1519,15 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	parent_node := current_node_parent(ui)
 	parent_identity := current_identity_parent(ui)
 	id := identity_hash(parent_identity, source, key, explicit_key)
-	if rt.seen[id] {
+	identity_key_value: UI_Key = UI_Unkeyed{}
+	if explicit_key { identity_key_value = key }
+	current_context := identity_declaration(rt, source, identity_key_value, parent_identity, .Node, kind, label)
+	if first_context, exists := rt.seen[id]; exists {
 		kind_text := explicit_key ? "duplicate key" : "repeated unkeyed sibling"
-		append_diagnostic(rt, fmt.tprintf("%s at %s:%d:%d component=%s key=%q; add a unique ui.key_scope or key", kind_text, source.file, source.line, source.column, source.component, key))
+		append_diagnostic(rt, fmt.tprintf("%s resolved to retained identity %d.\n  first declaration: %s\n  duplicate declaration: %s\nSuggestion: give repeated data items stable unique keys with ui.key_scope/component_begin, and keep the widget call site stable.", kind_text, id, identity_declaration_text(rt, first_context), identity_declaration_text(rt, current_context)))
 		return 0
 	}
-	rt.seen[id] = true
+	rt.seen[id] = current_context
 	identity_key := ""
 	if len(rt.identity_labels) > 0 { identity_key = rt.identity_labels[len(rt.identity_labels)-1] }
 	identity_key_u64: u64 = 0
@@ -1423,12 +1565,13 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	parent_node := current_node_parent(ui)
 	parent_identity := current_identity_parent(ui)
 	id := identity_hash_key(parent_identity, source, key)
-	if rt.seen[id] {
+	current_context := identity_declaration(rt, source, key, parent_identity, .Node, kind, label)
+	if first_context, exists := rt.seen[id]; exists {
 		kind_text := ui_key_is_explicit(key) ? "duplicate key" : "repeated unkeyed sibling"
-		append_diagnostic(rt, fmt.tprintf("%s at %s:%d:%d component=%s; add a unique key", kind_text, source.file, source.line, source.column, source.component))
+		append_diagnostic(rt, fmt.tprintf("%s resolved to retained identity %d.\n  first declaration: %s\n  duplicate declaration: %s\nSuggestion: give repeated data items stable unique keys with ui.key_scope/component_begin, and keep the widget call site stable.", kind_text, id, identity_declaration_text(rt, first_context), identity_declaration_text(rt, current_context)))
 		return 0
 	}
-	rt.seen[id] = true
+	rt.seen[id] = current_context
 	identity_key := ""
 	identity_key_u64: u64 = 0
 	identity_key_numeric := false
@@ -1493,11 +1636,12 @@ key_scope_begin_ex :: proc(ui: ^UI, key: string, source := Source_Site{}, loc :=
 	resolved_source := resolve_source(source, "key_scope", loc)
 	parent := current_identity_parent(ui)
 	id := identity_hash(parent, resolved_source, key, true)
-	if rt.identity_scopes[id] {
-		append_diagnostic(rt, fmt.tprintf("duplicate key scope at %s:%d:%d component=%s key=%q", resolved_source.file, resolved_source.line, resolved_source.column, resolved_source.component, key))
+	current_context := identity_declaration(rt, resolved_source, UI_Key(key), parent, .Key_Scope, label=key)
+	if first_context, exists := rt.identity_scopes[id]; exists {
+		append_diagnostic(rt, fmt.tprintf("duplicate key scope resolved to identity %d.\n  first declaration: %s\n  duplicate declaration: %s\nSuggestion: use a different stable key for each sibling item.", id, identity_declaration_text(rt, first_context), identity_declaration_text(rt, current_context)))
 		return false
 	}
-	rt.identity_scopes[id] = true
+	rt.identity_scopes[id] = current_context
 	push_identity_scope(rt, id, key, 1)
 	return true
 }
@@ -1507,11 +1651,12 @@ key_scope_begin_key :: proc(ui: ^UI, key: UI_Key, source := Source_Site{}, loc :
 	resolved_source := resolve_source(source, "key_scope", loc)
 	parent := current_identity_parent(ui)
 	id := identity_hash_key(parent, resolved_source, key)
-	if rt.identity_scopes[id] {
-		append_diagnostic(rt, fmt.tprintf("duplicate key scope at %s:%d:%d component=%s", resolved_source.file, resolved_source.line, resolved_source.column, resolved_source.component))
+	current_context := identity_declaration(rt, resolved_source, key, parent, .Key_Scope)
+	if first_context, exists := rt.identity_scopes[id]; exists {
+		append_diagnostic(rt, fmt.tprintf("duplicate key scope resolved to identity %d.\n  first declaration: %s\n  duplicate declaration: %s\nSuggestion: use a different stable key for each sibling item.", id, identity_declaration_text(rt, first_context), identity_declaration_text(rt, current_context)))
 		return false
 	}
-	rt.identity_scopes[id] = true
+	rt.identity_scopes[id] = current_context
 	switch value in key {
 	case UI_Unkeyed:
 		push_identity_scope(rt, id, "", 0)
@@ -1536,11 +1681,12 @@ key_scope_u64 :: proc(ui: ^UI, key: u64, source := Source_Site{}, loc := #caller
 	resolved_source := resolve_source(source, "key_scope_u64", loc)
 	parent := current_identity_parent(ui)
 	id := identity_hash_u64(parent, resolved_source, key)
-	if rt.identity_scopes[id] {
-		append_diagnostic(rt, fmt.tprintf("duplicate numeric key scope at %s:%d:%d component=%s key=%d", resolved_source.file, resolved_source.line, resolved_source.column, resolved_source.component, key))
+	current_context := identity_declaration(rt, resolved_source, UI_Key(key), parent, .Numeric_Key_Scope)
+	if first_context, exists := rt.identity_scopes[id]; exists {
+		append_diagnostic(rt, fmt.tprintf("duplicate numeric key scope resolved to identity %d.\n  first declaration: %s\n  duplicate declaration: %s\nSuggestion: use a different stable numeric key for each sibling item.", id, identity_declaration_text(rt, first_context), identity_declaration_text(rt, current_context)))
 		return false
 	}
-	rt.identity_scopes[id] = true
+	rt.identity_scopes[id] = current_context
 	push_identity_scope(rt, id, "", 2, key)
 	return true
 }
@@ -1993,14 +2139,7 @@ virtual_list_ensure_visible :: proc(rt: ^Runtime, id: Node_ID, index: int, reaso
 button_ex :: proc(ui: ^UI, label: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, paint_value: u64 = 0, loc := #caller_location, text_style := DEFAULT_BUTTON_TEXT_STYLE, content_style := DEFAULT_BUTTON_CONTENT_STYLE) -> (id: Node_ID, clicked: bool) {
 	resolved_source := resolve_source(source, "button", loc)
 	id = emit(ui, .Button, resolved_source, label=label, key=key, explicit_key=explicit_key, style=style, paint_value=paint_value, focusable=true, text_style=text_style, button_content=content_style)
-	if id != 0 && ui.runtime.activation_node == id && ui.runtime.activation_sequence > 0 {
-		if node, ok := ui.runtime.nodes[id]; ok {
-			if node.last_consumed_activation < ui.runtime.activation_sequence {
-				node.last_consumed_activation = ui.runtime.activation_sequence
-				clicked = true
-			}
-		}
-	}
+	clicked = consume_activation(ui.runtime, id)
 	return
 }
 
@@ -2014,6 +2153,94 @@ text_field_ex :: proc(ui: ^UI, value: string, source := Source_Site{}, key := ""
 	return emit(ui, .Text_Field, resolved_source, text=value, key=key, explicit_key=explicit_key, style=style, focusable=true, font=font, text_style=text_style)
 }
 
+consume_activation :: proc(rt: ^Runtime, id: Node_ID) -> bool {
+	if id == 0 || rt.activation_node != id || rt.activation_sequence == 0 { return false }
+	if node, ok := rt.nodes[id]; ok && node.last_consumed_activation < rt.activation_sequence {
+		node.last_consumed_activation = rt.activation_sequence
+		return true
+	}
+	return false
+}
+
+slider_normalize :: proc(value, minimum, maximum, step: f32) -> f32 {
+	// Unlike layout's sentinel-aware clampf, slider ranges may legitimately be
+	// entirely negative, so both bounds are always applied explicitly here.
+	result := minf(maxf(value, minimum), maximum)
+	if step > 0 {
+		steps := int((result-minimum)/step + 0.5)
+		result = minf(maximum, minimum+f32(steps)*step)
+	}
+	return result
+}
+
+// checkbox is app-authoritative: store the returned value when changed. A
+// focused checkbox activates with Enter or Space; pointer activation uses the
+// same one-shot retained input path as button.
+checkbox :: proc(
+	ui: ^UI,
+	label: string,
+	checked: bool,
+	key: UI_Key = UI_Unkeyed{},
+	style := DEFAULT_STYLE,
+	disabled := false,
+	loc := #caller_location,
+) -> Control_Change_Bool {
+	source := resolve_source(Source_Site{}, "checkbox", loc)
+	paint_value: u64 = 0
+	if checked { paint_value = 1 }
+	id := emit_key(ui, .Checkbox, source, label=label, key=key, style=style, state_bits=paint_value, disabled=disabled, focusable=!disabled, text_style=DEFAULT_BUTTON_TEXT_STYLE)
+	result := Control_Change_Bool{value=checked}
+	if id == 0 || disabled { return result }
+	if consume_activation(ui.runtime, id) {
+		result.value = !checked
+		result.changed = true
+		ui.runtime.pending[len(ui.runtime.pending)-1].description.paint_value = 1 if result.value else 0
+	}
+	return result
+}
+
+// slider_f32 describes a horizontal, controlled slider. A zero step is
+// continuous; arrow keys then move by one percent of the range. Positive
+// steps quantize to the nearest step from `minimum` and clamp at both ends.
+// Store the returned value when changed. Pointer coordinates and dimensions
+// are logical units, so the control follows the runtime's DPI-independent
+// layout contract.
+slider_f32 :: proc(
+	ui: ^UI,
+	label: string,
+	value, minimum, maximum: f32,
+	step: f32 = 0,
+	key: UI_Key = UI_Unkeyed{},
+	style := DEFAULT_STYLE,
+	disabled := false,
+	loc := #caller_location,
+) -> Control_Change_F32 {
+	result := Control_Change_F32{value=value}
+	range := maximum-minimum
+	if math.is_nan(minimum) || math.is_inf(minimum) || math.is_nan(maximum) || math.is_inf(maximum) ||
+		math.is_nan(value) || math.is_inf(value) || math.is_nan(step) || math.is_inf(step) ||
+		math.is_inf(range) || maximum <= minimum || step < 0 {
+		append_diagnostic(ui.runtime, fmt.tprintf("slider_f32 requires a finite value, an increasing finite range, and a finite step >= 0 (got value=%.4f range=%.4f..%.4f step=%.4f).\nSuggestion: use step=0 for continuous input.", value, minimum, maximum, step))
+		return result
+	}
+	result.value = slider_normalize(value, minimum, maximum, step)
+	result.changed = result.value != value
+	source := resolve_source(Source_Site{}, "slider_f32", loc)
+	id := emit_key(ui, .Slider, source, label=label, key=key, style=style, disabled=disabled, focusable=!disabled, text_style=DEFAULT_BUTTON_TEXT_STYLE)
+	if id == 0 { return result }
+	if node, ok := ui.runtime.nodes[id]; ok && node.control_pending {
+		result.value = slider_normalize(node.control_pending_value, minimum, maximum, step)
+		result.changed = result.value != value
+		node.control_pending = false
+	}
+	description := &ui.runtime.pending[len(ui.runtime.pending)-1].description
+	description.control_value = result.value
+	description.control_minimum = minimum
+	description.control_maximum = maximum
+	description.control_step = step
+	return result
+}
+
 button_simple :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, state := Button_State{}, loc := #caller_location, text_style := DEFAULT_BUTTON_TEXT_STYLE, content_style := DEFAULT_BUTTON_CONTENT_STYLE) -> bool {
 	resolved_source := resolve_source(Source_Site{}, "button", loc)
 	paint_state: u64 = 0
@@ -2022,13 +2249,7 @@ button_simple :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style 
 	if state.quiet { paint_state |= 4 }
 	id := emit_key(ui, .Button, resolved_source, label=label, key=key, style=style, state_bits=paint_state, selected=state.selected, disabled=state.disabled, focusable=!state.disabled, text_style=text_style, button_content=content_style)
 	if id == 0 || state.disabled { return false }
-	if ui.runtime.activation_node == id && ui.runtime.activation_sequence > 0 {
-		if node, ok := ui.runtime.nodes[id]; ok && node.last_consumed_activation < ui.runtime.activation_sequence {
-			node.last_consumed_activation = ui.runtime.activation_sequence
-			return true
-		}
-	}
-	return false
+	return consume_activation(ui.runtime, id)
 }
 
 text_simple :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE) -> Node_ID {
@@ -2071,7 +2292,15 @@ region_begin :: proc(ui: ^UI, key: string, revision: u64, source := Source_Site{
 	if id == 0 {
 		return 0, false
 	}
-	if old, ok := rt.nodes[id]; ok && old.region && old.region_cached && old.region_revision == revision {
+	effective_revision := revision
+	if old, ok := rt.nodes[id]; ok && old.region && revision < old.region_revision {
+		append_diagnostic(rt, fmt.tprintf("region revision regressed for %q.\n  retained region: %s:%d:%d component=%q key=%q scope=%q revision=%d\n  new description: %s:%d:%d component=%q key=%q scope-depth=%d revision=%d\nSuggestion: keep the region revision monotonic; increment it when the region's logical output changes.", key, old.site.file, old.site.line, old.site.column, old.site.component, old.key, old.identity_key, old.region_revision, resolved_source.file, resolved_source.line, resolved_source.column, resolved_source.component, key, len(rt.identity_stack), revision))
+		// Preserve the retained high-water revision so another stale description
+		// cannot make the cache appear current on a later frame.
+		effective_revision = old.region_revision
+		rt.pending[len(rt.pending)-1].description.region_revision = effective_revision
+	}
+	if old, ok := rt.nodes[id]; ok && old.region && old.region_cached && old.region_revision == effective_revision {
 		rt.stats.regions_skipped += 1
 		rt.stats.retained_subtrees_reused += 1
 		// The cached retained hierarchy is already authoritative. A marker is

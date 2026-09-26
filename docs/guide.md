@@ -13,7 +13,20 @@ returns `true` when activated, so ordinary control flow updates that state:
 if alicorn.button(&ui, "Pause") {
 	app.paused = !app.paused
 }
+
+enabled := alicorn.checkbox(&ui, "Show grid", app.show_grid)
+if enabled.changed {
+	app.show_grid = enabled.value
+}
+
+gain := alicorn.slider_f32(&ui, "Gain", app.gain, 0, 1, 0.05)
+if gain.changed {
+	app.gain = gain.value
+}
 ```
+
+Both controls report a proposed value; the application stores it. A slider's
+optional step is `0` for continuous input or a positive snapping increment.
 
 The runtime retains UI identity and interaction state, but does not observe
 arbitrary application memory. When a logical change needs a new description,

@@ -245,6 +245,31 @@ render_single_button :: proc(rt: ^alicorn.Runtime) -> (id: alicorn.Node_ID, clic
 	return
 }
 
+render_foundation_controls :: proc(
+	rt: ^alicorn.Runtime,
+	checked: bool,
+	value: f32,
+	checkbox_disabled := false,
+	slider_disabled := false,
+	step: f32 = 0.25,
+) -> (checkbox_id, slider_id: alicorn.Node_ID, checkbox_change: alicorn.Control_Change_Bool, slider_change: alicorn.Control_Change_F32) {
+	alicorn.invalidate_root(rt, "test controlled widgets")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin(&ui, .Root, label="controlled-widgets")
+	checkbox_change = alicorn.checkbox(&ui, "Enable option", checked, key=alicorn.key_string("enabled"), style=alicorn.layout_style(width=240, height=32), disabled=checkbox_disabled)
+	slider_change = alicorn.slider_f32(&ui, "Amount", value, 0, 1, step, key=alicorn.key_string("amount"), style=alicorn.layout_style(width=240, height=48), disabled=slider_disabled)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	for id in rt.order {
+		if node, ok := rt.nodes[id]; ok {
+			if node.kind == .Checkbox { checkbox_id = id }
+			if node.kind == .Slider { slider_id = id }
+		}
+	}
+	return
+}
+
 render_button_content :: proc(rt: ^alicorn.Runtime, content_style := alicorn.DEFAULT_BUTTON_CONTENT_STYLE) -> alicorn.Node_ID {
 	alicorn.invalidate_root(rt, "test button content layout")
 	ui, build := alicorn.begin_frame(rt)
@@ -577,6 +602,9 @@ test_identity_and_ambiguity :: proc(state: ^Test_State) {
 		alicorn.end_frame(&ui)
 	}
 	expect(state, rt.hard_error, "unkeyed repeated siblings must be a hard diagnostic")
+	expect(state, strings.contains(rt.diagnostic, "first declaration:") && strings.contains(rt.diagnostic, "duplicate declaration:"), "identity diagnostic names both first and duplicate declarations")
+	expect(state, strings.contains(rt.diagnostic, "scope-depth=") && strings.contains(rt.diagnostic, "Suggestion:"), "identity diagnostic includes scope context and an actionable suggestion")
+	expect(state, strings.contains(rt.diagnostic, "label=\"one\"") && strings.contains(rt.diagnostic, "label=\"two\""), "identity diagnostic distinguishes the first and duplicate widget descriptions")
 	alicorn.destroy_runtime(&rt)
 	rt = alicorn.new_runtime(alicorn.Rect{0, 0, 100, 100})
 	alicorn.invalidate_root(&rt, "duplicate key test")
@@ -589,6 +617,7 @@ test_identity_and_ambiguity :: proc(state: ^Test_State) {
 		alicorn.end_frame(&ui)
 	}
 	expect(state, rt.hard_error, "duplicate explicit keys must be a hard diagnostic")
+	expect(state, strings.contains(rt.diagnostic, "first declaration:") && strings.contains(rt.diagnostic, "duplicate declaration:"), "duplicate scope diagnostic preserves first and duplicate context")
 	alicorn.destroy_runtime(&rt)
 	rt = alicorn.new_runtime(alicorn.Rect{0, 0, 800, 500})
 	numeric_keys := []u64{11, 22, 33, 44}
@@ -613,6 +642,107 @@ test_identity_and_ambiguity :: proc(state: ^Test_State) {
 		alicorn.end_frame(&ui)
 	}
 	expect(state, rt.hard_error, "duplicate numeric keys must be a hard diagnostic")
+	alicorn.destroy_runtime(&rt)
+}
+
+test_checkbox_and_slider_controls :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 160})
+	checkbox_id, slider_id, check_change, slider_change := render_foundation_controls(&rt, false, 0.5)
+	expect(state, checkbox_id != 0 && slider_id != 0, "checkbox and slider emit retained controls")
+	if checkbox_id != 0 && slider_id != 0 {
+		checkbox_node := rt.nodes[checkbox_id]
+		slider_node := rt.nodes[slider_id]
+		expect(state, checkbox_node.focusable && slider_node.focusable, "enabled controls participate in keyboard focus")
+		expect(state, len(checkbox_node.paint) >= 3, "checkbox paints a distinct indicator and label")
+		expect(state, len(slider_node.paint) >= 4, "slider paints label, track, fill and thumb")
+		expect(state, !check_change.changed && !slider_change.changed, "initial controlled values are unchanged")
+
+		expect(state, alicorn.focus(&rt, checkbox_id), "checkbox accepts focus")
+		expect(state, alicorn.activate_focused(&rt), "focused checkbox accepts keyboard activation")
+		_, _, check_change, _ = render_foundation_controls(&rt, false, 0.5)
+		expect(state, check_change.changed && check_change.value, "checkbox returns one app-authoritative checked change")
+		expect(state, rt.nodes[checkbox_id].paint_value&1 != 0, "checkbox description reflects the returned checked state immediately")
+		_, _, check_change, _ = render_foundation_controls(&rt, check_change.value, 0.5)
+		expect(state, !check_change.changed && check_change.value, "checkbox activation is consumed exactly once")
+		checkbox_node = rt.nodes[checkbox_id]
+		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, checkbox_node.bounds.x+8, checkbox_node.bounds.y+8, 1})
+		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, checkbox_node.bounds.x+8, checkbox_node.bounds.y+8, 1})
+		_, _, check_change, _ = render_foundation_controls(&rt, true, 0.5)
+		expect(state, check_change.changed && !check_change.value, "checkbox pointer click returns the updated controlled value")
+
+		slider_node = rt.nodes[slider_id]
+		start_x := slider_node.bounds.x+8
+		end_x := slider_node.bounds.x+slider_node.bounds.w-8
+		y := slider_node.bounds.y+slider_node.bounds.h/2
+		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, start_x, y, 1})
+		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, start_x+(end_x-start_x)*0.75, y, 0})
+		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, start_x+(end_x-start_x)*0.75, y, 1})
+		_, _, _, slider_change = render_foundation_controls(&rt, check_change.value, 0.5)
+		expect(state, slider_change.changed && slider_change.value == 0.75, "slider pointer drag reports the clamped, stepped value")
+		expect(state, rt.nodes[slider_id].control_value == 0.75, "slider paint state reflects the returned app value")
+
+		expect(state, alicorn.focus(&rt, slider_id), "slider accepts focus")
+		expect(state, alicorn.adjust_focused_slider(&rt, -1), "focused slider consumes a left-arrow adjustment")
+		_, _, _, slider_change = render_foundation_controls(&rt, check_change.value, 0.75)
+		expect(state, slider_change.changed && slider_change.value == 0.5, "slider keyboard movement follows the configured step")
+		_, _, _, slider_change = render_foundation_controls(&rt, check_change.value, 0.5)
+		expect(state, !slider_change.changed, "slider does not manufacture changes after pending input is consumed")
+		_, _, _, _ = render_foundation_controls(&rt, check_change.value, 0.5, step=0)
+		expect(state, alicorn.adjust_focused_slider(&rt, 1), "continuous slider consumes a right-arrow adjustment")
+		_, _, _, slider_change = render_foundation_controls(&rt, check_change.value, 0.5, step=0)
+		expect(state, slider_change.changed && slider_change.value > 0.5 && slider_change.value < 0.52, "continuous slider keyboard step is one percent of its range")
+
+		_, _, _, slider_change = render_foundation_controls(&rt, check_change.value, 2)
+		expect(state, slider_change.changed && slider_change.value == 1, "slider clamps app-provided values to its maximum")
+		_, _, _, slider_change = render_foundation_controls(&rt, check_change.value, -1)
+		expect(state, slider_change.changed && slider_change.value == 0, "slider clamps app-provided values to its minimum")
+	}
+
+	checkbox_id, slider_id, _, _ = render_foundation_controls(&rt, false, 0.5, true, true)
+	if checkbox_id != 0 && slider_id != 0 {
+		expect(state, !alicorn.focus(&rt, checkbox_id) && !alicorn.focus(&rt, slider_id), "disabled checkbox and slider cannot receive focus")
+		expect(state, !alicorn.adjust_focused_slider(&rt, 1), "disabled slider ignores keyboard adjustments")
+		checkbox_node := rt.nodes[checkbox_id]
+		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, checkbox_node.bounds.x+4, checkbox_node.bounds.y+4, 1})
+		expect(state, rt.activation_node != checkbox_id, "disabled checkbox ignores pointer activation")
+	}
+	_, _, _, _ = render_foundation_controls(&rt, false, 0.5, true, true)
+	ui, should_build := alicorn.begin_frame(&rt)
+	_ = ui
+	expect(state, !should_build, "controlled widgets do not schedule background work while idle")
+	alicorn.destroy_runtime(&rt)
+}
+
+test_region_diagnostics :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 100})
+	alicorn.invalidate_region(&rt, "missing", 1)
+	expect(state, rt.hard_error && strings.contains(rt.diagnostic, "could not find a live region"), "unknown region invalidation is a hard actionable diagnostic")
+	expect(state, strings.contains(rt.diagnostic, "same key used by region_begin"), "unknown region diagnostic explains how to correct the key")
+	alicorn.destroy_runtime(&rt)
+
+	rt = alicorn.new_runtime(alicorn.Rect{0, 0, 320, 100})
+	body_calls: int = 0
+	render_region(&rt, 2, &body_calls)
+	region_id: alicorn.Node_ID = 0
+	for id, node in rt.nodes { if node.region { region_id = id; break } }
+	expect(state, region_id != 0 && rt.nodes[region_id].region_revision == 2, "region retains its current revision")
+	alicorn.invalidate_region(&rt, "static", 1)
+	expect(state, rt.hard_error && strings.contains(rt.diagnostic, "revision regressed"), "region invalidation rejects a decreasing revision")
+	expect(state, !rt.invalidated, "rejected region invalidation does not schedule a misleading rebuild")
+	if len(rt.diagnostic) > 0 { expect(state, strings.contains(rt.diagnostic, "retained region:") && strings.contains(rt.diagnostic, "Suggestion:"), "revision diagnostic includes retained source and corrective guidance") }
+
+	alicorn.invalidate_region(&rt, "static", 3)
+	expect(state, rt.nodes[region_id].region_revision == 3 && !rt.nodes[region_id].region_cached, "valid region invalidation advances the high-water revision and clears its cache")
+	render_region(&rt, 2, &body_calls)
+	expect(state, strings.contains(rt.diagnostic, "new description:") && strings.contains(rt.diagnostic, "revision=2"), "stale region description reports both retained and requested revisions")
+	expect(state, rt.nodes[region_id].region_revision == 3, "a stale region description cannot lower the retained high-water revision")
+	inspection := alicorn.inspect(&rt)
+	expect(state, strings.contains(inspection, "region: revision=3"), "inspector exposes region revision and cache state")
+	prior_diagnostic := rt.diagnostic
+	alicorn.invalidate_region(&rt, "static", 3)
+	expect(state, rt.diagnostic == prior_diagnostic && !rt.nodes[region_id].region_cached, "equal region revision is valid and explicitly forces a rebuild")
+	render_region(&rt, 3, &body_calls)
+	expect(state, rt.nodes[region_id].region_cached && rt.nodes[region_id].region_revision == 3, "valid region rebuild restores its cache at the same high-water revision")
 	alicorn.destroy_runtime(&rt)
 }
 
@@ -2862,6 +2992,7 @@ test_runtime_allocator_ownership :: proc(state: ^Test_State) {
 main :: proc() {
 	state: Test_State
 	test_identity_and_ambiguity(&state)
+	test_region_diagnostics(&state)
 	test_typed_key_variants(&state)
 	test_property_sequences(&state)
 	test_regions_and_stages(&state)
@@ -2869,6 +3000,7 @@ main :: proc() {
 	test_region_identity_sequences(&state)
 	test_focus_and_editing(&state)
 	test_keyboard_focus_and_activation(&state)
+	test_checkbox_and_slider_controls(&state)
 	test_button_states_and_content_layout(&state)
 	test_button_label_geometry_stable_across_states(&state)
 	test_unicode_editing(&state)

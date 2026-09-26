@@ -51,6 +51,10 @@ description_hash :: proc(d: Description) -> u64 {
 		h = hash_mix(h, u64(d.text_style.overflow))
 	}
 	h = hash_mix(h, d.paint_value)
+	h = hash_mix(h, u64(transmute(u32)d.control_value))
+	h = hash_mix(h, u64(transmute(u32)d.control_minimum))
+	h = hash_mix(h, u64(transmute(u32)d.control_maximum))
+	h = hash_mix(h, u64(transmute(u32)d.control_step))
 	h = hash_mix(h, hash_color(d.color))
 	h = hash_mix(h, u64(d.paint_background ? 1 : 0))
 	h = hash_mix(h, d.region_revision)
@@ -98,10 +102,12 @@ layout_hash :: proc(d: Description) -> u64 {
 	// Text participates in intrinsic measurement. A description can otherwise
 	// look layout-identical while a changing label/value moves its siblings.
 	#partial switch d.kind {
-	case .Button:
+	case .Button, .Checkbox, .Slider:
 		h = hash_mix(h, hash_string(d.label))
-		h = hash_mix(h, u64(transmute(u32)d.button_content_style.padding_x))
-		h = hash_mix(h, u64(transmute(u32)d.button_content_style.padding_y))
+		if d.kind == .Button {
+			h = hash_mix(h, u64(transmute(u32)d.button_content_style.padding_x))
+			h = hash_mix(h, u64(transmute(u32)d.button_content_style.padding_y))
+		}
 		h = hash_mix(h, u64(d.font))
 		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
 		h = hash_mix(h, u64(d.text_style.overflow))
@@ -166,13 +172,13 @@ release_node_strings :: proc(node: ^Node, allocator := context.allocator) {
 }
 
 node_has_text_product :: proc(kind: Node_Kind) -> bool {
-	return kind == .Text || kind == .Text_Field || kind == .Button
+	return kind == .Text || kind == .Text_Field || kind == .Button || kind == .Checkbox || kind == .Slider
 }
 
 copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	// Runtime-owned copies are important: a generic description may borrow a
 	// caller's string for only the duration of this procedure.
-	label_changed := d.kind == .Button && node.label != d.label
+	label_changed := (d.kind == .Button || d.kind == .Checkbox || d.kind == .Slider) && node.label != d.label
 	text_changed := node.text != d.text || label_changed
 	font_changed := node.font != d.font
 	weight_changed := effective_font_weight(node.text_style.font_weight) != effective_font_weight(d.text_style.font_weight)
@@ -199,6 +205,10 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	node.paint_background = d.paint_background
 	surface_description_changed := node.paint_value != d.paint_value
 	node.paint_value = d.paint_value
+	node.control_value = d.control_value
+	node.control_minimum = d.control_minimum
+	node.control_maximum = d.control_maximum
+	node.control_step = d.control_step
 	node.region_revision = d.region_revision
 	node.region = d.region
 	node.focusable = d.focusable && !d.disabled
@@ -268,6 +278,7 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	if d.disabled {
 		node.hovered = false
 		node.pressed = false
+		node.control_pending = false
 		if rt.focused == node.id { rt.focused = 0 }
 		if rt.captured_node == node.id { rt.captured_node = 0 }
 		if rt.activation_node == node.id { rt.activation_node = 0 }
@@ -445,7 +456,7 @@ reconcile :: proc(rt: ^Runtime) {
 			new_layout_hash := layout_hash(d)
 			new_paint_hash := paint_hash(d)
 			description_changed := node.description_hash != new_desc_hash
-			text_changed := node.text != d.text || (d.kind == .Button && node.label != d.label)
+			text_changed := node.text != d.text || ((d.kind == .Button || d.kind == .Checkbox || d.kind == .Slider) && node.label != d.label)
 			// Text/labels are included in layout_hash because they contribute
 			// intrinsic size. Keep this explicit at the reconciliation boundary so
 			// the invariant remains true even if layout hashing is later split by
