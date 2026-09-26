@@ -1486,11 +1486,25 @@ run_application_loop :: proc(
 		event_start := time.now()
 	wait_timed_out := false
 		idle_proof_timeout := false
+		smoke_timeout := false
 	wait_timeout_ms: sdl3.Sint32 = -1
 	if wait_for_event {
 		current_ns := u64(sdl3.GetTicksNS())
 		if next_deadline, found := scheduled_wake_next_deadline(&scheduler_state); found {
 			wait_timeout_ms = sdl3.Sint32(scheduled_wake_timeout_ms(next_deadline, current_ns))
+		}
+		if smoke {
+			elapsed := time.duration_nanoseconds(time.since(start))
+			remaining := i64(3_000_000_000) - elapsed
+			if remaining <= 0 {
+				quit_requested = true
+				continue
+			}
+			smoke_timeout_ms := u64((remaining + 999_999) / 1_000_000)
+			if wait_timeout_ms < 0 || smoke_timeout_ms < u64(wait_timeout_ms) {
+				wait_timeout_ms = sdl3.Sint32(min(smoke_timeout_ms, u64(0x7fff_ffff)))
+				smoke_timeout = true
+			}
 		}
 		if idle_proof_seconds > 0 {
 			elapsed := time.duration_nanoseconds(time.since(start))
@@ -1503,6 +1517,7 @@ run_application_loop :: proc(
 			if wait_timeout_ms < 0 || idle_timeout_ms < u64(wait_timeout_ms) {
 				wait_timeout_ms = sdl3.Sint32(min(idle_timeout_ms, u64(0x7fff_ffff)))
 				idle_proof_timeout = true
+				smoke_timeout = false
 			}
 		}
 	}
@@ -1535,7 +1550,7 @@ run_application_loop :: proc(
 		if !quit_requested {
 			native_dispatch_scheduled_wakes(&application_instance, rt, &scheduler_state, last_user_interaction_ns, &timing)
 		}
-		if wait_timed_out && idle_proof_timeout {
+		if wait_timed_out && (idle_proof_timeout || smoke_timeout) {
 			quit_requested = true
 			continue
 		}
@@ -1639,9 +1654,10 @@ run_application_loop :: proc(
 			if len(in_flight) > max_in_flight { max_in_flight = len(in_flight) }
 		}
 		if !rt.invalidated && !alicorn.frame_needs_submission(rt) {
-			if !smoke && application_instance.on_tick == nil {
+			if application_instance.on_tick == nil {
 				// Event-driven apps wait for either input, a worker wake, or their
 				// nearest scheduled deadline; there is no display-cadence tick.
+				// A bounded smoke run adds its own final event-loop deadline.
 				wait_for_event = true
 			} else {
 				sdl3.Delay(1)
