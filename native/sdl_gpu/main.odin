@@ -81,6 +81,7 @@ Application_Key :: enum {
 	Page_Up,
 	Page_Down,
 	Home,
+	End,
 	Fit_Selection,
 	Command_1,
 	Command_2,
@@ -99,6 +100,27 @@ application_key_can_preempt_text_field :: proc(key: Application_Key, composition
 	#partial switch key {
 	case .Up, .Down, .Page_Up, .Page_Down, .Open_Repository, .Open_Command_Palette, .Escape, .Return:
 		return true
+	case:
+		return false
+	}
+}
+
+// native_route_focused_control_key is kept separate from the event loop so the
+// platform key convention for retained controls can be verified headlessly.
+native_route_focused_control_key :: proc(rt: ^alicorn.Runtime, key: sdl3.Keycode) -> bool {
+	switch key {
+	case sdl3.K_SPACE:
+		return alicorn.activate_focused(rt, .Space)
+	case sdl3.K_RETURN, sdl3.K_KP_ENTER:
+		return alicorn.activate_focused(rt, .Enter)
+	case sdl3.K_LEFT, sdl3.K_DOWN:
+		return alicorn.adjust_focused_slider(rt, -1)
+	case sdl3.K_RIGHT, sdl3.K_UP:
+		return alicorn.adjust_focused_slider(rt, 1)
+	case sdl3.K_HOME:
+		return alicorn.set_focused_slider_bound(rt, .Minimum)
+	case sdl3.K_END:
+		return alicorn.set_focused_slider_bound(rt, .Maximum)
 	case:
 		return false
 	}
@@ -865,14 +887,8 @@ pump_events :: proc(
 					direction = .Previous
 				}
 				runtime_key_handled = alicorn.focus_traverse(rt, direction) != 0
-			} else if !runtime_key_handled && (event.key.key == sdl3.K_RETURN || event.key.key == sdl3.K_KP_ENTER || event.key.key == sdl3.K_SPACE) {
-				// Enter/Space activate focused buttons and checkboxes through the
-				// same one-shot retained contract as pointer-up.
-				runtime_key_handled = alicorn.activate_focused(rt)
-			} else if !runtime_key_handled && event.key.key == sdl3.K_LEFT {
-				runtime_key_handled = alicorn.adjust_focused_slider(rt, -1)
-			} else if !runtime_key_handled && event.key.key == sdl3.K_RIGHT {
-				runtime_key_handled = alicorn.adjust_focused_slider(rt, 1)
+			} else if !runtime_key_handled {
+				runtime_key_handled = native_route_focused_control_key(rt, event.key.key)
 			}
 			if !runtime_key_handled && event.key.key == sdl3.K_ESCAPE {
 				if alicorn.cancel_text_composition(rt, rt.focused, "Escape canceled text composition") {
@@ -909,6 +925,7 @@ pump_events :: proc(
 					case sdl3.K_PAGEUP: application_key = .Page_Up
 					case sdl3.K_PAGEDOWN: application_key = .Page_Down
 					case sdl3.K_HOME: application_key = .Home
+					case sdl3.K_END: application_key = .End
 					case sdl3.K_F: application_key = .Fit_Selection
 					case sdl3.K_1: application_key = .Command_1
 					case sdl3.K_2: application_key = .Command_2

@@ -41,7 +41,7 @@ build_app :: proc(
 		color=alicorn.Color{0.035, 0.045, 0.065, 1},
 	)
 	alicorn.text(&ui, "Alicorn Widget Gallery", style=alicorn.layout_style(height=32), text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_BOLD})
-	alicorn.text(&ui, "Interactive reference for controlled widgets · Tab to focus · Space toggles · arrow keys adjust sliders")
+	alicorn.text(&ui, "Interactive reference for controlled widgets · Tab to focus · Space toggles · arrows adjust sliders · Home/End set bounds")
 
 	alicorn.container_begin(
 		&ui,
@@ -58,7 +58,7 @@ build_app :: proc(
 		color=alicorn.Color{0.075, 0.09, 0.125, 1},
 	)
 	alicorn.text(&ui, "Checkboxes", style=alicorn.layout_style(height=28), text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_SEMIBOLD})
-	alicorn.text(&ui, "Click or focus a checkbox and press Space or Enter. The app owns each value.")
+	alicorn.text(&ui, "Click or focus a checkbox and press Space to toggle it. Enter is reserved for buttons.")
 	alicorn.container_begin(&ui, .Container, label="gallery-actions", style=alicorn.layout_style(.Row, gap=8))
 	if alicorn.button(&ui, "Reset values", key=alicorn.key_string("reset"), style=alicorn.layout_style(.Row, width=140, height=36)) {
 		reset_values(app)
@@ -123,7 +123,7 @@ build_app :: proc(
 		color=alicorn.Color{0.075, 0.09, 0.125, 1},
 	)
 	alicorn.text(&ui, "Sliders", style=alicorn.layout_style(height=28), text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_SEMIBOLD})
-	alicorn.text(&ui, "Drag the thumb, click the track, or use the arrow keys while focused.")
+	alicorn.text(&ui, "Drag or click the track · Left/Down decrease · Right/Up increase · Home/End jump to bounds.")
 
 	gain := alicorn.slider_f32(
 		&ui,

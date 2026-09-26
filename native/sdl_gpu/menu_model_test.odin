@@ -64,7 +64,7 @@ test_application_can_preempt_text_field_navigation_and_dismissal :: proc(t: ^tes
 	for key in interceptable_keys {
 		testing.expect(t, application_key_can_preempt_text_field(key), "transient UI key should be offered before text-field handling")
 	}
-	normal_keys := [?]Application_Key{Application_Key.Home, Application_Key.Fit_Selection}
+	normal_keys := [?]Application_Key{Application_Key.Home, Application_Key.End, Application_Key.Fit_Selection}
 	for key in normal_keys {
 		testing.expect(t, !application_key_can_preempt_text_field(key), "unrelated application key should retain normal routing")
 	}

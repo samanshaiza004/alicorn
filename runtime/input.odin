@@ -8,6 +8,16 @@ Focus_Direction :: enum {
 	Previous,
 }
 
+Activation_Key :: enum {
+	Enter,
+	Space,
+}
+
+Slider_Bound :: enum {
+	Minimum,
+	Maximum,
+}
+
 Scrollbar_Hit :: struct {
 	node: Node_ID,
 	axis: Scroll_Axis,
@@ -272,19 +282,34 @@ focus_traverse :: proc(rt: ^Runtime, direction: Focus_Direction) -> Node_ID {
 }
 
 // activate_focused feeds a keyboard activation through the same retained
-// contract used by pointer-up. Buttons and checkboxes consume this sequence
-// during the next description pass.
-activate_focused :: proc(rt: ^Runtime) -> bool {
+// contract used by pointer-up. Enter activates buttons; Space activates both
+// buttons and checkboxes, matching the usual checkbox keyboard convention.
+activate_focused :: proc(rt: ^Runtime, key: Activation_Key) -> bool {
 	id := rt.focused
 	node, ok := rt.nodes[id]
-	if !ok || !node.active || !node.focusable || node.disabled || (node.kind != .Button && node.kind != .Checkbox) {
+	if !ok { return false }
+	can_activate := node.kind == .Button || (node.kind == .Checkbox && key == .Space)
+	if !node.active || !node.focusable || node.disabled || !can_activate {
 		return false
 	}
 	rt.activation_sequence += 1
 	rt.activation_node = id
-	record_trace(rt, .Focus, id, "focused button activated")
-	invalidate_interaction_paint(rt, id, "focused button activated")
-	invalidate_root(rt, "focused button activated")
+	reason := "focused control activated by Enter" if key == .Enter else "focused control activated by Space"
+	record_trace(rt, .Focus, id, reason)
+	invalidate_interaction_paint(rt, id, reason)
+	invalidate_root(rt, reason)
+	return true
+}
+
+slider_stage_value :: proc(rt: ^Runtime, node: ^Node, requested: f32, reason: string) -> bool {
+	current := node.control_value
+	if node.control_pending { current = node.control_pending_value }
+	next := slider_normalize(requested, node.control_minimum, node.control_maximum, node.control_step)
+	if current == next { return false }
+	node.control_pending = true
+	node.control_pending_value = next
+	record_trace(rt, .Mutation, node.id, reason)
+	invalidate_root(rt, reason)
 	return true
 }
 
@@ -293,15 +318,8 @@ slider_set_from_pointer :: proc(rt: ^Runtime, node: ^Node, x: f32) -> bool {
 	track_start := node.bounds.x + minf(8, node.bounds.w*0.25)
 	track_width := maxf(node.bounds.w - minf(16, node.bounds.w*0.5), 1)
 	position := clampf((x-track_start)/track_width, 0, 1)
-	next := slider_normalize(node.control_minimum+position*(node.control_maximum-node.control_minimum), node.control_minimum, node.control_maximum, node.control_step)
-	current := node.control_value
-	if node.control_pending { current = node.control_pending_value }
-	if current == next { return false }
-	node.control_pending = true
-	node.control_pending_value = next
-	record_trace(rt, .Mutation, node.id, "slider value changed by pointer")
-	invalidate_root(rt, "slider value changed by pointer")
-	return true
+	requested := node.control_minimum+position*(node.control_maximum-node.control_minimum)
+	return slider_stage_value(rt, node, requested, "slider value changed by pointer")
 }
 
 // adjust_focused_slider applies one keyboard step to the focused slider. A
@@ -317,13 +335,20 @@ adjust_focused_slider :: proc(rt: ^Runtime, direction: int) -> bool {
 	if node.control_pending { current = node.control_pending_value }
 	step := node.control_step
 	if step <= 0 { step = (node.control_maximum-node.control_minimum)/100 }
-	next := slider_normalize(current+f32(direction)*step, node.control_minimum, node.control_maximum, node.control_step)
-	if next != current {
-		node.control_pending = true
-		node.control_pending_value = next
-		record_trace(rt, .Mutation, node.id, "slider value changed by keyboard")
-		invalidate_root(rt, "slider value changed by keyboard")
+	_ = slider_stage_value(rt, node, current+f32(direction)*step, "slider value changed by keyboard")
+	return true
+}
+
+// set_focused_slider_bound moves the focused slider to an exact endpoint. It
+// consumes the key even if already at that endpoint, so Home/End don't leak
+// into unrelated application shortcuts.
+set_focused_slider_bound :: proc(rt: ^Runtime, bound: Slider_Bound) -> bool {
+	node, ok := rt.nodes[rt.focused]
+	if !ok || !node.active || node.kind != .Slider || !node.focusable || node.disabled || node.control_maximum <= node.control_minimum {
+		return false
 	}
+	value := node.control_minimum if bound == .Minimum else node.control_maximum
+	_ = slider_stage_value(rt, node, value, "slider moved to range bound by keyboard")
 	return true
 }
 

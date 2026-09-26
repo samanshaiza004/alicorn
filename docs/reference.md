@@ -64,13 +64,15 @@ error and its correction hint.
 The default layout direction is column. Use `.Row` for horizontal children;
 `grow` shares available space. Layout is in logical window coordinates.
 
-Checkboxes toggle by pointer, Enter, or Space. Sliders drag with the pointer
-and adjust with Left/Right when focused. A slider's `step=0` means continuous
-pointer input and one-percent-of-range keyboard steps; a positive step snaps to
-the nearest increment from the minimum. Both controls clamp values to their
-range and ignore input while disabled. They do not own application state:
-store the returned `value` when `changed` is true. Their default sizes are
-content-aware; set `Layout_Style` when a specific size is desired.
+Checkboxes toggle by pointer or Space; Enter is reserved for button activation.
+Sliders drag with the pointer, adjust down with Left/Down and up with Right/Up,
+and jump to their exact minimum/maximum with Home/End. A slider's `step=0` means
+continuous pointer input and one-percent-of-range keyboard steps; a positive
+step snaps to the nearest increment from the minimum while keeping both
+endpoints reachable. Both controls clamp values to their range and ignore
+input while disabled. They do not own application state: store the returned
+`value` when `changed` is true. Their default sizes are content-aware; set
+`Layout_Style` when a specific size is desired.
 
 ## Identity and repeated UI
 

@@ -2166,6 +2166,9 @@ slider_normalize :: proc(value, minimum, maximum, step: f32) -> f32 {
 	// Unlike layout's sentinel-aware clampf, slider ranges may legitimately be
 	// entirely negative, so both bounds are always applied explicitly here.
 	result := minf(maxf(value, minimum), maximum)
+	// Keep the endpoints reachable even when the range is not an exact multiple
+	// of the snapping increment (for example 0..1 with step 0.3).
+	if result <= minimum || result >= maximum { return result }
 	if step > 0 {
 		steps := int((result-minimum)/step + 0.5)
 		result = minf(maximum, minimum+f32(steps)*step)
@@ -2174,8 +2177,8 @@ slider_normalize :: proc(value, minimum, maximum, step: f32) -> f32 {
 }
 
 // checkbox is app-authoritative: store the returned value when changed. A
-// focused checkbox activates with Enter or Space; pointer activation uses the
-// same one-shot retained input path as button.
+// focused checkbox activates with Space; pointer activation uses the same
+// one-shot retained input path as button.
 checkbox :: proc(
 	ui: ^UI,
 	label: string,
