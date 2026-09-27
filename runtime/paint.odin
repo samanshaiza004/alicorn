@@ -134,7 +134,7 @@ update_paint :: proc(rt: ^Runtime) {
 				if node.paint_background {
 					append(&node.paint, Display_Command{node.id, node.kind, node.bounds, node.clip, "", node.color})
 				}
-				if node.kind == .Scroll_Region && rt.focused == node.id {
+				if node.kind == .Scroll_Region && semantic_focus_owner_needs_outline(rt, node.id) {
 					append_focus_outline(node, Color{0.76, 0.86, 1.0, 1}, 1.5)
 				}
 			} else if node.kind == .Button {

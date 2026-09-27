@@ -1128,6 +1128,14 @@ semantic_focus_state :: proc(rt: ^Runtime) -> Semantic_Focus_State {
 	return rt.semantic_focus
 }
 
+semantic_focus_owner_needs_outline :: proc(rt: ^Runtime, owner: Node_ID) -> bool {
+	if rt.focused != owner { return false }
+	if rt.semantic_focus.owner != owner || rt.semantic_focus.realized_node == 0 { return true }
+
+	realized, ok := rt.nodes[rt.semantic_focus.realized_node]
+	return !ok || !realized.active || !semantic_node_within_owner(rt, realized.id, owner)
+}
+
 // semantic_focus_set changes the logical entity being operated on without
 // changing keyboard focus or application selection. Bind that identity to a
 // described node with semantic_bind; reconciliation then updates realized_node
@@ -1135,9 +1143,14 @@ semantic_focus_state :: proc(rt: ^Runtime) -> Semantic_Focus_State {
 semantic_focus_set :: proc(rt: ^Runtime, id: Semantic_ID, owner: Node_ID) -> bool {
 	if !semantic_id_is_valid(id) { return semantic_focus_clear(rt) }
 	if rt.semantic_focus.id == id && rt.semantic_focus.owner == owner { return false }
+	previous_owner := rt.semantic_focus.owner
 	rt.semantic_focus.id = id
 	rt.semantic_focus.owner = owner
 	refresh_semantic_focus_realization(rt)
+	if previous_owner != owner {
+		invalidate_interaction_paint(rt, previous_owner, "semantic focus owner changed")
+		invalidate_interaction_paint(rt, owner, "semantic focus owner changed")
+	}
 	record_trace(rt, .Focus, rt.semantic_focus.realized_node,
 		fmt.tprintf("semantic focus set namespace=%d value=%d owner=%d", id.namespace, id.value, owner))
 	return true
@@ -1148,8 +1161,10 @@ semantic_focus_clear :: proc(rt: ^Runtime) -> bool {
 		return false
 	}
 	previous := rt.semantic_focus.id
+	previous_owner := rt.semantic_focus.owner
 	rt.semantic_focus = Semantic_Focus_State{}
 	refresh_semantic_focus_realization(rt)
+	invalidate_interaction_paint(rt, previous_owner, "semantic focus cleared")
 	record_trace(rt, .Focus, 0,
 		fmt.tprintf("semantic focus cleared namespace=%d value=%d", previous.namespace, previous.value))
 	return true
@@ -1192,6 +1207,7 @@ refresh_semantic_focus_realization :: proc(rt: ^Runtime) {
 	}
 	rt.semantic_focus.realized_node = next
 	if previous != next {
+		invalidate_interaction_paint(rt, rt.semantic_focus.owner, "semantic focus realization changed")
 		if next == 0 && semantic_id_is_valid(rt.semantic_focus.id) {
 			record_trace(rt, .Focus, 0, "semantic focus has no realized presentation")
 		} else if next != 0 {

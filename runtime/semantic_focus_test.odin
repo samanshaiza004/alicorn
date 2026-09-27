@@ -57,7 +57,7 @@ test_semantic_focus_survives_virtualization_and_lod :: proc(t: ^testing.T) {
 	testing.expect(t, semantic_focus_set(&rt, event, owner), "semantic focus should accept an application entity and owner")
 	testing.expect(t, rt.focused == keyboard_focus_before && rt.selected == selected_before,
 		"setting semantic focus should not take keyboard focus or change retained selection")
-	testing.expect(t, focus(&rt, row), "the realized event row should accept keyboard focus")
+	testing.expect(t, focus(&rt, owner), "the list owner should retain keyboard focus")
 	_, _ = semantic_focus_test_render(&rt, true)
 	state := semantic_focus_state(&rt)
 	testing.expect(t, state.id == event && state.owner == owner && state.realized_node == row,
@@ -76,6 +76,15 @@ test_semantic_focus_survives_virtualization_and_lod :: proc(t: ^testing.T) {
 		}
 	}
 	testing.expect(t, semantic_outline, "the active semantic presentation should have a distinct visual outline")
+	owner_outline := false
+	for command in rt.nodes[owner].paint {
+		if command.kind == .Button && command.color.r == 0.76 && command.color.g == 0.86 {
+			owner_outline = true
+			break
+		}
+	}
+	testing.expect(t, !owner_outline,
+		"a realized semantic descendant should carry the focus indication without also outlining its owner")
 
 	_ = scroll_region_set_offset(&rt, owner, 192, "scroll active semantic row out of view")
 	owner_after_scroll, _ := semantic_focus_test_render(&rt, true)
@@ -84,7 +93,7 @@ test_semantic_focus_survives_virtualization_and_lod :: proc(t: ^testing.T) {
 	testing.expect(t, state.id == event && state.owner == owner && state.realized_node == 0,
 		"retiring the focused row should preserve semantic identity while clearing only its realization")
 	testing.expect(t, rt.focused == owner, "keyboard focus should move to the opted-in list owner, not an unrelated control")
-	owner_outline := false
+	owner_outline = false
 	for command in rt.nodes[owner].paint {
 		if command.kind == .Button && command.color.r == 0.76 && command.color.g == 0.86 {
 			owner_outline = true
@@ -105,6 +114,14 @@ test_semantic_focus_survives_virtualization_and_lod :: proc(t: ^testing.T) {
 	if row_again != 0 {
 		testing.expect(t, rt.nodes[row_again].semantic_active, "re-realization should restore semantic-active presentation")
 	}
+	owner_outline = false
+	for command in rt.nodes[owner].paint {
+		if command.kind == .Button && command.color.r == 0.76 && command.color.g == 0.86 {
+			owner_outline = true
+			break
+		}
+	}
+	testing.expect(t, !owner_outline, "re-realizing the semantic row should remove the owner's fallback outline")
 
 	_, _ = semantic_focus_test_render(&rt, false)
 	state = semantic_focus_state(&rt)
