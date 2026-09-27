@@ -128,11 +128,13 @@ Native_Dialog_Request :: struct {
 Native_Dialog_Bridge :: struct {
 	allocator:       mem.Allocator,
 	mutex:           sync.Mutex,
+	wake_cond:       sync.Cond,
 	completions:     [dynamic]File_Dialog_Result,
 	window:          ^sdl3.Window,
 	waker:           Application_Waker,
 	active:          bool,
 	accepting:       bool,
+	wakes_in_flight: int,
 	next_id:         u64,
 	refs:            int,
 }
@@ -197,6 +199,22 @@ native_dialog_bridge_shutdown :: proc(bridge: ^Native_Dialog_Bridge) {
 	bridge.accepting = false
 	bridge.active = false
 	bridge.waker = {}
+	sync.cond_broadcast(&bridge.wake_cond)
+	// A callback may have copied the waker before accepting was cleared. Keep
+	// the host's stack-owned waker alive until those calls have returned.
+	for bridge.wakes_in_flight > 0 {
+		sync.cond_wait(&bridge.wake_cond, &bridge.mutex)
+	}
+	sync.mutex_unlock(&bridge.mutex)
+}
+
+native_dialog_bridge_finish_wake :: proc(bridge: ^Native_Dialog_Bridge) {
+	if bridge == nil { return }
+	sync.mutex_lock(&bridge.mutex)
+	bridge.wakes_in_flight -= 1
+	if bridge.wakes_in_flight == 0 {
+		sync.cond_broadcast(&bridge.wake_cond)
+	}
 	sync.mutex_unlock(&bridge.mutex)
 }
 
@@ -260,13 +278,17 @@ native_dialog_file_callback :: proc "c" (userdata: rawptr, filelist: [^]cstring,
 	if bridge.accepting {
 		append(&bridge.completions, result)
 		waker = bridge.waker
+		bridge.wakes_in_flight += 1
 		should_wake = true
 	} else {
 		native_dialog_result_destroy(&result, bridge.allocator)
 	}
 	sync.mutex_unlock(&bridge.mutex)
 	native_dialog_request_destroy(request)
-	if should_wake { application_wake(waker) }
+	if should_wake {
+		application_wake(waker)
+		native_dialog_bridge_finish_wake(bridge)
+	}
 	native_dialog_bridge_release(bridge)
 }
 
