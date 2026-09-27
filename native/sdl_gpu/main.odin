@@ -17,6 +17,7 @@ import alicorn "../../runtime"
 import "vendor:sdl3"
 
 RESIZE_STRESS_ITERATIONS :: 300
+NATIVE_DESCRIPTION_STABILIZATION_LIMIT :: 4
 NATIVE_TEXT_BASE :: "Alicorn retained display list"
 NATIVE_TEXT_MUTATED :: "Alicorn retained display list Z"
 
@@ -271,6 +272,34 @@ Application :: struct {
 	on_scheduled_wake:  Application_Scheduled_Wake_Proc,
 	on_stop:            Application_Stop_Proc,
 	on_menu_command:    Application_Menu_Command_Proc,
+}
+
+Native_Description_Stabilization :: struct {
+	passes: int,
+	stable: bool,
+}
+
+// In-build application invalidations describe a newer state than the
+// description that raised them. Rebuild a small bounded number of times before
+// the host submits a GPU frame, so transient intermediate descriptions are not
+// visibly presented. Event/button consumption remains owned by the runtime.
+native_application_build_until_stable :: proc(
+	application: ^Application,
+	rt: ^alicorn.Runtime,
+	metrics: ^Window_Metrics,
+	timing: ^Native_Host_Timing,
+) -> Native_Description_Stabilization {
+	result := Native_Description_Stabilization{}
+	for rt.invalidated && result.passes < NATIVE_DESCRIPTION_STABILIZATION_LIMIT {
+		build_start := time.now()
+		_ = application.build(application.state, rt, metrics.logical_width, metrics.logical_height, metrics.display_scale)
+		native_timing_accumulate(&timing.application_build_ns, &timing.application_build_max_ns, u64(time.duration_nanoseconds(time.since(build_start))))
+		result.passes += 1
+	}
+	result.stable = !rt.invalidated
+	if result.passes > 1 { timing.application_stabilization_rebuilds += u64(result.passes-1) }
+	if !result.stable { timing.application_stabilization_limit_hits += 1 }
+	return result
 }
 
 // Native_Menu_Runtime is a host-owned bridge. Platform adapters keep HWND,
@@ -1489,9 +1518,7 @@ run_application_loop :: proc(
 	platform_text := ""
 	start := time.now()
 	alicorn.invalidate_root(rt, "SDL application initial frame")
-	build_start := time.now()
-	_ = application.build(application.state, rt, metrics.logical_width, metrics.logical_height, metrics.display_scale)
-	native_timing_accumulate(&timing.application_build_ns, &timing.application_build_max_ns, u64(time.duration_nanoseconds(time.since(build_start))) )
+	_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing)
 	sync_text_input_focus(window, rt, &text_input_active, &text_input_owner)
 
 	last_tick := time.now()
@@ -1622,9 +1649,7 @@ run_application_loop :: proc(
 		}
 
 		if rt.invalidated {
-			build_start = time.now()
-			_ = application.build(application.state, rt, metrics.logical_width, metrics.logical_height, metrics.display_scale)
-			native_timing_accumulate(&timing.application_build_ns, &timing.application_build_max_ns, u64(time.duration_nanoseconds(time.since(build_start))) )
+			_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing)
 			sync_text_input_focus(window, rt, &text_input_active, &text_input_owner)
 		}
 
@@ -1781,6 +1806,8 @@ run_application_loop :: proc(
 		"fence_wait_ns", timing.fence_wait_ns,
 		"application_tick_max_ns", timing.application_tick_max_ns,
 		"application_build_max_ns", timing.application_build_max_ns,
+		"application_stabilization_rebuilds", timing.application_stabilization_rebuilds,
+		"application_stabilization_limit_hits", timing.application_stabilization_limit_hits,
 		"event_waits", event_waits,
 		"application_wake_events", wake_events,
 		"gpu_encode_max_ns", timing.gpu_encode_max_ns,
