@@ -321,6 +321,13 @@ Desired_Children :: struct {
 	children: [dynamic]Node_ID,
 }
 
+record_frame_reconciled_trace :: proc(rt: ^Runtime) {
+	// The trace ring owns a copy, so keep formatting in the runtime's scratch
+	// arena instead of growing the caller's ambient temporary allocator.
+	reason := fmt.aprintf("frame %d reconciled", rt.stats.frame, allocator=rt.scratch_allocator)
+	record_trace(rt, .Reconcile, 0, reason)
+}
+
 same_children :: proc(a, b: []Node_ID) -> bool {
 	if len(a) != len(b) { return false }
 	for i := 0; i < len(a); i += 1 {
@@ -586,7 +593,7 @@ reconcile :: proc(rt: ^Runtime) {
 	advance_presentation_revision(rt)
 	rt.stats.frame += 1
 	delete(focus_lineage)
-	record_trace(rt, .Reconcile, 0, fmt.tprintf("frame %d reconciled", rt.stats.frame))
+	record_frame_reconciled_trace(rt)
 	note_submission_cause(rt, rt.frame_cause)
 	if rt.invalidated { note_pending_work_cause(rt, rt.frame_cause) }
 	rt.frame_cause = Cause_Context{}

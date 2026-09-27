@@ -131,6 +131,23 @@ test_cause_trace_ring_is_bounded_and_sequences_remain_ordered :: proc(t: ^testin
 }
 
 @(test)
+test_frame_trace_formatting_uses_runtime_scratch :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 100, 100}, Runtime_Config{trace_capacity=8})
+	defer destroy_runtime(&rt)
+	rt.stats.frame = 7
+	scratch_calls_before := rt.allocation_stats.scratch_alloc_calls
+
+	record_frame_reconciled_trace(&rt)
+
+	testing.expect(t, rt.allocation_stats.scratch_alloc_calls > scratch_calls_before,
+		"formatting a frame trace should allocate through the runtime-owned scratch allocator")
+	events := trace_snapshot(&rt)
+	defer delete(events)
+	testing.expect(t, len(events) == 1 && events[0].reason == "frame 7 reconciled",
+		"runtime scratch formatting should preserve the readable frame reason in the trace ring")
+}
+
+@(test)
 test_pointer_press_motion_release_share_cause_but_hover_motion_does_not_create_one :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 100, 100}, Runtime_Config{trace_capacity=16})
 	defer destroy_runtime(&rt)

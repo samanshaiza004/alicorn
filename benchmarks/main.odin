@@ -506,7 +506,7 @@ measure_churn :: proc(allocator_state: ^Bench_Allocator_State) {
 	alicorn.destroy_runtime(&rt)
 }
 
-measure_parent_bucket_scaling :: proc(count: int, allocator_state: ^Bench_Allocator_State) {
+measure_container_rich_frame_scaling :: proc(count: int, allocator_state: ^Bench_Allocator_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 1280, 900})
 	before := rt.stats
 	alloc_before := allocation_snapshot(allocator_state)
@@ -520,7 +520,7 @@ measure_parent_bucket_scaling :: proc(count: int, allocator_state: ^Bench_Alloca
 	if d.reconcile_nodes_visited != expected_nodes || d.nodes_created != expected_nodes || len(rt.nodes) != int(expected_nodes) {
 		benchmark_failure("container-rich reconciliation lost or duplicated parent buckets")
 	}
-	fmt.println("container_rich_parent_buckets", count, "logical_nodes", expected_nodes, "wall_ns", elapsed, "ns_per_node", elapsed/i64(expected_nodes), "reconcile", d.reconcile_nodes_visited, "alloc", allocation_delta(alloc_before, alloc_after).allocations)
+	fmt.println("container_rich_frame_parent_buckets", count, "logical_nodes", expected_nodes, "wall_ns", elapsed, "ns_per_node", elapsed/i64(expected_nodes), "reconcile_nodes", d.reconcile_nodes_visited, "alloc", allocation_delta(alloc_before, alloc_after).allocations)
 	alicorn.destroy_runtime(&rt)
 }
 
@@ -536,9 +536,9 @@ main :: proc() {
 	measure_regions(&allocator_state)
 	measure_key_paths(&allocator_state)
 	measure_churn(&allocator_state)
-	measure_parent_bucket_scaling(250, &allocator_state)
-	measure_parent_bucket_scaling(1_000, &allocator_state)
-	measure_parent_bucket_scaling(4_000, &allocator_state)
+	measure_container_rich_frame_scaling(250, &allocator_state)
+	measure_container_rich_frame_scaling(1_000, &allocator_state)
+	measure_container_rich_frame_scaling(4_000, &allocator_state)
 	measure_surface_locality(&allocator_state)
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 1280, 900})
 	render_virtual(&rt, 0)
