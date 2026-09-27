@@ -1,6 +1,7 @@
 package alicorn
 
 import "core:fmt"
+import "core:math"
 
 // utf8_character_index_to_byte_offset converts SDL's TEXT_EDITING character
 // indexes to Alicorn's byte-addressed text positions. The conversion is kept
@@ -196,4 +197,53 @@ text_field_input_area :: proc(rt: ^Runtime, id: Node_ID) -> (area: Rect, cursor:
 	if cursor < 0 { cursor = 0 }
 	ok = true
 	return
+}
+
+// text_input_target_is_active reports whether id is the live generic native
+// text-input owner described by the application. Text_Field remains a
+// separate adapter and does not need this marker.
+text_input_target_is_active :: proc(rt: ^Runtime, id: Node_ID) -> bool {
+	node, found := rt.nodes[id]
+	return found && node.active && node.text_input_target && node.focusable && !node.disabled
+}
+
+// text_input_target_area_set updates the platform candidate-window anchor for
+// a generic target. The rectangle is in logical window/client coordinates;
+// cursor_x is relative to rect.x. Applications normally update it alongside
+// caret geometry, while the native host reads it after each input/layout turn.
+text_input_target_area_set :: proc(rt: ^Runtime, id: Node_ID, area: Text_Input_Area) -> bool {
+	node, found := rt.nodes[id]
+	if !found || !node.active || !node.text_input_target || node.disabled { return false }
+	r := area.rect
+	if math.is_nan(r.x) || math.is_inf(r.x) || math.is_nan(r.y) || math.is_inf(r.y) ||
+		math.is_nan(r.w) || math.is_inf(r.w) || math.is_nan(r.h) || math.is_inf(r.h) ||
+		math.is_nan(area.cursor_x) || math.is_inf(area.cursor_x) || r.w <= 0 || r.h <= 0 {
+		return false
+	}
+	next := area
+	if next.cursor_x < 0 { next.cursor_x = 0 }
+	if next.cursor_x > r.w { next.cursor_x = r.w }
+	if node.text_input_area_set && node.text_input_area == next { return false }
+	node.text_input_area = next
+	node.text_input_area_set = true
+	return true
+}
+
+// text_input_area returns the focused text-input geometry consumed by the
+// native host. Text_Field derives it from shaped caret geometry; a generic
+// target may provide its caret anchor explicitly, otherwise its retained
+// bounds are used as a safe initial candidate-area fallback.
+text_input_area :: proc(rt: ^Runtime, id: Node_ID) -> (area: Text_Input_Area, ok: bool) {
+	node, found := rt.nodes[id]
+	if !found || !node.active || node.disabled { return }
+	if node.kind == .Text_Field {
+		rect, cursor, valid := text_field_input_area(rt, id)
+		if valid { return Text_Input_Area{rect=rect, cursor_x=cursor}, true }
+		if node.bounds.w <= 0 || node.bounds.h <= 0 { return }
+		return Text_Input_Area{rect=node.bounds}, true
+	}
+	if !node.text_input_target || !node.focusable { return }
+	if node.text_input_area_set { return node.text_input_area, true }
+	if node.bounds.w <= 0 || node.bounds.h <= 0 { return }
+	return Text_Input_Area{rect=node.bounds}, true
 }

@@ -11,4 +11,6 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin build native\sdl_gpu_entry -out:out\alicorn_sdl_gpu.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & .\out\alicorn_tests.exe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& .\out\alicorn_sdl_gpu.exe --text-input-contract-test
 exit $LASTEXITCODE

@@ -403,6 +403,27 @@ render_text_field :: proc(rt: ^alicorn.Runtime, value: string) -> alicorn.Node_I
 	return id
 }
 
+render_generic_text_input_target :: proc(rt: ^alicorn.Runtime, include_target: bool) -> alicorn.Node_ID {
+	alicorn.invalidate_root(rt, "test generic text-input target frame")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return 0 }
+	alicorn.container_begin_ex(&ui, .Root, alicorn.site("tests/text_input_target.odin", 1, 1, "root"))
+	id := alicorn.container_begin_ex(
+		&ui,
+		.Scroll_Region,
+		alicorn.site("tests/text_input_target.odin", 2, 1, "editor_viewport"),
+		label="editor viewport",
+		key="editor-viewport",
+		explicit_key=true,
+		style=alicorn.layout_style(width=320, height=120),
+	)
+	if include_target { _ = alicorn.text_input_target(&ui, id) }
+	alicorn.container_end(&ui)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return id
+}
+
 render_weighted_text :: proc(rt: ^alicorn.Runtime, weight: f32) -> alicorn.Node_ID {
 	alicorn.invalidate_root(rt, "test retained font weight")
 	ui, build := alicorn.begin_frame(rt)
@@ -1228,6 +1249,30 @@ test_text_input_composition :: proc(state: ^Test_State) {
 	render_optional_text_field(&rt, false)
 	expect(state, rt.focused == 0, "retiring a composing field must clear keyboard focus")
 	expect(state, len(rt.nodes) == 1, "retiring a composing field must remove its retained node")
+	alicorn.destroy_runtime(&rt)
+}
+
+test_generic_text_input_target :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 200})
+	id := render_generic_text_input_target(&rt, true)
+	expect(state, alicorn.text_input_target_is_active(&rt, id), "described generic target must be retained as a native text-input owner")
+	expect(state, rt.nodes[id].focusable, "generic text-input target must become keyboard focusable")
+	expect(state, alicorn.focus(&rt, id), "generic text-input target must accept keyboard focus")
+	area, area_ok := alicorn.text_input_area(&rt, id)
+	expect(state, area_ok && area.rect.w > 0 && area.rect.h > 0, "generic text-input target must provide a retained-bounds fallback candidate area")
+	expect(state, area.rect.x == rt.nodes[id].bounds.x && area.rect.y == rt.nodes[id].bounds.y, "default candidate area must track the target's retained bounds")
+
+	explicit_area := alicorn.Text_Input_Area{rect=alicorn.Rect{24, 48, 2, 18}, cursor_x=1.5}
+	expect(state, alicorn.text_input_target_area_set(&rt, id, explicit_area), "generic target must accept explicit candidate-window geometry")
+	area, area_ok = alicorn.text_input_area(&rt, id)
+	expect(state, area_ok && area == explicit_area, "native text-input geometry query must return the target's explicit caret anchor")
+	expect(state, !alicorn.text_input_target_area_set(&rt, id, alicorn.Text_Input_Area{rect=alicorn.Rect{0, 0, 0, 18}}), "generic target must reject empty candidate-window geometry")
+	expect(state, !alicorn.text_input_target_area_set(&rt, id+1, explicit_area), "generic target geometry must reject unknown retained identities")
+
+	_ = render_generic_text_input_target(&rt, false)
+	expect(state, !alicorn.text_input_target_is_active(&rt, id), "removing the description marker must release generic text-input ownership")
+	expect(state, !rt.nodes[id].text_input_area_set, "removing a generic target must clear its cached candidate geometry")
+	expect(state, !alicorn.focus(&rt, id), "a node that no longer owns text input must not remain a focusable target")
 	alicorn.destroy_runtime(&rt)
 }
 
@@ -3097,6 +3142,7 @@ main :: proc() {
 	test_unicode_editing(&state)
 	test_text_commands(&state)
 	test_text_input_composition(&state)
+	test_generic_text_input_target(&state)
 	test_interaction_paint_invalidation(&state)
 	test_invalidation_during_description_survives(&state)
 	test_interaction_regressions(&state)

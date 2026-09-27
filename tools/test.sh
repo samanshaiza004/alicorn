@@ -27,3 +27,5 @@ mkdir -p "$OUT_DIR"
 
 "$ODIN" build tests "-out:$OUT_DIR/alicorn_tests"
 "$OUT_DIR/alicorn_tests"
+"$ODIN" build native/sdl_gpu_entry "-out:$OUT_DIR/alicorn_sdl_gpu"
+"$OUT_DIR/alicorn_sdl_gpu" --text-input-contract-test

@@ -315,6 +315,14 @@ Text_Change :: struct {
 	changed: bool,
 }
 
+// Text_Input_Area is the native platform's candidate-window anchor in logical
+// client coordinates. cursor_x is relative to rect.x, matching SDL's input
+// area contract while remaining independent of any particular widget kind.
+Text_Input_Area :: struct {
+	rect: Rect,
+	cursor_x: f32,
+}
+
 Display_Command :: struct {
 	node:   Node_ID,
 	kind: Node_Kind,
@@ -392,6 +400,7 @@ Description :: struct {
 	region_revision: u64,
 	region:      bool,
 	focusable:   bool,
+	text_input_target: bool,
 	selected:    bool,
 	semantic_id: Semantic_ID,
 	disabled:    bool,
@@ -463,6 +472,9 @@ Node :: struct {
 	region:      bool,
 	region_cached: bool,
 	focusable:   bool,
+	text_input_target: bool,
+	text_input_area: Text_Input_Area,
+	text_input_area_set: bool,
 	disabled:    bool,
 	active:      bool,
 	present:     bool,
@@ -1743,6 +1755,31 @@ container_begin_ex :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, la
 		push_identity_scope(ui.runtime, id, "", 0)
 	}
 	return id
+}
+
+// text_input_target marks a described focus owner as a native text-input
+// destination without tying that ownership to a particular widget kind. The
+// node must be emitted in the current description; it becomes focusable as
+// part of the same retained description.
+text_input_target :: proc(ui: ^UI, id: Node_ID) -> bool {
+	rt := ui.runtime
+	if rt == nil || !rt.frame_open || id == 0 {
+		if rt != nil { append_diagnostic(rt, "text_input_target requires a live node in an open description frame") }
+		return false
+	}
+	for i := len(rt.pending)-1; i >= 0; i -= 1 {
+		item := &rt.pending[i]
+		if item.kind != .Description || item.description.id != id { continue }
+		if item.description.disabled {
+			append_diagnostic(rt, fmt.tprintf("disabled node %d cannot own native text input", id))
+			return false
+		}
+		item.description.text_input_target = true
+		item.description.focusable = true
+		return true
+	}
+	append_diagnostic(rt, fmt.tprintf("text_input_target references node %d that was not emitted in the current frame", id))
+	return false
 }
 
 container_end :: proc(ui: ^UI) {

@@ -13,6 +13,9 @@ jobs:
       - name: Install Odin
         run: brew install odin
 
+      - name: Install SDL3 for the native host contract test
+        run: brew install sdl3
+
       - name: Report Odin installation
         shell: sh
         run: |
@@ -22,6 +25,10 @@ jobs:
       - name: Build and run foundation checks
         shell: sh
         run: ./tools/check.sh
+
+      - name: Build and run headless native text-input contract
+        shell: sh
+        run: ./tools/test.sh
 
       - name: Build and run retained-work benchmark
         shell: sh

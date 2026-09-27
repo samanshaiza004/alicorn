@@ -184,6 +184,21 @@ Application_Build_Proc :: proc(
 	dpi_scale: f32,
 ) -> alicorn.Node_ID
 Application_Text_Change_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, change: alicorn.Text_Change)
+Application_Text_Input_Event_Kind :: enum { Commit, Preedit, Cancel }
+// SDL event text is borrowed for the callback. Preedit selection offsets are
+// UTF-8 byte offsets, not SDL's character indexes.
+Application_Text_Input_Event :: struct {
+	kind: Application_Text_Input_Event_Kind,
+	text: string,
+	selection_start_byte: int,
+	selection_end_byte: int,
+}
+Application_Text_Input_Proc :: proc(
+	state: rawptr,
+	rt: ^alicorn.Runtime,
+	owner: alicorn.Node_ID,
+	event: Application_Text_Input_Event,
+)
 Application_Key_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, key: Application_Key) -> bool
 Application_Pointer_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Pointer_Event, target: alicorn.Node_ID)
 Application_Scroll_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Scroll_Event)
@@ -261,6 +276,7 @@ Application :: struct {
 	window_decorations: Window_Decoration_Mode,
 	build:              Application_Build_Proc,
 	on_text_change:     Application_Text_Change_Proc,
+	on_text_input:      Application_Text_Input_Proc,
 	on_key:             Application_Key_Proc,
 	on_pointer:         Application_Pointer_Proc,
 	on_scroll:          Application_Scroll_Proc,
@@ -512,44 +528,165 @@ validate_text_pixel_snapping :: proc() {
 	}
 }
 
+Native_Text_Input_State :: struct {
+	active: bool,
+	owner: alicorn.Node_ID,
+	composition_owner: alicorn.Node_ID,
+	window_focused: bool,
+	last_area: alicorn.Text_Input_Area,
+	last_area_valid: bool,
+}
+
+native_text_input_owner_is_valid :: proc(rt: ^alicorn.Runtime, id: alicorn.Node_ID) -> bool {
+	node, ok := rt.nodes[id]
+	if !ok || !node.active || !node.focusable || node.disabled { return false }
+	return node.kind == .Text_Field || alicorn.text_input_target_is_active(rt, id)
+}
+
+native_current_text_input_owner :: proc(rt: ^alicorn.Runtime, state: ^Native_Text_Input_State = nil) -> alicorn.Node_ID {
+	if state != nil {
+		if !state.active || !state.window_focused || state.owner == 0 || state.owner != rt.focused { return 0 }
+		return state.owner if native_text_input_owner_is_valid(rt, state.owner) else 0
+	}
+	return rt.focused if native_text_input_owner_is_valid(rt, rt.focused) else 0
+}
+
+native_text_input_area_update_required :: proc(
+	state: ^Native_Text_Input_State,
+	area: alicorn.Text_Input_Area,
+	area_valid: bool,
+) -> bool {
+	if !area_valid { return state.last_area_valid }
+	return !state.last_area_valid || state.last_area != area
+}
+
+native_application_text_input_event :: proc(
+	application: ^Application,
+	rt: ^alicorn.Runtime,
+	owner: alicorn.Node_ID,
+	event: Application_Text_Input_Event,
+	require_live_target := true,
+) -> bool {
+	if application == nil || application.on_text_input == nil || owner == 0 { return false }
+	if require_live_target && !alicorn.text_input_target_is_active(rt, owner) { return false }
+	application.on_text_input(application.state, rt, owner, event)
+	reason := "application text input"
+	#partial switch event.kind {
+	case .Preedit: reason = "application text preedit"
+	case .Cancel: reason = "application text composition canceled"
+	}
+	alicorn.invalidate_root(rt, reason)
+	return true
+}
+
+native_dispatch_generic_text_input_event :: proc(
+	application: ^Application,
+	rt: ^alicorn.Runtime,
+	state: ^Native_Text_Input_State,
+	event: Application_Text_Input_Event,
+) -> bool {
+	owner := native_current_text_input_owner(rt, state)
+	if !alicorn.text_input_target_is_active(rt, owner) { return false }
+	normalized_event := event
+	if normalized_event.kind == .Preedit && len(normalized_event.text) == 0 { normalized_event.kind = .Cancel }
+	delivered := native_application_text_input_event(application, rt, owner, normalized_event)
+	if !delivered { return false }
+	if state != nil {
+		switch normalized_event.kind {
+		case .Preedit: state.composition_owner = owner
+		case .Commit, .Cancel: state.composition_owner = 0
+		}
+	}
+	return true
+}
+
+native_cancel_application_text_composition :: proc(
+	application: ^Application,
+	rt: ^alicorn.Runtime,
+	state: ^Native_Text_Input_State,
+) {
+	if state.composition_owner == 0 { return }
+	owner := state.composition_owner
+	state.composition_owner = 0
+	_ = native_application_text_input_event(
+		application,
+		rt,
+		owner,
+		Application_Text_Input_Event{kind=.Cancel},
+		require_live_target=false,
+	)
+}
+
+native_cancel_current_text_composition :: proc(
+	application: ^Application,
+	rt: ^alicorn.Runtime,
+	state: ^Native_Text_Input_State,
+	reason := "text composition canceled by text-input lifecycle",
+) {
+	if state.composition_owner != 0 {
+		native_cancel_application_text_composition(application, rt, state)
+		return
+	}
+	if node, ok := rt.nodes[state.owner]; ok && node.active && node.kind == .Text_Field && node.composition.active {
+		_ = alicorn.cancel_text_composition(rt, state.owner, reason)
+	}
+}
+
 sync_text_input_focus :: proc(
 	window: ^sdl3.Window,
 	rt: ^alicorn.Runtime,
-	active: ^bool,
-	owner: ^alicorn.Node_ID,
+	state: ^Native_Text_Input_State,
+	application: ^Application = nil,
 ) {
 	desired := rt.focused
-	if node, ok := rt.nodes[desired]; !ok || !node.active || node.kind != .Text_Field {
-		desired = 0
-	}
-	if desired != owner^ {
-		if active^ {
-			// Clear the platform preedit before changing the Alicorn owner;
-			// otherwise a late platform event could be applied to the wrong
-			// retained field.
-			if !sdl3.ClearComposition(window) { fail("SDL_ClearComposition failed during focus transfer") }
-			if !sdl3.StopTextInput(window) { fail("SDL_StopTextInput failed during focus transfer") }
-			active^ = false
+	if !state.window_focused || !native_text_input_owner_is_valid(rt, desired) { desired = 0 }
+	if desired != 0 {
+		if node, ok := rt.nodes[desired]; ok && node.kind != .Text_Field && (application == nil || application.on_text_input == nil) {
+			desired = 0
 		}
-		owner^ = 0
+	}
+	if desired != state.owner {
+		native_cancel_current_text_composition(application, rt, state)
+		if state.active {
+			// Clear platform preedit before changing the Alicorn owner; otherwise
+			// a late platform event could be applied to the wrong target.
+			if !sdl3.ClearComposition(window) { fail("SDL_ClearComposition failed during text-input focus transfer") }
+			if !sdl3.StopTextInput(window) { fail("SDL_StopTextInput failed during text-input focus transfer") }
+			state.active = false
+		}
+		state.owner = 0
+		state.last_area_valid = false
 		if desired != 0 {
-			if !sdl3.StartTextInput(window) { fail("SDL_StartTextInput failed for focused text field") }
-			active^ = true
-			owner^ = desired
+			if !sdl3.StartTextInput(window) { fail("SDL_StartTextInput failed for focused text-input target") }
+			state.active = true
+			state.owner = desired
 		}
 	}
-	if active^ && owner^ != 0 {
-		area, cursor, ok := alicorn.text_field_input_area(rt, owner^)
-		if !ok { return }
-		width := int(area.w)
-		height := int(area.h)
+	if state.active && state.owner != 0 {
+		area, ok := alicorn.text_input_area(rt, state.owner)
+		if !ok {
+			if native_text_input_area_update_required(state, {}, false) {
+				if !sdl3.SetTextInputArea(window, nil, 0) {
+					fail("SDL_SetTextInputArea failed while clearing stale candidate-window geometry")
+				}
+				state.last_area = alicorn.Text_Input_Area{}
+				state.last_area_valid = false
+			}
+			return
+		}
+		width := int(area.rect.w)
+		height := int(area.rect.h)
 		if width < 1 { width = 1 }
 		if height < 1 { height = 1 }
 		input_area := sdl3.Rect{
-			x=c.int(area.x), y=c.int(area.y), w=c.int(width), h=c.int(height),
+			x=c.int(area.rect.x), y=c.int(area.rect.y), w=c.int(width), h=c.int(height),
 		}
-		if !sdl3.SetTextInputArea(window, &input_area, c.int(cursor)) {
-			fail("SDL_SetTextInputArea failed for focused text field")
+		if native_text_input_area_update_required(state, area, true) {
+			if !sdl3.SetTextInputArea(window, &input_area, c.int(area.cursor_x)) {
+				fail("SDL_SetTextInputArea failed for focused text-input target")
+			}
+			state.last_area = area
+			state.last_area_valid = true
 		}
 	}
 }
@@ -738,6 +875,7 @@ pump_events :: proc(
 	wait_timed_out: ^bool = nil,
 	native_menu: ^Native_Menu_Runtime = nil,
 	last_user_interaction_ns: ^u64 = nil,
+	text_input_state: ^Native_Text_Input_State = nil,
 ) {
 	if telemetry != nil { telemetry.events_this_pump = 0 }
 	event: sdl3.Event
@@ -785,6 +923,10 @@ pump_events :: proc(
 			quit_requested^ = true
 		}
 		if event.type == .WINDOW_FOCUS_LOST {
+			if text_input_state != nil {
+				text_input_state.window_focused = false
+				native_cancel_current_text_composition(application, rt, text_input_state, "window focus lost")
+			}
 			// SDL releases its automatic mouse capture when focus leaves the
 			// window. Drop the matching retained press/drag state as well so a
 			// later motion cannot resume an abandoned scrollbar or split drag.
@@ -795,6 +937,9 @@ pump_events :: proc(
 				application.on_pointer(application.state, rt, alicorn.Pointer_Event{kind=.Cancel}, captured)
 			}
 			alicorn.cause_end(rt, cancel_cause)
+		}
+		if event.type == .WINDOW_FOCUS_GAINED && text_input_state != nil {
+			text_input_state.window_focused = true
 		}
 		if application != nil && application.on_wake != nil && wake_event_enabled && event.type == wake_event {
 			if wake_events != nil { wake_events^ += 1 }
@@ -853,16 +998,18 @@ pump_events :: proc(
 			menu_shortcut_handled := native_menu_try_shortcut(native_menu, int(event.key.key), event.key.mod)
 			runtime_key_handled := menu_shortcut_handled
 			// Let transient application UI intercept navigation and dismissal
-			// while a text field owns focus. Returning false preserves the normal
-			// caret/composition behavior below.
+			// while a text-input owner has focus. Returning false preserves the
+			// normal caret/composition behavior below.
 			if !runtime_key_handled && application != nil && application.on_key != nil {
-				text_field_focused := false
+				text_input_focused := native_current_text_input_owner(rt, text_input_state) != 0
 				composition_active := false
 				if node, ok := rt.nodes[rt.focused]; ok {
-					text_field_focused = node.active && node.kind == .Text_Field
 					composition_active = node.composition.active
 				}
-				if text_field_focused {
+				if text_input_state != nil && text_input_state.composition_owner == rt.focused {
+					composition_active = true
+				}
+				if text_input_focused {
 					application_key: Application_Key
 					mapped := true
 					switch event.key.key {
@@ -922,6 +1069,11 @@ pump_events :: proc(
 			if !runtime_key_handled && event.key.key == sdl3.K_ESCAPE {
 				if alicorn.cancel_text_composition(rt, rt.focused, "Escape canceled text composition") {
 					if !sdl3.ClearComposition(window) { fail("SDL_ClearComposition failed for Escape") }
+					runtime_key_handled = true
+				} else if text_input_state != nil && text_input_state.composition_owner == rt.focused {
+					native_cancel_application_text_composition(application, rt, text_input_state)
+					if !sdl3.ClearComposition(window) { fail("SDL_ClearComposition failed for Escape") }
+					runtime_key_handled = true
 				}
 			} else if !runtime_key_handled {
 				if node, ok := rt.nodes[rt.focused]; ok && node.active && node.kind == .Text_Field && !node.composition.active {
@@ -941,11 +1093,8 @@ pump_events :: proc(
 				}
 			}
 			if application != nil && !runtime_key_handled {
-				text_field_focused := false
-				if node, ok := rt.nodes[rt.focused]; ok {
-					text_field_focused = node.active && node.kind == .Text_Field
-				}
-				if !text_field_focused {
+				text_input_focused := native_current_text_input_owner(rt, text_input_state) != 0
+				if !text_input_focused {
 					application_key: Application_Key
 					handled := true
 					switch event.key.key {
@@ -1018,9 +1167,15 @@ pump_events :: proc(
 				fmt.println("sdl_event", "TEXT_INPUT", "text", raw_text)
 			}
 			if event.text.text != nil {
-				change := alicorn.process_text_input(rt, rt.focused, string(event.text.text))
-				native_dispatch_text_change(app_text, application, rt, change, telemetry)
-				if manual_log && application == nil { fmt.println("alicorn_after_TEXT_INPUT", "text", app_text^) }
+				owner := native_current_text_input_owner(rt, text_input_state)
+				if node, ok := rt.nodes[owner]; ok && node.active && node.kind == .Text_Field {
+					change := alicorn.process_text_input(rt, owner, string(event.text.text))
+					native_dispatch_text_change(app_text, application, rt, change, telemetry)
+					if manual_log && application == nil { fmt.println("alicorn_after_TEXT_INPUT", "text", app_text^) }
+				} else if alicorn.text_input_target_is_active(rt, owner) {
+					_ = native_dispatch_generic_text_input_event(application, rt, text_input_state,
+						Application_Text_Input_Event{kind=.Commit, text=string(event.text.text)})
+				}
 			}
 			alicorn.cause_end(rt, text_cause)
 		case .TEXT_EDITING:
@@ -1032,20 +1187,36 @@ pump_events :: proc(
 				fmt.println("sdl_event", "TEXT_EDITING", "text", raw_text, "start_chars", event.edit.start, "length_chars", event.edit.length)
 			}
 			if event.edit.text != nil {
-				alicorn.process_text_editing(
-					rt,
-					rt.focused,
-					string(event.edit.text),
-					int(event.edit.start),
-					int(event.edit.length),
-				)
-				if manual_log {
-					if node, ok := rt.nodes[rt.focused]; ok {
-						fmt.println(
-							"alicorn_after_TEXT_EDITING",
-							"preedit", node.composition.text,
-							"selection_bytes", node.composition.selection_start, node.composition.selection_end,
-						)
+				owner := native_current_text_input_owner(rt, text_input_state)
+				preedit := string(event.edit.text)
+				if node, ok := rt.nodes[owner]; ok && node.active && node.kind == .Text_Field {
+					alicorn.process_text_editing(rt, owner, preedit, int(event.edit.start), int(event.edit.length))
+					if manual_log {
+						if field, found := rt.nodes[owner]; found {
+							fmt.println(
+								"alicorn_after_TEXT_EDITING",
+								"preedit", field.composition.text,
+								"selection_bytes", field.composition.selection_start, field.composition.selection_end,
+							)
+						}
+					}
+				} else if alicorn.text_input_target_is_active(rt, owner) {
+					if len(preedit) == 0 {
+						_ = native_dispatch_generic_text_input_event(application, rt, text_input_state,
+							Application_Text_Input_Event{kind=.Cancel})
+					} else {
+						start_byte := alicorn.utf8_character_index_to_byte_offset(preedit, int(event.edit.start))
+						end_byte := start_byte
+						if event.edit.start < 0 {
+							start_byte, end_byte = len(preedit), len(preedit)
+						} else if event.edit.length >= 0 {
+							start_char, length_char := int(event.edit.start), int(event.edit.length)
+							end_byte = alicorn.utf8_character_index_to_byte_offset(preedit, start_char+length_char)
+						}
+						_ = native_dispatch_generic_text_input_event(application, rt, text_input_state, Application_Text_Input_Event{
+							kind=.Preedit, text=preedit,
+							selection_start_byte=start_byte, selection_end_byte=end_byte,
+						})
 					}
 				}
 			}
@@ -1059,6 +1230,9 @@ pump_events :: proc(
 			if !read_window_metrics(window, metrics) {
 				fail("window metrics became unavailable after a window event")
 			}
+		}
+		if text_input_state != nil {
+			sync_text_input_focus(window, rt, text_input_state, application)
 		}
 		has_event = poll_sdl_event(&event)
 	}
@@ -1478,8 +1652,6 @@ run_application_loop :: proc(
 	text_input_events := 0
 	composition_events := 0
 	text_events := Native_Text_Event_Telemetry{}
-	text_input_active := false
-	text_input_owner: alicorn.Node_ID = 0
 	in_flight: [dynamic; 3]Native_In_Flight
 	retired := 0
 	max_in_flight := 0
@@ -1517,9 +1689,11 @@ run_application_loop :: proc(
 
 	platform_text := ""
 	start := time.now()
+	window_flags := sdl3.GetWindowFlags(window)
+	text_input_state := Native_Text_Input_State{window_focused=(window_flags & sdl3.WindowFlags{.INPUT_FOCUS}) != sdl3.WindowFlags{}}
 	alicorn.invalidate_root(rt, "SDL application initial frame")
 	_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing)
-	sync_text_input_focus(window, rt, &text_input_active, &text_input_owner)
+	sync_text_input_focus(window, rt, &text_input_state, &application_instance)
 
 	last_tick := time.now()
 	last_focus_log := start
@@ -1606,6 +1780,7 @@ run_application_loop :: proc(
 			wait_timed_out=&wait_timed_out,
 			native_menu=native_menu,
 			last_user_interaction_ns=&last_user_interaction_ns,
+			text_input_state=&text_input_state,
 		)
 		if native_menu != nil {
 			if command, ok := native_menu_take_pending(native_menu); ok {
@@ -1650,8 +1825,10 @@ run_application_loop :: proc(
 
 		if rt.invalidated {
 			_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing)
-			sync_text_input_focus(window, rt, &text_input_active, &text_input_owner)
 		}
+		// A focus or caret change can update the platform candidate anchor
+		// without requiring a procedural description rebuild.
+		sync_text_input_focus(window, rt, &text_input_state, &application_instance)
 
 		// Interaction-only invalidation updates retained paint without asking the
 		// application to rebuild its procedural description. Flush that retained
@@ -1757,6 +1934,13 @@ run_application_loop :: proc(
 
 	if !sdl3.WaitForGPUIdle(device) { fail("SDL application GPU idle wait failed") }
 	native_dialog_bridge_shutdown(dialog_bridge)
+	native_cancel_current_text_composition(&application_instance, rt, &text_input_state, "application shutdown")
+	if text_input_state.active {
+		_ = sdl3.ClearComposition(window)
+		_ = sdl3.StopTextInput(window)
+		text_input_state.active = false
+		text_input_state.owner = 0
+	}
 	if application_instance.on_stop != nil {
 		// Stop worker threads while the host-owned waker state is still alive.
 		// This prevents a late worker completion from calling through a stack
@@ -1771,10 +1955,6 @@ run_application_loop :: proc(
 		retired += 1
 	}
 	clear(&in_flight)
-	if text_input_active {
-		_ = sdl3.ClearComposition(window)
-		_ = sdl3.StopTextInput(window)
-	}
 	elapsed_ns := time.duration_nanoseconds(time.since(start))
 	fmt.println(
 		"SDL application PASS",
@@ -1913,6 +2093,7 @@ RunFoundation :: proc() {
 	manual_ime := false
 	surface_stress := false
 	surface_geometry_test := false
+	text_input_contract_test := false
 	for argument in os.args {
 		if argument == "--manual-ime" {
 			manual_ime = true
@@ -1923,6 +2104,14 @@ RunFoundation :: proc() {
 		if argument == "--surface-geometry-test" {
 			surface_geometry_test = true
 		}
+		if argument == "--text-input-contract-test" {
+			text_input_contract_test = true
+		}
+	}
+	if text_input_contract_test {
+		if !native_generic_text_input_contract_test() { fail("generic text-input host contract tests failed") }
+		fmt.println("Alicorn generic text-input host contract: PASS")
+		return
 	}
 	if surface_geometry_test {
 		if !native_surface_geometry_self_test() { fail("native GPU surface geometry tests failed") }
@@ -2050,10 +2239,10 @@ RunFoundation :: proc() {
 	app_text, app_text_err := strings.clone(NATIVE_TEXT_BASE)
 	if app_text_err != nil { fail("native text state allocation failed") }
 	defer { if len(app_text) > 0 { delete(app_text) } }
-	text_input_active := false
-	text_input_owner: alicorn.Node_ID = 0
-	sync_text_input_focus(window, &rt, &text_input_active, &text_input_owner)
-	if !text_input_active || !sdl3.TextInputActive(window) {
+	window_flags := sdl3.GetWindowFlags(window)
+	text_input_state := Native_Text_Input_State{window_focused=(window_flags & sdl3.WindowFlags{.INPUT_FOCUS}) != sdl3.WindowFlags{}}
+	sync_text_input_focus(window, &rt, &text_input_state)
+	if !text_input_state.active || !sdl3.TextInputActive(window) {
 		fail("focused text field did not activate SDL text input")
 	}
 	// Feed one deterministic pair through SDL's own event queue. This is not
@@ -2070,6 +2259,7 @@ RunFoundation :: proc() {
 		window, &rt, &metrics, &quit_requested,
 		&logical_resize_events, &pixel_resize_events, &scale_events,
 		&text_input_events, &composition_events, &app_text,
+		text_input_state=&text_input_state,
 	)
 	if rt.nodes[field].text != NATIVE_TEXT_BASE || !rt.nodes[field].composition.active {
 		fail("SDL text-editing probe mutated committed text or failed to retain preedit")
@@ -2087,6 +2277,7 @@ RunFoundation :: proc() {
 		window, &rt, &metrics, &quit_requested,
 		&logical_resize_events, &pixel_resize_events, &scale_events,
 		&text_input_events, &composition_events, &app_text,
+		text_input_state=&text_input_state,
 	)
 	expected_probe_text := fmt.tprintf("%s%s", NATIVE_TEXT_BASE, "世界")
 	if app_text != expected_probe_text || rt.nodes[field].composition.active {
@@ -2179,6 +2370,7 @@ RunFoundation :: proc() {
 			&composition_events,
 			&app_text,
 			manual_log=manual_ime,
+			text_input_state=&text_input_state,
 		)
 		if quit_requested {
 			if manual_ime {
@@ -2193,7 +2385,7 @@ RunFoundation :: proc() {
 			print_window_metrics("resize", metrics)
 		}
 
-		sync_text_input_focus(window, &rt, &text_input_active, &text_input_owner)
+		sync_text_input_focus(window, &rt, &text_input_state)
 		if surface_stress && step >= 0 {
 			if step == 0 && len(in_flight) >= 3 {
 				if !wait_and_retire_oldest(device, &in_flight, &query_before_wait_true, &query_after_wait_true, &wait_count) {
@@ -2230,7 +2422,7 @@ RunFoundation :: proc() {
 			if rt.invalidated {
 				nodes = render_native_ui(&rt, frame, text_value)
 			}
-			sync_text_input_focus(window, &rt, &text_input_active, &text_input_owner)
+			sync_text_input_focus(window, &rt, &text_input_state)
 			command := sdl3.AcquireGPUCommandBuffer(device)
 		if command == nil {
 			fail("SDL_AcquireGPUCommandBuffer failed")
@@ -2302,11 +2494,11 @@ RunFoundation :: proc() {
 		retired += 1
 	}
 	clear(&in_flight)
-	if text_input_active {
+	if text_input_state.active {
 		if !sdl3.ClearComposition(window) { fail("SDL_ClearComposition failed during shutdown") }
 		if !sdl3.StopTextInput(window) { fail("SDL_StopTextInput failed") }
-		text_input_active = false
-		text_input_owner = 0
+		text_input_state.active = false
+		text_input_state.owner = 0
 	}
 	if !sdl3.HideWindow(window) || !sdl3.ShowWindow(window) {
 		fail("SDL hide/show window lifecycle failed")

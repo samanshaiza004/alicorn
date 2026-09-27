@@ -51,6 +51,7 @@ description_hash :: proc(d: Description) -> u64 {
 		h = hash_mix(h, u64(d.text_style.overflow))
 	}
 	h = hash_mix(h, d.paint_value)
+	h = hash_mix(h, u64(d.text_input_target ? 1 : 0))
 	h = hash_mix(h, u64(transmute(u32)d.control_value))
 	h = hash_mix(h, u64(transmute(u32)d.control_minimum))
 	h = hash_mix(h, u64(transmute(u32)d.control_maximum))
@@ -211,7 +212,12 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	node.control_step = d.control_step
 	node.region_revision = d.region_revision
 	node.region = d.region
-	node.focusable = d.focusable && !d.disabled
+	node.text_input_target = d.text_input_target
+	node.focusable = (d.focusable || d.text_input_target) && !d.disabled
+	if !node.text_input_target {
+		node.text_input_area = Text_Input_Area{}
+		node.text_input_area_set = false
+	}
 	node.disabled = d.disabled
 	// `selected` is both an application-declared visual state and the runtime's
 	// explicit selection projection. Preserve the runtime selection owner when
