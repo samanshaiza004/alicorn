@@ -581,7 +581,9 @@ reconcile :: proc(rt: ^Runtime) {
 	layout_tree(rt)
 	update_paint(rt)
 	rt.frame_open = false
-	rt.invalidated = rt.scroll_geometry_changed
+	// Preserve application invalidations raised while this description was
+	// open, in addition to follow-up work caused by changed scroll geometry.
+	rt.invalidated = rt.invalidated || rt.scroll_geometry_changed
 	rt.scroll_geometry_changed = false
 	rt.virtual_viewport_changed = false
 	// This description already observed the final geometry-surface bounds.

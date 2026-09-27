@@ -1366,6 +1366,10 @@ begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
 	// Scratch reset is performed after the previous frame has closed; keep the
 	// first frame path minimal while the arena is still empty.
 	runtime_scratch_reset(rt)
+	// Consume the invalidation that requested this description now. Any
+	// invalidate_root call made while the application is describing the frame
+	// then represents new work and must remain pending after reconciliation.
+	rt.invalidated = false
 	rt.frame_open = true
 	clear(&rt.pending)
 	clear(&rt.seen)

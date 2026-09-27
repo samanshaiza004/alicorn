@@ -1252,6 +1252,31 @@ test_interaction_paint_invalidation :: proc(state: ^Test_State) {
 	alicorn.destroy_runtime(&rt)
 }
 
+test_invalidation_during_description_survives :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
+	alicorn.invalidate_root(&rt, "initial application state")
+	ui, build := alicorn.begin_frame(&rt)
+	expect(state, build, "initial state invalidation should request a description")
+	if build {
+		alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="in-frame-invalidation-root")
+		// Model a control callback changing application state during the build.
+		alicorn.invalidate_root(&rt, "state changed by control while describing")
+		alicorn.container_end(&ui)
+		alicorn.end_frame(&ui)
+	}
+	expect(state, rt.invalidated, "an invalidation raised during description must survive reconciliation")
+
+	ui, build = alicorn.begin_frame(&rt)
+	expect(state, build, "surviving invalidation must request the follow-up description")
+	if build {
+		alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="in-frame-invalidation-root")
+		alicorn.container_end(&ui)
+		alicorn.end_frame(&ui)
+	}
+	expect(state, !rt.invalidated, "consuming the follow-up description should return to idle")
+	alicorn.destroy_runtime(&rt)
+}
+
 test_interaction_regressions :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 200})
 	id, _ := render_single_button(&rt)
@@ -3024,6 +3049,7 @@ main :: proc() {
 	test_text_commands(&state)
 	test_text_input_composition(&state)
 	test_interaction_paint_invalidation(&state)
+	test_invalidation_during_description_survives(&state)
 	test_interaction_regressions(&state)
 	test_disabled_button_semantics(&state)
 	test_ergonomic_identity(&state)
