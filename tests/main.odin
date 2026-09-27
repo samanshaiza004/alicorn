@@ -20,6 +20,9 @@ S_VLIST :: alicorn.Source_Site{"tests/render.odin", 50, 1, "virtual_list"}
 S_VROW :: alicorn.Source_Site{"tests/render.odin", 51, 1, "virtual_row"}
 S_LAYOUT_A :: alicorn.Source_Site{"tests/layout.odin", 1, 1, "fixed"}
 S_LAYOUT_B :: alicorn.Source_Site{"tests/layout.odin", 2, 1, "grow"}
+S_LAYOUT_LIMITED :: alicorn.Source_Site{"tests/layout_constraints.odin", 1, 1, "limited_grow"}
+S_LAYOUT_FILL :: alicorn.Source_Site{"tests/layout_constraints.odin", 2, 1, "fill_grow"}
+S_LAYOUT_TRAILING :: alicorn.Source_Site{"tests/layout_constraints.odin", 3, 1, "trailing_fixed"}
 S_REGION_STRESS :: alicorn.Source_Site{"tests/region_stress.odin", 1, 1, "region"}
 S_REGION_STRESS_SCOPE :: alicorn.Source_Site{"tests/region_stress.odin", 2, 1, "scope"}
 S_REGION_STRESS_NODE :: alicorn.Source_Site{"tests/region_stress.odin", 3, 1, "node"}
@@ -1456,6 +1459,52 @@ test_layout_geometry :: proc(state: ^Test_State) {
 		expect(state, rt.nodes[grow_id].bounds.w == 70, "grow row child consumes remaining width")
 		expect(state, rt.nodes[grow_id].bounds.x == 30, "row child placement")
 		expect(state, rt.stats.layout_updates >= 2, "layout changes must be counted")
+	}
+	alicorn.destroy_runtime(&rt)
+}
+
+test_layout_constraints_position_siblings :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 200, 80})
+	alicorn.invalidate_root(&rt, "row layout constraint test")
+	ui, build := alicorn.begin_frame(&rt)
+	if build {
+		alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="row-constraints", style=alicorn.layout_style(.Row))
+		fixed := alicorn.container_begin_ex(&ui, .Container, S_LAYOUT_A, label="fixed-min", style=alicorn.layout_style(width=50, height=20, min_width=80))
+		alicorn.container_end(&ui)
+		limited := alicorn.container_begin_ex(&ui, .Container, S_LAYOUT_LIMITED, label="limited-grow", style=alicorn.layout_style(height=20, max_width=30, grow=1))
+		alicorn.container_end(&ui)
+		fill := alicorn.container_begin_ex(&ui, .Container, S_LAYOUT_FILL, label="fill-grow", style=alicorn.layout_style(height=20, grow=1))
+		alicorn.container_end(&ui)
+		trailing := alicorn.container_begin_ex(&ui, .Container, S_LAYOUT_TRAILING, label="trailing-fixed", style=alicorn.layout_style(width=10, height=20))
+		alicorn.container_end(&ui)
+		alicorn.container_end(&ui)
+		alicorn.end_frame(&ui)
+		expect(state, rt.nodes[fixed].bounds.x == 0 && rt.nodes[fixed].bounds.w == 80, "row fixed minimum resolves before placement")
+		expect(state, rt.nodes[limited].bounds.x == 80 && rt.nodes[limited].bounds.w == 30, "row max-constrained grow starts after the resolved fixed size")
+		expect(state, rt.nodes[fill].bounds.x == 110 && rt.nodes[fill].bounds.w == 80, "row remaining grow absorbs space released by the max-constrained sibling")
+		expect(state, rt.nodes[trailing].bounds.x == 190 && rt.nodes[trailing].bounds.w == 10, "row trailing fixed sibling follows resolved grow allocation")
+	}
+	alicorn.destroy_runtime(&rt)
+
+	rt = alicorn.new_runtime(alicorn.Rect{0, 0, 100, 160})
+	alicorn.invalidate_root(&rt, "column layout constraint test")
+	ui, build = alicorn.begin_frame(&rt)
+	if build {
+		alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="column-constraints", style=alicorn.layout_style(.Column))
+		fixed := alicorn.container_begin_ex(&ui, .Container, S_LAYOUT_A, label="fixed-min", style=alicorn.layout_style(width=20, height=30, min_height=50))
+		alicorn.container_end(&ui)
+		limited := alicorn.container_begin_ex(&ui, .Container, S_LAYOUT_LIMITED, label="limited-grow", style=alicorn.layout_style(width=20, max_height=20, grow=1))
+		alicorn.container_end(&ui)
+		fill := alicorn.container_begin_ex(&ui, .Container, S_LAYOUT_FILL, label="fill-grow", style=alicorn.layout_style(width=20, grow=1))
+		alicorn.container_end(&ui)
+		trailing := alicorn.container_begin_ex(&ui, .Container, S_LAYOUT_TRAILING, label="trailing-fixed", style=alicorn.layout_style(width=20, height=10))
+		alicorn.container_end(&ui)
+		alicorn.container_end(&ui)
+		alicorn.end_frame(&ui)
+		expect(state, rt.nodes[fixed].bounds.y == 0 && rt.nodes[fixed].bounds.h == 50, "column fixed minimum resolves before placement")
+		expect(state, rt.nodes[limited].bounds.y == 50 && rt.nodes[limited].bounds.h == 20, "column max-constrained grow starts after the resolved fixed size")
+		expect(state, rt.nodes[fill].bounds.y == 70 && rt.nodes[fill].bounds.h == 80, "column remaining grow absorbs space released by the max-constrained sibling")
+		expect(state, rt.nodes[trailing].bounds.y == 150 && rt.nodes[trailing].bounds.h == 10, "column trailing fixed sibling follows resolved grow allocation")
 	}
 	alicorn.destroy_runtime(&rt)
 }
@@ -3057,6 +3106,7 @@ main :: proc() {
 	test_virtualization_and_gpu(&state)
 	test_virtualized_focus_retirement(&state)
 	test_layout_geometry(&state)
+	test_layout_constraints_position_siblings(&state)
 	test_text_intrinsic_layout_invalidation(&state)
 	test_container_paint_defaults(&state)
 	test_presentation_invalidation(&state)

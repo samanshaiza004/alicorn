@@ -152,6 +152,80 @@ intrinsic_main :: proc(node: ^Node, direction: Layout_Direction) -> f32 {
 	return 24 + 2*padding_y
 }
 
+main_axis_min :: proc(style: Layout_Style, direction: Layout_Direction) -> f32 {
+	return style.min_width if direction == .Row else style.min_height
+}
+
+main_axis_max :: proc(style: Layout_Style, direction: Layout_Direction) -> f32 {
+	return style.max_width if direction == .Row else style.max_height
+}
+
+resolved_main_size :: proc(node: ^Node, direction: Layout_Direction, basis: f32) -> f32 {
+	return clampf(basis, main_axis_min(node.style, direction), main_axis_max(node.style, direction))
+}
+
+// Resolve constrained grow children by distributing the space left after
+// fixed children and grow minima. Grow children that hit max constraints are
+// removed from the active set and their unused share is redistributed.
+resolve_main_sizes :: proc(
+	rt: ^Runtime,
+	children: []Node_ID,
+	direction: Layout_Direction,
+	available: f32,
+	sizes: []f32,
+) {
+	fixed_total: f32 = 0
+	grow_minimum_total: f32 = 0
+	active_weight: f32 = 0
+	for id, index in children {
+		child := rt.nodes[id]
+		if child.style.grow > 0 {
+			minimum := resolved_main_size(child, direction, 0)
+			sizes[index] = minimum
+			grow_minimum_total += minimum
+			maximum := main_axis_max(child.style, direction)
+			if maximum < 0 || maximum > minimum {
+				active_weight += child.style.grow
+			}
+		} else {
+			sizes[index] = resolved_main_size(child, direction, intrinsic_main(child, direction))
+			fixed_total += sizes[index]
+		}
+	}
+
+	remaining := maxf(available-fixed_total-grow_minimum_total, 0)
+	for active_weight > 0 && remaining > 0 {
+		limited_weight: f32 = 0
+		limited_space: f32 = 0
+		for id, index in children {
+			child := rt.nodes[id]
+			if child.style.grow <= 0 { continue }
+			maximum := main_axis_max(child.style, direction)
+			if maximum < 0 || maximum <= sizes[index] { continue }
+			share := remaining * child.style.grow / active_weight
+			room := maximum-sizes[index]
+			if share >= room {
+				sizes[index] = maximum
+				limited_weight += child.style.grow
+				limited_space += room
+			}
+		}
+		if limited_weight == 0 {
+			for id, index in children {
+				child := rt.nodes[id]
+				if child.style.grow <= 0 { continue }
+				maximum := main_axis_max(child.style, direction)
+				if maximum < 0 || maximum > sizes[index] {
+					sizes[index] += remaining * child.style.grow / active_weight
+				}
+			}
+			break
+		}
+		remaining = maxf(remaining-limited_space, 0)
+		active_weight = maxf(active_weight-limited_weight, 0)
+	}
+}
+
 layout_text_constraint :: proc(parent: ^Node, child: ^Node, cross_size: f32) -> f32 {
 	if !node_has_text_product(child.kind) { return 0 }
 	constraint: f32 = 0
@@ -307,8 +381,12 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	// authoritative for wrapping without re-executing the application
 	// description. The native renderer later resolves physical glyph residency
 	// for the current DPI.
+	has_grow := false
 	for id in children {
+		rt.stats.layout_nodes_visited += 1
+		rt.stats.stage_visits[.Layout] += 1
 		child := rt.nodes[id]
+		if child.style.grow > 0 { has_grow = true }
 		if node_has_text_product(child.kind) {
 			constraint := layout_text_constraint(parent, child, cross_size)
 			if prepare_text_run_node(rt, child, constraint) {
@@ -318,19 +396,11 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 			}
 		}
 	}
-	fixed: f32 = 0
-	grow: f32 = 0
-	for id in children {
-		rt.stats.layout_nodes_visited += 1
-		rt.stats.stage_visits[.Layout] += 1
-		child := rt.nodes[id]
-		if child.style.grow > 0 {
-			grow += child.style.grow
-		} else {
-			fixed += intrinsic_main(child, parent.style.direction)
-		}
+	main_sizes: []f32
+	if has_grow {
+		main_sizes = make([]f32, count, allocator=rt.scratch_allocator)
+		resolve_main_sizes(rt, children, parent.style.direction, available, main_sizes)
 	}
-	remaining := maxf(available-fixed, 0)
 	// A fixed-height virtual list realizes only the visible rows. Its first
 	// realized row may begin above the viewport when the scroll position is
 	// between row boundaries; the retained clip on the list protects the
@@ -346,13 +416,11 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 			cross_offset = -parent.layout_scroll_offset_y
 		}
 	}
-	for id in children {
+	for id, index in children {
 		child := rt.nodes[id]
 		old_bounds := child.bounds
-		main := intrinsic_main(child, parent.style.direction)
-		if child.style.grow > 0 && grow > 0 {
-			main = remaining * child.style.grow / grow
-		}
+		main := resolved_main_size(child, parent.style.direction, intrinsic_main(child, parent.style.direction))
+		if has_grow { main = main_sizes[index] }
 		if parent.style.direction == .Row {
 			cross := child.style.height >= 0 ? child.style.height : cross_size
 			cross = clampf(cross, child.style.min_height, child.style.max_height)
@@ -404,6 +472,7 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		dirty_set(&child.dirty, .Layout, false)
 		main_offset += main + parent.style.gap
 	}
+	if has_grow { delete(main_sizes, rt.scratch_allocator) }
 }
 
 layout_tree :: proc(rt: ^Runtime) {

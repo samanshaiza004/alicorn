@@ -1497,6 +1497,7 @@ run_application_loop :: proc(
 	last_tick := time.now()
 	last_focus_log := start
 	wait_for_event := false
+	swapchain_retry_pending := false
 	last_user_interaction_ns: u64 = 0
 	event_waits: u64 = 0
 	wake_events: u64 = 0
@@ -1509,9 +1510,27 @@ run_application_loop :: proc(
 		smoke_timeout := false
 	wait_timeout_ms: sdl3.Sint32 = -1
 	if wait_for_event {
+		// A successful swapchain acquisition can still return no drawable while
+		// the window is minimized or the swapchain is temporarily unavailable.
+		// Keep the presentation revision pending, but sleep between retries and
+		// let SDL events wake us as soon as the window can be presented again.
+		if swapchain_retry_pending {
+			wait_timeout_ms = native_event_wait_timeout_min(wait_timeout_ms, 100)
+		}
+		// Tick-driven applications still need their regular callback while a
+		// drawable is unavailable. Wait only until the next tick rather than
+		// turning the retry path into either a busy loop or an indefinite wait.
+		if application_instance.on_tick != nil {
+			elapsed_ns := time.duration_nanoseconds(time.since(last_tick))
+			remaining_ns := i64(16_666_667) - elapsed_ns
+			if remaining_ns < 0 { remaining_ns = 0 }
+			tick_timeout_ms := sdl3.Sint32((remaining_ns + 999_999) / 1_000_000)
+			wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, tick_timeout_ms))
+		}
 		current_ns := u64(sdl3.GetTicksNS())
 		if next_deadline, found := scheduled_wake_next_deadline(&scheduler_state); found {
-			wait_timeout_ms = sdl3.Sint32(scheduled_wake_timeout_ms(next_deadline, current_ns))
+			scheduled_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(next_deadline, current_ns))
+			wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, scheduled_timeout_ms))
 		}
 		if smoke {
 			elapsed := time.duration_nanoseconds(time.since(start))
@@ -1540,6 +1559,7 @@ run_application_loop :: proc(
 				smoke_timeout = false
 			}
 		}
+		swapchain_retry_pending = false
 	}
 		pump_events(
 			window, rt, metrics, &quit_requested,
@@ -1636,6 +1656,8 @@ run_application_loop :: proc(
 			}
 			if swapchain == nil || swap_w == 0 || swap_h == 0 {
 				_ = sdl3.CancelGPUCommandBuffer(command)
+				swapchain_retry_pending = true
+				wait_for_event = true
 				continue
 			}
 			metrics.pixel_width = int(swap_w)

@@ -15,6 +15,10 @@ LARGE_SCOPE :: alicorn.Source_Site{"benchmarks/main.odin", 30, 1, "large_scope"}
 LARGE_REGION :: alicorn.Source_Site{"benchmarks/main.odin", 31, 1, "large_region"}
 ROW :: alicorn.Source_Site{"benchmarks/main.odin", 40, 1, "virtual_row"}
 SURFACE :: alicorn.Source_Site{"benchmarks/main.odin", 50, 1, "surface"}
+RICH_GROUP :: alicorn.Source_Site{"benchmarks/main.odin", 60, 1, "rich_group_key"}
+RICH_PARENT :: alicorn.Source_Site{"benchmarks/main.odin", 61, 1, "rich_parent"}
+RICH_FIRST :: alicorn.Source_Site{"benchmarks/main.odin", 62, 1, "rich_first_child"}
+RICH_SECOND :: alicorn.Source_Site{"benchmarks/main.odin", 63, 1, "rich_second_child"}
 
 Bench_Allocator_State :: struct {
 	backing: mem.Allocator,
@@ -223,6 +227,26 @@ render_order :: proc(rt: ^alicorn.Runtime, order: []int) {
 	for value in order {
 		if alicorn.key_scope_u64(&ui, u64(value), NODE) {
 			alicorn.text_ex(&ui, "node", NODE)
+			alicorn.key_scope_end(&ui)
+		}
+	}
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+}
+
+render_container_rich :: proc(rt: ^alicorn.Runtime, count: int) {
+	alicorn.invalidate_root(rt, "container-rich bucket benchmark")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin_ex(&ui, .Root, ROOT, label="container-rich", style=alicorn.layout_style(.Column))
+	for i := 0; i < count; i += 1 {
+		if alicorn.key_scope_u64(&ui, u64(i), RICH_GROUP) {
+			alicorn.container_begin_ex(&ui, .Container, RICH_PARENT, label="bucket-parent", style=alicorn.layout_style(.Row, width=80, height=20))
+			alicorn.container_begin_ex(&ui, .Container, RICH_FIRST, label="first-child", style=alicorn.layout_style(width=20, height=10))
+			alicorn.container_end(&ui)
+			alicorn.container_begin_ex(&ui, .Container, RICH_SECOND, label="second-child", style=alicorn.layout_style(width=20, height=10))
+			alicorn.container_end(&ui)
+			alicorn.container_end(&ui)
 			alicorn.key_scope_end(&ui)
 		}
 	}
@@ -482,6 +506,24 @@ measure_churn :: proc(allocator_state: ^Bench_Allocator_State) {
 	alicorn.destroy_runtime(&rt)
 }
 
+measure_parent_bucket_scaling :: proc(count: int, allocator_state: ^Bench_Allocator_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 1280, 900})
+	before := rt.stats
+	alloc_before := allocation_snapshot(allocator_state)
+	start := time.now()
+	render_container_rich(&rt, count)
+	elapsed := time.duration_nanoseconds(time.since(start))
+	after := rt.stats
+	alloc_after := allocation_snapshot(allocator_state)
+	d := delta(before, after)
+	expected_nodes := u64(count*3 + 1)
+	if d.reconcile_nodes_visited != expected_nodes || d.nodes_created != expected_nodes || len(rt.nodes) != int(expected_nodes) {
+		benchmark_failure("container-rich reconciliation lost or duplicated parent buckets")
+	}
+	fmt.println("container_rich_parent_buckets", count, "logical_nodes", expected_nodes, "wall_ns", elapsed, "ns_per_node", elapsed/i64(expected_nodes), "reconcile", d.reconcile_nodes_visited, "alloc", allocation_delta(alloc_before, alloc_after).allocations)
+	alicorn.destroy_runtime(&rt)
+}
+
 main :: proc() {
 	allocator_state := Bench_Allocator_State{backing = context.allocator}
 	context.allocator = bench_allocator(&allocator_state)
@@ -494,6 +536,9 @@ main :: proc() {
 	measure_regions(&allocator_state)
 	measure_key_paths(&allocator_state)
 	measure_churn(&allocator_state)
+	measure_parent_bucket_scaling(250, &allocator_state)
+	measure_parent_bucket_scaling(1_000, &allocator_state)
+	measure_parent_bucket_scaling(4_000, &allocator_state)
 	measure_surface_locality(&allocator_state)
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 1280, 900})
 	render_virtual(&rt, 0)

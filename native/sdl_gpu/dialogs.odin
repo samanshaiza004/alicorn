@@ -460,6 +460,17 @@ dialog_message_flags :: proc(kind: Dialog_Message_Kind) -> sdl3.MessageBoxFlags 
 	return sdl3.MessageBoxFlags{.INFORMATION}
 }
 
+Dialog_Message_Box_Show_Proc :: proc "c" (#by_ptr data: sdl3.MessageBoxData, selected: ^c.int) -> bool
+
+dialog_show_message_box_result :: proc(
+	data: sdl3.MessageBoxData,
+	show: Dialog_Message_Box_Show_Proc,
+) -> (button_id: int, ok: bool) {
+	selected: c.int
+	ok = show(data, &selected)
+	return int(selected), ok
+}
+
 // ShowSimpleMessageBox is intentionally synchronous. Use it for genuinely
 // modal alerts/confirmations, not for routine application errors.
 ShowSimpleMessageBox :: proc(service: Dialog_Service, kind: Dialog_Message_Kind, title, message: string) -> bool {
@@ -498,6 +509,5 @@ ShowMessageBox :: proc(service: Dialog_Service, request: Dialog_Message_Request)
 		numbuttons=c.int(len(buttons)),
 		buttons=button_ptr,
 	}
-	selected: c.int
-	return int(selected), sdl3.ShowMessageBox(data, &selected)
+	return dialog_show_message_box_result(data, sdl3.ShowMessageBox)
 }

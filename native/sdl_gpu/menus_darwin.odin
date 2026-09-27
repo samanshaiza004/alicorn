@@ -154,10 +154,7 @@ darwin_menu_build_items :: proc(state: ^Darwin_Menu_State, menu: ^NS.Menu, items
 		case .Separator:
 			NS.Menu_addItem(menu, NS.MenuItem_separatorItem())
 		case .Submenu:
-			title := darwin_menu_string(description.label)
-			if title == nil { return false }
-			submenu := NS.Menu_initWithTitle(NS.Menu_alloc(), title)
-			NS.release(cast(^NS.Object)title)
+			submenu := darwin_menu_make_titled(description.label)
 			if submenu == nil { return false }
 			if !darwin_menu_build_items(state, submenu, description.items) {
 				NS.release(cast(^NS.Object)submenu)
@@ -257,7 +254,6 @@ native_menu_prepare :: proc(menu: ^Native_Menu_Runtime) -> bool {
 	state.update_selector = NS.MenuItem_registerActionCallback("menuNeedsUpdate", darwin_menu_update_callback)
 	state.main_menu = darwin_menu_make_titled("")
 	if state.main_menu == nil { return false }
-	NS.Menu_setAutoenablesItems(state.main_menu, false)
 
 	app_title := "Alicorn"
 	app_menu := darwin_menu_build_application_menu(state, app_title)
@@ -282,10 +278,7 @@ native_menu_prepare :: proc(menu: ^Native_Menu_Runtime) -> bool {
 	for description, index in menu.application.menus {
 		if description.label == "Help" { help_menu_index = index; continue }
 		if description.label == "Window" { continue }
-		title := darwin_menu_string(description.label)
-		if title == nil { return false }
-		submenu := NS.Menu_initWithTitle(NS.Menu_alloc(), title)
-		NS.release(cast(^NS.Object)title)
+		submenu := darwin_menu_make_titled(description.label)
 		if submenu == nil { return false }
 		if !darwin_menu_build_items(state, submenu, description.items) { return false }
 		empty_key := darwin_menu_string("")
@@ -310,10 +303,7 @@ native_menu_prepare :: proc(menu: ^Native_Menu_Runtime) -> bool {
 	if !darwin_menu_add_item(state.main_menu, window_item) { return false }
 	if help_menu_index >= 0 {
 		help := menu.application.menus[help_menu_index]
-		title := darwin_menu_string(help.label)
-		if title == nil { return false }
-		submenu := NS.Menu_initWithTitle(NS.Menu_alloc(), title)
-		NS.release(cast(^NS.Object)title)
+		submenu := darwin_menu_make_titled(help.label)
 		if submenu == nil || !darwin_menu_build_items(state, submenu, help.items) { return false }
 		empty_key = darwin_menu_string("")
 		if empty_key == nil { return false }

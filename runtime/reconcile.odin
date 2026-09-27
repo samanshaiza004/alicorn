@@ -321,13 +321,6 @@ Desired_Children :: struct {
 	children: [dynamic]Node_ID,
 }
 
-desired_children_index :: proc(buckets: []Desired_Children, parent: Node_ID) -> int {
-	for bucket, i in buckets {
-		if bucket.parent == parent { return i }
-	}
-	return -1
-}
-
 same_children :: proc(a, b: []Node_ID) -> bool {
 	if len(a) != len(b) { return false }
 	for i := 0; i < len(a); i += 1 {
@@ -406,15 +399,17 @@ reconcile :: proc(rt: ^Runtime) {
 	desired := make(map[Node_ID]bool, allocator=rt.scratch_allocator)
 	reused_roots := make(map[Node_ID]bool, allocator=rt.scratch_allocator)
 	buckets := make([dynamic]Desired_Children, 0, allocator=rt.scratch_allocator)
+	bucket_indices := make(map[Node_ID]int, allocator=rt.scratch_allocator)
 	for item in rt.pending {
 		switch item.kind {
 		case .Description:
 			d := item.description
 			desired[d.id] = true
-			index := desired_children_index(buckets[:], d.parent)
-			if index < 0 {
+			index, exists := bucket_indices[d.parent]
+			if !exists {
 				append(&buckets, Desired_Children{d.parent, make([dynamic]Node_ID, 0, allocator=rt.scratch_allocator)})
 				index = len(buckets)-1
+				bucket_indices[d.parent] = index
 			}
 			append(&buckets[index].children, d.id)
 		case .Reuse_Subtree:
@@ -484,9 +479,8 @@ reconcile :: proc(rt: ^Runtime) {
 	}
 
 	structure_changed := false
-	root_index := desired_children_index(buckets[:], 0)
 	desired_roots: []Node_ID
-	if root_index >= 0 { desired_roots = buckets[root_index].children[:] }
+	if root_index, exists := bucket_indices[0]; exists { desired_roots = buckets[root_index].children[:] }
 	if !same_children(rt.top_level[:], desired_roots) {
 		for id in rt.top_level {
 			if !desired[id] { retire_subtree(rt, id, desired) }
@@ -507,9 +501,8 @@ reconcile :: proc(rt: ^Runtime) {
 		processed_parents[parent_id] = true
 		parent, ok := rt.nodes[parent_id]
 		if !ok { continue }
-		index := desired_children_index(buckets[:], parent_id)
 		wanted: []Node_ID
-		if index >= 0 { wanted = buckets[index].children[:] }
+		if index, exists := bucket_indices[parent_id]; exists { wanted = buckets[index].children[:] }
 		if !same_children(parent.children[:], wanted) {
 			for old_child in parent.children {
 				if !desired[old_child] { retire_subtree(rt, old_child, desired) }
@@ -528,6 +521,7 @@ reconcile :: proc(rt: ^Runtime) {
 	delete(processed_parents)
 	delete(desired)
 	delete(reused_roots)
+	delete(bucket_indices)
 	for bucket in buckets { delete(bucket.children) }
 	delete(buckets)
 

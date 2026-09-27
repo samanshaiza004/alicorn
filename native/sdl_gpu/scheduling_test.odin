@@ -3,6 +3,16 @@ package alicorn_sdl_gpu
 import "core:testing"
 
 @(test)
+test_event_wait_timeout_keeps_earliest_deadline :: proc(t: ^testing.T) {
+	testing.expect(t, native_event_wait_timeout_min(-1, 100) == 100,
+		"a bounded retry should replace an indefinite event wait")
+	testing.expect(t, native_event_wait_timeout_min(100, 250) == 100,
+		"later deadlines must not postpone the swapchain retry")
+	testing.expect(t, native_event_wait_timeout_min(100, 16) == 16,
+		"earlier application ticks or scheduled wakes should still run first")
+}
+
+@(test)
 test_scheduled_wake_deadlines_replace_coalesce_and_select_nearest :: proc(t: ^testing.T) {
 	state := Native_Scheduled_Wake_State{active=true}
 	testing.expect(t, scheduled_wake_schedule(&state, .Frequent, 1_000, 250_000_000), "frequent deadline should schedule")

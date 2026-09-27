@@ -1,9 +1,24 @@
 package alicorn_sdl_gpu
 
+import "core:c"
 import "core:sync"
 import "core:testing"
 import "core:thread"
 import "core:time"
+import "vendor:sdl3"
+
+dialog_message_box_test_show :: proc "c" (#by_ptr data: sdl3.MessageBoxData, selected: ^c.int) -> bool {
+	_ = data
+	selected^ = 42
+	return true
+}
+
+@(test)
+test_native_message_box_returns_selected_button_id :: proc(t: ^testing.T) {
+	button_id, ok := dialog_show_message_box_result({}, dialog_message_box_test_show)
+	testing.expect(t, ok, "message-box result should preserve SDL's success status")
+	testing.expect(t, button_id == 42, "message-box result should read the selected ID after SDL writes it")
+}
 
 Native_Dialog_Shutdown_Test_State :: struct {
 	bridge:    ^Native_Dialog_Bridge,

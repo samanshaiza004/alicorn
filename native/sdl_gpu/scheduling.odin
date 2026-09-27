@@ -10,6 +10,14 @@ Native_Scheduled_Wake_State :: struct {
 	stats:        Application_Scheduler_Stats,
 }
 
+// SDL event waits use a negative timeout for an indefinite wait. Merge a new
+// nonnegative deadline without accidentally replacing an earlier retry/tick.
+native_event_wait_timeout_min :: proc(current_ms, candidate_ms: i32) -> i32 {
+	if candidate_ms < 0 { return current_ms }
+	if current_ms < 0 || candidate_ms < current_ms { return candidate_ms }
+	return current_ms
+}
+
 scheduled_wake_class_index :: proc(class: Scheduled_Wake_Class) -> int {
 	switch class {
 	case .Frequent: return 0
