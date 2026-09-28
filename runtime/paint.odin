@@ -265,7 +265,39 @@ update_paint :: proc(rt: ^Runtime) {
 				if node.text_style.overflow != .Wrap {
 					text_clip = rect_intersection(node.clip, node.bounds)
 				}
+				if node.kind == .Text && node.text_interaction && node.text_run_valid {
+					selection := text_run_selection_rects(
+						&node.text_run,
+						node.text_interaction_anchor,
+						node.text_interaction_focus,
+						allocator=rt.scratch_allocator,
+						scratch_allocator=rt.scratch_allocator,
+					)
+					for selected in selection {
+						bounds := selected.rect
+						bounds.x += node.bounds.x
+						bounds.y += node.bounds.y
+						append(&node.paint, Display_Command{
+							node.id, .Text_Selection, bounds, text_clip, "",
+							Color{0.20, 0.42, 0.78, 0.45},
+						})
+					}
+					delete(selection)
+				}
 				append(&node.paint, Display_Command{node.id, display_kind, node.bounds, text_clip, owned(display_text, rt.persistent_allocator), node.color})
+			}
+			if node.kind == .Text && node.text_interaction && node.text_interaction_show_caret && node.text_run_valid {
+				caret := text_node_caret_geometry(rt, node.id, node.text_interaction_focus)
+				if caret.valid {
+					caret_clip := node.clip
+					if node.text_style.overflow != .Wrap {
+						caret_clip = rect_intersection(node.clip, node.bounds)
+					}
+					append(&node.paint, Display_Command{
+						node.id, .Text_Caret, caret.rect, caret_clip, "",
+						Color{0.92, 0.95, 1.0, 1.0},
+					})
+				}
 			}
 			if node.kind == .Text_Field && rt.focused == node.id {
 				caret := text_field_caret_geometry(rt, node.id)

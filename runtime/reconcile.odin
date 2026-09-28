@@ -58,6 +58,14 @@ description_hash :: proc(d: Description) -> u64 {
 	h = hash_mix(h, u64(transmute(u32)d.control_step))
 	h = hash_mix(h, hash_color(d.color))
 	h = hash_mix(h, u64(d.paint_background ? 1 : 0))
+	h = hash_mix(h, u64(d.text_interaction ? 1 : 0))
+	if d.text_interaction {
+		h = hash_mix(h, u64(d.text_interaction_anchor.byte))
+		h = hash_mix(h, u64(d.text_interaction_anchor.affinity))
+		h = hash_mix(h, u64(d.text_interaction_focus.byte))
+		h = hash_mix(h, u64(d.text_interaction_focus.affinity))
+		h = hash_mix(h, u64(d.text_interaction_show_caret ? 1 : 0))
+	}
 	h = hash_mix(h, d.region_revision)
 	h = hash_mix(h, u64(d.surface_kind))
 	h = hash_mix(h, u64(d.surface_pixel_width))
@@ -213,6 +221,10 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	node.region_revision = d.region_revision
 	node.region = d.region
 	node.text_input_target = d.text_input_target
+	node.text_interaction = d.text_interaction && d.kind == .Text
+	node.text_interaction_anchor = d.text_interaction_anchor
+	node.text_interaction_focus = d.text_interaction_focus
+	node.text_interaction_show_caret = node.text_interaction && d.text_interaction_show_caret
 	node.focusable = (d.focusable || d.text_input_target) && !d.disabled
 	if !node.text_input_target {
 		node.text_input_area = Text_Input_Area{}

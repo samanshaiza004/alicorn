@@ -708,6 +708,37 @@ process_text_command :: proc(rt: ^Runtime, id: Node_ID, command: Text_Command) -
 	return change
 }
 
+// text_node_hit_test maps logical window coordinates to a byte offset local to
+// the retained Text or Text_Field node's UTF-8 value. The returned position is
+// grapheme-normalized and retains visual affinity. ok is false unless the
+// active retained node has a valid shaped run.
+text_node_hit_test :: proc(rt: ^Runtime, id: Node_ID, x, y: f32) -> (position: Text_Position, ok: bool) {
+	node, found := rt.nodes[id]
+	if !found || !node.active || (node.kind != .Text && node.kind != .Text_Field) || !node.text_run_valid || len(node.text_run.lines) == 0 {
+		return Text_Position{}, false
+	}
+	position = text_run_hit_test(&node.text_run, x-node.bounds.x, y-node.bounds.y, rt.scratch_allocator)
+	return position, true
+}
+
+// text_node_caret_geometry returns the retained Text or Text_Field run's caret
+// rectangle in absolute logical window coordinates. position.byte is a UTF-8
+// byte offset local to the node's text; the run normalizes it to a grapheme
+// boundary while honoring its visual affinity. Invalid/unshaped nodes return
+// geometry with valid=false.
+text_node_caret_geometry :: proc(rt: ^Runtime, id: Node_ID, position: Text_Position) -> Text_Caret_Geometry {
+	node, found := rt.nodes[id]
+	if !found || !node.active || (node.kind != .Text && node.kind != .Text_Field) || !node.text_run_valid {
+		return Text_Caret_Geometry{}
+	}
+	geometry := text_run_caret_geometry(&node.text_run, position, rt.scratch_allocator)
+	if geometry.valid {
+		geometry.rect.x += node.bounds.x
+		geometry.rect.y += node.bounds.y
+	}
+	return geometry
+}
+
 text_field_caret_geometry :: proc(rt: ^Runtime, id: Node_ID) -> Text_Caret_Geometry {
 	node, ok := rt.nodes[id]
 	if !ok || !node.active || node.kind != .Text_Field || !node.text_run_valid {

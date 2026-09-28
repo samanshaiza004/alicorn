@@ -199,6 +199,20 @@ Application_Text_Input_Proc :: proc(
 	owner: alicorn.Node_ID,
 	event: Application_Text_Input_Event,
 )
+Application_Text_Navigation_Key :: enum { Left, Right, Home, End }
+Application_Text_Key_Event :: struct {
+	key:     Application_Text_Navigation_Key,
+	shift:   bool,
+	control: bool,
+	alt:     bool,
+	super:   bool,
+}
+Application_Text_Key_Proc :: proc(
+	state: rawptr,
+	rt: ^alicorn.Runtime,
+	owner: alicorn.Node_ID,
+	event: Application_Text_Key_Event,
+) -> bool
 Application_Key_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, key: Application_Key) -> bool
 Application_Pointer_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Pointer_Event, target: alicorn.Node_ID)
 Application_Scroll_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Scroll_Event)
@@ -277,6 +291,7 @@ Application :: struct {
 	build:              Application_Build_Proc,
 	on_text_change:     Application_Text_Change_Proc,
 	on_text_input:      Application_Text_Input_Proc,
+	on_text_key:        Application_Text_Key_Proc,
 	on_key:             Application_Key_Proc,
 	on_pointer:         Application_Pointer_Proc,
 	on_scroll:          Application_Scroll_Proc,
@@ -597,6 +612,43 @@ native_dispatch_generic_text_input_event :: proc(
 		case .Commit, .Cancel: state.composition_owner = 0
 		}
 	}
+	return true
+}
+
+native_application_text_key_event :: proc(
+	key: sdl3.Keycode,
+	mod: sdl3.Keymod,
+) -> (event: Application_Text_Key_Event, mapped: bool) {
+	switch key {
+	case sdl3.K_LEFT: event.key = .Left
+	case sdl3.K_RIGHT: event.key = .Right
+	case sdl3.K_HOME: event.key = .Home
+	case sdl3.K_END: event.key = .End
+	case: return {}, false
+	}
+	event.shift = native_text_modifier(mod, sdl3.KMOD_SHIFT)
+	event.control = native_text_modifier(mod, sdl3.KMOD_CTRL)
+	event.alt = native_text_modifier(mod, sdl3.KMOD_ALT)
+	event.super = native_text_modifier(mod, sdl3.KMOD_GUI)
+	return event, true
+}
+
+native_dispatch_application_text_key :: proc(
+	application: ^Application,
+	rt: ^alicorn.Runtime,
+	key: sdl3.Keycode,
+	mod: sdl3.Keymod,
+) -> bool {
+	if application == nil || application.on_text_key == nil || rt == nil { return false }
+	event, mapped := native_application_text_key_event(key, mod)
+	if !mapped { return false }
+	owner := rt.focused
+	node, ok := rt.nodes[owner]
+	if !ok || !node.active || node.kind == .Text_Field || !alicorn.text_input_target_is_active(rt, owner) {
+		return false
+	}
+	if !application.on_text_key(application.state, rt, owner, event) { return false }
+	alicorn.invalidate_root(rt, "application handled focused text navigation key")
 	return true
 }
 
@@ -1034,6 +1086,14 @@ pump_events :: proc(
 						alicorn.invalidate_root(rt, "application handled focused text-field key")
 					}
 				}
+			}
+			if !runtime_key_handled {
+				runtime_key_handled = native_dispatch_application_text_key(
+					application,
+					rt,
+					event.key.key,
+					event.key.mod,
+				)
 			}
 			if event.key.key == sdl3.K_F12 && diagnostics_capture_requested != nil {
 				diagnostics_capture_requested^ = true
@@ -2110,7 +2170,8 @@ RunFoundation :: proc() {
 	}
 	if text_input_contract_test {
 		if !native_generic_text_input_contract_test() { fail("generic text-input host contract tests failed") }
-		fmt.println("Alicorn generic text-input host contract: PASS")
+		if !native_generic_text_navigation_contract_test() { fail("generic text-navigation host contract tests failed") }
+		fmt.println("Alicorn generic text-input/navigation host contract: PASS")
 		return
 	}
 	if surface_geometry_test {

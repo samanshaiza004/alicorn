@@ -435,6 +435,28 @@ render_weighted_text :: proc(rt: ^alicorn.Runtime, weight: f32) -> alicorn.Node_
 	return id
 }
 
+render_interactive_text :: proc(
+	rt: ^alicorn.Runtime,
+	value: string,
+	anchor, focus: alicorn.Text_Position,
+	show_caret: bool,
+) -> (id: alicorn.Node_ID, accepted: bool) {
+	alicorn.invalidate_root(rt, "test retained text interaction")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="text-interaction-root")
+	id = alicorn.text_ex(
+		&ui,
+		value,
+		S_EXTRA,
+		style=alicorn.layout_style(width=300, height=40),
+	)
+	accepted = alicorn.text_interaction(&ui, id, anchor, focus, show_caret)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return
+}
+
 render_two_text_fields :: proc(rt: ^alicorn.Runtime) -> (first, second: alicorn.Node_ID) {
 	alicorn.invalidate_root(rt, "test two text fields")
 	ui, build := alicorn.begin_frame(rt)
@@ -1695,6 +1717,68 @@ test_text_geometry :: proc(state: ^Test_State) {
 	expect(state, visual.byte == 2, "visual movement must advance to the next boundary on the line")
 	visual = alicorn.text_run_move_visual(&run, alicorn.Text_Position{2, .Trailing}, 1)
 	expect(state, visual.byte == 2, "visual movement at a wrapped line end must enter the next line deterministically")
+}
+
+test_retained_text_interaction :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 400, 120})
+	defer alicorn.destroy_runtime(&rt)
+	expect(state, alicorn.text_engine_load_font(&rt.text_engine, TEST_UI_FONT_DATA), "retained text interaction test font must load")
+
+	value := "Aé世界"
+	anchor := alicorn.Text_Position{len(value), .Trailing}
+	focus := alicorn.Text_Position{1, .Leading}
+	id, accepted := render_interactive_text(&rt, value, anchor, focus, true)
+	node, found := rt.nodes[id]
+	expect(state, accepted && found && node != nil && node.kind == .Text, "text interaction must decorate the just-emitted retained Text node")
+	if !found || node == nil { return }
+	expect(state, node.text_interaction && node.text_interaction_show_caret, "retained Text node must preserve its interaction opt-in and caller caret policy")
+	expect(state, node.text_interaction_anchor == anchor && node.text_interaction_focus == focus, "retained Text node must preserve directional anchor/focus positions")
+	expect(state, node.text_run_valid && len(node.text_run.lines) > 0, "retained Text node must use its one shaped Runa run")
+	if !node.text_run_valid || len(node.text_run.lines) == 0 { return }
+
+	hit, hit_ok := alicorn.text_node_hit_test(
+		&rt,
+		id,
+		node.bounds.x+node.text_run.width+16,
+		node.bounds.y+node.text_run.height/2,
+	)
+	expect(state, hit_ok && hit.byte == len(value), "retained text hit testing must return a local UTF-8 byte offset at the end of the run")
+	caret := alicorn.text_node_caret_geometry(&rt, id, anchor)
+	local_caret := alicorn.text_run_caret_geometry(&node.text_run, anchor)
+	expect(state, caret.valid && caret.position.byte == len(value), "retained text caret geometry must resolve a valid local byte position")
+	expect(state,
+		caret.rect.x == node.bounds.x+local_caret.rect.x && caret.rect.y == node.bounds.y+local_caret.rect.y,
+		"retained text caret geometry must be translated to absolute logical window coordinates",
+	)
+
+	selection_commands, text_commands, caret_commands := 0, 0, 0
+	selection_index, text_index, caret_index := -1, -1, -1
+	for command, index in rt.display {
+		if command.node != id { continue }
+		#partial switch command.kind {
+		case .Text_Selection:
+			selection_commands += 1
+			if selection_index < 0 { selection_index = index }
+		case .Text:
+			text_commands += 1
+			if text_index < 0 { text_index = index }
+		case .Text_Caret:
+			caret_commands += 1
+			if caret_index < 0 { caret_index = index }
+		}
+	}
+	expect(state, selection_commands > 0 && text_commands == 1 && caret_commands == 1, "opted-in Text must paint selected text, one retained text run, and its requested caret")
+	expect(state, selection_index >= 0 && selection_index < text_index && text_index < caret_index, "selection paints below text and caret paints above the same retained text run")
+
+	_, accepted = render_interactive_text(&rt, value, anchor, focus, false)
+	node = rt.nodes[id]
+	selection_commands, caret_commands = 0, 0
+	for command in node.paint {
+		if command.kind == .Text_Selection { selection_commands += 1 }
+		if command.kind == .Text_Caret { caret_commands += 1 }
+	}
+	expect(state, accepted && selection_commands > 0 && caret_commands == 0, "selection remains visible without focus while show_caret=false suppresses only the caret")
+	expect(state, node.text_interaction_anchor == anchor && node.text_interaction_focus == focus, "selection direction must survive a retained rebuild")
 }
 
 test_gpu_text_resource_boundary :: proc(state: ^Test_State) {
@@ -3158,6 +3242,7 @@ main :: proc() {
 	test_presentation_invalidation(&state)
 	test_presentation_submission_lifecycle(&state)
 	test_text_geometry(&state)
+	test_retained_text_interaction(&state)
 	test_gpu_text_resource_boundary(&state)
 	test_multiline_text_controls(&state)
 	test_text_ellipsis(&state)

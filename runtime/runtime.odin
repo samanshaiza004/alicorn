@@ -401,6 +401,10 @@ Description :: struct {
 	region:      bool,
 	focusable:   bool,
 	text_input_target: bool,
+	text_interaction: bool,
+	text_interaction_anchor: Text_Position,
+	text_interaction_focus: Text_Position,
+	text_interaction_show_caret: bool,
 	selected:    bool,
 	semantic_id: Semantic_ID,
 	disabled:    bool,
@@ -473,6 +477,10 @@ Node :: struct {
 	region_cached: bool,
 	focusable:   bool,
 	text_input_target: bool,
+	text_interaction: bool,
+	text_interaction_anchor: Text_Position,
+	text_interaction_focus: Text_Position,
+	text_interaction_show_caret: bool,
 	text_input_area: Text_Input_Area,
 	text_input_area_set: bool,
 	disabled:    bool,
@@ -2203,6 +2211,26 @@ button_ex :: proc(ui: ^UI, label: string, source := Source_Site{}, key := "", ex
 text_ex :: proc(ui: ^UI, value: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, paint_value: u64 = 0, loc := #caller_location, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE) -> Node_ID {
 	resolved_source := resolve_source(source, "text", loc)
 	return emit(ui, .Text, resolved_source, text=value, key=key, explicit_key=explicit_key, style=style, paint_value=paint_value, font=font, text_style=text_style)
+}
+
+// text_interaction opts the just-emitted Text node into retained selection and
+// caret decoration. anchor and focus are UTF-8 byte offsets local to that
+// node's text, with affinity disambiguating visual boundaries. Their direction
+// is preserved as supplied. The selection is painted regardless of keyboard
+// focus; show_caret independently controls whether a caret is painted at focus.
+// Geometry and both decorations use the Text node's one retained Runa run.
+text_interaction :: proc(ui: ^UI, id: Node_ID, anchor, focus: Text_Position, show_caret: bool) -> bool {
+	rt := ui.runtime
+	if rt == nil || !rt.frame_open || id == 0 || len(rt.pending) == 0 { return false }
+	item := &rt.pending[len(rt.pending)-1]
+	if item.kind != .Description || item.description.id != id || item.description.kind != .Text {
+		return false
+	}
+	item.description.text_interaction = true
+	item.description.text_interaction_anchor = anchor
+	item.description.text_interaction_focus = focus
+	item.description.text_interaction_show_caret = show_caret
+	return true
 }
 
 text_field_ex :: proc(ui: ^UI, value: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE) -> Node_ID {
