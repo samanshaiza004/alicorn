@@ -1980,7 +1980,7 @@ run_application_loop :: proc(
 		timing.opportunistic_deferrals = scheduler_stats.opportunistic_deferrals
 		timing.maximum_scheduled_lateness_ns = scheduler_stats.maximum_lateness_ns
 		if native_write_diagnostics(&diagnostics, start, gpu_driver, metrics^, rt, text_renderer, surface_renderer, solid_renderer, &timing, &text_events) {
-			screenshot_path := fmt.tprintf("%s/screenshot.ppm", diagnostics.capture_dir)
+			screenshot_path := fmt.tprintf("%s/screenshot.ppm", diagnostics.last_capture_dir)
 			if native_capture_display_ppm(
 				device, text_renderer, surface_renderer, solid_renderer, rt.display[:],
 				sdl3.Uint32(metrics.pixel_width), sdl3.Uint32(metrics.pixel_height),

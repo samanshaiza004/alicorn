@@ -49,8 +49,8 @@ shells. They otherwise use `ALICORN_ODIN`, then `odin` on `PATH`.
 
 ## Native diagnostics
 
-The native window supports `F12` for a diagnostic capture when started with
-diagnostics enabled, and `F11` to toggle retained bounds. Captures separate
+The native window supports `F12` for a diagnostic capture (including repeated
+captures during one run) and `F11` to toggle retained bounds. Captures separate
 application build/tick, event handling, GPU encoding, submission, and fence
 wait timings, alongside retained-tree identity and layout information.
 
@@ -58,8 +58,11 @@ wait timings, alongside retained-tree identity and layout information.
 .\tools\native_sdl_gpu.ps1 -Diagnostics -CaptureAfter 2 -CaptureDir out\diagnostics
 ```
 
-See `out/diagnostics/` for the generated files. Treat these as investigation
-artifacts, not golden-image compatibility promises.
+Each capture is written as a bundle under `out/diagnostics/`, for example
+`20260928T165642.317Z-0001/diagnostics.json`, `inspector.txt`, and
+`screenshot.ppm`. The UTC timestamp and sequence make repeated captures
+distinct, and the JSON records the capture ID and frame. Treat these as
+investigation artifacts, not golden-image compatibility promises.
 
 ## Change boundaries
 

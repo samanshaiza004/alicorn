@@ -17,7 +17,9 @@ Native_Diagnostics_Options :: struct {
 	capture_requested:   bool,
 	capture_after_ns:    u64,
 	capture_dir:         string,
-	captured:            bool,
+	automatic_capture_done: bool,
+	capture_sequence:    u64,
+	last_capture_dir:    string,
 }
 
 Native_Host_Timing :: struct {
@@ -162,6 +164,34 @@ native_parse_diagnostics_options :: proc() -> Native_Diagnostics_Options {
 	return options
 }
 
+native_diagnostics_timestamp :: proc(moment: time.Time) -> (stamp, iso: string, ok: bool) {
+	datetime, converted := time.time_to_datetime(moment)
+	if !converted { return }
+	millisecond := datetime.nano / 1_000_000
+	stamp = fmt.tprintf("%04d%02d%02dT%02d%02d%02d.%03dZ",
+		datetime.year, int(datetime.month), int(datetime.day),
+		int(datetime.hour), int(datetime.minute), int(datetime.second), millisecond)
+	iso = fmt.tprintf("%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
+		datetime.year, int(datetime.month), int(datetime.day),
+		int(datetime.hour), int(datetime.minute), int(datetime.second), millisecond)
+	return stamp, iso, true
+}
+
+native_diagnostics_create_bundle :: proc(root, stamp: string, first_sequence: u64) -> (directory: string, sequence: u64, ok: bool) {
+	if err := os.make_directory_all(root); err != nil { return }
+	sequence = first_sequence
+	for attempt in 0..<10_000 {
+		candidate := fmt.tprintf("%s/%s-%04d", root, stamp, sequence)
+		if err := os.make_directory(candidate); err == nil {
+			return candidate, sequence, true
+		} else if err != .Exist {
+			return "", 0, false
+		}
+		sequence += 1
+	}
+	return "", 0, false
+}
+
 native_write_diagnostics :: proc(
 	options: ^Native_Diagnostics_Options,
 	started: time.Time,
@@ -174,14 +204,19 @@ native_write_diagnostics :: proc(
 	timing: ^Native_Host_Timing,
 	text_events: ^Native_Text_Event_Telemetry = nil,
 ) -> bool {
-	if (!options.enabled && !options.capture_requested) || options.captured { return false }
+	automatic_due := options.enabled && !options.automatic_capture_done &&
+		time.duration_nanoseconds(time.since(started)) >= i64(options.capture_after_ns)
+	if !options.capture_requested && !automatic_due { return false }
 	// A capture is meant to explain a presented frame. The host may spend
 	// several idle/event-only iterations between application build and the
 	// first submission, especially when a surface tick is cadence-driven. Do
 	// not freeze a misleading zero-GPU snapshot in that window.
 	if timing.gpu_submissions == 0 { return false }
-	if !options.capture_requested && time.duration_nanoseconds(time.since(started)) < i64(options.capture_after_ns) { return false }
-	if err := os.make_directory_all(options.capture_dir); err != nil { return false }
+	stamp, captured_at, timestamp_ok := native_diagnostics_timestamp(time.now())
+	if !timestamp_ok { return false }
+	bundle_dir, capture_sequence, bundle_ok := native_diagnostics_create_bundle(
+		options.capture_dir, stamp, options.capture_sequence+1)
+	if !bundle_ok { return false }
 
 	p50 := native_timing_percentile(timing.frame_samples[:], 0.50)
 	p95 := native_timing_percentile(timing.frame_samples[:], 0.95)
@@ -204,6 +239,13 @@ native_write_diagnostics :: proc(
 	fmt.sbprintf(&builder, `{{
   "schema": 1,
   "kind": "alicorn-native-diagnostics",
+  "capture": {{
+    "id": "%s-%04d",
+    "captured_at_utc": "%s",
+    "sequence": %d,
+    "frame": %d,
+    "gpu_submissions": %d
+  }},
   "gpu_driver": "%s",
   "window": {{
     "logical_width": %d,
@@ -213,7 +255,7 @@ native_write_diagnostics :: proc(
     "pixel_density": %.4f,
     "display_scale": %.4f
   }},
-`, gpu_driver,
+	`, stamp, capture_sequence, captured_at, capture_sequence, timing.frames, timing.gpu_submissions, gpu_driver,
 		metrics.logical_width, metrics.logical_height, metrics.pixel_width, metrics.pixel_height,
 		metrics.pixel_density, metrics.display_scale)
 	fmt.sbprintf(&builder, `  "timing_ns": {{
@@ -321,20 +363,23 @@ native_write_diagnostics :: proc(
 }
 `)
 	json := strings.to_string(builder)
-	path := fmt.tprintf("%s/diagnostics.json", options.capture_dir)
+	path := fmt.tprintf("%s/diagnostics.json", bundle_dir)
 	if err := os.write_entire_file(path, json); err != nil { return false }
 	// Keep the full retained-tree explanation beside the compact JSON. The
 	// human-readable inspector already contains node identity, bounds, dirty
 	// stages, focus/hover state, and invalidation reasons without requiring a
 	// JSON escaping layer in the runtime.
 	inspection := alicorn.inspect(rt)
-	inspection_path := fmt.tprintf("%s/inspector.txt", options.capture_dir)
+	inspection_path := fmt.tprintf("%s/inspector.txt", bundle_dir)
 	if err := os.write_entire_file(inspection_path, inspection); err != nil {
 		delete(inspection)
 		return false
 	}
 	delete(inspection)
-	options.captured = true
-	fmt.println("alicorn_diagnostics", "path", path, "inspector", inspection_path, "frame_p95_ns", p95, "gpu_encode_ns", timing.gpu_encode_ns)
+	options.capture_sequence = capture_sequence
+	options.last_capture_dir = bundle_dir
+	options.capture_requested = false
+	if automatic_due { options.automatic_capture_done = true }
+	fmt.println("alicorn_diagnostics", "path", path, "inspector", inspection_path, "capture_id", fmt.tprintf("%s-%04d", stamp, capture_sequence), "frame_p95_ns", p95, "gpu_encode_ns", timing.gpu_encode_ns)
 	return true
 }
