@@ -1816,6 +1816,7 @@ run_application_loop :: proc(
 	if application_instance.on_services != nil {
 		application_instance.on_services(application_instance.state, Application_Services{
 			dialogs=Dialog_Service{handle=rawptr(dialog_bridge)},
+			clipboard=native_clipboard_service(),
 			scheduler=application_scheduler,
 		})
 	}

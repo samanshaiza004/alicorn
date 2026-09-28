@@ -86,6 +86,7 @@ Dialog_Service_Backend :: enum {
 
 Application_Services :: struct {
 	dialogs:   Dialog_Service,
+	clipboard: Clipboard_Service,
 	scheduler: Application_Scheduler,
 }
 

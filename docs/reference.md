@@ -27,6 +27,14 @@ the last keyboard or pointer event. `application_scheduler_stats` exposes
 scheduled/coalesced counts, runs, deferrals, pending state, and maximum
 lateness. Prefer this over display-cadence `on_tick` for live data refresh.
 
+`Application_Services.clipboard` is the UI-thread-only OS text clipboard
+service. `ClipboardGetText(service, allocator)` returns an owned UTF-8 string
+that the caller must release with the same allocator; an empty clipboard is a
+successful empty string, while `ok == false` reports an unavailable service or
+host error. `ClipboardSetText(service, text)` copies UTF-8 text synchronously
+and rejects embedded NUL bytes. Clipboard and dialog operations belong in the
+native host boundary; application code decides selection and edit semantics.
+
 ## Frame and invalidation
 
 | API | Use |
