@@ -289,12 +289,12 @@ update_paint :: proc(rt: ^Runtime) {
 			if node.kind == .Text && node.text_interaction && node.text_interaction_show_caret && node.text_run_valid {
 				caret := text_node_caret_geometry(rt, node.id, node.text_interaction_focus)
 				if caret.valid {
-					caret_clip := node.clip
-					if node.text_style.overflow != .Wrap {
-						caret_clip = rect_intersection(node.clip, node.bounds)
-					}
 					append(&node.paint, Display_Command{
-						node.id, .Text_Caret, caret.rect, caret_clip, "",
+						// A caret belongs to a text boundary, which can sit just
+						// beyond the glyph extent (including at byte 0 of an
+						// empty run). Keep it clipped by the containing viewport,
+						// not by the text node's glyph-sized bounds.
+						node.id, .Text_Caret, caret.rect, node.clip, "",
 						Color{0.92, 0.95, 1.0, 1.0},
 					})
 				}

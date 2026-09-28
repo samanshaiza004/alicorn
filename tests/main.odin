@@ -457,6 +457,42 @@ render_interactive_text :: proc(
 	return
 }
 
+render_natural_interactive_text :: proc(
+	rt: ^alicorn.Runtime,
+	value: string,
+	position: alicorn.Text_Position,
+) -> (id: alicorn.Node_ID, accepted: bool) {
+	alicorn.invalidate_root(rt, "test natural-width interactive text")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin_ex(
+		&ui,
+		.Root,
+		S_ROOT,
+		label="natural-width-text-interaction-root",
+		style=alicorn.layout_style(align=.Start),
+	)
+	alicorn.container_begin_ex(
+		&ui,
+		.Container,
+		S_ROW,
+		label="natural-width-text-interaction-row",
+		style=alicorn.layout_style(.Row, height=40, align=.Start),
+	)
+	id = alicorn.text_ex(
+		&ui,
+		value,
+		S_EXTRA,
+		style=alicorn.layout_style(height=40),
+		text_style=alicorn.Text_Style{overflow=.Clip},
+	)
+	accepted = alicorn.text_interaction(&ui, id, position, position, true)
+	alicorn.container_end(&ui)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return
+}
+
 render_two_text_fields :: proc(rt: ^alicorn.Runtime) -> (first, second: alicorn.Node_ID) {
 	alicorn.invalidate_root(rt, "test two text fields")
 	ui, build := alicorn.begin_frame(rt)
@@ -1787,6 +1823,44 @@ test_retained_text_interaction :: proc(state: ^Test_State) {
 	}
 	expect(state, accepted && selection_commands > 0 && caret_commands == 0, "selection remains visible without focus while show_caret=false suppresses only the caret")
 	expect(state, node.text_interaction_anchor == anchor && node.text_interaction_focus == focus, "selection direction must survive a retained rebuild")
+}
+
+test_interactive_text_caret_at_end_and_empty_line :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 400, 120})
+	defer alicorn.destroy_runtime(&rt)
+	expect(state, alicorn.text_engine_load_font(&rt.text_engine, TEST_UI_FONT_DATA), "text boundary caret test font must load")
+
+	value := "abc"
+	end_position := alicorn.Text_Position{byte=len(value), affinity=.Trailing}
+	id, accepted := render_natural_interactive_text(&rt, value, end_position)
+	node, found := rt.nodes[id]
+	expect(state, accepted && found && node != nil && node.text_run_valid, "natural-width interactive text must retain its shaped run")
+	if !found || node == nil || !node.text_run_valid { return }
+	end_caret := alicorn.text_node_caret_geometry(&rt, id, end_position)
+	expect(state, end_caret.valid && end_caret.position.byte == len(value), "caret geometry must remain valid at the trailing text boundary")
+	caret_commands := 0
+	for command in rt.display {
+		if command.node != id || command.kind != .Text_Caret { continue }
+		caret_commands += 1
+		expect(state, command.clip == node.clip, "trailing caret must use the containing clip instead of glyph bounds")
+		expect(state, command.clip.w > node.bounds.w, "trailing caret clip must extend past the natural-width glyph bounds")
+	}
+	expect(state, caret_commands == 1, "trailing text boundary must emit one visible caret command")
+
+	empty_position := alicorn.Text_Position{byte=0, affinity=.Leading}
+	id, accepted = render_natural_interactive_text(&rt, "", empty_position)
+	node, found = rt.nodes[id]
+	expect(state, accepted && found && node != nil && node.text_run_valid, "empty interactive text must retain a shaped run")
+	if !found || node == nil || !node.text_run_valid { return }
+	empty_caret := alicorn.text_node_caret_geometry(&rt, id, empty_position)
+	expect(state, empty_caret.valid && empty_caret.position.byte == 0, "empty text must provide valid caret geometry at byte zero")
+	caret_commands = 0
+	for command in rt.display {
+		if command.node != id || command.kind != .Text_Caret { continue }
+		caret_commands += 1
+		expect(state, command.clip == node.clip && command.clip.w > 0 && command.clip.h > 0, "empty-line caret must retain the nonempty ancestor viewport clip")
+	}
+	expect(state, caret_commands == 1, "empty interactive text must emit one visible caret command")
 }
 
 test_gpu_text_resource_boundary :: proc(state: ^Test_State) {
@@ -3251,6 +3325,7 @@ main :: proc() {
 	test_presentation_submission_lifecycle(&state)
 	test_text_geometry(&state)
 	test_retained_text_interaction(&state)
+	test_interactive_text_caret_at_end_and_empty_line(&state)
 	test_gpu_text_resource_boundary(&state)
 	test_multiline_text_controls(&state)
 	test_text_ellipsis(&state)
