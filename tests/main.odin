@@ -1279,6 +1279,14 @@ test_generic_text_input_target :: proc(state: ^Test_State) {
 	id := render_generic_text_input_target(&rt, true)
 	expect(state, alicorn.text_input_target_is_active(&rt, id), "described generic target must be retained as a native text-input owner")
 	expect(state, rt.nodes[id].focusable, "generic text-input target must become keyboard focusable")
+	target_bounds := rt.nodes[id].bounds
+	pointer_x, pointer_y := target_bounds.x+16, target_bounds.y+16
+	expect(state, alicorn.hit_test(&rt, pointer_x, pointer_y) == id,
+		"a generic text-input owner must participate in pointer hit testing")
+	pointer_target := alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, pointer_x, pointer_y, 1})
+	expect(state, pointer_target == id && rt.focused == id,
+		"pointer-down must focus a generic text-input owner through the normal retained path")
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, pointer_x, pointer_y, 1})
 	expect(state, alicorn.focus(&rt, id), "generic text-input target must accept keyboard focus")
 	area, area_ok := alicorn.text_input_area(&rt, id)
 	expect(state, area_ok && area.rect.w > 0 && area.rect.h > 0, "generic text-input target must provide a retained-bounds fallback candidate area")

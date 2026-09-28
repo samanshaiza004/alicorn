@@ -142,7 +142,8 @@ hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 		id := rt.order[i]
 		if node, ok := rt.nodes[id]; ok && node.active && !node.disabled &&
 			node_is_in_modal_overlay(rt, id, modal_root) && rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
-			if node.kind == .Button || node.kind == .Checkbox || node.kind == .Slider || node.kind == .Text_Field || node.kind == .Custom_Surface {
+			if node.kind == .Button || node.kind == .Checkbox || node.kind == .Slider || node.kind == .Text_Field || node.kind == .Custom_Surface ||
+			   (node.text_input_target && node.focusable) {
 				return id
 			}
 		}
