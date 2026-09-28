@@ -126,6 +126,10 @@ native_generic_text_navigation_contract_test :: proc() -> bool {
 	if !page_up_mapped || page_up.key != .Page_Up { return false }
 	page_down, page_down_mapped := native_application_text_key_event(sdl3.K_PAGEDOWN, sdl3.KMOD_SHIFT)
 	if !page_down_mapped || page_down.key != .Page_Down || !page_down.shift { return false }
+	backspace, backspace_mapped := native_application_text_key_event(sdl3.K_BACKSPACE, sdl3.KMOD_SHIFT)
+	if !backspace_mapped || backspace.key != .Backspace || !backspace.shift { return false }
+	delete, delete_mapped := native_application_text_key_event(sdl3.K_DELETE, {})
+	if !delete_mapped || delete.key != .Delete { return false }
 	_, unsupported_mapped := native_application_text_key_event(sdl3.K_A, all_modifiers)
 	if unsupported_mapped { return false }
 
@@ -160,20 +164,24 @@ native_generic_text_navigation_contract_test :: proc() -> bool {
 	if probe.owners[0] != owner || probe.events[0] != left { return false }
 	if !native_dispatch_application_text_key(&application, &rt, sdl3.K_DOWN, {}) { return false }
 	if len(probe.events) != 2 || probe.owners[1] != owner || probe.events[1] != down { return false }
+	if !native_dispatch_application_text_key(&application, &rt, sdl3.K_BACKSPACE, sdl3.KMOD_SHIFT) { return false }
+	if len(probe.events) != 3 || probe.owners[2] != owner || probe.events[2] != backspace { return false }
+	if !native_dispatch_application_text_key(&application, &rt, sdl3.K_DELETE, {}) { return false }
+	if len(probe.events) != 4 || probe.owners[3] != owner || probe.events[3] != delete { return false }
 
 	probe.handled = false
 	rt.invalidated = false
 	if native_dispatch_application_text_key(&application, &rt, sdl3.K_RIGHT, sdl3.KMOD_SHIFT) { return false }
-	if rt.invalidated || len(probe.events) != 3 || probe.owners[2] != owner || probe.events[2] != right { return false }
+	if rt.invalidated || len(probe.events) != 5 || probe.owners[4] != owner || probe.events[4] != right { return false }
 
 	if !alicorn.focus(&rt, field) { return false }
 	rt.invalidated = false
 	if native_dispatch_application_text_key(&application, &rt, sdl3.K_HOME, sdl3.KMOD_CTRL) { return false }
-	if rt.invalidated || len(probe.events) != 3 { return false }
+	if rt.invalidated || len(probe.events) != 5 { return false }
 
 	rt.focused = 0
 	if native_dispatch_application_text_key(&application, &rt, sdl3.K_END, sdl3.KMOD_ALT) { return false }
-	if len(probe.events) != 3 { return false }
+	if len(probe.events) != 5 { return false }
 
 	rt.focused = owner
 	owner_node, owner_found := rt.nodes[owner]
@@ -181,5 +189,5 @@ native_generic_text_navigation_contract_test :: proc() -> bool {
 	owner_node.active = false
 	rt.nodes[owner] = owner_node
 	if native_dispatch_application_text_key(&application, &rt, sdl3.K_END, sdl3.KMOD_ALT) { return false }
-	return len(probe.events) == 3
+	return len(probe.events) == 5
 }

@@ -199,7 +199,7 @@ Application_Text_Input_Proc :: proc(
 	owner: alicorn.Node_ID,
 	event: Application_Text_Input_Event,
 )
-Application_Text_Navigation_Key :: enum { Left, Right, Home, End, Up, Down, Page_Up, Page_Down }
+Application_Text_Navigation_Key :: enum { Left, Right, Home, End, Up, Down, Page_Up, Page_Down, Backspace, Delete }
 Application_Text_Key_Event :: struct {
 	key:     Application_Text_Navigation_Key,
 	shift:   bool,
@@ -628,6 +628,8 @@ native_application_text_key_event :: proc(
 	case sdl3.K_DOWN: event.key = .Down
 	case sdl3.K_PAGEUP: event.key = .Page_Up
 	case sdl3.K_PAGEDOWN: event.key = .Page_Down
+	case sdl3.K_BACKSPACE: event.key = .Backspace
+	case sdl3.K_DELETE: event.key = .Delete
 	case: return {}, false
 	}
 	event.shift = native_text_modifier(mod, sdl3.KMOD_SHIFT)
@@ -652,7 +654,7 @@ native_dispatch_application_text_key :: proc(
 		return false
 	}
 	if !application.on_text_key(application.state, rt, owner, event) { return false }
-	alicorn.invalidate_root(rt, "application handled focused text navigation key")
+	alicorn.invalidate_root(rt, "application handled focused text key")
 	return true
 }
 
