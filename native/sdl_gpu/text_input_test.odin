@@ -144,9 +144,17 @@ native_generic_text_navigation_contract_test :: proc() -> bool {
 	if !word_right_mapped || word_right.key != .Word_Right || !word_right.shift { return false }
 	word_backspace, word_backspace_mapped := native_application_text_key_event(sdl3.K_BACKSPACE, word_modifier)
 	if !word_backspace_mapped || word_backspace.key != .Delete_Word_Backward { return false }
-	line_modifier := sdl3.KMOD_GUI if ODIN_OS == .Darwin else sdl3.Keymod{}
-	line_left, line_left_mapped := native_application_text_key_event(sdl3.K_LEFT, line_modifier)
-	if !line_left_mapped || line_left.key != .Line_Start { return false }
+	when ODIN_OS == .Darwin {
+		line_left, line_left_mapped := native_application_text_key_event(sdl3.K_LEFT, sdl3.KMOD_GUI)
+		if !line_left_mapped || line_left.key != .Line_Start { return false }
+		line_right, line_right_mapped := native_application_text_key_event(sdl3.K_RIGHT, sdl3.KMOD_GUI)
+		if !line_right_mapped || line_right.key != .Line_End { return false }
+	} else {
+		line_left, line_left_mapped := native_application_text_key_event(sdl3.K_HOME, {})
+		if !line_left_mapped || line_left.key != .Home { return false }
+		line_right, line_right_mapped := native_application_text_key_event(sdl3.K_END, {})
+		if !line_right_mapped || line_right.key != .End { return false }
+	}
 	_, unsupported_mapped := native_application_text_key_event(sdl3.K_A, sdl3.KMOD_SHIFT|sdl3.KMOD_CTRL|sdl3.KMOD_ALT|sdl3.KMOD_GUI)
 	if unsupported_mapped { return false }
 
