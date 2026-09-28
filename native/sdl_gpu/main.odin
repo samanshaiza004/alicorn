@@ -199,7 +199,14 @@ Application_Text_Input_Proc :: proc(
 	owner: alicorn.Node_ID,
 	event: Application_Text_Input_Event,
 )
-Application_Text_Navigation_Key :: enum { Left, Right, Home, End, Up, Down, Page_Up, Page_Down, Backspace, Delete }
+// Application_Text_Navigation_Key is the host-normalized editing intent. The
+// SDL host applies platform modifier conventions before delivering it, so an
+// application need not interpret Ctrl/Option/Command itself.
+Application_Text_Navigation_Key :: enum {
+	Left, Right, Home, End, Up, Down, Page_Up, Page_Down, Backspace, Delete, Tab,
+	Word_Left, Word_Right, Line_Start, Line_End, Document_Start, Document_End,
+	Delete_Word_Backward, Delete_Word_Forward, Delete_Line_Backward, Delete_Line_Forward,
+}
 Application_Text_Key_Event :: struct {
 	key:     Application_Text_Navigation_Key,
 	shift:   bool,
@@ -619,17 +626,39 @@ native_application_text_key_event :: proc(
 	key: sdl3.Keycode,
 	mod: sdl3.Keymod,
 ) -> (event: Application_Text_Key_Event, mapped: bool) {
+	word := native_text_word_modifier(mod)
+	line := native_text_line_modifier(mod)
+	document := native_text_document_modifier(mod)
 	switch key {
-	case sdl3.K_LEFT: event.key = .Left
-	case sdl3.K_RIGHT: event.key = .Right
-	case sdl3.K_HOME: event.key = .Home
-	case sdl3.K_END: event.key = .End
-	case sdl3.K_UP: event.key = .Up
-	case sdl3.K_DOWN: event.key = .Down
+	case sdl3.K_LEFT:
+		if line { event.key = .Line_Start }
+		else if word { event.key = .Word_Left }
+		else { event.key = .Left }
+	case sdl3.K_RIGHT:
+		if line { event.key = .Line_End }
+		else if word { event.key = .Word_Right }
+		else { event.key = .Right }
+	case sdl3.K_HOME: event.key = .Document_Start if document else .Home
+	case sdl3.K_END: event.key = .Document_End if document else .End
+	case sdl3.K_UP:
+		when ODIN_OS == .Darwin {
+			event.key = .Document_Start if document else .Up
+		} else { event.key = .Up }
+	case sdl3.K_DOWN:
+		when ODIN_OS == .Darwin {
+			event.key = .Document_End if document else .Down
+		} else { event.key = .Down }
 	case sdl3.K_PAGEUP: event.key = .Page_Up
 	case sdl3.K_PAGEDOWN: event.key = .Page_Down
-	case sdl3.K_BACKSPACE: event.key = .Backspace
-	case sdl3.K_DELETE: event.key = .Delete
+	case sdl3.K_BACKSPACE:
+		if line { event.key = .Delete_Line_Backward }
+		else if word { event.key = .Delete_Word_Backward }
+		else { event.key = .Backspace }
+	case sdl3.K_DELETE:
+		if line { event.key = .Delete_Line_Forward }
+		else if word { event.key = .Delete_Word_Forward }
+		else { event.key = .Delete }
+	case sdl3.K_TAB: event.key = .Tab
 	case: return {}, false
 	}
 	event.shift = native_text_modifier(mod, sdl3.KMOD_SHIFT)
@@ -656,6 +685,21 @@ native_dispatch_application_text_key :: proc(
 	if !application.on_text_key(application.state, rt, owner, event) { return false }
 	alicorn.invalidate_root(rt, "application handled focused text key")
 	return true
+}
+
+// A generic focused text owner gets first refusal on Tab. If it declines the
+// key, retain the host's normal forward/backward focus traversal behavior.
+native_dispatch_application_text_key_or_focus_traverse :: proc(
+	application: ^Application,
+	rt: ^alicorn.Runtime,
+	key: sdl3.Keycode,
+	mod: sdl3.Keymod,
+) -> bool {
+	if native_dispatch_application_text_key(application, rt, key, mod) { return true }
+	if key != sdl3.K_TAB || rt == nil { return false }
+	direction: alicorn.Focus_Direction = .Next
+	if native_text_modifier(mod, sdl3.KMOD_SHIFT) { direction = .Previous }
+	return alicorn.focus_traverse(rt, direction) != 0
 }
 
 native_cancel_application_text_composition :: proc(
@@ -812,6 +856,14 @@ native_text_line_modifier :: proc(mod: sdl3.Keymod) -> bool {
 		return native_text_modifier(mod, sdl3.KMOD_GUI)
 	} else {
 		return false
+	}
+}
+
+native_text_document_modifier :: proc(mod: sdl3.Keymod) -> bool {
+	when ODIN_OS == .Darwin {
+		return native_text_primary_modifier(mod)
+	} else {
+		return native_text_modifier(mod, sdl3.KMOD_CTRL)
 	}
 }
 
@@ -1094,7 +1146,7 @@ pump_events :: proc(
 				}
 			}
 			if !runtime_key_handled {
-				runtime_key_handled = native_dispatch_application_text_key(
+				runtime_key_handled = native_dispatch_application_text_key_or_focus_traverse(
 					application,
 					rt,
 					event.key.key,
@@ -1123,13 +1175,7 @@ pump_events :: proc(
 				}
 				fmt.println("sdl_event", "KEY_DOWN", "key", event.key.key, "repeat", event.key.repeat, "composition_active", composition_active)
 			}
-			if !runtime_key_handled && event.key.key == sdl3.K_TAB {
-				direction: alicorn.Focus_Direction = .Next
-				if native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) {
-					direction = .Previous
-				}
-				runtime_key_handled = alicorn.focus_traverse(rt, direction) != 0
-			} else if !runtime_key_handled {
+			if !runtime_key_handled {
 				runtime_key_handled = native_route_focused_control_key(rt, event.key.key)
 			}
 			if !runtime_key_handled && event.key.key == sdl3.K_ESCAPE {

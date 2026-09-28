@@ -136,6 +136,13 @@ height.
 - `Text_Style` and `Font_Role` choose text weight, overflow, and UI/monospace
   roles. The native host bundles Atkinson Hyperlegible Next and Mono; font
   notices and file details are in [`assets/fonts/README.md`](../assets/fonts/README.md).
+- A generic `text_input_target` receives `Application_Text_Key_Event` values
+  whose key is a normalized editing intent (`Word_Left`, `Line_Start`,
+  `Document_End`, and so on), not an SDL keycode/modifier combination. The SDL
+  host applies platform conventions (Ctrl/Option word movement, Command line
+  movement, and platform document-edge keys). A focused generic text owner gets
+  first refusal on Tab; declining it preserves normal focus traversal. Global
+  menu shortcuts are checked before generic text keys.
 - `Runtime_Config` optionally configures persistent and scratch backing
   allocators when calling `new_runtime`.
 - `inspect(runtime)` and `trace_snapshot(runtime)` expose retained state and
