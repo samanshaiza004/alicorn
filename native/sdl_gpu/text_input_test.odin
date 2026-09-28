@@ -228,5 +228,7 @@ native_generic_text_navigation_contract_test :: proc() -> bool {
 	if !native_dispatch_application_text_key_or_focus_traverse(&application, &rt, sdl3.K_TAB, {}) { return false }
 	if rt.focused != field || len(probe.events) != 7 { return false }
 	if !native_dispatch_application_text_key_or_focus_traverse(&application, &rt, sdl3.K_TAB, sdl3.KMOD_SHIFT) { return false }
-	return rt.focused == owner && len(probe.events) == 8
+	// The built-in Text_Field handles its own text keys, so Shift+Tab should
+	// traverse back without delivering another generic application key event.
+	return rt.focused == owner && len(probe.events) == 7
 }
