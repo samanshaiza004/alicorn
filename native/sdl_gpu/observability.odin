@@ -26,9 +26,12 @@ Native_Host_Timing :: struct {
 	frames:              u64,
 	event_pump_ns:       u64,
 	application_build_ns: u64,
+	application_gpu_encode_ns: u64,
+	devtools_hud_encode_ns: u64,
 	application_stabilization_rebuilds: u64,
 	application_stabilization_limit_hits: u64,
 	application_tick_ns: u64,
+	application_tick_calls: u64,
 	gpu_encode_ns:       u64,
 	gpu_submit_ns:       u64,
 	fence_wait_ns:       u64,
@@ -65,6 +68,8 @@ Native_Text_Event_Telemetry :: struct {
 	pending_input_timestamp:     u64,
 	input_to_submit_samples:     [dynamic; NATIVE_DIAGNOSTIC_FRAME_SAMPLES]u64,
 	input_to_submit_max_ns:      u64,
+	input_to_submit_sequence:    u64,
+	events_received_sequence:    u64,
 }
 
 native_note_input_event :: proc(telemetry: ^Native_Text_Event_Telemetry, timestamp: u64) {
@@ -99,6 +104,7 @@ native_note_input_submission :: proc(telemetry: ^Native_Text_Event_Telemetry) {
 			pop(&telemetry.input_to_submit_samples)
 		}
 		append(&telemetry.input_to_submit_samples, latency)
+		telemetry.input_to_submit_sequence += 1
 		if latency > telemetry.input_to_submit_max_ns { telemetry.input_to_submit_max_ns = latency }
 	}
 	telemetry.pending_input_timestamp = 0
@@ -203,6 +209,7 @@ native_write_diagnostics :: proc(
 	solid_renderer: ^Native_Solid_Renderer,
 	timing: ^Native_Host_Timing,
 	text_events: ^Native_Text_Event_Telemetry = nil,
+	recorder: ^Native_Flight_Recorder = nil,
 ) -> bool {
 	automatic_due := options.enabled && !options.automatic_capture_done &&
 		time.duration_nanoseconds(time.since(started)) >= i64(options.capture_after_ns)
@@ -244,7 +251,9 @@ native_write_diagnostics :: proc(
     "captured_at_utc": "%s",
     "sequence": %d,
     "frame": %d,
-    "gpu_submissions": %d
+    "gpu_submissions": %d,
+    "application_gpu_submissions": %d,
+    "devtools_only_gpu_submissions": %d
   }},
   "gpu_driver": "%s",
   "window": {{
@@ -255,7 +264,8 @@ native_write_diagnostics :: proc(
     "pixel_density": %.4f,
     "display_scale": %.4f
   }},
-	`, stamp, capture_sequence, captured_at, capture_sequence, timing.frames, timing.gpu_submissions, gpu_driver,
+	`, stamp, capture_sequence, captured_at, capture_sequence, timing.frames, timing.gpu_submissions,
+		rt.stats.gpu_submits, timing.gpu_submissions-rt.stats.gpu_submits, gpu_driver,
 		metrics.logical_width, metrics.logical_height, metrics.pixel_width, metrics.pixel_height,
 		metrics.pixel_density, metrics.display_scale)
 	fmt.sbprintf(&builder, `  "timing_ns": {{
@@ -265,6 +275,7 @@ native_write_diagnostics :: proc(
     "application_stabilization_rebuilds": %d,
     "application_stabilization_limit_hits": %d,
     "application_tick": %d,
+    "application_tick_calls": %d,
     "scheduled_wakes": %d,
     "frequent_wakes": %d,
     "opportunistic_wakes": %d,
@@ -273,6 +284,8 @@ native_write_diagnostics :: proc(
     "opportunistic_deferrals": %d,
     "maximum_scheduled_lateness": %d,
     "gpu_encode": %d,
+    "application_gpu_encode": %d,
+    "devtools_hud_encode": %d,
     "gpu_submit": %d,
     "fence_wait": %d,
     "frame_average": %d,
@@ -289,16 +302,19 @@ native_write_diagnostics :: proc(
   }},
 	`, timing.frames, timing.event_pump_ns, timing.application_build_ns,
 		timing.application_stabilization_rebuilds, timing.application_stabilization_limit_hits,
-		timing.application_tick_ns,
+		timing.application_tick_ns, timing.application_tick_calls,
 		timing.scheduled_wakes, timing.frequent_wakes, timing.opportunistic_wakes,
 		timing.scheduled_requests, timing.schedule_coalesces, timing.opportunistic_deferrals,
 		timing.maximum_scheduled_lateness_ns,
-		timing.gpu_encode_ns, timing.gpu_submit_ns, timing.fence_wait_ns, average,
+		timing.gpu_encode_ns, timing.application_gpu_encode_ns, timing.devtools_hud_encode_ns,
+		timing.gpu_submit_ns, timing.fence_wait_ns, average,
 		p50, p95, p99, timing.frame_ns_max, timing.event_pump_max_ns,
 		timing.application_build_max_ns, timing.application_tick_max_ns,
 		timing.gpu_encode_max_ns, timing.gpu_submit_max_ns, timing.fence_wait_max_ns)
 	fmt.sbprintf(&builder, `  "gpu": {{
     "submissions": %d,
+    "application_submissions": %d,
+    "devtools_only_submissions": %d,
     "fence_waits": %d,
     "text_shape_calls": %d,
     "text_glyph_cache_hits": %d,
@@ -314,7 +330,7 @@ native_write_diagnostics :: proc(
     "solid_batches": %d,
     "solid_vertices_uploaded": %d
   }},
-`, timing.gpu_submissions, timing.fence_waits,
+`, timing.gpu_submissions, rt.stats.gpu_submits, timing.gpu_submissions-rt.stats.gpu_submits, timing.fence_waits,
 		rt.text_engine.shape_calls, rt.text_engine.glyph_cache_hits, rt.text_engine.glyph_cache_misses,
 		rt.text_engine.glyph_rasterizations,
 		len(text_renderer.pages), text_renderer.mesh_rebuilds, text_renderer.mesh_cache_hits,
@@ -358,7 +374,8 @@ native_write_diagnostics :: proc(
 	strings.write_string(&builder, `  "notes": [
     "timing values are host wall-clock measurements in nanoseconds",
     "runtime allocation telemetry excludes application allocations, GPU memory, driver memory, and OS working set",
-    "solid rectangles are batched only within contiguous display-list runs; text and custom surfaces remain ordering boundaries"
+    "solid rectangles are batched only within contiguous display-list runs; text and custom surfaces remain ordering boundaries",
+    "DevTools HUD geometry and HUD-only submissions do not increment application Frame_Stats; a HUD-only swapchain redraw still composites the current application display"
   ]
 }
 `)
@@ -376,10 +393,12 @@ native_write_diagnostics :: proc(
 		return false
 	}
 	delete(inspection)
+	timeline_path := fmt.tprintf("%s/timeline.json", bundle_dir)
+	if !native_write_flight_timeline(timeline_path, recorder) { return false }
 	options.capture_sequence = capture_sequence
 	options.last_capture_dir = bundle_dir
 	options.capture_requested = false
 	if automatic_due { options.automatic_capture_done = true }
-	fmt.println("alicorn_diagnostics", "path", path, "inspector", inspection_path, "capture_id", fmt.tprintf("%s-%04d", stamp, capture_sequence), "frame_p95_ns", p95, "gpu_encode_ns", timing.gpu_encode_ns)
+	fmt.println("alicorn_diagnostics", "path", path, "inspector", inspection_path, "timeline", timeline_path, "capture_id", fmt.tprintf("%s-%04d", stamp, capture_sequence), "frame_p95_ns", p95, "gpu_encode_ns", timing.gpu_encode_ns)
 	return true
 }

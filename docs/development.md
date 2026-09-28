@@ -49,18 +49,35 @@ shells. They otherwise use `ALICORN_ODIN`, then `odin` on `PATH`.
 
 ## Native diagnostics
 
-The native window supports `F12` for a diagnostic capture (including repeated
-captures during one run) and `F11` to toggle retained bounds. Captures separate
-application build/tick, event handling, GPU encoding, submission, and fence
-wait timings, alongside retained-tree identity and layout information.
+The native window supports `F10` to toggle the host-owned runtime HUD, `F11` to
+toggle retained bounds, and `F12` for a diagnostic capture (including repeated
+captures during one run). The HUD reports recent application builds,
+presentation updates, app-driven GPU submissions, host wakes, surface updates,
+runtime allocations, retained-region reuse, last-interaction stage visits, and
+input-to-submit latency. It starts hidden and
+does not add retained nodes or change application `Frame_Stats`. When visible,
+the host redraws the current scene to composite the overlay; those HUD-only
+submissions and encode costs are reported separately in the capture.
+
+The fixed 256-sample flight recorder stores host wake/work counter deltas in a
+rolling buffer. Event-driven idle time produces no synthetic frame samples;
+zero application work while asleep is expected behavior, not a zero-FPS error.
+The HUD uses one-shot idle/counter-expiry waits and returns to sleeping until
+the next app or OS event.
+
+F12 captures separate application build/tick, event handling, GPU encoding,
+submission, and fence-wait timings, alongside retained-tree identity, layout
+information, and the recent flight-recorder history.
 
 ```powershell
 .\tools\native_sdl_gpu.ps1 -Diagnostics -CaptureAfter 2 -CaptureDir out\diagnostics
 ```
 
 Each capture is written as a bundle under `out/diagnostics/`, for example
-`20260928T165642.317Z-0001/diagnostics.json`, `inspector.txt`, and
-`screenshot.ppm`. The UTC timestamp and sequence make repeated captures
+`20260928T165642.317Z-0001/diagnostics.json`, `inspector.txt`, `timeline.json`,
+and `screenshot.ppm`. The timeline uses a versioned JSON schema and contains at
+most the 256 most recent samples in oldest-to-newest order. The UTC timestamp
+and sequence make repeated captures
 distinct, and the JSON records the capture ID and frame. Treat these as
 investigation artifacts, not golden-image compatibility promises.
 

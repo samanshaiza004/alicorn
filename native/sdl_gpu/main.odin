@@ -986,6 +986,9 @@ pump_events :: proc(
 	native_menu: ^Native_Menu_Runtime = nil,
 	last_user_interaction_ns: ^u64 = nil,
 	text_input_state: ^Native_Text_Input_State = nil,
+	devtools_hud: ^Native_DevTools_HUD = nil,
+	devtools_hud_redraw_pending: ^bool = nil,
+	devtools_last_cause: ^alicorn.Cause_Context = nil,
 ) {
 	if telemetry != nil { telemetry.events_this_pump = 0 }
 	event: sdl3.Event
@@ -1005,6 +1008,7 @@ pump_events :: proc(
 		has_event = poll_sdl_event(&event)
 	}
 	for has_event {
+		if telemetry != nil { telemetry.events_received_sequence += 1 }
 		if last_user_interaction_ns != nil && native_event_is_user_interaction(event.type) {
 			last_user_interaction_ns^ = u64(sdl3.GetTicksNS())
 		}
@@ -1042,6 +1046,7 @@ pump_events :: proc(
 			// later motion cannot resume an abandoned scrollbar or split drag.
 			captured := rt.captured_node
 			cancel_cause := alicorn.pointer_cause_begin(rt, .Cancel)
+			if devtools_last_cause != nil { devtools_last_cause^ = cancel_cause.cause }
 			_ = alicorn.cancel_pointer_capture(rt)
 			if application != nil && application.on_pointer != nil {
 				application.on_pointer(application.state, rt, alicorn.Pointer_Event{kind=.Cancel}, captured)
@@ -1054,11 +1059,13 @@ pump_events :: proc(
 		if application != nil && application.on_wake != nil && wake_event_enabled && event.type == wake_event {
 			if wake_events != nil { wake_events^ += 1 }
 			wake_cause := alicorn.cause_begin(rt, .Async_Wake, "application wake event")
+			if devtools_last_cause != nil { devtools_last_cause^ = wake_cause.cause }
 			application.on_wake(application.state, rt)
 			alicorn.cause_end(rt, wake_cause)
 		}
 		if pointer, ok := pointer_from_sdl(event); ok {
 			pointer_cause := alicorn.pointer_cause_begin(rt, pointer.kind)
+			if devtools_last_cause != nil { devtools_last_cause^ = pointer_cause.cause }
 			target := alicorn.process_pointer(rt, pointer)
 			if application != nil && application.on_pointer != nil {
 				application.on_pointer(application.state, rt, pointer, target)
@@ -1067,6 +1074,7 @@ pump_events :: proc(
 		}
 		if application != nil && event.type == .MOUSE_WHEEL {
 			scroll_cause := alicorn.cause_begin(rt, .Scroll, "mouse wheel")
+			if devtools_last_cause != nil { devtools_last_cause^ = scroll_cause.cause }
 			delta_x := event.wheel.x
 			delta_y := event.wheel.y
 			ticks_x := int(event.wheel.integer_x)
@@ -1105,8 +1113,15 @@ pump_events :: proc(
 		}
 		if event.type == .KEY_DOWN && event.key.down {
 			key_cause := alicorn.cause_begin(rt, .Keyboard, "SDL key down")
+			if devtools_last_cause != nil { devtools_last_cause^ = key_cause.cause }
 			menu_shortcut_handled := native_menu_try_shortcut(native_menu, int(event.key.key), event.key.mod)
-			runtime_key_handled := menu_shortcut_handled
+			devtools_hotkey_handled := false
+			if !menu_shortcut_handled && event.key.key == sdl3.K_F10 && !event.key.repeat && devtools_hud != nil {
+				native_devtools_hud_toggle(devtools_hud)
+				if devtools_hud_redraw_pending != nil { devtools_hud_redraw_pending^ = true }
+				devtools_hotkey_handled = true
+			}
+			runtime_key_handled := menu_shortcut_handled || devtools_hotkey_handled
 			// Let transient application UI intercept navigation and dismissal
 			// while a text-input owner has focus. Returning false preserves the
 			// normal caret/composition behavior below.
@@ -1246,6 +1261,7 @@ pump_events :: proc(
 		#partial switch event.type {
 		case .WINDOW_RESIZED:
 			host_cause := alicorn.cause_begin(rt, .Host_Event, "window resized")
+			if devtools_last_cause != nil { devtools_last_cause^ = host_cause.cause }
 			// data1/data2 are logical window coordinates for this event.
 			metrics.logical_width = int(event.window.data1)
 			metrics.logical_height = int(event.window.data2)
@@ -1256,6 +1272,7 @@ pump_events :: proc(
 			alicorn.cause_end(rt, host_cause)
 		case .WINDOW_PIXEL_SIZE_CHANGED, .WINDOW_METAL_VIEW_RESIZED:
 			host_cause := alicorn.cause_begin(rt, .Host_Event, "drawable size changed")
+			if devtools_last_cause != nil { devtools_last_cause^ = host_cause.cause }
 			// data1/data2 are physical drawable pixels for these events. Do not
 			// feed them into the logical layout viewport.
 			metrics.pixel_width = int(event.window.data1)
@@ -1265,6 +1282,7 @@ pump_events :: proc(
 			alicorn.cause_end(rt, host_cause)
 		case .WINDOW_DISPLAY_SCALE_CHANGED:
 			host_cause := alicorn.cause_begin(rt, .Host_Event, "display scale changed")
+			if devtools_last_cause != nil { devtools_last_cause^ = host_cause.cause }
 			scale_events^ += 1
 			metrics.pixel_density = sdl3.GetWindowPixelDensity(window)
 			metrics.display_scale = sdl3.GetWindowDisplayScale(window)
@@ -1272,6 +1290,7 @@ pump_events :: proc(
 			alicorn.cause_end(rt, host_cause)
 		case .TEXT_INPUT:
 			text_cause := alicorn.cause_begin(rt, .Text_Input, "SDL text input")
+			if devtools_last_cause != nil { devtools_last_cause^ = text_cause.cause }
 			text_input_events^ += 1
 			if manual_log {
 				raw_text := ""
@@ -1292,6 +1311,7 @@ pump_events :: proc(
 			alicorn.cause_end(rt, text_cause)
 		case .TEXT_EDITING:
 			composition_cause := alicorn.cause_begin(rt, .Text_Composition, "SDL text composition")
+			if devtools_last_cause != nil { devtools_last_cause^ = composition_cause.cause }
 			composition_events^ += 1
 			if manual_log {
 				raw_text := ""
@@ -1764,6 +1784,10 @@ run_application_loop :: proc(
 	text_input_events := 0
 	composition_events := 0
 	text_events := Native_Text_Event_Telemetry{}
+	devtools_recorder: Native_Flight_Recorder
+	devtools_hud := Native_DevTools_HUD{}
+	devtools_hud_redraw_pending := false
+	devtools_hud_deadline_ns: u64 = 0
 	in_flight: [dynamic; 3]Native_In_Flight
 	retired := 0
 	max_in_flight := 0
@@ -1805,6 +1829,7 @@ run_application_loop :: proc(
 	text_input_state := Native_Text_Input_State{window_focused=(window_flags & sdl3.WindowFlags{.INPUT_FOCUS}) != sdl3.WindowFlags{}}
 	alicorn.invalidate_root(rt, "SDL application initial frame")
 	_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing)
+	devtools_cursor := native_devtools_cursor_init(rt, &timing, &text_events)
 	sync_text_input_focus(window, rt, &text_input_state, &application_instance)
 
 	last_tick := time.now()
@@ -1812,68 +1837,73 @@ run_application_loop :: proc(
 	wait_for_event := false
 	swapchain_retry_pending := false
 	last_user_interaction_ns: u64 = 0
+	devtools_last_cause: alicorn.Cause_Context
 	event_waits: u64 = 0
 	wake_events: u64 = 0
 	for !quit_requested {
 		native_host_scratch_reset(&host_scratch)
 		frame_start := time.now()
 		event_start := time.now()
-	wait_timed_out := false
+		wait_timed_out := false
 		idle_proof_timeout := false
 		smoke_timeout := false
-	wait_timeout_ms: sdl3.Sint32 = -1
-	if wait_for_event {
-		// A successful swapchain acquisition can still return no drawable while
-		// the window is minimized or the swapchain is temporarily unavailable.
-		// Keep the presentation revision pending, but sleep between retries and
-		// let SDL events wake us as soon as the window can be presented again.
-		if swapchain_retry_pending {
-			wait_timeout_ms = native_event_wait_timeout_min(wait_timeout_ms, 100)
-		}
-		// Tick-driven applications still need their regular callback while a
-		// drawable is unavailable. Wait only until the next tick rather than
-		// turning the retry path into either a busy loop or an indefinite wait.
-		if application_instance.on_tick != nil {
-			elapsed_ns := time.duration_nanoseconds(time.since(last_tick))
-			remaining_ns := i64(16_666_667) - elapsed_ns
-			if remaining_ns < 0 { remaining_ns = 0 }
-			tick_timeout_ms := sdl3.Sint32((remaining_ns + 999_999) / 1_000_000)
-			wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, tick_timeout_ms))
-		}
-		current_ns := u64(sdl3.GetTicksNS())
-		if next_deadline, found := scheduled_wake_next_deadline(&scheduler_state); found {
-			scheduled_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(next_deadline, current_ns))
-			wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, scheduled_timeout_ms))
-		}
-		if smoke {
-			elapsed := time.duration_nanoseconds(time.since(start))
-			remaining := i64(3_000_000_000) - elapsed
-			if remaining <= 0 {
-				quit_requested = true
-				continue
+		wait_timeout_ms: sdl3.Sint32 = -1
+		if wait_for_event {
+			// A successful swapchain acquisition can still return no drawable while
+			// the window is minimized or the swapchain is temporarily unavailable.
+			// Keep the presentation revision pending, but sleep between retries and
+			// let SDL events wake us as soon as the window can be presented again.
+			if swapchain_retry_pending {
+				wait_timeout_ms = native_event_wait_timeout_min(wait_timeout_ms, 100)
 			}
-			smoke_timeout_ms := u64((remaining + 999_999) / 1_000_000)
-			if wait_timeout_ms < 0 || smoke_timeout_ms < u64(wait_timeout_ms) {
-				wait_timeout_ms = sdl3.Sint32(min(smoke_timeout_ms, u64(0x7fff_ffff)))
-				smoke_timeout = true
+			// Tick-driven applications still need their regular callback while a
+			// drawable is unavailable. Wait only until the next tick rather than
+			// turning the retry path into either a busy loop or an indefinite wait.
+			if application_instance.on_tick != nil {
+				elapsed_ns := time.duration_nanoseconds(time.since(last_tick))
+				remaining_ns := i64(16_666_667) - elapsed_ns
+				if remaining_ns < 0 { remaining_ns = 0 }
+				tick_timeout_ms := sdl3.Sint32((remaining_ns + 999_999) / 1_000_000)
+				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, tick_timeout_ms))
 			}
+			current_ns := u64(sdl3.GetTicksNS())
+			if next_deadline, found := scheduled_wake_next_deadline(&scheduler_state); found {
+				scheduled_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(next_deadline, current_ns))
+				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, scheduled_timeout_ms))
+			}
+			if devtools_hud.visible && devtools_hud_deadline_ns != 0 {
+				hud_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(devtools_hud_deadline_ns, current_ns))
+				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, hud_timeout_ms))
+			}
+			if smoke {
+				elapsed := time.duration_nanoseconds(time.since(start))
+				remaining := i64(3_000_000_000) - elapsed
+				if remaining <= 0 {
+					quit_requested = true
+					continue
+				}
+				smoke_timeout_ms := u64((remaining + 999_999) / 1_000_000)
+				if wait_timeout_ms < 0 || smoke_timeout_ms < u64(wait_timeout_ms) {
+					wait_timeout_ms = sdl3.Sint32(min(smoke_timeout_ms, u64(0x7fff_ffff)))
+					smoke_timeout = true
+				}
+			}
+			if idle_proof_seconds > 0 {
+				elapsed := time.duration_nanoseconds(time.since(start))
+				remaining := i64(idle_proof_seconds)*1_000_000_000 - elapsed
+				if remaining <= 0 {
+					quit_requested = true
+					continue
+				}
+				idle_timeout_ms := u64((remaining + 999_999) / 1_000_000)
+				if wait_timeout_ms < 0 || idle_timeout_ms < u64(wait_timeout_ms) {
+					wait_timeout_ms = sdl3.Sint32(min(idle_timeout_ms, u64(0x7fff_ffff)))
+					idle_proof_timeout = true
+					smoke_timeout = false
+				}
+			}
+			swapchain_retry_pending = false
 		}
-		if idle_proof_seconds > 0 {
-			elapsed := time.duration_nanoseconds(time.since(start))
-			remaining := i64(idle_proof_seconds)*1_000_000_000 - elapsed
-			if remaining <= 0 {
-				quit_requested = true
-				continue
-			}
-			idle_timeout_ms := u64((remaining + 999_999) / 1_000_000)
-			if wait_timeout_ms < 0 || idle_timeout_ms < u64(wait_timeout_ms) {
-				wait_timeout_ms = sdl3.Sint32(min(idle_timeout_ms, u64(0x7fff_ffff)))
-				idle_proof_timeout = true
-				smoke_timeout = false
-			}
-		}
-		swapchain_retry_pending = false
-	}
 		pump_events(
 			window, rt, metrics, &quit_requested,
 			&logical_resize_events, &pixel_resize_events, &scale_events,
@@ -1893,6 +1923,9 @@ run_application_loop :: proc(
 			native_menu=native_menu,
 			last_user_interaction_ns=&last_user_interaction_ns,
 			text_input_state=&text_input_state,
+			devtools_hud=&devtools_hud,
+			devtools_hud_redraw_pending=&devtools_hud_redraw_pending,
+			devtools_last_cause=&devtools_last_cause,
 		)
 		if native_menu != nil {
 			if command, ok := native_menu_take_pending(native_menu); ok {
@@ -1930,7 +1963,11 @@ run_application_loop :: proc(
 		}
 		if application_instance.on_tick != nil && time.duration_nanoseconds(time.since(last_tick)) >= 16_666_667 {
 			tick_start := time.now()
+			timing.application_tick_calls += 1
+			tick_cause := alicorn.cause_begin(rt, .Application, "application tick")
+			devtools_last_cause = tick_cause.cause
 			application_instance.on_tick(application_instance.state, rt)
+			alicorn.cause_end(rt, tick_cause)
 			native_timing_accumulate(&timing.application_tick_ns, &timing.application_tick_max_ns, u64(time.duration_nanoseconds(time.since(tick_start))) )
 			last_tick = now
 		}
@@ -1952,7 +1989,33 @@ run_application_loop :: proc(
 			}
 		}
 
-		if alicorn.frame_needs_submission(rt) {
+		application_submission_pending := alicorn.frame_needs_submission(rt)
+		devtools_cause := devtools_last_cause
+		if devtools_cause.kind == .None { devtools_cause = rt.frame_cause }
+		if rt.pending_work_seen { devtools_cause = rt.pending_work_cause if !rt.pending_work_mixed else alicorn.Cause_Context{} }
+		if rt.submission_cause_seen {
+			devtools_cause = rt.submission_cause if !rt.submission_cause_mixed else alicorn.Cause_Context{}
+		}
+		if devtools_cause.kind == .None { devtools_cause = alicorn.Cause_Context{kind=.Host_Event} }
+		devtools_sample_time_ns := u64(sdl3.GetTicksNS())
+		devtools_preview := native_devtools_make_sample(
+			&devtools_cursor, rt, &timing, &text_events, devtools_cause, devtools_sample_time_ns, host_wakes=0,
+		)
+		if application_submission_pending { devtools_preview.gpu_submissions += 1 }
+		if text_events.pending_input_timestamp > 0 && devtools_sample_time_ns >= text_events.pending_input_timestamp {
+			// While a presentation is still being encoded, the HUD's IN~ value is
+			// the elapsed lower bound. The finalized recorder sample below replaces
+			// it with the exact input-to-submit duration.
+			devtools_preview.input_to_submit_ns = devtools_sample_time_ns-text_events.pending_input_timestamp
+		}
+		devtools_hud_deadline_wake := wait_timed_out && devtools_hud.visible && devtools_hud_deadline_ns != 0 &&
+			devtools_sample_time_ns >= devtools_hud_deadline_ns
+		devtools_wake_observed := native_devtools_observed_wake(&devtools_cursor, devtools_preview, &timing, &text_events)
+		if devtools_wake_observed && !devtools_hud_deadline_wake { devtools_preview.host_wakes = 1 }
+		if devtools_hud.visible && (devtools_wake_observed || devtools_hud_deadline_wake) {
+			devtools_hud_redraw_pending = true
+		}
+		if application_submission_pending || devtools_hud_redraw_pending {
 			if len(in_flight) >= 2 {
 				if !wait_and_retire_oldest(device, &in_flight, &query_before_wait_true, &query_after_wait_true, &wait_count, &timing) {
 					fail("SDL application fence retirement failed")
@@ -1972,12 +2035,19 @@ run_application_loop :: proc(
 				_ = sdl3.CancelGPUCommandBuffer(command)
 				swapchain_retry_pending = true
 				wait_for_event = true
+				native_devtools_record_wake(&devtools_recorder, &devtools_cursor, rt, &timing, &text_events,
+					devtools_cause, devtools_sample_time_ns, devtools_preview.host_wakes)
+				devtools_last_cause = {}
+				if devtools_hud.visible {
+					devtools_hud_deadline_ns = native_devtools_hud_next_wake_ns(&devtools_recorder, u64(sdl3.GetTicksNS()))
+				}
 				continue
 			}
 			metrics.pixel_width = int(swap_w)
 			metrics.pixel_height = int(swap_h)
 			logical_to_pixel_x := f32(swap_w) / f32(metrics.logical_width)
 			logical_to_pixel_y := f32(swap_h) / f32(metrics.logical_height)
+			renderer_metrics_before := native_devtools_renderer_metrics_capture(text_renderer, surface_renderer, solid_renderer)
 			if !draw_display_list(
 				command, swapchain, swap_w, swap_h,
 				text_renderer, surface_renderer, solid_renderer, rt.display[:],
@@ -1988,7 +2058,33 @@ run_application_loop :: proc(
 				_ = sdl3.CancelGPUCommandBuffer(command)
 				fail("SDL application display-list draw failed")
 			}
-			native_timing_accumulate(&timing.gpu_encode_ns, &timing.gpu_encode_max_ns, u64(time.duration_nanoseconds(time.since(encode_start))) )
+			application_encode_elapsed := u64(time.duration_nanoseconds(time.since(encode_start)))
+			if application_submission_pending {
+				timing.application_gpu_encode_ns += application_encode_elapsed
+			} else {
+				// A HUD-only wake must redraw the swapchain's base scene too, but
+				// those host-forced draw costs are attributed to DevTools rather
+				// than to the application interaction sample.
+				timing.devtools_hud_encode_ns += application_encode_elapsed
+			}
+			hud_encode_start := time.now()
+			if !native_devtools_hud_render(
+				&devtools_hud, solid_renderer, command, swapchain, swap_w, swap_h,
+				f32(swap_w)/f32(metrics.logical_width), f32(swap_h)/f32(metrics.logical_height),
+				&devtools_recorder, u64(sdl3.GetTicksNS()), devtools_preview,
+				preview_valid=devtools_hud.visible,
+				last_invalidation=rt.last_invalidation_reason,
+			) {
+				_ = sdl3.CancelGPUCommandBuffer(command)
+				fail("Alicorn DevTools HUD draw failed")
+			}
+			if !application_submission_pending {
+				native_devtools_renderer_metrics_restore(text_renderer, surface_renderer, solid_renderer, renderer_metrics_before)
+			}
+			hud_encode_elapsed := u64(time.duration_nanoseconds(time.since(hud_encode_start)))
+			if devtools_hud.visible { timing.devtools_hud_encode_ns += hud_encode_elapsed }
+			total_encode_elapsed := u64(time.duration_nanoseconds(time.since(encode_start)))
+			native_timing_accumulate(&timing.gpu_encode_ns, &timing.gpu_encode_max_ns, total_encode_elapsed)
 			submit_start := time.now()
 			fence := sdl3.SubmitGPUCommandBufferAndAcquireFence(command)
 			native_timing_accumulate(&timing.gpu_submit_ns, &timing.gpu_submit_max_ns, u64(time.duration_nanoseconds(time.since(submit_start))) )
@@ -1998,15 +2094,19 @@ run_application_loop :: proc(
 			append(&in_flight, Native_In_Flight{fence})
 			native_text_commit_submission(text_renderer)
 			native_surface_commit_submission(surface_renderer)
-			alicorn.gpu_surface_frame_consumed(rt)
-			// A retained frame remains pending until this successful submit
-			// acknowledgement. In particular, a nil swapchain texture above
-			// cancels the command and deliberately leaves the revision pending.
-			alicorn.frame_submission_succeeded(rt)
+			if application_submission_pending {
+				alicorn.gpu_surface_frame_consumed(rt)
+				// A retained frame remains pending until this successful submit
+				// acknowledgement. A HUD-only redraw has no app revision to acknowledge.
+				alicorn.frame_submission_succeeded(rt)
+			}
 			submitted += 1
 			timing.gpu_submissions += 1
-			rt.stats.gpu_submits += 1
-			native_note_input_submission(&text_events)
+			if application_submission_pending {
+				rt.stats.gpu_submits += 1
+				native_note_input_submission(&text_events)
+			}
+			devtools_hud_redraw_pending = false
 			if len(in_flight) > max_in_flight { max_in_flight = len(in_flight) }
 		}
 		if !rt.invalidated && !alicorn.frame_needs_submission(rt) {
@@ -2027,7 +2127,14 @@ run_application_loop :: proc(
 		timing.schedule_coalesces = scheduler_stats.coalesced
 		timing.opportunistic_deferrals = scheduler_stats.opportunistic_deferrals
 		timing.maximum_scheduled_lateness_ns = scheduler_stats.maximum_lateness_ns
-		if native_write_diagnostics(&diagnostics, start, gpu_driver, metrics^, rt, text_renderer, surface_renderer, solid_renderer, &timing, &text_events) {
+		native_devtools_record_wake(&devtools_recorder, &devtools_cursor, rt, &timing, &text_events,
+			devtools_cause, devtools_sample_time_ns, devtools_preview.host_wakes)
+		devtools_last_cause = {}
+		devtools_hud_deadline_ns = 0
+		if devtools_hud.visible {
+			devtools_hud_deadline_ns = native_devtools_hud_next_wake_ns(&devtools_recorder, u64(sdl3.GetTicksNS()))
+		}
+		if native_write_diagnostics(&diagnostics, start, gpu_driver, metrics^, rt, text_renderer, surface_renderer, solid_renderer, &timing, &text_events, &devtools_recorder) {
 			screenshot_path := fmt.tprintf("%s/screenshot.ppm", diagnostics.last_capture_dir)
 			if native_capture_display_ppm(
 				device, text_renderer, surface_renderer, solid_renderer, rt.display[:],
