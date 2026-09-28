@@ -199,7 +199,7 @@ Application_Text_Input_Proc :: proc(
 	owner: alicorn.Node_ID,
 	event: Application_Text_Input_Event,
 )
-Application_Text_Navigation_Key :: enum { Left, Right, Home, End }
+Application_Text_Navigation_Key :: enum { Left, Right, Home, End, Up, Down, Page_Up, Page_Down }
 Application_Text_Key_Event :: struct {
 	key:     Application_Text_Navigation_Key,
 	shift:   bool,
@@ -624,6 +624,10 @@ native_application_text_key_event :: proc(
 	case sdl3.K_RIGHT: event.key = .Right
 	case sdl3.K_HOME: event.key = .Home
 	case sdl3.K_END: event.key = .End
+	case sdl3.K_UP: event.key = .Up
+	case sdl3.K_DOWN: event.key = .Down
+	case sdl3.K_PAGEUP: event.key = .Page_Up
+	case sdl3.K_PAGEDOWN: event.key = .Page_Down
 	case: return {}, false
 	}
 	event.shift = native_text_modifier(mod, sdl3.KMOD_SHIFT)

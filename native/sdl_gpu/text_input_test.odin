@@ -118,6 +118,14 @@ native_generic_text_navigation_contract_test :: proc() -> bool {
 	if !home_mapped || home.key != .Home || home.shift || !home.control || home.alt || home.super { return false }
 	end_event, end_mapped := native_application_text_key_event(sdl3.K_END, sdl3.KMOD_ALT | sdl3.KMOD_GUI)
 	if !end_mapped || end_event.key != .End || end_event.shift || end_event.control || !end_event.alt || !end_event.super { return false }
+	up, up_mapped := native_application_text_key_event(sdl3.K_UP, sdl3.KMOD_SHIFT)
+	if !up_mapped || up.key != .Up || !up.shift { return false }
+	down, down_mapped := native_application_text_key_event(sdl3.K_DOWN, {})
+	if !down_mapped || down.key != .Down { return false }
+	page_up, page_up_mapped := native_application_text_key_event(sdl3.K_PAGEUP, {})
+	if !page_up_mapped || page_up.key != .Page_Up { return false }
+	page_down, page_down_mapped := native_application_text_key_event(sdl3.K_PAGEDOWN, sdl3.KMOD_SHIFT)
+	if !page_down_mapped || page_down.key != .Page_Down || !page_down.shift { return false }
 	_, unsupported_mapped := native_application_text_key_event(sdl3.K_A, all_modifiers)
 	if unsupported_mapped { return false }
 
@@ -150,20 +158,22 @@ native_generic_text_navigation_contract_test :: proc() -> bool {
 	if !native_dispatch_application_text_key(&application, &rt, sdl3.K_LEFT, all_modifiers) { return false }
 	if !rt.invalidated || len(probe.events) != 1 || len(probe.owners) != 1 { return false }
 	if probe.owners[0] != owner || probe.events[0] != left { return false }
+	if !native_dispatch_application_text_key(&application, &rt, sdl3.K_DOWN, {}) { return false }
+	if len(probe.events) != 2 || probe.owners[1] != owner || probe.events[1] != down { return false }
 
 	probe.handled = false
 	rt.invalidated = false
 	if native_dispatch_application_text_key(&application, &rt, sdl3.K_RIGHT, sdl3.KMOD_SHIFT) { return false }
-	if rt.invalidated || len(probe.events) != 2 || probe.owners[1] != owner || probe.events[1] != right { return false }
+	if rt.invalidated || len(probe.events) != 3 || probe.owners[2] != owner || probe.events[2] != right { return false }
 
 	if !alicorn.focus(&rt, field) { return false }
 	rt.invalidated = false
 	if native_dispatch_application_text_key(&application, &rt, sdl3.K_HOME, sdl3.KMOD_CTRL) { return false }
-	if rt.invalidated || len(probe.events) != 2 { return false }
+	if rt.invalidated || len(probe.events) != 3 { return false }
 
 	rt.focused = 0
 	if native_dispatch_application_text_key(&application, &rt, sdl3.K_END, sdl3.KMOD_ALT) { return false }
-	if len(probe.events) != 2 { return false }
+	if len(probe.events) != 3 { return false }
 
 	rt.focused = owner
 	owner_node, owner_found := rt.nodes[owner]
@@ -171,5 +181,5 @@ native_generic_text_navigation_contract_test :: proc() -> bool {
 	owner_node.active = false
 	rt.nodes[owner] = owner_node
 	if native_dispatch_application_text_key(&application, &rt, sdl3.K_END, sdl3.KMOD_ALT) { return false }
-	return len(probe.events) == 2
+	return len(probe.events) == 3
 }
