@@ -11,12 +11,21 @@ Native_DevTools_Sample :: struct {
 	timestamp_ns, cause_id: u64,
 	build_ns, encode_ns, submit_ns, input_to_submit_ns: u64,
 	app_builds, stabilization_rebuilds, host_wakes: u64,
+	pointer_events, hover_target_transitions: u64,
 	presentation_updates, gpu_submissions, surface_updates: u64,
 	descriptions_emitted, descriptions_reused, regions_skipped, retained_subtrees_reused: u64,
 	reconcile_visits, layout_visits, paint_visits, composition_visits: u64,
 	nodes_created, nodes_retired: u64,
 	persistent_allocations, persistent_bytes_live, scratch_requested_bytes: u64,
 	cause_kind: alicorn.Cause_Kind,
+}
+
+Native_DevTools_Activity_Class :: enum {
+	Idle,
+	Host,
+	Present,
+	App,
+	Surface,
 }
 
 Native_Flight_Recorder :: struct {

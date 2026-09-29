@@ -103,6 +103,8 @@ native_devtools_make_sample :: proc(
 		build_ns=timing.application_build_ns-cursor.application_build_ns,
 		encode_ns=timing.application_gpu_encode_ns-cursor.application_gpu_encode_ns,
 		host_wakes=host_wakes,
+		pointer_events=current.pointer_events-previous.pointer_events,
+		hover_target_transitions=current.hover_target_transitions-previous.hover_target_transitions,
 		app_builds=current.frames_built-previous.frames_built,
 		stabilization_rebuilds=timing.application_stabilization_rebuilds-cursor.stabilization_rebuilds,
 		presentation_updates=rt.presentation_revision-cursor.presentation_revision,
@@ -138,7 +140,8 @@ native_devtools_observed_wake :: proc(
 	return sample.app_builds > 0 || sample.presentation_updates > 0 || sample.gpu_submissions > 0 ||
 		sample.surface_updates > 0 || sample.reconcile_visits > 0 || sample.layout_visits > 0 ||
 		sample.paint_visits > 0 || sample.composition_visits > 0 || sample.nodes_created > 0 ||
-		sample.nodes_retired > 0 || sample.persistent_allocations > 0 || timing.application_tick_calls != cursor.application_tick_calls ||
+		sample.nodes_retired > 0 || sample.pointer_events > 0 || sample.hover_target_transitions > 0 ||
+		sample.persistent_allocations > 0 || timing.application_tick_calls != cursor.application_tick_calls ||
 		timing.scheduled_wakes != cursor.scheduled_wakes ||
 		text_events.events_received_sequence != cursor.events_received_sequence
 }
@@ -168,7 +171,8 @@ native_devtools_record_wake :: proc(
 	if text_events.input_to_submit_sequence > cursor.input_to_submit_sequence && len(text_events.input_to_submit_samples) > 0 {
 		sample.input_to_submit_ns = text_events.input_to_submit_samples[len(text_events.input_to_submit_samples)-1]
 	}
-	write_sample := sample.host_wakes > 0 || sample.app_builds > 0 || sample.presentation_updates > 0 ||
+	write_sample := sample.host_wakes > 0 || sample.pointer_events > 0 || sample.hover_target_transitions > 0 ||
+		sample.app_builds > 0 || sample.presentation_updates > 0 ||
 		sample.gpu_submissions > 0 || sample.surface_updates > 0 || sample.reconcile_visits > 0 ||
 		sample.layout_visits > 0 || sample.paint_visits > 0 || sample.composition_visits > 0 ||
 		sample.nodes_created > 0 || sample.nodes_retired > 0 || sample.persistent_allocations > 0

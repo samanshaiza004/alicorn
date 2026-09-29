@@ -92,3 +92,40 @@ test_devtools_hud_preview_works_before_first_recorded_sample :: proc(t: ^testing
 	testing.expect(t, recent.app_builds == 1 && recent.host_wakes == 1,
 		"the preview should contribute to recent totals even when the recorder is empty")
 }
+
+@(test)
+test_devtools_activity_classes_separate_host_presentation_app_and_surface :: proc(t: ^testing.T) {
+	host := Native_DevTools_Sample{host_wakes=1, pointer_events=6}
+	present := Native_DevTools_Sample{presentation_updates=1, gpu_submissions=1, paint_visits=2, hover_target_transitions=1}
+	app := Native_DevTools_Sample{app_builds=1, presentation_updates=1, layout_visits=3}
+	surface := Native_DevTools_Sample{surface_updates=1, presentation_updates=1, gpu_submissions=1}
+	testing.expect(t, native_devtools_activity_class(host) == .Host,
+		"input wakes with no runtime work are classified as HOST")
+	testing.expect(t, native_devtools_activity_class(present) == .Present,
+		"retained paint work is classified as PRESENT")
+	testing.expect(t, native_devtools_activity_class(app) == .App,
+		"application description work is classified as APP")
+	testing.expect(t, native_devtools_activity_class(surface) == .Surface,
+		"custom-surface-only updates are not mislabeled as retained presentation")
+	testing.expect(t, native_devtools_activity_class_name(.Host) == "host" &&
+		native_devtools_activity_class_label(.Present) == "PRESENT",
+		"activity class has stable timeline and HUD spellings")
+}
+
+@(test)
+test_devtools_hud_latest_activity_class_and_idle_timeout :: proc(t: ^testing.T) {
+	recorder: Native_Flight_Recorder
+	native_flight_record(&recorder, Native_DevTools_Sample{timestamp_ns=1_000_000_000, host_wakes=1, pointer_events=3})
+	testing.expect(t, native_devtools_hud_activity_class(&recorder, 1_100_000_000) == .Host,
+		"the HUD reflects the latest host-only pointer activity")
+	testing.expect(t, native_devtools_hud_activity_class(&recorder, 1_500_000_000) == .Idle,
+		"the HUD returns to IDLE at the existing one-shot inactivity deadline")
+	preview := Native_DevTools_Sample{timestamp_ns=1_600_000_000, app_builds=1}
+	testing.expect(t, native_devtools_hud_activity_class(&recorder, 1_600_000_000, preview, true) == .App,
+		"the in-progress app wake is reflected before recorder finalization")
+	zero_time_recorder: Native_Flight_Recorder
+	native_flight_record(&zero_time_recorder, Native_DevTools_Sample{host_wakes=1, pointer_events=1})
+	testing.expect(t, native_devtools_hud_activity_class(&zero_time_recorder, 1) == .Host &&
+		native_devtools_hud_next_wake_ns(&zero_time_recorder, 1) == NATIVE_DEVTOOLS_HUD_IDLE_AFTER_NS,
+		"timestamp zero remains a valid event time for classification and the one-shot idle deadline")
+}

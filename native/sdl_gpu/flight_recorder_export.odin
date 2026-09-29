@@ -64,10 +64,13 @@ native_flight_timeline_json :: proc(recorder: ^Native_Flight_Recorder) -> string
         "id": %d,
         "kind": "%s"
       }},
+      "activity_class": "%s",
       "work": {{
         "app_builds": %d,
         "stabilization_rebuilds": %d,
         "host_wakes": %d,
+        "pointer_events": %d,
+        "hover_target_transitions": %d,
         "presentation_updates": %d,
         "gpu_submissions": %d,
         "surface_updates": %d,
@@ -93,7 +96,9 @@ native_flight_timeline_json :: proc(recorder: ^Native_Flight_Recorder) -> string
       }}
     }}%s
 `, index, sample.timestamp_ns, sample.cause_id, native_flight_cause_name(sample.cause_kind),
+			native_devtools_activity_class_name(native_devtools_activity_class(sample)),
 			sample.app_builds, sample.stabilization_rebuilds, sample.host_wakes,
+			sample.pointer_events, sample.hover_target_transitions,
 			sample.presentation_updates, sample.gpu_submissions, sample.surface_updates,
 			sample.descriptions_emitted, sample.descriptions_reused, sample.regions_skipped,
 			sample.retained_subtrees_reused,

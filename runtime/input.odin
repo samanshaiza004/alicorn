@@ -118,6 +118,7 @@ cancel_pointer_capture :: proc(rt: ^Runtime) -> bool {
 			invalidate_interaction_paint(rt, captured, "hover cleared with pointer capture")
 		}
 		rt.last_hovered = 0
+		rt.stats.hover_target_transitions += 1
 	}
 	record_trace_literal(rt, .Pointer, captured, "pointer capture canceled by host")
 	return true
@@ -444,6 +445,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 				}
 			}
 			rt.last_hovered = hover_target
+			rt.stats.hover_target_transitions += 1
 			// Hover only changes retained presentation state. The application
 			// description remains valid and must not be rebuilt just to repaint
 			// the old and new hover targets.
@@ -514,6 +516,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 				}
 			}
 			rt.last_hovered = target
+			rt.stats.hover_target_transitions += 1
 		}
 		if !captured_is_split && captured != 0 && captured == target {
 			rt.activation_sequence += 1

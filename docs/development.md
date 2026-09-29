@@ -54,7 +54,11 @@ toggle retained bounds, and `F12` for a diagnostic capture (including repeated
 captures during one run). The HUD reports recent application builds,
 presentation updates, app-driven GPU submissions, host wakes, surface updates,
 runtime allocations, retained-region reuse, last-interaction stage visits, and
-input-to-submit latency. It starts hidden and
+input-to-submit latency. Its status classifies the latest work as `IDLE`,
+`HOST` (input/wake only), `PRESENT` (retained presentation), `APP` (application
+description/build), or `SURFACE` (custom-surface-only). Recent pointer-event
+and hover-target-transition counts help distinguish ordinary mouse motion from
+retained hover changes. It starts hidden and
 does not add retained nodes or change application `Frame_Stats`. When visible,
 the host redraws the current scene to composite the overlay; those HUD-only
 submissions and encode costs are reported separately in the capture.
@@ -63,7 +67,9 @@ The fixed 256-sample flight recorder stores host wake/work counter deltas in a
 rolling buffer. Event-driven idle time produces no synthetic frame samples;
 zero application work while asleep is expected behavior, not a zero-FPS error.
 The HUD uses one-shot idle/counter-expiry waits and returns to sleeping until
-the next app or OS event.
+the next app or OS event. Timeline samples include an activity class and raw
+pointer-event/hover-target-transition counts alongside application builds,
+retained stage visits, surface updates, and app-driven GPU submissions.
 
 F12 captures separate application build/tick, event handling, GPU encoding,
 submission, and fence-wait timings, alongside retained-tree identity, layout

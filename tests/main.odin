@@ -2640,8 +2640,10 @@ render_scrollbar_fixture :: proc(
 	policy := alicorn.Scrollbar_Policy.Auto,
 	outer_width: f32 = 100,
 	outer_height: f32 = 60,
+	text_owner := false,
+	invalidate := true,
 ) -> (id: alicorn.Node_ID, handle: alicorn.Scroll_Region_Handle) {
-	alicorn.invalidate_root(rt, "scrollbar fixture")
+	if invalidate { alicorn.invalidate_root(rt, "scrollbar fixture") }
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return }
 	alicorn.container_begin(&ui, .Root, label="scrollbar-root", style=alicorn.layout_style())
@@ -2655,8 +2657,10 @@ render_scrollbar_fixture :: proc(
 		style=alicorn.layout_style(width=outer_width, height=outer_height, clip=true),
 		axes=axes,
 		scrollbars=policy,
+		focusable=text_owner,
 	)
 	id = handle.id
+	if text_owner { _ = alicorn.text_input_target(&ui, id) }
 	alicorn.container_begin(&ui, .Virtual_List, label="scrollbar-content", style=alicorn.layout_style(width=content_width, height=content_height, clip=true))
 	alicorn.text(&ui, "retained scroll content", style=alicorn.layout_style(width=content_width, height=24))
 	alicorn.container_end(&ui)
@@ -2664,6 +2668,24 @@ render_scrollbar_fixture :: proc(
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	return
+}
+
+settle_scrollbar_fixture :: proc(
+	rt: ^alicorn.Runtime,
+	content_width, content_height: f32,
+	axes: alicorn.Scroll_Axes,
+	policy := alicorn.Scrollbar_Policy.Auto,
+	outer_width: f32 = 100,
+	outer_height: f32 = 60,
+	text_owner := false,
+) {
+	for pass in 0..<4 {
+		if !rt.invalidated { return }
+		_, _ = render_scrollbar_fixture(
+			rt, content_width, content_height, axes, policy,
+			outer_width, outer_height, text_owner, invalidate=false,
+		)
+	}
 }
 
 Modal_Scrollbar_Test_Nodes :: struct {
@@ -2950,6 +2972,133 @@ test_scrollbar_interaction :: proc(state: ^Test_State) {
 	expect(state, alicorn.scroll_region_offset_x(&rt, id) == node.scroll_content_width-node.scroll_viewport_width, "captured horizontal drag clamps to the end")
 	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, 500, start_y, 1})
 	expect(state, rt.scrollbar_drag_node == 0, "horizontal drag capture releases outside the window")
+}
+
+test_pointer_motion_hover_work :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
+	defer alicorn.destroy_runtime(&rt)
+	id, _ := render_scrollbar_fixture(&rt, 100, 600, .Vertical, .Always, 100, 60, text_owner=true)
+	settle_scrollbar_fixture(&rt, 100, 600, .Vertical, .Always, 100, 60, text_owner=true)
+	expect(state, rt.nodes[id].text_input_target && rt.nodes[id].focusable,
+		"editor-like scroll owner remains a focusable text-input hit target")
+	alicorn.frame_submission_succeeded(&rt)
+
+	owner := rt.nodes[id]
+	x, y := owner.bounds.x+12, owner.bounds.y+12
+	revision_before_entry := rt.presentation_revision
+	expect(state, alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, x, y, 0}) == id,
+		"pointer motion enters the generic text-input owner")
+	expect(state, rt.stats.hover_target_transitions == 1 && alicorn.presentation_needs_frame(&rt),
+		"entering the generic target produces one hover transition and one pending presentation")
+	ui, ready := alicorn.begin_presentation_frame(&rt)
+	expect(state, ready, "generic target entry flushes its retained presentation")
+	if ready { alicorn.end_presentation_frame(&ui) }
+	expect(state, rt.presentation_revision == revision_before_entry+1,
+		"generic target entry resolves as one retained presentation revision")
+	alicorn.frame_submission_succeeded(&rt)
+	builds := rt.stats.frames_built
+	revision := rt.presentation_revision
+	paints := rt.stats.paint_nodes_visited
+	compositions := rt.stats.composition_nodes_visited
+	transitions := rt.stats.hover_target_transitions
+	submissions := rt.stats.gpu_submits
+	for i := 0; i < 8; i += 1 {
+		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, x+f32(i+1), y+f32(i+1), 0})
+	}
+	expect(state, rt.stats.pointer_events == 9, "every ordinary move remains observable host input")
+	expect(state, rt.last_hovered == id && rt.stats.hover_target_transitions == transitions,
+		"movement inside an unchanged editor target has no further hover transition")
+	expect(state, rt.stats.frames_built == builds, "ordinary editor pointer motion does not rebuild the application")
+	expect(state, rt.presentation_revision == revision && !alicorn.presentation_needs_frame(&rt),
+		"ordinary editor pointer motion requests no retained presentation")
+	expect(state, rt.stats.paint_nodes_visited == paints && rt.stats.composition_nodes_visited == compositions,
+		"ordinary editor pointer motion visits neither paint nor composition stages")
+	expect(state, !alicorn.frame_needs_submission(&rt) && rt.stats.gpu_submits == submissions,
+		"ordinary editor pointer motion leaves no GPU submission pending")
+
+	// The scrollbar strip is not an editor hit target. Crossing its edge may
+	// produce one transition; repeated motion within the strip should be inert.
+	bar := rt.nodes[id].scrollbar_vertical_track
+	bar_x, bar_y := bar.x+bar.w/2, bar.y+bar.h/2
+	expect(state, alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, bar_x, bar_y, 0}) == 0,
+		"scrollbar track boundary is not reported as the editor owner")
+	expect(state, rt.stats.hover_target_transitions == transitions+1 && alicorn.presentation_needs_frame(&rt),
+		"crossing to the scrollbar causes only one target transition")
+	revision_before_scrollbar := rt.presentation_revision
+	ui, ready = alicorn.begin_presentation_frame(&rt)
+	if ready { alicorn.end_presentation_frame(&ui) }
+	expect(state, rt.presentation_revision == revision_before_scrollbar+1,
+		"leaving the generic owner for the scrollbar resolves as one presentation")
+	alicorn.frame_submission_succeeded(&rt)
+	revision = rt.presentation_revision
+	paints = rt.stats.paint_nodes_visited
+	compositions = rt.stats.composition_nodes_visited
+	for i := 0; i < 4; i += 1 {
+		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, bar_x, bar_y+f32(i+1), 0})
+	}
+	expect(state, rt.stats.hover_target_transitions == transitions+1 && rt.presentation_revision == revision,
+		"motion within the scrollbar boundary does not repeatedly present")
+	expect(state, rt.stats.paint_nodes_visited == paints && rt.stats.composition_nodes_visited == compositions,
+		"unchanged scrollbar-boundary motion performs no paint/composition work")
+
+	button_rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
+	defer alicorn.destroy_runtime(&button_rt)
+	button_id, _ := render_canonical_button(&button_rt)
+	alicorn.frame_submission_succeeded(&button_rt)
+	button := button_rt.nodes[button_id]
+	button_x, button_y := button.bounds.x+button.bounds.w/2, button.bounds.y+button.bounds.h/2
+	_ = alicorn.process_pointer(&button_rt, alicorn.Pointer_Event{.Move, button_x, button_y, 0})
+	ui, ready = alicorn.begin_presentation_frame(&button_rt)
+	expect(state, ready && button_rt.nodes[button_id].hovered,
+		"hover-painted button receives its retained hover presentation")
+	if ready { alicorn.end_presentation_frame(&ui) }
+	alicorn.frame_submission_succeeded(&button_rt)
+	button_builds := button_rt.stats.frames_built
+	button_revision := button_rt.presentation_revision
+	button_transitions := button_rt.stats.hover_target_transitions
+	button_paints := button_rt.stats.paint_nodes_visited
+	_ = alicorn.process_pointer(&button_rt, alicorn.Pointer_Event{.Move, button_x+1, button_y+1, 0})
+	expect(state, button_rt.stats.hover_target_transitions == button_transitions &&
+		button_rt.presentation_revision == button_revision && button_rt.stats.paint_nodes_visited == button_paints,
+		"motion within one hover-painted control does not repaint repeatedly")
+	_ = alicorn.process_pointer(&button_rt, alicorn.Pointer_Event{.Move, 300, 110, 0})
+	ui, ready = alicorn.begin_presentation_frame(&button_rt)
+	expect(state, ready && !button_rt.nodes[button_id].hovered && button_rt.stats.frames_built == button_builds,
+		"leaving a hover-painted control is retained-only work, not an application rebuild")
+	if ready { alicorn.end_presentation_frame(&ui) }
+
+	drag_rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
+	defer alicorn.destroy_runtime(&drag_rt)
+	drag_id, _ := render_scrollbar_fixture(&drag_rt, 100, 600, .Vertical, .Always, 100, 60, text_owner=true)
+	settle_scrollbar_fixture(&drag_rt, 100, 600, .Vertical, .Always, 100, 60, text_owner=true)
+	drag_node := drag_rt.nodes[drag_id]
+	drag_x, drag_y := drag_node.bounds.x+12, drag_node.bounds.y+12
+	_ = alicorn.process_pointer(&drag_rt, alicorn.Pointer_Event{.Down, drag_x, drag_y, 1})
+	_, _ = render_scrollbar_fixture(&drag_rt, 100, 600, .Vertical, .Always, 100, 60, text_owner=true)
+	settle_scrollbar_fixture(&drag_rt, 100, 600, .Vertical, .Always, 100, 60, text_owner=true)
+	alicorn.frame_submission_succeeded(&drag_rt)
+	_ = alicorn.process_pointer(&drag_rt, alicorn.Pointer_Event{.Move, drag_x, drag_y, 0})
+	ui, ready = alicorn.begin_presentation_frame(&drag_rt)
+	if ready { alicorn.end_presentation_frame(&ui) }
+	alicorn.frame_submission_succeeded(&drag_rt)
+	drag_builds := drag_rt.stats.frames_built
+	drag_revision := drag_rt.presentation_revision
+	drag_paints := drag_rt.stats.paint_nodes_visited
+	drag_compositions := drag_rt.stats.composition_nodes_visited
+	drag_transitions := drag_rt.stats.hover_target_transitions
+	for i := 0; i < 5; i += 1 {
+		_ = alicorn.process_pointer(&drag_rt, alicorn.Pointer_Event{.Move, drag_x+f32(i+1), drag_y, 0})
+	}
+	expect(state, drag_rt.captured_node == drag_id && drag_rt.last_hovered == drag_id,
+		"editor pointer capture survives motion during a selection drag")
+	expect(state, drag_rt.stats.hover_target_transitions == drag_transitions && drag_rt.stats.frames_built == drag_builds,
+		"captured movement within the editor does not trigger repeated hover or app work")
+	expect(state, drag_rt.presentation_revision == drag_revision && drag_rt.stats.paint_nodes_visited == drag_paints &&
+		drag_rt.stats.composition_nodes_visited == drag_compositions && !alicorn.frame_needs_submission(&drag_rt),
+		"captured movement within the editor does not schedule presentation/GPU work")
+	_ = alicorn.process_pointer(&drag_rt, alicorn.Pointer_Event{.Move, 280, 110, 0})
+	expect(state, drag_rt.captured_node == drag_id && drag_rt.stats.hover_target_transitions == drag_transitions+1,
+		"capture remains stable across one pointer-target exit")
 }
 
 Split_Test_Nodes :: struct {
@@ -3342,6 +3491,7 @@ main :: proc() {
 	test_scrollbar_layout_projection(&state)
 	test_modal_scrollbar_composition(&state)
 	test_scrollbar_interaction(&state)
+	test_pointer_motion_hover_work(&state)
 	test_retained_split_drag_and_clamp(&state)
 	test_adjacent_three_pane_split_redistribution(&state)
 	test_split_axis_nested_identity_and_cancel(&state)

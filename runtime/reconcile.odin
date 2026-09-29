@@ -363,7 +363,10 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 		retire_subtree(rt, child, desired)
 	}
 	if id == rt.focused { rt.focused = 0 }
-	if id == rt.last_hovered { rt.last_hovered = 0 }
+	if id == rt.last_hovered {
+		rt.last_hovered = 0
+		rt.stats.hover_target_transitions += 1
+	}
 	if id == rt.captured_node {
 		if node.kind == .Split_Handle {
 			if owner, owner_ok := rt.nodes[node.split_owner]; owner_ok { owner.split_dragging = false }

@@ -13,7 +13,78 @@ NATIVE_DEVTOOLS_HUD_MAX_RECENT_SAMPLES   :: 48
 native_devtools_sample_has_activity :: proc(sample: Native_DevTools_Sample) -> bool {
 	return sample.host_wakes > 0 || sample.app_builds > 0 || sample.presentation_updates > 0 ||
 		sample.gpu_submissions > 0 || sample.surface_updates > 0 || sample.persistent_allocations > 0 || sample.reconcile_visits > 0 ||
-		sample.layout_visits > 0 || sample.paint_visits > 0 || sample.composition_visits > 0
+		sample.layout_visits > 0 || sample.paint_visits > 0 || sample.composition_visits > 0 ||
+		sample.pointer_events > 0 || sample.hover_target_transitions > 0
+}
+
+native_devtools_activity_class :: proc(sample: Native_DevTools_Sample) -> Native_DevTools_Activity_Class {
+	if sample.app_builds > 0 { return .App }
+	// Retained stage visits distinguish actual UI presentation work from the
+	// presentation revision that a custom-surface-only update also advances.
+	if sample.reconcile_visits+sample.layout_visits+sample.paint_visits+sample.composition_visits > 0 ||
+		sample.nodes_created+sample.nodes_retired > 0 {
+		return .Present
+	}
+	if sample.surface_updates > 0 { return .Surface }
+	if sample.presentation_updates+sample.gpu_submissions+sample.persistent_allocations > 0 { return .Present }
+	if sample.host_wakes+sample.pointer_events+sample.hover_target_transitions > 0 { return .Host }
+	return .Idle
+}
+
+native_devtools_activity_class_name :: proc(class: Native_DevTools_Activity_Class) -> string {
+	switch class {
+	case .Idle:    return "idle"
+	case .Host:    return "host"
+	case .Present: return "present"
+	case .App:     return "app"
+	case .Surface: return "surface"
+	}
+	return "unknown"
+}
+
+native_devtools_activity_class_label :: proc(class: Native_DevTools_Activity_Class) -> string {
+	switch class {
+	case .Idle:    return "IDLE"
+	case .Host:    return "HOST"
+	case .Present: return "PRESENT"
+	case .App:     return "APP"
+	case .Surface: return "SURFACE"
+	}
+	return "UNKNOWN"
+}
+
+native_devtools_hud_latest_activity :: proc(
+	recorder: ^Native_Flight_Recorder,
+	now_ns: u64,
+	preview: Native_DevTools_Sample = {},
+	preview_valid := false,
+) -> (latest: Native_DevTools_Sample, found: bool) {
+	latest_ns: u64 = 0
+	for logical_index := 0; logical_index < native_flight_sample_count(recorder); logical_index += 1 {
+		sample, ok := native_flight_sample_at(recorder, logical_index)
+		if !ok || !native_devtools_sample_has_activity(sample) || sample.timestamp_ns > now_ns { continue }
+		if found && sample.timestamp_ns <= latest_ns { continue }
+		latest = sample
+		latest_ns = sample.timestamp_ns
+		found = true
+	}
+	if preview_valid && native_devtools_sample_has_activity(preview) && preview.timestamp_ns <= now_ns &&
+		(!found || preview.timestamp_ns > latest_ns) {
+		latest = preview
+		found = true
+	}
+	return
+}
+
+native_devtools_hud_activity_class :: proc(
+	recorder: ^Native_Flight_Recorder,
+	now_ns: u64,
+	preview: Native_DevTools_Sample = {},
+	preview_valid := false,
+) -> Native_DevTools_Activity_Class {
+	latest, found := native_devtools_hud_latest_activity(recorder, now_ns, preview, preview_valid)
+	if !found || now_ns-latest.timestamp_ns >= NATIVE_DEVTOOLS_HUD_IDLE_AFTER_NS { return .Idle }
+	return native_devtools_activity_class(latest)
 }
 
 Native_DevTools_HUD :: struct {
@@ -27,6 +98,8 @@ Native_DevTools_HUD_Recent :: struct {
 	host_wakes:          u64,
 	surface_updates:     u64,
 	persistent_allocations: u64,
+	pointer_events:      u64,
+	hover_target_transitions: u64,
 }
 
 Native_DevTools_HUD_Line :: struct {
@@ -60,6 +133,8 @@ native_devtools_hud_recent :: proc(
 		recent.host_wakes += sample.host_wakes
 		recent.surface_updates += sample.surface_updates
 		recent.persistent_allocations += sample.persistent_allocations
+		recent.pointer_events += sample.pointer_events
+		recent.hover_target_transitions += sample.hover_target_transitions
 	}
 	if preview_valid && preview.timestamp_ns >= cutoff && preview.timestamp_ns <= now_ns {
 		recent.app_builds += preview.app_builds
@@ -68,6 +143,8 @@ native_devtools_hud_recent :: proc(
 		recent.host_wakes += preview.host_wakes
 		recent.surface_updates += preview.surface_updates
 		recent.persistent_allocations += preview.persistent_allocations
+		recent.pointer_events += preview.pointer_events
+		recent.hover_target_transitions += preview.hover_target_transitions
 		last = preview
 		has_last = true
 	}
@@ -82,25 +159,31 @@ native_devtools_hud_next_wake_ns :: proc(recorder: ^Native_Flight_Recorder, now_
 	if count <= 0 { return 0 }
 	latest_activity_ns: u64 = 0
 	oldest_recent_ns: u64 = 0
+	latest_activity_found := false
+	oldest_recent_found := false
 	for logical_index := 0; logical_index < count; logical_index += 1 {
 		sample, ok := native_flight_sample_at(recorder, logical_index)
 		if !ok { continue }
-		if native_devtools_sample_has_activity(sample) && sample.timestamp_ns <= now_ns && sample.timestamp_ns > latest_activity_ns {
+		if native_devtools_sample_has_activity(sample) && sample.timestamp_ns <= now_ns &&
+			(!latest_activity_found || sample.timestamp_ns > latest_activity_ns) {
 			latest_activity_ns = sample.timestamp_ns
+			latest_activity_found = true
 		}
 		has_recent_count := sample.app_builds+sample.presentation_updates+sample.gpu_submissions+
-			sample.host_wakes+sample.surface_updates+sample.persistent_allocations > 0
+			sample.host_wakes+sample.surface_updates+sample.persistent_allocations+
+			sample.pointer_events+sample.hover_target_transitions > 0
 		if has_recent_count && sample.timestamp_ns <= now_ns && now_ns-sample.timestamp_ns < 1_000_000_000 {
-			if oldest_recent_ns == 0 || sample.timestamp_ns < oldest_recent_ns {
+			if !oldest_recent_found || sample.timestamp_ns < oldest_recent_ns {
 				oldest_recent_ns = sample.timestamp_ns
+				oldest_recent_found = true
 			}
 		}
 	}
 	deadline: u64 = 0
-	if latest_activity_ns != 0 && now_ns-latest_activity_ns < NATIVE_DEVTOOLS_HUD_IDLE_AFTER_NS {
+	if latest_activity_found && now_ns-latest_activity_ns < NATIVE_DEVTOOLS_HUD_IDLE_AFTER_NS {
 		deadline = latest_activity_ns + NATIVE_DEVTOOLS_HUD_IDLE_AFTER_NS
 	}
-	if oldest_recent_ns != 0 {
+	if oldest_recent_found {
 		counter_deadline := oldest_recent_ns + 1_000_000_000
 		if deadline == 0 || counter_deadline < deadline { deadline = counter_deadline }
 	}
@@ -288,17 +371,7 @@ native_devtools_hud_render :: proc(
 	native_hud_draw_quad(renderer, f32(panel_x), f32(panel_y), f32(panel_w), f32(3*font_scale), [4]f32{0.20, 0.68, 0.86, 1})
 
 	recent, last, has_last := native_devtools_hud_recent(recorder, now_ns, preview, preview_valid)
-	last_activity_ns: u64 = 0
-	for logical_index := 0; logical_index < native_flight_sample_count(recorder); logical_index += 1 {
-		sample, ok := native_flight_sample_at(recorder, logical_index)
-		if ok && native_devtools_sample_has_activity(sample) && sample.timestamp_ns <= now_ns && sample.timestamp_ns > last_activity_ns {
-			last_activity_ns = sample.timestamp_ns
-		}
-	}
-	if preview_valid && native_devtools_sample_has_activity(preview) && preview.timestamp_ns <= now_ns && preview.timestamp_ns > last_activity_ns {
-		last_activity_ns = preview.timestamp_ns
-	}
-	idle := last_activity_ns == 0 || now_ns-last_activity_ns >= NATIVE_DEVTOOLS_HUD_IDLE_AFTER_NS
+	activity_class := native_devtools_hud_activity_class(recorder, now_ns, preview, preview_valid)
 	content_x := panel_x + 10*font_scale
 	clip_right := panel_x + panel_w - 8*font_scale
 	line_y := panel_y + 8*font_scale
@@ -310,8 +383,17 @@ native_devtools_hud_render :: proc(
 
 	line: Native_DevTools_HUD_Line
 	native_hud_line_append(&line, "ALICORN DEVTOOLS")
-	native_hud_line_append(&line, "  IDLE" if idle else "  ACTIVE")
-	native_hud_build_line(renderer, &line, content_x, line_y, font_scale, clip_right, green if idle else cyan)
+	native_hud_line_append(&line, "  ")
+	native_hud_line_append(&line, native_devtools_activity_class_label(activity_class))
+	status_color := green
+	switch activity_class {
+	case .Host: status_color = muted
+	case .Present: status_color = cyan
+	case .App: status_color = [4]f32{0.98, 0.78, 0.36, 1}
+	case .Surface: status_color = [4]f32{0.34, 0.84, 0.62, 1}
+	case .Idle: status_color = green
+	}
+	native_hud_build_line(renderer, &line, content_x, line_y, font_scale, clip_right, status_color)
 
 	line = {}
 	native_hud_line_append(&line, "1S BLD ")
@@ -327,6 +409,10 @@ native_devtools_hud_render :: proc(
 	native_hud_line_append_u64(&line, recent.host_wakes)
 	native_hud_line_append(&line, " SURF ")
 	native_hud_line_append_u64(&line, recent.surface_updates)
+	native_hud_line_append(&line, " PTR ")
+	native_hud_line_append_u64(&line, recent.pointer_events)
+	native_hud_line_append(&line, " HOV ")
+	native_hud_line_append_u64(&line, recent.hover_target_transitions)
 	native_hud_line_append(&line, " ALLOC ")
 	native_hud_line_append_u64(&line, recent.persistent_allocations)
 	native_hud_build_line(renderer, &line, content_x, line_y+2*line_height, font_scale, clip_right, muted)
@@ -399,8 +485,8 @@ native_devtools_hud_render :: proc(
 	native_hud_line_append(&line, last_invalidation)
 	native_hud_build_line(renderer, &line, content_x, line_y+7*line_height, font_scale, clip_right, muted)
 
-	// Draw a bounded oldest-to-newest activity strip. Colors distinguish app
-	// work, submission, and host-only wakes without implying a fixed frame rate.
+	// Draw a bounded oldest-to-newest activity strip. Colors distinguish the
+	// classified work without implying a fixed frame rate.
 	strip_y := panel_y + panel_h - 17*font_scale
 	strip_x := content_x
 	strip_w := max(panel_w-20*font_scale, 0)
@@ -421,9 +507,13 @@ native_devtools_hud_render :: proc(
 		work := sample.app_builds + sample.presentation_updates + sample.gpu_submissions + sample.host_wakes
 		bar_h := font_scale + int(u64(10*font_scale)*work/max_work)
 		bar_color := [4]f32{0.23, 0.34, 0.44, 1}
-		if sample.host_wakes > 0 { bar_color = [4]f32{0.48, 0.55, 0.62, 1} }
-		if sample.app_builds+sample.presentation_updates > 0 { bar_color = [4]f32{0.28, 0.70, 0.88, 1} }
-		if sample.gpu_submissions > 0 { bar_color = [4]f32{0.34, 0.84, 0.62, 1} }
+		switch native_devtools_activity_class(sample) {
+		case .Host: bar_color = [4]f32{0.48, 0.55, 0.62, 1}
+		case .Present: bar_color = [4]f32{0.28, 0.70, 0.88, 1}
+		case .App: bar_color = [4]f32{0.98, 0.78, 0.36, 1}
+		case .Surface: bar_color = [4]f32{0.34, 0.84, 0.62, 1}
+		case .Idle: bar_color = [4]f32{0.23, 0.34, 0.44, 1}
+		}
 		x := strip_x + bar_index*(bar_width+bar_gap)
 		if x+bar_width > strip_x+strip_w { bar_width = max(strip_x+strip_w-x, 0) }
 		bar_top := strip_y + 12*font_scale - bar_h

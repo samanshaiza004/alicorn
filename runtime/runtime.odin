@@ -679,7 +679,10 @@ Frame_Stats :: struct {
 	paint_updates:     u64,
 	composite_updates:  u64,
 	adjacency_rebuilds: u64,
+	// pointer_events counts delivered runtime pointer events. Hover transitions
+	// count target identity changes, not every motion within an unchanged target.
 	pointer_events:    u64,
+	hover_target_transitions: u64,
 	gpu_submits:       u64,
 	surface_updates:  u64,
 	surface_frames_consumed: u64,
