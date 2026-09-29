@@ -204,7 +204,35 @@ text_field_input_area :: proc(rt: ^Runtime, id: Node_ID) -> (area: Rect, cursor:
 // separate adapter and does not need this marker.
 text_input_target_is_active :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 	node, found := rt.nodes[id]
-	return found && node.active && node.text_input_target && node.focusable && !node.disabled
+	return found && node.active && node.text_input_target && !node.text_input_target_suspended && node.focusable && !node.disabled
+}
+
+// text_input_target_set_suspended temporarily removes a retained text-input
+// target from native input routing without changing focus or the application
+// description. Applications can call this from an input callback; the native
+// host synchronizes SDL text input after that callback and before processing
+// the next queued event. A suspended target may be resumed after a later
+// description omits text_input_target, which is useful for bounded recovery
+// states that disable further composition until the user resolves them.
+text_input_target_set_suspended :: proc(rt: ^Runtime, id: Node_ID, suspended: bool) -> bool {
+	node, found := rt.nodes[id]
+	if !found || !node.active { return false }
+	if suspended {
+		is_target := node.kind == .Text_Field || node.text_input_target
+		if !is_target || !node.focusable || node.disabled { return false }
+	} else if !node.text_input_target_suspended {
+		if node.kind != .Text_Field && !node.text_input_target { return false }
+	}
+	if node.text_input_target_suspended == suspended { return false }
+	node.text_input_target_suspended = suspended
+	return true
+}
+
+// text_input_target_is_suspended reports whether a live retained node has
+// been temporarily removed from native text-input eligibility.
+text_input_target_is_suspended :: proc(rt: ^Runtime, id: Node_ID) -> bool {
+	node, found := rt.nodes[id]
+	return found && node.active && node.text_input_target_suspended
 }
 
 // text_input_target_area_set updates the platform candidate-window anchor for
@@ -213,7 +241,7 @@ text_input_target_is_active :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 // caret geometry, while the native host reads it after each input/layout turn.
 text_input_target_area_set :: proc(rt: ^Runtime, id: Node_ID, area: Text_Input_Area) -> bool {
 	node, found := rt.nodes[id]
-	if !found || !node.active || !node.text_input_target || node.disabled { return false }
+	if !found || !node.active || !node.text_input_target || node.text_input_target_suspended || node.disabled { return false }
 	r := area.rect
 	if math.is_nan(r.x) || math.is_inf(r.x) || math.is_nan(r.y) || math.is_inf(r.y) ||
 		math.is_nan(r.w) || math.is_inf(r.w) || math.is_nan(r.h) || math.is_inf(r.h) ||
@@ -235,7 +263,7 @@ text_input_target_area_set :: proc(rt: ^Runtime, id: Node_ID, area: Text_Input_A
 // bounds are used as a safe initial candidate-area fallback.
 text_input_area :: proc(rt: ^Runtime, id: Node_ID) -> (area: Text_Input_Area, ok: bool) {
 	node, found := rt.nodes[id]
-	if !found || !node.active || node.disabled { return }
+	if !found || !node.active || node.text_input_target_suspended || node.disabled { return }
 	if node.kind == .Text_Field {
 		rect, cursor, valid := text_field_input_area(rt, id)
 		if valid { return Text_Input_Area{rect=rect, cursor_x=cursor}, true }

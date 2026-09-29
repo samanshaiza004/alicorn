@@ -19,6 +19,23 @@ native_text_input_probe_callback :: proc(
 	append(&probe.owners, owner)
 }
 
+Native_Text_Input_Suspension_Probe :: struct {
+	commits: u64,
+}
+
+native_text_input_suspend_after_commit_callback :: proc(
+	state: rawptr,
+	rt: ^alicorn.Runtime,
+	owner: alicorn.Node_ID,
+	event: Application_Text_Input_Event,
+) {
+	probe := cast(^Native_Text_Input_Suspension_Probe)state
+	if event.kind == .Commit {
+		probe.commits += 1
+		_ = alicorn.text_input_target_set_suspended(rt, owner, true)
+	}
+}
+
 Native_Text_Key_Probe :: struct {
 	events: [dynamic]Application_Text_Key_Event,
 	owners: [dynamic]alicorn.Node_ID,
@@ -95,6 +112,32 @@ native_generic_text_input_contract_test :: proc() -> bool {
 	for event_owner in probe.owners {
 		if event_owner != owner { return false }
 	}
+	// A callback can suspend its retained target before the host's post-event
+	// focus sync. The target becomes ineligible immediately, so already-queued
+	// TEXT_INPUT/TEXT_EDITING events are rejected; clearing suspension makes it
+	// eligible for the host to start again on that same post-event sync.
+	eligibility_state := Native_Text_Input_State{active=true, owner=owner, window_focused=true}
+	suspension_probe: Native_Text_Input_Suspension_Probe
+	suspension_application := Application{
+		state=rawptr(&suspension_probe),
+		on_text_input=native_text_input_suspend_after_commit_callback,
+	}
+	if !native_dispatch_generic_text_input_event(&suspension_application, &rt, &eligibility_state, Application_Text_Input_Event{
+		kind=.Commit, text="fill recovery buffer",
+	}) { return false }
+	if suspension_probe.commits != 1 || !alicorn.text_input_target_is_suspended(&rt, owner) { return false }
+	if native_text_input_owner_is_valid(&rt, owner) || native_current_text_input_owner(&rt) != 0 { return false }
+	if native_dispatch_generic_text_input_event(&suspension_application, &rt, &eligibility_state, Application_Text_Input_Event{
+		kind=.Commit, text="must be rejected while suspended",
+	}) { return false }
+	if suspension_probe.commits != 1 || len(probe.events) != 5 { return false }
+	if !alicorn.text_input_target_set_suspended(&rt, owner, false) { return false }
+	if alicorn.text_input_target_is_suspended(&rt, owner) || !native_text_input_owner_is_valid(&rt, owner) ||
+		native_current_text_input_owner(&rt) != owner { return false }
+	if !native_dispatch_generic_text_input_event(&suspension_application, &rt, &eligibility_state, Application_Text_Input_Event{
+		kind=.Commit, text="resumed",
+	}) { return false }
+	if suspension_probe.commits != 2 || !alicorn.text_input_target_is_suspended(&rt, owner) { return false }
 	input_area := alicorn.Text_Input_Area{rect=alicorn.Rect{12, 18, 2, 20}, cursor_x=1}
 	geometry_state := Native_Text_Input_State{last_area=input_area, last_area_valid=true}
 	if !native_text_input_area_update_required(&geometry_state, {}, false) { return false }

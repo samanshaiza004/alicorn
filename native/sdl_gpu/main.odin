@@ -562,6 +562,7 @@ Native_Text_Input_State :: struct {
 native_text_input_owner_is_valid :: proc(rt: ^alicorn.Runtime, id: alicorn.Node_ID) -> bool {
 	node, ok := rt.nodes[id]
 	if !ok || !node.active || !node.focusable || node.disabled { return false }
+	if alicorn.text_input_target_is_suspended(rt, id) { return false }
 	return node.kind == .Text_Field || alicorn.text_input_target_is_active(rt, id)
 }
 

@@ -477,6 +477,7 @@ Node :: struct {
 	region_cached: bool,
 	focusable:   bool,
 	text_input_target: bool,
+	text_input_target_suspended: bool,
 	text_interaction: bool,
 	text_interaction_anchor: Text_Position,
 	text_interaction_focus: Text_Position,
