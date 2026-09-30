@@ -475,19 +475,59 @@ print_window_metrics :: proc(label: string, metrics: Window_Metrics) {
 	)
 }
 
-pointer_from_sdl :: proc(event: sdl3.Event) -> (value: alicorn.Pointer_Event, ok: bool) {
+pointer_modifiers_from_sdl :: proc(mod: sdl3.Keymod) -> alicorn.Input_Modifiers {
+	return alicorn.Input_Modifiers{
+		shift=native_text_modifier(mod, sdl3.KMOD_SHIFT),
+		control=native_text_modifier(mod, sdl3.KMOD_CTRL),
+		alt=native_text_modifier(mod, sdl3.KMOD_ALT),
+		super=native_text_modifier(mod, sdl3.KMOD_GUI),
+	}
+}
+
+pointer_from_sdl_with_modifiers :: proc(event: sdl3.Event, mod: sdl3.Keymod) -> (value: alicorn.Pointer_Event, ok: bool) {
 	// SDL mouse coordinates are window-logical coordinates. They are passed
 	// through unchanged; only the compositor converts logical geometry to pixels.
+	modifiers := pointer_modifiers_from_sdl(mod)
 	if event.type == .MOUSE_MOTION {
-		return alicorn.Pointer_Event{.Move, event.motion.x, event.motion.y, 0}, true
+		return alicorn.Pointer_Event{
+			kind=.Move,
+			x=event.motion.x,
+			y=event.motion.y,
+			modifiers=modifiers,
+		}, true
 	}
 	if event.type == .MOUSE_BUTTON_DOWN {
-		return alicorn.Pointer_Event{.Down, event.button.x, event.button.y, int(event.button.button)}, true
+		return alicorn.Pointer_Event{
+			kind=.Down,
+			x=event.button.x,
+			y=event.button.y,
+			button=int(event.button.button),
+			modifiers=modifiers,
+			click_count=event.button.clicks,
+		}, true
 	}
 	if event.type == .MOUSE_BUTTON_UP {
-		return alicorn.Pointer_Event{.Up, event.button.x, event.button.y, int(event.button.button)}, true
+		return alicorn.Pointer_Event{
+			kind=.Up,
+			x=event.button.x,
+			y=event.button.y,
+			button=int(event.button.button),
+			modifiers=modifiers,
+			click_count=event.button.clicks,
+		}, true
 	}
 	return alicorn.Pointer_Event{}, false
+}
+
+pointer_modifier_state_update :: proc(mod_state: ^sdl3.Keymod, event: sdl3.Event) {
+	if mod_state == nil { return }
+	if event.type == .KEY_DOWN || event.type == .KEY_UP {
+		mod_state^ = event.key.mod
+	} else if event.type == .WINDOW_FOCUS_LOST {
+		mod_state^ = {}
+	} else if event.type == .WINDOW_FOCUS_GAINED {
+		mod_state^ = sdl3.GetModState()
+	}
 }
 
 poll_sdl_event :: proc(event: ^sdl3.Event) -> bool {
@@ -508,7 +548,7 @@ validate_pointer_coordinates :: proc() {
 	event.type = .MOUSE_MOTION
 	event.motion.x = 123.25
 	event.motion.y = 234.75
-	pointer, ok := pointer_from_sdl(event)
+	pointer, ok := pointer_from_sdl_with_modifiers(event, {})
 	if !ok || pointer.x != event.motion.x || pointer.y != event.motion.y {
 		fail("SDL pointer coordinates were scaled or translated before hit testing")
 	}
@@ -987,11 +1027,14 @@ pump_events :: proc(
 	native_menu: ^Native_Menu_Runtime = nil,
 	last_user_interaction_ns: ^u64 = nil,
 	text_input_state: ^Native_Text_Input_State = nil,
+	pointer_modifier_state: ^sdl3.Keymod = nil,
 	devtools_hud: ^Native_DevTools_HUD = nil,
 	devtools_hud_redraw_pending: ^bool = nil,
 	devtools_last_cause: ^alicorn.Cause_Context = nil,
 ) {
 	if telemetry != nil { telemetry.events_this_pump = 0 }
+	mod_state := sdl3.GetModState()
+	if pointer_modifier_state != nil { mod_state = pointer_modifier_state^ }
 	event: sdl3.Event
 	when ODIN_OS == .Darwin {
 		pump_platform_events()
@@ -1009,6 +1052,13 @@ pump_events :: proc(
 		has_event = poll_sdl_event(&event)
 	}
 	for has_event {
+		// SDL mouse-button events carry no modifier snapshot. Track keyboard
+		// snapshots in queue order; GetModState seeds the pump and focus gain.
+		pointer_modifier_state_update(pointer_modifier_state, event)
+		if event.type == .KEY_DOWN || event.type == .KEY_UP ||
+			event.type == .WINDOW_FOCUS_LOST || event.type == .WINDOW_FOCUS_GAINED {
+			if pointer_modifier_state != nil { mod_state = pointer_modifier_state^ }
+		}
 		if telemetry != nil { telemetry.events_received_sequence += 1 }
 		if last_user_interaction_ns != nil && native_event_is_user_interaction(event.type) {
 			last_user_interaction_ns^ = u64(sdl3.GetTicksNS())
@@ -1064,7 +1114,7 @@ pump_events :: proc(
 			application.on_wake(application.state, rt)
 			alicorn.cause_end(rt, wake_cause)
 		}
-		if pointer, ok := pointer_from_sdl(event); ok {
+		if pointer, ok := pointer_from_sdl_with_modifiers(event, mod_state); ok {
 			pointer_cause := alicorn.pointer_cause_begin(rt, pointer.kind)
 			if devtools_last_cause != nil { devtools_last_cause^ = pointer_cause.cause }
 			target := alicorn.process_pointer(rt, pointer)
@@ -1829,6 +1879,7 @@ run_application_loop :: proc(
 	start := time.now()
 	window_flags := sdl3.GetWindowFlags(window)
 	text_input_state := Native_Text_Input_State{window_focused=(window_flags & sdl3.WindowFlags{.INPUT_FOCUS}) != sdl3.WindowFlags{}}
+	pointer_modifier_state := sdl3.GetModState()
 	alicorn.invalidate_root(rt, "SDL application initial frame")
 	_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing)
 	devtools_cursor := native_devtools_cursor_init(rt, &timing, &text_events)
@@ -1925,6 +1976,7 @@ run_application_loop :: proc(
 			native_menu=native_menu,
 			last_user_interaction_ns=&last_user_interaction_ns,
 			text_input_state=&text_input_state,
+			pointer_modifier_state=&pointer_modifier_state,
 			devtools_hud=&devtools_hud,
 			devtools_hud_redraw_pending=&devtools_hud_redraw_pending,
 			devtools_last_cause=&devtools_last_cause,

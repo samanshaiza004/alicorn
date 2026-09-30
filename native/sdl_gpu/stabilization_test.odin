@@ -61,10 +61,10 @@ test_native_host_coalesces_in_build_invalidation_before_presentation :: proc(t: 
 	}
 	testing.expect(t, button_bounds.w > 0 && button_bounds.h > 0, "the test action should be laid out for pointer activation")
 	x, y := button_bounds.x+button_bounds.w/2, button_bounds.y+button_bounds.h/2
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, x, y, 1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=x, y=y, button=1})
 	alicorn.invalidate_root(&rt, "stabilization test pointer down")
 	_ = native_application_build_until_stable(&application, &rt, &metrics, &timing)
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, x, y, 1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=x, y=y, button=1})
 	alicorn.invalidate_root(&rt, "stabilization test pointer up")
 	result := native_application_build_until_stable(&application, &rt, &metrics, &timing)
 	testing.expect(t, result.stable && result.passes == 2, "the host should rebuild once after an action mutates state during description")

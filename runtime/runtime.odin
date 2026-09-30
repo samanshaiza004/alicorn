@@ -191,17 +191,19 @@ Identity_Declaration :: struct {
 
 Pointer_Kind :: enum { Move, Down, Up, Cancel }
 
-Pointer_Event :: struct {
-	kind:   Pointer_Kind,
-	x, y:   f32,
-	button: int,
-}
-
 Input_Modifiers :: struct {
 	shift:   bool,
 	control: bool,
 	alt:     bool,
 	super:   bool,
+}
+
+Pointer_Event :: struct {
+	kind:        Pointer_Kind,
+	x, y:        f32,
+	button:      int,
+	modifiers:   Input_Modifiers, // keyboard modifiers held when the host dispatches this event
+	click_count: u8,               // platform click sequence count for button events; zero when unavailable
 }
 
 // Scroll_Event preserves both precise device deltas and whole wheel ticks.

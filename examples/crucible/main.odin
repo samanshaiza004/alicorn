@@ -63,7 +63,7 @@ main :: proc() {
 	focused_button := find_button(&rt, 3)
 	if focused_button != 0 {
 		node := rt.nodes[focused_button]
-		alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, node.bounds.x+2, node.bounds.y+2, 1})
+		alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=node.bounds.x+2, y=node.bounds.y+2, button=1})
 		render(&rt, &app)
 	}
 	app.tracks[1], app.tracks[6] = app.tracks[6], app.tracks[1]

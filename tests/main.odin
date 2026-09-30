@@ -750,8 +750,8 @@ test_checkbox_and_slider_controls :: proc(state: ^Test_State) {
 		_, _, check_change, _ = render_foundation_controls(&rt, check_change.value, 0.5)
 		expect(state, !check_change.changed && check_change.value, "checkbox activation is consumed exactly once")
 		checkbox_node = rt.nodes[checkbox_id]
-		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, checkbox_node.bounds.x+8, checkbox_node.bounds.y+8, 1})
-		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, checkbox_node.bounds.x+8, checkbox_node.bounds.y+8, 1})
+		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=checkbox_node.bounds.x+8, y=checkbox_node.bounds.y+8, button=1})
+		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=checkbox_node.bounds.x+8, y=checkbox_node.bounds.y+8, button=1})
 		_, _, check_change, _ = render_foundation_controls(&rt, true, 0.5)
 		expect(state, check_change.changed && !check_change.value, "checkbox pointer click returns the updated controlled value")
 
@@ -759,9 +759,9 @@ test_checkbox_and_slider_controls :: proc(state: ^Test_State) {
 		start_x := slider_node.bounds.x+8
 		end_x := slider_node.bounds.x+slider_node.bounds.w-8
 		y := slider_node.bounds.y+slider_node.bounds.h/2
-		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, start_x, y, 1})
-		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, start_x+(end_x-start_x)*0.75, y, 0})
-		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, start_x+(end_x-start_x)*0.75, y, 1})
+		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=start_x, y=y, button=1})
+		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=start_x+(end_x-start_x)*0.75, y=y, button=0})
+		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=start_x+(end_x-start_x)*0.75, y=y, button=1})
 		_, _, _, slider_change = render_foundation_controls(&rt, check_change.value, 0.5)
 		expect(state, slider_change.changed && slider_change.value == 0.75, "slider pointer drag reports the clamped, stepped value")
 		expect(state, rt.nodes[slider_id].control_value == 0.75, "slider paint state reflects the returned app value")
@@ -797,7 +797,7 @@ test_checkbox_and_slider_controls :: proc(state: ^Test_State) {
 		expect(state, !alicorn.focus(&rt, checkbox_id) && !alicorn.focus(&rt, slider_id), "disabled checkbox and slider cannot receive focus")
 		expect(state, !alicorn.adjust_focused_slider(&rt, 1), "disabled slider ignores keyboard adjustments")
 		checkbox_node := rt.nodes[checkbox_id]
-		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, checkbox_node.bounds.x+4, checkbox_node.bounds.y+4, 1})
+		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=checkbox_node.bounds.x+4, y=checkbox_node.bounds.y+4, button=1})
 		expect(state, rt.activation_node != checkbox_id, "disabled checkbox ignores pointer activation")
 	}
 	_, _, _, _ = render_foundation_controls(&rt, false, 0.5, true, true)
@@ -1057,7 +1057,7 @@ test_focus_and_editing :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 200})
 	ids := render_keyed(&rt, []string{"a", "b", "c"}, []int{0, 0, 0}, false, false)
 	b := rt.nodes[ids["b"]]
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, b.bounds.x+2, b.bounds.y+2, 1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=b.bounds.x+2, y=b.bounds.y+2, button=1})
 	render_keyed(&rt, []string{"a", "b", "c"}, []int{0, 0, 0}, false, false)
 	expect(state, rt.focused == ids["b"], "pointer focus must target the retained node")
 	ids = render_keyed(&rt, []string{"c", "b", "a"}, []int{0, 0, 0}, false, false)
@@ -1138,12 +1138,12 @@ test_button_states_and_content_layout :: proc(state: ^Test_State) {
 	button_id, _ := render_canonical_button(&state_rt, alicorn.Button_State{selected=true})
 	initial_fill := state_rt.nodes[button_id].paint[0].color
 	node = state_rt.nodes[button_id]
-	alicorn.process_pointer(&state_rt, alicorn.Pointer_Event{.Move, node.bounds.x+2, node.bounds.y+2, 0})
+	alicorn.process_pointer(&state_rt, alicorn.Pointer_Event{kind=.Move, x=node.bounds.x+2, y=node.bounds.y+2, button=0})
 	_, _ = render_canonical_button(&state_rt, alicorn.Button_State{selected=true})
 	hover_fill := state_rt.nodes[button_id].paint[0].color
 	expect(state, hover_fill != initial_fill, "selected button hover must change its fill")
 	node = state_rt.nodes[button_id]
-	alicorn.process_pointer(&state_rt, alicorn.Pointer_Event{.Down, node.bounds.x+2, node.bounds.y+2, 1})
+	alicorn.process_pointer(&state_rt, alicorn.Pointer_Event{kind=.Down, x=node.bounds.x+2, y=node.bounds.y+2, button=1})
 	_, _ = render_canonical_button(&state_rt, alicorn.Button_State{selected=true})
 	pressed_node := state_rt.nodes[button_id]
 	pressed_fill := pressed_node.paint[0].color
@@ -1177,7 +1177,7 @@ test_button_label_geometry_stable_across_states :: proc(state: ^Test_State) {
 
 	node = rt.nodes[id]
 	x, y := node.bounds.x+node.bounds.w/2, node.bounds.y+node.bounds.h/2
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, x, y, 0})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=x, y=y, button=0})
 	ui, ready := alicorn.begin_presentation_frame(&rt)
 	if ready { alicorn.end_presentation_frame(&ui) }
 	expect_button_label_geometry_stable(state, &rt, id, baseline, "hover")
@@ -1186,15 +1186,15 @@ test_button_label_geometry_stable_across_states :: proc(state: ^Test_State) {
 	_ = render_fixed_label_button(&rt)
 	expect_button_label_geometry_stable(state, &rt, id, baseline, "focus")
 
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, x, y, 1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=x, y=y, button=1})
 	_ = render_fixed_label_button(&rt)
 	expect_button_label_geometry_stable(state, &rt, id, baseline, "press")
 
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, x, y, 1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=x, y=y, button=1})
 	_ = render_fixed_label_button(&rt)
 	expect_button_label_geometry_stable(state, &rt, id, baseline, "release")
 
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, 150, 55, 0})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=150, y=55, button=0})
 	ui, ready = alicorn.begin_presentation_frame(&rt)
 	if ready { alicorn.end_presentation_frame(&ui) }
 	expect_button_label_geometry_stable(state, &rt, id, baseline, "return to rest")
@@ -1319,10 +1319,10 @@ test_generic_text_input_target :: proc(state: ^Test_State) {
 	pointer_x, pointer_y := target_bounds.x+16, target_bounds.y+16
 	expect(state, alicorn.hit_test(&rt, pointer_x, pointer_y) == id,
 		"a generic text-input owner must participate in pointer hit testing")
-	pointer_target := alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, pointer_x, pointer_y, 1})
+	pointer_target := alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=pointer_x, y=pointer_y, button=1})
 	expect(state, pointer_target == id && rt.focused == id,
 		"pointer-down must focus a generic text-input owner through the normal retained path")
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, pointer_x, pointer_y, 1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=pointer_x, y=pointer_y, button=1})
 	expect(state, alicorn.focus(&rt, id), "generic text-input target must accept keyboard focus")
 	area, area_ok := alicorn.text_input_area(&rt, id)
 	expect(state, area_ok && area.rect.w > 0 && area.rect.h > 0, "generic text-input target must provide a retained-bounds fallback candidate area")
@@ -1395,21 +1395,21 @@ test_interaction_regressions :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 200})
 	id, _ := render_single_button(&rt)
 	node := rt.nodes[id]
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, node.bounds.x+2, node.bounds.y+2, 0})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=node.bounds.x+2, y=node.bounds.y+2, button=0})
 	render_single_button(&rt)
 	expect(state, rt.nodes[id].hovered, "hover state must survive reconciliation")
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, node.bounds.x+2, node.bounds.y+2, 1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=node.bounds.x+2, y=node.bounds.y+2, button=1})
 	_, clicked := render_single_button(&rt)
 	expect(state, !clicked && rt.nodes[id].pressed, "pointer down must capture and retain pressed state without activating")
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, 400, 180, 0})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=400, y=180, button=0})
 	render_single_button(&rt)
 	expect(state, rt.nodes[id].pressed, "captured button remains pressed while pointer leaves its bounds")
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, 400, 180, 1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=400, y=180, button=1})
 	_, clicked = render_single_button(&rt)
 	expect(state, !clicked && !rt.nodes[id].pressed, "pointer up outside target must cancel activation")
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, node.bounds.x+2, node.bounds.y+2, 1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=node.bounds.x+2, y=node.bounds.y+2, button=1})
 	render_single_button(&rt)
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, node.bounds.x+2, node.bounds.y+2, 1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=node.bounds.x+2, y=node.bounds.y+2, button=1})
 	_, clicked = render_single_button(&rt)
 	expect(state, clicked && !rt.nodes[id].pressed, "pointer down/up on target must activate exactly once")
 	for _ in 0..<100 {
@@ -1419,7 +1419,7 @@ test_interaction_regressions :: proc(state: ^Test_State) {
 
 	child := render_focus_ancestor(&rt, true)
 	child_node := rt.nodes[child]
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, child_node.bounds.x+2, child_node.bounds.y+2, 1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=child_node.bounds.x+2, y=child_node.bounds.y+2, button=1})
 	render_focus_ancestor(&rt, true)
 	expect(state, rt.focused == child, "child should own focus before removal")
 	parent := render_focus_ancestor(&rt, false)
@@ -1437,7 +1437,7 @@ test_disabled_button_semantics :: proc(state: ^Test_State) {
 	id, _ := render_canonical_button(&rt)
 	node := rt.nodes[id]
 	enabled_color := node.paint[0].color
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, node.bounds.x+2, node.bounds.y+2, 1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=node.bounds.x+2, y=node.bounds.y+2, button=1})
 	expect(state, rt.captured_node == id, "enabled button must capture pointer down")
 	_, _ = render_canonical_button(&rt, alicorn.Button_State{disabled=true})
 	expect(state, rt.captured_node == 0 && !rt.nodes[id].pressed, "disabling a captured button must clear press state")
@@ -1542,9 +1542,9 @@ test_virtualized_focus_retirement :: proc(state: ^Test_State) {
 	open_id, row_id := render_virtual_focus(&rt, 0)
 	expect(state, open_id != 0 && row_id != 0, "virtual focus fixture emits both the unrelated action and first row")
 	row := rt.nodes[row_id]
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, row.bounds.x+4, row.bounds.y+4, 1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=row.bounds.x+4, y=row.bounds.y+4, button=1})
 	expect(state, rt.focused == row_id, "pointer-down focuses the realized virtual row button")
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, row.bounds.x+4, row.bounds.y+4, 1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=row.bounds.x+4, y=row.bounds.y+4, button=1})
 	_, _ = render_virtual_focus(&rt, 0)
 	expect(state, rt.focused == row_id, "a completed row click keeps focus on that row while it remains realized")
 	_, _ = render_virtual_focus(&rt, 240)
@@ -1657,7 +1657,7 @@ test_presentation_invalidation :: proc(state: ^Test_State) {
 	frames_before := rt.stats.frames_built
 	rt.invalidated = false
 	node := rt.nodes[id]
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, node.bounds.x+2, node.bounds.y+2, 0})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=node.bounds.x+2, y=node.bounds.y+2, button=0})
 	expect(state, !rt.invalidated, "hover must not invalidate the application description")
 	expect(state, alicorn.presentation_needs_frame(&rt), "hover must request a retained presentation frame")
 	_, build := alicorn.begin_frame(&rt)
@@ -2818,7 +2818,7 @@ test_modal_scrollbar_composition :: proc(state: ^Test_State) {
 	workspace := rt.nodes[nodes.workspace]
 	hidden_x := workspace.scrollbar_vertical_track.x+workspace.scrollbar_vertical_track.w/2
 	hidden_y := workspace.scrollbar_vertical_track.y+workspace.scrollbar_vertical_track.h/2
-	target := alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, hidden_x, hidden_y, 1})
+	target := alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=hidden_x, y=hidden_y, button=1})
 	expect(state, target == nodes.overlay && rt.scrollbar_drag_node != nodes.workspace,
 		"pointer input over a covered workspace scrollbar must be consumed by the modal layer")
 	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=hidden_x, y=hidden_y, button=1})
@@ -2827,7 +2827,7 @@ test_modal_scrollbar_composition :: proc(state: ^Test_State) {
 	modal_track := modal.scrollbar_vertical_track
 	modal_x := modal_track.x+modal_track.w/2
 	modal_y := modal_track.y+modal_track.h-1
-	target = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, modal_x, modal_y, 1})
+	target = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=modal_x, y=modal_y, button=1})
 	expect(state, target == nodes.modal_scroll && alicorn.scroll_region_offset(&rt, nodes.modal_scroll) > 0,
 		"modal-owned scrollbar must remain interactive above modal content")
 }
@@ -2925,7 +2925,7 @@ test_scrollbar_interaction :: proc(state: ^Test_State) {
 	node := rt.nodes[id]
 	track := node.scrollbar_vertical_track
 	thumb := node.scrollbar_vertical_thumb
-	expect(state, alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, track.x+track.w/2, track.y+track.h-1, 1}) == id, "vertical track click is claimed by the scroll region")
+	expect(state, alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=track.x+track.w/2, y=track.y+track.h-1, button=1}) == id, "vertical track click is claimed by the scroll region")
 	expect(state, alicorn.scroll_region_offset(&rt, id) == node.scroll_viewport_height, "vertical track click pages by one effective viewport")
 
 	// Build a fresh geometry at the top before testing pointer capture.
@@ -2933,44 +2933,44 @@ test_scrollbar_interaction :: proc(state: ^Test_State) {
 	node = rt.nodes[id]
 	thumb = node.scrollbar_vertical_thumb
 	start_x, start_y := thumb.x+thumb.w/2, thumb.y+thumb.h/2
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, start_x, start_y, 1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=start_x, y=start_y, button=1})
 	expect(state, rt.scrollbar_drag_node == id && rt.captured_node == id, "thumb down captures the retained scroll region")
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, start_x, 500, 0})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=start_x, y=500, button=0})
 	expect(state, alicorn.scroll_region_offset(&rt, id) == node.scroll_content_height-node.scroll_viewport_height, "captured vertical drag outside the track clamps to the end")
 	expect(state, alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Cancel}) == 0, "pointer cancellation is handled without a target")
 	expect(state, rt.scrollbar_drag_node == 0 && rt.captured_node == 0, "focus-loss cancellation clears both retained capture states")
 	before := alicorn.scroll_region_offset(&rt, id)
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, start_x, 0, 0})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=start_x, y=0, button=0})
 	expect(state, alicorn.scroll_region_offset(&rt, id) == before, "motion after focus-loss cancellation cannot continue dragging")
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, start_x, 500, 1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=start_x, y=500, button=1})
 	expect(state, rt.scrollbar_drag_node == 0 && rt.captured_node == 0, "pointer release outside the bar ends capture")
 	before = alicorn.scroll_region_offset(&rt, id)
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, start_x, 0, 0})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=start_x, y=0, button=0})
 	expect(state, alicorn.scroll_region_offset(&rt, id) == before, "moves after outside release do not continue the drag")
 	_ = alicorn.scroll_region_set_offset(&rt, id, 0)
 	_, _ = render_scrollbar_fixture(&rt, 100, 600, .Vertical)
 	node = rt.nodes[id]
 	thumb = node.scrollbar_vertical_thumb
 	start_x, start_y = thumb.x+thumb.w/2, thumb.y+thumb.h/2
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, start_x, start_y, 1})
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, start_x, 500, 0})
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, start_x, 500, 1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=start_x, y=start_y, button=1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=start_x, y=500, button=0})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=start_x, y=500, button=1})
 	expect(state, rt.scrollbar_drag_node == 0 && rt.captured_node == 0, "outside pointer-up releases an active drag capture")
 	expect(state, alicorn.scroll_region_offset(&rt, id) == node.scroll_content_height-node.scroll_viewport_height, "drag position remains clamped after outside release")
 
 	id, _ = render_scrollbar_fixture(&rt, 500, 55, .Both)
 	node = rt.nodes[id]
 	track_x, thumb_x := node.scrollbar_horizontal_track, node.scrollbar_horizontal_thumb
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, track_x.x+track_x.w-1, track_x.y+track_x.h/2, 1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=track_x.x+track_x.w-1, y=track_x.y+track_x.h/2, button=1})
 	expect(state, alicorn.scroll_region_offset_x(&rt, id) == node.scroll_viewport_width, "horizontal track click pages by one effective viewport")
 	_, _ = render_scrollbar_fixture(&rt, 500, 55, .Both)
 	node = rt.nodes[id]
 	thumb_x = node.scrollbar_horizontal_thumb
 	start_x, start_y = thumb_x.x+thumb_x.w/2, thumb_x.y+thumb_x.h/2
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, start_x, start_y, 1})
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, 500, start_y, 0})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=start_x, y=start_y, button=1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=500, y=start_y, button=0})
 	expect(state, alicorn.scroll_region_offset_x(&rt, id) == node.scroll_content_width-node.scroll_viewport_width, "captured horizontal drag clamps to the end")
-	alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, 500, start_y, 1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=500, y=start_y, button=1})
 	expect(state, rt.scrollbar_drag_node == 0, "horizontal drag capture releases outside the window")
 }
 
@@ -2986,7 +2986,7 @@ test_pointer_motion_hover_work :: proc(state: ^Test_State) {
 	owner := rt.nodes[id]
 	x, y := owner.bounds.x+12, owner.bounds.y+12
 	revision_before_entry := rt.presentation_revision
-	expect(state, alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, x, y, 0}) == id,
+	expect(state, alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=x, y=y, button=0}) == id,
 		"pointer motion enters the generic text-input owner")
 	expect(state, rt.stats.hover_target_transitions == 1 && alicorn.presentation_needs_frame(&rt),
 		"entering the generic target produces one hover transition and one pending presentation")
@@ -3003,7 +3003,7 @@ test_pointer_motion_hover_work :: proc(state: ^Test_State) {
 	transitions := rt.stats.hover_target_transitions
 	submissions := rt.stats.gpu_submits
 	for i := 0; i < 8; i += 1 {
-		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, x+f32(i+1), y+f32(i+1), 0})
+		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=x+f32(i+1), y=y+f32(i+1), button=0})
 	}
 	expect(state, rt.stats.pointer_events == 9, "every ordinary move remains observable host input")
 	expect(state, rt.last_hovered == id && rt.stats.hover_target_transitions == transitions,
@@ -3020,7 +3020,7 @@ test_pointer_motion_hover_work :: proc(state: ^Test_State) {
 	// produce one transition; repeated motion within the strip should be inert.
 	bar := rt.nodes[id].scrollbar_vertical_track
 	bar_x, bar_y := bar.x+bar.w/2, bar.y+bar.h/2
-	expect(state, alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, bar_x, bar_y, 0}) == 0,
+	expect(state, alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=bar_x, y=bar_y, button=0}) == 0,
 		"scrollbar track boundary is not reported as the editor owner")
 	expect(state, rt.stats.hover_target_transitions == transitions+1 && alicorn.presentation_needs_frame(&rt),
 		"crossing to the scrollbar causes only one target transition")
@@ -3034,7 +3034,7 @@ test_pointer_motion_hover_work :: proc(state: ^Test_State) {
 	paints = rt.stats.paint_nodes_visited
 	compositions = rt.stats.composition_nodes_visited
 	for i := 0; i < 4; i += 1 {
-		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, bar_x, bar_y+f32(i+1), 0})
+		_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=bar_x, y=bar_y+f32(i+1), button=0})
 	}
 	expect(state, rt.stats.hover_target_transitions == transitions+1 && rt.presentation_revision == revision,
 		"motion within the scrollbar boundary does not repeatedly present")
@@ -3047,7 +3047,7 @@ test_pointer_motion_hover_work :: proc(state: ^Test_State) {
 	alicorn.frame_submission_succeeded(&button_rt)
 	button := button_rt.nodes[button_id]
 	button_x, button_y := button.bounds.x+button.bounds.w/2, button.bounds.y+button.bounds.h/2
-	_ = alicorn.process_pointer(&button_rt, alicorn.Pointer_Event{.Move, button_x, button_y, 0})
+	_ = alicorn.process_pointer(&button_rt, alicorn.Pointer_Event{kind=.Move, x=button_x, y=button_y, button=0})
 	ui, ready = alicorn.begin_presentation_frame(&button_rt)
 	expect(state, ready && button_rt.nodes[button_id].hovered,
 		"hover-painted button receives its retained hover presentation")
@@ -3057,11 +3057,11 @@ test_pointer_motion_hover_work :: proc(state: ^Test_State) {
 	button_revision := button_rt.presentation_revision
 	button_transitions := button_rt.stats.hover_target_transitions
 	button_paints := button_rt.stats.paint_nodes_visited
-	_ = alicorn.process_pointer(&button_rt, alicorn.Pointer_Event{.Move, button_x+1, button_y+1, 0})
+	_ = alicorn.process_pointer(&button_rt, alicorn.Pointer_Event{kind=.Move, x=button_x+1, y=button_y+1, button=0})
 	expect(state, button_rt.stats.hover_target_transitions == button_transitions &&
 		button_rt.presentation_revision == button_revision && button_rt.stats.paint_nodes_visited == button_paints,
 		"motion within one hover-painted control does not repaint repeatedly")
-	_ = alicorn.process_pointer(&button_rt, alicorn.Pointer_Event{.Move, 300, 110, 0})
+	_ = alicorn.process_pointer(&button_rt, alicorn.Pointer_Event{kind=.Move, x=300, y=110, button=0})
 	ui, ready = alicorn.begin_presentation_frame(&button_rt)
 	expect(state, ready && !button_rt.nodes[button_id].hovered && button_rt.stats.frames_built == button_builds,
 		"leaving a hover-painted control is retained-only work, not an application rebuild")
@@ -3073,11 +3073,11 @@ test_pointer_motion_hover_work :: proc(state: ^Test_State) {
 	settle_scrollbar_fixture(&drag_rt, 100, 600, .Vertical, .Always, 100, 60, text_owner=true)
 	drag_node := drag_rt.nodes[drag_id]
 	drag_x, drag_y := drag_node.bounds.x+12, drag_node.bounds.y+12
-	_ = alicorn.process_pointer(&drag_rt, alicorn.Pointer_Event{.Down, drag_x, drag_y, 1})
+	_ = alicorn.process_pointer(&drag_rt, alicorn.Pointer_Event{kind=.Down, x=drag_x, y=drag_y, button=1})
 	_, _ = render_scrollbar_fixture(&drag_rt, 100, 600, .Vertical, .Always, 100, 60, text_owner=true)
 	settle_scrollbar_fixture(&drag_rt, 100, 600, .Vertical, .Always, 100, 60, text_owner=true)
 	alicorn.frame_submission_succeeded(&drag_rt)
-	_ = alicorn.process_pointer(&drag_rt, alicorn.Pointer_Event{.Move, drag_x, drag_y, 0})
+	_ = alicorn.process_pointer(&drag_rt, alicorn.Pointer_Event{kind=.Move, x=drag_x, y=drag_y, button=0})
 	ui, ready = alicorn.begin_presentation_frame(&drag_rt)
 	if ready { alicorn.end_presentation_frame(&ui) }
 	alicorn.frame_submission_succeeded(&drag_rt)
@@ -3087,7 +3087,7 @@ test_pointer_motion_hover_work :: proc(state: ^Test_State) {
 	drag_compositions := drag_rt.stats.composition_nodes_visited
 	drag_transitions := drag_rt.stats.hover_target_transitions
 	for i := 0; i < 5; i += 1 {
-		_ = alicorn.process_pointer(&drag_rt, alicorn.Pointer_Event{.Move, drag_x+f32(i+1), drag_y, 0})
+		_ = alicorn.process_pointer(&drag_rt, alicorn.Pointer_Event{kind=.Move, x=drag_x+f32(i+1), y=drag_y, button=0})
 	}
 	expect(state, drag_rt.captured_node == drag_id && drag_rt.last_hovered == drag_id,
 		"editor pointer capture survives motion during a selection drag")
@@ -3096,7 +3096,7 @@ test_pointer_motion_hover_work :: proc(state: ^Test_State) {
 	expect(state, drag_rt.presentation_revision == drag_revision && drag_rt.stats.paint_nodes_visited == drag_paints &&
 		drag_rt.stats.composition_nodes_visited == drag_compositions && !alicorn.frame_needs_submission(&drag_rt),
 		"captured movement within the editor does not schedule presentation/GPU work")
-	_ = alicorn.process_pointer(&drag_rt, alicorn.Pointer_Event{.Move, 280, 110, 0})
+	_ = alicorn.process_pointer(&drag_rt, alicorn.Pointer_Event{kind=.Move, x=280, y=110, button=0})
 	expect(state, drag_rt.captured_node == drag_id && drag_rt.stats.hover_target_transitions == drag_transitions+1,
 		"capture remains stable across one pointer-target exit")
 }
@@ -3205,28 +3205,28 @@ test_adjacent_three_pane_split_redistribution :: proc(state: ^Test_State) {
 	inner_handle := rt.nodes[nodes.inner_divider]
 	start_x := inner_handle.bounds.x + inner_handle.bounds.w/2
 	start_y := inner_handle.bounds.y + 20
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, start_x, start_y, 1})
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, start_x+50, start_y, 0})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=start_x, y=start_y, button=1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=start_x+50, y=start_y, button=0})
 	ui, ready := alicorn.begin_presentation_frame(&rt)
 	if ready { alicorn.end_presentation_frame(&ui) }
 	a_after_inner := rt.nodes[nodes.pane_a].bounds.w
 	b_after_inner := rt.nodes[nodes.pane_b].bounds.w
 	c_after_inner := rt.nodes[nodes.pane_c].bounds.w
 	expect(state, a_after_inner == a+50 && b_after_inner == b-50 && c_after_inner == c, "first divider redistributes only pane A and B")
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, start_x+50, start_y, 1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=start_x+50, y=start_y, button=1})
 
 	outer_handle := rt.nodes[nodes.outer_divider]
 	start_x = outer_handle.bounds.x + outer_handle.bounds.w/2
 	start_y = outer_handle.bounds.y + 20
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, start_x, start_y, 1})
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, start_x+40, start_y, 0})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=start_x, y=start_y, button=1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=start_x+40, y=start_y, button=0})
 	ui, ready = alicorn.begin_presentation_frame(&rt)
 	if ready { alicorn.end_presentation_frame(&ui) }
 	a_after_outer := rt.nodes[nodes.pane_a].bounds.w
 	b_after_outer := rt.nodes[nodes.pane_b].bounds.w
 	c_after_outer := rt.nodes[nodes.pane_c].bounds.w
 	expect(state, a_after_outer == a_after_inner && b_after_outer == b_after_inner+40 && c_after_outer == c_after_inner-40, "second divider redistributes only pane B and C")
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, start_x+40, start_y, 1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=start_x+40, y=start_y, button=1})
 }
 
 test_retained_split_drag_and_clamp :: proc(state: ^Test_State) {
@@ -3243,26 +3243,26 @@ test_retained_split_drag_and_clamp :: proc(state: ^Test_State) {
 	// The pointer is just outside the visible two-pixel divider, inside the
 	// expanded hit region.
 	start_x := handle.bounds.x - 3
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, start_x, 80, 1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=start_x, y=80, button=1})
 	expect(state, rt.captured_node == nodes.divider && parent.split_dragging, "pointer down captures the retained split divider")
 	expect(state, !rt.invalidated, "split pointer down does not invalidate the application description")
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, 999, 80, 0})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=999, y=80, button=0})
 	expect(state, parent.split_position == 398, "dragging beyond the window clamps to the second-pane minimum")
 	expect(state, !rt.invalidated, "split drag moves remain retained presentation work")
 	ui, ready := alicorn.begin_presentation_frame(&rt)
 	if ready { alicorn.end_presentation_frame(&ui) }
 	expect(state, first.bounds.w == 398 && second.bounds.w == 200, "retained-only presentation lays out panes during a drag")
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, 999, 500, 1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=999, y=500, button=1})
 	expect(state, rt.captured_node == 0 && !parent.split_dragging, "pointer release outside the window ends the captured drag")
 	expect(state, !handle.hovered && rt.last_hovered == 0, "release outside clears the divider hover state")
 	expect(state, !rt.invalidated, "split release outside does not trigger app-level pointer handling")
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, first.bounds.x+first.bounds.w-3, 40, 1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=first.bounds.x+first.bounds.w-3, y=40, button=1})
 	rt.viewport.w = 400
 	nodes = render_split_test(&rt, .Horizontal, 40, 150, 200)
 	parent = rt.nodes[nodes.split.id]
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, 500, 40, 0})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=500, y=40, button=0})
 	expect(state, parent.split_position == 198 && rt.captured_node == nodes.divider, "resize during capture reclamps drag and preserves capture")
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Up, 500, 40, 1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=500, y=40, button=1})
 
 	rt.viewport.w = 400
 	nodes = render_split_test(&rt, .Horizontal, 40, 150, 200)
@@ -3290,7 +3290,7 @@ test_split_axis_nested_identity_and_cancel :: proc(state: ^Test_State) {
 	expect(state, outer.id == outer2.id && inner.id == inner2.id && outer_divider == outer_divider2 && inner_divider == inner_divider2, "nested split identities survive description rebuild")
 	expect(state, rt.nodes[outer.id].split_position == 275 && rt.nodes[inner.id].split_position == 155, "nested split positions persist independently")
 	handle := rt.nodes[inner_divider]
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, handle.bounds.x+3, handle.bounds.y+1, 1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=handle.bounds.x+3, y=handle.bounds.y+1, button=1})
 	owner := rt.nodes[inner.id]
 	expect(state, owner.split_dragging && rt.captured_node == inner_divider, "nested divider begins its own retained drag")
 	alicorn.cancel_pointer_capture(&rt)
@@ -3349,8 +3349,8 @@ test_geometry_surface_resize_invalidation :: proc(state: ^Test_State) {
 	expect(state, window_resize_ok && window_resized.logical_bounds.w == 378, "window resize rebuilds geometry at the new resolved width")
 	handle := rt.nodes[divider]
 	x, y := handle.bounds.x+handle.bounds.w/2, handle.bounds.y+handle.bounds.h/2
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, x, y, 1})
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, x+40, y, 0})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=x, y=y, button=1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=x+40, y=y, button=0})
 	ui, ready := alicorn.begin_presentation_frame(&rt)
 	if ready { alicorn.end_presentation_frame(&ui) }
 	after, after_ok := alicorn.gpu_surface_context(&rt, surface)
@@ -3375,8 +3375,8 @@ test_split_virtual_viewport_followup :: proc(state: ^Test_State) {
 	}
 	handle := rt.nodes[divider]
 	x, y := handle.bounds.x+10, handle.bounds.y+handle.bounds.h/2
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Down, x, y, 1})
-	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{.Move, x, y+100, 0})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=x, y=y, button=1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=x, y=y+100, button=0})
 	expect(state, !rt.invalidated, "vertical split drag remains presentation-local until retained layout resolves")
 	ui, ready := alicorn.begin_presentation_frame(&rt)
 	if ready { alicorn.end_presentation_frame(&ui) }
@@ -3393,8 +3393,8 @@ test_split_virtual_viewport_followup :: proc(state: ^Test_State) {
 	}
 	horizontal_handle := horizontal_rt.nodes[horizontal_divider]
 	hx, hy := horizontal_handle.bounds.x+horizontal_handle.bounds.w/2, horizontal_handle.bounds.y+10
-	_ = alicorn.process_pointer(&horizontal_rt, alicorn.Pointer_Event{.Down, hx, hy, 1})
-	_ = alicorn.process_pointer(&horizontal_rt, alicorn.Pointer_Event{.Move, hx+50, hy, 0})
+	_ = alicorn.process_pointer(&horizontal_rt, alicorn.Pointer_Event{kind=.Down, x=hx, y=hy, button=1})
+	_ = alicorn.process_pointer(&horizontal_rt, alicorn.Pointer_Event{kind=.Move, x=hx+50, y=hy, button=0})
 	horizontal_ui, horizontal_ready := alicorn.begin_presentation_frame(&horizontal_rt)
 	if horizontal_ready { alicorn.end_presentation_frame(&horizontal_ui) }
 	expect(state, !horizontal_rt.invalidated, "width-only split drag keeps fixed-row virtualization presentation-local")

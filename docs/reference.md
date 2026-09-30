@@ -18,6 +18,16 @@ logical_height, dpi_scale) -> Node_ID`. A typical callback calls
 to do. Optional callbacks handle text changes, keys, pointer/scroll input,
 scheduled wakes, dialogs, worker wakeups, and lifecycle events.
 
+`on_pointer` receives a platform-neutral `Pointer_Event` with the pointer kind,
+logical window coordinates, button number, `Input_Modifiers`, and a native
+`click_count`. The modifier flags describe the host's best event-time keyboard
+state. SDL mouse-button events do not include a modifier snapshot, so the SDL
+host tracks keyboard modifier events in queue order. `click_count` is the
+platform-reported click sequence count (for example, 1 for a single click and 2
+for a double-click); it is zero on non-button events or when the host cannot
+provide a count. Application-level selection behavior should treat a zero
+count on a button-down event as one click.
+
 For periodic refreshes, read `Application_Services.scheduler` in
 `on_services`. `application_schedule_after` and
 `application_cancel_scheduled_wake` operate on one-shot `Frequent` and
