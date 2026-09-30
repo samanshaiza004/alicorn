@@ -457,12 +457,18 @@ render_interactive_text :: proc(
 	return
 }
 
-render_spanned_text :: proc(rt: ^alicorn.Runtime, spans: []alicorn.Text_Paint_Span) -> (id: alicorn.Node_ID, accepted: bool) {
+render_spanned_text :: proc(
+	rt: ^alicorn.Runtime,
+	spans: []alicorn.Text_Paint_Span,
+	value := "Aébc",
+	width: f32 = 32,
+	overflow := alicorn.Text_Overflow.Clip,
+) -> (id: alicorn.Node_ID, accepted: bool) {
 	alicorn.invalidate_root(rt, "test text paint spans")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return }
 	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="text-paint-spans-root")
-	id = alicorn.text_ex(&ui, "Aébc", S_EXTRA, style=alicorn.layout_style(width=32, height=42), text_style=alicorn.Text_Style{overflow=.Clip})
+	id = alicorn.text_ex(&ui, value, S_EXTRA, style=alicorn.layout_style(width=width, height=42), text_style=alicorn.Text_Style{overflow=overflow})
 	accepted = alicorn.text_paint_spans(&ui, id, spans)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
@@ -550,6 +556,103 @@ test_retained_text_paint_spans :: proc(state: ^Test_State) {
 	for command in node.paint { if command.kind == .Text_Selection { decorations += 1 } }
 	expect(state, decorations == 0 && len(node.paint) == baseline_paint_commands && node.text_run_generation == baseline_generation, "unset span attributes must behave like no spans without reshaping or extra paint commands")
 
+	bidi_value := "ab שלום cd\nwrapped words"
+	bidi_background := alicorn.Color{0.8, 0.15, 0.6, 0.35}
+	bidi_spans := []alicorn.Text_Paint_Span{{start=1, end=len(bidi_value)-2, background=bidi_background, background_set=true, underline=true}}
+	bidi_id, bidi_accepted := render_spanned_text(&rt, bidi_spans, bidi_value, 74, .Wrap)
+	bidi_node := rt.nodes[bidi_id]
+	expect(state, bidi_accepted && len(bidi_node.text_run.lines) > 1, "span geometry fixture must retain wrapped mixed-direction lines")
+	expected_rects := alicorn.text_run_selection_rects(
+		&bidi_node.text_run,
+		alicorn.Text_Position{bidi_spans[0].start, .Leading},
+		alicorn.Text_Position{bidi_spans[0].end, .Trailing},
+	)
+	actual_background_rects := 0
+	for command in bidi_node.paint {
+		if command.kind != .Text_Selection || command.color != bidi_background { continue }
+		actual_background_rects += 1
+		matched := false
+		for expected in expected_rects {
+			translated := expected.rect
+			translated.x += bidi_node.bounds.x
+			translated.y += bidi_node.bounds.y
+			if command.bounds == translated { matched = true; break }
+		}
+		expect(state, matched, "cached span geometry must match the existing bidi-aware selection rectangle for every line")
+	}
+	expect(state, actual_background_rects == len(expected_rects), "cached span geometry must emit one background rectangle per intersecting wrapped line")
+	delete(expected_rects)
+
+	cluster_values := []string{"office", "élan", "שלום fi\nabc"}
+	for cluster_value in cluster_values {
+		cluster_span := []alicorn.Text_Paint_Span{{start=1, end=len(cluster_value)-1, background=bidi_background, background_set=true}}
+		cluster_id, cluster_accepted := render_spanned_text(&rt, cluster_span, cluster_value, 62, .Wrap)
+		cluster_node := rt.nodes[cluster_id]
+		cluster_expected := alicorn.text_run_selection_rects(
+			&cluster_node.text_run,
+			alicorn.Text_Position{cluster_span[0].start, .Leading},
+			alicorn.Text_Position{cluster_span[0].end, .Trailing},
+		)
+		cluster_actual_count := 0
+		cluster_geometry_matches := true
+		for command in cluster_node.paint {
+			if command.kind != .Text_Selection || command.color != bidi_background { continue }
+			cluster_actual_count += 1
+			matched := false
+			for expected in cluster_expected {
+				translated := expected.rect
+				translated.x += cluster_node.bounds.x
+				translated.y += cluster_node.bounds.y
+				if command.bounds == translated { matched = true; break }
+			}
+			cluster_geometry_matches = cluster_geometry_matches && matched
+		}
+		expect(state, cluster_accepted && cluster_geometry_matches && cluster_actual_count == len(cluster_expected), "cached span geometry must match selection geometry for ligatures, combining marks, and wrapped RTL lines")
+		delete(cluster_expected)
+	}
+
+	ligature_value, ligature_value_err := strings.clone("ffi")
+	if ligature_value_err == nil {
+		ligature_run := alicorn.Text_Run{
+			value=ligature_value,
+			glyphs=make([dynamic]alicorn.Text_Glyph, 0, 1, context.allocator),
+			lines=make([dynamic]alicorn.Text_Line, 0, 1, context.allocator),
+			width=30, height=20, size=16, allocator=context.allocator,
+		}
+		append(&ligature_run.glyphs, alicorn.Text_Glyph{cluster_start=0, cluster_end=3, x_advance=30, line_index=0})
+		append(&ligature_run.lines, alicorn.Text_Line{glyph_start=0, glyph_end=1, byte_start=0, byte_end=3, width=30, height=20, baseline=14})
+		ligature_paint_color := alicorn.Color{0.25, 0.8, 0.5, 0.4}
+		ligature_spans := []alicorn.Text_Paint_Span{{start=1, end=2, background=ligature_paint_color, background_set=true}}
+		ligature_node := alicorn.Node{
+			text_paint_spans=make([dynamic]alicorn.Text_Paint_Span, 0, 1, context.allocator),
+			paint=make([dynamic]alicorn.Display_Command, 0, 2, context.allocator),
+			text_run=ligature_run,
+			text_run_valid=true,
+			bounds=alicorn.Rect{5, 7, 40, 24},
+			clip=alicorn.Rect{5, 7, 40, 24},
+			color=alicorn.Color{1, 1, 1, 1},
+		}
+		append(&ligature_node.text_paint_spans, ligature_spans[0])
+		ligature_geometry := alicorn.text_paint_geometry_make(&ligature_node.text_run)
+		alicorn.append_text_paint_geometry(&ligature_node, &ligature_geometry, ligature_node.clip, true)
+		ligature_expected := alicorn.text_run_selection_rects(&ligature_run, alicorn.Text_Position{1, .Leading}, alicorn.Text_Position{2, .Trailing})
+		ligature_match := len(ligature_expected) == 1 && len(ligature_node.paint) == 1
+		if ligature_match {
+			expected := ligature_expected[0].rect
+			expected.x += ligature_node.bounds.x
+			expected.y += ligature_node.bounds.y
+			ligature_match = ligature_node.paint[0].bounds == expected
+		}
+		expect(state, ligature_match, "single shaped ligature cluster must expand span geometry to its internal grapheme caret positions")
+		delete(ligature_expected)
+		alicorn.text_paint_geometry_destroy(&ligature_geometry)
+		delete(ligature_node.text_paint_spans)
+		delete(ligature_node.paint)
+		alicorn.text_run_destroy(&ligature_run)
+	} else {
+		expect(state, false, "synthetic ligature span fixture string must allocate")
+	}
+
 	region_rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 100})
 	defer alicorn.destroy_runtime(&region_rt)
 	expect(state, alicorn.text_engine_load_font(&region_rt.text_engine, TEST_UI_FONT_DATA), "text span region test font must load")
@@ -563,6 +666,35 @@ test_retained_text_paint_spans :: proc(state: ^Test_State) {
 	_, reused, _ = render_spanned_text_region(&region_rt, no_spans, 1)
 	region_node = region_rt.nodes[region_text_id]
 	expect(state, reused && len(region_node.text_paint_spans) == 1 && region_node.text_paint_spans[0].color == red, "region reuse must retain runtime-owned spans without reading the expired description slice")
+
+	dense_stats := alicorn.Runtime_Allocation_Stats{}
+	dense_rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 100}, alicorn.Runtime_Config{
+		persistent_allocator=context.allocator,
+		scratch_backing_allocator=context.allocator,
+		allocation_stats=&dense_stats,
+	})
+	defer alicorn.destroy_runtime(&dense_rt)
+	expect(state, alicorn.text_engine_load_font(&dense_rt.text_engine, TEST_UI_FONT_DATA), "dense text paint geometry test font must load")
+	dense_bytes := make([]u8, 16*1024)
+	for i in 0..<len(dense_bytes) { dense_bytes[i] = 'a' }
+	dense_value := string(dense_bytes)
+	dense_id, _ := render_spanned_text(&dense_rt, no_spans, dense_value, 300, .Clip)
+	dense_generation := dense_rt.nodes[dense_id].text_run_generation
+	dense_spans := make([dynamic]alicorn.Text_Paint_Span, 0, 1024)
+	for i in 0..<1024 {
+		start := i*16
+		append(&dense_spans, alicorn.Text_Paint_Span{start=start, end=start+8, underline=true})
+	}
+	allocations_before := dense_stats.scratch_alloc_calls
+	dense_id, _ = render_spanned_text(&dense_rt, dense_spans[:], dense_value, 300, .Clip)
+	dense_node := dense_rt.nodes[dense_id]
+	geometry_scratch_bytes := dense_stats.scratch_requested_bytes_epoch
+	geometry_scratch_allocations := dense_stats.scratch_alloc_calls-allocations_before
+	expect(state, dense_node.text_run_generation == dense_generation, "dense inline decorations must reuse the retained 16 KiB shaped run")
+	expect(state, geometry_scratch_bytes < 8*1024*1024, fmt.tprintf("dense spans must use scratch bounded by the run and span list (requested %d bytes)", geometry_scratch_bytes))
+	expect(state, geometry_scratch_allocations < 100, fmt.tprintf("dense span painting must not allocate caret arrays per span (made %d scratch allocations)", geometry_scratch_allocations))
+	delete(dense_bytes)
+	delete(dense_spans)
 }
 
 render_natural_interactive_text :: proc(

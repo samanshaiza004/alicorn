@@ -1,6 +1,120 @@
 package alicorn
 
-append_text_paint_geometry :: proc(node: ^Node, command_clip: Rect, backgrounds: bool, scratch_allocator := context.temp_allocator) {
+import runa "../third_party/Runa"
+
+Text_Paint_Caret_Key :: struct {
+	line_index: int,
+	byte: int,
+	affinity: Text_Affinity,
+}
+
+Text_Paint_Geometry :: struct {
+	grapheme_boundaries: [dynamic]int,
+	caret_x: map[Text_Paint_Caret_Key]f32,
+}
+
+text_paint_insert_caret :: proc(geometry: ^Text_Paint_Geometry, line_index: int, position: Text_Position, x: f32) {
+	key := Text_Paint_Caret_Key{line_index, position.byte, position.affinity}
+	if _, found := geometry.caret_x[key]; !found { geometry.caret_x[key] = x }
+}
+
+text_paint_boundary_lower_bound :: proc(boundaries: []int, byte: int, strict := false) -> int {
+	low, high := 0, len(boundaries)
+	for low < high {
+		middle := (low+high)/2
+		if boundaries[middle] < byte || (strict && boundaries[middle] == byte) { low = middle+1 }
+		else { high = middle }
+	}
+	return low
+}
+
+text_paint_geometry_make :: proc(run: ^Text_Run, allocator := context.temp_allocator) -> Text_Paint_Geometry {
+	geometry := Text_Paint_Geometry{
+		grapheme_boundaries=make([dynamic]int, 0, len(run.value)+1, allocator),
+		caret_x=make(map[Text_Paint_Caret_Key]f32, allocator=allocator),
+	}
+	append(&geometry.grapheme_boundaries, 0)
+	it := runa.grapheme_iter_make(run.value)
+	for {
+		_, end, ok := runa.grapheme_iter_next(&it)
+		if !ok { break }
+		append(&geometry.grapheme_boundaries, end)
+	}
+	for line, line_index in run.lines {
+		for glyph_index := line.glyph_start; glyph_index < line.glyph_end; glyph_index += 1 {
+			glyph := run.glyphs[glyph_index]
+			start, end := glyph.cluster_start, glyph.cluster_end
+			if start < 0 { start = 0 }
+			if end > len(run.value) { end = len(run.value) }
+			if end < start { end = start }
+			if start == end {
+				text_paint_insert_caret(&geometry, line_index, Text_Position{start, .Leading}, glyph.x)
+				text_paint_insert_caret(&geometry, line_index, Text_Position{start, .Trailing}, glyph.x)
+				continue
+			}
+			text_paint_insert_caret(&geometry, line_index, Text_Position{start, .Leading}, text_glyph_boundary_x(glyph, start))
+			boundary_index := text_paint_boundary_lower_bound(geometry.grapheme_boundaries[:], start, true)
+			for boundary_index < len(geometry.grapheme_boundaries) {
+				byte := geometry.grapheme_boundaries[boundary_index]
+				if byte > end { break }
+				x := text_glyph_boundary_x(glyph, byte)
+				if byte == end {
+					text_paint_insert_caret(&geometry, line_index, Text_Position{byte, .Trailing}, x)
+				} else {
+					text_paint_insert_caret(&geometry, line_index, Text_Position{byte, .Leading}, x)
+					text_paint_insert_caret(&geometry, line_index, Text_Position{byte, .Trailing}, x)
+				}
+				boundary_index += 1
+			}
+		}
+		text_paint_insert_caret(&geometry, line_index, Text_Position{line.byte_start, .Leading}, line.x)
+		text_paint_insert_caret(&geometry, line_index, Text_Position{line.byte_end, .Trailing}, line.width)
+	}
+	return geometry
+}
+
+text_paint_geometry_destroy :: proc(geometry: ^Text_Paint_Geometry) {
+	if geometry == nil { return }
+	if len(geometry.grapheme_boundaries) > 0 { delete(geometry.grapheme_boundaries) }
+	if geometry.caret_x != nil { delete(geometry.caret_x) }
+	geometry^ = Text_Paint_Geometry{}
+}
+
+text_paint_geometry_position_x :: proc(geometry: ^Text_Paint_Geometry, run: ^Text_Run, line_index: int, byte: int, affinity: Text_Affinity) -> f32 {
+	key := Text_Paint_Caret_Key{line_index, byte, affinity}
+	if x, found := geometry.caret_x[key]; found { return x }
+	line := run.lines[line_index]
+	if byte <= line.byte_start { return line.x }
+	if byte >= line.byte_end { return line.width }
+	return line.x
+}
+
+text_paint_grapheme_floor :: proc(boundaries: []int, byte: int) -> int {
+	index := text_paint_boundary_lower_bound(boundaries, byte)
+	if index < len(boundaries) && boundaries[index] == byte { return byte }
+	if index > 0 { return boundaries[index-1] }
+	return 0
+}
+
+text_paint_first_line_for_byte :: proc(run: ^Text_Run, byte: int) -> int {
+	low, high := 0, len(run.lines)
+	for low < high {
+		middle := (low+high)/2
+		if run.lines[middle].byte_end <= byte { low = middle+1 }
+		else { high = middle }
+	}
+	return low
+}
+
+text_paint_geometry_needed :: proc(node: ^Node) -> bool {
+	if node == nil { return false }
+	for span in node.text_paint_spans {
+		if span.background_set || span.underline || span.strikethrough { return true }
+	}
+	return false
+}
+
+append_text_paint_geometry :: proc(node: ^Node, geometry: ^Text_Paint_Geometry, command_clip: Rect, backgrounds: bool) {
 	if node == nil || !node.text_run_valid || len(node.text_paint_spans) == 0 { return }
 	for span in node.text_paint_spans {
 		if backgrounds && !span.background_set { continue }
@@ -8,31 +122,43 @@ append_text_paint_geometry :: proc(node: ^Node, command_clip: Rect, backgrounds:
 		start := clamp(span.start, 0, len(node.text_run.value))
 		end := clamp(span.end, 0, len(node.text_run.value))
 		if start >= end { continue }
-		selected := text_run_selection_rects(
-			&node.text_run,
-			Text_Position{start, .Leading},
-			Text_Position{end, .Trailing},
-			allocator=scratch_allocator,
-			scratch_allocator=scratch_allocator,
-		)
-		for item in selected {
-			bounds := item.rect
+		start = text_paint_grapheme_floor(geometry.grapheme_boundaries[:], start)
+		end = text_paint_grapheme_floor(geometry.grapheme_boundaries[:], end)
+		low, high := start, end
+		if low > high { low, high = high, low }
+		if low == high { continue }
+		line_start_index := text_paint_first_line_for_byte(&node.text_run, low)
+		for line_index := line_start_index; line_index < len(node.text_run.lines); line_index += 1 {
+			line := node.text_run.lines[line_index]
+			if high <= line.byte_start { break }
+			if high <= line.byte_start || low >= line.byte_end { continue }
+			selection_start := max(low, line.byte_start)
+			selection_end := min(high, line.byte_end)
+			left := line.x
+			right := line.width
+			if selection_start > line.byte_start {
+				left = text_paint_geometry_position_x(geometry, &node.text_run, line_index, selection_start, .Leading)
+			}
+			if selection_end < line.byte_end {
+				right = text_paint_geometry_position_x(geometry, &node.text_run, line_index, selection_end, .Trailing)
+			}
+			if right < left { left, right = right, left }
+			if right <= left { continue }
+			bounds := Rect{left, line.y, right-left, line.height}
 			bounds.x += node.bounds.x
 			bounds.y += node.bounds.y
 			if backgrounds && span.background_set {
 				append(&node.paint, Display_Command{node.id, .Text_Selection, bounds, command_clip, "", span.background, []Text_Paint_Span{}})
 			}
-			if !backgrounds && item.line_index >= 0 && item.line_index < len(node.text_run.lines) {
-				line := node.text_run.lines[item.line_index]
+			if !backgrounds {
 				if span.underline {
-					append(&node.paint, Display_Command{node.id, .Text_Selection, Rect{bounds.x, node.bounds.y+line.y+line.baseline+1, bounds.w, 1}, command_clip, "", span.color if span.color_set else node.color, []Text_Paint_Span{}})
+					append(&node.paint, Display_Command{node.id, .Text_Selection, Rect{bounds.x, bounds.y+line.baseline+1, bounds.w, 1}, command_clip, "", span.color if span.color_set else node.color, []Text_Paint_Span{}})
 				}
 				if span.strikethrough {
-					append(&node.paint, Display_Command{node.id, .Text_Selection, Rect{bounds.x, node.bounds.y+line.y+line.baseline-node.text_run.size*0.32, bounds.w, 1}, command_clip, "", span.color if span.color_set else node.color, []Text_Paint_Span{}})
+					append(&node.paint, Display_Command{node.id, .Text_Selection, Rect{bounds.x, bounds.y+line.baseline-node.text_run.size*0.32, bounds.w, 1}, command_clip, "", span.color if span.color_set else node.color, []Text_Paint_Span{}})
 				}
 			}
 		}
-		delete(selected)
 	}
 }
 
@@ -301,7 +427,11 @@ update_paint :: proc(rt: ^Runtime) {
 				if node.text_style.overflow != .Wrap {
 					text_clip = rect_intersection(node.clip, node.bounds)
 				}
-				if node.kind == .Text { append_text_paint_geometry(node, text_clip, true, rt.scratch_allocator) }
+				paint_geometry := Text_Paint_Geometry{}
+				if node.kind == .Text && node.text_run_valid && text_paint_geometry_needed(node) {
+					paint_geometry = text_paint_geometry_make(&node.text_run, rt.scratch_allocator)
+				}
+				append_text_paint_geometry(node, &paint_geometry, text_clip, true)
 				if node.kind == .Text && node.text_interaction && node.text_run_valid {
 					selection := text_run_selection_rects(
 						&node.text_run,
@@ -322,7 +452,8 @@ update_paint :: proc(rt: ^Runtime) {
 					delete(selection)
 				}
 				append(&node.paint, Display_Command{node.id, display_kind, node.bounds, text_clip, owned(display_text, rt.persistent_allocator), node.color, node.text_paint_spans[:]})
-				if node.kind == .Text { append_text_paint_geometry(node, text_clip, false, rt.scratch_allocator) }
+				append_text_paint_geometry(node, &paint_geometry, text_clip, false)
+				text_paint_geometry_destroy(&paint_geometry)
 			}
 			if node.kind == .Text && node.text_interaction && node.text_interaction_show_caret && node.text_run_valid {
 				caret := text_node_caret_geometry(rt, node.id, node.text_interaction_focus)
