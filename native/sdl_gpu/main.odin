@@ -9,6 +9,7 @@ import "core:fmt"
 import "core:math"
 import "core:mem"
 import "core:os"
+import "base:runtime"
 import "core:c"
 import "core:strconv"
 import "core:strings"
@@ -465,6 +466,178 @@ read_window_metrics :: proc(window: ^sdl3.Window, metrics: ^Window_Metrics) -> b
 		metrics.pixel_density > 0 && metrics.display_scale > 0
 }
 
+native_live_resize_redraw :: proc(state: ^Native_Live_Resize_State) {
+	if state == nil || !state.active || state.window == nil || state.device == nil || state.rt == nil ||
+		state.application == nil || state.metrics == nil || state.text_renderer == nil ||
+		state.surface_renderer == nil || state.solid_renderer == nil || state.timing == nil ||
+		state.host_scratch == nil || state.in_flight == nil {
+		return
+	}
+	if state.rendering {
+		state.pending = true
+		return
+	}
+	state.rendering = true
+	defer state.rendering = false
+	for pass in 0..<2 {
+		state.pending = false
+		native_live_resize_redraw_once(state)
+		if !state.pending { return }
+	}
+}
+
+native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
+	if state == nil || !state.active { return }
+	frame_start := time.now()
+	native_host_scratch_reset(state.host_scratch)
+
+	current_metrics: Window_Metrics
+	if !read_window_metrics(state.window, &current_metrics) { return }
+	cause_scope := alicorn.cause_begin(state.rt, .Host_Event, "SDL live resize expose")
+	defer alicorn.cause_end(state.rt, cause_scope)
+	cause := cause_scope.cause
+	old_metrics := state.metrics^
+	logical_changed := current_metrics.logical_width != old_metrics.logical_width ||
+	                   current_metrics.logical_height != old_metrics.logical_height
+	scale_changed := current_metrics.pixel_density != old_metrics.pixel_density ||
+	                 current_metrics.display_scale != old_metrics.display_scale
+	state.metrics^ = current_metrics
+	if logical_changed {
+		state.rt.viewport.w = f32(current_metrics.logical_width)
+		state.rt.viewport.h = f32(current_metrics.logical_height)
+		alicorn.invalidate_root(state.rt, "SDL live-resize logical size changed")
+	} else if scale_changed {
+		alicorn.invalidate_root(state.rt, "SDL live-resize display scale changed")
+	}
+	if state.rt.invalidated {
+		stabilization := native_application_build_until_stable(state.application, state.rt, state.metrics, state.timing)
+		if !stabilization.stable { return }
+	}
+	if state.text_input_state != nil {
+		sync_text_input_focus(state.window, state.rt, state.text_input_state, state.application)
+	}
+	if alicorn.presentation_needs_frame(state.rt) {
+		presentation_ui, ready := alicorn.begin_presentation_frame(state.rt)
+		if ready { alicorn.end_presentation_frame(&presentation_ui) }
+	}
+
+	application_submission_pending := alicorn.frame_needs_submission(state.rt)
+	if len(state.in_flight^) >= 2 {
+		if !wait_and_retire_oldest(
+			state.device, state.in_flight,
+			state.query_before_wait_true, state.query_after_wait_true, state.wait_count,
+			state.timing,
+		) {
+			return
+		}
+		if state.retired != nil { state.retired^ += 1 }
+	}
+	command := sdl3.AcquireGPUCommandBuffer(state.device)
+	if command == nil { return }
+	swapchain: ^sdl3.GPUTexture
+	swap_w, swap_h: sdl3.Uint32
+	if !sdl3.AcquireGPUSwapchainTexture(command, state.window, &swapchain, &swap_w, &swap_h) {
+		_ = sdl3.CancelGPUCommandBuffer(command)
+		return
+	}
+	if swapchain == nil || swap_w == 0 || swap_h == 0 {
+		_ = sdl3.CancelGPUCommandBuffer(command)
+		return
+	}
+	state.metrics.pixel_width = int(swap_w)
+	state.metrics.pixel_height = int(swap_h)
+	scale_x := f32(swap_w)/f32(state.metrics.logical_width)
+	scale_y := f32(swap_h)/f32(state.metrics.logical_height)
+	preview_time := u64(sdl3.GetTicksNS())
+	preview := native_devtools_make_sample(
+		state.devtools_cursor, state.rt, state.timing, state.text_events,
+		cause, preview_time, host_wakes=1,
+	)
+	preview.gpu_submissions += 1
+	renderer_metrics_before := native_devtools_renderer_metrics_capture(
+		state.text_renderer, state.surface_renderer, state.solid_renderer,
+	)
+	encode_start := time.now()
+	if !draw_display_list(
+		command, swapchain, swap_w, swap_h,
+		state.text_renderer, state.surface_renderer, state.solid_renderer, state.rt.display[:],
+		scale_x, scale_y,
+		debug_bounds=state.debug_bounds,
+		scratch_allocator=state.host_scratch.allocator,
+	) {
+		_ = sdl3.CancelGPUCommandBuffer(command)
+		fail("SDL live-resize display-list draw failed")
+	}
+	encode_elapsed := u64(time.duration_nanoseconds(time.since(encode_start)))
+	if application_submission_pending { state.timing.application_gpu_encode_ns += encode_elapsed }
+	else { state.timing.devtools_hud_encode_ns += encode_elapsed }
+	hud_start := time.now()
+	if !native_devtools_hud_render(
+		state.devtools_hud, state.solid_renderer, command, swapchain, swap_w, swap_h,
+		scale_x, scale_y,
+		state.devtools_recorder, u64(sdl3.GetTicksNS()), preview,
+		preview_valid=state.devtools_hud != nil && state.devtools_hud.visible,
+		last_invalidation=state.rt.last_invalidation_reason,
+	) {
+		_ = sdl3.CancelGPUCommandBuffer(command)
+		fail("Alicorn DevTools live-resize HUD draw failed")
+	}
+	if !application_submission_pending {
+		native_devtools_renderer_metrics_restore(
+			state.text_renderer, state.surface_renderer, state.solid_renderer,
+			renderer_metrics_before,
+		)
+	}
+	if state.devtools_hud != nil && state.devtools_hud.visible {
+		state.timing.devtools_hud_encode_ns += u64(time.duration_nanoseconds(time.since(hud_start)))
+	}
+	native_timing_accumulate(&state.timing.gpu_encode_ns, &state.timing.gpu_encode_max_ns,
+		u64(time.duration_nanoseconds(time.since(encode_start))))
+	submit_start := time.now()
+	fence := sdl3.SubmitGPUCommandBufferAndAcquireFence(command)
+	native_timing_accumulate(&state.timing.gpu_submit_ns, &state.timing.gpu_submit_max_ns,
+		u64(time.duration_nanoseconds(time.since(submit_start))))
+	if fence == nil { fail("SDL live-resize frame submission failed") }
+	append(state.in_flight, Native_In_Flight{fence})
+	native_text_commit_submission(state.text_renderer)
+	native_surface_commit_submission(state.surface_renderer)
+	if application_submission_pending {
+		alicorn.gpu_surface_frame_consumed(state.rt)
+		alicorn.frame_submission_succeeded(state.rt)
+		state.rt.stats.gpu_submits += 1
+	}
+	if state.submitted != nil { state.submitted^ += 1 }
+	state.timing.gpu_submissions += 1
+	if state.max_in_flight != nil && len(state.in_flight^) > state.max_in_flight^ {
+		state.max_in_flight^ = len(state.in_flight^)
+	}
+	native_timing_add_frame(state.timing, u64(time.duration_nanoseconds(time.since(frame_start))))
+	if state.devtools_recorder != nil && state.devtools_cursor != nil && state.text_events != nil {
+		native_devtools_record_wake(
+			state.devtools_recorder, state.devtools_cursor, state.rt, state.timing, state.text_events,
+			cause, u64(sdl3.GetTicksNS()), 1,
+		)
+	}
+}
+
+native_live_resize_event_watch :: proc "c" (userdata: rawptr, event: ^sdl3.Event) -> bool {
+	// AddEventWatch can run from arbitrary producer threads for most events.
+	// Filter those without touching host state; SDL guarantees live-resize
+	// WINDOW_EXPOSED events arrive on the main thread for direct redraw.
+	if event == nil || event.type != .WINDOW_EXPOSED || event.window.data1 != 1 { return true }
+	state := cast(^Native_Live_Resize_State)userdata
+	if state == nil || !state.active || state.window == nil || event.window.windowID != sdl3.GetWindowID(state.window) {
+		return true
+	}
+	if state.rendering {
+		state.pending = true
+		return true
+	}
+	context = runtime.default_context()
+	native_live_resize_redraw(state)
+	return true
+}
+
 print_window_metrics :: proc(label: string, metrics: Window_Metrics) {
 	fmt.println(
 		"window_metrics", label,
@@ -597,6 +770,39 @@ Native_Text_Input_State :: struct {
 	window_focused: bool,
 	last_area: alicorn.Text_Input_Area,
 	last_area_valid: bool,
+}
+
+// SDL's live-resize expose callback runs while the platform's interactive
+// sizing loop has control. Keep the host references together so that callback
+// can rebuild and submit one current frame without entering the normal event
+// loop recursively.
+Native_Live_Resize_State :: struct {
+	active: bool,
+	rendering: bool,
+	pending: bool,
+	window: ^sdl3.Window,
+	device: ^sdl3.GPUDevice,
+	rt: ^alicorn.Runtime,
+	application: ^Application,
+	metrics: ^Window_Metrics,
+	text_renderer: ^Native_Text_Renderer,
+	surface_renderer: ^Native_Surface_Renderer,
+	solid_renderer: ^Native_Solid_Renderer,
+	text_input_state: ^Native_Text_Input_State,
+	timing: ^Native_Host_Timing,
+	host_scratch: ^Native_Host_Scratch,
+	in_flight: ^[dynamic; 3]Native_In_Flight,
+	retired: ^int,
+	max_in_flight: ^int,
+	query_before_wait_true: ^int,
+	query_after_wait_true: ^int,
+	wait_count: ^int,
+	submitted: ^int,
+	text_events: ^Native_Text_Event_Telemetry,
+	devtools_recorder: ^Native_Flight_Recorder,
+	devtools_cursor: ^Native_DevTools_Cursor,
+	devtools_hud: ^Native_DevTools_HUD,
+	debug_bounds: bool,
 }
 
 native_text_input_owner_is_valid :: proc(rt: ^alicorn.Runtime, id: alicorn.Node_ID) -> bool {
@@ -1886,6 +2092,35 @@ run_application_loop :: proc(
 	_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing)
 	devtools_cursor := native_devtools_cursor_init(rt, &timing, &text_events)
 	sync_text_input_focus(window, rt, &text_input_state, &application_instance)
+	live_resize_state := Native_Live_Resize_State{
+		active=true,
+		window=window,
+		device=device,
+		rt=rt,
+		application=&application_instance,
+		metrics=metrics,
+		text_renderer=text_renderer,
+		surface_renderer=surface_renderer,
+		solid_renderer=solid_renderer,
+		text_input_state=&text_input_state,
+		timing=&timing,
+		host_scratch=&host_scratch,
+		in_flight=&in_flight,
+		retired=&retired,
+		max_in_flight=&max_in_flight,
+		query_before_wait_true=&query_before_wait_true,
+		query_after_wait_true=&query_after_wait_true,
+		wait_count=&wait_count,
+		submitted=&submitted,
+		text_events=&text_events,
+		devtools_recorder=&devtools_recorder,
+		devtools_cursor=&devtools_cursor,
+		devtools_hud=&devtools_hud,
+		debug_bounds=debug_bounds,
+	}
+	if !sdl3.AddEventWatch(native_live_resize_event_watch, rawptr(&live_resize_state)) {
+		fail("SDL live-resize event watch registration failed")
+	}
 
 	last_tick := time.now()
 	last_focus_log := start
@@ -2207,6 +2442,8 @@ run_application_loop :: proc(
 		}
 	}
 
+	live_resize_state.active = false
+	sdl3.RemoveEventWatch(native_live_resize_event_watch, rawptr(&live_resize_state))
 	if !sdl3.WaitForGPUIdle(device) { fail("SDL application GPU idle wait failed") }
 	native_dialog_bridge_shutdown(dialog_bridge)
 	native_cancel_current_text_composition(&application_instance, rt, &text_input_state, "application shutdown")
