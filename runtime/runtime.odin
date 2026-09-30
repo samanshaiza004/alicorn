@@ -145,6 +145,32 @@ Color :: struct {
 	r, g, b, a: f32,
 }
 
+// Text_Paint_Span decorates a half-open UTF-8 byte range in a retained Text
+// run. Foreground/background attributes are independent; later spans win for
+// those attributes when set. Underline and strike are additive. These paint
+// attributes never participate in shaping or layout.
+Text_Paint_Span :: struct {
+	start, end: int,
+	color: Color,
+	color_set: bool,
+	underline: bool,
+	strikethrough: bool,
+	background: Color,
+	background_set: bool,
+}
+
+text_paint_span_has_effect :: proc(span: Text_Paint_Span) -> bool {
+	return span.color_set || span.background_set || span.underline || span.strikethrough
+}
+
+text_paint_color_for_cluster :: proc(spans: []Text_Paint_Span, cluster_start, cluster_end: int, fallback: Color) -> Color {
+	result := fallback
+	for span in spans {
+		if span.color_set && span.start < cluster_end && span.end > cluster_start { result = span.color }
+	}
+	return result
+}
+
 // GPU_Surface_Point is expressed in logical coordinates local to the resolved
 // bounds of its geometry surface.
 GPU_Surface_Point :: struct {
@@ -332,6 +358,7 @@ Display_Command :: struct {
 	clip:   Rect,
 	text:   string,
 	color:  Color,
+	text_paint_spans: []Text_Paint_Span,
 }
 
 Dirty_Stage :: enum {
@@ -388,6 +415,7 @@ Description :: struct {
 	kind:        Node_Kind,
 	label:       string,
 	text:        string,
+	text_paint_spans: []Text_Paint_Span,
 	font:        Font_Role,
 	text_style:  Text_Style,
 	button_content_style: Button_Content_Style,
@@ -463,6 +491,7 @@ Node :: struct {
 	kind:        Node_Kind,
 	label:       string,
 	text:        string,
+	text_paint_spans: [dynamic]Text_Paint_Span,
 	font:        Font_Role,
 	text_style:  Text_Style,
 	button_content_style: Button_Content_Style,
@@ -2236,6 +2265,19 @@ text_interaction :: proc(ui: ^UI, id: Node_ID, anchor, focus: Text_Position, sho
 	item.description.text_interaction_anchor = anchor
 	item.description.text_interaction_focus = focus
 	item.description.text_interaction_show_caret = show_caret
+	return true
+}
+
+// text_paint_spans assigns the ordered span list to the just-emitted Text
+// description. Offsets are half-open UTF-8 byte offsets into its displayed
+// string. Later spans win for foreground and background; underline and strike
+// are additive. The runtime copies the borrowed slice during reconcile.
+text_paint_spans :: proc(ui: ^UI, id: Node_ID, spans: []Text_Paint_Span) -> bool {
+	rt := ui.runtime
+	if rt == nil || !rt.frame_open || id == 0 || len(rt.pending) == 0 { return false }
+	item := &rt.pending[len(rt.pending)-1]
+	if item.kind != .Description || item.description.id != id || item.description.kind != .Text { return false }
+	item.description.text_paint_spans = spans
 	return true
 }
 

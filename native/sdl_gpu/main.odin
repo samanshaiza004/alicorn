@@ -2382,9 +2382,10 @@ RunFoundation :: proc() {
 		}
 	}
 	if text_input_contract_test {
+		if !native_text_paint_span_contract_test() { fail("native text paint-span contract tests failed") }
 		if !native_generic_text_input_contract_test() { fail("generic text-input host contract tests failed") }
 		if !native_generic_text_navigation_contract_test() { fail("generic text-navigation host contract tests failed") }
-		fmt.println("Alicorn generic text-input/navigation host contract: PASS")
+		fmt.println("Alicorn generic text-input/navigation/paint-span host contract: PASS")
 		return
 	}
 	if surface_geometry_test {

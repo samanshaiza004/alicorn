@@ -229,6 +229,77 @@ native_text_hash_color :: proc(h: u64, color: alicorn.Color) -> u64 {
 	return result
 }
 
+native_text_hash_spans :: proc(h: u64, spans: []alicorn.Text_Paint_Span) -> u64 {
+	color_count: u64 = 0
+	for span in spans { if span.color_set { color_count += 1 } }
+	result := native_text_hash_mix(h, color_count)
+	for span in spans {
+		if !span.color_set { continue }
+		result = native_text_hash_mix(result, u64(span.start))
+		result = native_text_hash_mix(result, u64(span.end))
+		result = native_text_hash_color(result, span.color)
+	}
+	return result
+}
+
+// Produce the last matching span index for each UTF-8 byte. Event chains and
+// a max-index segment tree avoid rescanning all spans for every glyph.
+native_text_span_winners :: proc(text: string, spans: []alicorn.Text_Paint_Span, scratch_allocator := context.temp_allocator) -> []int {
+	if len(text) == 0 || len(spans) == 0 { return nil }
+	has_color := false
+	for span in spans { if span.color_set { has_color = true; break } }
+	if !has_color { return nil }
+	byte_count := len(text)
+	start_head := make([]int, byte_count+1, allocator=scratch_allocator)
+	end_head := make([]int, byte_count+1, allocator=scratch_allocator)
+	start_next := make([]int, len(spans), allocator=scratch_allocator)
+	end_next := make([]int, len(spans), allocator=scratch_allocator)
+	for i in 0..=byte_count { start_head[i], end_head[i] = -1, -1 }
+	for i in 0..<len(spans) {
+		start_next[i], end_next[i] = -1, -1
+		start := clamp(spans[i].start, 0, byte_count)
+		end := clamp(spans[i].end, 0, byte_count)
+		if !spans[i].color_set || start >= end { continue }
+		start_next[i] = start_head[start]
+		start_head[start] = i
+		end_next[i] = end_head[end]
+		end_head[end] = i
+	}
+	leaf_count := 1
+	for leaf_count < len(spans) { leaf_count *= 2 }
+	tree := make([]int, leaf_count*2, allocator=scratch_allocator)
+	for i in 0..<len(tree) { tree[i] = -1 }
+	winners := make([]int, byte_count, allocator=scratch_allocator)
+	for byte in 0..<byte_count {
+		for index := end_head[byte]; index >= 0; index = end_next[index] {
+			pos := leaf_count + index
+			tree[pos] = -1
+			for pos /= 2; pos > 0; pos /= 2 { tree[pos] = max(tree[pos*2], tree[pos*2+1]) }
+		}
+		for index := start_head[byte]; index >= 0; index = start_next[index] {
+			pos := leaf_count + index
+			tree[pos] = index
+			for pos /= 2; pos > 0; pos /= 2 { tree[pos] = max(tree[pos*2], tree[pos*2+1]) }
+		}
+		winners[byte] = tree[1]
+	}
+	delete(start_head, scratch_allocator)
+	delete(end_head, scratch_allocator)
+	delete(start_next, scratch_allocator)
+	delete(end_next, scratch_allocator)
+	delete(tree, scratch_allocator)
+	return winners
+}
+
+native_text_color_for_cluster :: proc(spans: []alicorn.Text_Paint_Span, winners: []int, cluster_start, cluster_end: int, fallback: alicorn.Color) -> alicorn.Color {
+	winning_index := -1
+	start := clamp(cluster_start, 0, len(winners))
+	end := clamp(cluster_end, 0, len(winners))
+	for byte in start..<end { winning_index = max(winning_index, winners[byte]) }
+	if winning_index >= 0 && winning_index < len(spans) && spans[winning_index].color_set { return spans[winning_index].color }
+	return fallback
+}
+
 // Runa's mono rasterizer stores the fractional X phase in four quarter-pixel
 // variants. Keep the sampled quad origin on an integer physical pixel so the
 // phase is supplied by the bitmap rather than by fractional texture
@@ -267,6 +338,7 @@ native_text_mesh_fingerprint :: proc(display: []alicorn.Display_Command, scale_x
 		h = native_text_hash_rect(h, command.clip)
 		h = native_text_hash_color(h, command.color)
 		h = native_text_hash_mix(h, native_text_hash_string(command.text))
+		h = native_text_hash_spans(h, command.text_paint_spans)
 	}
 	h = native_text_hash_mix(h, text_index)
 	return h
@@ -306,6 +378,7 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 		}
 		if !node.text_run_valid && command.kind != .Text_Composition { continue }
 		if command.kind == .Text_Composition && !node.composition_run_valid { continue }
+		winners := native_text_span_winners(command.text, command.text_paint_spans, scratch_allocator)
 		for glyph in run.glyphs {
 			// Tabs and unsupported controls retain logical advance/caret geometry
 			// but must never reach the atlas or produce fallback glyphs.
@@ -329,7 +402,8 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 			x1 := x0 + f32(slot_view.Px_Size[0])
 			y1 := y0 + f32(slot_view.Px_Size[1])
 			u0, v0, u1, v1 := slot_view.UV_Rect[0], slot_view.UV_Rect[1], slot_view.UV_Rect[2], slot_view.UV_Rect[3]
-			color := [4]f32{command.color.r, command.color.g, command.color.b, command.color.a}
+			glyph_color := native_text_color_for_cluster(command.text_paint_spans, winners, glyph.cluster_start, glyph.cluster_end, command.color)
+			color := [4]f32{glyph_color.r, glyph_color.g, glyph_color.b, glyph_color.a}
 			first := sdl3.Uint32(len(renderer.vertices))
 			append(&renderer.vertices,
 				Native_Text_Vertex{[3]f32{x0, y0, 0}, color, [2]f32{u0, v0}},
@@ -341,6 +415,7 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 			)
 			append(&renderer.draws, Native_Text_Draw{first, command.node, slot_view.Page_Index, slot_view.Is_Color})
 		}
+		if len(winners) > 0 { delete(winners, scratch_allocator) }
 	}
 	renderer.last_scale_x = scale_x
 	renderer.last_scale_y = scale_y

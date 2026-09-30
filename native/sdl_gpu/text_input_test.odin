@@ -3,6 +3,35 @@ package alicorn_sdl_gpu
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
+native_text_paint_span_contract_test :: proc() -> bool {
+	red := alicorn.Color{1, 0, 0, 1}
+	green := alicorn.Color{0, 1, 0, 1}
+	blue := alicorn.Color{0, 0, 1, 1}
+	spans := []alicorn.Text_Paint_Span{
+		{start=0, end=4, color=red, color_set=true},
+		{start=2, end=5, color=blue, color_set=true},
+		{start=1, end=3, color=green, color_set=true},
+		{start=0, end=6, underline=true},
+	}
+	winners := native_text_span_winners("abcdef", spans)
+	defer delete(winners, context.temp_allocator)
+	if len(winners) != 6 || winners[0] != 0 || winners[1] != 2 || winners[2] != 2 || winners[3] != 1 || winners[4] != 1 || winners[5] != -1 { return false }
+	if native_text_color_for_cluster(spans, winners, 1, 2, alicorn.Color{}) != green ||
+		native_text_color_for_cluster(spans, winners, 3, 4, alicorn.Color{}) != blue ||
+		native_text_color_for_cluster(spans, winners, 5, 6, red) != red ||
+		native_text_color_for_cluster(spans, winners, 1, 4, red) != green ||
+		native_text_color_for_cluster(spans, winners, 1, 4, red) != alicorn.text_paint_color_for_cluster(spans, 1, 4, red) ||
+		native_text_color_for_cluster(spans, winners, 3, 4, red) != alicorn.text_paint_color_for_cluster(spans, 3, 4, red) ||
+		len(native_text_span_winners("abcdef", []alicorn.Text_Paint_Span{{start=0, end=6, underline=true}})) != 0 {
+		return false
+	}
+	unicode_spans := []alicorn.Text_Paint_Span{{start=2, end=4, color=blue, color_set=true}}
+	unicode_winners := native_text_span_winners("Aéfi", unicode_spans)
+	defer delete(unicode_winners, context.temp_allocator)
+	return native_text_color_for_cluster(unicode_spans, unicode_winners, 1, 4, red) == blue &&
+		native_text_color_for_cluster(unicode_spans, unicode_winners, 5, 6, red) == red
+}
+
 Native_Text_Input_Probe :: struct {
 	events: [dynamic]Application_Text_Input_Event,
 	owners: [dynamic]alicorn.Node_ID,

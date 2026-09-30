@@ -457,6 +457,114 @@ render_interactive_text :: proc(
 	return
 }
 
+render_spanned_text :: proc(rt: ^alicorn.Runtime, spans: []alicorn.Text_Paint_Span) -> (id: alicorn.Node_ID, accepted: bool) {
+	alicorn.invalidate_root(rt, "test text paint spans")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="text-paint-spans-root")
+	id = alicorn.text_ex(&ui, "Aébc", S_EXTRA, style=alicorn.layout_style(width=32, height=42), text_style=alicorn.Text_Style{overflow=.Clip})
+	accepted = alicorn.text_paint_spans(&ui, id, spans)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return
+}
+
+render_spanned_text_region :: proc(rt: ^alicorn.Runtime, spans: []alicorn.Text_Paint_Span, revision: u64) -> (id: alicorn.Node_ID, reused: bool, accepted: bool) {
+	alicorn.invalidate_root(rt, "test spanned text region")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="spanned-text-region-root")
+	start := len(rt.pending)
+	region_id, was_reused := alicorn.region_begin(&ui, "spanned-text", revision, S_REGION)
+	reused = was_reused
+	if !was_reused {
+		id = alicorn.text_ex(&ui, "cached", S_EXTRA, style=alicorn.layout_style(width=160, height=36))
+		accepted = alicorn.text_paint_spans(&ui, id, spans)
+	}
+	alicorn.region_end(&ui, region_id, was_reused, start)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return
+}
+
+test_retained_text_paint_spans :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 100})
+	defer alicorn.destroy_runtime(&rt)
+	expect(state, alicorn.text_engine_load_font(&rt.text_engine, TEST_UI_FONT_DATA), "text paint span test font must load")
+	no_spans: []alicorn.Text_Paint_Span
+	id, accepted := render_spanned_text(&rt, no_spans)
+	node := rt.nodes[id]
+	expect(state, accepted && node.text_run_valid, "plain Text must retain its shaped run with no spans")
+	if !node.text_run_valid { return }
+	baseline_generation := node.text_run_generation
+	baseline_width, baseline_height := node.text_run.width, node.text_run.height
+	baseline_glyph_count := len(node.text_run.glyphs)
+	baseline_paint_commands := len(node.paint)
+	probe := alicorn.Text_Position{byte=2, affinity=.Leading}
+	baseline_caret := alicorn.text_run_caret_geometry(&node.text_run, probe)
+	baseline_hit := alicorn.text_run_hit_test(&node.text_run, baseline_caret.rect.x+node.text_run.size*0.2, baseline_caret.rect.y+baseline_caret.rect.h*0.5)
+
+	red := alicorn.Color{0.9, 0.2, 0.1, 1}
+	blue := alicorn.Color{0.1, 0.4, 0.95, 1}
+	spans := []alicorn.Text_Paint_Span{
+		{start=0, end=5, color=red, color_set=true, background=alicorn.Color{0.12, 0.1, 0.2, 1}, background_set=true},
+		{start=2, end=4, color=blue, color_set=true, underline=true, strikethrough=true},
+	}
+	winning_color := alicorn.text_paint_color_for_cluster(spans, 2, 4, alicorn.Color{1, 1, 1, 1})
+	expect(state, winning_color == blue, "overlapping foreground ranges must resolve in input order with the last matching span winning")
+	id, accepted = render_spanned_text(&rt, spans)
+	node = rt.nodes[id]
+	expect(state, accepted && node.text_run_generation == baseline_generation, "span-only updates must retain the same shaped text generation")
+	expect(state, node.text_run.width == baseline_width && node.text_run.height == baseline_height && len(node.text_run.glyphs) == baseline_glyph_count, "paint spans must not change text run size or glyph count")
+	caret := alicorn.text_run_caret_geometry(&node.text_run, probe)
+	hit := alicorn.text_run_hit_test(&node.text_run, baseline_caret.rect.x+node.text_run.size*0.2, baseline_caret.rect.y+baseline_caret.rect.h*0.5)
+	expect(state, caret == baseline_caret && hit == baseline_hit, "paint spans must preserve caret and hit-test geometry")
+	text_commands, background_commands, underline_commands, strike_commands := 0, 0, 0, 0
+	clipped_geometry_seen := false
+	text_snapshot: []alicorn.Text_Paint_Span
+	for command in node.paint {
+		if command.kind == .Text {
+			text_commands += 1
+			text_snapshot = command.text_paint_spans
+		}
+		if command.kind == .Text_Selection {
+			if command.color == spans[0].background { background_commands += 1 }
+			if command.bounds.x+command.bounds.w > command.clip.x+command.clip.w { clipped_geometry_seen = true }
+			if command.color == blue && command.bounds.h == 1 {
+				line := node.text_run.lines[0]
+				if command.bounds.y == node.bounds.y+line.y+line.baseline-node.text_run.size*0.32 { strike_commands += 1 }
+				if command.bounds.y == node.bounds.y+line.y+line.baseline+1 { underline_commands += 1 }
+			}
+			expect(state, command.clip == alicorn.rect_intersection(node.clip, node.bounds), "span backgrounds and decorations must use the clipped text node bounds")
+		}
+	}
+	expect(state, text_commands == 1 && len(text_snapshot) == 2, "display snapshots must retain the ordered span data on the single text command")
+	expect(state, background_commands > 0 && underline_commands > 0 && strike_commands > 0, fmt.tprintf("paint spans must emit clipped background, underline, and strike geometry (bg=%d underline=%d strike=%d)", background_commands, underline_commands, strike_commands))
+	expect(state, clipped_geometry_seen, "span geometry beyond the constrained text node must remain clipped to its command bounds")
+
+	// Non-color, non-decoration ranges are intentionally a visual no-op.
+	disabled_span := []alicorn.Text_Paint_Span{{start=0, end=5}}
+	id, _ = render_spanned_text(&rt, disabled_span)
+	node = rt.nodes[id]
+	decorations := 0
+	for command in node.paint { if command.kind == .Text_Selection { decorations += 1 } }
+	expect(state, decorations == 0 && len(node.paint) == baseline_paint_commands && node.text_run_generation == baseline_generation, "unset span attributes must behave like no spans without reshaping or extra paint commands")
+
+	region_rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 100})
+	defer alicorn.destroy_runtime(&region_rt)
+	expect(state, alicorn.text_engine_load_font(&region_rt.text_engine, TEST_UI_FONT_DATA), "text span region test font must load")
+	owned_source_spans := make([dynamic]alicorn.Text_Paint_Span, 1)
+	owned_source_spans[0] = alicorn.Text_Paint_Span{start=0, end=6, color=red, color_set=true}
+	region_text_id, reused, region_accepted := render_spanned_text_region(&region_rt, owned_source_spans[:], 1)
+	expect(state, region_accepted && !reused, "first region description must accept a text span list")
+	delete(owned_source_spans)
+	region_node := region_rt.nodes[region_text_id]
+	expect(state, len(region_node.text_paint_spans) == 1 && region_node.text_paint_spans[0].color == red, "reconcile must own span data after the caller frees its input slice")
+	_, reused, _ = render_spanned_text_region(&region_rt, no_spans, 1)
+	region_node = region_rt.nodes[region_text_id]
+	expect(state, reused && len(region_node.text_paint_spans) == 1 && region_node.text_paint_spans[0].color == red, "region reuse must retain runtime-owned spans without reading the expired description slice")
+}
+
 render_natural_interactive_text :: proc(
 	rt: ^alicorn.Runtime,
 	value: string,
@@ -3474,6 +3582,7 @@ main :: proc() {
 	test_presentation_submission_lifecycle(&state)
 	test_text_geometry(&state)
 	test_retained_text_interaction(&state)
+	test_retained_text_paint_spans(&state)
 	test_interactive_text_caret_at_end_and_empty_line(&state)
 	test_gpu_text_resource_boundary(&state)
 	test_multiline_text_controls(&state)

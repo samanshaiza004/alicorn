@@ -154,6 +154,32 @@ height.
 - `Text_Style` and `Font_Role` choose text weight, overflow, and UI/monospace
   roles. The native host bundles Atkinson Hyperlegible Next and Mono; font
   notices and file details are in [`assets/fonts/README.md`](../assets/fonts/README.md).
+- `text_paint_spans(ui, id, spans)` decorates the just-described `.Text` node.
+  Each `Text_Paint_Span` uses a half-open UTF-8 byte range (`start`, `end`) in
+  the displayed `Text_Run.value`. Set `color_set` to use `color`; set
+  `background_set` to use `background`; `underline` and `strikethrough` add
+  those decorations. Empty spans clear all span paint on the node. The runtime
+  copies the supplied slice during reconciliation, so its source can be
+  temporary. Span edits repaint the retained run but do not reshape it or
+  change its caret, hit-test, or layout geometry.
+- Overlapping foreground spans use the last matching span in input order.
+  Backgrounds draw in input order, so later backgrounds cover earlier ones;
+  underline and strike are additive. Foreground color applies to a complete
+  shaped glyph cluster when the range touches it. This preserves ligatures and
+  cluster shaping; a span inside a ligature colors that whole glyph. Background
+  and decoration bounds expand to intersecting grapheme geometry and use the
+  text command's clip.
+- Example, immediately after emitting a Text node:
+
+  ```odin
+  id := alicorn.text(&ui, "Save draft")
+  spans := []alicorn.Text_Paint_Span{{
+      start=0, end=4,
+      color=alicorn.Color{0.35, 0.78, 1, 1}, color_set=true,
+      underline=true,
+  }}
+  _ = alicorn.text_paint_spans(&ui, id, spans)
+  ```
 - A generic `text_input_target` receives `Application_Text_Key_Event` values
   whose key is a normalized editing intent (`Word_Left`, `Line_Start`,
   `Document_End`, and so on), not an SDL keycode/modifier combination. The SDL
