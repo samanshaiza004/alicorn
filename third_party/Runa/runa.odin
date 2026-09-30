@@ -227,6 +227,7 @@ Shaped_Glyph :: shape.Shaped_Glyph
 // drawing the glyphs walk left-to-right, level-aware.
 Paragraph_Glyph :: struct {
 	font:      ^Font,
+	style_span: int, // -1 for the paragraph's default font/variation state.
 	glyph_id:  Glyph_ID,
 	cluster:   u32,
 	x_advance: f32,
@@ -250,6 +251,18 @@ Line :: struct {
 // first font that covers each codepoint wins.
 Font_Stack :: distinct []^Font
 
+// Font_Style_Span selects a font face and one optional variation axis over a
+// half-open UTF-8 byte range. Spans must be sorted, non-overlapping, and start
+// and end on codepoint boundaries. A nil font uses the paragraph's normal
+// fallback stack while still applying the requested variation when supported.
+Font_Style_Span :: struct {
+	start, end: int,
+	font: ^Font,
+	variation_tag: Axis_Tag,
+	variation_value: f32,
+	variation_set: bool,
+}
+
 // Feature is a discretionary OpenType feature a caller may switch off per call.
 Feature :: shape.Feature
 
@@ -269,6 +282,7 @@ Paragraph_Opts :: struct {
 	// ligature bits to turn ligatures off (e.g. a code editor). Feeds layout
 	// and measurement alike, so widths match what's drawn.
 	disable_features: bit_set[Feature],
+	font_style_spans: []Font_Style_Span,
 }
 
 // layout_paragraph lays out `text` per `opts`, producing one or more
@@ -289,6 +303,31 @@ Paragraph_Opts :: struct {
 layout_paragraph :: proc(text: string, opts: Paragraph_Opts, cache: ^Cache = nil, allocator := context.allocator) -> (lines: []Line, err: Error) {
 	if len(opts.fonts) == 0 { err = .Invalid_Table; return }
 	if opts.size <= 0       { err = .Invalid_Table; return }
+	last_style_end := 0
+	style_boundary_cursor := 0
+	for span in opts.font_style_spans {
+		if span.start < last_style_end || span.start < 0 || span.start >= span.end || span.end > len(text) {
+			err = .Invalid_Table
+			return
+		}
+		for style_boundary_cursor < span.start {
+			_, byte_len := utf8.decode_rune_in_string(text[style_boundary_cursor:])
+			style_boundary_cursor += byte_len
+		}
+		if style_boundary_cursor != span.start {
+			err = .Invalid_Table
+			return
+		}
+		for style_boundary_cursor < span.end {
+			_, byte_len := utf8.decode_rune_in_string(text[style_boundary_cursor:])
+			style_boundary_cursor += byte_len
+		}
+		if style_boundary_cursor != span.end {
+			err = .Invalid_Table
+			return
+		}
+		last_style_end = span.end
+	}
 
 	// Resolve paragraph direction. `Auto` (the default) runs the
 	// UAX #9 P2/P3 first-strong-character heuristic; `LTR`/`RTL`
@@ -324,11 +363,14 @@ layout_paragraph :: proc(text: string, opts: Paragraph_Opts, cache: ^Cache = nil
 		text_start:  int,
 		text_end:    int,
 		script:      itemize.Script_Code,
+		style_span: int,
 	}
 	runs := make([dynamic]Run, 0, 4, context.temp_allocator)
 
 	cur_font:    ^Font
 	cur_script:  itemize.Script_Code = itemize.COMMON
+	cur_style_span := -1
+	style_cursor := 0
 	run_start := 0
 	// Walk codepoints via the actual UTF-8 decoder rather than `for r
 	// in text`. The shortcut form was paired with `utf8_byte_len(r)`
@@ -345,7 +387,18 @@ layout_paragraph :: proc(text: string, opts: Paragraph_Opts, cache: ^Cache = nil
 	byte_off := 0
 	for byte_off < len(text) {
 		r, byte_len := utf8.decode_rune_in_string(text[byte_off:])
+		for style_cursor < len(opts.font_style_spans) && byte_off >= opts.font_style_spans[style_cursor].end {
+			style_cursor += 1
+		}
+		style_idx := -1
+		if style_cursor < len(opts.font_style_spans) {
+			candidate := opts.font_style_spans[style_cursor]
+			if byte_off >= candidate.start && byte_off < candidate.end { style_idx = style_cursor }
+		}
 		picked := pick_font_for_rune(opts.fonts, r)
+		if style_idx >= 0 && opts.font_style_spans[style_idx].font != nil && font_lookup_glyph(opts.font_style_spans[style_idx].font, r) != 0 {
+			picked = opts.font_style_spans[style_idx].font
+		}
 		raw_script := itemize.script_of(r)
 		// UAX #24 resolution: Common / Inherited fold into the
 		// surrounding run. They only "set" the script if no real
@@ -356,16 +409,17 @@ layout_paragraph :: proc(text: string, opts: Paragraph_Opts, cache: ^Cache = nil
 		} else if cur_font == nil {
 			next_script = raw_script
 		}
-		if cur_font != nil && (picked != cur_font || next_script != cur_script) {
-			append(&runs, Run{font = cur_font, text_start = run_start, text_end = byte_off, script = cur_script})
+		if cur_font != nil && (picked != cur_font || next_script != cur_script || style_idx != cur_style_span) {
+			append(&runs, Run{font = cur_font, text_start = run_start, text_end = byte_off, script = cur_script, style_span = cur_style_span})
 			run_start = byte_off
 		}
 		cur_font   = picked
 		cur_script = next_script
+		cur_style_span = style_idx
 		byte_off += byte_len
 	}
 	if cur_font != nil {
-		append(&runs, Run{font = cur_font, text_start = run_start, text_end = byte_off, script = cur_script})
+		append(&runs, Run{font = cur_font, text_start = run_start, text_end = byte_off, script = cur_script, style_span = cur_style_span})
 	}
 
 	// Shape each run and concatenate. With a non-nil cache, runs hit
@@ -374,10 +428,32 @@ layout_paragraph :: proc(text: string, opts: Paragraph_Opts, cache: ^Cache = nil
 	// iteration.
 	all_glyphs := make([dynamic]Paragraph_Glyph, 0, 32, allocator)
 	tmp_shape  := make([dynamic]Shaped_Glyph, 0, 32, context.temp_allocator)
+	max_height: f32 = 0
+	max_baseline: f32 = 0
 
 	for run in runs {
 		run_text := text[run.text_start:run.text_end]
 		ot_script_tag := opentype_script_tag(run.script)
+		variation_index := -1
+		previous_variation: f32
+		if run.style_span >= 0 {
+			style := opts.font_style_spans[run.style_span]
+			if style.variation_set {
+				for axis, i in run.font._fvar.axes {
+					if Axis_Tag(axis.tag) == style.variation_tag {
+						variation_index = i
+						previous_variation = run.font._axis_values[i]
+						break
+					}
+				}
+				_ = font_set_variation(run.font, style.variation_tag, style.variation_value)
+			}
+		}
+		run_scale := opts.size / f32(run.font.units_per_em)
+		run_height := (run.font.ascent - run.font.descent + run.font.line_gap) * run_scale
+		run_baseline := run.font.ascent * run_scale
+		if run_height > max_height { max_height = run_height }
+		if run_baseline > max_baseline { max_baseline = run_baseline }
 		shaped: []Shaped_Glyph
 		if cache != nil {
 			shaped = shape_text_cached(run.font, run_text, opts.size, cache, ot_script_tag, disable_features = opts.disable_features)
@@ -397,6 +473,7 @@ layout_paragraph :: proc(text: string, opts: Paragraph_Opts, cache: ^Cache = nil
 			}
 			append(&all_glyphs, Paragraph_Glyph{
 				font      = run.font,
+				style_span = run.style_span,
 				glyph_id  = sg.glyph_id,
 				cluster   = absolute_cluster,
 				x_advance = sg.x_advance,
@@ -406,12 +483,15 @@ layout_paragraph :: proc(text: string, opts: Paragraph_Opts, cache: ^Cache = nil
 				level     = level,
 			})
 		}
+		if variation_index >= 0 {
+			run.font._axis_values[variation_index] = previous_variation
+			apply_mvar_metrics(run.font)
+		}
 	}
 
-	// Compute line height from the tallest font in the stack.
+	// Include default-stack faces and every actual style-selected run face.
+	// An italic face or variable instance can have different vertical metrics.
 	scale_factor :: proc(f: ^Font, size: f32) -> f32 { return size / f32(f.units_per_em) }
-	max_height: f32 = 0
-	max_baseline: f32 = 0
 	for f in opts.fonts {
 		s := scale_factor(f, opts.size)
 		h := (f.ascent - f.descent + f.line_gap) * s

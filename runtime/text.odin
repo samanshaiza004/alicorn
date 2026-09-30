@@ -33,12 +33,18 @@ Text_Engine :: struct {
 	font_data:            []u8,
 	font:                 runa.Font,
 	font_weight_axis:     Font_Weight_Axis,
+	italic_font_data:     []u8,
+	italic_font:          runa.Font,
+	italic_font_weight_axis: Font_Weight_Axis,
 	fallback_font_data:   []u8,
 	fallback_font:        runa.Font,
 	fallback_font_weight_axis: Font_Weight_Axis,
 	monospace_font_data: []u8,
 	monospace_font:       runa.Font,
 	monospace_font_weight_axis: Font_Weight_Axis,
+	monospace_italic_font_data: []u8,
+	monospace_italic_font: runa.Font,
+	monospace_italic_font_weight_axis: Font_Weight_Axis,
 	monospace_fallback_font_data: []u8,
 	monospace_fallback_font:      runa.Font,
 	monospace_fallback_font_weight_axis: Font_Weight_Axis,
@@ -47,6 +53,8 @@ Text_Engine :: struct {
 	fallback_font_loaded: bool,
 	monospace_font_loaded: bool,
 	monospace_fallback_font_loaded: bool,
+	italic_font_loaded:    bool,
+	monospace_italic_font_loaded: bool,
 	cache_initialized:    bool,
 	font_generation:      u64,
 	atlas:                 runa.Atlas,
@@ -68,6 +76,7 @@ Glyph_Resource_Key :: struct {
 	font:           Font_Role,
 	font_source:    Text_Font_Source,
 	font_weight_bits: u32,
+	italic:         bool,
 	glyph_id:        runa.Glyph_ID,
 	size_bits:       u32,
 	subpixel_bucket: u8,
@@ -88,6 +97,8 @@ Text_Glyph :: struct {
 	level:          u8,
 	// Control whitespace keeps layout/editor geometry but is skipped by raster.
 	control_advance: bool,
+	font_weight: f32,
+	italic: bool,
 }
 
 Text_Source_Kind :: enum {
@@ -181,6 +192,7 @@ Text_Run :: struct {
 	font:           Font_Role,
 	font_source:    Text_Font_Source,
 	font_weight:    f32,
+	style_hash:     u64,
 	overflow:       Text_Overflow,
 	ligatures_disabled: bool,
 	allocator:      mem.Allocator,
@@ -205,6 +217,19 @@ text_engine_font :: proc(engine: ^Text_Engine, role: Font_Role) -> (font: ^runa.
 		return &engine.monospace_font, true
 	}
 	return &engine.font, engine.font_loaded
+}
+
+text_engine_italic_font :: proc(engine: ^Text_Engine, role: Font_Role, source: Text_Font_Source) -> (font: ^runa.Font, loaded: bool) {
+	if source == .Fallback { return nil, false }
+	if role == .Monospace {
+		return &engine.monospace_italic_font, engine.monospace_italic_font_loaded
+	}
+	return &engine.italic_font, engine.italic_font_loaded
+}
+
+text_engine_font_is_italic :: proc(engine: ^Text_Engine, role: Font_Role, source: Text_Font_Source, font: ^runa.Font) -> bool {
+	italic_font, loaded := text_engine_italic_font(engine, role, source)
+	return loaded && font == italic_font
 }
 
 effective_font_weight :: proc(weight: f32) -> f32 {
@@ -259,6 +284,30 @@ text_engine_font_for_source :: proc(engine: ^Text_Engine, role: Font_Role, sourc
 	return text_engine_font(engine, role)
 }
 
+text_engine_font_for_glyph :: proc(engine: ^Text_Engine, role: Font_Role, source: Text_Font_Source, italic: bool) -> (font: ^runa.Font, loaded: bool) {
+	if italic {
+		if font, ok := text_engine_italic_font(engine, role, source); ok { return font, true }
+	}
+	return text_engine_font_for_source(engine, role, source)
+}
+
+text_engine_weight_axis_for_glyph :: proc(engine: ^Text_Engine, role: Font_Role, source: Text_Font_Source, italic: bool) -> Font_Weight_Axis {
+	if italic && source == .Primary {
+		if role == .Monospace { return engine.monospace_italic_font_weight_axis }
+		return engine.italic_font_weight_axis
+	}
+	return text_engine_weight_axis(engine, role, source)
+}
+
+text_engine_resolve_font_weight :: proc(engine: ^Text_Engine, role: Font_Role, source: Text_Font_Source, italic: bool, weight: f32) -> f32 {
+	axis := text_engine_weight_axis_for_glyph(engine, role, source, italic)
+	if !axis.available { return FONT_WEIGHT_REGULAR }
+	resolved := effective_font_weight(weight)
+	if resolved < axis.min_value { resolved = axis.min_value }
+	if resolved > axis.max_value { resolved = axis.max_value }
+	return resolved
+}
+
 // Use a platform/application fallback face for a run if the primary face is
 // missing any codepoint that the fallback can render. Keeping each run on one
 // face avoids losing face identity in retained glyph geometry; mixed-face
@@ -302,6 +351,13 @@ text_engine_load_font_role :: proc(engine: ^Text_Engine, role: Font_Role, data: 
 	text_engine_reset_font_resources(engine)
 	switch role {
 	case .UI:
+		if engine.italic_font_loaded {
+			runa.font_destroy(&engine.italic_font)
+			delete(engine.italic_font_data, engine.allocator)
+			engine.italic_font = runa.Font{}
+			engine.italic_font_data = nil
+			engine.italic_font_loaded = false
+		}
 		if engine.font_loaded { runa.font_destroy(&engine.font) }
 		delete(engine.font_data, engine.allocator)
 		engine.font_data = copy_data
@@ -309,12 +365,54 @@ text_engine_load_font_role :: proc(engine: ^Text_Engine, role: Font_Role, data: 
 		engine.font_weight_axis = weight_axis
 		engine.font_loaded = true
 	case .Monospace:
+		if engine.monospace_italic_font_loaded {
+			runa.font_destroy(&engine.monospace_italic_font)
+			delete(engine.monospace_italic_font_data, engine.allocator)
+			engine.monospace_italic_font = runa.Font{}
+			engine.monospace_italic_font_data = nil
+			engine.monospace_italic_font_loaded = false
+		}
 		if engine.monospace_font_loaded { runa.font_destroy(&engine.monospace_font) }
 		delete(engine.monospace_font_data, engine.allocator)
 		engine.monospace_font_data = copy_data
 		engine.monospace_font = font
 		engine.monospace_font_weight_axis = weight_axis
 		engine.monospace_font_loaded = true
+	}
+	engine.font_generation += 1
+	engine.available = true
+	return true
+}
+
+// text_engine_load_italic_font_role installs an authentic italic face matching
+// a role. Italic is a separate face in the bundled Atkinson families, not a
+// synthetic shear. A missing optional italic face leaves that text upright.
+text_engine_load_italic_font_role :: proc(engine: ^Text_Engine, role: Font_Role, data: []u8) -> bool {
+	if len(data) == 0 { return false }
+	copy_data := make([]u8, len(data), engine.allocator)
+	copy(copy_data, data)
+	font, err := runa.font_load(copy_data, engine.allocator)
+	if err != .None {
+		delete(copy_data, engine.allocator)
+		return false
+	}
+	weight_axis := text_engine_weight_axis_for_font(&font)
+	text_engine_reset_font_resources(engine)
+	switch role {
+	case .UI:
+		if engine.italic_font_loaded { runa.font_destroy(&engine.italic_font) }
+		delete(engine.italic_font_data, engine.allocator)
+		engine.italic_font_data = copy_data
+		engine.italic_font = font
+		engine.italic_font_weight_axis = weight_axis
+		engine.italic_font_loaded = true
+	case .Monospace:
+		if engine.monospace_italic_font_loaded { runa.font_destroy(&engine.monospace_italic_font) }
+		delete(engine.monospace_italic_font_data, engine.allocator)
+		engine.monospace_italic_font_data = copy_data
+		engine.monospace_italic_font = font
+		engine.monospace_italic_font_weight_axis = weight_axis
+		engine.monospace_italic_font_loaded = true
 	}
 	engine.font_generation += 1
 	engine.available = true
@@ -369,9 +467,11 @@ text_engine_destroy :: proc(engine: ^Text_Engine) {
 	if engine.font_loaded {
 		runa.font_destroy(&engine.font)
 	}
+	if engine.italic_font_loaded { runa.font_destroy(&engine.italic_font) }
 	if engine.monospace_font_loaded {
 		runa.font_destroy(&engine.monospace_font)
 	}
+	if engine.monospace_italic_font_loaded { runa.font_destroy(&engine.monospace_italic_font) }
 	if engine.fallback_font_loaded {
 		runa.font_destroy(&engine.fallback_font)
 	}
@@ -379,23 +479,26 @@ text_engine_destroy :: proc(engine: ^Text_Engine) {
 		runa.font_destroy(&engine.monospace_fallback_font)
 	}
 	delete(engine.font_data, engine.allocator)
+	delete(engine.italic_font_data, engine.allocator)
 	delete(engine.fallback_font_data, engine.allocator)
 	delete(engine.monospace_font_data, engine.allocator)
+	delete(engine.monospace_italic_font_data, engine.allocator)
 	delete(engine.monospace_fallback_font_data, engine.allocator)
 	if len(engine.name) > 0 { delete(engine.name, engine.allocator) }
 	engine^ = {}
 }
 
-text_engine_glyph :: proc(engine: ^Text_Engine, glyph_id: runa.Glyph_ID, size: f32, subpixel_bucket: u8 = 0, hint: bool = true, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI, font_source := Text_Font_Source.Primary, font_weight: f32 = FONT_WEIGHT_REGULAR) -> (slot: runa.Atlas_Slot, drawable, ok: bool) {
-	font, loaded := text_engine_font_for_source(engine, font_role, font_source)
+text_engine_glyph :: proc(engine: ^Text_Engine, glyph_id: runa.Glyph_ID, size: f32, subpixel_bucket: u8 = 0, hint: bool = true, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI, font_source := Text_Font_Source.Primary, font_weight: f32 = FONT_WEIGHT_REGULAR, italic := false) -> (slot: runa.Atlas_Slot, drawable, ok: bool) {
+	font, loaded := text_engine_font_for_glyph(engine, font_role, font_source, italic)
 	if !loaded || size <= 0 { return }
-	weight := effective_font_weight(font_weight)
+	weight := text_engine_resolve_font_weight(engine, font_role, font_source, italic, font_weight)
 	is_color := runa.font_has_color_layers(font, glyph_id)
 	key := Glyph_Resource_Key{
 		font_generation = engine.font_generation,
 		font = font_role,
 		font_source = font_source,
 		font_weight_bits = transmute(u32)weight,
+		italic = italic,
 		glyph_id = glyph_id,
 		size_bits = transmute(u32)size,
 		subpixel_bucket = subpixel_bucket & 3,
@@ -410,7 +513,7 @@ text_engine_glyph :: proc(engine: ^Text_Engine, glyph_id: runa.Glyph_ID, size: f
 	err: runa.Error
 	previous_temp_allocator := context.temp_allocator
 	context.temp_allocator = scratch_allocator
-	_ = text_engine_apply_font_weight(font, text_engine_weight_axis(engine, font_role, font_source), weight)
+	_ = text_engine_apply_font_weight(font, text_engine_weight_axis_for_glyph(engine, font_role, font_source, italic), weight)
 	defer { runa.font_reset_variations(font) }
 	slot, err = runa.raster_glyph(font, glyph_id, size, key.subpixel_bucket, &engine.atlas, allocator=engine.allocator, hint=hint)
 	context.temp_allocator = previous_temp_allocator
@@ -544,6 +647,160 @@ text_source_range_for_output :: proc(spans: []Text_Source_Span, output_start, ou
 	return
 }
 
+text_style_source_to_output :: proc(source_spans: []Text_Source_Span, source_byte, source_length: int, trailing: bool) -> int {
+	position := clamp(source_byte, 0, source_length)
+	if len(source_spans) == 0 { return position }
+	lo, hi := 0, len(source_spans)
+	for lo < hi {
+		mid := (lo+hi)/2
+		if source_spans[mid].source_end < position { lo = mid+1 } else { hi = mid }
+	}
+	if lo >= len(source_spans) { return source_spans[len(source_spans)-1].output_end }
+	span := source_spans[lo]
+	if position <= span.source_start { return span.output_start }
+	if position >= span.source_end { return span.output_end }
+	if trailing { return span.output_end }
+	return span.output_start
+}
+
+text_style_grapheme_bound :: proc(boundaries: []int, value_length, byte: int, trailing: bool) -> int {
+	position := clamp(byte, 0, value_length)
+	lo, hi := 0, len(boundaries)
+	for lo < hi {
+		mid := (lo+hi)/2
+		if boundaries[mid] < position { lo = mid+1 } else { hi = mid }
+	}
+	if lo < len(boundaries) && boundaries[lo] == position { return position }
+	if trailing {
+		if lo < len(boundaries) { return boundaries[lo] }
+		return value_length
+	}
+	if lo > 0 { return boundaries[lo-1] }
+	return 0
+}
+
+text_style_tree_set :: proc(tree: []int, leaf_count, index, value: int) {
+	position := leaf_count+index
+	tree[position] = value
+	for position /= 2; position > 0; position /= 2 {
+		tree[position] = max(tree[position*2], tree[position*2+1])
+	}
+}
+
+// Convert potentially nested application style ranges into ordered, disjoint
+// Runa font spans. Start/end event chains and max-index trees preserve the
+// documented last-setter-wins rule in O(bytes + spans log spans) work.
+text_style_font_run_append :: proc(out: ^[dynamic]runa.Font_Style_Span, start, end: int, weight, base_weight: f32, italic: bool, italic_face: ^runa.Font) {
+	if start >= end || (!italic && weight == base_weight) { return }
+	font := italic_face if italic else nil
+	if len(out^) > 0 {
+		last := &out^[len(out^)-1]
+		if last.end == start && last.font == font && last.variation_value == weight {
+			last.end = end
+			return
+		}
+	}
+	append(out, runa.Font_Style_Span{
+		start=start, end=end, font=font,
+		variation_tag=FONT_WEIGHT_AXIS_TAG, variation_value=weight, variation_set=true,
+	})
+}
+
+text_style_spans_for_run :: proc(
+	engine: ^Text_Engine,
+	value: string,
+	source_spans: []Text_Source_Span,
+	source_length: int,
+	spans: []Text_Style_Span,
+	font_role: Font_Role,
+	font_source: Text_Font_Source,
+	base_weight: f32,
+	scratch_allocator: mem.Allocator,
+) -> [dynamic]runa.Font_Style_Span {
+	result := make([dynamic]runa.Font_Style_Span, 0, min(len(spans), 16), scratch_allocator)
+	if len(value) == 0 || len(spans) == 0 { return result }
+	boundaries := make([dynamic]int, 0, len(value)+1, scratch_allocator)
+	append(&boundaries, 0)
+	iter := runa.grapheme_iter_make(value)
+	for {
+		_, end, found := runa.grapheme_iter_next(&iter)
+		if !found { break }
+		append(&boundaries, end)
+	}
+	if boundaries[len(boundaries)-1] != len(value) { append(&boundaries, len(value)) }
+	defer { delete(boundaries) }
+
+	byte_count := len(value)
+	start_head := make([]int, byte_count+1, scratch_allocator)
+	end_head := make([]int, byte_count+1, scratch_allocator)
+	start_next := make([]int, len(spans), scratch_allocator)
+	end_next := make([]int, len(spans), scratch_allocator)
+	defer {
+		delete(start_head, scratch_allocator)
+		delete(end_head, scratch_allocator)
+		delete(start_next, scratch_allocator)
+		delete(end_next, scratch_allocator)
+	}
+	for i in 0..=byte_count { start_head[i], end_head[i] = -1, -1 }
+	for i in 0..<len(spans) { start_next[i], end_next[i] = -1, -1 }
+	leaf_count := 1
+	for leaf_count < len(spans) { leaf_count *= 2 }
+	weight_tree := make([]int, leaf_count*2, scratch_allocator)
+	italic_tree := make([]int, leaf_count*2, scratch_allocator)
+	defer {
+		delete(weight_tree, scratch_allocator)
+		delete(italic_tree, scratch_allocator)
+	}
+	for i in 0..<len(weight_tree) { weight_tree[i], italic_tree[i] = -1, -1 }
+	for span, i in spans {
+		if !text_style_span_has_effect(span) { continue }
+		start := text_style_source_to_output(source_spans, span.start, source_length, false)
+		end := text_style_source_to_output(source_spans, span.end, source_length, true)
+		start = text_style_grapheme_bound(boundaries[:], byte_count, start, false)
+		end = text_style_grapheme_bound(boundaries[:], byte_count, end, true)
+		start, end = clamp(start, 0, byte_count), clamp(end, 0, byte_count)
+		if start >= end { continue }
+		start_next[i] = start_head[start]
+		start_head[start] = i
+		end_next[i] = end_head[end]
+		end_head[end] = i
+	}
+	italic_font: ^runa.Font
+	if font_source == .Primary {
+		font, loaded := text_engine_italic_font(engine, font_role, font_source)
+		if loaded { italic_font = font }
+	}
+	current_start := -1
+	current_end := -1
+	current_weight := base_weight
+	current_italic := false
+	for position in 0..<byte_count {
+		for index := end_head[position]; index >= 0; index = end_next[index] {
+			span := spans[index]
+			if span.font_weight_set { text_style_tree_set(weight_tree[:], leaf_count, index, -1) }
+			if span.italic_set { text_style_tree_set(italic_tree[:], leaf_count, index, -1) }
+		}
+		for index := start_head[position]; index >= 0; index = start_next[index] {
+			span := spans[index]
+			if span.font_weight_set { text_style_tree_set(weight_tree[:], leaf_count, index, index) }
+			if span.italic_set { text_style_tree_set(italic_tree[:], leaf_count, index, index) }
+		}
+		weight_index, italic_index := weight_tree[1], italic_tree[1]
+		weight := base_weight
+		if weight_index >= 0 { weight = effective_font_weight(spans[weight_index].font_weight) }
+		italic := italic_index >= 0 && spans[italic_index].italic
+		weight = text_engine_resolve_font_weight(engine, font_role, font_source, italic, weight)
+		boundary := position == 0 || weight != current_weight || italic != current_italic
+		if boundary {
+			text_style_font_run_append(&result, current_start, position, current_weight, base_weight, current_italic, italic_font)
+			current_start, current_weight, current_italic = position, weight, italic
+		}
+		current_end = position+1
+	}
+	text_style_font_run_append(&result, current_start, current_end, current_weight, base_weight, current_italic, italic_font)
+	return result
+}
+
 text_tab_advance :: proc(line_x, space_advance: f32) -> f32 {
 	stop := space_advance * f32(TEXT_TAB_WIDTH_SPACES)
 	if stop <= 0 { return space_advance }
@@ -561,11 +818,11 @@ text_tab_advance :: proc(line_x, space_advance: f32) -> f32 {
 // size. Physical glyph rasterization is deliberately deferred to the native
 // renderer so a window can move between DPI scales without changing logical
 // layout.
-text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, editable: bool = false, allocator := context.allocator, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI, font_weight: f32 = FONT_WEIGHT_REGULAR, overflow := Text_Overflow.Wrap) -> (run: Text_Run, ok: bool) {
+text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, editable: bool = false, allocator := context.allocator, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI, font_weight: f32 = FONT_WEIGHT_REGULAR, overflow := Text_Overflow.Wrap, text_style_spans: []Text_Style_Span = nil) -> (run: Text_Run, ok: bool) {
 	font_source := text_engine_choose_font_source(engine, font_role, value)
 	font, font_loaded := text_engine_font_for_source(engine, font_role, font_source)
 	if !font_loaded || size <= 0 { return }
-	resolved_font_weight := effective_font_weight(font_weight)
+	resolved_font_weight := text_engine_resolve_font_weight(engine, font_role, font_source, false, font_weight)
 	_ = text_engine_apply_font_weight(font, text_engine_weight_axis(engine, font_role, font_source), resolved_font_weight)
 	defer { runa.font_reset_variations(font) }
 	stack := runa.Font_Stack{font}
@@ -580,8 +837,14 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 	opts := runa.Paragraph_Opts{fonts=stack, size=size, direction=.Auto, align=.Start, max_width=wrap_width, disable_features=disable_features}
 	normalized_value, source_spans := text_normalize_controls(value, scratch_allocator)
 	defer { delete(source_spans) }
+	resolved_style_spans := text_style_spans_for_run(
+		engine, normalized_value, source_spans[:], len(value), text_style_spans,
+		font_role, font_source, resolved_font_weight, scratch_allocator,
+	)
+	defer { delete(resolved_style_spans) }
 	previous_temp_allocator := context.temp_allocator
 	context.temp_allocator = scratch_allocator
+	opts.font_style_spans = resolved_style_spans[:]
 	lines, err := runa.layout_paragraph(normalized_value, opts, &engine.cache, allocator=allocator)
 	context.temp_allocator = previous_temp_allocator
 	if err != .None { return }
@@ -600,6 +863,7 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 	run.font = font_role
 	run.font_source = font_source
 	run.font_weight = resolved_font_weight
+	run.style_hash = hash_text_style_spans(text_style_spans)
 	run.overflow = overflow
 	run.ligatures_disabled = editable
 	run.allocator = allocator
@@ -629,6 +893,14 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 			output_start := int(glyph.cluster)
 			output_end := text_cluster_end(output_start, cluster_starts[:], len(normalized_value))
 			cluster_start, cluster_end, control_advance, tab := text_source_range_for_output(source_spans[:], output_start, output_end, len(value))
+			glyph_weight := resolved_font_weight
+			if glyph.style_span >= 0 && glyph.style_span < len(resolved_style_spans) {
+				glyph_style := resolved_style_spans[glyph.style_span]
+				if glyph_style.variation_set && glyph_style.variation_tag == FONT_WEIGHT_AXIS_TAG {
+					glyph_weight = effective_font_weight(glyph_style.variation_value)
+				}
+			}
+			glyph_italic := text_engine_font_is_italic(engine, font_role, font_source, glyph.font)
 			if cluster_start < line_byte_start { line_byte_start = cluster_start }
 			if cluster_end > line_byte_end { line_byte_end = cluster_end }
 			advance := glyph.x_advance
@@ -646,6 +918,8 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 				line_index=line_index,
 				level=glyph.level,
 				control_advance=control_advance,
+				font_weight=glyph_weight,
+				italic=glyph_italic,
 			})
 			pen_x += advance
 		}
@@ -696,6 +970,18 @@ text_ellipsis_candidate :: proc(value: string, prefix_end: int, allocator: mem.A
 	return string(bytes)
 }
 
+text_style_spans_prefix :: proc(spans: []Text_Style_Span, prefix_end: int, allocator: mem.Allocator) -> [dynamic]Text_Style_Span {
+	result := make([dynamic]Text_Style_Span, 0, min(len(spans), 16), allocator)
+	for span in spans {
+		if span.start >= prefix_end { continue }
+		clipped := span
+		clipped.start = max(span.start, 0)
+		clipped.end = min(span.end, prefix_end)
+		if clipped.start < clipped.end && text_style_span_has_effect(clipped) { append(&result, clipped) }
+	}
+	return result
+}
+
 text_ellipsis_candidate_fits :: proc(
 	engine: ^Text_Engine,
 	value: string,
@@ -705,9 +991,12 @@ text_ellipsis_candidate_fits :: proc(
 	font_weight: f32,
 	scratch_allocator: mem.Allocator,
 	editable: bool = false,
+	text_style_spans: []Text_Style_Span = nil,
 ) -> bool {
 	candidate := text_ellipsis_candidate(value, prefix_end, scratch_allocator)
 	defer { delete(candidate, scratch_allocator) }
+	candidate_styles := text_style_spans_prefix(text_style_spans, prefix_end, scratch_allocator)
+	defer { delete(candidate_styles) }
 	run, ok := text_run_build(
 		engine, candidate, size,
 		editable=editable,
@@ -716,6 +1005,7 @@ text_ellipsis_candidate_fits :: proc(
 		font_role=font_role,
 		font_weight=font_weight,
 		overflow=.Clip,
+		text_style_spans=candidate_styles[:],
 	)
 	if !ok { return false }
 	fits := run.width <= max_width
@@ -733,6 +1023,7 @@ text_run_build_with_overflow :: proc(
 	font_weight: f32,
 	overflow: Text_Overflow,
 	editable: bool = false,
+	text_style_spans: []Text_Style_Span = nil,
 ) -> (run: Text_Run, ok: bool) {
 	if overflow != .Ellipsis {
 		return text_run_build(
@@ -743,6 +1034,7 @@ text_run_build_with_overflow :: proc(
 			font_role=font_role,
 			font_weight=font_weight,
 			overflow=overflow,
+			text_style_spans=text_style_spans,
 		)
 	}
 
@@ -755,6 +1047,8 @@ text_run_build_with_overflow :: proc(
 		}
 	}
 	line_value := value[:line_end]
+	line_styles := text_style_spans_prefix(text_style_spans, line_end, scratch_allocator)
+	defer { delete(line_styles) }
 	full, full_ok := text_run_build(
 		engine, line_value, size, max_width,
 		editable=editable,
@@ -763,10 +1057,12 @@ text_run_build_with_overflow :: proc(
 		font_role=font_role,
 		font_weight=font_weight,
 		overflow=.Clip,
+		text_style_spans=line_styles[:],
 	)
 	if !full_ok { return }
 	if line_end == len(value) && (max_width <= 0 || full.width <= max_width) {
 		full.overflow = .Ellipsis
+		full.style_hash = hash_text_style_spans(text_style_spans)
 		return full, true
 	}
 	text_run_destroy(&full)
@@ -792,6 +1088,7 @@ text_run_build_with_overflow :: proc(
 		if text_ellipsis_candidate_fits(
 			engine, line_value, ends[mid], max_width, size,
 			font_role, font_weight, scratch_allocator, editable,
+			line_styles[:],
 		) {
 			best = mid
 			low = mid
@@ -810,9 +1107,11 @@ text_run_build_with_overflow :: proc(
 		font_role=font_role,
 		font_weight=font_weight,
 		overflow=.Clip,
+		text_style_spans=line_styles[:],
 	)
 	if !ok { return }
 	run.overflow = .Ellipsis
+	run.style_hash = hash_text_style_spans(text_style_spans)
 	source_copy, err := strings.clone(value, allocator)
 	if err != nil {
 		text_run_destroy(&run)
@@ -854,6 +1153,7 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 	}
 	requested_width := max_width
 	font_weight := effective_font_weight(node.text_style.font_weight)
+	style_hash := hash_text_style_spans(node.text_style_spans[:])
 	if requested_width < 0 {
 		// For auto-width text, the parent layout pass owns the real wrapping
 		// constraint. Once that pass has produced a valid run, do not rebuild it
@@ -861,6 +1161,7 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 		if node.style.width <= 0 && node.text_run_valid &&
 			node.text_run.font_generation == rt.text_engine.font_generation &&
 			node.text_run.font_weight == font_weight &&
+			node.text_run.style_hash == style_hash &&
 			node.text_run.overflow == text_overflow {
 			return false
 		}
@@ -871,6 +1172,7 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 		node.text_run.font_generation == rt.text_engine.font_generation &&
 		node.text_run.max_width == requested_width &&
 		node.text_run.font_weight == font_weight &&
+		node.text_run.style_hash == style_hash &&
 		node.text_run.overflow == text_overflow {
 		return false
 	}
@@ -879,6 +1181,7 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 		&rt.text_engine, text_value, 16, requested_width,
 		rt.persistent_allocator, rt.scratch_allocator,
 		node.font, font_weight, text_overflow, editable=node.kind == .Text_Field,
+		text_style_spans=node.text_style_spans[:],
 	)
 	if built {
 		node.text_run = run

@@ -154,6 +154,14 @@ height.
 - `Text_Style` and `Font_Role` choose text weight, overflow, and UI/monospace
   roles. The native host bundles Atkinson Hyperlegible Next and Mono; font
   notices and file details are in [`assets/fonts/README.md`](../assets/fonts/README.md).
+- `text_style_spans(ui, id, spans)` applies shaping-aware typography to the
+  just-described `.Text` node. Each `Text_Style_Span` uses a half-open UTF-8
+  byte range. Weight and italic are independently optional; later spans that
+  set an attribute win. These styles participate in shaping and can change
+  glyph advances or line metrics, so they invalidate text layout and editor
+  geometry. The bundled faces use real variable weights and separate italic
+  fonts. Keep color, backgrounds, underline, and strikethrough in
+  `Text_Paint_Span` when geometry must remain unchanged.
 - `text_paint_spans(ui, id, spans)` decorates the just-described `.Text` node.
   Each `Text_Paint_Span` uses a half-open UTF-8 byte range (`start`, `end`) in
   the displayed `Text_Run.value`. Set `color_set` to use `color`; set

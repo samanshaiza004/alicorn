@@ -9,6 +9,15 @@ must be flagged in a `### Breaking changes` section per release.
 Source-compatible additions (new procs, new defaulted parameters,
 new optional features) live under `### Added` / `### Changed`.
 
+## Unreleased
+
+### Added
+
+- `Paragraph_Opts.font_style_spans` selects font faces and one optional
+  variation axis over sorted, non-overlapping UTF-8 ranges. These ranges
+  participate in shaping and may affect metrics. Invalid or non-codepoint
+  boundaries return `Error.Invalid_Table`.
+
 ## 1.3.1 — 2026-09-13
 
 ### Changed

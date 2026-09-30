@@ -159,6 +159,22 @@ Text_Paint_Span :: struct {
 	background_set: bool,
 }
 
+// Text_Style_Span changes typography over a half-open UTF-8 byte range. These
+// effects participate in shaping and can change glyph metrics; use paint spans
+// for color and decorations that must preserve editor geometry. The last span
+// that sets an attribute wins independently for weight and italic face.
+Text_Style_Span :: struct {
+	start, end: int,
+	font_weight: f32,
+	font_weight_set: bool,
+	italic: bool,
+	italic_set: bool,
+}
+
+text_style_span_has_effect :: proc(span: Text_Style_Span) -> bool {
+	return span.font_weight_set || span.italic_set
+}
+
 text_paint_span_has_effect :: proc(span: Text_Paint_Span) -> bool {
 	return span.color_set || span.background_set || span.underline || span.strikethrough
 }
@@ -416,6 +432,7 @@ Description :: struct {
 	label:       string,
 	text:        string,
 	text_paint_spans: []Text_Paint_Span,
+	text_style_spans: []Text_Style_Span,
 	font:        Font_Role,
 	text_style:  Text_Style,
 	button_content_style: Button_Content_Style,
@@ -492,6 +509,7 @@ Node :: struct {
 	label:       string,
 	text:        string,
 	text_paint_spans: [dynamic]Text_Paint_Span,
+	text_style_spans: [dynamic]Text_Style_Span,
 	font:        Font_Role,
 	text_style:  Text_Style,
 	button_content_style: Button_Content_Style,
@@ -2278,6 +2296,20 @@ text_paint_spans :: proc(ui: ^UI, id: Node_ID, spans: []Text_Paint_Span) -> bool
 	item := &rt.pending[len(rt.pending)-1]
 	if item.kind != .Description || item.description.id != id || item.description.kind != .Text { return false }
 	item.description.text_paint_spans = spans
+	return true
+}
+
+// text_style_spans assigns shaping-aware typography ranges to the just-emitted
+// Text node. Byte offsets refer to its UTF-8 text; spans are retained until the
+// next frame and copied into runtime-owned storage during reconciliation.
+text_style_spans :: proc(ui: ^UI, id: Node_ID, spans: []Text_Style_Span) -> bool {
+	rt := ui.runtime
+	if rt == nil || !rt.frame_open || id == 0 || len(rt.pending) == 0 { return false }
+	item := &rt.pending[len(rt.pending)-1]
+	if item.kind != .Description || item.description.id != id || item.description.kind != .Text {
+		return false
+	}
+	item.description.text_style_spans = spans
 	return true
 }
 

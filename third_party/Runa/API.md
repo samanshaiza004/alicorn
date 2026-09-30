@@ -59,6 +59,14 @@ automatically inside `raster_glyph`.
 // features (ccmp, locl, rlig) are always applied and not representable here.
 Feature :: enum u8 { Ligatures, Contextual_Ligatures, Contextual_Alternates }
 
+Font_Style_Span :: struct {
+    start, end: int,             // half-open UTF-8 byte range, codepoint aligned
+    font: ^Font,                  // nil keeps the normal font fallback choice
+    variation_tag: Axis_Tag,
+    variation_value: f32,
+    variation_set: bool,
+}
+
 Paragraph_Opts :: struct {
     fonts:     Font_Stack,
     size:      f32,
@@ -68,6 +76,7 @@ Paragraph_Opts :: struct {
     language:  parse.Tag,
     disable_features: bit_set[Feature],   // {} = all applied; feeds layout AND
                                           // measurement so widths stay consistent
+    font_style_spans: []Font_Style_Span,  // sorted, non-overlapping; may change metrics
 }
 
 layout_paragraph :: proc(text: string, opts: Paragraph_Opts,
@@ -78,7 +87,8 @@ line_destroy     :: proc(l: ^Line, allocator := context.allocator)
 ```
 
 `layout_paragraph` runs the full pipeline:
-1. itemize into (font, script) runs (UAX #24 script segmentation)
+1. itemize into (font, script, style) runs (UAX #24 script segmentation);
+   span byte ranges must begin/end on UTF-8 codepoint boundaries
 2. UAX #9 bidi resolve when the text contains any RTL codepoints
 3. shape each run via `shape_text` (GSUB + GPOS, with the Indic /
    Arabic / SEA shaper paths dispatched by script tag)

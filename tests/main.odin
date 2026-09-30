@@ -8,7 +8,9 @@ import alicorn "../runtime"
 import runa "../third_party/Runa"
 
 TEST_UI_FONT_DATA :: #load("../assets/fonts/AtkinsonHyperlegibleNext-Variable.ttf")
+TEST_UI_ITALIC_FONT_DATA :: #load("../assets/fonts/AtkinsonHyperlegibleNext-Italic-Variable.ttf")
 TEST_MONO_FONT_DATA :: #load("../assets/fonts/AtkinsonHyperlegibleMono-Variable.ttf")
+TEST_MONO_ITALIC_FONT_DATA :: #load("../assets/fonts/AtkinsonHyperlegibleMono-Italic-Variable.ttf")
 
 S_ROOT :: alicorn.Source_Site{"tests/render.odin", 1, 1, "root"}
 S_ROW :: alicorn.Source_Site{"tests/render.odin", 10, 1, "track_row"}
@@ -2457,6 +2459,95 @@ test_monospace_font_role :: proc(state: ^Test_State) {
 	expect(state, engine.font_generation > fallback_generation, "loading a fallback face must invalidate retained font resources")
 }
 
+render_style_spanned_text :: proc(rt: ^alicorn.Runtime, spans: []alicorn.Text_Style_Span) -> alicorn.Node_ID {
+	alicorn.invalidate_root(rt, "text style span regression")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return 0 }
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="text-style-root")
+	id := alicorn.text_ex(&ui, "Alicorn", S_ROOT, key="styled", explicit_key=true, font=.Monospace)
+	_ = alicorn.text_style_spans(&ui, id, spans)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return id
+}
+
+test_text_typography_spans :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 100})
+	defer alicorn.destroy_runtime(&rt)
+	expect(state, alicorn.text_engine_load_font(&rt.text_engine, TEST_UI_FONT_DATA), "typography test UI font must load")
+	expect(state, alicorn.text_engine_load_font_role(&rt.text_engine, .Monospace, TEST_MONO_FONT_DATA), "typography test mono font must load")
+	expect(state, alicorn.text_engine_load_italic_font_role(&rt.text_engine, .UI, TEST_UI_ITALIC_FONT_DATA), "authentic UI italic face must load")
+	expect(state, alicorn.text_engine_load_italic_font_role(&rt.text_engine, .Monospace, TEST_MONO_ITALIC_FONT_DATA), "authentic monospace italic face must load")
+
+	regular_id := render_style_spanned_text(&rt, nil)
+	regular_node, regular_found := rt.nodes[regular_id]
+	expect(state, regular_found && regular_node != nil && regular_node.text_run_valid, "unspanned monospace text must shape before style changes")
+	regular_width := regular_node.text_run.width if regular_found && regular_node != nil else 0
+	regular_height := regular_node.text_run.height if regular_found && regular_node != nil else 0
+	regular_generation := regular_node.text_run_generation if regular_found && regular_node != nil else 0
+
+	styles := []alicorn.Text_Style_Span{{
+		start=0, end=len("Alicorn"),
+		font_weight=alicorn.FONT_WEIGHT_BOLD, font_weight_set=true,
+		italic=true, italic_set=true,
+	}}
+	styled_id := render_style_spanned_text(&rt, styles)
+	styled_node, styled_found := rt.nodes[styled_id]
+	expect(state, styled_id == regular_id && styled_found && styled_node != nil, "typography changes must retain text-node identity")
+	if styled_found && styled_node != nil {
+		expect(state, len(styled_node.text_style_spans) == 1, "runtime must retain the active typography span")
+		expect(state, styled_node.text_run_valid && styled_node.text_run_generation > regular_generation, "typography span changes must rebuild the shaped text product")
+		if styled_node.text_run_valid {
+			expect(state, len(styled_node.text_run.glyphs) == len("Alicorn"), "test word must produce one glyph per ASCII character")
+			for glyph in styled_node.text_run.glyphs {
+				expect(state, glyph.italic, "styled glyphs must select the genuine italic face")
+				expect(state, glyph.font_weight == alicorn.FONT_WEIGHT_BOLD, "styled glyphs must retain their shaping weight for rasterization")
+			}
+			// The bundled Mono variants are expected to preserve editor columns.
+			// This assertion tests the real bundled faces rather than making it an
+			// invariant of Text_Style_Span, whose contract allows metric changes.
+			expect(state, abs(styled_node.text_run.width-regular_width) < 0.01, "bundled mono bold-italic advances must preserve logical column geometry")
+			expect(state, abs(styled_node.text_run.height-regular_height) < 0.01, "bundled mono italic metrics must preserve editor row height")
+			caret := alicorn.text_run_caret_geometry(&styled_node.text_run, alicorn.Text_Position{len("Alicorn"), .Trailing})
+			expect(state, caret.valid && abs(caret.rect.x-styled_node.text_run.width) < 0.01, "caret geometry must follow the actual styled run advances")
+
+			misses_before := rt.text_engine.glyph_cache_misses
+			glyph_id := styled_node.text_run.glyphs[0].glyph_id
+			_, _, upright_ok := alicorn.text_engine_glyph(&rt.text_engine, glyph_id, 16, font_role=.Monospace, font_weight=alicorn.FONT_WEIGHT_BOLD)
+			_, _, italic_ok := alicorn.text_engine_glyph(&rt.text_engine, glyph_id, 16, font_role=.Monospace, font_weight=alicorn.FONT_WEIGHT_BOLD, italic=true)
+			expect(state, upright_ok && italic_ok && rt.text_engine.glyph_cache_misses >= misses_before+2, "glyph raster resources must distinguish italic face and weight from upright glyphs")
+		}
+	}
+	clamped_styles := []alicorn.Text_Style_Span{{start=0, end=len("Alicorn"), font_weight=900, font_weight_set=true}}
+	clamped_run, clamped_ok := alicorn.text_run_build(&rt.text_engine, "Alicorn", 16, allocator=context.allocator, font_role=.Monospace, text_style_spans=clamped_styles)
+	if clamped_ok {
+		defer alicorn.text_run_destroy(&clamped_run)
+		for glyph in clamped_run.glyphs {
+			expect(state, glyph.font_weight == rt.text_engine.monospace_font_weight_axis.max_value, "out-of-range span weight must clamp identically for shaping and rasterization")
+		}
+	}
+	expect(state, clamped_ok, "out-of-range typography weight must still shape at the supported face limit")
+	control_styles := []alicorn.Text_Style_Span{{start=3, end=4, italic=true, italic_set=true}}
+	control_run, control_ok := alicorn.text_run_build(&rt.text_engine, "A\r\nB", 16, allocator=context.allocator, font_role=.Monospace, text_style_spans=control_styles)
+	if control_ok {
+		defer alicorn.text_run_destroy(&control_run)
+		styled_b, plain_a := false, false
+		for glyph in control_run.glyphs {
+			if glyph.cluster_start == 3 { styled_b = glyph.italic }
+			if glyph.cluster_start == 0 { plain_a = !glyph.italic }
+		}
+		expect(state, styled_b && plain_a, "source typography ranges must map through CRLF normalization to the correct glyphs")
+	}
+	expect(state, control_ok, "typography spans over normalized source controls must still shape")
+
+	// Runa is public to runtime consumers: reject a style boundary in the
+	// middle of a multibyte codepoint instead of silently dropping its style.
+	bad_span := []runa.Font_Style_Span{{start=1, end=2, variation_tag=alicorn.FONT_WEIGHT_AXIS_TAG, variation_value=alicorn.FONT_WEIGHT_BOLD, variation_set=true}}
+	bad_opts := runa.Paragraph_Opts{fonts=runa.Font_Stack{&rt.text_engine.monospace_font}, size=16, font_style_spans=bad_span}
+	bad_lines, bad_err := runa.layout_paragraph("éx", bad_opts, &rt.text_engine.cache, allocator=context.allocator)
+	expect(state, bad_err == .Invalid_Table && len(bad_lines) == 0, "Runa must reject typography spans that split a UTF-8 codepoint")
+}
+
 test_public_monospace_font_role :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
 	ui, build := alicorn.begin_frame(&rt)
@@ -3720,6 +3811,7 @@ main :: proc() {
 	test_multiline_text_controls(&state)
 	test_text_ellipsis(&state)
 	test_monospace_font_role(&state)
+	test_text_typography_spans(&state)
 	test_public_monospace_font_role(&state)
 	test_retained_text_weight(&state)
 	test_retained_text_product_lifetime(&state)

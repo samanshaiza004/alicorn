@@ -49,6 +49,23 @@ hash_text_paint_spans :: proc(spans: []Text_Paint_Span) -> u64 {
 	return h
 }
 
+hash_text_style_spans :: proc(spans: []Text_Style_Span) -> u64 {
+	h: u64 = 1469598103934665603
+	effective_count: u64 = 0
+	for span in spans { if text_style_span_has_effect(span) { effective_count += 1 } }
+	h = hash_mix(h, effective_count)
+	for span in spans {
+		if !text_style_span_has_effect(span) { continue }
+		h = hash_mix(h, u64(span.start))
+		h = hash_mix(h, u64(span.end))
+		h = hash_mix(h, u64(span.font_weight_set ? 1 : 0))
+		h = hash_mix(h, u64(transmute(u32)effective_font_weight(span.font_weight)))
+		h = hash_mix(h, u64(span.italic ? 1 : 0))
+		h = hash_mix(h, u64(span.italic_set ? 1 : 0))
+	}
+	return h
+}
+
 hash_button_content_style :: proc(style: Button_Content_Style) -> u64 {
 	h: u64 = 1469598103934665603
 	h = hash_mix(h, u64(style.horizontal))
@@ -61,6 +78,7 @@ hash_button_content_style :: proc(style: Button_Content_Style) -> u64 {
 description_hash :: proc(d: Description) -> u64 {
 	h := hash_mix(hash_string(d.label), hash_string(d.text))
 	h = hash_mix(h, hash_text_paint_spans(d.text_paint_spans))
+	h = hash_mix(h, hash_text_style_spans(d.text_style_spans))
 	h = hash_mix(h, u64(d.kind))
 	h = hash_mix(h, u64(d.font))
 	if d.kind == .Button {
@@ -142,6 +160,7 @@ layout_hash :: proc(d: Description) -> u64 {
 		h = hash_mix(h, u64(d.text_style.overflow))
 	case .Text, .Text_Field:
 		h = hash_mix(h, hash_string(d.text))
+		h = hash_mix(h, hash_text_style_spans(d.text_style_spans))
 		h = hash_mix(h, u64(d.font))
 		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
 		h = hash_mix(h, u64(d.text_style.overflow))
@@ -195,6 +214,7 @@ release_node_strings :: proc(node: ^Node, allocator := context.allocator) {
 	if len(node.label) > 0 { delete(node.label, allocator) }
 	if len(node.text) > 0 { delete(node.text, allocator) }
 	if len(node.text_paint_spans) > 0 { delete(node.text_paint_spans) }
+	if len(node.text_style_spans) > 0 { delete(node.text_style_spans) }
 	if len(node.identity_key) > 0 { delete(node.identity_key, allocator) }
 	if len(node.last_reason) > 0 { delete(node.last_reason, allocator) }
 	node.site = Source_Site{}
@@ -212,9 +232,10 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	text_changed := node.text != d.text || label_changed
 	font_changed := node.font != d.font
 	weight_changed := effective_font_weight(node.text_style.font_weight) != effective_font_weight(d.text_style.font_weight)
+	style_spans_changed := hash_text_style_spans(node.text_style_spans[:]) != hash_text_style_spans(d.text_style_spans)
 	overflow_changed := node.text_style.overflow != d.text_style.overflow
 	kind_changed := node.kind != d.kind
-	if node.text_run_valid && (text_changed || font_changed || weight_changed || overflow_changed || kind_changed || !node_has_text_product(d.kind)) {
+	if node.text_run_valid && (text_changed || font_changed || weight_changed || overflow_changed || style_spans_changed || kind_changed || !node_has_text_product(d.kind)) {
 		text_run_destroy(&node.text_run)
 		node.text_run_valid = false
 	}
@@ -241,6 +262,15 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 		node.text_paint_spans = make([dynamic]Text_Paint_Span, 0, effective_count, allocator=rt.persistent_allocator)
 		for span in d.text_paint_spans {
 			if text_paint_span_has_effect(span) { append(&node.text_paint_spans, span) }
+		}
+	}
+	if style_spans_changed {
+		if len(node.text_style_spans) > 0 { delete(node.text_style_spans) }
+		style_count := 0
+		for span in d.text_style_spans { if text_style_span_has_effect(span) { style_count += 1 } }
+		node.text_style_spans = make([dynamic]Text_Style_Span, 0, style_count, allocator=rt.persistent_allocator)
+		for span in d.text_style_spans {
+			if text_style_span_has_effect(span) { append(&node.text_style_spans, span) }
 		}
 	}
 	node.parent = d.parent
