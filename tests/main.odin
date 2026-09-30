@@ -1779,6 +1779,38 @@ test_virtualization_and_gpu :: proc(state: ^Test_State) {
 	alicorn.destroy_runtime(&rt)
 }
 
+test_virtualized_activation_is_one_shot :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 180})
+	_, row_id := render_virtual_focus(&rt, 0)
+	expect(state, row_id != 0, "activation fixture realizes its target row")
+	row := rt.nodes[row_id]
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=row.bounds.x+4, y=row.bounds.y+4, button=1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=row.bounds.x+4, y=row.bounds.y+4, button=1})
+	_, _ = render_virtual_focus(&rt, 0)
+	consumed_sequence := rt.activation_sequence
+	expect(state, rt.nodes[row_id].last_consumed_activation == consumed_sequence, "the realized row consumes its click once")
+	expect(state, rt.activation_node == 0, "a consumed activation is cleared globally")
+	_, _ = render_virtual_focus(&rt, 240)
+	_, retained := rt.nodes[row_id]
+	expect(state, !retained, "scrolling the target out of the virtual window retires its node")
+	_, recreated_id := render_virtual_focus(&rt, 0)
+	expect(state, recreated_id == row_id, "the virtual row returns with the same stable identity")
+	_, _ = render_virtual_focus(&rt, 0)
+	expect(state, rt.nodes[row_id].last_consumed_activation == 0, "a recreated row does not replay a consumed click")
+	alicorn.destroy_runtime(&rt)
+
+	rt = alicorn.new_runtime(alicorn.Rect{0, 0, 320, 180})
+	_, row_id = render_virtual_focus(&rt, 0)
+	row = rt.nodes[row_id]
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=row.bounds.x+4, y=row.bounds.y+4, button=1})
+	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=row.bounds.x+4, y=row.bounds.y+4, button=1})
+	_, _ = render_virtual_focus(&rt, 240)
+	expect(state, rt.activation_node == 0, "an activation expires when its target disappears before consumption")
+	_, _ = render_virtual_focus(&rt, 0)
+	_, _ = render_virtual_focus(&rt, 0)
+	expect(state, rt.nodes[row_id].last_consumed_activation == 0, "a later incarnation cannot consume an expired click")
+	alicorn.destroy_runtime(&rt)
+}
 test_virtualized_focus_retirement :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 180})
 	open_id, row_id := render_virtual_focus(&rt, 0)
@@ -2872,6 +2904,55 @@ test_high_level_virtual_list_and_style_defaults :: proc(state: ^Test_State) {
 	}
 }
 
+test_variable_virtual_list_metrics :: proc(state: ^Test_State) {
+	index: alicorn.Virtual_List_Height_Index
+	initialized := alicorn.virtual_list_height_index_init(&index, 100, 22, context.allocator)
+	defer alicorn.virtual_list_height_index_destroy(&index)
+	expect(state, initialized, "variable virtual list initializes from a fixed estimate")
+	_ = alicorn.virtual_list_height_index_set_height(&index, 1, 66)
+	_ = alicorn.virtual_list_height_index_set_height(&index, 4, 44)
+	metrics := alicorn.virtual_list_variable_metrics(&index, 24, 44)
+	expect(state, index.total_height == 2_266, "sparse measured heights adjust total scroll extent")
+	expect(state, metrics.first == 1 && metrics.last == 2, "fractional viewport maps to the one expanded logical row it intersects")
+	expect(state, abs(metrics.leading_offset_y-2) < 0.01, "variable list retains the fractional offset into its first measured row")
+	expect(state, alicorn.virtual_list_height_index_item_top(&index, 4) == 132, "prefix geometry includes earlier expanded rows")
+	metrics = alicorn.virtual_list_variable_metrics(&index, 90, 30)
+	expect(state, metrics.first == 2 && metrics.last == 4, "range calculation crosses the boundary after an expanded row")
+	_ = alicorn.virtual_list_height_index_set_height(&index, 1, 22)
+	expect(state, index.total_height == 2_222, "returning a measured row to its estimate removes its sparse override")
+	_ = alicorn.virtual_list_height_index_set_count(&index, 3)
+	expect(state, index.total_height == 66, "shrinking item count retires out-of-range measurements")
+
+	alicorn.virtual_list_height_index_destroy(&index)
+	_ = alicorn.virtual_list_height_index_init(&index, 10, 10, context.allocator)
+	_ = alicorn.virtual_list_height_index_set_height(&index, 2, 20)
+	_ = alicorn.virtual_list_height_index_set_height(&index, 7, 30)
+	expect(state,
+		alicorn.virtual_list_height_index_apply_edit(&index, 3, 2, 4, 12),
+		"inserting logical rows shifts later sparse measurements")
+	expect(state,
+		alicorn.virtual_list_height_index_item_height(&index, 2) == 20 &&
+		alicorn.virtual_list_height_index_item_height(&index, 7) == 10 &&
+		alicorn.virtual_list_height_index_item_height(&index, 9) == 30,
+		"an edit drops replaced row heights and shifts unaffected later rows")
+	expect(state, index.total_height == 150, "insertion reflows total sparse-list geometry")
+	expect(state,
+		!alicorn.virtual_list_height_index_apply_edit(&index, 1, 1, 0, 12),
+		"inconsistent resulting item counts are rejected without changing the index")
+	expect(state, index.item_count == 12 && alicorn.virtual_list_height_index_item_height(&index, 9) == 30,
+		"rejected height-index edits are transactional")
+	expect(state,
+		alicorn.virtual_list_height_index_apply_edit(&index, 1, 4, 1, 9),
+		"deleting logical rows shifts later sparse measurements")
+	expect(state,
+		alicorn.virtual_list_height_index_item_height(&index, 6) == 30 && index.total_height == 110,
+		"deletion preserves only unaffected measurements at their new logical indexes")
+	expect(state,
+		alicorn.virtual_list_height_index_item_at(&index, 69) == 6 &&
+		alicorn.virtual_list_height_index_item_at(&index, 110) == 8,
+		"content-space lookup resolves variable rows and clamps to the last logical item")
+}
+
 render_both_scroll :: proc(rt: ^alicorn.Runtime) -> alicorn.Node_ID {
 	alicorn.invalidate_root(rt, "both-axis scroll test")
 	ui, build := alicorn.begin_frame(rt)
@@ -3797,6 +3878,7 @@ main :: proc() {
 	test_structure_layout_invalidation(&state)
 	test_virtualization_and_gpu(&state)
 	test_virtualized_focus_retirement(&state)
+	test_virtualized_activation_is_one_shot(&state)
 	test_layout_geometry(&state)
 	test_layout_constraints_position_siblings(&state)
 	test_text_intrinsic_layout_invalidation(&state)
@@ -3820,6 +3902,7 @@ main :: proc() {
 	test_gpu_geometry_surface_contract(&state)
 	test_retained_scroll_region(&state)
 	test_high_level_virtual_list_and_style_defaults(&state)
+	test_variable_virtual_list_metrics(&state)
 	test_scroll_region_routing_and_clamp(&state)
 	test_scrollbar_layout_projection(&state)
 	test_modal_scrollbar_composition(&state)

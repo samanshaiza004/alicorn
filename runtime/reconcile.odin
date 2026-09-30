@@ -431,6 +431,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	for child in children {
 		retire_subtree(rt, child, desired)
 	}
+	if id == rt.activation_node { rt.activation_node = 0 }
 	if id == rt.focused { rt.focused = 0 }
 	if id == rt.last_hovered {
 		rt.last_hovered = 0
@@ -808,4 +809,7 @@ end_frame :: proc(ui: ^UI) {
 		clear(&ui.runtime.identity_key_numeric)
 	}
 	reconcile(ui.runtime)
+	// An unconsumed activation expires with this application description. This
+	// also covers controls that disappeared before their event could be read.
+	ui.runtime.activation_node = 0
 }
