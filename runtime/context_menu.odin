@@ -5,7 +5,7 @@ import "core:fmt"
 CONTEXT_MENU_DEFAULT_WIDTH :: f32(224)
 CONTEXT_MENU_DEFAULT_ITEM_HEIGHT :: f32(32)
 CONTEXT_MENU_DEFAULT_SEPARATOR_HEIGHT :: f32(9)
-CONTEXT_MENU_DEFAULT_PADDING :: f32(5)
+CONTEXT_MENU_DEFAULT_PADDING :: f32(7)
 CONTEXT_MENU_VIEWPORT_MARGIN :: f32(8)
 
 // context_menu_placement prefers below/right of the anchor, flips when that
@@ -235,17 +235,29 @@ context_menu_separator :: proc(ui: ^UI, loc := #caller_location) {
 	if ui == nil || ui.runtime == nil || !ui.runtime.context_menu.open || ui.runtime.context_menu.panel == 0 { return }
 	rt := ui.runtime
 	index := rt.context_menu.item_index
-	source := resolve_source(Source_Site{}, "context-menu-separator", loc)
-	_ = emit_key(
+	resolved_width := minf(rt.context_menu.preferred_width, maxf(rt.viewport.w-2*CONTEXT_MENU_VIEWPORT_MARGIN, 0))
+	line_width := maxf(resolved_width-2*rt.context_menu.padding-16, 0)
+	container_id := container_begin_simple(
 		ui,
 		.Container,
-		source,
-		label="context-menu-separator",
+		label="context-menu-separator-slot",
 		key=key_pair(0, u64(index+1)),
-		style=layout_style(.Row, height=rt.context_menu.separator_height),
-		color=Color{0.24, 0.28, 0.36, 1},
-		paint_background=true,
+		style=layout_style(.Column, height=rt.context_menu.separator_height, align=.Center),
+		loc=loc,
 	)
+	if container_id != 0 {
+		_ = container_begin_simple(
+			ui,
+			.Container,
+			label="context-menu-separator-line",
+			key=key_pair(1, u64(index+1)),
+			style=layout_style(.Row, width=line_width, height=1),
+			color=Color{0.24, 0.28, 0.36, 1},
+			loc=loc,
+		)
+		container_end(ui)
+		container_end(ui)
+	}
 	rt.context_menu.content_height += rt.context_menu.separator_height
 	rt.context_menu.item_index += 1
 }

@@ -162,15 +162,19 @@ append_text_paint_geometry :: proc(node: ^Node, geometry: ^Text_Paint_Geometry, 
 	}
 }
 
-append_focus_outline :: proc(node: ^Node, color: Color, thickness: f32) {
+append_rect_outline :: proc(node: ^Node, kind: Node_Kind, color: Color, thickness: f32) {
 	width := min(max(thickness, 0), node.bounds.w/2)
 	height := min(max(thickness, 0), node.bounds.h/2)
 	if width <= 0 || height <= 0 { return }
-	append(&node.paint, Display_Command{node.id, .Button, Rect{node.bounds.x, node.bounds.y, node.bounds.w, height}, node.clip, "", color, []Text_Paint_Span{}})
-	append(&node.paint, Display_Command{node.id, .Button, Rect{node.bounds.x, node.bounds.y+node.bounds.h-height, node.bounds.w, height}, node.clip, "", color, []Text_Paint_Span{}})
+	append(&node.paint, Display_Command{node.id, kind, Rect{node.bounds.x, node.bounds.y, node.bounds.w, height}, node.clip, "", color, []Text_Paint_Span{}})
+	append(&node.paint, Display_Command{node.id, kind, Rect{node.bounds.x, node.bounds.y+node.bounds.h-height, node.bounds.w, height}, node.clip, "", color, []Text_Paint_Span{}})
 	interior_height := max(0, node.bounds.h-height*2)
-	append(&node.paint, Display_Command{node.id, .Button, Rect{node.bounds.x, node.bounds.y+height, width, interior_height}, node.clip, "", color, []Text_Paint_Span{}})
-	append(&node.paint, Display_Command{node.id, .Button, Rect{node.bounds.x+node.bounds.w-width, node.bounds.y+height, width, interior_height}, node.clip, "", color, []Text_Paint_Span{}})
+	append(&node.paint, Display_Command{node.id, kind, Rect{node.bounds.x, node.bounds.y+height, width, interior_height}, node.clip, "", color, []Text_Paint_Span{}})
+	append(&node.paint, Display_Command{node.id, kind, Rect{node.bounds.x+node.bounds.w-width, node.bounds.y+height, width, interior_height}, node.clip, "", color, []Text_Paint_Span{}})
+}
+
+append_focus_outline :: proc(node: ^Node, color: Color, thickness: f32) {
+	append_rect_outline(node, .Button, color, thickness)
 }
 
 append_scrollbar_display :: proc(rt: ^Runtime, node: ^Node) {
@@ -296,6 +300,9 @@ update_paint :: proc(rt: ^Runtime) {
 				if node.paint_background {
 					append(&node.paint, Display_Command{node.id, node.kind, node.bounds, node.clip, "", node.color, []Text_Paint_Span{}})
 				}
+				if node.kind == .Context_Menu_Panel {
+					append_rect_outline(node, .Context_Menu_Panel, Color{0.22, 0.27, 0.34, 1}, 1)
+				}
 				if node.kind == .Scroll_Region && semantic_focus_owner_needs_outline(rt, node.id) {
 					append_focus_outline(node, Color{0.76, 0.86, 1.0, 1}, 1.5)
 				}
@@ -324,33 +331,42 @@ update_paint :: proc(rt: ^Runtime) {
 					}
 				}
 				text_clip := rect_intersection(node.clip, content_bounds)
-				quiet := (node.paint_value & 4) != 0
-				button_color := Color{0.08, 0.10, 0.14, 1}
-				if !quiet { button_color = Color{0.15, 0.25, 0.42, 1} }
-				if node.selected { button_color = Color{0.27, 0.48, 0.70, 1} }
-				if node.pressed {
-					button_color = Color{0.15, 0.22, 0.32, 1}
-					if !quiet { button_color = Color{0.24, 0.42, 0.68, 1} }
-					if node.selected { button_color = Color{0.36, 0.62, 0.86, 1} }
-				} else if node.hovered {
-					button_color = Color{0.12, 0.16, 0.23, 1}
-					if !quiet { button_color = Color{0.20, 0.34, 0.54, 1} }
-					if node.selected { button_color = Color{0.33, 0.57, 0.80, 1} }
-				}
 				text_color := Color{0.90, 0.95, 1.0, 1.0}
-				if node.disabled {
-					button_color = Color{0.10, 0.13, 0.18, 1}
-					text_color = Color{0.48, 0.53, 0.62, 1.0}
+				parent_is_context_menu := false
+				if parent, ok := rt.nodes[node.parent]; ok {
+					parent_is_context_menu = parent.kind == .Context_Menu_Panel
 				}
-				append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", button_color, []Text_Paint_Span{}})
-				if node.semantic_active {
-					append_focus_outline(node, Color{0.12, 0.78, 0.82, 1}, 1)
-				}
-				if rt.focused == node.id && !node.disabled {
-					// Focus is an independent outline so it remains visible without
-					// replacing the selected, hover, or pressed fill.
-					focus_color := Color{0.76, 0.86, 1.0, 1}
-					append_focus_outline(node, focus_color, 1.5)
+				if parent_is_context_menu {
+					if node.disabled {
+						text_color = Color{0.48, 0.53, 0.62, 1.0}
+					} else if node.pressed {
+						append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", Color{0.20, 0.31, 0.46, 1}, []Text_Paint_Span{}})
+					} else if node.hovered || node.selected || rt.focused == node.id {
+						append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", Color{0.17, 0.24, 0.36, 1}, []Text_Paint_Span{}})
+					}
+				} else {
+					quiet := (node.paint_value & 4) != 0
+					button_color := Color{0.08, 0.10, 0.14, 1}
+					if !quiet { button_color = Color{0.15, 0.25, 0.42, 1} }
+					if node.selected { button_color = Color{0.27, 0.48, 0.70, 1} }
+					if node.pressed {
+						button_color = Color{0.15, 0.22, 0.32, 1}
+						if !quiet { button_color = Color{0.24, 0.42, 0.68, 1} }
+						if node.selected { button_color = Color{0.36, 0.62, 0.86, 1} }
+					} else if node.hovered {
+						button_color = Color{0.12, 0.16, 0.23, 1}
+						if !quiet { button_color = Color{0.20, 0.34, 0.54, 1} }
+						if node.selected { button_color = Color{0.33, 0.57, 0.80, 1} }
+					}
+					if node.disabled { button_color = Color{0.10, 0.13, 0.18, 1}; text_color = Color{0.48, 0.53, 0.62, 1.0} }
+					append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", button_color, []Text_Paint_Span{}})
+					if node.semantic_active { append_focus_outline(node, Color{0.12, 0.78, 0.82, 1}, 1) }
+					if rt.focused == node.id && !node.disabled {
+						// Focus is an independent outline so it remains visible without
+						// replacing the selected, hover, or pressed fill.
+						focus_color := Color{0.76, 0.86, 1.0, 1}
+						append_focus_outline(node, focus_color, 1.5)
+					}
 				}
 				append(&node.paint, Display_Command{node.id, .Text, text_bounds, text_clip, owned(display_text, rt.persistent_allocator), text_color, []Text_Paint_Span{}})
 			} else if node.kind == .Checkbox {

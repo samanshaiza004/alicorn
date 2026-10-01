@@ -52,9 +52,25 @@ test_context_menu_navigation_skips_disabled_items_and_dispatches_action :: proc(
 	first := context_menu_test_find(&rt, "Rename", .Button)
 	disabled := context_menu_test_find(&rt, "Unavailable", .Button)
 	last := context_menu_test_find(&rt, "Move to Trash", .Button)
+	separator := context_menu_test_find(&rt, "context-menu-separator-slot", .Container)
+	separator_line := context_menu_test_find(&rt, "context-menu-separator-line", .Container)
 	panel := rt.nodes[rt.context_menu.panel]
 	testing.expect(t, first != 0 && disabled != 0 && last != 0, "all menu commands should be retained")
-	if first == 0 || disabled == 0 || last == 0 { return }
+	testing.expect(t, separator != 0 && separator_line != 0, "the separator should use a transparent spacing slot and a separate line")
+	if first == 0 || disabled == 0 || last == 0 || separator == 0 || separator_line == 0 { return }
+	separator_slot_node := rt.nodes[separator]
+	separator_line_node := rt.nodes[separator_line]
+	testing.expect(t, !separator_slot_node.paint_background, "separator spacing should not paint a filled band")
+	testing.expect(t, separator_slot_node.bounds.h == CONTEXT_MENU_DEFAULT_SEPARATOR_HEIGHT && separator_line_node.bounds.h == 1,
+		"separator should preserve breathing room while drawing only a one-pixel line")
+	testing.expect(t, separator_line_node.bounds.x > separator_slot_node.bounds.x && separator_line_node.bounds.x+separator_line_node.bounds.w < separator_slot_node.bounds.x+separator_slot_node.bounds.w,
+		"separator line should be inset from the menu edges")
+	button_paints := 0
+	for command in rt.nodes[first].paint { if command.kind == .Button { button_paints += 1 } }
+	testing.expect(t, button_paints == 1, "keyboard focus on a menu item should use a row highlight without the ordinary button outline")
+	panel_outline_segments := 0
+	for command in panel.paint { if command.kind == .Context_Menu_Panel && !same_rect(command.bounds, panel.bounds) { panel_outline_segments += 1 } }
+	testing.expect(t, panel_outline_segments == 4, "the popup should have a subtle four-sided border")
 	testing.expect(t, rt.focused == first, "opening should focus the first enabled menu item")
 	testing.expect(t, panel.clip.x == rt.viewport.x && panel.clip.y == rt.viewport.y && panel.clip.w == rt.viewport.w && panel.clip.h == rt.viewport.h,
 		"the top-level popup should escape clipping from the invoking workspace pane")
