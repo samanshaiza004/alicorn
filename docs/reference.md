@@ -37,6 +37,13 @@ the last keyboard or pointer event. `application_scheduler_stats` exposes
 scheduled/coalesced counts, runs, deferrals, pending state, and maximum
 lateness. Prefer this over display-cadence `on_tick` for live data refresh.
 
+Use `Application.on_close_requested` to defer an OS/window close while an
+application handles unsaved work. Return `.Allow` to close immediately or
+`.Defer` to keep the window running. After the user resolves the application's
+save/discard flow, call `application_request_quit` with
+`Application_Services.quit`; this service is UI-thread-only and valid until
+`Run` returns.
+
 `Application_Services.clipboard` is the UI-thread-only OS text clipboard
 service. `ClipboardGetText(service, allocator)` returns an owned UTF-8 string
 that the caller must release with the same allocator; an empty clipboard is a

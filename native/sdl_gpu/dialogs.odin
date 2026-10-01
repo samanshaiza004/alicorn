@@ -88,6 +88,20 @@ Application_Services :: struct {
 	dialogs:   Dialog_Service,
 	clipboard: Clipboard_Service,
 	scheduler: Application_Scheduler,
+	quit:      Application_Quit_Request,
+}
+
+// Application_Quit_Request lets an application complete a previously deferred
+// close request after its own save/discard flow has finished. It is UI-thread
+// only and remains valid for the lifetime of Run.
+Application_Quit_Request_Proc :: proc(data: rawptr)
+Application_Quit_Request :: struct {
+	data:    rawptr,
+	request: Application_Quit_Request_Proc,
+}
+
+application_request_quit :: proc(request: Application_Quit_Request) {
+	if request.request != nil { request.request(request.data) }
 }
 
 Application_Dialog_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, result: ^File_Dialog_Result)

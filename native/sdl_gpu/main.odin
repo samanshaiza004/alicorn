@@ -231,6 +231,8 @@ Application_Wake_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
 Application_Scheduled_Wake_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, class: Scheduled_Wake_Class)
 Application_Stop_Proc :: proc(state: rawptr)
 Application_Menu_Command_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, command: Application_Command_ID)
+Application_Close_Result :: enum {Allow, Defer}
+Application_Close_Requested_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime) -> Application_Close_Result
 
 // Scheduled_Wake_Class distinguishes work that should run at a useful cadence
 // from lower-fidelity work that can wait until the user has been quiet.
@@ -309,6 +311,7 @@ Application :: struct {
 	on_dialog:          Application_Dialog_Proc,
 	on_wake:            Application_Wake_Proc,
 	on_scheduled_wake:  Application_Scheduled_Wake_Proc,
+	on_close_requested: Application_Close_Requested_Proc,
 	on_stop:            Application_Stop_Proc,
 	on_menu_command:    Application_Menu_Command_Proc,
 }
@@ -437,6 +440,11 @@ native_application_wake :: proc(data: rawptr) {
 	if state == nil || !state.active { return }
 	event := sdl3.Event{type=state.event_type}
 	_ = sdl3.PushEvent(&event)
+}
+
+native_application_request_quit :: proc(data: rawptr) {
+	state := cast(^bool)data
+	if state != nil { state^ = true }
 }
 
 fail :: proc(message: string) -> ! {
@@ -1291,7 +1299,11 @@ pump_events :: proc(
 			}
 		}
 		if event.type == .QUIT || event.type == .WINDOW_CLOSE_REQUESTED {
-			quit_requested^ = true
+			close_result := Application_Close_Result.Allow
+			if application != nil && application.on_close_requested != nil {
+				close_result = application.on_close_requested(application.state, rt)
+			}
+			if close_result == .Allow { quit_requested^ = true }
 		}
 		if event.type == .WINDOW_FOCUS_LOST {
 			if text_input_state != nil {
@@ -2077,6 +2089,7 @@ run_application_loop :: proc(
 			dialogs=Dialog_Service{handle=rawptr(dialog_bridge)},
 			clipboard=native_clipboard_service(),
 			scheduler=application_scheduler,
+			quit=Application_Quit_Request{data=rawptr(&quit_requested), request=native_application_request_quit},
 		})
 	}
 	if application_instance.on_start != nil {
