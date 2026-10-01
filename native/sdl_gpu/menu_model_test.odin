@@ -60,7 +60,13 @@ test_disabled_runtime_action_rejects_native_menu_invocation :: proc(t: ^testing.
 
 @(test)
 test_application_can_preempt_text_field_navigation_and_dismissal :: proc(t: ^testing.T) {
-	interceptable_keys := [?]Application_Key{Application_Key.Up, Application_Key.Down, Application_Key.Page_Up, Application_Key.Page_Down, Application_Key.Open_Repository, Application_Key.Open_Command_Palette, Application_Key.Escape, Application_Key.Return}
+	interceptable_keys := [?]Application_Key{
+		Application_Key.Up, Application_Key.Down, Application_Key.Page_Up, Application_Key.Page_Down,
+		Application_Key.Open_Repository, Application_Key.Open_Command_Palette,
+		Application_Key.Find, Application_Key.Workspace_Search,
+		Application_Key.Find_Next, Application_Key.Find_Previous,
+		Application_Key.Escape, Application_Key.Return,
+	}
 	for key in interceptable_keys {
 		testing.expect(t, application_key_can_preempt_text_field(key), "transient UI key should be offered before text-field handling")
 	}

@@ -91,6 +91,10 @@ Application_Key :: enum {
 	Toggle,
 	Open_Repository,
 	Open_Command_Palette,
+	Find,
+	Workspace_Search,
+	Find_Next,
+	Find_Previous,
 	Escape,
 	Return,
 }
@@ -100,7 +104,8 @@ Application_Key :: enum {
 application_key_can_preempt_text_field :: proc(key: Application_Key, composition_active := false) -> bool {
 	if key == .Escape && composition_active { return false }
 	#partial switch key {
-	case .Up, .Down, .Page_Up, .Page_Down, .Open_Repository, .Open_Command_Palette, .Escape, .Return:
+	case .Up, .Down, .Page_Up, .Page_Down, .Open_Repository, .Open_Command_Palette,
+	     .Find, .Workspace_Search, .Find_Next, .Find_Previous, .Escape, .Return:
 		return true
 	case:
 		return false
@@ -1420,6 +1425,12 @@ pump_events :: proc(
 						if len(application.menus) == 0 && native_text_primary_modifier(event.key.mod) && native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) {
 							application_key = .Open_Command_Palette
 						} else { mapped = false }
+					case sdl3.K_F:
+						if native_text_primary_modifier(event.key.mod) {
+							application_key = .Workspace_Search if native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) else .Find
+						} else { mapped = false }
+					case sdl3.K_F3:
+						application_key = .Find_Previous if native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) else .Find_Next
 					case: mapped = false
 					}
 					if mapped && application_key_can_preempt_text_field(application_key, composition_active) &&
@@ -1500,7 +1511,6 @@ pump_events :: proc(
 					case sdl3.K_PAGEDOWN: application_key = .Page_Down
 					case sdl3.K_HOME: application_key = .Home
 					case sdl3.K_END: application_key = .End
-					case sdl3.K_F: application_key = .Fit_Selection
 					case sdl3.K_1: application_key = .Command_1
 					case sdl3.K_2: application_key = .Command_2
 					case sdl3.K_3: application_key = .Command_3
@@ -1511,6 +1521,14 @@ pump_events :: proc(
 						if len(application.menus) == 0 && native_text_primary_modifier(event.key.mod) && native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) {
 							application_key = .Open_Command_Palette
 						} else { handled = false }
+					case sdl3.K_F:
+						if native_text_primary_modifier(event.key.mod) {
+							application_key = .Workspace_Search if native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) else .Find
+						} else {
+							application_key = .Fit_Selection
+						}
+					case sdl3.K_F3:
+						application_key = .Find_Previous if native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) else .Find_Next
 					case sdl3.K_O:
 						if len(application.menus) == 0 && native_text_primary_modifier(event.key.mod) {
 							application_key = .Open_Repository
