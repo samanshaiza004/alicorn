@@ -125,6 +125,12 @@ description_hash :: proc(d: Description) -> u64 {
 
 layout_hash :: proc(d: Description) -> u64 {
 	h := hash_mix(hash_style(d.style), u64(d.parent))
+	if d.kind == .Context_Menu_Panel {
+		h = hash_mix(h, u64(transmute(u32)d.context_menu_bounds.x))
+		h = hash_mix(h, u64(transmute(u32)d.context_menu_bounds.y))
+		h = hash_mix(h, u64(transmute(u32)d.context_menu_bounds.w))
+		h = hash_mix(h, u64(transmute(u32)d.context_menu_bounds.h))
+	}
 	// Scrolling changes realized child geometry even when the description and
 	// child set remain otherwise identical. Keep both the logical offset and
 	// the residual layout offset in this dependency: the former is the public
@@ -276,6 +282,7 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	node.parent = d.parent
 	node.kind = d.kind
 	node.style = d.style
+	node.context_menu_bounds = d.context_menu_bounds
 	node.font = d.font
 	node.text_style = d.text_style
 	node.button_content_style = d.button_content_style
@@ -656,6 +663,10 @@ reconcile :: proc(rt: ^Runtime) {
 			rt.focused = focus_fallback(rt, focus_lineage[:], !focus_was_in_virtual_list)
 		}
 	}
+	if rt.context_menu.open && rt.context_menu.focus_initial_pending {
+		if id := context_menu_focus_edge(rt); id != 0 { _ = context_menu_set_focus(rt, id) }
+		rt.context_menu.focus_initial_pending = false
+	}
 	if rt.focused != previous_focus {
 		// The old focus owner may have been retired during reconciliation. The
 		// new owner still needs an interaction repaint so a fallback caret or
@@ -808,8 +819,18 @@ end_frame :: proc(ui: ^UI) {
 		clear(&ui.runtime.identity_key_u64)
 		clear(&ui.runtime.identity_key_numeric)
 	}
+	if ui.runtime.context_menu.open && !ui.runtime.context_menu.described {
+		context_menu_close_internal(ui.runtime, false)
+	}
 	reconcile(ui.runtime)
 	// An unconsumed activation expires with this application description. This
 	// also covers controls that disappeared before their event could be read.
 	ui.runtime.activation_node = 0
+	if ui.runtime.context_menu.dismissed {
+		if node, ok := ui.runtime.nodes[ui.runtime.context_menu.overlay]; !ok || !node.active {
+			ui.runtime.context_menu.dismissed = false
+			ui.runtime.context_menu.overlay = 0
+			ui.runtime.context_menu.panel = 0
+		}
+	}
 }

@@ -156,6 +156,31 @@ overlay fills the viewport, but generic child containers do not auto-size to
 their descendants; transient panels need an explicit or application-computed
 height.
 
+### Context menus
+
+`context_menu_open(runtime, anchor, restore_focus_to, width, item_height)` opens
+one retained, single-level menu at a logical viewport rectangle. For a
+pointer-anchored menu, pass `Rect{x, y, 0, 0}`; for keyboard invocation, pass the
+focused control's bounds (or use `context_menu_open_for_focused`). The runtime
+places the menu beside the anchor, flips it when space is short, and clamps it
+to the viewport. Describe the ordinary root first, then, while the menu is
+open, call `context_menu_begin`, add `context_menu_item` and
+`context_menu_separator` entries, and finish with `context_menu_end`.
+
+The app owns the context entity and command handler. Menu items use the same
+`Action_ID` registry as native menus and return the selected ID from
+`context_menu_end`; Alicorn never invokes application callbacks. A registered
+disabled action is not focusable or activatable. Up/Down, Home/End, Enter/Space,
+Escape, outside-click dismissal, focus restoration, and the full-viewport input
+blocker are runtime behavior. If the app omits the menu on the next description,
+the runtime closes it. The host exposes `POINTER_BUTTON_SECONDARY` for secondary
+click and maps Shift+F10 to `Application_Key.Context_Menu`; the app should open
+the menu from its focused/semantic target and call `context_menu_open`.
+
+The popup is a top-level transient layer, so it is not clipped by its invoking
+pane. This first primitive is single-level and has no submenu, checkmark, or
+embedded-widget model.
+
 ## Text, runtime, and presentation
 
 - `Text_Style` and `Font_Role` choose text weight, overflow, and UI/monospace

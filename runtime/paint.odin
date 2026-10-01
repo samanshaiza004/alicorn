@@ -289,7 +289,7 @@ update_paint :: proc(rt: ^Runtime) {
 					delete(selection)
 				}
 			}
-			if node.kind == .Root || node.kind == .Modal_Overlay || node.kind == .Container || node.kind == .Virtual_List || node.kind == .Virtual_Row || node.kind == .Split || node.kind == .Scroll_Region {
+			if node.kind == .Root || node.kind == .Modal_Overlay || node.kind == .Context_Menu_Overlay || node.kind == .Context_Menu_Panel || node.kind == .Container || node.kind == .Virtual_List || node.kind == .Virtual_Row || node.kind == .Split || node.kind == .Scroll_Region {
 				// Layout containers are non-painting unless the caller explicitly
 				// supplied a background. This keeps structural wrappers from
 				// producing accidental rectangles in the compositor.

@@ -41,6 +41,8 @@ ui_key_is_explicit :: proc(key: UI_Key) -> bool {
 Node_Kind :: enum {
 	Root,
 	Modal_Overlay,
+	Context_Menu_Overlay,
+	Context_Menu_Panel,
 	Container,
 	Button,
 	Checkbox,
@@ -248,6 +250,10 @@ Pointer_Event :: struct {
 	click_count: u8,               // platform click sequence count for button events; zero when unavailable
 }
 
+POINTER_BUTTON_PRIMARY :: 1
+POINTER_BUTTON_MIDDLE :: 2
+POINTER_BUTTON_SECONDARY :: 3
+
 // Scroll_Event preserves both precise device deltas and whole wheel ticks.
 // The precise deltas are authoritative for scrolling. Whole ticks remain
 // available to diagnostics and applications that explicitly need coarse
@@ -437,6 +443,7 @@ Description :: struct {
 	text_style:  Text_Style,
 	button_content_style: Button_Content_Style,
 	style:       Layout_Style,
+	context_menu_bounds: Rect,
 	color:       Color,
 	paint_background: bool,
 	paint_value: u64,
@@ -514,6 +521,7 @@ Node :: struct {
 	text_style:  Text_Style,
 	button_content_style: Button_Content_Style,
 	style:       Layout_Style,
+	context_menu_bounds: Rect,
 	color:       Color,
 	paint_background: bool,
 	paint_value: u64,
@@ -658,6 +666,37 @@ Action_State :: struct {
 	checked: bool,
 }
 
+Context_Menu_State :: struct {
+	open: bool,
+	dismissed: bool,
+	described: bool,
+	pointer_consumed: bool,
+	focus_initial_pending: bool,
+	anchor: Rect,
+	panel_bounds: Rect,
+	restore_focus: Node_ID,
+	overlay: Node_ID,
+	panel: Node_ID,
+	preferred_width: f32,
+	item_height: f32,
+	separator_height: f32,
+	padding: f32,
+	content_height: f32,
+	item_index: int,
+	activation_action: Action_ID,
+	pending_start: int,
+}
+
+Context_Menu_Key :: enum {
+	Other,
+	Up,
+	Down,
+	Home,
+	End,
+	Activate,
+	Cancel,
+}
+
 Action_Entry :: struct {
 	descriptor: Action_Descriptor,
 	state:      Action_State,
@@ -765,6 +804,7 @@ Runtime :: struct {
 	identity_key_pair: [dynamic]UI_Key_Pair,
 	viewport:    Rect,
 	focused:     Node_ID,
+	context_menu: Context_Menu_State,
 	selected:    Node_ID,
 	semantic_focus: Semantic_Focus_State,
 	last_hovered: Node_ID,
@@ -1460,6 +1500,7 @@ begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
 	// then represents new work and must remain pending after reconciliation.
 	rt.invalidated = false
 	rt.frame_open = true
+	rt.context_menu.described = false
 	clear(&rt.pending)
 	clear(&rt.seen)
 	clear(&rt.identity_scopes)

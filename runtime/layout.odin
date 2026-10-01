@@ -368,6 +368,10 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	if count == 0 { return }
 	if inner.w < 0 { inner.w = 0 }
 	if inner.h < 0 { inner.h = 0 }
+	if parent.kind == .Context_Menu_Overlay {
+		context_menu_layout_children(rt, parent, children[:])
+		return
+	}
 	if parent.kind == .Split && len(children) == 3 {
 		layout_split_children(rt, parent, inner, children[:])
 		return

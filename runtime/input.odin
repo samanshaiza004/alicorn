@@ -27,8 +27,10 @@ Scrollbar_Hit :: struct {
 modal_overlay_root :: proc(rt: ^Runtime) -> Node_ID {
 	for index := len(rt.top_level)-1; index >= 0; index -= 1 {
 		id := rt.top_level[index]
-		if node, ok := rt.nodes[id]; ok && node.active && node.kind == .Modal_Overlay {
-			return id
+		if node, ok := rt.nodes[id]; ok && node.active {
+			if node.kind == .Modal_Overlay { return id }
+			if node.kind == .Context_Menu_Overlay && id == rt.context_menu.overlay &&
+				(rt.context_menu.open || rt.context_menu.dismissed) { return id }
 		}
 	}
 	return 0
@@ -151,7 +153,7 @@ hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 	}
 	if overlay, ok := rt.nodes[modal_root]; ok && overlay.active &&
 		rect_contains(overlay.bounds, x, y) && rect_contains(overlay.clip, x, y) {
-		return modal_root
+		if overlay.kind == .Modal_Overlay || overlay.kind == .Context_Menu_Overlay { return modal_root }
 	}
 	return 0
 }
@@ -377,14 +379,42 @@ select :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 
 process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 	rt.stats.pointer_events += 1
+	menu_active := context_menu_input_active(rt)
+	rt.context_menu.pointer_consumed = menu_active
 	if event.kind == .Cancel {
 		_ = cancel_pointer_capture(rt)
 		return 0
 	}
+	if menu_active && rt.context_menu.open {
+		if overlay, ok := rt.nodes[rt.context_menu.overlay]; !ok || !overlay.active {
+			// The application has requested a menu but has not described its
+			// overlay yet. Do not let the invoking pointer sequence reach content.
+			return 0
+		}
+	}
+	if menu_active && rt.context_menu.dismissed { return 0 }
 	if scrollbar_handle_pointer(rt, event) {
 		return rt.scrollbar_drag_node if rt.scrollbar_drag_node != 0 else rt.captured_node
 	}
 	target := hit_test(rt, event.x, event.y)
+	if menu_active && rt.context_menu.open && event.kind == .Down && target == rt.context_menu.overlay {
+		inside_panel := false
+		if panel, ok := rt.nodes[rt.context_menu.panel]; ok && panel.active {
+			inside_panel = rect_contains(panel.bounds, event.x, event.y) && rect_contains(panel.clip, event.x, event.y)
+		}
+		if !inside_panel {
+			context_menu_close_internal(rt, true)
+			record_trace(rt, .Pointer, target, "context menu dismissed by outside click")
+			return target
+		}
+	}
+	// Secondary and auxiliary mouse buttons are exposed to the application as
+	// context gestures, but they must not press, focus, or activate ordinary
+	// retained buttons. A zero button remains accepted for adapters that do not
+	// provide button identity.
+	if (event.kind == .Down || event.kind == .Up) && event.button != 0 && event.button != POINTER_BUTTON_PRIMARY {
+		return target
+	}
 	if event.kind == .Down {
 		if rt.captured_node != 0 || rt.scrollbar_drag_node != 0 {
 			_ = cancel_pointer_capture(rt)

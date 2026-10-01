@@ -106,6 +106,15 @@ themselves to their descendants, so give transient panels an explicit or
 application-computed height. See the API
 [reference](reference.md#transient-modal-surfaces).
 
+For a single-level context menu, handle secondary-click (or the host's
+Shift+F10 `Application_Key.Context_Menu`) in the application and open it with
+`context_menu_open`. Keep the semantic context target in application state.
+After describing the ordinary root, add the menu with
+`context_menu_begin/item/separator/end`; dispatch the `Action_ID` returned by
+`context_menu_end` through the app's existing command handler. The popup owns
+navigation, placement, outside-click dismissal, and focus restoration. See the
+[context-menu reference](reference.md#context-menus).
+
 ## When something looks wrong
 
 Use the runtime inspector and trace to see identity, focus, bounds, invalidation

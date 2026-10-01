@@ -95,6 +95,7 @@ Application_Key :: enum {
 	Open_Command_Palette,
 	Find,
 	Workspace_Search,
+	Context_Menu,
 	Workspace_Rename,
 	Find_Next,
 	Find_Previous,
@@ -109,7 +110,7 @@ application_key_can_preempt_text_field :: proc(key: Application_Key, composition
 	if key == .Workspace_Rename && composition_active { return false }
 	#partial switch key {
 	case .Up, .Down, .Page_Up, .Page_Down, .Open_Repository, .Open_Command_Palette,
-	     .Find, .Workspace_Search, .Workspace_Rename, .Find_Next, .Find_Previous, .Escape, .Return:
+	     .Find, .Workspace_Search, .Workspace_Rename, .Context_Menu, .Find_Next, .Find_Previous, .Escape, .Return:
 		return true
 	case:
 		return false
@@ -1319,6 +1320,7 @@ pump_events :: proc(
 			if close_result == .Allow { quit_requested^ = true }
 		}
 		if event.type == .WINDOW_FOCUS_LOST {
+			alicorn.context_menu_close(rt)
 			if text_input_state != nil {
 				text_input_state.window_focused = false
 				native_cancel_current_text_composition(application, rt, text_input_state, "window focus lost")
@@ -1349,7 +1351,7 @@ pump_events :: proc(
 			pointer_cause := alicorn.pointer_cause_begin(rt, pointer.kind)
 			if devtools_last_cause != nil { devtools_last_cause^ = pointer_cause.cause }
 			target := alicorn.process_pointer(rt, pointer)
-			if application != nil && application.on_pointer != nil {
+			if application != nil && application.on_pointer != nil && !alicorn.context_menu_pointer_consumed(rt) {
 				application.on_pointer(application.state, rt, pointer, target)
 			}
 			alicorn.cause_end(rt, pointer_cause)
@@ -1396,14 +1398,22 @@ pump_events :: proc(
 		if event.type == .KEY_DOWN && event.key.down {
 			key_cause := alicorn.cause_begin(rt, .Keyboard, "SDL key down")
 			if devtools_last_cause != nil { devtools_last_cause^ = key_cause.cause }
-			menu_shortcut_handled := native_menu_try_shortcut(native_menu, int(event.key.key), event.key.mod)
+			context_menu_handled := alicorn.context_menu_handle_key(rt, native_context_menu_key_from_sdl(event.key.key))
+			menu_shortcut_handled := !context_menu_handled && native_menu_try_shortcut(native_menu, int(event.key.key), event.key.mod)
 			devtools_hotkey_handled := false
-			if !menu_shortcut_handled && event.key.key == sdl3.K_F10 && !event.key.repeat && devtools_hud != nil {
+			if !menu_shortcut_handled && event.key.key == sdl3.K_F10 &&
+				!native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) && !event.key.repeat && devtools_hud != nil {
 				native_devtools_hud_toggle(devtools_hud)
 				if devtools_hud_redraw_pending != nil { devtools_hud_redraw_pending^ = true }
 				devtools_hotkey_handled = true
 			}
-			runtime_key_handled := menu_shortcut_handled || devtools_hotkey_handled
+			runtime_key_handled := context_menu_handled || menu_shortcut_handled || devtools_hotkey_handled
+			if !runtime_key_handled && event.key.key == sdl3.K_F10 &&
+				native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) && !event.key.repeat &&
+				application != nil && application.on_key != nil {
+				runtime_key_handled = application.on_key(application.state, rt, .Context_Menu)
+				if runtime_key_handled { alicorn.invalidate_root(rt, "application opened context menu from keyboard") }
+			}
 			// Let transient application UI intercept navigation and dismissal
 			// while a text-input owner has focus. Returning false preserves the
 			// normal caret/composition behavior below.
