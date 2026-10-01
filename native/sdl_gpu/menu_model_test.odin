@@ -63,18 +63,19 @@ test_application_can_preempt_text_field_navigation_and_dismissal :: proc(t: ^tes
 	interceptable_keys := [?]Application_Key{
 		Application_Key.Up, Application_Key.Down, Application_Key.Page_Up, Application_Key.Page_Down,
 		Application_Key.Open_Repository, Application_Key.Open_Command_Palette,
-		Application_Key.Find, Application_Key.Workspace_Search,
+		Application_Key.Find, Application_Key.Workspace_Search, Application_Key.Workspace_Rename,
 		Application_Key.Find_Next, Application_Key.Find_Previous,
 		Application_Key.Escape, Application_Key.Return,
 	}
 	for key in interceptable_keys {
 		testing.expect(t, application_key_can_preempt_text_field(key), "transient UI key should be offered before text-field handling")
 	}
-	normal_keys := [?]Application_Key{Application_Key.Home, Application_Key.End, Application_Key.Fit_Selection}
+	normal_keys := [?]Application_Key{Application_Key.Left, Application_Key.Right, Application_Key.Home, Application_Key.End, Application_Key.Fit_Selection}
 	for key in normal_keys {
 		testing.expect(t, !application_key_can_preempt_text_field(key), "unrelated application key should retain normal routing")
 	}
 	testing.expect(t, !application_key_can_preempt_text_field(.Escape, true), "Escape must cancel active text composition before transient UI dismissal")
+	testing.expect(t, !application_key_can_preempt_text_field(.Workspace_Rename, true), "F2 must not interrupt active text composition")
 	testing.expect(t, native_text_field_return_key(false) == .Return, "plain Enter should retain ordinary text-field return semantics")
 	testing.expect(t, native_text_field_return_key(true) == .Find_Previous, "Shift+Enter should route to previous Find match")
 }

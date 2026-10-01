@@ -78,6 +78,8 @@ Native_UI_Nodes :: struct {
 // the SDL host. Applications do not need to depend on SDL keycode constants
 // just to implement navigation or a few commands.
 Application_Key :: enum {
+	Left,
+	Right,
 	Up,
 	Down,
 	Page_Up,
@@ -93,6 +95,7 @@ Application_Key :: enum {
 	Open_Command_Palette,
 	Find,
 	Workspace_Search,
+	Workspace_Rename,
 	Find_Next,
 	Find_Previous,
 	Escape,
@@ -103,9 +106,10 @@ Application_Key :: enum {
 // focused text field can participate in transient UI such as a command picker.
 application_key_can_preempt_text_field :: proc(key: Application_Key, composition_active := false) -> bool {
 	if key == .Escape && composition_active { return false }
+	if key == .Workspace_Rename && composition_active { return false }
 	#partial switch key {
 	case .Up, .Down, .Page_Up, .Page_Down, .Open_Repository, .Open_Command_Palette,
-	     .Find, .Workspace_Search, .Find_Next, .Find_Previous, .Escape, .Return:
+	     .Find, .Workspace_Search, .Workspace_Rename, .Find_Next, .Find_Previous, .Escape, .Return:
 		return true
 	case:
 		return false
@@ -1434,6 +1438,7 @@ pump_events :: proc(
 						if native_text_primary_modifier(event.key.mod) {
 							application_key = .Workspace_Search if native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) else .Find
 						} else { mapped = false }
+					case sdl3.K_F2: application_key = .Workspace_Rename
 					case sdl3.K_F3:
 						application_key = .Find_Previous if native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) else .Find_Next
 					case: mapped = false
@@ -1510,6 +1515,8 @@ pump_events :: proc(
 					application_key: Application_Key
 					handled := true
 					switch event.key.key {
+					case sdl3.K_LEFT: application_key = .Left
+					case sdl3.K_RIGHT: application_key = .Right
 					case sdl3.K_UP: application_key = .Up
 					case sdl3.K_DOWN: application_key = .Down
 					case sdl3.K_PAGEUP: application_key = .Page_Up
@@ -1534,6 +1541,7 @@ pump_events :: proc(
 						}
 					case sdl3.K_F3:
 						application_key = .Find_Previous if native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) else .Find_Next
+					case sdl3.K_F2: application_key = .Workspace_Rename
 					case sdl3.K_O:
 						if len(application.menus) == 0 && native_text_primary_modifier(event.key.mod) {
 							application_key = .Open_Repository
