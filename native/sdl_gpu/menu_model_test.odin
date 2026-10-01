@@ -75,6 +75,8 @@ test_application_can_preempt_text_field_navigation_and_dismissal :: proc(t: ^tes
 		testing.expect(t, !application_key_can_preempt_text_field(key), "unrelated application key should retain normal routing")
 	}
 	testing.expect(t, !application_key_can_preempt_text_field(.Escape, true), "Escape must cancel active text composition before transient UI dismissal")
+	testing.expect(t, native_text_field_return_key(false) == .Return, "plain Enter should retain ordinary text-field return semantics")
+	testing.expect(t, native_text_field_return_key(true) == .Find_Previous, "Shift+Enter should route to previous Find match")
 }
 
 @(test)

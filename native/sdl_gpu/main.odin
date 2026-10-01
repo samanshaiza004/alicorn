@@ -112,6 +112,10 @@ application_key_can_preempt_text_field :: proc(key: Application_Key, composition
 	}
 }
 
+native_text_field_return_key :: proc(shifted: bool) -> Application_Key {
+	return .Find_Previous if shifted else .Return
+}
+
 // native_route_focused_control_key is kept separate from the event loop so the
 // platform key convention for retained controls can be verified headlessly.
 native_route_focused_control_key :: proc(rt: ^alicorn.Runtime, key: sdl3.Keycode) -> bool {
@@ -1417,7 +1421,8 @@ pump_events :: proc(
 					case sdl3.K_PAGEUP: application_key = .Page_Up
 					case sdl3.K_PAGEDOWN: application_key = .Page_Down
 					case sdl3.K_ESCAPE: application_key = .Escape
-					case sdl3.K_RETURN, sdl3.K_KP_ENTER: application_key = .Return
+					case sdl3.K_RETURN, sdl3.K_KP_ENTER:
+						application_key = native_text_field_return_key(native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT))
 					case sdl3.K_O:
 						if len(application.menus) == 0 && native_text_primary_modifier(event.key.mod) { application_key = .Open_Repository }
 						else { mapped = false }
