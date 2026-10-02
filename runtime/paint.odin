@@ -358,6 +358,7 @@ update_paint :: proc(rt: ^Runtime) {
 						if !quiet { button_color = Color{0.20, 0.34, 0.54, 1} }
 						if node.selected { button_color = Color{0.33, 0.57, 0.80, 1} }
 					}
+					if node.drop_position == .On { button_color = Color{0.17, 0.39, 0.34, 1} }
 					if node.disabled { button_color = Color{0.10, 0.13, 0.18, 1}; text_color = Color{0.48, 0.53, 0.62, 1.0} }
 					append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", button_color, []Text_Paint_Span{}})
 					if node.semantic_active { append_focus_outline(node, Color{0.12, 0.78, 0.82, 1}, 1) }
@@ -497,6 +498,25 @@ update_paint :: proc(rt: ^Runtime) {
 						Color{0.92, 0.95, 1.0, 1.0}, []Text_Paint_Span{},
 					})
 				}
+			}
+			if node.drop_position == .On {
+				append(&node.paint, Display_Command{
+					node.id, .Text_Selection, node.bounds, node.clip, "",
+					Color{0.17, 0.39, 0.34, 0.30}, []Text_Paint_Span{},
+				})
+			} else if node.drop_position == .Before || node.drop_position == .After {
+				marker := Rect{}
+				if node.drop_target_mode == .Between_Horizontal {
+					marker_x := node.bounds.x if node.drop_position == .Before else node.bounds.x+node.bounds.w-2
+					marker = Rect{marker_x, node.bounds.y+2, 2, maxf(node.bounds.h-4, 0)}
+				} else {
+					marker_y := node.bounds.y if node.drop_position == .Before else node.bounds.y+node.bounds.h-2
+					marker = Rect{node.bounds.x+2, marker_y, maxf(node.bounds.w-4, 0), 2}
+				}
+				append(&node.paint, Display_Command{
+					node.id, .Text_Selection, marker, node.clip, "",
+					Color{0.44, 0.83, 0.76, 1}, []Text_Paint_Span{},
+				})
 			}
 			rt.stats.paint_updates += 1
 			dirty_set(&node.dirty, .Composite, true)

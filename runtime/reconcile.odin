@@ -313,6 +313,17 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	// description to opt a node into the selected visual state.
 	node.selected = d.selected || rt.selected == node.id
 	node.semantic_id = d.semantic_id
+	node.drag_source_type = d.drag_source_type
+	node.drag_source_id = d.drag_source_id
+	node.drop_target_type = d.drop_target_type
+	node.drop_target_id = d.drop_target_id
+	node.drop_target_mode = d.drop_target_mode
+	node.drop_position = .None
+	if rt.drag.phase == .Dragging && d.drop_target_type == rt.drag.drag_type &&
+		d.drop_target_id == rt.drag.target && rt.drag.target != (Semantic_ID{}) {
+		node.drop_position = rt.drag.position
+		rt.drag.target_node = node.id
+	}
 	node.explicit_key = d.explicit_key
 	node.identity_key_kind = d.identity_key_kind
 	node.identity_key_pair = d.identity_key_pair

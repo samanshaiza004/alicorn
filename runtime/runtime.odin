@@ -235,6 +235,44 @@ Identity_Declaration :: struct {
 
 Pointer_Kind :: enum { Move, Down, Up, Cancel }
 
+// Drag_Type is an application-defined local drag category. Alicorn only uses
+// it to match a source to compatible targets; it does not interpret payloads.
+Drag_Type :: distinct u64
+
+Drop_Target_Mode :: enum {
+	On,
+	Between_Horizontal,
+	Between_Vertical,
+}
+
+Drop_Position :: enum { None, On, Before, After }
+Drag_Phase :: enum { Idle, Candidate, Dragging }
+Drag_Event_Kind :: enum { Started, Target_Changed, Dropped, Cancelled }
+
+Drag_Event :: struct {
+	kind: Drag_Event_Kind,
+	drag_type: Drag_Type,
+	source: Semantic_ID,
+	previous_target: Semantic_ID,
+	target: Semantic_ID,
+	position: Drop_Position,
+}
+
+Drag_Session :: struct {
+	phase: Drag_Phase,
+	drag_type: Drag_Type,
+	source: Semantic_ID,
+	source_node: Node_ID, // presentation hint only; never the source identity
+	start_x, start_y: f32,
+	x, y: f32,
+	target: Semantic_ID,
+	target_node: Node_ID, // presentation hint only; never the target identity
+	position: Drop_Position,
+	target_mode: Drop_Target_Mode,
+}
+
+DRAG_START_THRESHOLD :: 5.0
+
 Input_Modifiers :: struct {
 	shift:   bool,
 	control: bool,
@@ -461,6 +499,11 @@ Description :: struct {
 	text_interaction_show_caret: bool,
 	selected:    bool,
 	semantic_id: Semantic_ID,
+	drag_source_type: Drag_Type,
+	drag_source_id: Semantic_ID,
+	drop_target_type: Drag_Type,
+	drop_target_id: Semantic_ID,
+	drop_target_mode: Drop_Target_Mode,
 	disabled:    bool,
 	identity_key: string,
 	identity_key_u64: u64,
@@ -548,6 +591,12 @@ Node :: struct {
 	pressed:     bool,
 	selected:    bool,
 	semantic_id: Semantic_ID,
+	drag_source_type: Drag_Type,
+	drag_source_id: Semantic_ID,
+	drop_target_type: Drag_Type,
+	drop_target_id: Semantic_ID,
+	drop_target_mode: Drop_Target_Mode,
+	drop_position: Drop_Position,
 	semantic_active: bool,
 	last_consumed_activation: u64,
 	control_pending: bool,
@@ -809,6 +858,9 @@ Runtime :: struct {
 	semantic_focus: Semantic_Focus_State,
 	last_hovered: Node_ID,
 	captured_node: Node_ID,
+	drag: Drag_Session,
+	drag_event: Drag_Event,
+	drag_event_pending: bool,
 	scrollbar_drag_node: Node_ID,
 	scrollbar_drag_axis: Scroll_Axis,
 	scrollbar_drag_pointer_origin: f32,

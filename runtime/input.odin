@@ -101,7 +101,9 @@ scrollbar_handle_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> bool {
 cancel_pointer_capture :: proc(rt: ^Runtime) -> bool {
 	captured := rt.captured_node
 	dragging := rt.scrollbar_drag_node != 0
-	if captured == 0 && !dragging { return false }
+	drag_candidate := rt.drag.phase != .Idle
+	if captured == 0 && !dragging && !drag_candidate { return false }
+	if drag_candidate { drag_cancel_session(rt) }
 	if node, ok := rt.nodes[captured]; ok {
 		if node.pressed {
 			node.pressed = false
@@ -147,6 +149,19 @@ hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 			node_is_in_modal_overlay(rt, id, modal_root) && rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
 			if node.kind == .Button || node.kind == .Checkbox || node.kind == .Slider || node.kind == .Text_Field || node.kind == .Custom_Surface ||
 			   (node.text_input_target && node.focusable) {
+				return id
+			}
+		}
+	}
+	// Background drop surfaces are hit-testable only during an active drag.
+	// Ordinary pointer hit testing remains restricted to interactive nodes,
+	// while blank tree/panel space can still represent a meaningful target.
+	if rt.drag.phase == .Dragging {
+		for i := len(rt.order)-1; i >= 0; i -= 1 {
+			id := rt.order[i]
+			if node, ok := rt.nodes[id]; ok && node.active && !node.disabled &&
+				node.drop_target_type == rt.drag.drag_type && semantic_id_is_valid(node.drop_target_id) &&
+				node_is_in_modal_overlay(rt, id, modal_root) && rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
 				return id
 			}
 		}
@@ -379,6 +394,7 @@ select :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 
 process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 	rt.stats.pointer_events += 1
+	drag_event_clear(rt)
 	menu_active := context_menu_input_active(rt)
 	rt.context_menu.pointer_consumed = menu_active
 	if event.kind == .Cancel {
@@ -453,6 +469,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 		}
 	}
 	if event.kind == .Move {
+		_ = drag_process_pointer(rt, event, target)
 		hover_target := target
 		if captured, ok := rt.nodes[rt.captured_node]; ok && captured.active && captured.kind == .Split_Handle {
 			hover_target = captured.id
@@ -482,6 +499,20 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 		}
 	} else if event.kind == .Down {
 		if target != 0 {
+			if event.button == 0 || event.button == POINTER_BUTTON_PRIMARY {
+				if source_node, drag_type, source_id, found := drag_source_at(rt, target); found {
+					rt.drag = Drag_Session{
+						phase=.Candidate,
+						drag_type=drag_type,
+						source=source_id,
+						source_node=source_node,
+						start_x=event.x,
+						start_y=event.y,
+						x=event.x,
+						y=event.y,
+					}
+				}
+			}
 			if node, ok := rt.nodes[target]; ok {
 				if node.kind != .Split_Handle { focus(rt, target) }
 				// Pointer placement is an explicit cancellation boundary for a
@@ -517,6 +548,10 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 			invalidate_root(rt, "pointer down")
 		}
 	} else if event.kind == .Up {
+		if drag_process_pointer(rt, event, target) {
+			record_trace(rt, .Pointer, target, "drag dropped")
+			return target
+		}
 		captured := rt.captured_node
 		if captured != 0 {
 			if node, ok := rt.nodes[captured]; ok {

@@ -16,7 +16,8 @@ logical_height, dpi_scale) -> Node_ID`. A typical callback calls
 `begin_frame`, emits a `.Root` container and its children, then calls
 `end_frame`. Return early if `begin_frame` says there is no application build
 to do. Optional callbacks handle text changes, keys, pointer/scroll input,
-scheduled wakes, dialogs, worker wakeups, and lifecycle events.
+drag/drop transitions, scheduled wakes, dialogs, worker wakeups, and lifecycle
+events.
 
 `on_pointer` receives a platform-neutral `Pointer_Event` with the pointer kind,
 logical window coordinates, button number, `Input_Modifiers`, and a native
@@ -180,6 +181,33 @@ the menu from its focused/semantic target and call `context_menu_open`.
 The popup is a top-level transient layer, so it is not clipped by its invoking
 pane. This first primitive is single-level and has no submenu, checkmark, or
 embedded-widget model.
+
+### Local drag and drop
+
+`drag_source(ui, drag_type, semantic_id)` and
+`drop_target(ui, drag_type, semantic_id, mode)` annotate the most recently
+described node. The application chooses a nonzero `Drag_Type`, supplies stable
+`Semantic_ID`s, and interprets the event payload; Alicorn never stores an
+application pointer or decides whether a drop means move, copy, or reorder.
+Use `.On` for a destination surface and `.Between_Horizontal` or
+`.Between_Vertical` for Before/After insertion targets. Hit testing resolves a
+child control to its nearest accepting retained ancestor. During an active
+drag, an annotated background surface can also receive drops in its blank
+space.
+
+The host recognizes a drag after the pointer moves at least five logical
+pixels from a primary-button press on a declared source. Below that threshold,
+ordinary click activation is unchanged. `Application.on_drag` receives
+`.Started`, `.Target_Changed`, `.Dropped`, and `.Cancelled` events, identified
+by semantic source/target IDs. Target-change events are emitted only when the
+semantic target or Before/After side changes; same-target pointer motion stays
+in retained runtime presentation and does not rebuild the application. A
+virtualized source may disappear after `.Started`; the semantic source ID
+remains valid for the rest of the session. Escape, native pointer cancellation,
+and focus loss cancel and release the drag.
+
+This is an in-window, single-source primitive. It does not transport operating
+system file drops or arbitrary MIME payloads.
 
 ## Text, runtime, and presentation
 

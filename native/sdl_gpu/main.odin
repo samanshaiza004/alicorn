@@ -237,6 +237,7 @@ Application_Text_Key_Proc :: proc(
 ) -> bool
 Application_Key_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, key: Application_Key) -> bool
 Application_Pointer_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Pointer_Event, target: alicorn.Node_ID)
+Application_Drag_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Drag_Event)
 Application_Scroll_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Scroll_Event)
 Application_Tick_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
 Application_Start_Proc :: proc(state: rawptr, waker: Application_Waker)
@@ -318,6 +319,7 @@ Application :: struct {
 	on_text_key:        Application_Text_Key_Proc,
 	on_key:             Application_Key_Proc,
 	on_pointer:         Application_Pointer_Proc,
+	on_drag:            Application_Drag_Proc,
 	on_scroll:          Application_Scroll_Proc,
 	on_tick:            Application_Tick_Proc,
 	on_services:        Application_Services_Proc,
@@ -712,6 +714,15 @@ pointer_from_sdl_with_modifiers :: proc(event: sdl3.Event, mod: sdl3.Keymod) -> 
 		}, true
 	}
 	return alicorn.Pointer_Event{}, false
+}
+
+native_dispatch_drag_event :: proc(application: ^Application, rt: ^alicorn.Runtime) -> bool {
+	event, pending := alicorn.drag_event_take(rt)
+	if !pending { return false }
+	if application != nil && application.on_drag != nil {
+		application.on_drag(application.state, rt, event)
+	}
+	return true
 }
 
 pointer_modifier_state_update :: proc(mod_state: ^sdl3.Keymod, event: sdl3.Event) {
@@ -1332,6 +1343,7 @@ pump_events :: proc(
 			cancel_cause := alicorn.pointer_cause_begin(rt, .Cancel)
 			if devtools_last_cause != nil { devtools_last_cause^ = cancel_cause.cause }
 			_ = alicorn.cancel_pointer_capture(rt)
+			_ = native_dispatch_drag_event(application, rt)
 			if application != nil && application.on_pointer != nil {
 				application.on_pointer(application.state, rt, alicorn.Pointer_Event{kind=.Cancel}, captured)
 			}
@@ -1351,7 +1363,9 @@ pump_events :: proc(
 			pointer_cause := alicorn.pointer_cause_begin(rt, pointer.kind)
 			if devtools_last_cause != nil { devtools_last_cause^ = pointer_cause.cause }
 			target := alicorn.process_pointer(rt, pointer)
-			if application != nil && application.on_pointer != nil && !alicorn.context_menu_pointer_consumed(rt) {
+			drag_event_dispatched := native_dispatch_drag_event(application, rt)
+			drag_consumed := drag_event_dispatched || alicorn.drag_is_active(rt)
+			if application != nil && application.on_pointer != nil && !alicorn.context_menu_pointer_consumed(rt) && !drag_consumed {
 				application.on_pointer(application.state, rt, pointer, target)
 			}
 			alicorn.cause_end(rt, pointer_cause)
@@ -1399,7 +1413,13 @@ pump_events :: proc(
 			key_cause := alicorn.cause_begin(rt, .Keyboard, "SDL key down")
 			if devtools_last_cause != nil { devtools_last_cause^ = key_cause.cause }
 			context_menu_handled := alicorn.context_menu_handle_key(rt, native_context_menu_key_from_sdl(event.key.key))
-			menu_shortcut_handled := !context_menu_handled && native_menu_try_shortcut(native_menu, int(event.key.key), event.key.mod)
+			drag_cancelled := false
+			if !context_menu_handled && event.key.key == sdl3.K_ESCAPE && alicorn.drag_is_active(rt) {
+				_ = alicorn.drag_cancel(rt)
+				_ = native_dispatch_drag_event(application, rt)
+				drag_cancelled = true
+			}
+			menu_shortcut_handled := !context_menu_handled && !drag_cancelled && native_menu_try_shortcut(native_menu, int(event.key.key), event.key.mod)
 			devtools_hotkey_handled := false
 			if !menu_shortcut_handled && event.key.key == sdl3.K_F10 &&
 				!native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) && !event.key.repeat && devtools_hud != nil {
@@ -1407,7 +1427,7 @@ pump_events :: proc(
 				if devtools_hud_redraw_pending != nil { devtools_hud_redraw_pending^ = true }
 				devtools_hotkey_handled = true
 			}
-			runtime_key_handled := context_menu_handled || menu_shortcut_handled || devtools_hotkey_handled
+			runtime_key_handled := context_menu_handled || drag_cancelled || menu_shortcut_handled || devtools_hotkey_handled
 			if !runtime_key_handled && event.key.key == sdl3.K_F10 &&
 				native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) && !event.key.repeat &&
 				application != nil && application.on_key != nil {
