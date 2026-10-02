@@ -1,5 +1,10 @@
 package alicorn
 
+DRAG_SOURCE_OPACITY :: f32(0.55)
+DRAG_PREVIEW_POINTER_OFFSET :: f32(12)
+DRAG_PREVIEW_MAX_WIDTH :: f32(280)
+DRAG_PREVIEW_MAX_LABEL_BYTES :: 256
+
 // drag_source marks the most recently described node as a local drag source.
 // The application identity must remain meaningful if virtualization removes
 // the node while the drag is in progress.
@@ -73,7 +78,106 @@ drag_cancel_session :: proc(rt: ^Runtime) {
 		rt.drag_event_pending = true
 	}
 	drag_clear_target_visual(rt)
+	drag_preview_clear(rt)
 	rt.drag = {}
+}
+
+drag_preview_begin :: proc(rt: ^Runtime) {
+	if rt == nil || rt.drag.phase != .Dragging { return }
+	drag_preview_clear(rt)
+	if source, ok := rt.nodes[rt.drag.source_node]; ok && source.active {
+		label := source.label if source.label != "" else source.text
+		if len(label) > DRAG_PREVIEW_MAX_LABEL_BYTES {
+			label = label[:grapheme_floor_boundary(label, DRAG_PREVIEW_MAX_LABEL_BYTES)]
+		}
+		size := f32(14)
+		font := source.font
+		weight := effective_font_weight(source.text_style.font_weight)
+		styles: []Text_Style_Span
+		if source.text_run_valid {
+			size = source.text_run.size
+			styles = source.text_style_spans[:]
+		}
+		if len(label) > 0 {
+			run, built := text_run_build_with_overflow(
+				&rt.text_engine,
+				label,
+				maxf(size, 10),
+				DRAG_PREVIEW_MAX_WIDTH-24,
+				rt.persistent_allocator,
+				rt.scratch_allocator,
+				font,
+				weight,
+				.Ellipsis,
+				text_style_spans=styles,
+			)
+			if built {
+				rt.drag_preview.run = run
+				rt.drag_preview.width = minf(run.width+24, DRAG_PREVIEW_MAX_WIDTH)
+				rt.drag_preview.height = maxf(run.height+12, 28)
+				rt.drag_preview.ready = true
+			}
+		}
+	}
+	if !rt.drag_preview.ready {
+		rt.drag_preview.width = 96
+		rt.drag_preview.height = 28
+	}
+	rt.composition_rebuild = true
+	request_presentation(rt, "drag preview started")
+}
+
+// drag_preview_clear removes borrowed text commands before releasing the
+// shaped label they refer to. The pending presentation rebuild restores the
+// ordinary retained list without waking the application.
+drag_preview_clear :: proc(rt: ^Runtime) {
+	if rt == nil { return }
+	write_index := 0
+	for read_index := 0; read_index < len(rt.display); read_index += 1 {
+		command := rt.display[read_index]
+		if command.node == 0 { continue }
+		rt.display[write_index] = command
+		write_index += 1
+	}
+	for len(rt.display) > write_index { _ = pop(&rt.display) }
+	if rt.drag_preview.ready { text_run_destroy(&rt.drag_preview.run) }
+	rt.drag_preview = Drag_Preview{}
+	rt.composition_rebuild = true
+	request_presentation(rt, "drag preview cleared")
+}
+
+// A drag preview is a retained display overlay with a source-independent
+// label. Its node ID is zero, which is reserved for runtime-generated display
+// commands and never participates in hit testing.
+append_drag_preview :: proc(rt: ^Runtime) {
+	if rt == nil || rt.drag.phase != .Dragging { return }
+	preview := rt.drag_preview
+	shadow := Rect{2, 3, preview.width, preview.height}
+	card := Rect{0, 0, preview.width, preview.height}
+	append(&rt.display,
+		Display_Command{Node_ID(0), .Button, shadow, rt.viewport, "", Color{0, 0, 0, 0.38}, []Text_Paint_Span{}},
+		Display_Command{Node_ID(0), .Button, card, rt.viewport, "", Color{0.12, 0.16, 0.23, 0.96}, []Text_Paint_Span{}},
+	)
+	if preview.ready {
+		text_bounds := Rect{11, (preview.height-preview.run.height)/2, maxf(preview.width-22, 0), preview.run.height}
+		append(&rt.display, Display_Command{
+			Node_ID(0), .Text, text_bounds, rt.viewport, preview.run.value,
+			Color{0.91, 0.94, 0.98, 0.96}, []Text_Paint_Span{},
+		})
+	}
+}
+
+drag_preview_pointer_moved :: proc(rt: ^Runtime) {
+	if rt == nil || rt.drag.phase != .Dragging { return }
+	// The native compositor translates the node-zero overlay from the current
+	// drag coordinates, so moving within a target changes no app descriptions
+	// and does not recompose the retained display list.
+	request_presentation(rt, "drag preview followed pointer")
+}
+
+drag_source_opacity :: proc(rt: ^Runtime, id: Node_ID) -> f32 {
+	if rt != nil && rt.drag.phase == .Dragging && rt.drag.source_node == id { return DRAG_SOURCE_OPACITY }
+	return 1
 }
 
 drag_clear_target_visual :: proc(rt: ^Runtime) {
@@ -242,6 +346,7 @@ drag_process_pointer :: proc(rt: ^Runtime, event: Pointer_Event, hit: Node_ID) -
 				rt.drag.phase = .Dragging
 				rt.drag.x = event.x
 				rt.drag.y = event.y
+				drag_preview_begin(rt)
 				drag_update_target(rt, hit, event.x, event.y, false)
 				rt.drag_event = Drag_Event{
 					kind=.Started,
@@ -257,6 +362,7 @@ drag_process_pointer :: proc(rt: ^Runtime, event: Pointer_Event, hit: Node_ID) -
 			rt.drag.x = event.x
 			rt.drag.y = event.y
 			drag_update_target(rt, hit, event.x, event.y)
+			drag_preview_pointer_moved(rt)
 			return true
 		}
 	} else if event.kind == .Up {
@@ -280,6 +386,7 @@ drag_process_pointer :: proc(rt: ^Runtime, event: Pointer_Event, hit: Node_ID) -
 				rt.drag_event_pending = true
 			}
 			drag_clear_target_visual(rt)
+			drag_preview_clear(rt)
 			rt.drag = {}
 			if node, ok := rt.nodes[rt.captured_node]; ok && node.pressed {
 				node.pressed = false

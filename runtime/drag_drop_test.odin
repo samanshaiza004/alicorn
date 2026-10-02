@@ -7,6 +7,7 @@ DRAG_TEST_SOURCE :: Semantic_ID{namespace=701, value=1}
 DRAG_TEST_TARGET :: Semantic_ID{namespace=701, value=2}
 DRAG_SCROLL_SOURCE :: Semantic_ID{namespace=702, value=1}
 DRAG_SCROLL_TARGET :: Semantic_ID{namespace=702, value=2}
+DRAG_TEST_UI_FONT_DATA :: #load("../assets/fonts/AtkinsonHyperlegibleNext-Variable.ttf")
 
 drag_test_build :: proc(rt: ^Runtime, include_source := true, target_width: f32 = 180) -> (source: Node_ID, target_container: Node_ID, target_button: Node_ID) {
 	ui, should_build := begin_frame(rt)
@@ -134,6 +135,7 @@ test_drag_target_refreshes_after_rebuild_without_pointer_motion :: proc(t: ^test
 test_drag_source_identity_survives_virtualized_node_retirement :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 400, 100})
 	defer destroy_runtime(&rt)
+	testing.expect(t, text_engine_load_font(&rt.text_engine, DRAG_TEST_UI_FONT_DATA), "drag preview test UI font should load")
 	source, _, target_button := drag_test_build(&rt)
 	if source == 0 || target_button == 0 { testing.expect(t, false, "drag test controls should be retained"); return }
 	source_node := rt.nodes[source]
@@ -141,20 +143,57 @@ test_drag_source_identity_survives_virtualized_node_retirement :: proc(t: ^testi
 	sx := source_node.bounds.x+source_node.bounds.w/2
 	sy := source_node.bounds.y+source_node.bounds.h/2
 	_ = process_pointer(&rt, Pointer_Event{kind=.Down, x=sx, y=sy, button=POINTER_BUTTON_PRIMARY})
+	rt.invalidated = false
 	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=target_node.bounds.x+target_node.bounds.w/2, y=target_node.bounds.y+target_node.bounds.h/2})
 	started, started_ok := drag_event_take(&rt)
 	testing.expect(t, started_ok && started.kind == .Started && started.source == DRAG_TEST_SOURCE,
 		"a stable semantic source identity should be captured when the drag starts")
+	testing.expect(t, rt.drag_preview.ready && rt.drag_preview.run.value == "source",
+		"starting a local drag should retain a shaped source-label preview")
+	testing.expect(t, drag_source_opacity(&rt, source) == DRAG_SOURCE_OPACITY,
+		"the active source should be dimmed while its preview follows the pointer")
+	ui, presentation_ready := begin_presentation_frame(&rt)
+	if presentation_ready { end_presentation_frame(&ui) }
+	preview_card_found, preview_text_found := false, false
+	for command in rt.display {
+		if command.node != 0 { continue }
+		if command.kind == .Button { preview_card_found = true }
+		if command.kind == .Text && command.text == "source" { preview_text_found = true }
+	}
+	testing.expect(t, presentation_ready && preview_card_found && preview_text_found,
+		"the retained display should compose a non-hit-testable card and source label for the drag preview")
+	frames_before_motion := rt.stats.frames_built
+	drag_x_before_motion, drag_y_before_motion := rt.drag.x, rt.drag.y
+	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=drag_x_before_motion+1, y=drag_y_before_motion+1})
+	testing.expect(t, rt.drag.x == drag_x_before_motion+1 && rt.drag.y == drag_y_before_motion+1,
+		"the drag preview position should track retained pointer coordinates")
+	testing.expect(t, rt.stats.frames_built == frames_before_motion && !rt.invalidated,
+		"drag preview pointer motion should not rebuild application descriptions")
 
+	invalidate_root(&rt, "retire virtualized drag source")
 	_, target_container_after, target_button_after := drag_test_build(&rt, include_source=false)
 	testing.expect(t, rt.drag.phase == .Dragging && rt.drag.source == DRAG_TEST_SOURCE,
 		"retiring the source node during virtualization should not invalidate the semantic drag session")
+	testing.expect(t, rt.drag_preview.ready && rt.drag_preview.run.value == "source",
+		"the drag preview should remain available after virtualization retires its source row")
 	if target_container_after == 0 || target_button_after == 0 { testing.expect(t, false, "drop target should remain available after source virtualization"); return }
-	target_node = rt.nodes[target_button_after]
-	_ = process_pointer(&rt, Pointer_Event{kind=.Up, x=target_node.bounds.x+target_node.bounds.w/2, y=target_node.bounds.y+target_node.bounds.h/2, button=POINTER_BUTTON_PRIMARY})
-	dropped, dropped_ok := drag_event_take(&rt)
-	testing.expect(t, dropped_ok && dropped.kind == .Dropped && dropped.source == DRAG_TEST_SOURCE,
-		"the completed drop should report the stable source identity without dereferencing its retired node")
+	ui, presentation_ready = begin_presentation_frame(&rt)
+	if presentation_ready { end_presentation_frame(&ui) }
+	preview_text_found = false
+	for command in rt.display {
+		if command.node == 0 && command.kind == .Text && command.text == "source" { preview_text_found = true }
+	}
+	testing.expect(t, preview_text_found, "virtualized source retirement should not remove the pointer-following preview")
+	_ = drag_cancel(&rt)
+	ui, presentation_ready = begin_presentation_frame(&rt)
+	if presentation_ready { end_presentation_frame(&ui) }
+	preview_commands_remain := false
+	for command in rt.display { if command.node == 0 { preview_commands_remain = true } }
+	cancelled, cancelled_ok := drag_event_take(&rt)
+	testing.expect(t, cancelled_ok && cancelled.kind == .Cancelled && cancelled.source == DRAG_TEST_SOURCE,
+		"cancelling a virtualized drag should still report its stable semantic source")
+	testing.expect(t, !rt.drag_preview.ready && !preview_commands_remain && drag_source_opacity(&rt, source) == 1,
+		"cancellation should remove the ghost and restore the source presentation state")
 }
 
 @(test)

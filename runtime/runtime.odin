@@ -271,6 +271,14 @@ Drag_Session :: struct {
 	target_mode: Drop_Target_Mode,
 }
 
+// Drag_Preview is a small runtime-owned presentation snapshot. The shaped run
+// remains available while a virtualized source row is temporarily unrealized.
+Drag_Preview :: struct {
+	run: Text_Run,
+	width, height: f32,
+	ready: bool,
+}
+
 DRAG_START_THRESHOLD :: 5.0
 
 Input_Modifiers :: struct {
@@ -497,6 +505,10 @@ Description :: struct {
 	text_interaction_anchor: Text_Position,
 	text_interaction_focus: Text_Position,
 	text_interaction_show_caret: bool,
+	visual_row_text_node: Node_ID,
+	visual_row_position: Text_Position,
+	visual_row_color: Color,
+	visual_row_enabled: bool,
 	selected:    bool,
 	semantic_id: Semantic_ID,
 	drag_source_type: Drag_Type,
@@ -582,6 +594,10 @@ Node :: struct {
 	text_interaction_anchor: Text_Position,
 	text_interaction_focus: Text_Position,
 	text_interaction_show_caret: bool,
+	visual_row_text_node: Node_ID,
+	visual_row_position: Text_Position,
+	visual_row_color: Color,
+	visual_row_enabled: bool,
 	text_input_area: Text_Input_Area,
 	text_input_area_set: bool,
 	disabled:    bool,
@@ -859,6 +875,7 @@ Runtime :: struct {
 	last_hovered: Node_ID,
 	captured_node: Node_ID,
 	drag: Drag_Session,
+	drag_preview: Drag_Preview,
 	drag_event: Drag_Event,
 	drag_event_pending: bool,
 	scrollbar_drag_node: Node_ID,
@@ -2376,6 +2393,35 @@ text_interaction :: proc(ui: ^UI, id: Node_ID, anchor, focus: Text_Position, sho
 	item.description.text_interaction_anchor = anchor
 	item.description.text_interaction_focus = focus
 	item.description.text_interaction_show_caret = show_caret
+	return true
+}
+
+// visual_row_background paints one shaped visual row behind an editor row
+// container. The row can be wider than the text node, so the same call may be
+// made for the source lane and its gutter. The text node's retained Text_Run
+// supplies wrapped-row geometry; no paint-span byte slicing is involved.
+visual_row_background :: proc(ui: ^UI, row, text: Node_ID, position: Text_Position, color: Color) -> bool {
+	if ui == nil || ui.runtime == nil || !ui.runtime.frame_open || row == 0 || text == 0 || position.byte < 0 { return false }
+	rt := ui.runtime
+	row_index, text_index := -1, -1
+	for index := len(rt.pending)-1; index >= 0; index -= 1 {
+		item := rt.pending[index]
+		if item.kind != .Description { continue }
+		if item.description.id == row { row_index = index }
+		if item.description.id == text { text_index = index }
+		if row_index >= 0 && text_index >= 0 { break }
+	}
+	if row_index < 0 || text_index < 0 { return false }
+	row_description := &rt.pending[row_index].description
+	text_description := rt.pending[text_index].description
+	if text_description.kind != .Text { return false }
+	if row_description.kind != .Container && row_description.kind != .Virtual_Row && row_description.kind != .Virtual_List {
+		return false
+	}
+	row_description.visual_row_text_node = text
+	row_description.visual_row_position = position
+	row_description.visual_row_color = color
+	row_description.visual_row_enabled = true
 	return true
 }
 

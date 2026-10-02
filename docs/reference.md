@@ -212,6 +212,13 @@ The runtime changes only the retained scroll offset; the application rebuilds
 the virtualized viewport only when that offset advances. Releasing, canceling,
 or reaching the scroll limit stops the timer.
 
+Dragging also presents a small runtime-owned preview: Alicorn captures a
+bounded shaped copy of the source label (falling back to its text), offsets it
+from the pointer, and dims the realized source to 55% opacity. The preview is
+presentation-only and hit-test-transparent. Its label remains available if
+virtualization retires the source node; pointer motion updates the preview
+position without rebuilding application descriptions.
+
 This is an in-window, single-source primitive. It does not transport operating
 system file drops or arbitrary MIME payloads.
 
@@ -243,6 +250,13 @@ system file drops or arbitrary MIME payloads.
   cluster shaping; a span inside a ligature colors that whole glyph. Background
   and decoration bounds expand to intersecting grapheme geometry and use the
   text command's clip.
+- `visual_row_background(ui, row, text, position, color)` paints the complete
+  shaped visual row behind an editor row container. `row` may be the source
+  lane or a separate gutter; `text` supplies the retained shaped geometry and
+  `position` chooses the wrapped visual row. The background spans the row
+  container's width and uses the text row's Y and height, so it does not stop
+  at the last glyph. This is row geometry, not a text paint span, and therefore
+  remains correct when a wrapped row is active.
 - Example, immediately after emitting a Text node:
 
   ```odin

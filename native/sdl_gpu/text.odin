@@ -350,7 +350,20 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 	for command in display {
 		if !native_text_is_text(command.kind) { continue }
 		text_command_count += 1
-		if node, found := renderer.runtime.nodes[command.node]; found {
+		fingerprint = native_text_hash_mix(
+			fingerprint,
+		u64(transmute(u32)alicorn.drag_source_opacity(renderer.runtime, command.node)),
+		)
+		if command.node == alicorn.Node_ID(0) {
+			if renderer.runtime.drag_preview.ready {
+				run := &renderer.runtime.drag_preview.run
+				fingerprint = native_text_hash_mix(fingerprint, u64(run.font))
+				fingerprint = native_text_hash_mix(fingerprint, u64(run.font_source))
+				fingerprint = native_text_hash_mix(fingerprint, u64(transmute(u32)run.size))
+				fingerprint = native_text_hash_mix(fingerprint, u64(transmute(u32)run.font_weight))
+				fingerprint = native_text_hash_mix(fingerprint, run.style_hash)
+			}
+		} else if node, found := renderer.runtime.nodes[command.node]; found {
 			generation := node.text_run_generation
 			if command.kind == .Text_Composition { generation = node.composition_run_generation }
 			fingerprint = native_text_hash_mix(fingerprint, generation)
@@ -370,14 +383,18 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 	clear(&renderer.draws)
 	for command in display {
 		if !native_text_is_text(command.kind) { continue }
-		node, found := renderer.runtime.nodes[command.node]
-		if !found { continue }
-		run := &node.text_run
-		if command.kind == .Text_Composition {
-			run = &node.composition_run
+		run: ^alicorn.Text_Run
+		if command.node == alicorn.Node_ID(0) {
+			if !renderer.runtime.drag_preview.ready { continue }
+			run = &renderer.runtime.drag_preview.run
+		} else {
+			node, found := renderer.runtime.nodes[command.node]
+			if !found { continue }
+			run = &node.text_run
+			if command.kind == .Text_Composition { run = &node.composition_run }
+			if !node.text_run_valid && command.kind != .Text_Composition { continue }
+			if command.kind == .Text_Composition && !node.composition_run_valid { continue }
 		}
-		if !node.text_run_valid && command.kind != .Text_Composition { continue }
-		if command.kind == .Text_Composition && !node.composition_run_valid { continue }
 		winners := native_text_span_winners(command.text, command.text_paint_spans, scratch_allocator)
 		for glyph in run.glyphs {
 			// Tabs and unsupported controls retain logical advance/caret geometry
@@ -403,6 +420,7 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 			y1 := y0 + f32(slot_view.Px_Size[1])
 			u0, v0, u1, v1 := slot_view.UV_Rect[0], slot_view.UV_Rect[1], slot_view.UV_Rect[2], slot_view.UV_Rect[3]
 			glyph_color := native_text_color_for_cluster(command.text_paint_spans, winners, glyph.cluster_start, glyph.cluster_end, command.color)
+			glyph_color.a *= alicorn.drag_source_opacity(renderer.runtime, command.node)
 			color := [4]f32{glyph_color.r, glyph_color.g, glyph_color.b, glyph_color.a}
 			first := sdl3.Uint32(len(renderer.vertices))
 			append(&renderer.vertices,
@@ -526,6 +544,10 @@ native_text_render_command :: proc(
 			{-1, 1, 0, 1},
 		},
 		model = [4][4]f32{{1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1}},
+	}
+	if command.node == alicorn.Node_ID(0) {
+		uniforms.model[3][0] = (renderer.runtime.drag.x+alicorn.DRAG_PREVIEW_POINTER_OFFSET)*scale_x
+		uniforms.model[3][1] = (renderer.runtime.drag.y+alicorn.DRAG_PREVIEW_POINTER_OFFSET)*scale_y
 	}
 	sdl3.PushGPUVertexUniformData(command_buffer, 0, &uniforms, sdl3.Uint32(size_of(Native_Text_Uniforms)))
 	target_info := sdl3.GPUColorTargetInfo{texture=target, clear_color=sdl3.FColor{}, load_op=.LOAD, store_op=.STORE}

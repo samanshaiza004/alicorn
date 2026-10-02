@@ -1765,6 +1765,7 @@ draw_display_list :: proc(
 	debug_bounds := false,
 	scratch_allocator := context.temp_allocator,
 ) -> bool {
+	solid_renderer.runtime = text_renderer.runtime
 	if !native_text_rebuild_mesh(text_renderer, display, logical_to_pixel_x, logical_to_pixel_y, scratch_allocator) { return false }
 	if !native_text_sync_atlas(text_renderer, command, scratch_allocator) { return false }
 	if !native_text_upload_vertices(text_renderer, command) { return false }

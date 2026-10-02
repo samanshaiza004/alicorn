@@ -18,6 +18,7 @@ Native_Solid_Draw :: struct {
 
 Native_Solid_Renderer :: struct {
 	device:          ^sdl3.GPUDevice,
+	runtime:         ^alicorn.Runtime,
 	pipeline:        ^sdl3.GPUGraphicsPipeline,
 	sampler:         ^sdl3.GPUSampler,
 	white_texture:   ^sdl3.GPUTexture,
@@ -133,10 +134,16 @@ native_solid_build :: proc(
 	for draw, i in display {
 		if native_text_is_text(draw.kind) || draw.kind == .Custom_Surface { continue }
 		if skip_root && draw.kind == .Root { continue }
-		left := draw.bounds.x
-		top := draw.bounds.y
-		right := draw.bounds.x + draw.bounds.w
-		bottom := draw.bounds.y + draw.bounds.h
+		drag_offset_x: f32 = 0
+		drag_offset_y: f32 = 0
+		if draw.node == alicorn.Node_ID(0) && renderer.runtime != nil {
+			drag_offset_x = renderer.runtime.drag.x + alicorn.DRAG_PREVIEW_POINTER_OFFSET
+			drag_offset_y = renderer.runtime.drag.y + alicorn.DRAG_PREVIEW_POINTER_OFFSET
+		}
+		left := draw.bounds.x + drag_offset_x
+		top := draw.bounds.y + drag_offset_y
+		right := draw.bounds.x + draw.bounds.w + drag_offset_x
+		bottom := draw.bounds.y + draw.bounds.h + drag_offset_y
 		if draw.clip.x > left { left = draw.clip.x }
 		if draw.clip.y > top { top = draw.clip.y }
 		if draw.clip.x + draw.clip.w < right { right = draw.clip.x + draw.clip.w }
@@ -152,7 +159,8 @@ native_solid_build :: proc(
 		if x1 <= x0 || y1 <= y0 { continue }
 		if len(renderer.vertices) + 6 > MAX_SOLID_VERTICES { return false }
 		first := sdl3.Uint32(len(renderer.vertices))
-		color := [4]f32{draw.color.r, draw.color.g, draw.color.b, draw.color.a}
+		opacity := alicorn.drag_source_opacity(renderer.runtime, draw.node)
+		color := [4]f32{draw.color.r, draw.color.g, draw.color.b, draw.color.a*opacity}
 		native_solid_append_quad(&renderer.vertices, f32(x0), f32(y0), f32(x1), f32(y1), color)
 		renderer.draws[i] = Native_Solid_Draw{first, 6}
 	}
@@ -173,10 +181,16 @@ native_solid_append_debug_bounds :: proc(
 	color := [4]f32{1.0, 0.78, 0.16, 0.72}
 	for draw in display {
 		if skip_root && draw.kind == .Root { continue }
-		left := draw.bounds.x * scale_x
-		top := draw.bounds.y * scale_y
-		right := (draw.bounds.x + draw.bounds.w) * scale_x
-		bottom := (draw.bounds.y + draw.bounds.h) * scale_y
+		drag_offset_x: f32 = 0
+		drag_offset_y: f32 = 0
+		if draw.node == alicorn.Node_ID(0) && renderer.runtime != nil {
+			drag_offset_x = renderer.runtime.drag.x + alicorn.DRAG_PREVIEW_POINTER_OFFSET
+			drag_offset_y = renderer.runtime.drag.y + alicorn.DRAG_PREVIEW_POINTER_OFFSET
+		}
+		left := (draw.bounds.x + drag_offset_x) * scale_x
+		top := (draw.bounds.y + drag_offset_y) * scale_y
+		right := (draw.bounds.x + draw.bounds.w + drag_offset_x) * scale_x
+		bottom := (draw.bounds.y + draw.bounds.h + drag_offset_y) * scale_y
 		if left < 0 { left = 0 }
 		if top < 0 { top = 0 }
 		if right > f32(target_w) { right = f32(target_w) }

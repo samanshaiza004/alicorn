@@ -218,9 +218,25 @@ rebuild_display :: proc(rt: ^Runtime) {
 	for id in rt.top_level {
 		compose_subtree(rt, id)
 	}
+	append_drag_preview(rt)
 	rt.stats.composite_updates += 1
 	rt.composition_rebuild = false
 	record_trace(rt, .Composite, 0, "retained display list rebuilt after structure change")
+}
+
+append_visual_row_background :: proc(rt: ^Runtime, row: ^Node) {
+	if rt == nil || row == nil || !row.visual_row_enabled { return }
+	text, found := rt.nodes[row.visual_row_text_node]
+	if !found || !text.active || text.kind != .Text || !text.text_run_valid || len(text.text_run.lines) == 0 { return }
+	position := text_position_normalize(&text.text_run, row.visual_row_position)
+	line_index := text_run_line_for_byte(&text.text_run, position)
+	if line_index < 0 || line_index >= len(text.text_run.lines) { return }
+	line := text.text_run.lines[line_index]
+	bounds := Rect{row.bounds.x, text.bounds.y+line.y, row.bounds.w, line.height}
+	if bounds.w <= 0 || bounds.h <= 0 { return }
+	append(&row.paint, Display_Command{
+		row.id, .Text_Selection, bounds, row.clip, "", row.visual_row_color, []Text_Paint_Span{},
+	})
 }
 
 update_paint :: proc(rt: ^Runtime) {
@@ -300,6 +316,7 @@ update_paint :: proc(rt: ^Runtime) {
 				if node.paint_background {
 					append(&node.paint, Display_Command{node.id, node.kind, node.bounds, node.clip, "", node.color, []Text_Paint_Span{}})
 				}
+				append_visual_row_background(rt, node)
 				if node.kind == .Context_Menu_Panel {
 					append_rect_outline(node, .Context_Menu_Panel, Color{0.22, 0.27, 0.34, 1}, 1)
 				}

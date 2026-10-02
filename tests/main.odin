@@ -477,6 +477,70 @@ render_spanned_text :: proc(
 	return
 }
 
+render_visual_row_background_test :: proc(
+	rt: ^alicorn.Runtime,
+	position: alicorn.Text_Position,
+) -> (row_id, gutter_id, text_id: alicorn.Node_ID, accepted: bool) {
+	alicorn.invalidate_root(rt, "test full-width wrapped visual-row background")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin(&ui, .Root, label="visual-row-root", style=alicorn.layout_style(.Column, grow=1, clip=true))
+	row_id = alicorn.container_begin(
+		&ui,
+		.Container,
+		label="visual-row",
+		key=alicorn.key_string("visual-row"),
+		style=alicorn.layout_style(.Row, width=320, height=100, align=.Start, clip=true),
+		color=alicorn.Color{0.04, 0.05, 0.07, 1},
+	)
+	gutter_id = alicorn.container_begin(
+		&ui,
+		.Virtual_List,
+		label="visual-row-gutter",
+		key=alicorn.key_string("visual-row-gutter"),
+		style=alicorn.layout_style(.Column, width=42, height=100, clip=true),
+		color=alicorn.Color{0.08, 0.09, 0.12, 1},
+	)
+	_ = alicorn.text(&ui, "17", key=alicorn.key_string("visual-row-number"), font=.Monospace)
+	alicorn.container_end(&ui)
+	alicorn.container_begin(
+		&ui,
+		.Virtual_List,
+		label="visual-row-source-lane",
+		key=alicorn.key_string("visual-row-source-lane"),
+		style=alicorn.layout_style(.Column, width=278, height=100, clip=true),
+	)
+	text_id = alicorn.text_ex(
+		&ui,
+		"A wrapped editor line has several visual rows, and the caret should light the complete row rather than just its shaped words.",
+		S_EXTRA,
+		key="visual-row-text",
+		explicit_key=true,
+		style=alicorn.layout_style(width=278, height=100),
+		font=.Monospace,
+		text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_REGULAR, overflow=.Wrap},
+	)
+	accepted = alicorn.visual_row_background(
+		&ui,
+		row_id,
+		text_id,
+		position,
+		alicorn.Color{0.12, 0.16, 0.22, 1},
+	)
+	_ = alicorn.visual_row_background(
+		&ui,
+		gutter_id,
+		text_id,
+		position,
+		alicorn.Color{0.12, 0.16, 0.22, 1},
+	)
+	alicorn.container_end(&ui)
+	alicorn.container_end(&ui)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return
+}
+
 render_spanned_text_region :: proc(rt: ^alicorn.Runtime, spans: []alicorn.Text_Paint_Span, revision: u64) -> (id: alicorn.Node_ID, reused: bool, accepted: bool) {
 	alicorn.invalidate_root(rt, "test spanned text region")
 	ui, build := alicorn.begin_frame(rt)
@@ -697,6 +761,56 @@ test_retained_text_paint_spans :: proc(state: ^Test_State) {
 	expect(state, geometry_scratch_allocations < 100, fmt.tprintf("dense span painting must not allocate caret arrays per span (made %d scratch allocations)", geometry_scratch_allocations))
 	delete(dense_bytes)
 	delete(dense_spans)
+}
+
+test_full_width_wrapped_visual_row_background :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
+	defer alicorn.destroy_runtime(&rt)
+	expect(state, alicorn.text_engine_load_font_role(&rt.text_engine, .Monospace, TEST_MONO_FONT_DATA), "visual-row test monospace font must load")
+	row_id, gutter_id, text_id, accepted := render_visual_row_background_test(
+		&rt,
+		alicorn.Text_Position{byte=54, affinity=.Leading},
+	)
+	if row_id == 0 || gutter_id == 0 || text_id == 0 {
+		expect(state, false, "visual-row fixture must retain row, gutter, and source text")
+		return
+	}
+	text_node := rt.nodes[text_id]
+	expect(state, accepted && len(text_node.text_run.lines) >= 2, "caret visual-row background should accept a wrapped text row")
+	if !accepted || len(text_node.text_run.lines) < 2 { return }
+	line_index := alicorn.text_run_line_for_byte(&text_node.text_run, alicorn.Text_Position{byte=54, affinity=.Leading})
+	if line_index <= 0 { expect(state, false, "test caret position should land on a later wrapped visual row"); return }
+	line := text_node.text_run.lines[line_index]
+	row := rt.nodes[row_id]
+	gutter := rt.nodes[gutter_id]
+	highlight_color := alicorn.Color{0.12, 0.16, 0.22, 1}
+	row_highlight_found, gutter_highlight_found := false, false
+	row_highlight_index, gutter_highlight_index, gutter_base_index := -1, -1, -1
+	for command, index in row.paint {
+		if command.kind == .Text_Selection && command.color == highlight_color {
+			row_highlight_found = true
+			row_highlight_index = index
+			expect(state, command.bounds.x == row.bounds.x && command.bounds.w == row.bounds.w, "active editor highlight should span the full visual-row width")
+			expect(state, command.bounds.y == text_node.bounds.y+line.y && command.bounds.h == line.height, "active editor highlight should use the wrapped visual-row Y and height")
+		}
+	}
+	for command, index in gutter.paint {
+		if command.kind == .Virtual_List { gutter_base_index = index }
+		if command.kind == .Text_Selection && command.color == highlight_color {
+			gutter_highlight_found = true
+			gutter_highlight_index = index
+			expect(state, command.bounds.x == gutter.bounds.x && command.bounds.w == gutter.bounds.w, "active gutter highlight should fill the gutter lane")
+			expect(state, command.bounds.y == text_node.bounds.y+line.y && command.bounds.h == line.height, "active gutter highlight should align with the same wrapped visual row")
+		}
+	}
+	expect(state, row_highlight_found && gutter_highlight_found, "both source lane and gutter should paint an active visual-row background")
+	expect(state, gutter_base_index >= 0 && gutter_highlight_index > gutter_base_index, "gutter highlight should paint over its base background")
+	text_display_index, row_display_index := -1, -1
+	for command, index in rt.display {
+		if command.node == row_id && command.kind == .Text_Selection { row_display_index = index }
+		if command.node == text_id && command.kind == .Text { text_display_index = index }
+	}
+	expect(state, row_display_index >= 0 && text_display_index > row_display_index, "active-row background should compose behind source text")
 }
 
 render_natural_interactive_text :: proc(
@@ -3888,6 +4002,7 @@ main :: proc() {
 	test_text_geometry(&state)
 	test_retained_text_interaction(&state)
 	test_retained_text_paint_spans(&state)
+	test_full_width_wrapped_visual_row_background(&state)
 	test_interactive_text_caret_at_end_and_empty_line(&state)
 	test_gpu_text_resource_boundary(&state)
 	test_multiline_text_controls(&state)
