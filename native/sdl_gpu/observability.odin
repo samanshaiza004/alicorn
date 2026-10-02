@@ -323,6 +323,9 @@ native_write_diagnostics :: proc(
     "text_atlas_pages": %d,
     "text_mesh_rebuilds": %d,
     "text_mesh_cache_hits": %d,
+    "text_fingerprint_ns": %d,
+    "text_fingerprint_bytes": %d,
+    "text_mesh_rebuild_ns": %d,
     "text_mesh_commands": %d,
     "text_vertex_uploads": %d,
     "surface_encodes": %d,
@@ -334,6 +337,7 @@ native_write_diagnostics :: proc(
 		rt.text_engine.shape_calls, rt.text_engine.glyph_cache_hits, rt.text_engine.glyph_cache_misses,
 		rt.text_engine.glyph_rasterizations,
 		len(text_renderer.pages), text_renderer.mesh_rebuilds, text_renderer.mesh_cache_hits,
+		text_renderer.fingerprint_ns, text_renderer.fingerprint_bytes, text_renderer.mesh_rebuild_ns,
 		text_renderer.mesh_text_commands, text_renderer.vertex_uploads,
 		surface_renderer.encodes, surface_renderer.vertex_uploads,
 		solid_renderer.batches, solid_renderer.vertices_uploaded)
@@ -399,6 +403,14 @@ native_write_diagnostics :: proc(
 	options.last_capture_dir = bundle_dir
 	options.capture_requested = false
 	if automatic_due { options.automatic_capture_done = true }
-	fmt.println("alicorn_diagnostics", "path", path, "inspector", inspection_path, "timeline", timeline_path, "capture_id", fmt.tprintf("%s-%04d", stamp, capture_sequence), "frame_p95_ns", p95, "gpu_encode_ns", timing.gpu_encode_ns)
+	fmt.println(
+		"alicorn_diagnostics", "path", path, "inspector", inspection_path, "timeline", timeline_path,
+		"capture_id", fmt.tprintf("%s-%04d", stamp, capture_sequence), "frame_p95_ns", p95,
+		"gpu_encode_ns", timing.gpu_encode_ns,
+		"text_fingerprint_ns", text_renderer.fingerprint_ns,
+		"text_fingerprint_bytes", text_renderer.fingerprint_bytes,
+		"text_mesh_rebuild_ns", text_renderer.mesh_rebuild_ns,
+		"text_mesh_cache_hits", text_renderer.mesh_cache_hits,
+	)
 	return true
 }

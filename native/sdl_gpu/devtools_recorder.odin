@@ -4,6 +4,9 @@ import alicorn "../../runtime"
 
 Native_DevTools_Renderer_Metrics :: struct {
 	text_atlas_uploads, text_atlas_upload_bytes, text_mesh_rebuilds, text_mesh_cache_hits, text_vertex_uploads: u64,
+	// Mirrors the cumulative Native_Text_Renderer fields fingerprint_ns,
+	// fingerprint_bytes, and mesh_rebuild_ns; the renderer owns their updates.
+	text_fingerprint_ns, text_fingerprint_bytes, text_mesh_rebuild_ns: u64,
 	surface_resource_creations, surface_vertex_uploads, surface_encodes: u64,
 	solid_batches, solid_vertices_uploaded: u64,
 }
@@ -19,6 +22,9 @@ native_devtools_renderer_metrics_capture :: proc(
 		text_atlas_upload_bytes=text_renderer.atlas_upload_bytes,
 		text_mesh_rebuilds=text_renderer.mesh_rebuilds,
 		text_mesh_cache_hits=text_renderer.mesh_cache_hits,
+		text_fingerprint_ns=text_renderer.fingerprint_ns,
+		text_fingerprint_bytes=text_renderer.fingerprint_bytes,
+		text_mesh_rebuild_ns=text_renderer.mesh_rebuild_ns,
 		text_vertex_uploads=text_renderer.vertex_uploads,
 		surface_resource_creations=surface_renderer.resource_creations,
 		surface_vertex_uploads=surface_renderer.vertex_uploads,
@@ -39,6 +45,9 @@ native_devtools_renderer_metrics_restore :: proc(
 	text_renderer.atlas_upload_bytes = metrics.text_atlas_upload_bytes
 	text_renderer.mesh_rebuilds = metrics.text_mesh_rebuilds
 	text_renderer.mesh_cache_hits = metrics.text_mesh_cache_hits
+	text_renderer.fingerprint_ns = metrics.text_fingerprint_ns
+	text_renderer.fingerprint_bytes = metrics.text_fingerprint_bytes
+	text_renderer.mesh_rebuild_ns = metrics.text_mesh_rebuild_ns
 	text_renderer.vertex_uploads = metrics.text_vertex_uploads
 	surface_renderer.resource_creations = metrics.surface_resource_creations
 	surface_renderer.vertex_uploads = metrics.surface_vertex_uploads
