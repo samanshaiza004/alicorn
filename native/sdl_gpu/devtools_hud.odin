@@ -9,6 +9,10 @@ import "vendor:sdl3"
 NATIVE_DEVTOOLS_HUD_REFRESH_INTERVAL_NS :: 1_000_000_000
 NATIVE_DEVTOOLS_HUD_IDLE_AFTER_NS       :: 500_000_000
 NATIVE_DEVTOOLS_HUD_MAX_RECENT_SAMPLES   :: 48
+// Worst-case 8 lines x 65 visible glyphs x 35 pixels per glyph, plus the panel
+// and activity strip. Reserve this before application draw commands reference
+// the shared solid buffer; the HUD itself is encoded afterward.
+NATIVE_DEVTOOLS_HUD_RESERVE_VERTICES :: 131072
 
 native_devtools_sample_has_activity :: proc(sample: Native_DevTools_Sample) -> bool {
 	return sample.host_wakes > 0 || sample.app_builds > 0 || sample.presentation_updates > 0 ||
@@ -295,7 +299,9 @@ native_hud_glyph_rows :: proc(character: u8) -> [7]u8 {
 }
 
 native_hud_draw_quad :: proc(renderer: ^Native_Solid_Renderer, x, y, width, height: f32, color: [4]f32) {
-	if width <= 0 || height <= 0 || len(renderer.vertices)+6 > MAX_SOLID_VERTICES { return }
+	// The HUD appends after application render commands already reference this
+	// buffer, so it may use spare capacity but must not replace the GPU buffer.
+	if width <= 0 || height <= 0 || len(renderer.vertices)+6 > renderer.vertex_capacity { return }
 	native_solid_append_quad(&renderer.vertices, x, y, x+width, y+height, color)
 }
 

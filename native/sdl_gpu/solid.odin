@@ -9,7 +9,7 @@ import "vendor:sdl3"
 // cannot overwrite a surface mesh that is still needed later in the display
 // list. Geometry is clipped on the CPU; text and custom surfaces remain hard
 // ordering boundaries in the compositor.
-MAX_SOLID_VERTICES :: 65536
+NATIVE_SOLID_INITIAL_VERTICES :: 65536
 
 Native_Solid_Draw :: struct {
 	first_vertex:  sdl3.Uint32,
@@ -25,6 +25,7 @@ Native_Solid_Renderer :: struct {
 	vertex_buffer:   ^sdl3.GPUBuffer,
 	vertex_transfer: ^sdl3.GPUTransferBuffer,
 	vertices:        [dynamic]Native_Text_Vertex,
+	vertex_capacity: int,
 	draws:           [dynamic]Native_Solid_Draw,
 	white_initialized: bool,
 	upload_pending:  bool,
@@ -34,6 +35,7 @@ Native_Solid_Renderer :: struct {
 
 native_solid_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTextureFormat) -> (renderer: Native_Solid_Renderer, ok: bool) {
 	renderer.device = device
+	renderer.vertex_capacity = NATIVE_SOLID_INITIAL_VERTICES
 	renderer.vertices = make([dynamic]Native_Text_Vertex, 0, 4096)
 	renderer.draws = make([dynamic]Native_Solid_Draw, 0, 1024)
 
@@ -84,16 +86,62 @@ native_solid_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTex
 	})
 	renderer.vertex_buffer = sdl3.CreateGPUBuffer(device, sdl3.GPUBufferCreateInfo{
 		usage=sdl3.GPUBufferUsageFlags{.VERTEX},
-		size=sdl3.Uint32(MAX_SOLID_VERTICES * size_of(Native_Text_Vertex)),
+		size=sdl3.Uint32(renderer.vertex_capacity * size_of(Native_Text_Vertex)),
 	})
 	renderer.vertex_transfer = sdl3.CreateGPUTransferBuffer(device, sdl3.GPUTransferBufferCreateInfo{
 		usage=.UPLOAD,
-		size=sdl3.Uint32(MAX_SOLID_VERTICES * size_of(Native_Text_Vertex)),
+		size=sdl3.Uint32(renderer.vertex_capacity * size_of(Native_Text_Vertex)),
 	})
 	if renderer.sampler == nil || renderer.white_texture == nil || renderer.vertex_buffer == nil || renderer.vertex_transfer == nil {
 		return renderer, false
 	}
 	return renderer, true
+}
+
+native_solid_next_vertex_capacity :: proc(current, required, maximum: int) -> int {
+	if required <= current { return current }
+	if required <= 0 || maximum <= 0 || required > maximum { return 0 }
+	capacity := max(current, 4096)
+	for capacity < required {
+		if capacity > maximum / 2 {
+			capacity = maximum
+		} else {
+			capacity *= 2
+		}
+	}
+	return capacity
+}
+
+native_solid_ensure_vertex_capacity :: proc(renderer: ^Native_Solid_Renderer, required: int) -> bool {
+	maximum := int(sdl3.Uint32(0xFFFFFFFF) / sdl3.Uint32(size_of(Native_Text_Vertex)))
+	new_capacity := native_solid_next_vertex_capacity(renderer.vertex_capacity, required, maximum)
+	if new_capacity == 0 { return false }
+	if new_capacity == renderer.vertex_capacity { return true }
+	new_size := sdl3.Uint32(new_capacity * size_of(Native_Text_Vertex))
+	new_buffer := sdl3.CreateGPUBuffer(renderer.device, sdl3.GPUBufferCreateInfo{
+		usage=sdl3.GPUBufferUsageFlags{.VERTEX}, size=new_size,
+	})
+	if new_buffer == nil { return false }
+	new_transfer := sdl3.CreateGPUTransferBuffer(renderer.device, sdl3.GPUTransferBufferCreateInfo{
+		usage=.UPLOAD, size=new_size,
+	})
+	if new_transfer == nil {
+		sdl3.ReleaseGPUBuffer(renderer.device, new_buffer)
+		return false
+	}
+	// These buffers are shared by submissions. Wait before replacing them so
+	// earlier frames cannot still be reading the old vertex buffer.
+	if !sdl3.WaitForGPUIdle(renderer.device) {
+		sdl3.ReleaseGPUTransferBuffer(renderer.device, new_transfer)
+		sdl3.ReleaseGPUBuffer(renderer.device, new_buffer)
+		return false
+	}
+	sdl3.ReleaseGPUBuffer(renderer.device, renderer.vertex_buffer)
+	sdl3.ReleaseGPUTransferBuffer(renderer.device, renderer.vertex_transfer)
+	renderer.vertex_buffer = new_buffer
+	renderer.vertex_transfer = new_transfer
+	renderer.vertex_capacity = new_capacity
+	return true
 }
 
 native_solid_destroy :: proc(renderer: ^Native_Solid_Renderer) {
@@ -157,7 +205,9 @@ native_solid_build :: proc(
 		if x1 > int(target_w) { x1 = int(target_w) }
 		if y1 > int(target_h) { y1 = int(target_h) }
 		if x1 <= x0 || y1 <= y0 { continue }
-		if len(renderer.vertices) + 6 > MAX_SOLID_VERTICES { return false }
+		if len(renderer.vertices) + 6 > renderer.vertex_capacity && !native_solid_ensure_vertex_capacity(renderer, len(renderer.vertices) + 6) {
+			return false
+		}
 		first := sdl3.Uint32(len(renderer.vertices))
 		opacity := alicorn.drag_source_opacity(renderer.runtime, draw.node)
 		color := [4]f32{draw.color.r, draw.color.g, draw.color.b, draw.color.a*opacity}
@@ -199,7 +249,12 @@ native_solid_append_debug_bounds :: proc(
 		thickness := f32(1)
 		if scale_x > thickness { thickness = scale_x }
 		if scale_y > thickness { thickness = scale_y }
-		if len(renderer.vertices) + 24 > MAX_SOLID_VERTICES { return }
+		if len(renderer.vertices) + 24 > renderer.vertex_capacity && !native_solid_ensure_vertex_capacity(renderer, len(renderer.vertices) + 24) {
+			// Bounds are optional diagnostics; preserve the app frame and draw any
+			// overlay geometry accumulated so far if the extra allocation fails.
+			renderer.upload_pending = len(renderer.vertices) > 0
+			return
+		}
 		first := sdl3.Uint32(len(renderer.vertices))
 		native_solid_append_quad(&renderer.vertices, left, top, right, min(top+thickness, bottom), color)
 		native_solid_append_quad(&renderer.vertices, left, max(bottom-thickness, top), right, bottom, color)
@@ -225,6 +280,7 @@ native_solid_prepare_white_texture :: proc(renderer: ^Native_Solid_Renderer, com
 
 native_solid_upload :: proc(renderer: ^Native_Solid_Renderer, command: ^sdl3.GPUCommandBuffer) -> bool {
 	if !renderer.upload_pending { return true }
+	if len(renderer.vertices) > renderer.vertex_capacity { return false }
 	mapped := sdl3.MapGPUTransferBuffer(renderer.device, renderer.vertex_transfer, true)
 	if mapped == nil { return false }
 	destination := cast([^]Native_Text_Vertex)mapped

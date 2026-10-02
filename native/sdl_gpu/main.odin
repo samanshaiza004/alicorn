@@ -603,11 +603,16 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 		state.text_renderer, state.surface_renderer, state.solid_renderer,
 	)
 	encode_start := time.now()
+	hud_vertex_reserve := 0
+	if state.devtools_hud != nil && state.devtools_hud.visible {
+		hud_vertex_reserve = NATIVE_DEVTOOLS_HUD_RESERVE_VERTICES
+	}
 	if !draw_display_list(
 		command, swapchain, swap_w, swap_h,
 		state.text_renderer, state.surface_renderer, state.solid_renderer, state.rt.display[:],
 		scale_x, scale_y,
 		debug_bounds=state.debug_bounds,
+		reserve_solid_vertices=hud_vertex_reserve,
 		scratch_allocator=state.host_scratch.allocator,
 	) {
 		_ = sdl3.CancelGPUCommandBuffer(command)
@@ -1763,6 +1768,7 @@ draw_display_list :: proc(
 	logical_to_pixel_x, logical_to_pixel_y: f32,
 	skip_root := false,
 	debug_bounds := false,
+	reserve_solid_vertices := 0,
 	scratch_allocator := context.temp_allocator,
 ) -> bool {
 	solid_renderer.runtime = text_renderer.runtime
@@ -1773,6 +1779,12 @@ draw_display_list :: proc(
 	debug_draw_start := len(solid_renderer.draws)
 	if debug_bounds {
 		native_solid_append_debug_bounds(solid_renderer, display, logical_to_pixel_x, logical_to_pixel_y, swap_w, swap_h, skip_root)
+	}
+	// Optional host overlays (currently the DevTools HUD) append to this mesh
+	// after app draws are recorded. Reserve their bounded space now, before any
+	// current-command draw can retain the existing GPU buffer.
+	if reserve_solid_vertices > 0 {
+		_ = native_solid_ensure_vertex_capacity(solid_renderer, len(solid_renderer.vertices)+reserve_solid_vertices)
 	}
 	if len(solid_renderer.vertices) > 0 {
 		if !native_solid_prepare_white_texture(solid_renderer, command) { return false }
@@ -2448,11 +2460,14 @@ run_application_loop :: proc(
 			logical_to_pixel_x := f32(swap_w) / f32(metrics.logical_width)
 			logical_to_pixel_y := f32(swap_h) / f32(metrics.logical_height)
 			renderer_metrics_before := native_devtools_renderer_metrics_capture(text_renderer, surface_renderer, solid_renderer)
+			hud_vertex_reserve := 0
+			if devtools_hud.visible { hud_vertex_reserve = NATIVE_DEVTOOLS_HUD_RESERVE_VERTICES }
 			if !draw_display_list(
 				command, swapchain, swap_w, swap_h,
 				text_renderer, surface_renderer, solid_renderer, rt.display[:],
 				logical_to_pixel_x, logical_to_pixel_y,
 				debug_bounds=debug_bounds,
+				reserve_solid_vertices=hud_vertex_reserve,
 				scratch_allocator=host_scratch.allocator,
 			) {
 				_ = sdl3.CancelGPUCommandBuffer(command)
