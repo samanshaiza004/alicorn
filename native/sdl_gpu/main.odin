@@ -2865,8 +2865,39 @@ RunFoundation :: proc() {
 	window_flags := sdl3.GetWindowFlags(window)
 	text_input_state := Native_Text_Input_State{window_focused=(window_flags & sdl3.WindowFlags{.INPUT_FOCUS}) != sdl3.WindowFlags{}}
 	sync_text_input_focus(window, &rt, &text_input_state)
+	if !text_input_state.active {
+		fmt.println("Waiting up to 5 seconds for window focus before text-input validation; click the Alicorn SDL_GPU proof window if needed")
+	}
+	focus_wait_start := time.now()
+	for !text_input_state.active && !quit_requested &&
+		time.duration_nanoseconds(time.since(focus_wait_start)) < 5_000_000_000 {
+		pump_events(
+			window, &rt, &metrics, &quit_requested,
+			&logical_resize_events, &pixel_resize_events, &scale_events,
+			&text_input_events, &composition_events, &app_text,
+			text_input_state=&text_input_state,
+		)
+		window_flags = sdl3.GetWindowFlags(window)
+		has_input_focus := (window_flags & sdl3.WindowFlags{.INPUT_FOCUS}) != sdl3.WindowFlags{}
+		if has_input_focus {
+			text_input_state.window_focused = true
+			sync_text_input_focus(window, &rt, &text_input_state)
+		}
+		if !text_input_state.active { sdl3.Delay(16) }
+	}
 	if !text_input_state.active || !sdl3.TextInputActive(window) {
-		fail("focused text field did not activate SDL text input")
+		when ODIN_OS == .Darwin {
+			focus := darwin_focus_state(window)
+			fmt.println(
+				"native_text_input_focus",
+				"app_active", focus.app_active,
+				"key_window", focus.key_window,
+				"sdl_input_focus", focus.input_focus,
+				"runtime_focus", rt.focused,
+				"field", field,
+			)
+		}
+		fail("focused text field did not activate SDL text input after waiting for window focus")
 	}
 	// Feed one deterministic pair through SDL's own event queue. This is not
 	// a substitute for manual OS-IME validation, but it proves the native
