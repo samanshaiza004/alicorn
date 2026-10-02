@@ -117,29 +117,29 @@ native_surface_append_geometry :: proc(
 	return true
 }
 
-native_surface_geometry_self_test :: proc() -> bool {
+native_surface_geometry_self_test :: proc() -> Native_Validation_Result {
 	vertices := make([dynamic]Native_Text_Vertex, 0, 128, allocator=context.temp_allocator)
 	defer delete(vertices)
 	segments := [1]alicorn.GPU_Surface_Line_Segment{{
 		start={2, 3}, end={12, 3}, thickness=2, color={1, 0, 0, 1},
 	}}
 	circles := [1]alicorn.GPU_Surface_Filled_Circle{{center={20, 10}, radius=4, color={0, 1, 0, 1}}}
-	if !native_surface_append_geometry(&vertices, alicorn.Rect{100, 50, 40, 30}, 2, 2, segments[:], circles[:]) { return false }
-	if len(vertices) != 6+alicorn.GPU_SURFACE_CIRCLE_SEGMENTS*3 { return false }
+	if !native_surface_append_geometry(&vertices, alicorn.Rect{100, 50, 40, 30}, 2, 2, segments[:], circles[:]) { return native_validation_failed() }
+	if len(vertices) != 6+alicorn.GPU_SURFACE_CIRCLE_SEGMENTS*3 { return native_validation_failed() }
 	// Surface-local coordinates are translated by the resolved surface origin,
 	// then scaled to physical pixels for the GPU vertex buffer.
-	if vertices[0].position[0] < 200 || vertices[0].position[0] > 204 { return false }
-	if vertices[0].position[1] < 104 || vertices[0].position[1] > 106 { return false }
-	if vertices[0].color[0] != 1 || vertices[0].color[1] != 0 || vertices[0].color[2] != 0 || vertices[0].color[3] != 1 { return false }
-	if vertices[6].position[0] != 240 || vertices[6].position[1] != 120 { return false }
-	if vertices[7].position[0] < 247 || vertices[7].position[0] > 249 || vertices[7].position[1] != 120 { return false }
-	if vertices[6].color[0] != 0 || vertices[6].color[1] != 1 || vertices[6].color[2] != 0 || vertices[6].color[3] != 1 { return false }
+	if vertices[0].position[0] < 200 || vertices[0].position[0] > 204 { return native_validation_failed() }
+	if vertices[0].position[1] < 104 || vertices[0].position[1] > 106 { return native_validation_failed() }
+	if vertices[0].color[0] != 1 || vertices[0].color[1] != 0 || vertices[0].color[2] != 0 || vertices[0].color[3] != 1 { return native_validation_failed() }
+	if vertices[6].position[0] != 240 || vertices[6].position[1] != 120 { return native_validation_failed() }
+	if vertices[7].position[0] < 247 || vertices[7].position[0] > 249 || vertices[7].position[1] != 120 { return native_validation_failed() }
+	if vertices[6].color[0] != 0 || vertices[6].color[1] != 1 || vertices[6].color[2] != 0 || vertices[6].color[3] != 1 { return native_validation_failed() }
 
 	clear(&vertices)
 	for _ in 0..<MAX_SURFACE_VERTICES-47 { append(&vertices, Native_Text_Vertex{}) }
 	previous_len := len(vertices)
-	if native_surface_append_circle(&vertices, 0, 0, 1, 1, 1, native_surface_color(1, 1, 1, 1)) { return false }
-	if len(vertices) != previous_len { return false } // no partial primitive on overflow
+	if native_surface_append_circle(&vertices, 0, 0, 1, 1, 1, native_surface_color(1, 1, 1, 1)) { return native_validation_failed() }
+	if len(vertices) != previous_len { return native_validation_failed() } // no partial primitive on overflow
 
 	// Exercise the complete retained-node -> native-mesh path without needing
 	// an SDL device. The live backend uses this same mesh builder before upload.
@@ -147,34 +147,35 @@ native_surface_geometry_self_test :: proc() -> bool {
 	defer alicorn.destroy_runtime(&rt)
 	alicorn.invalidate_root(&rt, "native geometry mesh test")
 	ui, build := alicorn.begin_frame(&rt)
-	if !build { return false }
+	if !build { return native_validation_failed() }
 	alicorn.container_begin(&ui, .Root, label="native-geometry-root")
 	surface := alicorn.gpu_geometry_surface(&ui, "native-geometry", 0, alicorn.layout_style(width=80, height=50), 2)
 	waveform := alicorn.gpu_surface(&ui, "native-waveform", 0, alicorn.Rect{0, 0, 80, 50}, 160, 100, 2)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
-	if !alicorn.gpu_surface_update_geometry(&rt, surface, 1, segments[:], circles[:]) { return false }
+	if !alicorn.gpu_surface_update_geometry(&rt, surface, 1, segments[:], circles[:]) { return native_validation_failed() }
 	samples := [2]f32{0.1, 0.9}
-	if !alicorn.gpu_surface_update(&rt, waveform, 1, samples[:]) { return false }
+	if !alicorn.gpu_surface_update(&rt, waveform, 1, samples[:]) { return native_validation_failed() }
 
 	renderer := Native_Surface_Renderer{
 		runtime=&rt,
 		vertices=make([dynamic]Native_Text_Vertex, 0, 128, allocator=context.temp_allocator),
 	}
 	defer delete(renderer.vertices)
-	if !native_surface_rebuild_mesh(&renderer, surface, 2, 2) { return false }
-	if len(renderer.vertices) != 6+alicorn.GPU_SURFACE_CIRCLE_SEGMENTS*3 { return false }
+	if !native_surface_rebuild_mesh(&renderer, surface, 2, 2) { return native_validation_failed() }
+	if len(renderer.vertices) != 6+alicorn.GPU_SURFACE_CIRCLE_SEGMENTS*3 { return native_validation_failed() }
 	first_fingerprint := renderer.mesh_fingerprint
 	changed := [1]alicorn.GPU_Surface_Line_Segment{{
 		start={8, 3}, end={18, 13}, thickness=2, color={1, 0, 0, 1},
 	}}
-	if !alicorn.gpu_surface_update_geometry(&rt, surface, 2, changed[:], circles[:]) { return false }
-	if !native_surface_rebuild_mesh(&renderer, surface, 2, 2) { return false }
-	if renderer.mesh_fingerprint == first_fingerprint || len(renderer.vertices) != 6+alicorn.GPU_SURFACE_CIRCLE_SEGMENTS*3 { return false }
+	if !alicorn.gpu_surface_update_geometry(&rt, surface, 2, changed[:], circles[:]) { return native_validation_failed() }
+	if !native_surface_rebuild_mesh(&renderer, surface, 2, 2) { return native_validation_failed() }
+	if renderer.mesh_fingerprint == first_fingerprint || len(renderer.vertices) != 6+alicorn.GPU_SURFACE_CIRCLE_SEGMENTS*3 { return native_validation_failed() }
 	// Geometry surfaces are transparent by default, while the original waveform
 	// mesh retains its opaque dark background quad.
-	if !native_surface_rebuild_mesh(&renderer, waveform, 2, 2) { return false }
-	return len(renderer.vertices) == 12 && renderer.vertices[0].color[0] == 0.08 && renderer.vertices[0].color[1] == 0.14 && renderer.vertices[0].color[2] == 0.24
+	if !native_surface_rebuild_mesh(&renderer, waveform, 2, 2) { return native_validation_failed() }
+	if len(renderer.vertices) == 12 && renderer.vertices[0].color[0] == 0.08 && renderer.vertices[0].color[1] == 0.14 && renderer.vertices[0].color[2] == 0.24 { return Native_Validation_Result{ok=true} }
+	return native_validation_failed()
 }
 
 native_surface_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTextureFormat, runtime: ^alicorn.Runtime) -> (renderer: Native_Surface_Renderer, ok: bool) {

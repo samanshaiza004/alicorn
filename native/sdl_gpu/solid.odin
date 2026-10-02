@@ -98,23 +98,9 @@ native_solid_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTex
 	return renderer, true
 }
 
-native_solid_next_vertex_capacity :: proc(current, required, maximum: int) -> int {
-	if required <= current { return current }
-	if required <= 0 || maximum <= 0 || required > maximum { return 0 }
-	capacity := max(current, 4096)
-	for capacity < required {
-		if capacity > maximum / 2 {
-			capacity = maximum
-		} else {
-			capacity *= 2
-		}
-	}
-	return capacity
-}
-
 native_solid_ensure_vertex_capacity :: proc(renderer: ^Native_Solid_Renderer, required: int) -> bool {
 	maximum := int(sdl3.Uint32(0xFFFFFFFF) / sdl3.Uint32(size_of(Native_Text_Vertex)))
-	new_capacity := native_solid_next_vertex_capacity(renderer.vertex_capacity, required, maximum)
+	new_capacity := native_next_vertex_capacity(renderer.vertex_capacity, required, maximum)
 	if new_capacity == 0 { return false }
 	if new_capacity == renderer.vertex_capacity { return true }
 	new_size := sdl3.Uint32(new_capacity * size_of(Native_Text_Vertex))
