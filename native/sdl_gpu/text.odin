@@ -2,6 +2,7 @@ package alicorn_sdl_gpu
 
 import "core:c"
 import "core:math"
+import "core:time"
 import alicorn "../../runtime"
 import runa "../../third_party/Runa"
 import "vendor:sdl3"
@@ -54,6 +55,9 @@ Native_Text_Renderer :: struct {
 	last_scale_x:   f32,
 	last_scale_y:   f32,
 	mesh_fingerprint: u64,
+	fingerprint_ns:   u64,
+	fingerprint_bytes: u64,
+	mesh_rebuild_ns:  u64,
 	atlas_uploads: u64,
 	atlas_upload_bytes: u64,
 	mesh_rebuilds: u64,
@@ -245,8 +249,46 @@ native_text_hash_spans :: proc(h: u64, spans: []alicorn.Text_Paint_Span) -> u64 
 	return result
 }
 
-// Produce the last matching span index for each UTF-8 byte. Event chains and
-// a max-index segment tree avoid rescanning all spans for every glyph.
+Native_Text_Span_Strategy :: enum {
+	None,
+	Single,
+	Sorted_Non_Overlapping,
+	Segment_Tree,
+}
+
+// Most syntax projections are a sorted, non-overlapping list. Keep those out
+// of the byte-sized winner map below; the painter can resolve their colors
+// directly from shaped cluster ranges. Preserve the span-array ordering as
+// the precedence rule for every overlapping/unsorted case.
+native_text_span_strategy :: proc(text_length: int, spans: []alicorn.Text_Paint_Span) -> (strategy: Native_Text_Span_Strategy, single_index: int, starts_sorted: bool) {
+	color_count := 0
+	previous_color_start := -1
+	previous_color_end := -1
+	color_spans_sorted := true
+	previous_start := -1
+	starts_sorted = true
+	single_index = -1
+	for span, index in spans {
+		start := clamp(span.start, 0, text_length)
+		end := clamp(span.end, 0, text_length)
+		if start < previous_start { starts_sorted = false }
+		previous_start = start
+		if !span.color_set || start >= end { continue }
+		if start < previous_color_start || start < previous_color_end { color_spans_sorted = false }
+		previous_color_start = start
+		previous_color_end = max(previous_color_end, end)
+		color_count += 1
+		single_index = index
+	}
+	if color_count == 0 { return .None, -1, starts_sorted }
+	if color_count == 1 { return .Single, single_index, starts_sorted }
+	if color_spans_sorted { return .Sorted_Non_Overlapping, -1, starts_sorted }
+	return .Segment_Tree, -1, starts_sorted
+}
+
+// Produce the last matching span index for each UTF-8 byte. This allocation-
+// heavy path is reserved for genuinely overlapping or unsorted spans; a
+// max-index segment tree preserves last-span-wins semantics in that case.
 native_text_span_winners :: proc(text: string, spans: []alicorn.Text_Paint_Span, scratch_allocator := context.temp_allocator) -> []int {
 	if len(text) == 0 || len(spans) == 0 { return nil }
 	has_color := false
@@ -301,6 +343,100 @@ native_text_color_for_cluster :: proc(spans: []alicorn.Text_Paint_Span, winners:
 	for byte in start..<end { winning_index = max(winning_index, winners[byte]) }
 	if winning_index >= 0 && winning_index < len(spans) && spans[winning_index].color_set { return spans[winning_index].color }
 	return fallback
+}
+
+native_text_color_for_single_span :: proc(text_length: int, spans: []alicorn.Text_Paint_Span, span_index: int, cluster_start, cluster_end: int, fallback: alicorn.Color) -> alicorn.Color {
+	if span_index < 0 || span_index >= len(spans) { return fallback }
+	span := spans[span_index]
+	if !span.color_set { return fallback }
+	start := clamp(cluster_start, 0, text_length)
+	end := clamp(cluster_end, 0, text_length)
+	span_start := clamp(span.start, 0, text_length)
+	span_end := clamp(span.end, 0, text_length)
+	if start < span_end && span_start < end { return span.color }
+	return fallback
+}
+
+// Resolve an ordered source cluster against sorted, disjoint spans. The cursor
+// only moves forward when shaped clusters are also source-ordered; bidi runs
+// that violate that condition use the general winner map instead.
+native_text_color_for_sorted_cluster :: proc(
+	text_length: int,
+	spans: []alicorn.Text_Paint_Span,
+	cursor: ^int,
+	cluster_start, cluster_end: int,
+	fallback: alicorn.Color,
+) -> alicorn.Color {
+	start := clamp(cluster_start, 0, text_length)
+	end := clamp(cluster_end, 0, text_length)
+	if start >= end { return fallback }
+	for cursor^ < len(spans) {
+		span := spans[cursor^]
+		span_start := clamp(span.start, 0, text_length)
+		span_end := clamp(span.end, 0, text_length)
+		if !span.color_set || span_start >= span_end || span_end <= start {
+			cursor^ += 1
+			continue
+		}
+		break
+	}
+	winner := -1
+	for index := cursor^; index < len(spans); index += 1 {
+		span := spans[index]
+		if !span.color_set { continue }
+		span_start := clamp(span.start, 0, text_length)
+		span_end := clamp(span.end, 0, text_length)
+		if span_start >= end { break }
+		if span_start < span_end && span_end > start { winner = index }
+	}
+	if winner >= 0 { return spans[winner].color }
+	return fallback
+}
+
+// A visual bidi run may visit source clusters out of order. Sorted disjoint
+// spans still need no byte-winner array in that case: binary-search the span
+// start, then inspect only ranges that can intersect this cluster.
+native_text_color_for_sorted_cluster_binary :: proc(
+	text_length: int,
+	spans: []alicorn.Text_Paint_Span,
+	cluster_start, cluster_end: int,
+	fallback: alicorn.Color,
+) -> alicorn.Color {
+	start := clamp(cluster_start, 0, text_length)
+	end := clamp(cluster_end, 0, text_length)
+	if start >= end { return fallback }
+	low, high := 0, len(spans)
+	for low < high {
+		mid := low + (high-low)/2
+		span_start := clamp(spans[mid].start, 0, text_length)
+		if span_start < start { low = mid + 1 } else { high = mid }
+	}
+	first := low
+	for first > 0 {
+		first -= 1
+		if spans[first].color_set { break }
+	}
+	winner := -1
+	for index := first; index < len(spans); index += 1 {
+		span := spans[index]
+		span_start := clamp(span.start, 0, text_length)
+		if span_start >= end { break }
+		span_end := clamp(span.end, 0, text_length)
+		if span.color_set && span_start < span_end && span_end > start { winner = index }
+	}
+	if winner >= 0 { return spans[winner].color }
+	return fallback
+}
+
+native_text_glyph_clusters_are_ordered :: proc(glyphs: []alicorn.Text_Glyph) -> bool {
+	previous_start := -1
+	previous_end := -1
+	for glyph in glyphs {
+		if glyph.cluster_start < previous_start || glyph.cluster_end < previous_end { return false }
+		previous_start = glyph.cluster_start
+		previous_end = glyph.cluster_end
+	}
+	return true
 }
 
 // Runa's mono rasterizer stores the fractional X phase in four quarter-pixel
@@ -372,16 +508,112 @@ native_text_quad_visible :: proc(x0, y0, x1, y1: f32, clip: alicorn.Rect, scale_
 	return x0 < clip_x1 && x1 > clip_x0 && y0 < clip_y1 && y1 > clip_y0
 }
 
+native_text_rects_intersect :: proc(a, b: alicorn.Rect) -> bool {
+	if a.w <= 0 || a.h <= 0 || b.w <= 0 || b.h <= 0 { return false }
+	return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y
+}
+
+native_text_command_intersects_clip :: proc(command: alicorn.Display_Command) -> bool {
+	// Drag-preview text is translated at draw time. Its mesh-space bounds do
+	// not describe the final clip-space location, so leave it to exact culling.
+	if command.node == alicorn.Node_ID(0) { return true }
+	return native_text_rects_intersect(command.bounds, command.clip)
+}
+
+// This is a deliberately broad logical bound, not a substitute for the exact
+// raster-bounds clip test below. The em-sized margin admits bearings, accents,
+// italic overhang, combining marks, and zero-advance glyphs while still
+// excluding glyphs far outside a long line's viewport before atlas lookup.
+native_text_glyph_may_intersect_clip :: proc(
+	glyph: alicorn.Text_Glyph,
+	run_size: f32,
+	command: alicorn.Display_Command,
+	scale_x, scale_y: f32,
+) -> bool {
+	// The drag preview receives a host-side model translation after mesh build.
+	// Do not apply an untransformed logical bound that could drop its glyphs.
+	if command.node == alicorn.Node_ID(0) { return true }
+	if command.clip.w <= 0 || command.clip.h <= 0 { return false }
+	clip_xa := command.clip.x * scale_x
+	clip_ya := command.clip.y * scale_y
+	clip_xb := (command.clip.x + command.clip.w) * scale_x
+	clip_yb := (command.clip.y + command.clip.h) * scale_y
+	clip_x0, clip_x1 := min(clip_xa, clip_xb), max(clip_xa, clip_xb)
+	clip_y0, clip_y1 := min(clip_ya, clip_yb), max(clip_ya, clip_yb)
+	run_size_abs := run_size
+	if run_size_abs < 0 { run_size_abs = -run_size_abs }
+	scale_x_abs, scale_y_abs := scale_x, scale_y
+	if scale_x_abs < 0 { scale_x_abs = -scale_x_abs }
+	if scale_y_abs < 0 { scale_y_abs = -scale_y_abs }
+	margin_x := max(run_size_abs * scale_x_abs, 1)
+	margin_y := max(run_size_abs * scale_y_abs, 1)
+	glyph_xa := (command.bounds.x + glyph.x) * scale_x
+	glyph_xb := (command.bounds.x + glyph.x + glyph.x_advance) * scale_x
+	glyph_ya := (command.bounds.y + glyph.y) * scale_y
+	glyph_yb := (command.bounds.y + glyph.y + glyph.y_advance) * scale_y
+	x0 := min(glyph_xa, glyph_xb) - margin_x
+	x1 := max(glyph_xa, glyph_xb) + margin_x
+	y0 := min(glyph_ya, glyph_yb) - margin_y
+	y1 := max(glyph_ya, glyph_yb) + margin_y
+	return x0 < clip_x1 && x1 > clip_x0 && y0 < clip_y1 && y1 > clip_y0
+}
+
+native_text_command_run :: proc(renderer: ^Native_Text_Renderer, command: alicorn.Display_Command) -> (run: alicorn.Text_Run, ok: bool) {
+	if command.node == alicorn.Node_ID(0) {
+		if !renderer.runtime.drag_preview.ready { return }
+		return renderer.runtime.drag_preview.run, true
+	}
+	node, found := renderer.runtime.nodes[command.node]
+	if !found { return }
+	if command.kind == .Text_Composition {
+		if !node.composition_run_valid { return }
+		return node.composition_run, true
+	}
+	if !node.text_run_valid { return }
+	return node.text_run, true
+}
+
+native_text_reserve_shaped_vertices :: proc(
+	renderer: ^Native_Text_Renderer,
+	display: []alicorn.Display_Command,
+	scale_x, scale_y: f32,
+) {
+	visible_glyphs := 0
+	for command in display {
+		if !native_text_is_text(command.kind) || !native_text_command_intersects_clip(command) { continue }
+		run, ok := native_text_command_run(renderer, command)
+		if !ok { continue }
+		for glyph in run.glyphs {
+			if glyph.control_advance || !native_text_glyph_may_intersect_clip(glyph, run.size, command, scale_x, scale_y) { continue }
+			visible_glyphs += 1
+		}
+	}
+	maximum_vertices := int(sdl3.Uint32(0xFFFFFFFF) / sdl3.Uint32(size_of(Native_Text_Vertex)))
+	// If the estimate exceeds what the GPU buffer size can represent, let the
+	// existing incremental capacity checks fail safely; don't reserve a
+	// theoretical maximum-sized CPU mesh for an already-unrenderable demand.
+	if visible_glyphs <= maximum_vertices/6 {
+		required_vertices := visible_glyphs * 6
+		if required_vertices > cap(renderer.vertices) {
+			reserve(&renderer.vertices, required_vertices)
+		}
+	}
+}
+
 // The mesh fingerprint includes only the ordered display state that can affect
 // text pixels. Solid and surface commands are intentionally excluded: their
 // changes must not invalidate the retained text vertex mesh.
-native_text_mesh_fingerprint :: proc(display: []alicorn.Display_Command, scale_x, scale_y: f32) -> u64 {
+native_text_mesh_fingerprint :: proc(display: []alicorn.Display_Command, scale_x, scale_y: f32) -> (fingerprint: u64, bytes_hashed: u64) {
 	h: u64 = 1469598103934665603
+	bytes_hashed = 0
 	h = native_text_hash_mix(h, u64(transmute(u32)scale_x))
 	h = native_text_hash_mix(h, u64(transmute(u32)scale_y))
 	text_index: u64 = 0
 	for command in display {
 		if !native_text_is_text(command.kind) { continue }
+		bytes_hashed += u64(len(command.text))
+		// Span hashing makes one count pass and one content pass.
+		bytes_hashed += u64(len(command.text_paint_spans) * size_of(alicorn.Text_Paint_Span) * 2)
 		h = native_text_hash_mix(h, text_index)
 		text_index += 1
 		h = native_text_hash_mix(h, u64(command.node))
@@ -393,11 +625,12 @@ native_text_mesh_fingerprint :: proc(display: []alicorn.Display_Command, scale_x
 		h = native_text_hash_spans(h, command.text_paint_spans)
 	}
 	h = native_text_hash_mix(h, text_index)
-	return h
+	return h, bytes_hashed
 }
 
 native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []alicorn.Display_Command, scale_x, scale_y: f32, scratch_allocator := context.temp_allocator) -> bool {
-	fingerprint := native_text_mesh_fingerprint(display, scale_x, scale_y)
+	fingerprint_start := time.now()
+	fingerprint, fingerprint_bytes := native_text_mesh_fingerprint(display, scale_x, scale_y)
 	text_command_count: u64 = 0
 	for command in display {
 		if !native_text_is_text(command.kind) { continue }
@@ -425,33 +658,42 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 	// the retained run's atlas slots. Include the runtime text generation so a
 	// same-string font swap cannot leave old vertices resident.
 	fingerprint = native_text_hash_mix(fingerprint, renderer.runtime.text_engine.font_generation)
+	renderer.fingerprint_ns += u64(time.duration_nanoseconds(time.since(fingerprint_start)))
+	renderer.fingerprint_bytes += fingerprint_bytes
 	renderer.mesh_text_commands = text_command_count
 	if renderer.mesh_valid && renderer.mesh_fingerprint == fingerprint {
 		renderer.mesh_cache_hits += 1
 		return true
 	}
 	renderer.mesh_rebuilds += 1
+	mesh_rebuild_start := time.now()
+	// The old mesh is no longer available once its arrays are cleared. If a
+	// capacity/allocation failure interrupts this rebuild, do not let a later
+	// frame reuse the old fingerprint with this partial data.
+	renderer.mesh_valid = false
 	clear(&renderer.vertices)
 	clear(&renderer.draws)
+	// Reserve once from the shaped glyphs that can plausibly reach a text
+	// command's clip; don't couple CPU allocation to maximum GPU capacity.
+	native_text_reserve_shaped_vertices(renderer, display, scale_x, scale_y)
 	for command in display {
-		if !native_text_is_text(command.kind) { continue }
-		run: ^alicorn.Text_Run
-		if command.node == alicorn.Node_ID(0) {
-			if !renderer.runtime.drag_preview.ready { continue }
-			run = &renderer.runtime.drag_preview.run
-		} else {
-			node, found := renderer.runtime.nodes[command.node]
-			if !found { continue }
-			run = &node.text_run
-			if command.kind == .Text_Composition { run = &node.composition_run }
-			if !node.text_run_valid && command.kind != .Text_Composition { continue }
-			if command.kind == .Text_Composition && !node.composition_run_valid { continue }
+		if !native_text_is_text(command.kind) || !native_text_command_intersects_clip(command) { continue }
+		run, run_ok := native_text_command_run(renderer, command)
+		if !run_ok { continue }
+		span_strategy, single_span_index, starts_sorted := native_text_span_strategy(len(command.text), command.text_paint_spans)
+		clusters_ordered := native_text_glyph_clusters_are_ordered(run.glyphs[:])
+		winners: []int
+		if span_strategy == .Segment_Tree || (span_strategy == .Sorted_Non_Overlapping && !clusters_ordered && !starts_sorted) {
+			winners = native_text_span_winners(command.text, command.text_paint_spans, scratch_allocator)
 		}
-		winners := native_text_span_winners(command.text, command.text_paint_spans, scratch_allocator)
+		span_cursor := 0
 		for glyph in run.glyphs {
 			// Tabs and unsupported controls retain logical advance/caret geometry
 			// but must never reach the atlas or produce fallback glyphs.
 			if glyph.control_advance { continue }
+			// Avoid atlas lookup/rasterization for glyphs well outside the clip.
+			// Bitmap bearings and overhang still get the exact check after lookup.
+			if !native_text_glyph_may_intersect_clip(glyph, run.size, command, scale_x, scale_y) { continue }
 			// Text_Run stores logical geometry only. Resolve the physical glyph
 			// resource at the current raster scale so moving a window to a Retina
 			// display does not stretch a low-resolution atlas slot. The raster
@@ -472,10 +714,24 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 			if !native_text_quad_visible(x0, y0, x1, y1, command.clip, scale_x, scale_y) { continue }
 			if len(renderer.vertices) + 6 > renderer.vertex_capacity && !native_text_ensure_vertex_capacity(renderer, len(renderer.vertices) + 6) {
 				if len(winners) > 0 { delete(winners, scratch_allocator) }
+				renderer.mesh_rebuild_ns += u64(time.duration_nanoseconds(time.since(mesh_rebuild_start)))
 				return false
 			}
 			u0, v0, u1, v1 := slot_view.UV_Rect[0], slot_view.UV_Rect[1], slot_view.UV_Rect[2], slot_view.UV_Rect[3]
-			glyph_color := native_text_color_for_cluster(command.text_paint_spans, winners, glyph.cluster_start, glyph.cluster_end, command.color)
+			glyph_color := command.color
+			if span_strategy == .Single {
+				glyph_color = native_text_color_for_single_span(len(command.text), command.text_paint_spans, single_span_index, glyph.cluster_start, glyph.cluster_end, command.color)
+			} else if span_strategy == .Sorted_Non_Overlapping {
+				if clusters_ordered {
+					glyph_color = native_text_color_for_sorted_cluster(len(command.text), command.text_paint_spans, &span_cursor, glyph.cluster_start, glyph.cluster_end, command.color)
+				} else if starts_sorted {
+					glyph_color = native_text_color_for_sorted_cluster_binary(len(command.text), command.text_paint_spans, glyph.cluster_start, glyph.cluster_end, command.color)
+				} else {
+					glyph_color = native_text_color_for_cluster(command.text_paint_spans, winners, glyph.cluster_start, glyph.cluster_end, command.color)
+				}
+			} else if span_strategy == .Segment_Tree {
+				glyph_color = native_text_color_for_cluster(command.text_paint_spans, winners, glyph.cluster_start, glyph.cluster_end, command.color)
+			}
 			glyph_color.a *= alicorn.drag_source_opacity(renderer.runtime, command.node)
 			color := [4]f32{glyph_color.r, glyph_color.g, glyph_color.b, glyph_color.a}
 			first := sdl3.Uint32(len(renderer.vertices))
@@ -496,6 +752,7 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 	renderer.mesh_fingerprint = fingerprint
 	renderer.mesh_valid = true
 	renderer.vertex_upload_pending = len(renderer.vertices) > 0
+	renderer.mesh_rebuild_ns += u64(time.duration_nanoseconds(time.since(mesh_rebuild_start)))
 	return true
 }
 

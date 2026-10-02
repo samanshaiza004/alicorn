@@ -167,6 +167,38 @@ native_solid_append_quad :: proc(vertices: ^[dynamic]Native_Text_Vertex, x0, y0,
 	)
 }
 
+native_solid_pixel_bounds :: proc(
+	renderer: ^Native_Solid_Renderer,
+	draw: alicorn.Display_Command,
+	scale_x, scale_y: f32,
+	target_w, target_h: sdl3.Uint32,
+) -> (x0, y0, x1, y1: int, visible: bool) {
+	drag_offset_x: f32 = 0
+	drag_offset_y: f32 = 0
+	if draw.node == alicorn.Node_ID(0) && renderer.runtime != nil {
+		drag_offset_x = renderer.runtime.drag.x + alicorn.DRAG_PREVIEW_POINTER_OFFSET
+		drag_offset_y = renderer.runtime.drag.y + alicorn.DRAG_PREVIEW_POINTER_OFFSET
+	}
+	left := draw.bounds.x + drag_offset_x
+	top := draw.bounds.y + drag_offset_y
+	right := draw.bounds.x + draw.bounds.w + drag_offset_x
+	bottom := draw.bounds.y + draw.bounds.h + drag_offset_y
+	if draw.clip.x > left { left = draw.clip.x }
+	if draw.clip.y > top { top = draw.clip.y }
+	if draw.clip.x + draw.clip.w < right { right = draw.clip.x + draw.clip.w }
+	if draw.clip.y + draw.clip.h < bottom { bottom = draw.clip.y + draw.clip.h }
+	x0 = int(left * scale_x)
+	y0 = int(top * scale_y)
+	x1 = int(right * scale_x)
+	y1 = int(bottom * scale_y)
+	if x0 < 0 { x0 = 0 }
+	if y0 < 0 { y0 = 0 }
+	if x1 > int(target_w) { x1 = int(target_w) }
+	if y1 > int(target_h) { y1 = int(target_h) }
+	visible = x1 > x0 && y1 > y0
+	return
+}
+
 native_solid_build :: proc(
 	renderer: ^Native_Solid_Renderer,
 	display: []alicorn.Display_Command,
@@ -176,35 +208,25 @@ native_solid_build :: proc(
 ) -> bool {
 	clear(&renderer.vertices)
 	clear(&renderer.draws)
+	visible_rect_count := 0
+	for draw in display {
+		if native_text_is_text(draw.kind) || draw.kind == .Custom_Surface { continue }
+		if skip_root && draw.kind == .Root { continue }
+		_, _, _, _, visible := native_solid_pixel_bounds(renderer, draw, scale_x, scale_y, target_w, target_h)
+		if visible { visible_rect_count += 1 }
+	}
+	required_vertices := visible_rect_count * 6
+	if required_vertices > cap(renderer.vertices) {
+		reserve(&renderer.vertices, required_vertices)
+	}
 	for draw in display {
 		append(&renderer.draws, Native_Solid_Draw{})
 	}
 	for draw, i in display {
 		if native_text_is_text(draw.kind) || draw.kind == .Custom_Surface { continue }
 		if skip_root && draw.kind == .Root { continue }
-		drag_offset_x: f32 = 0
-		drag_offset_y: f32 = 0
-		if draw.node == alicorn.Node_ID(0) && renderer.runtime != nil {
-			drag_offset_x = renderer.runtime.drag.x + alicorn.DRAG_PREVIEW_POINTER_OFFSET
-			drag_offset_y = renderer.runtime.drag.y + alicorn.DRAG_PREVIEW_POINTER_OFFSET
-		}
-		left := draw.bounds.x + drag_offset_x
-		top := draw.bounds.y + drag_offset_y
-		right := draw.bounds.x + draw.bounds.w + drag_offset_x
-		bottom := draw.bounds.y + draw.bounds.h + drag_offset_y
-		if draw.clip.x > left { left = draw.clip.x }
-		if draw.clip.y > top { top = draw.clip.y }
-		if draw.clip.x + draw.clip.w < right { right = draw.clip.x + draw.clip.w }
-		if draw.clip.y + draw.clip.h < bottom { bottom = draw.clip.y + draw.clip.h }
-		x0 := int(left * scale_x)
-		y0 := int(top * scale_y)
-		x1 := int(right * scale_x)
-		y1 := int(bottom * scale_y)
-		if x0 < 0 { x0 = 0 }
-		if y0 < 0 { y0 = 0 }
-		if x1 > int(target_w) { x1 = int(target_w) }
-		if y1 > int(target_h) { y1 = int(target_h) }
-		if x1 <= x0 || y1 <= y0 { continue }
+		x0, y0, x1, y1, visible := native_solid_pixel_bounds(renderer, draw, scale_x, scale_y, target_w, target_h)
+		if !visible { continue }
 		if len(renderer.vertices) + 6 > renderer.vertex_capacity && !native_solid_ensure_vertex_capacity(renderer, len(renderer.vertices) + 6) {
 			return false
 		}
@@ -229,6 +251,30 @@ native_solid_append_debug_bounds :: proc(
 	skip_root := false,
 ) {
 	color := [4]f32{1.0, 0.78, 0.16, 0.72}
+	visible_bounds_count := 0
+	for draw in display {
+		if skip_root && draw.kind == .Root { continue }
+		drag_offset_x: f32 = 0
+		drag_offset_y: f32 = 0
+		if draw.node == alicorn.Node_ID(0) && renderer.runtime != nil {
+			drag_offset_x = renderer.runtime.drag.x + alicorn.DRAG_PREVIEW_POINTER_OFFSET
+			drag_offset_y = renderer.runtime.drag.y + alicorn.DRAG_PREVIEW_POINTER_OFFSET
+		}
+		left := (draw.bounds.x + drag_offset_x) * scale_x
+		top := (draw.bounds.y + drag_offset_y) * scale_y
+		right := (draw.bounds.x + draw.bounds.w + drag_offset_x) * scale_x
+		bottom := (draw.bounds.y + draw.bounds.h + drag_offset_y) * scale_y
+		if left < 0 { left = 0 }
+		if top < 0 { top = 0 }
+		if right > f32(target_w) { right = f32(target_w) }
+		if bottom > f32(target_h) { bottom = f32(target_h) }
+		if right <= left || bottom <= top { continue }
+		visible_bounds_count += 1
+	}
+	required_vertices := len(renderer.vertices) + visible_bounds_count * 24
+	if required_vertices > cap(renderer.vertices) {
+		reserve(&renderer.vertices, required_vertices)
+	}
 	for draw in display {
 		if skip_root && draw.kind == .Root { continue }
 		drag_offset_x: f32 = 0
