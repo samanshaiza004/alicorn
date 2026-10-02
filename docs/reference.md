@@ -206,6 +206,12 @@ virtualized source may disappear after `.Started`; the semantic source ID
 remains valid for the rest of the session. Escape, native pointer cancellation,
 and focus loss cancel and release the drag.
 
+While a local drag is held inside the 24-logical-pixel edge zone of a
+scrollable viewport, the native host schedules bounded 16 ms autoscroll ticks.
+The runtime changes only the retained scroll offset; the application rebuilds
+the virtualized viewport only when that offset advances. Releasing, canceling,
+or reaching the scroll limit stops the timer.
+
 This is an in-window, single-source primitive. It does not transport operating
 system file drops or arbitrary MIME payloads.
 

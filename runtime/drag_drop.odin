@@ -169,6 +169,57 @@ drag_update_target :: proc(rt: ^Runtime, hit: Node_ID, x, y: f32, emit_event := 
 	drag_assign_target(rt, node, identity, position, mode, emit_event)
 }
 
+DRAG_AUTOSCROLL_EDGE :: 24.0
+DRAG_AUTOSCROLL_MAX_SPEED :: 720.0
+
+// drag_autoscroll_can_step reports whether an active local drag is within the
+// edge zone of a scroll region that can still move in that direction. The
+// native host uses this to schedule bounded ticks while the pointer is held
+// still; ordinary pointer motion remains retained-only.
+drag_autoscroll_can_step :: proc(rt: ^Runtime) -> bool {
+	_, _, _, found := drag_autoscroll_edge(rt)
+	return found
+}
+
+// drag_autoscroll_step advances the nearest scroll region under the pointer.
+// elapsed_ns is capped so delayed wakeups cannot produce a large jump.
+drag_autoscroll_step :: proc(rt: ^Runtime, elapsed_ns: u64) -> bool {
+	region_id, direction, strength, found := drag_autoscroll_edge(rt)
+	if !found || elapsed_ns == 0 { return false }
+	seconds := min(f32(elapsed_ns)*0.000000001, 0.05)
+	region := scroll_region_state(rt, region_id)
+	return scroll_region_set_offset(
+		rt,
+		region_id,
+		region.offset_y + direction*DRAG_AUTOSCROLL_MAX_SPEED*strength*seconds,
+		"drag edge autoscroll",
+	)
+}
+
+drag_autoscroll_edge :: proc(rt: ^Runtime) -> (region_id: Node_ID, direction, strength: f32, found: bool) {
+	if rt == nil || rt.drag.phase != .Dragging { return }
+	for index := len(rt.order)-1; index >= 0; index -= 1 {
+		id := rt.order[index]
+		node, ok := rt.nodes[id]
+		if !ok || !node.active || node.kind != .Scroll_Region { continue }
+		viewport := node.scroll_viewport_bounds
+		if viewport.w <= 0 || viewport.h <= 0 { viewport = node.bounds }
+		if rt.drag.x < viewport.x || rt.drag.x > viewport.x+viewport.w { continue }
+		top_distance := rt.drag.y-viewport.y
+		bottom_distance := viewport.y+viewport.h-rt.drag.y
+		if top_distance >= -DRAG_AUTOSCROLL_EDGE && top_distance < DRAG_AUTOSCROLL_EDGE {
+			if node.scroll_offset_y <= 0 { continue }
+			return id, -1, clampf((DRAG_AUTOSCROLL_EDGE-top_distance)/DRAG_AUTOSCROLL_EDGE, 0.15, 1), true
+		}
+		if bottom_distance >= -DRAG_AUTOSCROLL_EDGE && bottom_distance < DRAG_AUTOSCROLL_EDGE {
+			max_scroll := maxf(node.scroll_content_height-node.scroll_viewport_height, 0)
+			if node.scroll_offset_y >= max_scroll { continue }
+			return id, 1, clampf((DRAG_AUTOSCROLL_EDGE-bottom_distance)/DRAG_AUTOSCROLL_EDGE, 0.15, 1), true
+		}
+	}
+	return
+}
+
 drag_process_pointer :: proc(rt: ^Runtime, event: Pointer_Event, hit: Node_ID) -> bool {
 	if rt == nil { return false }
 	if event.kind == .Move {

@@ -253,6 +253,8 @@ Application_Close_Requested_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime) ->
 // from lower-fidelity work that can wait until the user has been quiet.
 Scheduled_Wake_Class :: enum {Frequent, Opportunistic}
 
+NATIVE_DRAG_AUTOSCROLL_INTERVAL_NS :: u64(16_000_000)
+
 Application_Schedule_After_Proc :: proc(data: rawptr, class: Scheduled_Wake_Class, delay_ns: u64) -> bool
 Application_Cancel_Scheduled_Proc :: proc(data: rawptr, class: Scheduled_Wake_Class) -> bool
 Application_Scheduler_Stats_Proc :: proc(data: rawptr) -> Application_Scheduler_Stats
@@ -448,6 +450,25 @@ native_dispatch_scheduled_wakes :: proc(
 			application.on_scheduled_wake(application.state, rt, class)
 			alicorn.cause_end(rt, cause)
 		}
+	}
+}
+
+native_drag_autoscroll_update :: proc(rt: ^alicorn.Runtime, deadline_ns: ^u64, now_ns: u64) {
+	if deadline_ns == nil { return }
+	if rt == nil || !alicorn.drag_autoscroll_can_step(rt) {
+		deadline_ns^ = 0
+		return
+	}
+	if deadline_ns^ == 0 {
+		deadline_ns^ = now_ns+NATIVE_DRAG_AUTOSCROLL_INTERVAL_NS
+		return
+	}
+	if now_ns < deadline_ns^ { return }
+	_ = alicorn.drag_autoscroll_step(rt, NATIVE_DRAG_AUTOSCROLL_INTERVAL_NS)
+	if alicorn.drag_autoscroll_can_step(rt) {
+		deadline_ns^ = now_ns+NATIVE_DRAG_AUTOSCROLL_INTERVAL_NS
+	} else {
+		deadline_ns^ = 0
 	}
 }
 
@@ -2199,6 +2220,7 @@ run_application_loop :: proc(
 	last_tick := time.now()
 	last_focus_log := start
 	wait_for_event := false
+	drag_autoscroll_deadline_ns: u64 = 0
 	swapchain_retry_pending := false
 	last_user_interaction_ns: u64 = 0
 	devtools_last_cause: alicorn.Cause_Context
@@ -2231,6 +2253,10 @@ run_application_loop :: proc(
 				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, tick_timeout_ms))
 			}
 			current_ns := u64(sdl3.GetTicksNS())
+			if drag_autoscroll_deadline_ns != 0 {
+				drag_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(drag_autoscroll_deadline_ns, current_ns))
+				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, drag_timeout_ms))
+			}
 			if next_deadline, found := scheduled_wake_next_deadline(&scheduler_state); found {
 				scheduled_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(next_deadline, current_ns))
 				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, scheduled_timeout_ms))
@@ -2292,6 +2318,7 @@ run_application_loop :: proc(
 			devtools_hud_redraw_pending=&devtools_hud_redraw_pending,
 			devtools_last_cause=&devtools_last_cause,
 		)
+		native_drag_autoscroll_update(rt, &drag_autoscroll_deadline_ns, u64(sdl3.GetTicksNS()))
 		if native_menu != nil {
 			if command, ok := native_menu_take_pending(native_menu); ok {
 				native_menu_dispatch_command(native_menu, command)

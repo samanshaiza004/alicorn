@@ -5,6 +5,8 @@ import "core:testing"
 DRAG_TEST_TYPE :: Drag_Type(41)
 DRAG_TEST_SOURCE :: Semantic_ID{namespace=701, value=1}
 DRAG_TEST_TARGET :: Semantic_ID{namespace=701, value=2}
+DRAG_SCROLL_SOURCE :: Semantic_ID{namespace=702, value=1}
+DRAG_SCROLL_TARGET :: Semantic_ID{namespace=702, value=2}
 
 drag_test_build :: proc(rt: ^Runtime, include_source := true) -> (source: Node_ID, target_container: Node_ID, target_button: Node_ID) {
 	ui, should_build := begin_frame(rt)
@@ -140,4 +142,52 @@ test_drag_cancel_releases_capture_and_delivers_cancellation :: proc(t: ^testing.
 		"host cancellation should notify the application and clear the active drag")
 	testing.expect(t, rt.drag.phase == .Idle && rt.captured_node == 0 && rt.activation_node == 0,
 		"cancellation should release pointer capture and suppress click activation")
+}
+
+drag_autoscroll_test_build :: proc(rt: ^Runtime) -> (source: Node_ID, scroll: Node_ID, target: Node_ID) {
+	ui, should_build := begin_frame(rt)
+	if !should_build { return }
+	container_begin_simple(&ui, .Root, label="drag-scroll-root", key=key_string("drag-scroll-root"), style=layout_style(.Column, width=240, height=240, gap=8))
+	source, _ = button_ex(&ui, "source", key="drag-scroll-source", style=layout_style(width=100, height=36))
+	_ = drag_source(&ui, DRAG_TEST_TYPE, DRAG_SCROLL_SOURCE)
+	region := scroll_region_begin(&ui, key=key_string("drag-scroll-region"), viewport_height=150, content_height=900, style=layout_style(.Column, width=240, height=150), label="drag-scroll-region")
+	scroll = region.id
+	target, _ = button_ex(&ui, "target", key="drag-scroll-target", style=layout_style(width=180, height=36))
+	_ = drop_target(&ui, DRAG_TEST_TYPE, DRAG_SCROLL_TARGET, .On)
+	scroll_region_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+	return
+}
+
+@(test)
+test_drag_autoscroll_repeats_at_scroll_edges_without_pointer_motion :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 240})
+	defer destroy_runtime(&rt)
+	source, scroll, target := drag_autoscroll_test_build(&rt)
+	if source == 0 || scroll == 0 || target == 0 {
+		testing.expect(t, false, "drag autoscroll test nodes should be retained")
+		return
+	}
+	source_node := rt.nodes[source]
+	viewport := scroll_region_state(&rt, scroll).viewport_bounds
+	start_x := source_node.bounds.x+source_node.bounds.w/2
+	start_y := source_node.bounds.y+source_node.bounds.h/2
+	_ = process_pointer(&rt, Pointer_Event{kind=.Down, x=start_x, y=start_y, button=POINTER_BUTTON_PRIMARY})
+	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=viewport.x+viewport.w/2, y=viewport.y+viewport.h-2})
+	_, started := drag_event_take(&rt)
+	initial_offset := scroll_region_offset(&rt, scroll)
+	testing.expect(t, started && drag_autoscroll_can_step(&rt), "a drag held near a scroll edge should request a bounded host tick")
+	rt.invalidated = false
+	_ = drag_autoscroll_step(&rt, 16_000_000)
+	after_downward_tick := scroll_region_offset(&rt, scroll)
+	testing.expect(t, after_downward_tick > initial_offset, "one scheduled edge tick should advance the scroll region without another pointer move")
+	testing.expect(t, rt.invalidated, "scrolling must rebuild the virtualized viewport so newly visible rows can be described")
+
+	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=viewport.x+viewport.w/2, y=viewport.y+2})
+	_ = drag_autoscroll_step(&rt, 16_000_000)
+	testing.expect(t, scroll_region_offset(&rt, scroll) < after_downward_tick, "moving to the top edge should autoscroll back toward earlier rows")
+	_ = process_pointer(&rt, Pointer_Event{kind=.Cancel})
+	event, cancelled := drag_event_take(&rt)
+	testing.expect(t, cancelled && event.kind == .Cancelled && !drag_autoscroll_can_step(&rt), "canceling the drag should stop scheduled autoscroll")
 }
