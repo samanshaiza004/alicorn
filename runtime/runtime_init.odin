@@ -1,0 +1,62 @@
+package alicorn
+import "core:mem"
+
+new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
+	persistent_backing_allocator := config.persistent_allocator
+	if persistent_backing_allocator.procedure == nil {
+		persistent_backing_allocator = context.allocator
+	}
+	scratch_backing_allocator := config.scratch_backing_allocator
+	if scratch_backing_allocator.procedure == nil {
+		scratch_backing_allocator = persistent_backing_allocator
+	}
+	capacity := config.trace_capacity
+	if capacity < 1 { capacity = 1 }
+	stats := config.allocation_stats
+	stats_owned := false
+	if stats == nil {
+		stats = new(Runtime_Allocation_Stats, allocator=persistent_backing_allocator)
+		stats_owned = true
+	}
+	persistent_state := new(Runtime_Allocator_State, allocator=persistent_backing_allocator)
+	persistent_state^ = Runtime_Allocator_State{backing=persistent_backing_allocator, stats=stats, scratch=false}
+	rt := Runtime{
+		persistent_backing_allocator = persistent_backing_allocator,
+		persistent_allocator = runtime_allocator(persistent_state),
+		scratch_backing_allocator = scratch_backing_allocator,
+		allocation_stats = stats,
+		allocation_stats_owned = stats_owned,
+		persistent_allocator_state = persistent_state,
+		viewport = viewport,
+		invalidated = true,
+	}
+	rt.scratch_arena = new(mem.Dynamic_Arena, allocator=rt.persistent_allocator)
+	mem.dynamic_arena_init(rt.scratch_arena, block_allocator=scratch_backing_allocator, array_allocator=rt.persistent_allocator)
+	rt.scratch_allocator_state = new(Runtime_Allocator_State, allocator=rt.persistent_allocator)
+	rt.scratch_allocator_state^ = Runtime_Allocator_State{
+		backing=mem.dynamic_arena_allocator(rt.scratch_arena),
+		stats=stats,
+		scratch=true,
+	}
+	rt.scratch_allocator = runtime_allocator(rt.scratch_allocator_state)
+	rt.nodes = make(map[Node_ID]^Node, allocator=rt.persistent_allocator)
+	rt.order = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
+	rt.top_level = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
+	rt.pending = make([dynamic]Pending_Item, 0, allocator=rt.persistent_allocator)
+	rt.seen = make(map[Node_ID]Identity_Declaration, allocator=rt.persistent_allocator)
+	rt.identity_scopes = make(map[Node_ID]Identity_Declaration, allocator=rt.persistent_allocator)
+	rt.stack = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
+	rt.identity_stack = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
+	rt.identity_labels = make([dynamic]string, 0, allocator=rt.persistent_allocator)
+	rt.identity_key_u64 = make([dynamic]u64, 0, allocator=rt.persistent_allocator)
+	rt.identity_key_numeric = make([dynamic]bool, 0, allocator=rt.persistent_allocator)
+	rt.identity_key_kind = make([dynamic]u8, 0, allocator=rt.persistent_allocator)
+	rt.identity_key_pair = make([dynamic]UI_Key_Pair, 0, allocator=rt.persistent_allocator)
+	rt.paint_queue = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
+	rt.display = make([dynamic]Display_Command, 0, allocator=rt.persistent_allocator)
+	rt.trace = Trace_Ring{events = make([dynamic]Trace_Event, capacity, allocator=rt.persistent_allocator)}
+	rt.actions = make([dynamic]Action_Entry, 0, allocator=rt.persistent_allocator)
+	rt.text_engine = new_text_engine("runtime text", false, rt.persistent_allocator)
+	return rt
+}
+
