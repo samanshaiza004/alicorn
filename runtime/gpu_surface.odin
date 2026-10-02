@@ -17,13 +17,18 @@ GPU_Backend :: struct {
 // gpu_surface_update is the explicit high-frequency update path. The sample
 // slice is copied into runtime-owned storage before this procedure returns;
 // no application pointer is retained. It deliberately does not invalidate
-// the procedural root or queue ordinary layout/paint work.
+// the procedural root or queue ordinary layout/paint work. Inputs larger than
+// GPU_SURFACE_MAX_WAVEFORM_SAMPLES are rejected atomically; the native backend
+// emits one background quad and one six-vertex segment per adjacent pair.
 gpu_surface_update :: proc(rt: ^Runtime, id: Node_ID, revision: u64, samples: []f32) -> bool {
 	node, ok := rt.nodes[id]
 	if !ok || node == nil || !node.active || node.kind != .Custom_Surface {
 		return false
 	}
 	if node.surface_revision == revision {
+		return false
+	}
+	if len(samples) > GPU_SURFACE_MAX_WAVEFORM_SAMPLES {
 		return false
 	}
 	clear(&node.surface_samples)

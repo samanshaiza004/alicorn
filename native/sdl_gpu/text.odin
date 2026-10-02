@@ -6,7 +6,7 @@ import alicorn "../../runtime"
 import runa "../../third_party/Runa"
 import "vendor:sdl3"
 
-MAX_TEXT_VERTICES :: 65536
+NATIVE_TEXT_INITIAL_VERTICES :: 65536
 NATIVE_TEXT_SUBPIXEL_BUCKETS :: 4
 
 Native_Text_Vertex :: struct {
@@ -46,6 +46,7 @@ Native_Text_Renderer :: struct {
 	runtime:        ^alicorn.Runtime,
 	pages:          [dynamic]Native_Atlas_Page,
 	vertices:       [dynamic]Native_Text_Vertex,
+	vertex_capacity: int,
 	draws:          [dynamic]Native_Text_Draw,
 	pending_dirty:  [dynamic]runa.Atlas_Dirty_View,
 	mesh_valid:     bool,
@@ -167,8 +168,10 @@ native_text_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUText
 		address_mode_u=.CLAMP_TO_EDGE, address_mode_v=.CLAMP_TO_EDGE, address_mode_w=.CLAMP_TO_EDGE,
 		max_lod=1,
 	})
-	renderer.vertex_buffer = sdl3.CreateGPUBuffer(device, sdl3.GPUBufferCreateInfo{usage=sdl3.GPUBufferUsageFlags{.VERTEX}, size=sdl3.Uint32(MAX_TEXT_VERTICES * size_of(Native_Text_Vertex))})
-	renderer.vertex_transfer = sdl3.CreateGPUTransferBuffer(device, sdl3.GPUTransferBufferCreateInfo{usage=.UPLOAD, size=sdl3.Uint32(MAX_TEXT_VERTICES * size_of(Native_Text_Vertex))})
+	renderer.vertex_capacity = NATIVE_TEXT_INITIAL_VERTICES
+	initial_vertex_bytes := sdl3.Uint32(renderer.vertex_capacity * size_of(Native_Text_Vertex))
+	renderer.vertex_buffer = sdl3.CreateGPUBuffer(device, sdl3.GPUBufferCreateInfo{usage=sdl3.GPUBufferUsageFlags{.VERTEX}, size=initial_vertex_bytes})
+	renderer.vertex_transfer = sdl3.CreateGPUTransferBuffer(device, sdl3.GPUTransferBufferCreateInfo{usage=.UPLOAD, size=initial_vertex_bytes})
 	renderer.atlas_transfer = sdl3.CreateGPUTransferBuffer(device, sdl3.GPUTransferBufferCreateInfo{usage=.UPLOAD, size=4 * 1024 * 1024})
 	if renderer.sampler == nil || renderer.vertex_buffer == nil || renderer.vertex_transfer == nil || renderer.atlas_transfer == nil {
 		return renderer, false
@@ -320,6 +323,55 @@ native_text_snap_y :: proc(physical_y: f32) -> f32 {
 	return math.floor(physical_y + 0.5)
 }
 
+native_text_next_vertex_capacity :: proc(current, required, maximum: int) -> int {
+	if required <= current { return current }
+	if required <= 0 || maximum <= 0 || required > maximum { return 0 }
+	capacity := max(current, 4096)
+	for capacity < required {
+		if capacity > maximum / 2 {
+			capacity = maximum
+		} else {
+			capacity *= 2
+		}
+	}
+	return capacity
+}
+
+native_text_ensure_vertex_capacity :: proc(renderer: ^Native_Text_Renderer, required: int) -> bool {
+	maximum := int(sdl3.Uint32(0xFFFFFFFF) / sdl3.Uint32(size_of(Native_Text_Vertex)))
+	new_capacity := native_text_next_vertex_capacity(renderer.vertex_capacity, required, maximum)
+	if new_capacity == 0 { return false }
+	if new_capacity == renderer.vertex_capacity { return true }
+	new_size := sdl3.Uint32(new_capacity * size_of(Native_Text_Vertex))
+	new_buffer := sdl3.CreateGPUBuffer(renderer.device, sdl3.GPUBufferCreateInfo{usage=sdl3.GPUBufferUsageFlags{.VERTEX}, size=new_size})
+	if new_buffer == nil { return false }
+	new_transfer := sdl3.CreateGPUTransferBuffer(renderer.device, sdl3.GPUTransferBufferCreateInfo{usage=.UPLOAD, size=new_size})
+	if new_transfer == nil {
+		sdl3.ReleaseGPUBuffer(renderer.device, new_buffer)
+		return false
+	}
+	// Replacing the shared buffers is rare. Retire prior submissions before
+	// releasing them so the current larger mesh cannot race an in-flight draw.
+	if !sdl3.WaitForGPUIdle(renderer.device) {
+		sdl3.ReleaseGPUTransferBuffer(renderer.device, new_transfer)
+		sdl3.ReleaseGPUBuffer(renderer.device, new_buffer)
+		return false
+	}
+	sdl3.ReleaseGPUBuffer(renderer.device, renderer.vertex_buffer)
+	sdl3.ReleaseGPUTransferBuffer(renderer.device, renderer.vertex_transfer)
+	renderer.vertex_buffer = new_buffer
+	renderer.vertex_transfer = new_transfer
+	renderer.vertex_capacity = new_capacity
+	return true
+}
+
+native_text_quad_visible :: proc(x0, y0, x1, y1: f32, clip: alicorn.Rect, scale_x, scale_y: f32) -> bool {
+	if clip.w <= 0 || clip.h <= 0 || x1 <= x0 || y1 <= y0 { return false }
+	clip_x0, clip_y0 := clip.x * scale_x, clip.y * scale_y
+	clip_x1, clip_y1 := (clip.x + clip.w) * scale_x, (clip.y + clip.h) * scale_y
+	return x0 < clip_x1 && x1 > clip_x0 && y0 < clip_y1 && y1 > clip_y0
+}
+
 // The mesh fingerprint includes only the ordered display state that can affect
 // text pixels. Solid and surface commands are intentionally excluded: their
 // changes must not invalidate the retained text vertex mesh.
@@ -400,7 +452,6 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 			// Tabs and unsupported controls retain logical advance/caret geometry
 			// but must never reach the atlas or produce fallback glyphs.
 			if glyph.control_advance { continue }
-			if len(renderer.vertices) + 6 > MAX_TEXT_VERTICES { return false }
 			// Text_Run stores logical geometry only. Resolve the physical glyph
 			// resource at the current raster scale so moving a window to a Retina
 			// display does not stretch a low-resolution atlas slot. The raster
@@ -418,6 +469,11 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 			y0 := snapped_y + slot_view.Bearing[1]
 			x1 := x0 + f32(slot_view.Px_Size[0])
 			y1 := y0 + f32(slot_view.Px_Size[1])
+			if !native_text_quad_visible(x0, y0, x1, y1, command.clip, scale_x, scale_y) { continue }
+			if len(renderer.vertices) + 6 > renderer.vertex_capacity && !native_text_ensure_vertex_capacity(renderer, len(renderer.vertices) + 6) {
+				if len(winners) > 0 { delete(winners, scratch_allocator) }
+				return false
+			}
 			u0, v0, u1, v1 := slot_view.UV_Rect[0], slot_view.UV_Rect[1], slot_view.UV_Rect[2], slot_view.UV_Rect[3]
 			glyph_color := native_text_color_for_cluster(command.text_paint_spans, winners, glyph.cluster_start, glyph.cluster_end, command.color)
 			glyph_color.a *= alicorn.drag_source_opacity(renderer.runtime, command.node)
@@ -506,7 +562,7 @@ native_text_sync_atlas :: proc(renderer: ^Native_Text_Renderer, command: ^sdl3.G
 native_text_upload_vertices :: proc(renderer: ^Native_Text_Renderer, command: ^sdl3.GPUCommandBuffer) -> bool {
 	if !renderer.vertex_upload_pending { return true }
 	mapped := sdl3.MapGPUTransferBuffer(renderer.device, renderer.vertex_transfer, true)
-	if mapped == nil || len(renderer.vertices) > MAX_TEXT_VERTICES { return false }
+	if mapped == nil || len(renderer.vertices) > renderer.vertex_capacity { return false }
 	destination := cast([^]Native_Text_Vertex)mapped
 	for vertex, i in renderer.vertices { destination[i] = vertex }
 	sdl3.UnmapGPUTransferBuffer(renderer.device, renderer.vertex_transfer)

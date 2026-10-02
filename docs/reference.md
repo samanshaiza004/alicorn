@@ -296,8 +296,12 @@ system file drops or arbitrary MIME payloads.
   If distinct causes coalesce into one frame, its stage records are left
   unattributed rather than assigned to the most recent input.
 - `gpu_surface` / `gpu_surface_update` provide the current bounded custom
-  surface path. Keep GPU handles and rendering callbacks inside the host; the
-  application supplies typed data, not SDL command buffers.
+  surface path. Waveform updates accept at most
+  `GPU_SURFACE_MAX_WAVEFORM_SAMPLES` (1,365) samples; larger updates return
+  `false` without changing the current payload or revision. The limit accounts
+  for the background quad and six vertices per adjacent sample pair within
+  `GPU_SURFACE_MAX_VERTICES`. Keep GPU handles and rendering callbacks inside
+  the host; the application supplies typed data, not SDL command buffers.
 
 For the ownership and lifecycle model behind these calls, see
 [Architecture](architecture.md).

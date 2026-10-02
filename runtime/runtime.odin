@@ -76,6 +76,11 @@ GPU_Surface_Kind :: enum {
 GPU_SURFACE_MAX_VERTICES :: 8192
 GPU_SURFACE_CIRCLE_SEGMENTS :: 16
 
+// Waveform surfaces reserve one six-vertex background quad and emit one
+// six-vertex segment for each adjacent sample pair. This is the largest
+// sample count whose complete mesh fits GPU_SURFACE_MAX_VERTICES.
+GPU_SURFACE_MAX_WAVEFORM_SAMPLES :: GPU_SURFACE_MAX_VERTICES / 6
+
 // GPU_Surface_Context is the backend-neutral placement contract. The runtime
 // owns these values; a backend must not infer them from the window or retain an
 // application pointer to obtain them later.
