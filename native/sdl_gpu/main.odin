@@ -2367,6 +2367,13 @@ run_application_loop :: proc(
 		if rt.invalidated {
 			_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing)
 		}
+		if alicorn.drag_is_active(rt) && !rt.invalidated {
+			alicorn.drag_refresh_target(rt)
+			_ = native_dispatch_drag_event(&application_instance, rt)
+			if rt.invalidated {
+				_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing)
+			}
+		}
 		// A focus or caret change can update the platform candidate anchor
 		// without requiring a procedural description rebuild.
 		sync_text_input_focus(window, rt, &text_input_state, &application_instance)

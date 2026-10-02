@@ -169,6 +169,14 @@ drag_update_target :: proc(rt: ^Runtime, hit: Node_ID, x, y: f32, emit_event := 
 	drag_assign_target(rt, node, identity, position, mode, emit_event)
 }
 
+// drag_refresh_target re-evaluates the retained target after an application
+// rebuild changes geometry under a stationary pointer, such as edge autoscroll.
+drag_refresh_target :: proc(rt: ^Runtime) {
+	if rt == nil || rt.drag.phase != .Dragging { return }
+	hit := hit_test(rt, rt.drag.x, rt.drag.y)
+	drag_update_target(rt, hit, rt.drag.x, rt.drag.y)
+}
+
 DRAG_AUTOSCROLL_EDGE :: 24.0
 DRAG_AUTOSCROLL_MAX_SPEED :: 720.0
 

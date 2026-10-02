@@ -8,7 +8,7 @@ DRAG_TEST_TARGET :: Semantic_ID{namespace=701, value=2}
 DRAG_SCROLL_SOURCE :: Semantic_ID{namespace=702, value=1}
 DRAG_SCROLL_TARGET :: Semantic_ID{namespace=702, value=2}
 
-drag_test_build :: proc(rt: ^Runtime, include_source := true) -> (source: Node_ID, target_container: Node_ID, target_button: Node_ID) {
+drag_test_build :: proc(rt: ^Runtime, include_source := true, target_width: f32 = 180) -> (source: Node_ID, target_container: Node_ID, target_button: Node_ID) {
 	ui, should_build := begin_frame(rt)
 	if !should_build { return }
 	container_begin_simple(&ui, .Root, label="drag-test-root", key=key_string("drag-test-root"), style=layout_style(.Row, width=400, height=100, gap=20, padding=10))
@@ -17,7 +17,7 @@ drag_test_build :: proc(rt: ^Runtime, include_source := true) -> (source: Node_I
 		_ = semantic_bind(&ui, DRAG_TEST_SOURCE)
 		_ = drag_source(&ui, DRAG_TEST_TYPE, DRAG_TEST_SOURCE)
 	}
-	target_container = container_begin_simple(&ui, .Container, label="drop-group", key=key_string("drag-test-target-container"), style=layout_style(.Row, width=180, height=50))
+	target_container = container_begin_simple(&ui, .Container, label="drop-group", key=key_string("drag-test-target-container"), style=layout_style(.Row, width=target_width, height=50))
 	_ = drop_target(&ui, DRAG_TEST_TYPE, DRAG_TEST_TARGET, .Between_Horizontal)
 	target_button, _ = button_ex(&ui, "nested target", key="drag-test-target-button", style=layout_style(width=170, height=45))
 	container_end(&ui)
@@ -94,6 +94,40 @@ test_drag_resolves_ancestor_targets_and_emits_only_semantic_transitions :: proc(
 		"release on an accepted target should deliver one completed drop")
 	testing.expect(t, rt.drag.phase == .Idle && rt.captured_node == 0 && rt.activation_node == 0,
 		"a completed drag should release capture and must not activate its source button")
+}
+
+@(test)
+test_drag_target_refreshes_after_rebuild_without_pointer_motion :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 400, 100})
+	defer destroy_runtime(&rt)
+	source, target_container, target_button := drag_test_build(&rt)
+	if source == 0 || target_container == 0 || target_button == 0 {
+		testing.expect(t, false, "source and drop target should be retained")
+		return
+	}
+	source_node := rt.nodes[source]
+	target_node := rt.nodes[target_container]
+	hit_node := rt.nodes[target_button]
+	sx := source_node.bounds.x+source_node.bounds.w/2
+	sy := source_node.bounds.y+source_node.bounds.h/2
+	pointer_x := target_node.bounds.x+3
+	pointer_y := hit_node.bounds.y+hit_node.bounds.h/2
+	_ = process_pointer(&rt, Pointer_Event{kind=.Down, x=sx, y=sy, button=POINTER_BUTTON_PRIMARY})
+	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=pointer_x, y=pointer_y})
+	started, started_ok := drag_event_take(&rt)
+	testing.expect(t, started_ok && started.kind == .Started && started.position == .Before,
+		"the pointer should start over the leading side of the original target")
+
+	// Simulate a virtualized/autoscrolled rebuild that changes target geometry
+	// while the host pointer remains stationary.
+	_, _, _ = drag_test_build(&rt, target_width=4)
+	drag_refresh_target(&rt)
+	changed, changed_ok := drag_event_take(&rt)
+	testing.expect(t, changed_ok && changed.kind == .Target_Changed &&
+		changed.target == DRAG_TEST_TARGET && changed.position == .After,
+		"a stationary pointer should retarget when rebuilt geometry moves the target midpoint beneath it")
+	testing.expect(t, rt.drag.position == .After,
+		"retained insertion feedback should follow the refreshed semantic target position")
 }
 
 @(test)
