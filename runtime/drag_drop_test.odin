@@ -184,16 +184,17 @@ test_drag_source_identity_survives_virtualized_node_retirement :: proc(t: ^testi
 		if command.node == 0 && command.kind == .Text && command.text == "source" { preview_text_found = true }
 	}
 	testing.expect(t, preview_text_found, "virtualized source retirement should not remove the pointer-following preview")
-	_ = drag_cancel(&rt)
+	target_node = rt.nodes[target_button_after]
+	_ = process_pointer(&rt, Pointer_Event{kind=.Up, x=target_node.bounds.x+target_node.bounds.w/2, y=target_node.bounds.y+target_node.bounds.h/2, button=POINTER_BUTTON_PRIMARY})
+	dropped, dropped_ok := drag_event_take(&rt)
+	testing.expect(t, dropped_ok && dropped.kind == .Dropped && dropped.source == DRAG_TEST_SOURCE,
+		"the completed drop should report the stable source identity without dereferencing its retired node")
 	ui, presentation_ready = begin_presentation_frame(&rt)
 	if presentation_ready { end_presentation_frame(&ui) }
 	preview_commands_remain := false
 	for command in rt.display { if command.node == 0 { preview_commands_remain = true } }
-	cancelled, cancelled_ok := drag_event_take(&rt)
-	testing.expect(t, cancelled_ok && cancelled.kind == .Cancelled && cancelled.source == DRAG_TEST_SOURCE,
-		"cancelling a virtualized drag should still report its stable semantic source")
 	testing.expect(t, !rt.drag_preview.ready && !preview_commands_remain && drag_source_opacity(&rt, source) == 1,
-		"cancellation should remove the ghost and restore the source presentation state")
+		"drop completion should remove the ghost and restore the source presentation state")
 }
 
 @(test)
