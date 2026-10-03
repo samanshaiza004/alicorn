@@ -1,5 +1,8 @@
 package main
 
+// 01 · Hello teaches the native event loop, retained layout, and app-owned
+// state. Run with `odin run examples/01_hello`; change the button or count.
+
 import "core:fmt"
 import alicorn "../../runtime"
 import host "../../native/sdl_gpu"

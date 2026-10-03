@@ -4,7 +4,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
 REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd -P)
-OUT_DIR=$REPO_ROOT/out
+OUT_DIR=$REPO_ROOT/out/examples
 
 . "$SCRIPT_DIR/common.sh"
 ODIN_ARG=
@@ -24,5 +24,9 @@ ODIN=$(alicorn_resolve_odin "$ODIN_ARG")
 
 cd "$REPO_ROOT"
 mkdir -p "$OUT_DIR"
-"$ODIN" build examples/02_form "-out:$OUT_DIR/alicorn_widget_gallery"
-exec "$OUT_DIR/alicorn_widget_gallery"
+for example in examples/*; do
+	[ -f "$example/main.odin" ] || continue
+	name=${example##*/}
+	echo "Building example $name"
+	"$ODIN" build "$example" "-out:$OUT_DIR/$name"
+done

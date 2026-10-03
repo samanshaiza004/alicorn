@@ -253,9 +253,10 @@ retained interaction and presentation state described by its public API.
 Alicorn is experimental; public APIs may change and the widget set is
 intentionally small. Windows and macOS native paths are exercised, while
 Linux native support is not validated. Accessibility limitations are
-documented in the [guide](guide.md#accessibility-status). A visual inspector
-overlay is not yet shipped; use the text inspector, trace, and host diagnostics
-described in [Development](development.md#native-diagnostics).
+documented in the [guide](guide.md#accessibility-status). The opt-in visual
+inspector is available to native apps launched with `--inspector`; follow
+[example 05](../examples/05_inspector/main.odin) and the
+[Development diagnostics guide](development.md#native-diagnostics).
 
 Performance numbers are machine- and workload-specific. The published
 [text-layout benchmark](benchmarks/text-layout.md) separates Windows and Mac

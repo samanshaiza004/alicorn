@@ -20,7 +20,7 @@ ODIN=$(alicorn_resolve_odin "$ODIN_ARG")
 
 cd "$REPO_ROOT"
 mkdir -p "$OUT_DIR"
-"$ODIN" build examples/custom_surface "-out:$OUT_DIR/alicorn_custom_surface"
+"$ODIN" build examples/04_custom_surface "-out:$OUT_DIR/alicorn_custom_surface"
 if [ "$SMOKE" = yes ]; then
 	exec "$OUT_DIR/alicorn_custom_surface" --smoke
 fi

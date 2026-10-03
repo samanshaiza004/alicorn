@@ -10,7 +10,7 @@ $Executable = Join-Path $OutDir 'alicorn_custom_surface.exe'
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 Push-Location $RepoRoot
 try {
-	& $Odin build examples\custom_surface "-out:$Executable"
+	& $Odin build examples\04_custom_surface "-out:$Executable"
 	if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 	$OdinRoot = Split-Path -Parent $Odin
 	$SDL3 = Join-Path $OdinRoot 'vendor\sdl3\SDL3.dll'

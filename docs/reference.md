@@ -9,7 +9,7 @@ of truth for exact parameter types and defaults.
 Import `native/sdl_gpu` as a host package and pass an `Application` to `Run`.
 The application state pointer is borrowed for the duration of `Run`; keep the
 state alive until it returns. See the complete
-[native starter](../examples/native_hello/main.odin).
+[native starter](../examples/01_hello/main.odin).
 
 The required callback is `build(state, runtime, logical_width,
 logical_height, dpi_scale) -> Node_ID`. A typical callback calls

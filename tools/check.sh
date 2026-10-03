@@ -29,9 +29,7 @@ git diff --check
 
 "$ODIN" build tests "-out:$OUT_DIR/alicorn_tests"
 "$ODIN" build benchmarks "-out:$OUT_DIR/alicorn_benchmarks"
-"$ODIN" build examples/identity_torture "-out:$OUT_DIR/identity_torture"
-"$ODIN" build examples/crucible "-out:$OUT_DIR/crucible"
-"$ODIN" build examples/runa_text "-out:$OUT_DIR/runa_text"
+"$SCRIPT_DIR/build_examples.sh" --odin "$ODIN"
 
 "$OUT_DIR/alicorn_tests"
 "$ODIN" test runtime

@@ -12,7 +12,7 @@ a Scratchpad benchmark, a resource soak, or a general latency guarantee.
 ## Build and run
 
 ```sh
-odin build examples/native_hello -o:speed -out:out/alicorn_native_hello_perf
+odin build examples/01_hello -o:speed -out:out/alicorn_native_hello_perf
 ./out/alicorn_native_hello_perf --idle-validation-seconds=25
 ```
 

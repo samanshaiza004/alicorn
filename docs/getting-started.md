@@ -67,7 +67,7 @@ macOS runner links against the SDL3 installation from step 1.
 
 ## 4. Make a change
 
-Open [`examples/native_hello/main.odin`](../examples/native_hello/main.odin).
+Open [`examples/01_hello/main.odin`](../examples/01_hello/main.odin).
 Try changing `"Hello, Alicorn"` or the button label, save, and rerun the same
 native command. The runner rebuilds before launching.
 
@@ -89,9 +89,9 @@ and a negative slider range:
 ./tools/widget_gallery.sh
 ```
 
-The app source is [`examples/widget_gallery/main.odin`](../examples/widget_gallery/main.odin).
-The [examples guide](../examples/README.md) distinguishes the current learning
-path from headless validation fixtures and lists the remaining example gaps.
+The app source is [`examples/02_form/main.odin`](../examples/02_form/main.odin).
+Continue through the [numbered example progression](../examples/README.md) for
+worker-backed virtualization, custom GPU surfaces, and the built-in inspector.
 
 ## If Odin is not on `PATH`
 

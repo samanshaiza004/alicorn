@@ -1,6 +1,11 @@
 package main
 
+// 02 · Form teaches app-owned values, controlled text input, and per-widget
+// style/color overrides. Run with `odin run examples/02_form`; change a value
+// or panel color and rerun.
+
 import "core:fmt"
+import "core:strings"
 import alicorn "../../runtime"
 import host "../../native/sdl_gpu"
 
@@ -11,6 +16,8 @@ App :: struct {
 	exposure: f32,
 	offset: f32,
 	clicks: int,
+	name: string,
+	name_owned: bool,
 }
 
 reset_values :: proc(app: ^App) {
@@ -19,6 +26,21 @@ reset_values :: proc(app: ^App) {
 	app.gain = 0.65
 	app.exposure = 0.4
 	app.offset = -1.5
+}
+
+form_text_change :: proc(state: rawptr, rt: ^alicorn.Runtime, change: alicorn.Text_Change) {
+	if !change.changed { return }
+	app := cast(^App)state
+	value, err := strings.clone(change.text)
+	if err != nil { return }
+	if app.name_owned { delete(app.name) }
+	app.name, app.name_owned = value, true
+	alicorn.invalidate_root(rt, "form text field changed")
+}
+
+form_stop :: proc(state: rawptr) {
+	app := cast(^App)state
+	if app.name_owned { delete(app.name) }
 }
 
 build_app :: proc(
@@ -58,6 +80,9 @@ build_app :: proc(
 		color=alicorn.Color{0.075, 0.09, 0.125, 1},
 	)
 	alicorn.text(&ui, "Checkboxes", style=alicorn.layout_style(height=28), text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_SEMIBOLD})
+	alicorn.text(&ui, "Name", style=alicorn.layout_style(height=22))
+	alicorn.text_field(&ui, app.name, key=alicorn.key_string("name"), style=alicorn.layout_style(height=36))
+	alicorn.text(&ui, fmt.tprintf("Hello, %s", app.name), style=alicorn.layout_style(height=24))
 	alicorn.text(&ui, "Click or focus a checkbox and press Space to toggle it. Enter is reserved for buttons.")
 	alicorn.container_begin(&ui, .Container, label="gallery-actions", style=alicorn.layout_style(.Row, gap=8))
 	if alicorn.button(&ui, "Reset values", key=alicorn.key_string("reset"), style=alicorn.layout_style(.Row, width=140, height=36)) {
@@ -191,12 +216,14 @@ build_app :: proc(
 }
 
 main :: proc() {
-	app := App{show_grid=true, gain=0.65, exposure=0.4, offset=-1.5}
+	app := App{show_grid=true, gain=0.65, exposure=0.4, offset=-1.5, name="Alicorn"}
 	host.Run(host.Application{
 		state=rawptr(&app),
 		title="Alicorn Widget Gallery",
 		width=1000,
 		height=760,
 		build=build_app,
+		on_text_change=form_text_change,
+		on_stop=form_stop,
 	})
 }

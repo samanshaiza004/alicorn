@@ -1,7 +1,7 @@
 # Building Alicorn applications
 
 An Alicorn application owns its data and describes its UI with ordinary Odin
-control flow. The [native starter](../examples/native_hello/main.odin) is a
+control flow. The [native starter](../examples/01_hello/main.odin) is a
 small complete example; this guide explains the patterns to grow it.
 
 ## Keep state in your application

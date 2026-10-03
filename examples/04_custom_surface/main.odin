@@ -1,5 +1,9 @@
 package main
 
+// 04 · Custom Surface teaches bounded retained GPU geometry inside ordinary
+// clipped layout, including resize/DPI updates. Run with
+// `odin run examples/04_custom_surface`; change the waveform geometry.
+
 // Scheduled main-thread callbacks update only retained GPU geometry; they do
 // not invalidate or rebuild the ordinary UI description.
 import "core:math"

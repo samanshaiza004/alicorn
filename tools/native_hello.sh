@@ -20,5 +20,5 @@ ODIN=$(alicorn_resolve_odin "$ODIN_ARG")
 
 cd "$REPO_ROOT"
 mkdir -p "$OUT_DIR"
-"$ODIN" build examples/native_hello "-out:$OUT_DIR/alicorn_native_hello"
+"$ODIN" build examples/01_hello "-out:$OUT_DIR/alicorn_native_hello"
 exec "$OUT_DIR/alicorn_native_hello" "$@"
