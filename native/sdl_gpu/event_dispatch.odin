@@ -125,7 +125,11 @@ pump_events :: proc(
 			_ = alicorn.cancel_pointer_capture(rt)
 			_ = native_dispatch_drag_event(application, rt)
 			if application != nil && application.on_pointer != nil {
-				application.on_pointer(application.state, rt, alicorn.Pointer_Event{kind=.Cancel}, captured)
+				cancelled_pointer := alicorn.Pointer_Event{kind=.Cancel}
+				if key, key_ok := alicorn.node_identity_key(rt, captured); key_ok {
+					cancelled_pointer.target_key = key
+				}
+				application.on_pointer(application.state, rt, cancelled_pointer, captured)
 			}
 			alicorn.cause_end(rt, cancel_cause)
 		}
@@ -143,6 +147,9 @@ pump_events :: proc(
 			pointer_cause := alicorn.pointer_cause_begin(rt, pointer.kind)
 			if devtools_last_cause != nil { devtools_last_cause^ = pointer_cause.cause }
 			target := alicorn.process_pointer(rt, pointer)
+			if key, key_ok := alicorn.node_identity_key(rt, target); key_ok {
+				pointer.target_key = key
+			}
 			drag_event_dispatched := native_dispatch_drag_event(application, rt)
 			drag_consumed := drag_event_dispatched || alicorn.drag_is_active(rt)
 			if application != nil && application.on_pointer != nil && !alicorn.context_menu_pointer_consumed(rt) && !drag_consumed {

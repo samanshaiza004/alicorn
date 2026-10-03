@@ -38,6 +38,12 @@ duplicate key is reported rather than guessed from its current position.
 Runtime node IDs are implementation identity, not persistent IDs for saving
 data across program versions.
 
+`Runtime` remains a public Odin struct for now, so its fields are technically
+reachable by importing applications. They are implementation details, not a
+supported compatibility surface. Applications should use documented runtime
+queries and commands; the package exposes read-only node snapshots and text
+geometry queries rather than retained node or shaping storage.
+
 ## Work and invalidation
 
 `begin_frame` skips application description when the root is not invalidated.

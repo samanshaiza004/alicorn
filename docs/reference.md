@@ -28,6 +28,18 @@ platform-reported click sequence count (for example, 1 for a single click and 2
 for a double-click); it is zero on non-button events or when the host cannot
 provide a count. Application-level selection behavior should treat a zero
 count on a button-down event as one click.
+Native hosts also populate `Pointer_Event.target_key` from the hit or captured
+node when it has an explicit key. Direct callers of `process_pointer` receive
+the target `Node_ID` and can query `node_identity_key` themselves.
+
+`Runtime`'s fields are exported for Odin interoperability, but are internal
+implementation details and are not a supported application API. Use
+`node_info`, `text_field_value`, `focused_node`, `captured_node`,
+`viewport_bounds`, `runtime_scratch_allocator`, and retained text geometry
+procedures for read access. Borrowed strings remain valid until the next
+mutation of the referenced value, application description, or runtime
+destruction. Scratch allocations must not outlive the next runtime scratch
+reset.
 
 For periodic refreshes, read `Application_Services.scheduler` in
 `on_services`. `application_schedule_after` and
@@ -82,6 +94,10 @@ error and its correction hint.
 | `checkbox` | Emit a controlled checkbox; returns `{value, changed}`. |
 | `slider_f32` | Emit a controlled horizontal `f32` slider; returns `{value, changed}`. |
 | `text_field` | Emit an editable text field. The host reports committed edits through `on_text_change`. |
+| `text_field_value` | Read the borrowed current value of an active retained text field. |
+| `node_info` / `node_identity_key` / `node_by_key` | Read a node's geometry, interaction state, scroll metrics, and explicit identity. |
+| `text_node_line_geometry` / `text_node_hit_test_line` | Query retained visual-line geometry and hit-test without exposing its shaped run. |
+| `runtime_text_run_build` | Shape temporary application text through Alicorn's retained text engine without exposing the engine. |
 | `container_begin` / `container_end` | Group children and define their layout. |
 | `layout_style` | Set direction, size constraints, growth, padding, gap, alignment, and clipping. |
 | `button_content_style` | Set label alignment and padding inside a button. |

@@ -296,6 +296,10 @@ Pointer_Event :: struct {
 	button:      int,
 	modifiers:   Input_Modifiers, // keyboard modifiers held when the host dispatches this event
 	click_count: u8,               // platform click sequence count for button events; zero when unavailable
+	// target_key is filled by the native host after hit testing and is available
+	// to application pointer callbacks. Direct process_pointer callers should
+	// use the returned Node_ID with node_identity_key when they need the key.
+	target_key:  UI_Key,
 }
 
 POINTER_BUTTON_PRIMARY :: 1
@@ -846,6 +850,10 @@ Frame_Stats :: struct {
 	surface_geometry_overflow_rejections: u64,
 }
 
+// Runtime's fields remain exported because Odin does not support private
+// struct fields. Applications should treat them as implementation details and
+// use the query and mutation procedures in this package instead. The fields
+// can change between releases without preserving application compatibility.
 Runtime :: struct {
 	persistent_backing_allocator: mem.Allocator,
 	persistent_allocator:      mem.Allocator,
