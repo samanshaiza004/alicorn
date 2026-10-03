@@ -18,6 +18,8 @@ still evolving; Alicorn is not production-ready yet.
 
 **New to Alicorn?** Follow [Getting Started](docs/getting-started.md) to install
 the prerequisites, build the project, and run an editable native example.
+For this release's scope and limitations, see the
+[v0.1.0 release notes](RELEASE_NOTES_v0.1.0.md).
 
 Then explore the [application guide](docs/guide.md), [API reference](docs/reference.md),
 [Choosing Alicorn](docs/choosing-alicorn.md), [examples](examples/README.md),
