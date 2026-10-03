@@ -35,12 +35,14 @@ For focused work:
 ```powershell
 .\tools\test.ps1
 .\tools\bench.ps1
+.\tools\bench_text_layout.ps1
 .\tools\native_sdl_gpu.ps1 -SurfaceStress
 ```
 
 ```sh
 ./tools/test.sh
 ./tools/bench.sh
+./tools/bench_text_layout.sh
 ./tools/native_sdl_gpu.sh
 ```
 
@@ -95,3 +97,5 @@ investigation artifacts, not golden-image compatibility promises.
 - Run the headless checks for runtime/API changes; run a native smoke on the
   target platform for host, input, text, or rendering changes.
 - Use benchmarks to compare a named workload, not as cross-machine promises.
+- The focused wrapped-text workload and the machine/toolchain used for its
+  v0.1.0 capture are recorded in [Text layout benchmark](benchmarks/text-layout.md).
