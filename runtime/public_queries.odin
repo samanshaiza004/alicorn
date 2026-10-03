@@ -110,7 +110,10 @@ node_identity_key :: proc(rt: ^Runtime, id: Node_ID) -> (key: UI_Key, ok: bool) 
 	if !found || node == nil { return }
 	switch node.identity_key_kind {
 	case 1:
-		key = node.identity_key
+		// identity_key is the containing identity scope. The node's explicit
+		// string key is stored separately as key; returning the scope here
+		// makes keyed items impossible to resolve from pointer events.
+		key = node.key
 	case 2:
 		key = node.identity_key_u64
 	case 3:
@@ -132,7 +135,7 @@ node_by_key :: proc(rt: ^Runtime, key: UI_Key, kind: Node_Kind) -> (id: Node_ID,
 		if !found || node == nil || !node.active || node.kind != kind { continue }
 		switch value in key {
 		case string:
-			if node.identity_key_kind == 1 && node.identity_key == value { return candidate_id, true }
+			if node.identity_key_kind == 1 && node.key == value { return candidate_id, true }
 		case u64:
 			if node.identity_key_kind == 2 && node.identity_key_u64 == value { return candidate_id, true }
 		case UI_Key_Pair:
