@@ -1,0 +1,39 @@
+# native_hello macOS performance capture
+# 2026-10-02 CDT; Alicorn f35c2a02e5359d5346a05dad6cc5e11965c2c812
+# macOS 27.0 (26A428), MacBookAir10,1, Apple M1, arm64, 8 GiB RAM, 8 logical CPUs
+# Odin dev-2026-09-nightly:a2fb372; -o:speed; SDL3 3.4.16; Metal
+# executable_size_bytes 3492344; linked SDL3 is external, not included in this size
+# ps RSS is KiB; ps CPU time is user+system process time, rounded to centiseconds
+
+# Attempt 1: no diagnostics; unexpectedly active. Not accepted as idle proof.
+sdl3_version 3 4 16
+gpu_driver_requested metal gpu_driver_selected metal
+idle_sample {"elapsed_seconds": 5.025583, "rss_kib": 60416, "cpu_seconds": 1.2, "ps_raw": "60416   0:01.20"}
+idle_sample {"elapsed_seconds": 20.086173, "rss_kib": 48640, "cpu_seconds": 2.53, "ps_raw": "48640   0:02.53"}
+SDL application PASS submissions 172 retired 172 max_frames_in_flight 2 wall_ns 25001025000 logical_resize_events 0 pixel_resize_events 1 scale_events 1 text_input_events 0 composition_events 0 text_change_dispatches 0 text_changes 0 text_edit_key_events 0 text_navigation_key_events 0 text_selection_key_events 0 text_word_key_events 0 events_per_pump_max 2 oldest_event_age_max_ns 102334542 input_to_submit_p95_ns 104378417 input_to_submit_max_ns 4336632376 text_mesh_rebuilds 81 text_mesh_cache_hits 91 text_fingerprint_ns 172000 text_fingerprint_bytes 5481 text_mesh_rebuild_ns 2903000 text_vertex_uploads 81 frame_p95_ns 132211000 gpu_encode_ns 149053000 gpu_submit_ns 6118000 fence_wait_ns 232000 application_tick_max_ns 0 application_build_max_ns 7707000 application_stabilization_rebuilds 0 application_stabilization_limit_hits 0 event_waits 478 application_wake_events 0 gpu_encode_max_ns 22144000 fence_wait_max_ns 12000
+idle_cpu_percent_one_core 8.831
+launch_to_gpu_driver_log_ns 1584810750
+exit_code 0
+
+# Attempt 2: capture after 20 host-loop seconds; CPU sampled before capture.
+# Observed pointer events, but only one app build and one app GPU submission.
+sdl3_version 3 4 16
+gpu_driver_requested metal gpu_driver_selected metal
+idle_sample {"elapsed_seconds": 5.063776, "rss_kib": 74352, "cpu_seconds": 0.99, "ps_raw": "74352   0:00.99"}
+idle_sample {"elapsed_seconds": 19.070538, "rss_kib": 26864, "cpu_seconds": 1.13, "ps_raw": "26864   0:01.13"}
+alicorn_diagnostics path out/native-hello-idle-perf/20261003T024847.122Z-0001/diagnostics.json inspector out/native-hello-idle-perf/20261003T024847.122Z-0001/inspector.txt timeline out/native-hello-idle-perf/20261003T024847.122Z-0001/timeline.json capture_id 20261003T024847.122Z-0001 frame_p95_ns 483407000 gpu_encode_ns 24083000 text_fingerprint_ns 3000 text_fingerprint_bytes 31 text_mesh_rebuild_ns 752000 text_mesh_cache_hits 0
+alicorn_diagnostics screenshot out/native-hello-idle-perf/20261003T024847.122Z-0001/screenshot.ppm
+SDL application PASS submissions 1 retired 1 max_frames_in_flight 1 wall_ns 25001649000 logical_resize_events 0 pixel_resize_events 1 scale_events 1 text_input_events 0 composition_events 0 text_change_dispatches 0 text_changes 0 text_edit_key_events 0 text_navigation_key_events 0 text_selection_key_events 0 text_word_key_events 0 events_per_pump_max 2 oldest_event_age_max_ns 25294917 input_to_submit_p95_ns 0 input_to_submit_max_ns 0 text_mesh_rebuilds 1 text_mesh_cache_hits 1 text_fingerprint_ns 14000 text_fingerprint_bytes 62 text_mesh_rebuild_ns 752000 text_vertex_uploads 1 frame_p95_ns 483407000 gpu_encode_ns 24083000 gpu_submit_ns 145000 fence_wait_ns 0 application_tick_max_ns 0 application_build_max_ns 12995000 application_stabilization_rebuilds 0 application_stabilization_limit_hits 0 event_waits 26 application_wake_events 0 gpu_encode_max_ns 24083000 fence_wait_max_ns 0
+idle_cpu_percent_one_core 0.9995
+exit_code 0
+
+# Separate startup probe: --capture-after=0, --idle-validation-seconds=3.
+# First-frame diagnostics log includes capture serialization overhead; not first visible pixel.
+sdl3_version 3 4 16
+gpu_driver_requested metal gpu_driver_selected metal
+alicorn_diagnostics path out/native-hello-startup-perf/20261003T024920.937Z-0001/diagnostics.json inspector out/native-hello-startup-perf/20261003T024920.937Z-0001/inspector.txt timeline out/native-hello-startup-perf/20261003T024920.937Z-0001/timeline.json capture_id 20261003T024920.937Z-0001 frame_p95_ns 592088000 gpu_encode_ns 29749000 text_fingerprint_ns 2000 text_fingerprint_bytes 31 text_mesh_rebuild_ns 522000 text_mesh_cache_hits 0
+alicorn_diagnostics screenshot out/native-hello-startup-perf/20261003T024920.937Z-0001/screenshot.ppm
+SDL application PASS submissions 1 retired 1 max_frames_in_flight 1 wall_ns 3004572000 logical_resize_events 0 pixel_resize_events 1 scale_events 1 text_input_events 0 composition_events 0 text_change_dispatches 0 text_changes 0 text_edit_key_events 0 text_navigation_key_events 0 text_selection_key_events 0 text_word_key_events 0 events_per_pump_max 1 oldest_event_age_max_ns 130405458 input_to_submit_p95_ns 0 input_to_submit_max_ns 0 text_mesh_rebuilds 1 text_mesh_cache_hits 1 text_fingerprint_ns 5000 text_fingerprint_bytes 62 text_mesh_rebuild_ns 522000 text_vertex_uploads 1 frame_p95_ns 182575000 gpu_encode_ns 29749000 gpu_submit_ns 111000 fence_wait_ns 0 application_tick_max_ns 0 application_build_max_ns 14005000 application_stabilization_rebuilds 0 application_stabilization_limit_hits 0 event_waits 2 application_wake_events 0 gpu_encode_max_ns 29749000 fence_wait_max_ns 0
+launch_to_gpu_driver_log_ns 1048786375
+launch_to_first_frame_diagnostics_log_ns 1730320875
+exit_code 0

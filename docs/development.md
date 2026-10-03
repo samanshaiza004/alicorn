@@ -99,3 +99,6 @@ investigation artifacts, not golden-image compatibility promises.
 - Use benchmarks to compare a named workload, not as cross-machine promises.
 - The focused wrapped-text workload and the machine/toolchain used for its
   v0.1.0 capture are recorded in [Text layout benchmark](benchmarks/text-layout.md).
+- The [native hello Mac sample](benchmarks/native-hello-macos.md) records
+  idle submissions, process CPU/RSS, executable size, and a qualified startup
+  observation, with raw diagnostics alongside the report.

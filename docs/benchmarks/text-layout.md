@@ -71,3 +71,47 @@ This capture is a baseline, not a latency target. Timing includes retained
 description/reconciliation, shaping, layout, paint preparation, and per-frame
 application work. Compare like-for-like builds and environments, and inspect
 the work counters alongside elapsed time.
+
+## macOS capture
+
+Captured 2026-10-02 CDT at Alicorn
+`f35c2a02e5359d5346a05dad6cc5e11965c2c812`. The benchmark code was unchanged
+from `b486dcf`, which introduced the Windows capture above.
+
+| Item | Environment |
+|---|---|
+| OS | macOS 27.0, build 26A428 |
+| Mac model | MacBookAir10,1 |
+| CPU / architecture | Apple M1 / arm64 |
+| Logical processors / physical memory | 8 / 8 GiB |
+| Odin | `dev-2026-09-nightly:a2fb372` |
+| Build profile | `-o:speed` |
+| Runtime | Headless Alicorn runtime; no native host or GPU |
+
+Three sequential fresh processes used the same optimized binary. The first
+was launched by `tools/bench_text_layout.sh --odin <compiler>`; the next two
+invoked `out/alicorn_text_layout_benchmark` directly.
+
+| Phase | Frames | Median total | Median per frame | Per-frame range |
+|---|---:|---:|---:|---:|
+| Variable-height scroll | 120 | 838.331 ms | 6.986 ms | 6.772–7.234 ms |
+| Wrapped-width reflow | 40 | 429.800 ms | 10.745 ms | 10.602–10.972 ms |
+
+All three runs reproduced the Windows phase work counters: scroll had 492
+fresh shape calls, 0 cache hits, 1,787 layout visits, and 15 retained nodes;
+reflow had 444 fresh shape calls, 0 cache hits, 482 layout visits, and 13
+retained nodes. The sparse index ended with 317 measured rows, spanning 62.4
+to approximately 187.2 logical pixels. The Mac shaping cache reported 319
+entries; the Windows summary reported 317. No cache leak or performance
+conclusion follows from that two-entry difference in a single workload.
+
+[Raw Mac stdout for all three runs](raw/text-layout-macos-m1-2026-10-02.txt)
+is retained alongside this report. The original Windows per-run stdout was
+not available in the repository; its supplied summary above is preserved
+without reconstructing raw results.
+
+These are separate machine baselines. Matching compiler revisions and phase
+work counters help establish workload consistency, but the CPUs and operating
+systems differ. Neither capture measures native scrolling latency or GPU
+presentation. See the separate [native-hello Mac sample](native-hello-macos.md)
+for limited native-host evidence.

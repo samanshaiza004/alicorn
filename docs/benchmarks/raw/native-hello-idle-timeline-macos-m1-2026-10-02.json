@@ -1,0 +1,959 @@
+{
+  "schema": 1,
+  "kind": "alicorn-flight-recorder",
+  "timestamp_clock": "monotonic",
+  "sample_order": "oldest_to_newest",
+  "sample_count": 25,
+    "samples": [
+    {
+      "sample_index": 0,
+      "timestamp_ns": 1395388833,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "app",
+      "work": {
+        "app_builds": 1,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 0,
+        "hover_target_transitions": 0,
+        "presentation_updates": 1,
+        "gpu_submissions": 1,
+        "surface_updates": 0,
+        "descriptions_emitted": 4,
+        "descriptions_reused": 4,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 4,
+        "layout_visits": 1,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 18,
+        "persistent_bytes_live": 9613953,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 91000,
+        "gpu_encode": 24081000,
+        "gpu_submit": 145000,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 1,
+      "timestamp_ns": 1618604250,
+      "cause": {
+        "id": 4,
+        "kind": "pointer"
+      },
+      "activity_class": "present",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 0,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 1,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 2,
+      "timestamp_ns": 3738437958,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 1,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 3,
+      "timestamp_ns": 3744811500,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 1,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 4,
+      "timestamp_ns": 3989922625,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 1,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 5,
+      "timestamp_ns": 4004119541,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 1,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 6,
+      "timestamp_ns": 4005238833,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 1,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 7,
+      "timestamp_ns": 4017066416,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 1,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 8,
+      "timestamp_ns": 4022343875,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 1,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 9,
+      "timestamp_ns": 4037232791,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 1,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 10,
+      "timestamp_ns": 4040230541,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 1,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 11,
+      "timestamp_ns": 4523642750,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 0,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 12,
+      "timestamp_ns": 4638645625,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 0,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 13,
+      "timestamp_ns": 4753941750,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 0,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 14,
+      "timestamp_ns": 4854272333,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 0,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 15,
+      "timestamp_ns": 5041127208,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 0,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 16,
+      "timestamp_ns": 5154668000,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 0,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 17,
+      "timestamp_ns": 5258129916,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 0,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 18,
+      "timestamp_ns": 5371485750,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 0,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 19,
+      "timestamp_ns": 5488395291,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 0,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 20,
+      "timestamp_ns": 5589362708,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 0,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 21,
+      "timestamp_ns": 5704864125,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 0,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 22,
+      "timestamp_ns": 5939651958,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 0,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 23,
+      "timestamp_ns": 6020936500,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 0,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    },
+    {
+      "sample_index": 24,
+      "timestamp_ns": 25769491625,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "host",
+      "work": {
+        "app_builds": 0,
+        "stabilization_rebuilds": 0,
+        "host_wakes": 1,
+        "pointer_events": 2,
+        "hover_target_transitions": 0,
+        "presentation_updates": 0,
+        "gpu_submissions": 0,
+        "surface_updates": 0,
+        "descriptions_emitted": 0,
+        "descriptions_reused": 0,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 0,
+        "layout_visits": 0,
+        "paint_visits": 0,
+        "composition_visits": 0,
+        "nodes_created": 0,
+        "nodes_retired": 0,
+        "persistent_allocations": 0,
+        "persistent_bytes_live": 9613935,
+        "scratch_requested_bytes": 1480
+      },
+      "timing_ns": {
+        "application_build": 0,
+        "gpu_encode": 0,
+        "gpu_submit": 0,
+        "input_to_submit": 0
+      }
+    }
+  ]
+}
