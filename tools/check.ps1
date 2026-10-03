@@ -12,22 +12,12 @@ New-Item -ItemType Directory -Force -Path 'out' | Out-Null
 & git diff --check
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$targets = @(
-    @('tests', 'out\alicorn_tests.exe'),
-    @('benchmarks', 'out\alicorn_benchmarks.exe')
-)
-foreach ($target in $targets) {
-    & $Odin build $target[0] -out:$target[1]
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-}
+& $Odin build benchmarks -out:out\alicorn_benchmarks.exe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & "$PSScriptRoot\build_examples.ps1" -Odin $Odin
-
-& .\out\alicorn_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-& $Odin test runtime
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-& $Odin test native\sdl_gpu -out:out\alicorn_native_tests.exe
+# Reuse the canonical test path; it stages SDL3 before running native tests.
+& "$PSScriptRoot\test.ps1" -Odin $Odin
 exit $LASTEXITCODE
