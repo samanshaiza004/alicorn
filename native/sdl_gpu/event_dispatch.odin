@@ -50,6 +50,7 @@ pump_events :: proc(
 	devtools_hud: ^Native_DevTools_HUD = nil,
 	devtools_hud_redraw_pending: ^bool = nil,
 	devtools_last_cause: ^alicorn.Cause_Context = nil,
+	inspector: ^Native_Inspector_Overlay = nil,
 ) {
 	if telemetry != nil { telemetry.events_this_pump = 0 }
 	mod_state := sdl3.GetModState()
@@ -81,6 +82,23 @@ pump_events :: proc(
 		if telemetry != nil { telemetry.events_received_sequence += 1 }
 		if last_user_interaction_ns != nil && native_event_is_user_interaction(event.type) {
 			last_user_interaction_ns^ = u64(sdl3.GetTicksNS())
+		}
+		if native_inspector_route_event(inspector, rt, event, mod_state, application, text_input_state, window) {
+			// Host diagnostics are available while the inspector owns input. Do
+			// not pass these keys through app shortcut or text routing first.
+			if event.type == .KEY_DOWN && event.key.down && !event.key.repeat {
+				if event.key.key == sdl3.K_F12 && diagnostics_capture_requested != nil { diagnostics_capture_requested^ = true }
+				if event.key.key == sdl3.K_F11 && debug_bounds != nil {
+					debug_bounds^ = !debug_bounds^
+					if inspector != nil { inspector.redraw_pending = true }
+				}
+				if event.key.key == sdl3.K_F10 && !native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) && devtools_hud != nil {
+					native_devtools_hud_toggle(devtools_hud)
+					if devtools_hud_redraw_pending != nil { devtools_hud_redraw_pending^ = true }
+				}
+			}
+			has_event = poll_sdl_event(&event)
+			continue
 		}
 		if telemetry != nil {
 			event_timestamp: u64 = 0
@@ -492,5 +510,6 @@ pump_events :: proc(
 		}
 		has_event = poll_sdl_event(&event)
 	}
+	native_inspector_finish_input_pump(inspector, text_input_state)
 	if telemetry != nil { native_finish_input_pump(telemetry) }
 }

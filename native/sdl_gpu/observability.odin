@@ -28,6 +28,8 @@ Native_Host_Timing :: struct {
 	application_build_ns: u64,
 	application_gpu_encode_ns: u64,
 	devtools_hud_encode_ns: u64,
+	inspector_encode_ns: u64,
+	inspector_submissions: u64,
 	application_stabilization_rebuilds: u64,
 	application_stabilization_limit_hits: u64,
 	application_tick_ns: u64,
@@ -184,7 +186,7 @@ native_diagnostics_timestamp :: proc(moment: time.Time) -> (stamp, iso: string, 
 }
 
 native_diagnostics_create_bundle :: proc(root, stamp: string, first_sequence: u64) -> (directory: string, sequence: u64, ok: bool) {
-	if err := os.make_directory_all(root); err != nil { return }
+	if err := os.make_directory_all(root); err != nil && err != .Exist { return }
 	sequence = first_sequence
 	for attempt in 0..<10_000 {
 		candidate := fmt.tprintf("%s/%s-%04d", root, stamp, sequence)
@@ -253,7 +255,8 @@ native_write_diagnostics :: proc(
     "frame": %d,
     "gpu_submissions": %d,
     "application_gpu_submissions": %d,
-    "devtools_only_gpu_submissions": %d
+    "devtools_only_gpu_submissions": %d,
+    "inspector_gpu_submissions": %d
   }},
   "gpu_driver": "%s",
   "window": {{
@@ -265,7 +268,7 @@ native_write_diagnostics :: proc(
     "display_scale": %.4f
   }},
 	`, stamp, capture_sequence, captured_at, capture_sequence, timing.frames, timing.gpu_submissions,
-		rt.stats.gpu_submits, timing.gpu_submissions-rt.stats.gpu_submits, gpu_driver,
+		rt.stats.gpu_submits, timing.gpu_submissions-rt.stats.gpu_submits, timing.inspector_submissions, gpu_driver,
 		metrics.logical_width, metrics.logical_height, metrics.pixel_width, metrics.pixel_height,
 		metrics.pixel_density, metrics.display_scale)
 	fmt.sbprintf(&builder, `  "timing_ns": {{
@@ -286,6 +289,7 @@ native_write_diagnostics :: proc(
     "gpu_encode": %d,
     "application_gpu_encode": %d,
     "devtools_hud_encode": %d,
+    "inspector_encode": %d,
     "gpu_submit": %d,
     "fence_wait": %d,
     "frame_average": %d,
@@ -306,7 +310,7 @@ native_write_diagnostics :: proc(
 		timing.scheduled_wakes, timing.frequent_wakes, timing.opportunistic_wakes,
 		timing.scheduled_requests, timing.schedule_coalesces, timing.opportunistic_deferrals,
 		timing.maximum_scheduled_lateness_ns,
-		timing.gpu_encode_ns, timing.application_gpu_encode_ns, timing.devtools_hud_encode_ns,
+		timing.gpu_encode_ns, timing.application_gpu_encode_ns, timing.devtools_hud_encode_ns, timing.inspector_encode_ns,
 		timing.gpu_submit_ns, timing.fence_wait_ns, average,
 		p50, p95, p99, timing.frame_ns_max, timing.event_pump_max_ns,
 		timing.application_build_max_ns, timing.application_tick_max_ns,

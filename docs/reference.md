@@ -306,6 +306,13 @@ system file drops or arbitrary MIME payloads.
   allocators when calling `new_runtime`.
 - `inspect(runtime)` and `trace_snapshot(runtime)` expose retained state and
   recent invalidation/stage events for diagnostics.
+- The native `Run` host accepts `--inspector` (enable `F9`) and
+  `--inspector-open` (enable and show immediately). Its built-in visual
+  inspector uses a separate Alicorn runtime above the application, preserving
+  app focus and keeping inspector work out of application stage counters.
+  `Escape` closes it. Tree selection and Pick inspect retained nodes without
+  invoking app controls. No app-private data or callback is required. See
+  [Native diagnostics](development.md#native-diagnostics) for usage and capture.
 - `cause_begin` / `cause_end` bracket an input, async completion, or other
   external action. Use `cause_resume` only to continue a saved cause across a
   genuinely dependent asynchronous step; unrelated completions need new IDs.

@@ -246,7 +246,7 @@ win32_menu_draw_caption_labels :: proc(state: ^Win32_Menu_State) {
 }
 
 win32_menu_dispatch_native_id :: proc(state: ^Win32_Menu_State, native_id: u32) {
-	if state == nil || state.menu == nil || native_id == 0 || int(native_id) >= len(state.commands) { return }
+	if state == nil || state.menu == nil || native_id == 0 || int(native_id) >= len(state.commands) || native_inspector_visible(state.menu.inspector) { return }
 	state.menu.pending_command = state.commands[native_id]
 	state.menu.has_pending = true
 }

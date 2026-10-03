@@ -62,6 +62,7 @@ draw_display_list :: proc(
 	logical_to_pixel_x, logical_to_pixel_y: f32,
 	skip_root := false,
 	debug_bounds := false,
+	clear_background := true,
 	reserve_solid_vertices := 0,
 	scratch_allocator := context.temp_allocator,
 ) -> bool {
@@ -86,10 +87,12 @@ draw_display_list :: proc(
 	}
 	// The retained display list remains in logical window units. Only this
 	// compositor boundary converts its geometry to the physical swapchain.
-	background := make_color_target(swapchain, sdl3.FColor{0.035, 0.045, 0.065, 1}, false)
-	pass := sdl3.BeginGPURenderPass(command, &background, 1, nil)
-	if pass == nil { return false }
-	sdl3.EndGPURenderPass(pass)
+	if clear_background {
+		background := make_color_target(swapchain, sdl3.FColor{0.035, 0.045, 0.065, 1}, false)
+		pass := sdl3.BeginGPURenderPass(command, &background, 1, nil)
+		if pass == nil { return false }
+		sdl3.EndGPURenderPass(pass)
+	}
 
 	display_index := 0
 	for display_index < len(display) {

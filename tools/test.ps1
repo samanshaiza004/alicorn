@@ -23,6 +23,11 @@ if ((Get-Item -LiteralPath $SDL3).Length -lt 100000) {
 }
 Copy-Item -LiteralPath $SDL3 -Destination 'out\SDL3.dll' -Force
 
+& $Odin test runtime
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Odin test native\sdl_gpu -out:out\alicorn_native_tests.exe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 & .\out\alicorn_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & .\out\alicorn_sdl_gpu.exe --text-input-contract-test

@@ -51,6 +51,56 @@ shells. They otherwise use `ALICORN_ODIN`, then `odin` on `PATH`.
 
 ## Native diagnostics
 
+The reusable native `Run` host provides a visual inspector when started with
+`--inspector`. Press `F9` to open or close it; `--inspector-open` enables it and
+opens it at startup. `Escape` or the inspector's Close button also closes it.
+The inspector is disabled by default.
+
+The Tree tab shows a collapsible retained hierarchy. Select a row for node
+identity, source location, component/key scope, bounds, and interaction state.
+Use Pick (or `P`) and click an application node to inspect it without activating it.
+The Focus tab shows keyboard focus, semantic identity, its durable owner, and
+its currently realized node. Work shows retained stage counters, presentation
+and submission revisions, and host timings. Causes shows bounded recent
+transactions with actions, invalidations, stage work, and submissions.
+
+The inspector is an Alicorn UI in its own retained runtime, composited above
+the application. Inspector interactions consume input while it is open; the
+application's focus and semantic focus stay intact. Async application work and
+window lifecycle events continue. It refreshes when inspected state changes
+or the developer interacts, and adds no periodic tick or idle polling. An
+application identity error remains visible in the inspector. With inspector
+opt-in, the host suspends further descriptions of the failed application for
+the remainder of that run, allowing the independent inspector to stay usable
+and return to idle.
+
+Run the inspector fixture for a bounded native check and screenshot:
+
+```powershell
+.\tools\native_sdl_gpu.ps1 -InspectorOpen -Smoke -Diagnostics -CaptureAfter 0
+```
+
+```sh
+./tools/native_sdl_gpu.sh --inspector-open --smoke --diagnostics --capture-after=0
+```
+
+The fixture has nested components, semantic focus, a virtual list, and actions.
+Its `--inspector-input-smoke` mode injects SDL input through the production host
+to check picking, text-input blocking, composition cancellation, focus, and
+settled application work. Add `--inspector-identity-error` to inspect an
+intentional duplicate-key error. These two switches belong to the fixture;
+`--inspector` and `--inspector-open` work with any app using the reusable host,
+without application diagnostics code.
+
+```powershell
+.\out\alicorn_sdl_gpu.exe --inspector-fixture --inspector-input-smoke
+.\out\alicorn_sdl_gpu.exe --inspector-fixture --inspector-input-smoke --inspector-identity-error
+```
+
+Use `--capture-after=0` for a static startup capture, or press `F12` during an
+interactive run. A settled event-driven app sleeps rather than waking solely
+for the automatic capture timer.
+
 The native window supports `F10` to toggle the host-owned runtime HUD, `F11` to
 toggle retained bounds, and `F12` for a diagnostic capture (including repeated
 captures during one run). The HUD reports recent application builds,

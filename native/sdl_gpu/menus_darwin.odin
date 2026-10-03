@@ -102,7 +102,7 @@ darwin_menu_shortcut_mask :: proc(modifiers: Application_Menu_Modifiers) -> NS.E
 darwin_menu_callback :: proc "c" (unused: rawptr, selector: NS.SEL, sender: ^NS.Object) {
 	context = runtime.default_context()
 	menu := darwin_active_menu
-	if menu == nil || menu.application == nil || menu.runtime == nil || sender == nil { return }
+	if menu == nil || menu.application == nil || menu.runtime == nil || sender == nil || native_inspector_visible(menu.inspector) { return }
 	item := cast(^NS.MenuItem)sender
 	command := Application_Command_ID(u32(NS.MenuItem_tag(item)))
 	menu.pending_command = command

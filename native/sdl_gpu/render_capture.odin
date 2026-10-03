@@ -19,6 +19,7 @@ native_capture_display_ppm :: proc(
 	scale_x, scale_y: f32,
 	path: string,
 	debug_bounds := false,
+	inspector: ^Native_Inspector_Overlay = nil,
 	scratch_allocator := context.temp_allocator,
 ) -> bool {
 	if width == 0 || height == 0 { return false }
@@ -37,6 +38,11 @@ native_capture_display_ppm :: proc(
 	command := sdl3.AcquireGPUCommandBuffer(device)
 	if command == nil { return false }
 	if !draw_display_list(command, texture, width, height, text_renderer, surface_renderer, solid_renderer, display, scale_x, scale_y, debug_bounds=debug_bounds, scratch_allocator=scratch_allocator) {
+		_ = sdl3.CancelGPUCommandBuffer(command)
+		return false
+	}
+	if !native_inspector_render(inspector, surface_renderer, command, texture, width, height, scale_x, scale_y,
+		scratch_allocator=scratch_allocator) {
 		_ = sdl3.CancelGPUCommandBuffer(command)
 		return false
 	}
@@ -73,5 +79,9 @@ native_capture_display_ppm :: proc(
 	native_text_commit_submission(text_renderer)
 	native_surface_commit_submission(surface_renderer)
 	native_solid_commit_submission(solid_renderer)
+	if native_inspector_visible(inspector) {
+		native_text_commit_submission(&inspector.text_renderer)
+		native_solid_commit_submission(&inspector.solid_renderer)
+	}
 	return true
 }
