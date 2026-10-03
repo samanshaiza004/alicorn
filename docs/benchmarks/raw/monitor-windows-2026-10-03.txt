@@ -1,0 +1,13 @@
+Windows Alicorn Monitor bounded smoke capture
+monitor_commit=16e5cfcfca2b8ada30752817d04d5123e83ee2e9
+alicorn_dependency=71b621393a6d7d14d6d944596a52be9cd113f227
+build=odin build . -out:out\\alicorn-monitor.exe (default profile)
+arguments=--smoke
+sample_elapsed_seconds=1.020 cpu_seconds=0.310 working_set_bytes=114434048 private_bytes=154578944
+sample_elapsed_seconds=2.210 cpu_seconds=0.360 working_set_bytes=115855360 private_bytes=155971584
+process_exit_elapsed_seconds=3.671 exit_code=0
+--- captured stdout ---
+sdl3_version 3 4 2
+gpu_driver_requested  gpu_driver_selected direct3d12
+SDL application PASS submissions 16 retired 16 max_frames_in_flight 2 wall_ns 2999037100 logical_resize_events 0 pixel_resize_events 1 scale_events 0 text_input_events 0 composition_events 0 text_change_dispatches 0 text_changes 0 text_edit_key_events 0 text_navigation_key_events 0 text_selection_key_events 0 text_word_key_events 0 events_per_pump_max 0 oldest_event_age_max_ns 0 input_to_submit_p95_ns 0 input_to_submit_max_ns 0 text_mesh_rebuilds 15 text_mesh_cache_hits 1 text_vertex_uploads 15 frame_p95_ns 1800 gpu_encode_ns 43020600 gpu_submit_ns 5431000 fence_wait_ns 471300 application_tick_max_ns 0 application_build_max_ns 27414800 event_waits 1546 application_wake_events 0 gpu_encode_max_ns 8426600 fence_wait_max_ns 68600
+process_monitor PASS samples 12 rows 111 cpu_percent 6.2 memory_used 8.7 GB memory_total 15.2 GB identity_keys 111 queried_this_sample 111 unavailable_this_sample 68 process_samples 3 surface_updates 12 surface_frames 12 graph_points 512 graph_latest_percent 6.2 graph_min_percent 0.0 graph_max_percent 11.0 graph_current_delta_percent 0.0 projection_rebuilds 4 query_failures 204

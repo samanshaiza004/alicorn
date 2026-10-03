@@ -40,19 +40,16 @@ The suite also records 100/1,000-node cases, churn patterns, container-rich
 frames, and complete stage/allocation counters. Those values are preserved
 without selecting only the fastest cases in the raw output.
 
-## Scope and remaining evidence
+## Scope
 
-This Mac run complements the same focused wrapped-text workload measured on
-Windows and macOS in the [text-layout report](text-layout.md). The Mac-only
-[native hello sample](native-hello-macos.md) measures one idle host session,
-RSS/process CPU observations, binary size, and qualified startup markers.
-These results were produced by the project author and are not independent
-validation or a cross-framework comparison.
-
-There is not yet a matching Windows run of this retained-work suite, a Windows
-native-hello idle/startup result, or fixed-fixture native measurements for
-Monitor, History, and Scope. The v0.1.0 performance issue remains open until
-those release-gate gaps are resolved or deliberately descoped.
+This Mac run complements the Windows retained-work suite in
+[retained-work-windows.md](retained-work-windows.md), the same focused
+wrapped-text workload measured on both platforms in the
+[text-layout report](text-layout.md), and the platform-specific native hello
+reports. These results were produced by the project author and are not
+independent validation or a cross-framework comparison. The Windows native
+report also includes bounded Monitor, History, and Scope dogfood captures;
+their workload and idle-measurement limits are stated there.
 
 [Raw Mac output](raw/retained-work-macos-m1-2026-10-02.txt) is committed
 alongside this summary.

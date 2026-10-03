@@ -1,0 +1,16 @@
+Windows Alicorn Scope bounded fixed-trace smoke capture
+scope_commit=e80d800bf2759dfb93535ec698e45f68613fad7b
+alicorn_dependency=5147a63b984fd088e238a9a32f59e0648fda2ad7
+caliber_dependency=197cd964cc7265bc60df599a6b8562eac7c75f3a
+build=odin build . -o:speed -out:out\\alicorn-scope-perf.exe (Go/Rust backend built by tools/build.ps1)
+arguments=--smoke <100k-trace-fixture>
+fixture_bytes=7888912 fixture_sha256=199679E2DCAA39FD94EEDC2E0B3B0C05D55A06DAB53E6BEC1AD688ADBC4695CB
+sample_elapsed_seconds=1.120 cpu_seconds=0.470 working_set_bytes=155836416 private_bytes=250339328
+sample_elapsed_seconds=2.210 cpu_seconds=0.470 working_set_bytes=155836416 private_bytes=250339328
+process_exit_elapsed_seconds=4.021 exit_code=0
+--- captured stdout ---
+sdl3_version 3 4 2
+gpu_driver_requested  gpu_driver_selected direct3d12
+scope_timeline_metrics pointer_events 0 window_requests 1 cache_hits 8 resource_decodes 1 geometry_updates 3
+SDL application PASS submissions 4 retired 4 max_frames_in_flight 2 wall_ns 3019084400 logical_resize_events 1 pixel_resize_events 1 scale_events 0 text_input_events 0 composition_events 0 text_change_dispatches 0 text_changes 0 text_edit_key_events 0 text_navigation_key_events 0 text_selection_key_events 0 text_word_key_events 0 events_per_pump_max 0 oldest_event_age_max_ns 0 input_to_submit_p95_ns 0 input_to_submit_max_ns 0 text_mesh_rebuilds 4 text_mesh_cache_hits 0 text_vertex_uploads 4 frame_p95_ns 21062700 gpu_encode_ns 5671700 gpu_submit_ns 3393000 fence_wait_ns 17900 application_tick_max_ns 0 application_build_max_ns 2839400 event_waits 4 application_wake_events 15 gpu_encode_max_ns 3620900 fence_wait_max_ns 14300
+alicorn-scope PASS builds 5 wakes 15 resource_copies 4 events_cached 512

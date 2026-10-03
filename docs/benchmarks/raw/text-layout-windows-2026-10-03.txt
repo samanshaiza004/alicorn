@@ -1,0 +1,35 @@
+Windows focused text-layout benchmark capture
+date_local=2026-10-03
+alicorn_commit=7c5e812
+odin=dev-2026-09-nightly:a2fb372
+os=Windows 10.0.19045.6466 (Windows 10 22H2)
+processor=AMD Family 25 Model 97 Stepping 2; 12 logical processors; Ryzen 5 7600X (per Windows validation record)
+profile=-o:speed; headless; no native host/GPU
+
+--- fresh process 1 ---
+Alicorn focused text-layout benchmark (headless; raw wall-clock nanoseconds)
+workload logical_rows 20000 viewport 1180 x 860 estimated_row_height 84 text_bytes_first_row 358 typography_spans 2 paint_spans 3
+initial_frame visible_rows 11 measured_heights 11 shape_calls_total 22 retained_nodes 14
+warmup_geometry measured_height_rows 12 height_min 62.4 height_max 104.00001
+variable_height_scroll frames 120 elapsed_ns 398867200 ns_per_frame 3323893 shape_calls 492 shape_cache_hits 0 layout_node_visits 1787 retained_nodes 15
+wrapped_width_reflow frames 40 elapsed_ns 147493300 ns_per_frame 3687332 shape_calls 444 shape_cache_hits 0 layout_node_visits 482 retained_nodes 13
+final_geometry measured_height_rows 317 height_min 62.4 height_max 187.20001
+text_cache_entries 317
+--- fresh process 2 ---
+Alicorn focused text-layout benchmark (headless; raw wall-clock nanoseconds)
+workload logical_rows 20000 viewport 1180 x 860 estimated_row_height 84 text_bytes_first_row 358 typography_spans 2 paint_spans 3
+initial_frame visible_rows 11 measured_heights 11 shape_calls_total 22 retained_nodes 14
+warmup_geometry measured_height_rows 12 height_min 62.4 height_max 104.00001
+variable_height_scroll frames 120 elapsed_ns 394091200 ns_per_frame 3284093 shape_calls 492 shape_cache_hits 0 layout_node_visits 1787 retained_nodes 15
+wrapped_width_reflow frames 40 elapsed_ns 147790800 ns_per_frame 3694770 shape_calls 444 shape_cache_hits 0 layout_node_visits 482 retained_nodes 13
+final_geometry measured_height_rows 317 height_min 62.4 height_max 187.20001
+text_cache_entries 317
+--- fresh process 3 ---
+Alicorn focused text-layout benchmark (headless; raw wall-clock nanoseconds)
+workload logical_rows 20000 viewport 1180 x 860 estimated_row_height 84 text_bytes_first_row 358 typography_spans 2 paint_spans 3
+initial_frame visible_rows 11 measured_heights 11 shape_calls_total 22 retained_nodes 14
+warmup_geometry measured_height_rows 12 height_min 62.4 height_max 104.00001
+variable_height_scroll frames 120 elapsed_ns 396247200 ns_per_frame 3302060 shape_calls 492 shape_cache_hits 0 layout_node_visits 1787 retained_nodes 15
+wrapped_width_reflow frames 40 elapsed_ns 150183700 ns_per_frame 3754592 shape_calls 444 shape_cache_hits 0 layout_node_visits 482 retained_nodes 13
+final_geometry measured_height_rows 317 height_min 62.4 height_max 187.20001
+text_cache_entries 317

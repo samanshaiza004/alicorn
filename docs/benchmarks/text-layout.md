@@ -37,7 +37,7 @@ fixture exercises variable-height wrapping.
 
 ## Windows capture
 
-Captured 2026-10-02 at 20:06 local time on the following environment:
+Captured 2026-10-03 on Alicorn `7c5e812` at the following environment:
 
 | Item | Environment |
 |---|---|
@@ -53,8 +53,8 @@ value is the median of the three runs; the range shows run-to-run variation.
 
 | Phase | Frames | Median total | Median per frame | Per-frame range |
 |---|---:|---:|---:|---:|
-| Variable-height scroll | 120 | 395.319 ms | 3.294 ms | 3.260–3.424 ms |
-| Wrapped-width reflow | 40 | 144.535 ms | 3.613 ms | 3.558–3.624 ms |
+| Variable-height scroll | 120 | 396.247 ms | 3.302 ms | 3.284–3.324 ms |
+| Wrapped-width reflow | 40 | 147.791 ms | 3.695 ms | 3.687–3.755 ms |
 
 The measured work was stable across all three processes:
 
@@ -66,6 +66,9 @@ The measured work was stable across all three processes:
 The initial 1180 px pass measured row heights from 62.4 to 104 logical pixels.
 After scrolling and narrow-width reflow, the sparse index held 317 measured
 rows spanning 62.4 to 187.2 logical pixels; the shaping cache held 317 entries.
+
+[Raw Windows stdout for all three runs](raw/text-layout-windows-2026-10-03.txt)
+is committed alongside this summary.
 
 This capture is a baseline, not a latency target. Timing includes retained
 description/reconciliation, shaping, layout, paint preparation, and per-frame
@@ -106,9 +109,7 @@ entries; the Windows summary reported 317. No cache leak or performance
 conclusion follows from that two-entry difference in a single workload.
 
 [Raw Mac stdout for all three runs](raw/text-layout-macos-m1-2026-10-02.txt)
-is retained alongside this report. The original Windows per-run stdout was
-not available in the repository; its supplied summary above is preserved
-without reconstructing raw results.
+is retained alongside this report.
 
 These are separate machine baselines. Matching compiler revisions and phase
 work counters help establish workload consistency, but the CPUs and operating
