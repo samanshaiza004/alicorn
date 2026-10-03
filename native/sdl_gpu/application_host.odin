@@ -21,15 +21,16 @@ native_application_build_until_stable :: proc(
 	rt: ^alicorn.Runtime,
 	metrics: ^Window_Metrics,
 	timing: ^Native_Host_Timing,
+	stop_on_hard_error := false,
 ) -> Native_Description_Stabilization {
 	result := Native_Description_Stabilization{}
-	for rt.invalidated && result.passes < NATIVE_DESCRIPTION_STABILIZATION_LIMIT {
+	for rt.invalidated && (!stop_on_hard_error || !rt.hard_error) && result.passes < NATIVE_DESCRIPTION_STABILIZATION_LIMIT {
 		build_start := time.now()
 		_ = application.build(application.state, rt, metrics.logical_width, metrics.logical_height, metrics.display_scale)
 		native_timing_accumulate(&timing.application_build_ns, &timing.application_build_max_ns, u64(time.duration_nanoseconds(time.since(build_start))))
 		result.passes += 1
 	}
-	result.stable = !rt.invalidated
+	result.stable = !rt.invalidated || (stop_on_hard_error && rt.hard_error)
 	if result.passes > 1 { timing.application_stabilization_rebuilds += u64(result.passes-1) }
 	if !result.stable { timing.application_stabilization_limit_hits += 1 }
 	return result
@@ -41,13 +42,14 @@ Native_Menu_Runtime :: struct {
 	window:          ^sdl3.Window,
 	application:     ^Application,
 	runtime:         ^alicorn.Runtime,
+	inspector:       ^Native_Inspector_Overlay,
 	platform_data:   rawptr,
 	pending_command: Application_Command_ID,
 	has_pending:     bool,
 }
 
 native_menu_dispatch_command :: proc(menu: ^Native_Menu_Runtime, command: Application_Command_ID) {
-	if menu == nil || menu.application == nil || menu.application.on_menu_command == nil { return }
+	if menu == nil || menu.application == nil || menu.application.on_menu_command == nil || native_inspector_visible(menu.inspector) { return }
 	if menu.runtime != nil {
 		_, state, found := alicorn.action_lookup(menu.runtime, command)
 		if found && !state.enabled { return }

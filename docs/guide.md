@@ -145,7 +145,10 @@ the API boundary and limitations.
 
 ## When something looks wrong
 
-Use the runtime inspector and trace to see identity, focus, bounds, invalidation
-reasons, and visited work. The native host also has diagnostic captures; see
+Launch a native app with `--inspector` and press `F9` for the built-in visual
+inspector, or use `--inspector-open` to show it at startup. Its tree, focus,
+work, and causality tabs read retained runtime truth; Pick selects an app node
+without activating it. Close returns input to the application's existing
+focus. The native host also has diagnostic captures; see
 [Development](development.md#native-diagnostics). For the design boundaries,
 see [Architecture](architecture.md).

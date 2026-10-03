@@ -5,6 +5,9 @@ param(
     [switch]$SurfaceGeometryTest,
     [switch]$Diagnostics,
     [switch]$DebugBounds,
+    [switch]$Inspector,
+    [switch]$InspectorOpen,
+    [switch]$Smoke,
     [int]$CaptureAfter = 2,
     [string]$CaptureDir = 'out\diagnostics'
 )
@@ -56,5 +59,8 @@ if ($Diagnostics) {
     $arguments += "--capture-dir=$CaptureDir"
 }
 if ($DebugBounds) { $arguments += '--debug-bounds' }
+if ($Inspector) { $arguments += '--inspector' }
+if ($InspectorOpen) { $arguments += '--inspector-open' }
+if ($Smoke) { $arguments += '--smoke' }
 & .\out\alicorn_sdl_gpu.exe @arguments
 exit $LASTEXITCODE

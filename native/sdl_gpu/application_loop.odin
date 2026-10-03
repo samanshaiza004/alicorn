@@ -48,6 +48,12 @@ run_application_loop :: proc(
 	submitted := 0
 	timing := Native_Host_Timing{}
 	diagnostics := native_parse_diagnostics_options()
+	inspector: Native_Inspector_Overlay
+	if !native_inspector_init(&inspector, device, sdl3.GetGPUSwapchainTextureFormat(device, window), rt.viewport) {
+		fail("visual inspector initialization failed")
+	}
+	defer native_inspector_destroy(&inspector)
+	if native_menu != nil { native_menu.inspector = &inspector }
 	debug_bounds := diagnostics.debug_bounds
 	host_scratch := native_host_scratch_make()
 	defer native_host_scratch_destroy(&host_scratch)
@@ -80,9 +86,12 @@ run_application_loop :: proc(
 	start := time.now()
 	window_flags := sdl3.GetWindowFlags(window)
 	text_input_state := Native_Text_Input_State{window_focused=(window_flags & sdl3.WindowFlags{.INPUT_FOCUS}) != sdl3.WindowFlags{}}
+	text_input_state.suspended = native_inspector_visible(&inspector)
 	pointer_modifier_state := sdl3.GetModState()
 	alicorn.invalidate_root(rt, "SDL application initial frame")
-	_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing)
+	_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing, stop_on_hard_error=inspector.enabled)
+	initial_summary := native_inspector_host_summary(&timing, rt, 0)
+	native_inspector_update(&inspector, rt, rt.viewport, &initial_summary)
 	devtools_cursor := native_devtools_cursor_init(rt, &timing, &text_events)
 	sync_text_input_focus(window, rt, &text_input_state, &application_instance)
 	live_resize_state := Native_Live_Resize_State{
@@ -109,6 +118,7 @@ run_application_loop :: proc(
 		devtools_recorder=&devtools_recorder,
 		devtools_cursor=&devtools_cursor,
 		devtools_hud=&devtools_hud,
+		inspector=&inspector,
 		debug_bounds=debug_bounds,
 	}
 	if !sdl3.AddEventWatch(native_live_resize_event_watch, rawptr(&live_resize_state)) {
@@ -215,6 +225,7 @@ run_application_loop :: proc(
 			devtools_hud=&devtools_hud,
 			devtools_hud_redraw_pending=&devtools_hud_redraw_pending,
 			devtools_last_cause=&devtools_last_cause,
+			inspector=&inspector,
 		)
 		native_drag_autoscroll_update(rt, &drag_autoscroll_deadline_ns, u64(sdl3.GetTicksNS()))
 		if native_menu != nil {
@@ -262,14 +273,14 @@ run_application_loop :: proc(
 			last_tick = now
 		}
 
-		if rt.invalidated {
-			_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing)
+		if rt.invalidated && (!inspector.enabled || !rt.hard_error) {
+			_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing, stop_on_hard_error=inspector.enabled)
 		}
-		if alicorn.drag_is_active(rt) && !rt.invalidated {
+		if alicorn.drag_is_active(rt) && !rt.invalidated && !native_inspector_visible(&inspector) {
 			alicorn.drag_refresh_target(rt)
 			_ = native_dispatch_drag_event(&application_instance, rt)
 			if rt.invalidated {
-				_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing)
+				_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing, stop_on_hard_error=inspector.enabled)
 			}
 		}
 		// A focus or caret change can update the platform candidate anchor
@@ -279,14 +290,21 @@ run_application_loop :: proc(
 		// Interaction-only invalidation updates retained paint without asking the
 		// application to rebuild its procedural description. Flush that retained
 		// presentation before submitting the next GPU frame.
-		if !rt.invalidated && alicorn.presentation_needs_frame(rt) {
+		if !rt.invalidated && (!inspector.enabled || !rt.hard_error) && alicorn.presentation_needs_frame(rt) {
 			presentation_ui, ready := alicorn.begin_presentation_frame(rt)
 			if ready {
 				alicorn.end_presentation_frame(&presentation_ui)
 			}
 		}
 
+		inspector_summary := native_inspector_host_summary(&timing, rt, event_waits+wake_events)
+		native_inspector_update(&inspector, rt, alicorn.Rect{0, 0, f32(metrics.logical_width), f32(metrics.logical_height)}, &inspector_summary)
+		// A toolbar Close can be consumed during this description, after the
+		// native pump has already drained. Resume its preserved app owner now.
+		native_inspector_finish_input_pump(&inspector, &text_input_state)
+		sync_text_input_focus(window, rt, &text_input_state, &application_instance)
 		application_submission_pending := alicorn.frame_needs_submission(rt)
+		inspector_submission_pending := native_inspector_submission_pending(&inspector)
 		devtools_cause := devtools_last_cause
 		if devtools_cause.kind == .None { devtools_cause = rt.frame_cause }
 		if rt.pending_work_seen { devtools_cause = rt.pending_work_cause if !rt.pending_work_mixed else alicorn.Cause_Context{} }
@@ -312,7 +330,7 @@ run_application_loop :: proc(
 		if devtools_hud.visible && (devtools_wake_observed || devtools_hud_deadline_wake) {
 			devtools_hud_redraw_pending = true
 		}
-		if application_submission_pending || devtools_hud_redraw_pending {
+		if application_submission_pending || devtools_hud_redraw_pending || inspector_submission_pending {
 			if len(in_flight) >= 2 {
 				if !wait_and_retire_oldest(device, &in_flight, &query_before_wait_true, &query_after_wait_true, &wait_count, &timing) {
 					fail("SDL application fence retirement failed")
@@ -361,6 +379,8 @@ run_application_loop :: proc(
 			application_encode_elapsed := u64(time.duration_nanoseconds(time.since(encode_start)))
 			if application_submission_pending {
 				timing.application_gpu_encode_ns += application_encode_elapsed
+			} else if inspector_submission_pending {
+				timing.inspector_encode_ns += application_encode_elapsed
 			} else {
 				// A HUD-only wake must redraw the swapchain's base scene too, but
 				// those host-forced draw costs are attributed to DevTools rather
@@ -383,6 +403,15 @@ run_application_loop :: proc(
 			}
 			hud_encode_elapsed := u64(time.duration_nanoseconds(time.since(hud_encode_start)))
 			if devtools_hud.visible { timing.devtools_hud_encode_ns += hud_encode_elapsed }
+			inspector_encode_start := time.now()
+			if !native_inspector_render(&inspector, surface_renderer, command, swapchain, swap_w, swap_h,
+				logical_to_pixel_x, logical_to_pixel_y, scratch_allocator=host_scratch.allocator) {
+				_ = sdl3.CancelGPUCommandBuffer(command)
+				fail("Alicorn visual inspector draw failed")
+			}
+			if native_inspector_visible(&inspector) {
+				timing.inspector_encode_ns += u64(time.duration_nanoseconds(time.since(inspector_encode_start)))
+			}
 			total_encode_elapsed := u64(time.duration_nanoseconds(time.since(encode_start)))
 			native_timing_accumulate(&timing.gpu_encode_ns, &timing.gpu_encode_max_ns, total_encode_elapsed)
 			submit_start := time.now()
@@ -394,6 +423,9 @@ run_application_loop :: proc(
 			append(&in_flight, Native_In_Flight{fence})
 			native_text_commit_submission(text_renderer)
 			native_surface_commit_submission(surface_renderer)
+			native_solid_commit_submission(solid_renderer)
+			native_inspector_submission_succeeded(&inspector)
+			if native_inspector_visible(&inspector) { timing.inspector_submissions += 1 }
 			if application_submission_pending {
 				alicorn.gpu_surface_frame_consumed(rt)
 				// A retained frame remains pending until this successful submit
@@ -408,8 +440,15 @@ run_application_loop :: proc(
 			}
 			devtools_hud_redraw_pending = false
 			if len(in_flight) > max_in_flight { max_in_flight = len(in_flight) }
+			// Refresh source submit/revision truth once after an app submit. The
+			// resulting inspector-only submission never acknowledges the app,
+			// so this follow-up converges and leaves an event-driven app asleep.
+			if application_submission_pending {
+				post_submit_summary := native_inspector_host_summary(&timing, rt, event_waits+wake_events)
+				native_inspector_update(&inspector, rt, inspector.runtime.viewport, &post_submit_summary)
+			}
 		}
-		if !rt.invalidated && !alicorn.frame_needs_submission(rt) {
+		if !native_application_has_pending_work(rt, suspend_hard_error=inspector.enabled) && !native_inspector_submission_pending(&inspector) && !devtools_hud_redraw_pending {
 			if application_instance.on_tick == nil {
 				// Event-driven apps wait for either input, a worker wake, or their
 				// nearest scheduled deadline; there is no display-cadence tick.
@@ -443,6 +482,7 @@ run_application_loop :: proc(
 				f32(metrics.pixel_height) / f32(metrics.logical_height),
 				screenshot_path,
 				debug_bounds=debug_bounds,
+				inspector=&inspector,
 			) {
 				fmt.println("alicorn_diagnostics", "screenshot", screenshot_path)
 			} else {
@@ -453,6 +493,7 @@ run_application_loop :: proc(
 
 	live_resize_state.active = false
 	sdl3.RemoveEventWatch(native_live_resize_event_watch, rawptr(&live_resize_state))
+	if native_menu != nil { native_menu.inspector = nil }
 	if !sdl3.WaitForGPUIdle(device) { fail("SDL application GPU idle wait failed") }
 	native_dialog_bridge_shutdown(dialog_bridge)
 	native_cancel_current_text_composition(&application_instance, rt, &text_input_state, "application shutdown")
@@ -506,6 +547,8 @@ run_application_loop :: proc(
 		"text_vertex_uploads", text_renderer.vertex_uploads,
 		"frame_p95_ns", native_timing_percentile(timing.frame_samples[:], 0.95),
 		"gpu_encode_ns", timing.gpu_encode_ns,
+		"inspector_encode_ns", timing.inspector_encode_ns,
+		"inspector_submissions", timing.inspector_submissions,
 		"gpu_submit_ns", timing.gpu_submit_ns,
 		"fence_wait_ns", timing.fence_wait_ns,
 		"application_tick_max_ns", timing.application_tick_max_ns,

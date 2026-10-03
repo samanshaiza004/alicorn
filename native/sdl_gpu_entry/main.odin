@@ -10,5 +10,11 @@ main :: proc() {
 			return
 		}
 	}
+	for argument in os.args {
+		if argument == "--inspector" || argument == "--inspector-open" || argument == "--inspector-fixture" {
+			host.RunInspectorFixture()
+			return
+		}
+	}
 	host.RunFoundation()
 }

@@ -10,6 +10,9 @@ Native_Text_Input_State :: struct {
 	owner: alicorn.Node_ID,
 	composition_owner: alicorn.Node_ID,
 	window_focused: bool,
+	// A host overlay can own keyboard input while retaining the application's
+	// focused node. Native text ownership resumes after its event queue drains.
+	suspended: bool,
 	last_area: alicorn.Text_Input_Area,
 	last_area_valid: bool,
 }
@@ -23,7 +26,7 @@ native_text_input_owner_is_valid :: proc(rt: ^alicorn.Runtime, id: alicorn.Node_
 
 native_current_text_input_owner :: proc(rt: ^alicorn.Runtime, state: ^Native_Text_Input_State = nil) -> alicorn.Node_ID {
 	if state != nil {
-		if !state.active || !state.window_focused || state.owner == 0 || state.owner != rt.focused { return 0 }
+		if state.suspended || !state.active || !state.window_focused || state.owner == 0 || state.owner != rt.focused { return 0 }
 		return state.owner if native_text_input_owner_is_valid(rt, state.owner) else 0
 	}
 	return rt.focused if native_text_input_owner_is_valid(rt, rt.focused) else 0
@@ -197,7 +200,7 @@ sync_text_input_focus :: proc(
 	application: ^Application = nil,
 ) {
 	desired := rt.focused
-	if !state.window_focused || !native_text_input_owner_is_valid(rt, desired) { desired = 0 }
+	if state.suspended || !state.window_focused || !native_text_input_owner_is_valid(rt, desired) { desired = 0 }
 	if desired != 0 {
 		if node, ok := rt.nodes[desired]; ok && node.kind != .Text_Field && (application == nil || application.on_text_input == nil) {
 			desired = 0

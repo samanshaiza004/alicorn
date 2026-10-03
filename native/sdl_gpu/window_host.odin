@@ -81,19 +81,26 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	} else if scale_changed {
 		alicorn.invalidate_root(state.rt, "SDL live-resize display scale changed")
 	}
-	if state.rt.invalidated {
-		stabilization := native_application_build_until_stable(state.application, state.rt, state.metrics, state.timing)
+	inspector_enabled := state.inspector != nil && state.inspector.enabled
+	if state.rt.invalidated && (!inspector_enabled || !state.rt.hard_error) {
+		stabilization := native_application_build_until_stable(state.application, state.rt, state.metrics, state.timing, stop_on_hard_error=inspector_enabled)
 		if !stabilization.stable { return }
 	}
+	inspector_summary := native_inspector_host_summary(state.timing, state.rt, state.timing.frames)
+	native_inspector_update(state.inspector, state.rt,
+		alicorn.Rect{0, 0, f32(current_metrics.logical_width), f32(current_metrics.logical_height)}, &inspector_summary)
 	if state.text_input_state != nil {
+		state.text_input_state.suspended = native_inspector_visible(state.inspector) ||
+			(state.inspector != nil && state.inspector.suppress_text_until_drain)
 		sync_text_input_focus(state.window, state.rt, state.text_input_state, state.application)
 	}
-	if alicorn.presentation_needs_frame(state.rt) {
+	if (!inspector_enabled || !state.rt.hard_error) && alicorn.presentation_needs_frame(state.rt) {
 		presentation_ui, ready := alicorn.begin_presentation_frame(state.rt)
 		if ready { alicorn.end_presentation_frame(&presentation_ui) }
 	}
 
 	application_submission_pending := alicorn.frame_needs_submission(state.rt)
+	inspector_submission_pending := native_inspector_submission_pending(state.inspector)
 	if len(state.in_flight^) >= 2 {
 		if !wait_and_retire_oldest(
 			state.device, state.in_flight,
@@ -147,6 +154,7 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	}
 	encode_elapsed := u64(time.duration_nanoseconds(time.since(encode_start)))
 	if application_submission_pending { state.timing.application_gpu_encode_ns += encode_elapsed }
+	else if inspector_submission_pending { state.timing.inspector_encode_ns += encode_elapsed }
 	else { state.timing.devtools_hud_encode_ns += encode_elapsed }
 	hud_start := time.now()
 	if !native_devtools_hud_render(
@@ -168,6 +176,15 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	if state.devtools_hud != nil && state.devtools_hud.visible {
 		state.timing.devtools_hud_encode_ns += u64(time.duration_nanoseconds(time.since(hud_start)))
 	}
+	inspector_start := time.now()
+	if !native_inspector_render(state.inspector, state.surface_renderer, command, swapchain, swap_w, swap_h,
+		scale_x, scale_y, scratch_allocator=state.host_scratch.allocator) {
+		_ = sdl3.CancelGPUCommandBuffer(command)
+		fail("Alicorn visual inspector live-resize draw failed")
+	}
+	if native_inspector_visible(state.inspector) {
+		state.timing.inspector_encode_ns += u64(time.duration_nanoseconds(time.since(inspector_start)))
+	}
 	native_timing_accumulate(&state.timing.gpu_encode_ns, &state.timing.gpu_encode_max_ns,
 		u64(time.duration_nanoseconds(time.since(encode_start))))
 	submit_start := time.now()
@@ -178,6 +195,9 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	append(state.in_flight, Native_In_Flight{fence})
 	native_text_commit_submission(state.text_renderer)
 	native_surface_commit_submission(state.surface_renderer)
+	native_solid_commit_submission(state.solid_renderer)
+	native_inspector_submission_succeeded(state.inspector)
+	if native_inspector_visible(state.inspector) { state.timing.inspector_submissions += 1 }
 	if application_submission_pending {
 		alicorn.gpu_surface_frame_consumed(state.rt)
 		alicorn.frame_submission_succeeded(state.rt)
@@ -185,6 +205,11 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	}
 	if state.submitted != nil { state.submitted^ += 1 }
 	state.timing.gpu_submissions += 1
+	if application_submission_pending {
+		post_submit_summary := native_inspector_host_summary(state.timing, state.rt, state.timing.frames)
+		native_inspector_update(state.inspector, state.rt,
+			alicorn.Rect{0, 0, f32(current_metrics.logical_width), f32(current_metrics.logical_height)}, &post_submit_summary)
+	}
 	if state.max_in_flight != nil && len(state.in_flight^) > state.max_in_flight^ {
 		state.max_in_flight^ = len(state.in_flight^)
 	}
@@ -255,6 +280,7 @@ Native_Live_Resize_State :: struct {
 	devtools_recorder: ^Native_Flight_Recorder,
 	devtools_cursor: ^Native_DevTools_Cursor,
 	devtools_hud: ^Native_DevTools_HUD,
+	inspector: ^Native_Inspector_Overlay,
 	debug_bounds: bool,
 }
 
