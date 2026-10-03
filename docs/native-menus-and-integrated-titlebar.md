@@ -81,14 +81,22 @@ separator; disabled and checked items; and Ctrl shortcuts. Its callback prints
 the semantic command ID and invocation count. `--menu-fixture-smoke` initializes
 the host and exits after the normal three-second smoke interval.
 
-Windows manual acceptance still needs to cover native command selection,
-keyboard menu navigation, drag/no-drag regions, all resize edges, minimize,
-maximize/restore, caption double-click, Alt+Space, DPI and monitor movement,
-light/dark and active/inactive appearance, and hover over maximize for Snap
-Layouts. macOS runtime
-validation still needs to confirm menu placement, traffic lights, shortcut
-dispatch, and focus behavior on a real AppKit host. Headless menu-model tests
-and cross-target type checking do not replace those native checks.
+Validation record (2026-10-02): the project owner manually verified on macOS
+that AppKit menu commands activate, keyboard shortcuts dispatch, IME works,
+and native window resizing works. The project owner had previously confirmed
+that the file/folder picker works on macOS. The local native SDL_GPU fixture
+also passed on macOS 27.0/arm64 with SDL 3.4.16 and Metal selected; it exercised
+2x Retina metrics, 300 resize iterations, and 303 submitted/retired frames.
+macOS verification for this pass is complete for these owner-confirmed items;
+unreported host details below are deferred rather than claimed as tested.
+
+Remaining manual acceptance is platform-specific. Windows still needs native
+command selection and keyboard menu navigation, drag/no-drag regions, all
+resize edges, minimize, maximize/restore, caption double-click, Alt+Space, DPI
+and monitor movement, light/dark and active/inactive appearance, and hover over
+maximize for Snap Layouts. macOS traffic-light behavior and focus reacquisition
+were not separately recorded. Headless menu-model tests and native smoke do not
+replace those interaction checks.
 
 ## Platform references
 
