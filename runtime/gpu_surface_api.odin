@@ -1,38 +1,89 @@
 package alicorn
 
-custom_surface :: proc(ui: ^UI, surface_key: string, frame: u64, logical_bounds: Rect, pixel_width, pixel_height: int, dpi_scale: f32, source := Source_Site{}, loc := #caller_location) -> Node_ID {
+// custom_surface declares a waveform surface. The declaration is stable UI
+// structure; changing its retained payload is done with gpu_surface_update.
+// Surfaces are presentation-only and do not receive pointer events unless
+// surface_interaction is explicitly set to .Pointer. Application-wide host
+// pointer callbacks remain global; this controls Alicorn retained hit testing.
+custom_surface :: proc(
+	ui: ^UI,
+	surface_key: string,
+	logical_bounds: Rect,
+	pixel_width, pixel_height: int,
+	dpi_scale: f32,
+	surface_interaction := GPU_Surface_Interaction.Inert,
+	source := Source_Site{},
+	loc := #caller_location,
+) -> Node_ID {
 	resolved_source := resolve_source(source, "custom_surface", loc)
 	style := DEFAULT_STYLE
 	style.width = logical_bounds.w
 	style.height = logical_bounds.h
-	return emit(ui, .Custom_Surface, resolved_source, label=surface_key, key=surface_key, explicit_key=true, style=style, paint_value=frame, color=Color{0.15, 0.25, 0.42, 1}, surface_pixel_width=pixel_width, surface_pixel_height=pixel_height, surface_dpi_scale=dpi_scale)
+	return emit(
+		ui, .Custom_Surface, resolved_source,
+		label=surface_key,
+		key=surface_key,
+		explicit_key=true,
+		style=style,
+		color=Color{0.15, 0.25, 0.42, 1},
+		surface_kind=.Waveform,
+		surface_interaction=surface_interaction,
+		surface_pixel_width=pixel_width,
+		surface_pixel_height=pixel_height,
+		surface_dpi_scale=dpi_scale,
+	)
 }
 
-// gpu_surface is the explicit public name for the retained surface contract;
-// custom_surface remains as the compatibility spelling used by the first
-// native fixture.
-gpu_surface_ex :: proc(ui: ^UI, surface_key: string, revision: u64, logical_bounds: Rect, pixel_width, pixel_height: int, dpi_scale: f32, source := Source_Site{}, loc := #caller_location) -> Node_ID {
-	return custom_surface(ui, surface_key, revision, logical_bounds, pixel_width, pixel_height, dpi_scale, source, loc)
+// gpu_surface is the public spelling for the retained waveform-surface
+// contract. custom_surface remains as a compatibility name.
+gpu_surface_ex :: proc(
+	ui: ^UI,
+	surface_key: string,
+	logical_bounds: Rect,
+	pixel_width, pixel_height: int,
+	dpi_scale: f32,
+	surface_interaction := GPU_Surface_Interaction.Inert,
+	source := Source_Site{},
+	loc := #caller_location,
+) -> Node_ID {
+	return custom_surface(ui, surface_key, logical_bounds, pixel_width, pixel_height, dpi_scale, surface_interaction, source, loc)
 }
 
-gpu_surface_simple :: proc(ui: ^UI, surface_key: string, revision: u64, logical_bounds: Rect, pixel_width, pixel_height: int, dpi_scale: f32, loc := #caller_location) -> Node_ID {
-	return custom_surface(ui, surface_key, revision, logical_bounds, pixel_width, pixel_height, dpi_scale, Source_Site{}, loc)
+gpu_surface_simple :: proc(
+	ui: ^UI,
+	surface_key: string,
+	logical_bounds: Rect,
+	pixel_width, pixel_height: int,
+	dpi_scale: f32,
+	surface_interaction := GPU_Surface_Interaction.Inert,
+	loc := #caller_location,
+) -> Node_ID {
+	return custom_surface(ui, surface_key, logical_bounds, pixel_width, pixel_height, dpi_scale, surface_interaction, Source_Site{}, loc)
 }
 
-gpu_surface :: proc(ui: ^UI, surface_key: string, revision: u64, logical_bounds: Rect, pixel_width, pixel_height: int, dpi_scale: f32, loc := #caller_location) -> Node_ID {
-	return gpu_surface_simple(ui, surface_key, revision, logical_bounds, pixel_width, pixel_height, dpi_scale, loc)
+gpu_surface :: proc(
+	ui: ^UI,
+	surface_key: string,
+	logical_bounds: Rect,
+	pixel_width, pixel_height: int,
+	dpi_scale: f32,
+	surface_interaction := GPU_Surface_Interaction.Inert,
+	loc := #caller_location,
+) -> Node_ID {
+	return gpu_surface_simple(ui, surface_key, logical_bounds, pixel_width, pixel_height, dpi_scale, surface_interaction, loc)
 }
 
 // gpu_geometry_surface_ex creates a retained colored-geometry surface whose
 // bounds are resolved by Alicorn layout. Geometry update coordinates are
-// logical units local to the resulting bounds. Pixel extent is derived from
-// the resolved bounds and dpi_scale when queried through gpu_surface_context.
+// surface-local logical units. Its payload is retained across ordinary
+// description and layout changes, and the surface is inert unless interaction
+// is explicitly requested.
 gpu_geometry_surface_ex :: proc(
 	ui: ^UI,
 	surface_key: string,
-	revision: u64,
 	style: Layout_Style,
 	dpi_scale: f32 = 1,
+	surface_interaction := GPU_Surface_Interaction.Inert,
 	source := Source_Site{},
 	loc := #caller_location,
 ) -> Node_ID {
@@ -40,34 +91,34 @@ gpu_geometry_surface_ex :: proc(
 	return emit(
 		ui, .Custom_Surface, resolved_source,
 		label=surface_key,
-	key=surface_key,
-	explicit_key=true,
-	style=style,
-	paint_value=revision,
-	color=Color{0.08, 0.14, 0.24, 1},
-	surface_kind=.Geometry,
-	surface_dpi_scale=dpi_scale,
+		key=surface_key,
+		explicit_key=true,
+		style=style,
+		color=Color{0.08, 0.14, 0.24, 1},
+		surface_kind=.Geometry,
+		surface_interaction=surface_interaction,
+		surface_dpi_scale=dpi_scale,
 	)
 }
 
 gpu_geometry_surface_simple :: proc(
 	ui: ^UI,
 	surface_key: string,
-	revision: u64,
 	style: Layout_Style,
 	dpi_scale: f32 = 1,
+	surface_interaction := GPU_Surface_Interaction.Inert,
 	loc := #caller_location,
 ) -> Node_ID {
-	return gpu_geometry_surface_ex(ui, surface_key, revision, style, dpi_scale, Source_Site{}, loc)
+	return gpu_geometry_surface_ex(ui, surface_key, style, dpi_scale, surface_interaction, Source_Site{}, loc)
 }
 
 gpu_geometry_surface :: proc(
 	ui: ^UI,
 	surface_key: string,
-	revision: u64,
 	style: Layout_Style,
 	dpi_scale: f32 = 1,
+	surface_interaction := GPU_Surface_Interaction.Inert,
 	loc := #caller_location,
 ) -> Node_ID {
-	return gpu_geometry_surface_simple(ui, surface_key, revision, style, dpi_scale, loc)
+	return gpu_geometry_surface_simple(ui, surface_key, style, dpi_scale, surface_interaction, loc)
 }

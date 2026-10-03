@@ -272,12 +272,12 @@ render_virtual :: proc(rt: ^alicorn.Runtime, scroll: f32) {
 	alicorn.end_frame(&ui)
 }
 
-render_surface :: proc(rt: ^alicorn.Runtime, revision: u64) -> alicorn.Node_ID {
+render_surface :: proc(rt: ^alicorn.Runtime) -> alicorn.Node_ID {
 	alicorn.invalidate_root(rt, "benchmark surface description")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return 0 }
 	alicorn.container_begin_ex(&ui, .Root, ROOT, label="surface-root")
-	id := alicorn.custom_surface(&ui, "waveform", revision, alicorn.Rect{0, 0, 640, 240}, 1280, 480, 2, SURFACE)
+	id := alicorn.custom_surface(&ui, "waveform", alicorn.Rect{0, 0, 640, 240}, 1280, 480, 2, source=SURFACE)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	return id
@@ -285,18 +285,18 @@ render_surface :: proc(rt: ^alicorn.Runtime, revision: u64) -> alicorn.Node_ID {
 
 measure_surface_locality :: proc(allocator_state: ^Bench_Allocator_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 300})
-	id := render_surface(&rt, 0)
+	id := render_surface(&rt)
 	samples := make([]f32, 512)
 	for i := 0; i < len(samples); i += 1 { samples[i] = f32(i) / f32(len(samples)-1) }
 	// Warm the retained sample capacity so the measured loop isolates the
 	// explicit update path rather than dynamic-array growth.
-	alicorn.gpu_surface_update(&rt, id, 1, samples)
+	alicorn.gpu_surface_update(&rt, id, samples)
 	alicorn.gpu_surface_frame_consumed(&rt)
 	before := rt.stats
 	alloc_before := allocation_snapshot(allocator_state)
 	start := time.now()
 	for i := 0; i < 1_200; i += 1 {
-		if !alicorn.gpu_surface_update(&rt, id, u64(i+2), samples) { benchmark_failure("surface update rejected during locality benchmark") }
+		if !alicorn.gpu_surface_update(&rt, id, samples) { benchmark_failure("surface update rejected during locality benchmark") }
 		_, build := alicorn.begin_frame(&rt)
 		if build { benchmark_failure("surface-only benchmark executed the application description") }
 		alicorn.gpu_surface_frame_consumed(&rt)

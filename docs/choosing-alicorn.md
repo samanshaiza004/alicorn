@@ -146,8 +146,15 @@ not require one retained node or ordinary description per item/sample.
 bounded graph/spectrum-like surface beside normal controls.
 
 `virtual_list_begin/end` asks the app to emit only the visible fixed-height
-rows, each with a stable data key. A surface declaration has the shape
-`custom_surface(&ui, key, revision, logical_bounds, pixel_width, pixel_height, dpi_scale)`.
+rows, each with a stable data key. A waveform surface declaration has the
+shape `gpu_surface(&ui, key, logical_bounds, pixel_width, pixel_height,
+dpi_scale)`, while layout-sized geometry uses
+`gpu_geometry_surface(&ui, key, style, dpi_scale)`. Declarations have no
+payload revision: call `gpu_surface_update` or
+`gpu_surface_update_geometry` to atomically publish new retained data, and use
+the explicitly versioned variants only when an asynchronous producer needs
+latest-wins ordering. Surfaces are inert to pointer input by default; opt in to
+`.Pointer` interaction only for a surface that behaves as a control/canvas.
 The surface API carries typed, bounded presentation data; it does not expose
 SDL command buffers or an application shader API. Keep platform/GPU handles
 in the host boundary. Do not emit every logical row or move GPU sizing into

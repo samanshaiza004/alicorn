@@ -67,6 +67,17 @@ GPU_Surface_Kind :: enum {
 	Geometry,
 }
 
+// A GPU surface is presentation-only unless pointer interaction is explicitly
+// requested by its declaration.
+GPU_Surface_Interaction :: enum {
+	Inert,
+	Pointer,
+}
+
+// Versioned payload updates use a distinct type so they cannot be confused
+// with a surface declaration or another application's unrelated counter.
+GPU_Surface_Update_Revision :: distinct u64
+
 // Geometry surfaces share the native SDL_GPU triangle budget. Transparent
 // geometry emits no background vertices; a segment uses six vertices and a
 // filled circle uses 16 fan triangles (48 vertices).
@@ -87,7 +98,7 @@ GPU_Surface_Context :: struct {
 	pixel_height:   int,
 	dpi_scale:      f32,
 	clip:           Rect,
-	revision:       u64,
+	payload_revision: GPU_Surface_Update_Revision,
 }
 
 Layout_Direction :: enum { Row, Column }
@@ -527,6 +538,7 @@ Description :: struct {
 	identity_key_u64: u64,
 	identity_key_numeric: bool,
 	surface_kind: GPU_Surface_Kind,
+	surface_interaction: GPU_Surface_Interaction,
 	surface_pixel_width: int,
 	surface_pixel_height: int,
 	surface_dpi_scale: f32,
@@ -633,6 +645,7 @@ Node :: struct {
 	identity_key_kind: u8,
 	identity_key_pair: UI_Key_Pair,
 	surface_kind: GPU_Surface_Kind,
+	surface_interaction: GPU_Surface_Interaction,
 	surface_pixel_width: int,
 	surface_pixel_height: int,
 	surface_dpi_scale: f32,
@@ -667,7 +680,7 @@ Node :: struct {
 	split_drag_start_position: f32,
 	split_drag_start_coordinate: f32,
 	split_dragging: bool,
-	surface_revision: u64,
+	surface_payload_revision: GPU_Surface_Update_Revision,
 	surface_samples: [dynamic]f32,
 	surface_geometry_active: bool,
 	surface_segments: [dynamic]GPU_Surface_Line_Segment,
@@ -848,6 +861,8 @@ Frame_Stats :: struct {
 	surface_frames_consumed: u64,
 	surface_geometry_updates: u64,
 	surface_geometry_overflow_rejections: u64,
+	surface_clear_count: u64,
+	surface_stale_update_rejections: u64,
 }
 
 // Runtime's fields remain exported because Odin does not support private

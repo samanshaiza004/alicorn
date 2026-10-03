@@ -147,7 +147,8 @@ hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 		id := rt.order[i]
 		if node, ok := rt.nodes[id]; ok && node.active && !node.disabled &&
 			node_is_in_modal_overlay(rt, id, modal_root) && rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
-			if node.kind == .Button || node.kind == .Checkbox || node.kind == .Slider || node.kind == .Text_Field || node.kind == .Custom_Surface ||
+			if node.kind == .Button || node.kind == .Checkbox || node.kind == .Slider || node.kind == .Text_Field ||
+			   (node.kind == .Custom_Surface && node.surface_interaction == .Pointer) ||
 			   (node.text_input_target && node.focusable) {
 				return id
 			}
@@ -544,8 +545,10 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 		}
 		rt.activation_node = 0
 		record_trace(rt, .Pointer, target, "pointer down hit retained node")
-		if node, ok := rt.nodes[target]; !ok || node.kind != .Split_Handle {
-			invalidate_root(rt, "pointer down")
+		if target != 0 {
+			if node, ok := rt.nodes[target]; ok && node.kind != .Split_Handle {
+				invalidate_root(rt, "pointer down")
+			}
 		}
 	} else if event.kind == .Up {
 		if drag_process_pointer(rt, event, target) {
@@ -594,7 +597,9 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 			rt.activation_node = 0
 		}
 		record_trace(rt, .Pointer, target, "pointer up hit retained node")
-		if !captured_is_split { invalidate_root(rt, "pointer up") }
+		if !captured_is_split && (captured != 0 || target != 0) {
+			invalidate_root(rt, "pointer up")
+		}
 	}
 	return target
 }

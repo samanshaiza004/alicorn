@@ -154,6 +154,13 @@ pump_events :: proc(
 			drag_consumed := drag_event_dispatched || alicorn.drag_is_active(rt)
 			if application != nil && application.on_pointer != nil && !alicorn.context_menu_pointer_consumed(rt) && !drag_consumed {
 				application.on_pointer(application.state, rt, pointer, target)
+				// App-level pointer handlers can mutate their own state even when
+				// the hit test intentionally returns no retained target. Preserve
+				// the historical description refresh for those explicit handlers;
+				// otherwise an inert surface/background click stays presentation-only.
+				if pointer.kind == .Down || pointer.kind == .Up {
+					alicorn.invalidate_root(rt, "application pointer callback")
+				}
 			}
 			alicorn.cause_end(rt, pointer_cause)
 		}

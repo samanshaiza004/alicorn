@@ -14,18 +14,18 @@ test_gpu_surface_waveform_sample_limit_is_atomic :: proc(t: ^testing.T) {
 		return
 	}
 	container_begin(&ui, .Root, label="waveform-limit-root")
-	surface := gpu_surface(&ui, "waveform-limit-surface", 0, Rect{0, 0, 120, 40}, 120, 40, 1)
+	surface := gpu_surface(&ui, "waveform-limit-surface", Rect{0, 0, 120, 40}, 120, 40, 1)
 	container_end(&ui)
 	end_frame(&ui)
 
 	samples := make([]f32, GPU_SURFACE_MAX_WAVEFORM_SAMPLES)
 	defer delete(samples)
 	for i in 0..<len(samples) { samples[i] = f32(i) / f32(len(samples)) }
-	testing.expect(t, gpu_surface_update(&rt, surface, 1, samples),
+	testing.expect(t, gpu_surface_update(&rt, surface, samples),
 		"the exact waveform sample limit should be accepted")
 	node := rt.nodes[surface]
-	testing.expect(t, node.surface_revision == 1 && len(node.surface_samples) == GPU_SURFACE_MAX_WAVEFORM_SAMPLES,
-		"accepted boundary update should retain the full payload and revision")
+	testing.expect(t, u64(node.surface_payload_revision) == 1 && len(node.surface_samples) == GPU_SURFACE_MAX_WAVEFORM_SAMPLES,
+		"accepted boundary update should retain the full payload and assign a payload revision")
 	if len(node.surface_samples) != GPU_SURFACE_MAX_WAVEFORM_SAMPLES { return }
 	first_sample := node.surface_samples[0]
 	last_sample := node.surface_samples[len(node.surface_samples)-1]
@@ -36,10 +36,10 @@ test_gpu_surface_waveform_sample_limit_is_atomic :: proc(t: ^testing.T) {
 	oversized := make([]f32, GPU_SURFACE_MAX_WAVEFORM_SAMPLES+1)
 	defer delete(oversized)
 	for i in 0..<len(oversized) { oversized[i] = 1 }
-	testing.expect(t, !gpu_surface_update(&rt, surface, 2, oversized),
+	testing.expect(t, !gpu_surface_update(&rt, surface, oversized),
 		"one sample above the waveform limit should be rejected")
 	testing.expect(t,
-		node.surface_revision == 1 && len(node.surface_samples) == GPU_SURFACE_MAX_WAVEFORM_SAMPLES &&
+		u64(node.surface_payload_revision) == 1 && len(node.surface_samples) == GPU_SURFACE_MAX_WAVEFORM_SAMPLES &&
 			node.surface_samples[0] == first_sample && node.surface_samples[len(node.surface_samples)-1] == last_sample,
 		"rejected update should preserve the previous samples and revision")
 	testing.expect(t,

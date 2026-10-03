@@ -325,10 +325,19 @@ system file drops or arbitrary MIME payloads.
 - `gpu_surface` / `gpu_surface_update` provide the current bounded custom
   surface path. Waveform updates accept at most
   `GPU_SURFACE_MAX_WAVEFORM_SAMPLES` (1,365) samples; larger updates return
-  `false` without changing the current payload or revision. The limit accounts
-  for the background quad and six vertices per adjacent sample pair within
-  `GPU_SURFACE_MAX_VERTICES`. Keep GPU handles and rendering callbacks inside
-  the host; the application supplies typed data, not SDL command buffers.
+  `false` without changing the current payload. Declarations do not take a
+  revision; ordinary waveform and geometry updates advance the retained
+  payload revision internally. `gpu_surface_update_versioned` and
+  `gpu_surface_update_geometry_versioned` are for callers that need strict
+  latest-wins ordering, and reject equal or stale revisions. Update APIs must
+  run on the runtime's owning/UI thread. `gpu_surface_clear` explicitly
+  removes the payload while retaining the surface node. Surfaces do not
+  participate in retained hit testing, focus, or pointer capture unless their
+  declaration opts in with `GPU_Surface_Interaction.Pointer`. The sample limit
+  accounts for the background quad and six vertices per adjacent sample pair
+  within `GPU_SURFACE_MAX_VERTICES`. Keep GPU handles and rendering callbacks
+  inside the host; the application supplies typed data, not SDL command
+  buffers.
 
 For the ownership and lifecycle model behind these calls, see
 [Architecture](architecture.md).

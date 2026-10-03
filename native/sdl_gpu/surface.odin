@@ -149,13 +149,13 @@ native_surface_geometry_self_test :: proc() -> Native_Validation_Result {
 	ui, build := alicorn.begin_frame(&rt)
 	if !build { return native_validation_failed() }
 	alicorn.container_begin(&ui, .Root, label="native-geometry-root")
-	surface := alicorn.gpu_geometry_surface(&ui, "native-geometry", 0, alicorn.layout_style(width=80, height=50), 2)
-	waveform := alicorn.gpu_surface(&ui, "native-waveform", 0, alicorn.Rect{0, 0, 80, 50}, 160, 100, 2)
+	surface := alicorn.gpu_geometry_surface(&ui, "native-geometry", alicorn.layout_style(width=80, height=50), 2)
+	waveform := alicorn.gpu_surface(&ui, "native-waveform", alicorn.Rect{0, 0, 80, 50}, 160, 100, 2)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
-	if !alicorn.gpu_surface_update_geometry(&rt, surface, 1, segments[:], circles[:]) { return native_validation_failed() }
+	if !alicorn.gpu_surface_update_geometry(&rt, surface, segments[:], circles[:]) { return native_validation_failed() }
 	samples := [2]f32{0.1, 0.9}
-	if !alicorn.gpu_surface_update(&rt, waveform, 1, samples[:]) { return native_validation_failed() }
+	if !alicorn.gpu_surface_update(&rt, waveform, samples[:]) { return native_validation_failed() }
 
 	renderer := Native_Surface_Renderer{
 		runtime=&rt,
@@ -168,7 +168,7 @@ native_surface_geometry_self_test :: proc() -> Native_Validation_Result {
 	changed := [1]alicorn.GPU_Surface_Line_Segment{{
 		start={8, 3}, end={18, 13}, thickness=2, color={1, 0, 0, 1},
 	}}
-	if !alicorn.gpu_surface_update_geometry(&rt, surface, 2, changed[:], circles[:]) { return native_validation_failed() }
+	if !alicorn.gpu_surface_update_geometry(&rt, surface, changed[:], circles[:]) { return native_validation_failed() }
 	if !native_surface_rebuild_mesh(&renderer, surface, 2, 2) { return native_validation_failed() }
 	if renderer.mesh_fingerprint == first_fingerprint || len(renderer.vertices) != 6+alicorn.GPU_SURFACE_CIRCLE_SEGMENTS*3 { return native_validation_failed() }
 	// Geometry surfaces are transparent by default, while the original waveform
@@ -251,7 +251,7 @@ native_surface_rebuild_mesh :: proc(renderer: ^Native_Surface_Renderer, id: alic
 	if !ok || node == nil || !node.active || node.kind != .Custom_Surface { return false }
 	h: u64 = 1469598103934665603
 	h = native_surface_mix(h, u64(id))
-	h = native_surface_mix(h, u64(node.surface_revision))
+	h = native_surface_mix(h, u64(node.surface_payload_revision))
 	h = native_surface_mix(h, u64(len(node.surface_samples)))
 	h = native_surface_mix(h, u64(node.surface_geometry_active ? 1 : 0))
 	h = native_surface_mix(h, u64(len(node.surface_segments)))

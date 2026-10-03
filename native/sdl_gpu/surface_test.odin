@@ -47,14 +47,14 @@ test_waveform_mesh_fits_exact_runtime_sample_limit :: proc(t: ^testing.T) {
 		return
 	}
 	alicorn.container_begin(&ui, .Root, label="waveform-capacity-root")
-	surface := alicorn.gpu_surface(&ui, "waveform-capacity-surface", 0, alicorn.Rect{0, 0, 120, 40}, 120, 40, 1)
+	surface := alicorn.gpu_surface(&ui, "waveform-capacity-surface", alicorn.Rect{0, 0, 120, 40}, 120, 40, 1)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 
 	samples := make([]f32, alicorn.GPU_SURFACE_MAX_WAVEFORM_SAMPLES)
 	defer delete(samples)
 	for i in 0..<len(samples) { samples[i] = 0.5 }
-	testing.expect(t, alicorn.gpu_surface_update(&rt, surface, 1, samples),
+	testing.expect(t, alicorn.gpu_surface_update(&rt, surface, samples),
 		"runtime should accept exactly the waveform capacity")
 
 	renderer := Native_Surface_Renderer{

@@ -113,6 +113,7 @@ description_hash :: proc(d: Description) -> u64 {
 	}
 	h = hash_mix(h, d.region_revision)
 	h = hash_mix(h, u64(d.surface_kind))
+	h = hash_mix(h, u64(d.surface_interaction))
 	h = hash_mix(h, u64(d.surface_pixel_width))
 	h = hash_mix(h, u64(d.surface_pixel_height))
 	h = hash_mix(h, u64(transmute(u32)d.surface_dpi_scale))
@@ -295,7 +296,6 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	node.button_content_style = d.button_content_style
 	node.color = d.color
 	node.paint_background = d.paint_background
-	surface_description_changed := node.paint_value != d.paint_value
 	node.paint_value = d.paint_value
 	node.control_value = d.control_value
 	node.control_minimum = d.control_minimum
@@ -338,7 +338,9 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	node.explicit_key = d.explicit_key
 	node.identity_key_kind = d.identity_key_kind
 	node.identity_key_pair = d.identity_key_pair
+	surface_kind_changed := node.surface_kind != d.surface_kind
 	node.surface_kind = d.surface_kind
+	node.surface_interaction = d.surface_interaction
 	node.surface_pixel_width = d.surface_pixel_width
 	node.surface_pixel_height = d.surface_pixel_height
 	node.surface_dpi_scale = d.surface_dpi_scale
@@ -364,14 +366,11 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	node.split_owner = d.split_owner
 	node.split_handle_size = d.split_handle_size
 	node.split_hit_size = d.split_hit_size
-	// A direct surface update owns the high-frequency revision. A later root
-	// wake with the same description must not roll it back; a changed
-	// description revision is an explicit replacement and is authoritative.
-	if node.surface_revision == node.paint_value || surface_description_changed {
-		node.surface_revision = d.paint_value
-	}
 	if node.kind == .Custom_Surface {
-		if kind_changed || surface_description_changed {
+		// Retained GPU payloads are independent from declarative UI rebuilds.
+		// Keep the last valid payload until an explicit update/clear or the
+		// surface changes between fundamentally different payload kinds.
+		if kind_changed || surface_kind_changed {
 			clear(&node.surface_samples)
 			clear(&node.surface_segments)
 			clear(&node.surface_circles)

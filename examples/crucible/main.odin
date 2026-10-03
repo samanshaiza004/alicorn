@@ -14,7 +14,6 @@ Track :: struct {
 Crucible :: struct {
 	tracks:    [8]Track,
 	compact:   bool,
-	surface_frame: u64,
 }
 
 render :: proc(rt: ^alicorn.Runtime, app: ^Crucible) {
@@ -41,7 +40,7 @@ render :: proc(rt: ^alicorn.Runtime, app: ^Crucible) {
 		}
 	}
 	// The surface is continuously changing beside ordinary retained UI.
-	alicorn.custom_surface(&ui, "spectrum", app.surface_frame, alicorn.Rect{0, 0, 320, 120}, 640, 240, 2)
+	alicorn.custom_surface(&ui, "spectrum", alicorn.Rect{0, 0, 320, 120}, 640, 240, 2)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 }
@@ -77,8 +76,6 @@ main :: proc() {
 	render(&rt, &app)
 	fmt.println("Crucible compact focus fallback:", rt.focused)
 	app.compact = false
-	render(&rt, &app)
-	app.surface_frame += 1
 	render(&rt, &app)
 	fmt.println("Crucible retained nodes:", len(rt.nodes), "regions skipped:", rt.stats.regions_skipped, "composites:", rt.stats.composite_updates)
 	fmt.println(alicorn.inspect(&rt))

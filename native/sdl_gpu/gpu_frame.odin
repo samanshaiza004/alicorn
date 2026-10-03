@@ -22,7 +22,7 @@ Native_UI_Nodes :: struct {
 	surface: alicorn.Node_ID,
 }
 
-render_native_ui :: proc(rt: ^alicorn.Runtime, frame: u64, value := NATIVE_TEXT_BASE) -> Native_UI_Nodes {
+render_native_ui :: proc(rt: ^alicorn.Runtime, value := NATIVE_TEXT_BASE) -> Native_UI_Nodes {
 	alicorn.invalidate_root(rt, "native frame")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return Native_UI_Nodes{} }
@@ -35,7 +35,7 @@ render_native_ui :: proc(rt: ^alicorn.Runtime, frame: u64, value := NATIVE_TEXT_
 	)
 	field := alicorn.text_field(&ui, value, style=alicorn.Layout_Style{.Column, -1, 32, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
 	alicorn.button(&ui, "GPU frame", style=alicorn.Layout_Style{.Column, 180, 32, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
-	surface := alicorn.custom_surface(&ui, "animated-surface", frame, alicorn.Rect{0, 0, 280, 120}, 560, 240, 2)
+	surface := alicorn.custom_surface(&ui, "animated-surface", alicorn.Rect{0, 0, 280, 120}, 560, 240, 2)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	return Native_UI_Nodes{field, surface}

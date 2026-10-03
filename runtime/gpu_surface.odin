@@ -20,30 +20,64 @@ GPU_Backend :: struct {
 // the procedural root or queue ordinary layout/paint work. Inputs larger than
 // GPU_SURFACE_MAX_WAVEFORM_SAMPLES are rejected atomically; the native backend
 // emits one background quad and one six-vertex segment per adjacent pair.
-gpu_surface_update :: proc(rt: ^Runtime, id: Node_ID, revision: u64, samples: []f32) -> bool {
+GPU_SURFACE_UPDATE_REVISION_MAX :: u64(0xFFFF_FFFF_FFFF_FFFF)
+
+gpu_surface_next_payload_revision :: proc(current: GPU_Surface_Update_Revision) -> (next: GPU_Surface_Update_Revision, ok: bool) {
+	value := u64(current)
+	if value == GPU_SURFACE_UPDATE_REVISION_MAX { return 0, false }
+	return GPU_Surface_Update_Revision(value+1), true
+}
+
+gpu_surface_payload_node :: proc(rt: ^Runtime, id: Node_ID) -> (^Node, bool) {
 	node, ok := rt.nodes[id]
-	if !ok || node == nil || !node.active || node.kind != .Custom_Surface {
-		return false
-	}
-	if node.surface_revision == revision {
-		return false
-	}
-	if len(samples) > GPU_SURFACE_MAX_WAVEFORM_SAMPLES {
-		return false
-	}
-	clear(&node.surface_samples)
-	clear(&node.surface_segments)
-	clear(&node.surface_circles)
-	for sample in samples {
-		append(&node.surface_samples, sample)
-	}
-	node.surface_geometry_active = false
-	node.surface_revision = revision
+	if !ok || node == nil || !node.active || node.kind != .Custom_Surface { return nil, false }
+	return node, true
+}
+
+gpu_surface_note_payload_commit :: proc(rt: ^Runtime, id: Node_ID, revision: GPU_Surface_Update_Revision, reason: string, geometry: bool) {
+	node, ok := rt.nodes[id]
+	if !ok || node == nil { return }
+	node.surface_payload_revision = revision
 	rt.surface_frame_pending = true
 	advance_presentation_revision(rt)
 	rt.stats.surface_updates += 1
-	record_trace_literal(rt, .Invalidation, id, "explicit GPU surface revision update")
+	if geometry { rt.stats.surface_geometry_updates += 1 }
+	record_trace_literal(rt, .Invalidation, id, reason)
 	note_submission_cause(rt, trace_current_cause(rt))
+}
+
+gpu_surface_update :: proc(rt: ^Runtime, id: Node_ID, samples: []f32) -> bool {
+	node, ok := gpu_surface_payload_node(rt, id)
+	if !ok || len(samples) > GPU_SURFACE_MAX_WAVEFORM_SAMPLES { return false }
+	revision, revision_ok := gpu_surface_next_payload_revision(node.surface_payload_revision)
+	if !revision_ok { return false }
+	clear(&node.surface_samples)
+	clear(&node.surface_segments)
+	clear(&node.surface_circles)
+	for sample in samples { append(&node.surface_samples, sample) }
+	node.surface_geometry_active = false
+	gpu_surface_note_payload_commit(rt, id, revision, "GPU waveform payload replaced", false)
+	return true
+}
+
+// gpu_surface_update_versioned is for producers that need latest-wins ordering.
+// Marshal calls onto the runtime's owning/UI thread. Revisions must be strictly
+// greater than the currently retained payload revision; equal and stale
+// updates are rejected.
+gpu_surface_update_versioned :: proc(rt: ^Runtime, id: Node_ID, revision: GPU_Surface_Update_Revision, samples: []f32) -> bool {
+	node, ok := gpu_surface_payload_node(rt, id)
+	if !ok { return false }
+	if u64(revision) <= u64(node.surface_payload_revision) {
+		rt.stats.surface_stale_update_rejections += 1
+		return false
+	}
+	if len(samples) > GPU_SURFACE_MAX_WAVEFORM_SAMPLES { return false }
+	clear(&node.surface_samples)
+	clear(&node.surface_segments)
+	clear(&node.surface_circles)
+	for sample in samples { append(&node.surface_samples, sample) }
+	node.surface_geometry_active = false
+	gpu_surface_note_payload_commit(rt, id, revision, "versioned GPU waveform payload replaced", false)
 	return true
 }
 
@@ -86,21 +120,52 @@ gpu_surface_geometry_fits :: proc(segment_count, circle_count: int) -> bool {
 }
 
 // gpu_surface_update_geometry copies surface-local logical geometry into the
-// runtime's persistent allocator. Updates are atomic: equal revisions,
-// invalid primitives, and meshes exceeding GPU_SURFACE_MAX_VERTICES return
-// false without replacing the currently displayed payload. Colors are
+// runtime's persistent allocator and assigns its own monotonic payload
+// revision. Invalid primitives and meshes exceeding GPU_SURFACE_MAX_VERTICES
+// return false without replacing the currently displayed payload. Colors are
 // normalized RGBA; segment thickness and circle radius are positive logical
 // units. Circles are rendered as deterministic 16-triangle fans.
 gpu_surface_update_geometry :: proc(
 	rt: ^Runtime,
 	id: Node_ID,
-	revision: u64,
 	segments: []GPU_Surface_Line_Segment,
 	circles: []GPU_Surface_Filled_Circle,
 ) -> bool {
-	node, ok := rt.nodes[id]
-	if !ok || node == nil || !node.active || node.kind != .Custom_Surface { return false }
-	if node.surface_revision == revision { return false }
+	node, ok := gpu_surface_payload_node(rt, id)
+	if !ok { return false }
+	if !gpu_surface_geometry_fits(len(segments), len(circles)) {
+		rt.stats.surface_geometry_overflow_rejections += 1
+		return false
+	}
+	if !gpu_surface_geometry_valid(segments, circles) { return false }
+	revision, revision_ok := gpu_surface_next_payload_revision(node.surface_payload_revision)
+	if !revision_ok { return false }
+	clear(&node.surface_segments)
+	clear(&node.surface_circles)
+	clear(&node.surface_samples)
+	for segment in segments { append(&node.surface_segments, segment) }
+	for circle in circles { append(&node.surface_circles, circle) }
+	node.surface_geometry_active = true
+	gpu_surface_note_payload_commit(rt, id, revision, "GPU geometry payload replaced", true)
+	return true
+}
+
+// gpu_surface_update_geometry_versioned provides strict freshness ordering for
+// advanced producers. Marshal calls onto the runtime's owning/UI thread.
+// Invalid or stale input never replaces the currently displayed geometry.
+gpu_surface_update_geometry_versioned :: proc(
+	rt: ^Runtime,
+	id: Node_ID,
+	revision: GPU_Surface_Update_Revision,
+	segments: []GPU_Surface_Line_Segment,
+	circles: []GPU_Surface_Filled_Circle,
+) -> bool {
+	node, ok := gpu_surface_payload_node(rt, id)
+	if !ok { return false }
+	if u64(revision) <= u64(node.surface_payload_revision) {
+		rt.stats.surface_stale_update_rejections += 1
+		return false
+	}
 	if !gpu_surface_geometry_fits(len(segments), len(circles)) {
 		rt.stats.surface_geometry_overflow_rejections += 1
 		return false
@@ -112,12 +177,29 @@ gpu_surface_update_geometry :: proc(
 	for segment in segments { append(&node.surface_segments, segment) }
 	for circle in circles { append(&node.surface_circles, circle) }
 	node.surface_geometry_active = true
-	node.surface_revision = revision
+	gpu_surface_note_payload_commit(rt, id, revision, "versioned GPU geometry payload replaced", true)
+	return true
+}
+
+// gpu_surface_clear explicitly removes the last retained payload while keeping
+// the surface node and its declared kind/background alive. An already-empty
+// surface is a no-op and does not schedule a frame.
+gpu_surface_clear :: proc(rt: ^Runtime, id: Node_ID) -> bool {
+	node, ok := gpu_surface_payload_node(rt, id)
+	if !ok || (len(node.surface_samples) == 0 && len(node.surface_segments) == 0 && len(node.surface_circles) == 0) { return false }
+	revision, revision_ok := gpu_surface_next_payload_revision(node.surface_payload_revision)
+	if !revision_ok { return false }
+	clear(&node.surface_samples)
+	clear(&node.surface_segments)
+	clear(&node.surface_circles)
+	node.surface_geometry_active = node.surface_kind == .Geometry
+	node.surface_payload_revision = revision
 	rt.surface_frame_pending = true
 	advance_presentation_revision(rt)
 	rt.stats.surface_updates += 1
-	rt.stats.surface_geometry_updates += 1
-	record_trace_literal(rt, .Invalidation, id, "explicit GPU surface geometry revision update")
+	rt.stats.surface_clear_count += 1
+	if node.surface_kind == .Geometry { rt.stats.surface_geometry_updates += 1 }
+	record_trace_literal(rt, .Invalidation, id, "GPU surface payload explicitly cleared")
 	note_submission_cause(rt, trace_current_cause(rt))
 	return true
 }
@@ -133,7 +215,7 @@ gpu_surface_context :: proc(rt: ^Runtime, id: Node_ID) -> (ctx: GPU_Surface_Cont
 		pixel_height=node.surface_pixel_height,
 		dpi_scale=node.surface_dpi_scale,
 		clip=rect_intersection(node.clip, node.bounds),
-		revision=node.surface_revision,
+		payload_revision=node.surface_payload_revision,
 	}
 	if node.surface_geometry_active || node.surface_kind == .Geometry {
 		ctx.pixel_width = int(node.bounds.w * node.surface_dpi_scale + 0.5)

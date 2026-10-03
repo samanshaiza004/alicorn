@@ -322,10 +322,10 @@ RunFoundation :: proc() {
 	// runtime display is rendered into an offscreen RGBA8 target, downloaded
 	// only after its submission fence signals, and checked inside the text
 	// bounds.
-	nodes := render_native_ui(&rt, 0)
+	nodes := render_native_ui(&rt)
 	field := nodes.field
 	alicorn.focus(&rt, field)
-	render_native_ui(&rt, 0)
+	render_native_ui(&rt)
 	readback_ok, readback_non_background := native_text_readback_probe(
 		device,
 		&text_renderer,
@@ -407,7 +407,7 @@ RunFoundation :: proc() {
 	if rt.nodes[field].text != NATIVE_TEXT_BASE || !rt.nodes[field].composition.active {
 		fail("SDL text-editing probe mutated committed text or failed to retain preedit")
 	}
-	render_native_ui(&rt, 0, app_text)
+	render_native_ui(&rt, app_text)
 	composition_command_found := false
 	for command in rt.display {
 		if command.kind == .Text_Composition { composition_command_found = true; break }
@@ -456,7 +456,7 @@ RunFoundation :: proc() {
 		// Settle the deterministic input probe before measuring surface-only
 		// frames. The following counter window starts after this one ordinary
 		// application description has been adopted.
-		nodes = render_native_ui(&rt, 0, app_text)
+		nodes = render_native_ui(&rt, app_text)
 	}
 	ordinary_before_surface := rt.stats
 	surface_encodes_before := surface_renderer.encodes
@@ -537,7 +537,7 @@ RunFoundation :: proc() {
 				retired += 1
 			}
 			fill_surface_samples(&surface_samples, f32(step) * 0.08)
-			if !alicorn.gpu_surface_update(&rt, nodes.surface, u64(step+1), surface_samples[:]) {
+			if !alicorn.gpu_surface_update(&rt, nodes.surface, surface_samples[:]) {
 				fail("explicit GPU surface update failed during surface stress")
 			}
 		}
@@ -560,10 +560,8 @@ RunFoundation :: proc() {
 		}
 		if should_submit {
 			text_value := app_text
-			frame := u64(step+3)
-			if manual_ime || surface_stress { frame = 0 }
 			if rt.invalidated {
-				nodes = render_native_ui(&rt, frame, text_value)
+				nodes = render_native_ui(&rt, text_value)
 			}
 			sync_text_input_focus(window, &rt, &text_input_state)
 			command := sdl3.AcquireGPUCommandBuffer(device)
