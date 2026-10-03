@@ -26,11 +26,10 @@ that size excludes those dependencies and packaging.
 
 ## Idle observation
 
-The initial attempt submitted 172 frames in 25 seconds and used 8.831% of one
-core between seconds 5 and 20. It was visibly active according to its own
-counters, so it is retained as an uncontrolled attempt rather than used as
-idle evidence. It had no flight-recorder capture; the trigger for those
-updates was not established.
+The first attempt submitted 172 frames in 25 seconds and used 8.831% of one
+core between seconds 5 and 20. The operator later confirmed they were
+interacting with the window, so this was not an idle run and is excluded from
+the idle result. It remains in the raw log only for traceability.
 
 A second run requested existing diagnostics no earlier than 20 host-loop seconds:
 
@@ -39,63 +38,65 @@ A second run requested existing diagnostics no earlier than 20 host-loop seconds
     --capture-after=20 --capture-dir=out/native-hello-idle-perf
 ```
 
-The capture request does not add its own event-loop wake deadline. In this
-idle run it was processed near the final 25-second timeout, rather than
-waking the app at exactly 20 seconds.
+The capture request does not add its own event-loop wake deadline. It was
+processed near the final 25-second timeout, rather than waking the app at
+exactly 20 seconds.
 
-The flight recorder at capture contained one application build, one GPU
-submission, and 11 pointer events. Those pointer events caused no additional
-application builds or submissions. At normal shutdown, the host reported
-**one submitted frame, one retired frame, one text-mesh rebuild, and zero
-application ticks** over 25.002 seconds. There were 26 event waits and no
-application wake events. The diagnostic offscreen screenshot is separate
-work and is excluded from the host's swapchain submission counter.
+This run recorded 11 pointer events, so it also is not used as the no-input
+idle result. It is retained as an auxiliary diagnostic trace: those events
+caused no additional application builds or submissions. At shutdown, the
+host reported one submitted and retired frame, one text-mesh rebuild, zero
+application ticks, and 26 event waits over 25.002 seconds.
+
+The final 25-second run was made with the window left untouched and without
+diagnostic capture:
+
+```sh
+./out/alicorn_native_hello_perf --idle-validation-seconds=25
+```
 
 `ps -p <pid> -o rss=,time=` sampled resident size and aggregate process CPU
-time, which has centisecond precision. CPU percentage below is the change
-in process CPU time divided by wall time, with 100% meaning one core. Samples
-were taken before the diagnostic capture, avoiding its cost in this interval.
+time, which has centisecond precision. CPU percentage below is the change in
+process CPU time divided by wall time, with 100% meaning one core.
 
 | Elapsed from process launch | Resident size | Process CPU time |
 |---|---:|---:|
-| 5.064 s | 74,352 KiB (72.61 MiB) | 0.99 s |
-| 19.071 s | 26,864 KiB (26.23 MiB) | 1.13 s |
+| 5.066 s | 89,520 KiB (87.42 MiB) | 0.54 s |
+| 20.006 s | 84,016 KiB (82.05 MiB) | 0.54 s |
 
-The measured interval used **0.9995% of one core**. RSS did not increase
-between these samples. RSS is neither physical footprint nor Alicorn-owned
-live allocation accounting; macOS reclamation/compression and framework
-memory can change it. This short sample does not certify long-term memory
-stability or zero idle wakeups.
+`ps` reports CPU time to centiseconds. No CPU-time change was visible over
+14.940 seconds, corresponding to **less than 0.07% of one core at this
+measurement resolution**, not proof of literally zero CPU use. RSS fell by
+5.38 MiB. At shutdown, this untouched run reported one submitted and retired
+frame, one text-mesh rebuild, zero input events, zero application ticks, and
+two event waits over 25.000 seconds. RSS is neither physical footprint nor
+Alicorn-owned live allocation accounting; this short sample does not certify
+long-term memory stability or zero idle wakeups.
 
 ## Startup observation
 
-A separate fresh process requested diagnostics immediately after its first
-submitted-frame iteration and exited after three host-loop seconds:
+A separate fresh process requested diagnostics after its first submitted
+frame and exited after three host-loop seconds. Two launches were observed
+with an external monotonic clock; cache state was not controlled, so these
+are individual observations, not a benchmark distribution:
 
-```sh
-./out/alicorn_native_hello_perf --idle-validation-seconds=3 \
-    --capture-after=0 --capture-dir=out/native-hello-startup-perf
-```
-
-An external monotonic clock measured process launch to stdout markers:
-
-| Marker | Time |
-|---|---:|
-| GPU driver selected | 1.049 s |
-| First-frame diagnostics log | 1.730 s |
+| Marker | Earlier run | Repeat run |
+|---|---:|---:|
+| GPU driver selected | 1.049 s | 0.228 s |
+| First-frame diagnostics log | 1.730 s | 0.668 s |
 
 The second marker follows the first swapchain submission and includes
 diagnostic serialization and file-output overhead. It precedes the separate
-offscreen screenshot. It is **not time to the first visible pixel**. This was
-one launch with uncontrolled OS/driver cache state; no cold-start or median
-startup claim is made. The host passed normal shutdown with one submitted
-and retired application frame.
+offscreen screenshot. It is **not time to the first visible pixel**. These
+observations support no cold-start or median startup claim. Both hosts passed
+normal shutdown with one submitted and retired application frame, and the
+repeat was left untouched and recorded zero input events.
 
 ## Raw evidence
 
-- [Both idle attempts and the startup probe](raw/native-hello-macos-m1-2026-10-02.txt)
-- [Idle diagnostics JSON](raw/native-hello-idle-macos-m1-2026-10-02.json)
-- [Idle flight-recorder timeline](raw/native-hello-idle-timeline-macos-m1-2026-10-02.json)
+- [Idle attempts and both startup probes](raw/native-hello-macos-m1-2026-10-02.txt)
+- [Auxiliary diagnostic JSON (11 pointer events; not no-input idle evidence)](raw/native-hello-idle-macos-m1-2026-10-02.json)
+- [Auxiliary flight-recorder timeline](raw/native-hello-idle-timeline-macos-m1-2026-10-02.json)
 
 Frame and event-pump wall times include time spent waiting for input. They
 must not be interpreted as active CPU render cost during idle. The native
