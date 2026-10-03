@@ -20,7 +20,7 @@ platform certification for every GPU driver or window manager.
 
 From the repository root, `.\tools\check.ps1 -Odin C:\Users\saman\Documents\odin\dist\odin.exe`
 and `.\tools\test.ps1 -Odin C:\Users\saman\Documents\odin\dist\odin.exe`
-passed. This includes 32 runtime tests, 42 native-host tests, foundation tests,
+passed. This includes 33 runtime tests, 42 native-host tests, foundation tests,
 and the generic native text-input contract.
 
 The native smoke commands below completed on Direct3D 12:
