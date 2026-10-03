@@ -97,8 +97,8 @@ investigation artifacts, not golden-image compatibility promises.
 - Run the headless checks for runtime/API changes; run a native smoke on the
   target platform for host, input, text, or rendering changes.
 - Use benchmarks to compare a named workload, not as cross-machine promises.
-- The focused wrapped-text workload and the machine/toolchain used for its
-  v0.1.0 capture are recorded in [Text layout benchmark](benchmarks/text-layout.md).
-- The [native hello Mac sample](benchmarks/native-hello-macos.md) records
-  idle submissions, process CPU/RSS, executable size, and a qualified startup
-  observation, with raw diagnostics alongside the report.
+- The [performance evidence index](performance.md) links the published
+  cross-platform text-layout runs, Mac retained-work suite, and native-hello
+  sample. These are workload-specific observations, not cross-machine
+  promises; the native report includes raw evidence and qualified startup
+  markers.

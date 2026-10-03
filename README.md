@@ -20,7 +20,14 @@ still evolving; Alicorn is not production-ready yet.
 the prerequisites, build the project, and run an editable native example.
 
 Then explore the [application guide](docs/guide.md), [API reference](docs/reference.md),
-[architecture](docs/architecture.md), or [contributor guide](docs/development.md).
+[Choosing Alicorn](docs/choosing-alicorn.md), [examples](examples/README.md),
+[performance evidence](docs/performance.md), [architecture](docs/architecture.md),
+or [contributor guide](docs/development.md).
+
+**Accessibility status:** Alicorn provides keyboard focus/navigation, keyboard
+control behavior, and semantic action/focus identities, but it does not yet
+expose its GPU-rendered UI as a platform accessibility tree for screen readers.
+See the guide's [accessibility status](docs/guide.md#accessibility-status).
 
 ## License
 

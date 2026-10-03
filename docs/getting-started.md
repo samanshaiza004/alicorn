@@ -90,6 +90,8 @@ and a negative slider range:
 ```
 
 The app source is [`examples/widget_gallery/main.odin`](../examples/widget_gallery/main.odin).
+The [examples guide](../examples/README.md) distinguishes the current learning
+path from headless validation fixtures and lists the remaining example gaps.
 
 ## If Odin is not on `PATH`
 

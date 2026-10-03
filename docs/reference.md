@@ -145,6 +145,17 @@ on that row. A later matching `semantic_bind` reconnects the presentation.
 application's selected item. `semantic_focus_state` and `inspect(runtime)` show
 the identity, owner, and current realization.
 
+### Accessibility boundary
+
+These semantic IDs and focus states are runtime interaction data, not a
+platform accessibility tree. `Action_ID` names an application command; it does
+not automatically expose a control's accessible role, name, value, or actions
+to UI Automation, NSAccessibility, or a screen reader. The current runtime has
+no bridge that publishes its GPU-rendered node tree to those platform APIs.
+Native host menus and dialogs are OS-owned services, but custom Alicorn
+controls and context menus remain outside that accessibility tree. See the
+[guide's accessibility status](guide.md#accessibility-status).
+
 ## Transient modal surfaces
 
 `modal_overlay_begin(ui, key, style, backdrop_color)` and

@@ -115,6 +115,34 @@ After describing the ordinary root, add the menu with
 navigation, placement, outside-click dismissal, and focus restoration. See the
 [context-menu reference](reference.md#context-menus).
 
+## Accessibility status
+
+Alicorn has keyboard-level interaction support: Tab and Shift+Tab traverse
+focusable controls, buttons activate from the keyboard, checkboxes toggle with
+Space, sliders respond to their documented keys, and text fields use the
+native text-input path, including composition events. Focus has a visible
+runtime presentation. Applications can also publish stable `Action_ID`s for
+commands and use `Semantic_ID` to keep logical focus attached to an item whose
+visual row may be virtualized; these APIs keep app behavior and identity
+explicit.
+
+These features are **not** a platform accessibility bridge. Alicorn does not
+currently expose its retained controls as UI Automation elements on Windows
+or an Accessibility/NSAccessibility tree on macOS. Consequently, VoiceOver,
+Narrator, and other screen readers cannot inspect or operate the ordinary
+GPU-rendered Alicorn control tree through native accessibility APIs. A
+`Semantic_ID` identifies an app entity for Alicorn; it is not an accessible
+role, label, value, or platform element. Native application menus and dialogs
+use OS facilities; that does not make Alicorn-rendered context menus or
+controls accessible to assistive technology.
+
+For v0.1, treat keyboard reachability and screen-reader accessibility as
+separate capabilities. The intended direction is to build any future platform
+bridge from the existing control, action, focus, and semantic state rather
+than infer accessibility from paint output or add a parallel application
+command model. See the [reference](reference.md#accessibility-boundary) for
+the API boundary and limitations.
+
 ## When something looks wrong
 
 Use the runtime inspector and trace to see identity, focus, bounds, invalidation

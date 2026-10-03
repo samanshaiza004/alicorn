@@ -88,6 +88,8 @@ cadences, not animations or general-purpose task queues.
 ## Boundaries and current scope
 
 The current surface API supports typed retained presentation data; it is not
-an application shader API. Accessibility integration, broader platform
-validation, and additional advanced text behavior remain future work. The
-project is experimental, and its API may change.
+an application shader API. The runtime's keyboard focus, semantic focus, and
+action IDs are not yet exported as a Windows UI Automation or macOS
+NSAccessibility tree; see the [accessibility status](guide.md#accessibility-status).
+Broader platform validation and additional advanced text behavior remain
+future work. The project is experimental, and its API may change.
