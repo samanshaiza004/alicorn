@@ -45,16 +45,15 @@ try {
             & tar.exe -xf $SourceArchive -C $SourceDirectory --strip-components=1
             if ($LASTEXITCODE -ne 0) { throw "SDL source extraction failed (exit $LASTEXITCODE)." }
         }
-        if (-not (Test-Path -LiteralPath (Join-Path $BuildDirectory 'CMakeCache.txt'))) {
-            & cmake -S $SourceDirectory -B $BuildDirectory `
-                "-DCMAKE_INSTALL_PREFIX=$Prefix" `
-                '-DCMAKE_BUILD_TYPE=Release' `
-                '-DSDL_SHARED=OFF' '-DSDL_STATIC=ON' `
-                '-DSDL_TEST_LIBRARY=OFF' '-DSDL_TESTS=OFF' `
-                '-DSDL_INSTALL_TESTS=OFF' '-DSDL_DISABLE_INSTALL_DOCS=ON' `
-                '-DSDL_FRAMEWORK=OFF'
-            if ($LASTEXITCODE -ne 0) { throw "SDL CMake configure failed (exit $LASTEXITCODE)." }
-        }
+        & cmake -S $SourceDirectory -B $BuildDirectory `
+            "-DCMAKE_INSTALL_PREFIX=$Prefix" `
+            '-DCMAKE_BUILD_TYPE=Release' `
+            '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded' `
+            '-DSDL_SHARED=OFF' '-DSDL_STATIC=ON' `
+            '-DSDL_TEST_LIBRARY=OFF' '-DSDL_TESTS=OFF' `
+            '-DSDL_INSTALL_TESTS=OFF' '-DSDL_DISABLE_INSTALL_DOCS=ON' `
+            '-DSDL_FRAMEWORK=OFF'
+        if ($LASTEXITCODE -ne 0) { throw "SDL CMake configure failed (exit $LASTEXITCODE)." }
         & cmake --build $BuildDirectory --config Release --target SDL3-static
         if ($LASTEXITCODE -ne 0) { throw "SDL static build failed (exit $LASTEXITCODE)." }
         & cmake --install $BuildDirectory --config Release
