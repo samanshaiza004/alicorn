@@ -4083,6 +4083,7 @@ main :: proc() {
 	test_adjacent_three_pane_split_redistribution(&state)
 	test_split_axis_nested_identity_and_cancel(&state)
 	test_split_virtual_viewport_followup(&state)
+	test_style_environment_local_typography_invalidation(&state)
 	test_runtime_allocator_ownership(&state)
 	if state.failures == 0 {
 		fmt.println("Alicorn foundation tests: PASS")

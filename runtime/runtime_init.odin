@@ -28,6 +28,7 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 		allocation_stats_owned = stats_owned,
 		persistent_allocator_state = persistent_state,
 		viewport = viewport,
+		style_environment = DEFAULT_STYLE_ENVIRONMENT,
 		invalidated = true,
 	}
 	rt.scratch_arena = new(mem.Dynamic_Arena, allocator=rt.persistent_allocator)
@@ -52,6 +53,8 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 	rt.identity_key_numeric = make([dynamic]bool, 0, allocator=rt.persistent_allocator)
 	rt.identity_key_kind = make([dynamic]u8, 0, allocator=rt.persistent_allocator)
 	rt.identity_key_pair = make([dynamic]UI_Key_Pair, 0, allocator=rt.persistent_allocator)
+	rt.style_scope_stack = make([dynamic]Style_Environment_Scope, 0, allocator=rt.persistent_allocator)
+	rt.layout_roots = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.paint_queue = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.display = make([dynamic]Display_Command, 0, allocator=rt.persistent_allocator)
 	rt.trace = Trace_Ring{events = make([dynamic]Trace_Event, capacity, allocator=rt.persistent_allocator)}

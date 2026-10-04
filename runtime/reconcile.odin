@@ -87,7 +87,9 @@ description_hash :: proc(d: Description) -> u64 {
 	if node_has_text_product(d.kind) {
 		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
 		h = hash_mix(h, u64(d.text_style.overflow))
+		h = hash_mix(h, u64(transmute(u32)d.style_environment.text_scale))
 	}
+	h = hash_mix(h, u64(d.style_scope_boundary ? 1 : 0))
 	h = hash_mix(h, d.paint_value)
 	h = hash_mix(h, u64(d.text_input_target ? 1 : 0))
 	h = hash_mix(h, u64(transmute(u32)d.control_value))
@@ -172,12 +174,14 @@ layout_hash :: proc(d: Description) -> u64 {
 		h = hash_mix(h, u64(d.font))
 		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
 		h = hash_mix(h, u64(d.text_style.overflow))
+		h = hash_mix(h, u64(transmute(u32)d.style_environment.text_scale))
 	case .Text, .Text_Field:
 		h = hash_mix(h, hash_string(d.text))
 		h = hash_mix(h, hash_text_style_spans(d.text_style_spans))
 		h = hash_mix(h, u64(d.font))
 		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
 		h = hash_mix(h, u64(d.text_style.overflow))
+		h = hash_mix(h, u64(transmute(u32)d.style_environment.text_scale))
 	}
 	return h
 }
@@ -244,12 +248,14 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	// caller's string for only the duration of this procedure.
 	label_changed := (d.kind == .Button || d.kind == .Checkbox || d.kind == .Slider) && node.label != d.label
 	text_changed := node.text != d.text || label_changed
+	style_changes := style_environment_changed_domains(node.style_environment, d.style_environment)
+	typography_changed := Style_Domain.Typography in style_changes
 	font_changed := node.font != d.font
 	weight_changed := effective_font_weight(node.text_style.font_weight) != effective_font_weight(d.text_style.font_weight)
 	style_spans_changed := hash_text_style_spans(node.text_style_spans[:]) != hash_text_style_spans(d.text_style_spans)
 	overflow_changed := node.text_style.overflow != d.text_style.overflow
 	kind_changed := node.kind != d.kind
-	if node.text_run_valid && (text_changed || font_changed || weight_changed || overflow_changed || style_spans_changed || kind_changed || !node_has_text_product(d.kind)) {
+	if node.text_run_valid && (text_changed || typography_changed || font_changed || weight_changed || overflow_changed || style_spans_changed || kind_changed || !node_has_text_product(d.kind)) {
 		text_run_destroy(&node.text_run)
 		node.text_run_valid = false
 	}
@@ -293,6 +299,8 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	node.context_menu_bounds = d.context_menu_bounds
 	node.font = d.font
 	node.text_style = d.text_style
+	node.style_environment = d.style_environment
+	node.style_scope_boundary = d.style_scope_boundary
 	node.button_content_style = d.button_content_style
 	node.color = d.color
 	node.paint_background = d.paint_background
@@ -422,12 +430,23 @@ invalidate_interaction_paint :: proc(rt: ^Runtime, id: Node_ID, reason := "inter
 mark_layout_ancestors :: proc(rt: ^Runtime, id: Node_ID) {
 	rt.layout_pending = true
 	current := id
+	scope_root := Node_ID(0)
 	for current != 0 {
 		node, ok := rt.nodes[current]
 		if !ok { break }
 		dirty_set(&node.dirty, .Layout, true)
 		dirty_set(&node.dirty, .Composite, true)
+		if node.style_scope_boundary {
+			scope_root = current
+			break
+		}
 		current = node.parent
+	}
+	if scope_root != 0 {
+		if root, ok := rt.nodes[scope_root]; ok && !root.layout_root_queued {
+			root.layout_root_queued = true
+			append(&rt.layout_roots, scope_root)
+		}
 	}
 }
 
@@ -578,19 +597,22 @@ reconcile :: proc(rt: ^Runtime) {
 			new_paint_hash := paint_hash(d)
 			description_changed := node.description_hash != new_desc_hash
 			text_changed := node.text != d.text || ((d.kind == .Button || d.kind == .Checkbox || d.kind == .Slider) && node.label != d.label)
+			style_changes := style_environment_changed_domains(node.style_environment, d.style_environment)
+			style_stages := style_domains_dirty_stages(style_changes)
 			// Text/labels are included in layout_hash because they contribute
 			// intrinsic size. Keep this explicit at the reconciliation boundary so
 			// the invariant remains true even if layout hashing is later split by
 			// product type.
-			layout_changed := node.layout_hash != new_layout_hash || text_changed
-			paint_changed := node.paint_hash != new_paint_hash
+			layout_changed := node.layout_hash != new_layout_hash || text_changed || Dirty_Stage.Layout in style_stages
+			paint_changed := node.paint_hash != new_paint_hash || Dirty_Stage.Paint in style_stages
+			composite_changed := Dirty_Stage.Composite in style_stages
 			copy_node_description(rt, node, d)
 			node.description_hash = new_desc_hash
 			node.layout_hash = new_layout_hash
 			node.paint_hash = new_paint_hash
 			reason := "description reused"
 			if description_changed { reason = "description changed" }
-			mark_dirty(node, reason, description_changed, layout_changed, paint_changed || layout_changed, false, rt.persistent_allocator)
+			mark_dirty(node, reason, description_changed, layout_changed, paint_changed || layout_changed, composite_changed, rt.persistent_allocator)
 			if layout_changed { mark_layout_ancestors(rt, d.id) }
 			if description_changed || layout_changed || paint_changed {
 				queue_paint(rt, d.id)
@@ -773,6 +795,9 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.identity_key_numeric)
 	delete(rt.identity_key_kind)
 	delete(rt.identity_key_pair)
+	delete(rt.style_scope_stack)
+	delete(rt.layout_roots)
+	delete(rt.layout_visit_probe)
 	delete(rt.paint_queue)
 	for entry in rt.trace.events { if entry.reason_owned && len(entry.reason) > 0 { delete(entry.reason, rt.persistent_allocator) } }
 	delete(rt.trace.events)
@@ -833,6 +858,11 @@ end_frame :: proc(ui: ^UI) {
 	if !ui.runtime.frame_open {
 		return
 	}
+	if len(ui.runtime.style_scope_stack) != 0 {
+		append_diagnostic(ui.runtime, "unbalanced style environment scope at end_frame")
+		clear(&ui.runtime.style_scope_stack)
+	}
+	ui.runtime.style_environment = DEFAULT_STYLE_ENVIRONMENT
 	if len(ui.runtime.stack) != 0 || len(ui.runtime.identity_stack) != 0 {
 		append_diagnostic(ui.runtime, "unbalanced container or identity scope at end_frame")
 		clear(&ui.runtime.stack)

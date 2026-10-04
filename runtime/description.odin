@@ -138,7 +138,9 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	if effective_layout_scroll_offset_x < 0 { effective_layout_scroll_offset_x = scroll_offset_x }
 	description := Description{
 		id=id, parent=parent_node, site=source, key=key, explicit_key=explicit_key,
-		kind=kind, label=label, text=text, font=font, text_style=text_style, button_content_style=button_content, style=style, color=color, paint_background=paint_background,
+		kind=kind, label=label, text=text, font=font, text_style=text_style,
+		style_environment=rt.style_environment, style_scope_boundary=false,
+		button_content_style=button_content, style=style, color=color, paint_background=paint_background,
 		paint_value=paint_value, region_revision=region_revision, region=is_region,
 		focusable=focusable, identity_key=identity_key,
 		identity_key_u64=identity_key_u64, identity_key_numeric=identity_key_numeric,
@@ -204,7 +206,9 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	description := Description{
 		id=id, parent=parent_node, site=source, key=key_string_value, explicit_key=ui_key_is_explicit(key),
 		identity_key_kind=key_kind, identity_key_pair=identity_key_pair,
-		kind=kind, label=label, text=text, font=font, text_style=text_style, button_content_style=button_content, style=style, color=color, paint_background=paint_background,
+		kind=kind, label=label, text=text, font=font, text_style=text_style,
+		style_environment=rt.style_environment, style_scope_boundary=false,
+		button_content_style=button_content, style=style, color=color, paint_background=paint_background,
 		paint_value=state_bits, region_revision=region_revision, region=is_region,
 		focusable=focusable, selected=selected, disabled=disabled, identity_key=identity_key,
 		identity_key_u64=identity_key_u64, identity_key_numeric=identity_key_numeric,

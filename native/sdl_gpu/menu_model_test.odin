@@ -65,6 +65,7 @@ test_application_can_preempt_text_field_navigation_and_dismissal :: proc(t: ^tes
 		Application_Key.Open_Repository, Application_Key.Open_Command_Palette,
 		Application_Key.Find, Application_Key.Workspace_Search, Application_Key.Workspace_Rename,
 		Application_Key.Find_Next, Application_Key.Find_Previous,
+		Application_Key.Zoom_In, Application_Key.Zoom_Out, Application_Key.Zoom_Reset,
 		Application_Key.Escape, Application_Key.Return,
 	}
 	for key in interceptable_keys {
@@ -76,6 +77,7 @@ test_application_can_preempt_text_field_navigation_and_dismissal :: proc(t: ^tes
 	}
 	testing.expect(t, !application_key_can_preempt_text_field(.Escape, true), "Escape must cancel active text composition before transient UI dismissal")
 	testing.expect(t, !application_key_can_preempt_text_field(.Workspace_Rename, true), "F2 must not interrupt active text composition")
+	testing.expect(t, !application_key_can_preempt_text_field(.Zoom_In, true), "zoom shortcuts must not interrupt active text composition")
 	testing.expect(t, native_text_field_return_key(false) == .Return, "plain Enter should retain ordinary text-field return semantics")
 	testing.expect(t, native_text_field_return_key(true) == .Find_Previous, "Shift+Enter should route to previous Find match")
 }

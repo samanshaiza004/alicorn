@@ -268,9 +268,8 @@ layout_split_children :: proc(rt: ^Runtime, parent: ^Node, inner: Rect, children
 	hit_size := minf(total, maxf(rt.nodes[children[1]].split_hit_size, thickness))
 	hit_offset := clampf(first+(thickness-hit_size)*0.5, 0, total-hit_size)
 	for id, index in children {
-		rt.stats.layout_nodes_visited += 1
-		rt.stats.stage_visits[.Layout] += 1
 		child := rt.nodes[id]
+		layout_note_node_visit(rt, child)
 		old_bounds := child.bounds
 		old_hit_bounds := child.hit_bounds
 		main_offset := f32(0)
@@ -315,6 +314,13 @@ layout_split_children :: proc(rt: ^Runtime, parent: ^Node, inner: Rect, children
 		}
 		dirty_set(&child.dirty, .Layout, false)
 	}
+}
+
+layout_note_node_visit :: proc(rt: ^Runtime, node: ^Node) {
+	if rt == nil || node == nil { return }
+	if len(rt.layout_visit_probe) > 0 { rt.layout_visit_probe[node.id] += 1 }
+	rt.stats.layout_nodes_visited += 1
+	rt.stats.stage_visits[.Layout] += 1
 }
 
 layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
@@ -387,9 +393,8 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	// for the current DPI.
 	has_grow := false
 	for id in children {
-		rt.stats.layout_nodes_visited += 1
-		rt.stats.stage_visits[.Layout] += 1
 		child := rt.nodes[id]
+		layout_note_node_visit(rt, child)
 		if child.style.grow > 0 { has_grow = true }
 		if node_has_text_product(child.kind) {
 			constraint := layout_text_constraint(parent, child, cross_size)
@@ -422,6 +427,7 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	}
 	for id, index in children {
 		child := rt.nodes[id]
+		layout_note_node_visit(rt, child)
 		old_bounds := child.bounds
 		main := resolved_main_size(child, parent.style.direction, intrinsic_main(child, parent.style.direction))
 		if has_grow { main = main_sizes[index] }
@@ -483,8 +489,6 @@ layout_tree :: proc(rt: ^Runtime) {
 	for id in rt.top_level {
 		node, ok := rt.nodes[id]
 		if !ok || !node.active { continue }
-		rt.stats.layout_nodes_visited += 1
-		rt.stats.stage_visits[.Layout] += 1
 		if node.parent == 0 {
 			old := node.bounds
 			node.bounds = rt.viewport
@@ -496,10 +500,26 @@ layout_tree :: proc(rt: ^Runtime) {
 				queue_paint(rt, id)
 			}
 			if !same_rect(old, node.bounds) || dirty_has(node.dirty, .Layout) {
+				layout_note_node_visit(rt, node)
 				layout_children(rt, id)
 			}
 			dirty_set(&node.dirty, .Layout, false)
 		}
 	}
+	for id in rt.layout_roots {
+		node, ok := rt.nodes[id]
+		if !ok { continue }
+		node.layout_root_queued = false
+		if !node.active || !dirty_has(node.dirty, .Layout) { continue }
+		parent_is_dirty := false
+		if parent, found := rt.nodes[node.parent]; found && dirty_has(parent.dirty, .Layout) {
+			parent_is_dirty = true
+		}
+		if parent_is_dirty { continue }
+		layout_note_node_visit(rt, node)
+		layout_children(rt, id)
+		dirty_set(&node.dirty, .Layout, false)
+	}
+	clear(&rt.layout_roots)
 	rt.layout_pending = false
 }
