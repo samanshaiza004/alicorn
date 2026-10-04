@@ -106,6 +106,11 @@ themselves to their descendants, so give transient panels an explicit or
 application-computed height. See the API
 [reference](reference.md#transient-modal-surfaces).
 
+Attach delayed help to a just-described control with `tooltip(&ui, text)`. The
+native host waits for the hover deadline; the popup remains pointer-transparent
+and does not change focus. See the
+[tooltip reference](reference.md#tooltips) for dismissal and placement behavior.
+
 For a single-level context menu, handle secondary-click (or the host's
 Shift+F10 `Application_Key.Context_Menu`) in the application and open it with
 `context_menu_open`. Keep the semantic context target in application state.

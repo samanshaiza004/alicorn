@@ -198,6 +198,16 @@ overlay fills the viewport, but generic child containers do not auto-size to
 their descendants; transient panels need an explicit or application-computed
 height.
 
+### Tooltips
+
+Call `tooltip(ui, text, delay_ms)` immediately after describing the control that
+owns the help text. The default delay is 500 ms; Alicorn retains the label with
+that node and anchors a small popup to its bounds. The native event loop waits
+for the one-shot hover deadline instead of polling. The popup flips and clamps
+to the viewport, remains hit-test transparent, and never takes keyboard focus.
+Pointer exit, a press, keyboard input, focus loss, or a modal/context menu
+dismisses it. Once shown or dismissed, no recurring timer remains armed.
+
 ### Context menus
 
 `context_menu_open(runtime, anchor, restore_focus_to, width, item_height)` opens

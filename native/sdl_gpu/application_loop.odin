@@ -165,6 +165,10 @@ run_application_loop :: proc(
 				drag_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(drag_autoscroll_deadline_ns, current_ns))
 				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, drag_timeout_ms))
 			}
+			if tooltip_deadline := alicorn.tooltip_next_deadline(rt); tooltip_deadline != 0 {
+				tooltip_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(tooltip_deadline, current_ns))
+				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, tooltip_timeout_ms))
+			}
 			if next_deadline, found := scheduled_wake_next_deadline(&scheduler_state); found {
 				scheduled_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(next_deadline, current_ns))
 				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, scheduled_timeout_ms))
@@ -227,6 +231,7 @@ run_application_loop :: proc(
 			devtools_last_cause=&devtools_last_cause,
 			inspector=&inspector,
 		)
+		_ = alicorn.tooltip_advance(rt, u64(sdl3.GetTicksNS()))
 		native_drag_autoscroll_update(rt, &drag_autoscroll_deadline_ns, u64(sdl3.GetTicksNS()))
 		if native_menu != nil {
 			if command, ok := native_menu_take_pending(native_menu); ok {

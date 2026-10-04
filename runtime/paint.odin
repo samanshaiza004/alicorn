@@ -218,7 +218,9 @@ rebuild_display :: proc(rt: ^Runtime) {
 	for id in rt.top_level {
 		compose_subtree(rt, id)
 	}
+	rt.transient_overlay_kind = .None
 	append_drag_preview(rt)
+	append_tooltip_overlay(rt)
 	rt.stats.composite_updates += 1
 	rt.composition_rebuild = false
 	record_trace(rt, .Composite, 0, "retained display list rebuilt after structure change")
