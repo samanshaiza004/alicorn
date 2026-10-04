@@ -40,6 +40,8 @@ Node_Kind :: enum {
 	Modal_Overlay,
 	Context_Menu_Overlay,
 	Context_Menu_Panel,
+	Tooltip_Background,
+	Tooltip_Text,
 	Container,
 	Button,
 	Checkbox,
@@ -307,6 +309,7 @@ Pointer_Event :: struct {
 	button:      int,
 	modifiers:   Input_Modifiers, // keyboard modifiers held when the host dispatches this event
 	click_count: u8,               // platform click sequence count for button events; zero when unavailable
+	timestamp_ns: u64,             // monotonic host time used by delayed interactions; zero for synthetic events
 	// target_key is filled by the native host after hit testing and is available
 	// to application pointer callbacks. Direct process_pointer callers should
 	// use the returned Node_ID with node_identity_key when they need the key.
@@ -525,6 +528,8 @@ Description :: struct {
 	kind:        Node_Kind,
 	label:       string,
 	text:        string,
+	tooltip_text: string,
+	tooltip_delay_ms: u32,
 	text_paint_spans: []Text_Paint_Span,
 	text_style_spans: []Text_Style_Span,
 	font:        Font_Role,
@@ -615,6 +620,8 @@ Node :: struct {
 	kind:        Node_Kind,
 	label:       string,
 	text:        string,
+	tooltip_text: string,
+	tooltip_delay_ms: u32,
 	text_paint_spans: [dynamic]Text_Paint_Span,
 	text_style_spans: [dynamic]Text_Style_Span,
 	font:        Font_Role,
@@ -811,6 +818,20 @@ Context_Menu_Key :: enum {
 	Cancel,
 }
 
+Tooltip_State :: struct {
+	target: Node_ID,
+	deadline_ns: u64,
+	visible: bool,
+	run: Text_Run,
+	run_ready: bool,
+}
+
+Transient_Overlay_Kind :: enum {
+	None,
+	Drag_Preview,
+	Tooltip,
+}
+
 Action_Entry :: struct {
 	descriptor: Action_Descriptor,
 	state:      Action_State,
@@ -929,6 +950,8 @@ Runtime :: struct {
 	layout_visit_probe: map[Node_ID]u64,
 	focused:     Node_ID,
 	context_menu: Context_Menu_State,
+	tooltip: Tooltip_State,
+	transient_overlay_kind: Transient_Overlay_Kind,
 	selected:    Node_ID,
 	semantic_focus: Semantic_Focus_State,
 	last_hovered: Node_ID,

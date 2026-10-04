@@ -161,7 +161,7 @@ native_solid_pixel_bounds :: proc(
 ) -> (x0, y0, x1, y1: int, visible: bool) {
 	drag_offset_x: f32 = 0
 	drag_offset_y: f32 = 0
-	if draw.node == alicorn.Node_ID(0) && renderer.runtime != nil {
+	if draw.node == alicorn.Node_ID(0) && renderer.runtime != nil && renderer.runtime.transient_overlay_kind == .Drag_Preview {
 		drag_offset_x = renderer.runtime.drag.x + alicorn.DRAG_PREVIEW_POINTER_OFFSET
 		drag_offset_y = renderer.runtime.drag.y + alicorn.DRAG_PREVIEW_POINTER_OFFSET
 	}
@@ -242,7 +242,7 @@ native_solid_append_debug_bounds :: proc(
 		if skip_root && draw.kind == .Root { continue }
 		drag_offset_x: f32 = 0
 		drag_offset_y: f32 = 0
-		if draw.node == alicorn.Node_ID(0) && renderer.runtime != nil {
+		if draw.node == alicorn.Node_ID(0) && renderer.runtime != nil && renderer.runtime.transient_overlay_kind == .Drag_Preview {
 			drag_offset_x = renderer.runtime.drag.x + alicorn.DRAG_PREVIEW_POINTER_OFFSET
 			drag_offset_y = renderer.runtime.drag.y + alicorn.DRAG_PREVIEW_POINTER_OFFSET
 		}
@@ -265,7 +265,7 @@ native_solid_append_debug_bounds :: proc(
 		if skip_root && draw.kind == .Root { continue }
 		drag_offset_x: f32 = 0
 		drag_offset_y: f32 = 0
-		if draw.node == alicorn.Node_ID(0) && renderer.runtime != nil {
+		if draw.node == alicorn.Node_ID(0) && renderer.runtime != nil && renderer.runtime.transient_overlay_kind == .Drag_Preview {
 			drag_offset_x = renderer.runtime.drag.x + alicorn.DRAG_PREVIEW_POINTER_OFFSET
 			drag_offset_y = renderer.runtime.drag.y + alicorn.DRAG_PREVIEW_POINTER_OFFSET
 		}

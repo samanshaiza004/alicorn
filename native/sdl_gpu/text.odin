@@ -201,7 +201,7 @@ native_text_destroy :: proc(renderer: ^Native_Text_Renderer) {
 }
 
 native_text_is_text :: proc(kind: alicorn.Node_Kind) -> bool {
-	return kind == .Text || kind == .Text_Field || kind == .Text_Composition
+	return kind == .Text || kind == .Text_Field || kind == .Text_Composition || kind == .Tooltip_Text
 }
 
 native_text_hash_mix :: proc(h, value: u64) -> u64 {
@@ -502,7 +502,7 @@ native_text_rects_intersect :: proc(a, b: alicorn.Rect) -> bool {
 native_text_command_intersects_clip :: proc(command: alicorn.Display_Command) -> bool {
 	// Drag-preview text is translated at draw time. Its mesh-space bounds do
 	// not describe the final clip-space location, so leave it to exact culling.
-	if command.node == alicorn.Node_ID(0) { return true }
+	if command.node == alicorn.Node_ID(0) && command.kind != .Tooltip_Text { return true }
 	return native_text_rects_intersect(command.bounds, command.clip)
 }
 
@@ -518,7 +518,7 @@ native_text_glyph_may_intersect_clip :: proc(
 ) -> bool {
 	// The drag preview receives a host-side model translation after mesh build.
 	// Do not apply an untransformed logical bound that could drop its glyphs.
-	if command.node == alicorn.Node_ID(0) { return true }
+	if command.node == alicorn.Node_ID(0) && command.kind != .Tooltip_Text { return true }
 	if command.clip.w <= 0 || command.clip.h <= 0 { return false }
 	clip_xa := command.clip.x * scale_x
 	clip_ya := command.clip.y * scale_y
@@ -546,6 +546,10 @@ native_text_glyph_may_intersect_clip :: proc(
 
 native_text_command_run :: proc(renderer: ^Native_Text_Renderer, command: alicorn.Display_Command) -> (run: alicorn.Text_Run, ok: bool) {
 	if command.node == alicorn.Node_ID(0) {
+		if command.kind == .Tooltip_Text {
+			if !renderer.runtime.tooltip.run_ready { return }
+			return renderer.runtime.tooltip.run, true
+		}
 		if !renderer.runtime.drag_preview.ready { return }
 		return renderer.runtime.drag_preview.run, true
 	}
@@ -626,7 +630,14 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 		u64(transmute(u32)alicorn.drag_source_opacity(renderer.runtime, command.node)),
 		)
 		if command.node == alicorn.Node_ID(0) {
-			if renderer.runtime.drag_preview.ready {
+			if command.kind == .Tooltip_Text && renderer.runtime.tooltip.run_ready {
+				run := &renderer.runtime.tooltip.run
+				fingerprint = native_text_hash_mix(fingerprint, u64(run.font))
+				fingerprint = native_text_hash_mix(fingerprint, u64(run.font_source))
+				fingerprint = native_text_hash_mix(fingerprint, u64(transmute(u32)run.size))
+				fingerprint = native_text_hash_mix(fingerprint, u64(transmute(u32)run.font_weight))
+				fingerprint = native_text_hash_mix(fingerprint, run.style_hash)
+			} else if renderer.runtime.drag_preview.ready {
 				run := &renderer.runtime.drag_preview.run
 				fingerprint = native_text_hash_mix(fingerprint, u64(run.font))
 				fingerprint = native_text_hash_mix(fingerprint, u64(run.font_source))
@@ -844,7 +855,8 @@ native_text_render_command :: proc(
 		},
 		model = [4][4]f32{{1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1}},
 	}
-	if command.node == alicorn.Node_ID(0) {
+	if command.node == alicorn.Node_ID(0) && command.kind != .Tooltip_Text &&
+	   renderer.runtime.transient_overlay_kind == .Drag_Preview {
 		uniforms.model[3][0] = (renderer.runtime.drag.x+alicorn.DRAG_PREVIEW_POINTER_OFFSET)*scale_x
 		uniforms.model[3][1] = (renderer.runtime.drag.y+alicorn.DRAG_PREVIEW_POINTER_OFFSET)*scale_y
 	}

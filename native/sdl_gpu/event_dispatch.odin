@@ -135,6 +135,7 @@ pump_events :: proc(
 		}
 		if event.type == .WINDOW_FOCUS_LOST {
 			alicorn.context_menu_close(rt)
+			alicorn.tooltip_dismiss(rt)
 			if text_input_state != nil {
 				text_input_state.window_focused = false
 				native_cancel_current_text_composition(application, rt, text_input_state, "window focus lost")
@@ -156,6 +157,9 @@ pump_events :: proc(
 			}
 			alicorn.cause_end(rt, cancel_cause)
 		}
+		if event.type == .WINDOW_MOUSE_LEAVE {
+			alicorn.tooltip_dismiss(rt)
+		}
 		if event.type == .WINDOW_FOCUS_GAINED && text_input_state != nil {
 			text_input_state.window_focused = true
 		}
@@ -167,6 +171,7 @@ pump_events :: proc(
 			alicorn.cause_end(rt, wake_cause)
 		}
 		if pointer_ok {
+			pointer.timestamp_ns = u64(sdl3.GetTicksNS())
 			pointer_cause := alicorn.pointer_cause_begin(rt, pointer.kind)
 			if devtools_last_cause != nil { devtools_last_cause^ = pointer_cause.cause }
 			target := alicorn.process_pointer(rt, pointer)
@@ -188,6 +193,7 @@ pump_events :: proc(
 			alicorn.cause_end(rt, pointer_cause)
 		}
 		if application != nil && event.type == .MOUSE_WHEEL {
+			alicorn.tooltip_dismiss(rt)
 			scroll_cause := alicorn.cause_begin(rt, .Scroll, "mouse wheel")
 			if devtools_last_cause != nil { devtools_last_cause^ = scroll_cause.cause }
 			delta_x := event.wheel.x
@@ -227,6 +233,7 @@ pump_events :: proc(
 			alicorn.cause_end(rt, scroll_cause)
 		}
 		if event.type == .KEY_DOWN && event.key.down {
+			alicorn.tooltip_dismiss(rt)
 			key_cause := alicorn.cause_begin(rt, .Keyboard, "SDL key down")
 			if devtools_last_cause != nil { devtools_last_cause^ = key_cause.cause }
 			context_menu_handled := alicorn.context_menu_handle_key(rt, native_context_menu_key_from_sdl(event.key.key))

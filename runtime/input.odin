@@ -253,6 +253,7 @@ focus :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 	if previous == id {
 		return true
 	}
+	tooltip_dismiss(rt)
 	if previous != 0 {
 		if old, old_ok := rt.nodes[previous]; old_ok && clear_text_composition(old, rt.persistent_allocator) {
 			invalidate_interaction_paint(rt, previous, "text composition canceled on focus loss")
@@ -398,6 +399,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 	drag_event_clear(rt)
 	menu_active := context_menu_input_active(rt)
 	rt.context_menu.pointer_consumed = menu_active
+	if event.kind != .Move || menu_active { tooltip_dismiss(rt) }
 	if event.kind == .Cancel {
 		_ = cancel_pointer_capture(rt)
 		return 0
@@ -411,9 +413,11 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 	}
 	if menu_active && rt.context_menu.dismissed { return 0 }
 	if scrollbar_handle_pointer(rt, event) {
+		tooltip_dismiss(rt)
 		return rt.scrollbar_drag_node if rt.scrollbar_drag_node != 0 else rt.captured_node
 	}
 	target := hit_test(rt, event.x, event.y)
+	if event.kind == .Move { tooltip_pointer_update(rt, target, event.timestamp_ns) }
 	if menu_active && rt.context_menu.open && event.kind == .Down && target == rt.context_menu.overlay {
 		inside_panel := false
 		if panel, ok := rt.nodes[rt.context_menu.panel]; ok && panel.active {
@@ -601,6 +605,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 			invalidate_root(rt, "pointer up")
 		}
 	}
+	if event.kind == .Up { tooltip_pointer_update(rt, target, event.timestamp_ns) }
 	return target
 }
 
