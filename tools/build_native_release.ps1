@@ -68,6 +68,7 @@ try {
         $LinkItems = @((Get-Content -LiteralPath $LinkInterface -Raw) -split '[\r\n;]+' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
         $NativeLibraries = [Collections.Generic.List[string]]::new()
         foreach ($Item in $LinkItems) {
+            if ($Item -match '^\$<LINK_ONLY:([^<>]+)>$') { $Item = $Matches[1] }
             if ($Item -in @('SDL3::Headers', 'SDL3::SDL3-static', 'SDL3::SDL3')) { continue }
             if ($Item -match '^\$<') { throw "Unresolved SDL CMake link expression: '$Item'." }
             if ($Item.StartsWith('-')) { $NativeLibraries.Add($Item); continue }
