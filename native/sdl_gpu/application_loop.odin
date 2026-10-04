@@ -88,6 +88,7 @@ run_application_loop :: proc(
 	text_input_state := Native_Text_Input_State{window_focused=(window_flags & sdl3.WindowFlags{.INPUT_FOCUS}) != sdl3.WindowFlags{}}
 	text_input_state.suspended = native_inspector_visible(&inspector)
 	pointer_modifier_state := sdl3.GetModState()
+	pointer_button_state := Native_Pointer_Button_State{}
 	alicorn.invalidate_root(rt, "SDL application initial frame")
 	_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing, stop_on_hard_error=inspector.enabled)
 	initial_summary := native_inspector_host_summary(&timing, rt, 0)
@@ -222,6 +223,7 @@ run_application_loop :: proc(
 			last_user_interaction_ns=&last_user_interaction_ns,
 			text_input_state=&text_input_state,
 			pointer_modifier_state=&pointer_modifier_state,
+			pointer_button_state=&pointer_button_state,
 			devtools_hud=&devtools_hud,
 			devtools_hud_redraw_pending=&devtools_hud_redraw_pending,
 			devtools_last_cause=&devtools_last_cause,
