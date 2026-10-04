@@ -8,10 +8,12 @@ import win "core:sys/windows"
 import "core:c"
 import "core:fmt"
 import sdl3 "vendor:sdl3"
+import alicorn "../../runtime"
 
 foreign import dwmapi "system:Dwmapi.lib"
 foreign dwmapi {
 	DwmDefWindowProc :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam: win.WPARAM, lparam: win.LPARAM, result: ^win.LRESULT) -> win.BOOL ---
+	DwmExtendFrameIntoClientArea :: proc "system" (hwnd: win.HWND, margins: ^win.MARGINS) -> win.HRESULT ---
 }
 
 foreign import comctl32 "system:Comctl32.lib"
@@ -32,12 +34,21 @@ WIN32_MF_SEPARATOR       :: win.UINT(0x00000800)
 WIN32_MF_CHECKED         :: win.UINT(0x00000008)
 WIN32_MF_BYPOSITION      :: win.UINT(0x00000400)
 WIN32_VK_SPACE            :: 0x20
+WIN32_VK_F10              :: 0x79
+WIN32_VK_RETURN           :: 0x0D
+WIN32_VK_ESCAPE           :: 0x1B
+WIN32_VK_LEFT             :: 0x25
+WIN32_VK_RIGHT            :: 0x27
+
+NATIVE_MENU_HOST_NODE_BASE :: alicorn.Node_ID(0xFFFF_FFFF_FFFF_F000)
+NATIVE_MENU_HOST_SOLID_NODE :: alicorn.Node_ID(0xFFFF_FFFF_FFFF_E000)
 
 Win32_Menu_Label :: struct {
 	text:   []u16,
 	length: int,
 	bounds: win.RECT,
 	popup:  win.HMENU,
+	host_node: alicorn.Node_ID,
 }
 
 Win32_Menu_Item_Binding :: struct {
@@ -55,11 +66,19 @@ Win32_Menu_State :: struct {
 	labels:     []Win32_Menu_Label,
 	commands:   [dynamic]Application_Command_ID,
 	bindings:   [dynamic]Win32_Menu_Item_Binding,
+	title:      Win32_Menu_Label,
+	title_text: string,
 	active:     bool,
 	hovered:    int,
+	active_menu: int,
+	menu_mode: bool,
+	chrome_height: f32,
 	dpi:        u32,
 	installed:  bool,
 	menu_attached: bool,
+	frame_extended: bool,
+	frame_enabled: bool,
+	text_renderer: ^Native_Text_Renderer,
 }
 
 win32_menu_state :: proc(data: win.DWORD_PTR) -> ^Win32_Menu_State {
@@ -169,10 +188,21 @@ win32_menu_label_at_window_point :: proc(state: ^Win32_Menu_State, x, y: i32) ->
 	return -1
 }
 
+// Win32 sends screen coordinates even for nonclient hit testing. Convert using
+// the client origin so this also works for maximized windows and monitors whose
+// desktop coordinates are negative.
+win32_screen_point_to_window_logical :: proc(screen_x, screen_y, client_origin_x, client_origin_y: i32, dpi: u32) -> (f32, f32) {
+	effective_dpi := dpi if dpi != 0 else 96
+	logical_per_pixel := 96.0/f32(effective_dpi)
+	return f32(screen_x-client_origin_x)*logical_per_pixel, f32(screen_y-client_origin_y)*logical_per_pixel
+}
+
 win32_menu_screen_point_to_window :: proc(state: ^Win32_Menu_State, x, y: i32) -> (i32, i32, bool) {
-	window_rect: win.RECT
-	if !win.GetWindowRect(state.hwnd, &window_rect) { return 0, 0, false }
-	return x-window_rect.left, y-window_rect.top, true
+	client_origin := win.POINT{}
+	if !win.ClientToScreen(state.hwnd, &client_origin) { return 0, 0, false }
+	dpi := win.GetDpiForWindow(state.hwnd)
+	logical_x, logical_y := win32_screen_point_to_window_logical(x, y, i32(client_origin.x), i32(client_origin.y), dpi)
+	return i32(logical_x), i32(logical_y), true
 }
 
 win32_menu_client_point_to_window :: proc(state: ^Win32_Menu_State, point: ^win.POINT) -> bool {
@@ -184,71 +214,232 @@ win32_menu_client_point_to_window :: proc(state: ^Win32_Menu_State, point: ^win.
 	return true
 }
 
-win32_menu_draw_caption_labels :: proc(state: ^Win32_Menu_State) {
-	if state == nil || state.menu == nil || state.menu.application == nil || state.menu.application.window_decorations != .Integrated_Title_Bar { return }
-	hdc := win.GetWindowDC(state.hwnd)
-	if hdc == nil { return }
-	defer win.ReleaseDC(state.hwnd, hdc)
-	old_font := win.SelectObject(hdc, win.GetStockObject(win.DEFAULT_GUI_FONT))
-	defer win.SelectObject(hdc, old_font)
-	_ = win.SetBkMode(hdc, .TRANSPARENT)
-
-	state.dpi = win.GetDpiForWindow(state.hwnd)
-	if state.dpi == 0 { state.dpi = 96 }
-	caption_h := win.GetSystemMetricsForDpi(win.SM_CYCAPTION, state.dpi)
-	frame_y := win.GetSystemMetricsForDpi(win.SM_CYSIZEFRAME, state.dpi)
-	frame_x := win.GetSystemMetricsForDpi(win.SM_CXSIZEFRAME, state.dpi)
-	button_w := win.GetSystemMetricsForDpi(win.SM_CXSIZE, state.dpi)
-	caption_buttons_reserve := button_w*3 + frame_x + 6
-	window_rect: win.RECT
-	if !win.GetWindowRect(state.hwnd, &window_rect) { return }
-	usable_right := i32(window_rect.right-window_rect.left) - caption_buttons_reserve
-
-	text_metrics: win.TEXTMETRICW
-	_ = win.GetTextMetricsW(hdc, &text_metrics)
-	text_height := i32(text_metrics.tmHeight)
-	left := frame_x + win.GetSystemMetricsForDpi(win.SM_CXSIZE, state.dpi) + (8*win.INT(state.dpi))/96
-	// Keep the native window title visible and place the menu labels after it.
-	title: [256]u16
-	title_len := win.GetWindowTextW(state.hwnd, win.LPWSTR(&title[0]), c.int(len(title)))
-	if title_len > 0 {
-		title_size: win.SIZE
-		if win.GetTextExtentPoint32W(hdc, win.LPCWSTR(&title[0]), title_len, &title_size) {
-			left += i32(title_size.cx) + (8*win.INT(state.dpi))/96
+win32_integrated_frame_hit_test :: proc(
+	x, y, width, height: i32,
+	chrome_height, resize_x, resize_y: i32,
+	maximized: bool,
+	labels: []win.RECT,
+) -> win.LRESULT {
+	if !maximized && resize_x > 0 && resize_y > 0 {
+		left := x < resize_x
+		right := x >= width-resize_x
+		top := y < resize_y
+		bottom := y >= height-resize_y
+		if top && left { return win.LRESULT(win.HTTOPLEFT) }
+		if top && right { return win.LRESULT(win.HTTOPRIGHT) }
+		if bottom && left { return win.LRESULT(win.HTBOTTOMLEFT) }
+		if bottom && right { return win.LRESULT(win.HTBOTTOMRIGHT) }
+		if left { return win.LRESULT(win.HTLEFT) }
+		if right { return win.LRESULT(win.HTRIGHT) }
+		if top { return win.LRESULT(win.HTTOP) }
+		if bottom { return win.LRESULT(win.HTBOTTOM) }
+	}
+	for label in labels {
+		if x >= i32(label.left) && x < i32(label.right) && y >= i32(label.top) && y < i32(label.bottom) {
+			return win.LRESULT(win.HTCLIENT)
 		}
 	}
-	base_top := frame_y + (caption_h-text_height)/2
+	if y >= 0 && y < chrome_height { return win.LRESULT(win.HTCAPTION) }
+	return win.LRESULT(win.HTCLIENT)
+}
+
+win32_menu_frame_hit_test :: proc(state: ^Win32_Menu_State, screen_x, screen_y: i32) -> win.LRESULT {
+	if state == nil || !state.frame_enabled { return win.LRESULT(win.HTCLIENT) }
+	client_rect: win.RECT
+	if !win.GetClientRect(state.hwnd, &client_rect) { return win.LRESULT(win.HTCLIENT) }
+	client_origin := win.POINT{}
+	if !win.ClientToScreen(state.hwnd, &client_origin) { return win.LRESULT(win.HTCLIENT) }
+	dpi := win.GetDpiForWindow(state.hwnd)
+	if dpi == 0 { dpi = 96 }
+	to_logical := 96.0/f32(dpi)
+	logical_x, logical_y := win32_screen_point_to_window_logical(screen_x, screen_y, i32(client_origin.x), i32(client_origin.y), dpi)
+	x, y := i32(logical_x), i32(logical_y)
+	width := i32(f32(client_rect.right-client_rect.left)*to_logical)
+	height := i32(f32(client_rect.bottom-client_rect.top)*to_logical)
+	resize_x := i32(f32(win.GetSystemMetricsForDpi(win.SM_CXSIZEFRAME, dpi)+win.GetSystemMetricsForDpi(win.SM_CXPADDEDBORDER, dpi))*to_logical)
+	resize_y := i32(f32(win.GetSystemMetricsForDpi(win.SM_CYSIZEFRAME, dpi)+win.GetSystemMetricsForDpi(win.SM_CXPADDEDBORDER, dpi))*to_logical)
+	labels := make([]win.RECT, len(state.labels), allocator=context.temp_allocator)
+	for label, i in state.labels { labels[i] = label.bounds }
+	defer delete(labels, context.temp_allocator)
+	return win32_integrated_frame_hit_test(x, y, width, height, i32(state.chrome_height), resize_x, resize_y,
+		win.IsZoomed(state.hwnd) != false, labels)
+}
+
+win32_menu_layout_labels :: proc(state: ^Win32_Menu_State) {
+	if state == nil || state.menu == nil || state.menu.application == nil || !state.frame_enabled { return }
+	state.dpi = win.GetDpiForWindow(state.hwnd)
+	if state.dpi == 0 { state.dpi = 96 }
+	scale := 96.0/f32(state.dpi)
+	client: win.RECT
+	if !win.GetClientRect(state.hwnd, &client) { return }
+	client_width := f32(client.right-client.left)*scale
+	caption_h := f32(win.GetSystemMetricsForDpi(win.SM_CYCAPTION, state.dpi))*scale
+	frame_y := f32(win.GetSystemMetricsForDpi(win.SM_CYSIZEFRAME, state.dpi))*scale
+	state.chrome_height = max(caption_h+frame_y, 28)
+	state.menu.content_inset_top = state.chrome_height
+	frame_x := f32(win.GetSystemMetricsForDpi(win.SM_CXSIZEFRAME, state.dpi))*scale
+	button_w := f32(win.GetSystemMetricsForDpi(win.SM_CXSIZE, state.dpi))*scale
+	usable_right := client_width-(button_w*3+frame_x+8)
+	left := frame_x+8
+	if title_run := native_text_host_run(state.text_renderer, state.title.host_node); title_run != nil {
+		title_width := title_run.width+16
+		state.title.bounds = win.RECT{left=win.LONG(left), top=0, right=win.LONG(min(left+title_width, usable_right)), bottom=win.LONG(state.chrome_height)}
+		left += title_width
+	} else {
+		state.title.bounds = win.RECT{}
+	}
+	left += 8
 	for i in 0..<len(state.labels) {
 		label := &state.labels[i]
 		label.bounds = win.RECT{}
 		if left >= usable_right { continue }
-		label_size: win.SIZE
-		if !win.GetTextExtentPoint32W(hdc, win.LPCWSTR(&label.text[0]), c.int(label.length), &label_size) { continue }
-		padding := (12*win.INT(state.dpi))/96
-		width := i32(label_size.cx) + padding*2
-		label.bounds = win.RECT{
-			left=win.LONG(left), top=win.LONG(base_top-((4*win.INT(state.dpi))/96)),
-			right=win.LONG(min(left+width, usable_right)), bottom=win.LONG(base_top+text_height+((4*win.INT(state.dpi))/96)),
-		}
-		if state.hovered == i {
-			_ = win.FillRect(hdc, &label.bounds, win.GetSysColorBrush(win.COLOR_HIGHLIGHT))
-			_ = win.SetTextColor(hdc, win.GetSysColor(win.COLOR_HIGHLIGHTTEXT))
-		} else if state.active {
-			_ = win.SetTextColor(hdc, win.GetSysColor(win.COLOR_CAPTIONTEXT))
-		} else {
-			_ = win.SetTextColor(hdc, win.GetSysColor(win.COLOR_INACTIVECAPTIONTEXT))
-		}
-		text_x := i32(label.bounds.left) + padding
-		text_y := base_top
-		_ = win.TextOutW(hdc, win.INT(text_x), win.INT(text_y), win.LPCWSTR(&label.text[0]), c.int(label.length))
+		run := native_text_host_run(state.text_renderer, label.host_node)
+		if run == nil { continue }
+		width := run.width+24
+		label.bounds = win.RECT{left=win.LONG(left), top=0, right=win.LONG(min(left+width, usable_right)), bottom=win.LONG(state.chrome_height)}
 		left += width
 	}
+}
+
+win32_menu_extend_frame :: proc(state: ^Win32_Menu_State) -> bool {
+	if state == nil || state.hwnd == nil || !state.frame_enabled { return false }
+	// A negative top margin extends DWM's frame across the complete client area.
+	margins := win.MARGINS{0, 0, -1, 0}
+	if DwmExtendFrameIntoClientArea(state.hwnd, &margins) < 0 { return false }
+	state.frame_extended = true
+	return true
+}
+
+win32_menu_frame_changed :: proc(state: ^Win32_Menu_State) -> bool {
+	if state == nil || state.hwnd == nil { return false }
+	flags := win.UINT(win.SWP_NOMOVE | win.SWP_NOSIZE | win.SWP_NOZORDER | win.SWP_NOACTIVATE | win.SWP_FRAMECHANGED)
+	if !win.SetWindowPos(state.hwnd, nil, 0, 0, 0, 0, flags) { return false }
+	return true
+}
+
+win32_menu_reapply_frame :: proc(state: ^Win32_Menu_State) -> bool {
+	if state == nil || !state.frame_enabled { return true }
+	if !win32_menu_extend_frame(state) { return false }
+	if !win32_menu_frame_changed(state) { return false }
+	win32_menu_layout_labels(state)
+	if state.menu != nil { state.menu.chrome_redraw_pending = true }
+	return true
+}
+
+win32_menu_disable_frame :: proc(state: ^Win32_Menu_State) {
+	if state == nil { return }
+	state.frame_enabled = false
+	state.frame_extended = false
+	state.chrome_height = 0
+	if state.menu != nil {
+		state.menu.content_inset_top = 0
+		state.menu.chrome_redraw_pending = true
+	}
+	// Stop extending DWM and force Windows to recalculate the standard frame
+	// after the subclass stops handling WM_NCCALCSIZE.
+	if state.hwnd != nil {
+		margins := win.MARGINS{}
+		_ = DwmExtendFrameIntoClientArea(state.hwnd, &margins)
+		_ = win32_menu_frame_changed(state)
+	}
+}
+
+native_menu_prepare_gpu :: proc(menu: ^Native_Menu_Runtime, rt: ^alicorn.Runtime, renderer: ^Native_Text_Renderer) -> bool {
+	if menu == nil { return false }
+	// A system-decorated application may intentionally have no menus. The
+	// platform preparation already accepted that case, so GPU chrome setup is a
+	// no-op rather than a startup failure.
+	if menu.platform_data == nil { return menu.application != nil && len(menu.application.menus) == 0 && menu.application.window_decorations == .System }
+	if rt == nil || renderer == nil { return false }
+	state := cast(^Win32_Menu_State)menu.platform_data
+	if !state.frame_enabled { return true }
+	state.text_renderer = renderer
+	title := menu.application.title
+	if title == "" { title = "Alicorn application" }
+	state.title_text = title
+	title_run, title_ok := alicorn.text_run_build(&rt.text_engine, title, 14, allocator=rt.persistent_allocator, scratch_allocator=rt.scratch_allocator)
+	if !title_ok { return false }
+	state.title.host_node = NATIVE_MENU_HOST_NODE_BASE
+	if !native_text_register_host_run(renderer, state.title.host_node, title_run) {
+		alicorn.text_run_destroy(&title_run)
+		return false
+	}
+	for &label, i in state.labels {
+		run, ok := alicorn.text_run_build(&rt.text_engine, menu.application.menus[i].label, 14,
+			allocator=rt.persistent_allocator, scratch_allocator=rt.scratch_allocator)
+		if !ok { return false }
+		label.host_node = NATIVE_MENU_HOST_NODE_BASE+alicorn.Node_ID(i+1)
+		if !native_text_register_host_run(renderer, label.host_node, run) {
+			alicorn.text_run_destroy(&run)
+			return false
+		}
+	}
+	win32_menu_layout_labels(state)
+	menu.chrome_redraw_pending = true
+	return true
+}
+
+win32_color_ref :: proc(value: win.COLORREF) -> alicorn.Color {
+	color := u32(value)
+	return alicorn.Color{f32(color&0xff)/255, f32((color>>8)&0xff)/255, f32((color>>16)&0xff)/255, 1}
+}
+
+win32_menu_chrome_colors :: proc(state: ^Win32_Menu_State) -> (background, foreground: alicorn.Color) {
+	background = win32_color_ref(win.GetSysColor(win.COLOR_ACTIVECAPTION if state.active else win.COLOR_INACTIVECAPTION))
+	foreground = win32_color_ref(win.GetSysColor(win.COLOR_CAPTIONTEXT if state.active else win.COLOR_INACTIVECAPTIONTEXT))
+	return
+}
+
+native_menu_overlay_commands :: proc(menu: ^Native_Menu_Runtime, width, height: f32, allocator: mem.Allocator) -> []alicorn.Display_Command {
+	if menu == nil || menu.application == nil || menu.application.window_decorations != .Integrated_Title_Bar || menu.platform_data == nil { return nil }
+	state := cast(^Win32_Menu_State)menu.platform_data
+	if !state.frame_enabled || state.chrome_height <= 0 { return nil }
+	commands := make([dynamic]alicorn.Display_Command, 0, len(state.labels)+len(state.labels)+3, allocator=allocator)
+	background, foreground := win32_menu_chrome_colors(state)
+	full := alicorn.Rect{0, 0, width, min(state.chrome_height, height)}
+	append(&commands, alicorn.Display_Command{NATIVE_MENU_HOST_SOLID_NODE, .Root, full, full, "", background, nil})
+	active_index := state.hovered
+	if active_index < 0 && state.menu_mode { active_index = state.active_menu }
+	if active_index >= 0 && active_index < len(state.labels) {
+		bounds := state.labels[active_index].bounds
+		if bounds.right > bounds.left {
+			append(&commands, alicorn.Display_Command{
+				NATIVE_MENU_HOST_SOLID_NODE+1, .Button,
+				alicorn.Rect{f32(bounds.left), 2, f32(bounds.right-bounds.left), max(state.chrome_height-4, 0)},
+				full, "", win32_color_ref(win.GetSysColor(win.COLOR_HIGHLIGHT)), nil,
+			})
+			foreground = win32_color_ref(win.GetSysColor(win.COLOR_HIGHLIGHTTEXT))
+		}
+	}
+	if title_run := native_text_host_run(state.text_renderer, state.title.host_node); title_run != nil {
+		y := max((state.chrome_height-title_run.height)/2, 0)
+		append(&commands, alicorn.Display_Command{
+			state.title.host_node, .Text, alicorn.Rect{f32(state.title.bounds.left)+8, y, title_run.width, title_run.height},
+			full, state.title_text, foreground, nil,
+		})
+	}
+	for label, i in state.labels {
+		run := native_text_host_run(state.text_renderer, label.host_node)
+		if run == nil || label.bounds.right <= label.bounds.left { continue }
+		y := max((state.chrome_height-run.height)/2, 0)
+		label_color := foreground
+		if i == active_index { label_color = win32_color_ref(win.GetSysColor(win.COLOR_HIGHLIGHTTEXT)) }
+		append(&commands, alicorn.Display_Command{
+			label.host_node, .Text, alicorn.Rect{f32(label.bounds.left)+12, y, run.width, run.height},
+			full, menu.application.menus[i].label, label_color, nil,
+		})
+	}
+	return commands[:]
 }
 
 win32_menu_dispatch_native_id :: proc(state: ^Win32_Menu_State, native_id: u32) {
 	if state == nil || state.menu == nil || native_id == 0 || int(native_id) >= len(state.commands) || native_inspector_visible(state.menu.inspector) { return }
 	state.menu.pending_command = state.commands[native_id]
 	state.menu.has_pending = true
+	state.menu_mode = false
+	state.active_menu = -1
+	state.hovered = -1
+	state.menu.chrome_redraw_pending = true
 }
 
 win32_menu_open_popup :: proc(state: ^Win32_Menu_State, index: int) {
@@ -256,12 +447,120 @@ win32_menu_open_popup :: proc(state: ^Win32_Menu_State, index: int) {
 	label := state.labels[index]
 	if label.popup == nil { return }
 	win32_menu_refresh_state(state)
-	window_rect: win.RECT
-	if !win.GetWindowRect(state.hwnd, &window_rect) { return }
+	client_origin := win.POINT{}
+	if !win.ClientToScreen(state.hwnd, &client_origin) { return }
+	dpi := win.GetDpiForWindow(state.hwnd)
+	if dpi == 0 { dpi = 96 }
+	to_pixels := f32(dpi)/96.0
 	flags := win.UINT(win.TPM_RETURNCMD | win.TPM_NONOTIFY | win.TPM_LEFTALIGN | win.TPM_TOPALIGN)
-	command := win.TrackPopupMenu(label.popup, flags, win.INT(window_rect.left+label.bounds.left), win.INT(window_rect.top+label.bounds.bottom), 0, state.hwnd, nil)
+	command := win.TrackPopupMenu(label.popup, flags,
+		win.INT(i32(client_origin.x)+i32(f32(label.bounds.left)*to_pixels)),
+		win.INT(i32(client_origin.y)+i32(f32(label.bounds.bottom)*to_pixels)),
+		0, state.hwnd, nil)
 	win32_menu_dispatch_native_id(state, u32(command))
+	if command == 0 && state.menu != nil { state.menu.chrome_redraw_pending = true }
 	_ = win.PostMessageW(state.hwnd, win.WM_NULL, 0, 0)
+}
+
+native_menu_handle_keydown :: proc(menu: ^Native_Menu_Runtime, keycode: int, modifiers: sdl3.Keymod) -> bool {
+	if menu == nil || menu.application == nil || menu.application.window_decorations != .Integrated_Title_Bar || menu.platform_data == nil { return false }
+	state := cast(^Win32_Menu_State)menu.platform_data
+	alt := native_text_modifier(modifiers, sdl3.KMOD_ALT)
+	control := native_text_modifier(modifiers, sdl3.KMOD_CTRL)
+	super := native_text_modifier(modifiers, sdl3.KMOD_GUI)
+	if alt && keycode == int(sdl3.K_SPACE) { return false }
+	if (keycode == int(sdl3.K_LALT) || keycode == int(sdl3.K_RALT)) && !control && !super {
+		if len(state.labels) == 0 { return false }
+		state.menu_mode = true
+		state.active_menu = 0
+		state.hovered = -1
+		menu.chrome_redraw_pending = true
+		return true
+	}
+	if alt && !control && !super {
+		upper := keycode
+		if upper >= 'a' && upper <= 'z' { upper -= ('a' - 'A') }
+		for description, i in menu.application.menus {
+			if len(description.label) > 0 {
+				first := int(description.label[0])
+				if first >= 'a' && first <= 'z' { first -= ('a' - 'A') }
+				if first == upper {
+					state.menu_mode = true
+					state.active_menu = i
+					state.hovered = -1
+					win32_menu_open_popup(state, i)
+					return true
+				}
+			}
+		}
+	}
+	if keycode == int(sdl3.K_F10) && !native_text_modifier(modifiers, sdl3.KMOD_SHIFT) &&
+		!control && !alt {
+		if len(state.labels) == 0 { return false }
+		state.menu_mode = true
+		state.active_menu = 0
+		state.hovered = -1
+		menu.chrome_redraw_pending = true
+		return true
+	}
+	if !state.menu_mode { return false }
+	if keycode == int(sdl3.K_ESCAPE) {
+		state.menu_mode = false
+		state.active_menu = -1
+		state.hovered = -1
+		menu.chrome_redraw_pending = true
+		return true
+	}
+	if keycode == int(sdl3.K_LEFT) || keycode == int(sdl3.K_RIGHT) {
+		count := len(state.labels)
+		if count == 0 { return true }
+		delta := 1
+		if keycode == int(sdl3.K_LEFT) { delta = count-1 }
+		state.active_menu = (state.active_menu+delta)%count
+		menu.chrome_redraw_pending = true
+		return true
+	}
+	if !alt && !control && !super {
+		upper := keycode
+		if upper >= 'a' && upper <= 'z' { upper -= ('a' - 'A') }
+		for description, i in menu.application.menus {
+			if len(description.label) > 0 {
+				first := int(description.label[0])
+				if first >= 'a' && first <= 'z' { first -= ('a' - 'A') }
+				if first == upper {
+					state.active_menu = i
+					state.hovered = -1
+					win32_menu_open_popup(state, i)
+					return true
+				}
+			}
+		}
+	}
+	if keycode == int(sdl3.K_RETURN) || keycode == int(sdl3.K_KP_ENTER) || keycode == int(sdl3.K_SPACE) {
+		win32_menu_open_popup(state, state.active_menu)
+		return true
+	}
+	return false
+}
+
+win32_menu_cancel_app_pointer :: proc(state: ^Win32_Menu_State) {
+	if state == nil || state.menu == nil || state.menu.runtime == nil { return }
+	menu := state.menu
+	rt := menu.runtime
+	captured := rt.captured_node
+	if captured == 0 && !alicorn.drag_is_active(rt) { return }
+	cancel_cause := alicorn.pointer_cause_begin(rt, .Cancel)
+	_ = alicorn.cancel_pointer_capture(rt)
+	if alicorn.drag_is_active(rt) {
+		_ = alicorn.drag_cancel(rt)
+		_ = native_dispatch_drag_event(menu.application, rt)
+	}
+	if menu.application != nil && menu.application.on_pointer != nil {
+		cancelled := alicorn.Pointer_Event{kind=.Cancel}
+		if key, ok := alicorn.node_identity_key(rt, captured); ok { cancelled.target_key = key }
+		menu.application.on_pointer(menu.application.state, rt, cancelled, captured)
+	}
+	alicorn.cause_end(rt, cancel_cause)
 }
 
 win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam: win.WPARAM, lparam: win.LPARAM, subclass_id: win.UINT_PTR, ref_data: win.DWORD_PTR) -> win.LRESULT {
@@ -269,18 +568,41 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 	state := win32_menu_state(ref_data)
 	if state == nil { return win.DefSubclassProc(hwnd, message, wparam, lparam) }
 	state.hwnd = hwnd
+	integrated := state.frame_enabled
 
-	if message == win.WM_NCHITTEST || message == win.WM_NCMOUSEMOVE || message == win.WM_NCLBUTTONDOWN || message == win.WM_NCLBUTTONUP || message == win.WM_NCLBUTTONDBLCLK {
+	if integrated && message == win.WM_NCCALCSIZE {
+		// Keep the outer window and client coordinates aligned. On maximize,
+		// preserve the monitor work area so the client never covers the taskbar.
+		if win.IsZoomed(hwnd) != false {
+			monitor := win.MonitorFromWindow(hwnd, .MONITOR_DEFAULTTONEAREST)
+			monitor_info := win.MONITORINFO{cbSize=win.DWORD(size_of(win.MONITORINFO))}
+			if monitor != nil && win.GetMonitorInfoW(monitor, &monitor_info) {
+				if wparam != 0 {
+					params := cast(^win.NCCALCSIZE_PARAMS)uintptr(lparam)
+					if params != nil { params.rgrc[0] = monitor_info.rcWork }
+				} else {
+					rect := cast(^win.RECT)uintptr(lparam)
+					if rect != nil { rect^ = monitor_info.rcWork }
+				}
+			}
+		}
+		return 0
+	}
+	if integrated && (message == win.WM_NCMOUSEMOVE || message == win.WM_NCLBUTTONDOWN ||
+		message == win.WM_NCRBUTTONDOWN || message == win.WM_NCLBUTTONUP || message == win.WM_NCRBUTTONUP) {
+		win32_menu_cancel_app_pointer(state)
+	}
+
+	if message == win.WM_NCHITTEST || message == win.WM_NCMOUSEMOVE || message == win.WM_NCMOUSELEAVE ||
+		message == win.WM_NCLBUTTONDOWN || message == win.WM_NCLBUTTONUP || message == win.WM_NCLBUTTONDBLCLK ||
+		message == win.WM_NCRBUTTONDOWN || message == win.WM_NCRBUTTONUP || message == win.WM_NCRBUTTONDBLCLK {
 		dwm_result: win.LRESULT
 		if DwmDefWindowProc(hwnd, message, wparam, lparam, &dwm_result) { return dwm_result }
 	}
 
-	if message == win.WM_NCHITTEST && state.menu != nil && state.menu.application != nil && state.menu.application.window_decorations == .Integrated_Title_Bar {
+	if integrated && message == win.WM_NCHITTEST {
 		point := win32_menu_point_from_lparam(lparam)
-		if index_x, index_y, ok := win32_menu_screen_point_to_window(state, i32(point.x), i32(point.y)); ok {
-			if win32_menu_label_at_window_point(state, index_x, index_y) >= 0 { return win.LRESULT(win.HTCLIENT) }
-		}
-		return win.DefSubclassProc(hwnd, message, wparam, lparam)
+		return win32_menu_frame_hit_test(state, i32(point.x), i32(point.y))
 	}
 
 	if message == win.WM_COMMAND {
@@ -292,22 +614,31 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 	}
 	if message == win.WM_INITMENUPOPUP { win32_menu_refresh_state(state) }
 
-	if state.menu != nil && state.menu.application != nil && state.menu.application.window_decorations == .Integrated_Title_Bar {
+	if integrated {
 		if message == win.WM_LBUTTONDOWN {
 			point := win32_menu_point_from_lparam(lparam)
 			if win32_menu_client_point_to_window(state, &point) {
 				if index := win32_menu_label_at_window_point(state, i32(point.x), i32(point.y)); index >= 0 {
+					win32_menu_cancel_app_pointer(state)
+					state.menu_mode = true
+					state.active_menu = index
 					win32_menu_open_popup(state, index)
 					return 0
 				}
+			}
+			if state.menu_mode {
+				state.menu_mode = false
+				state.active_menu = -1
+				state.menu.chrome_redraw_pending = true
 			}
 		} else if message == win.WM_MOUSEMOVE {
 			point := win32_menu_point_from_lparam(lparam)
 			if win32_menu_client_point_to_window(state, &point) {
 				index := win32_menu_label_at_window_point(state, i32(point.x), i32(point.y))
+				if index >= 0 { win32_menu_cancel_app_pointer(state) }
 				if index != state.hovered {
 					state.hovered = index
-					_ = win.RedrawWindow(hwnd, nil, nil, win.RedrawWindowFlags(0x0401))
+					state.menu.chrome_redraw_pending = true
 				}
 				track := win.TRACKMOUSEEVENT{cbSize=win.DWORD(size_of(win.TRACKMOUSEEVENT)), dwFlags=win.TME_LEAVE, hwndTrack=hwnd}
 				_ = win.TrackMouseEvent(&track)
@@ -315,17 +646,29 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 		} else if message == win.WM_MOUSELEAVE {
 			if state.hovered >= 0 {
 				state.hovered = -1
-				_ = win.RedrawWindow(hwnd, nil, nil, win.RedrawWindowFlags(0x0401))
+				state.menu.chrome_redraw_pending = true
 			}
 		} else if message == win.WM_SYSKEYDOWN {
 			key := int(uintptr(wparam) & 0xff)
 			alt_context := (uintptr(lparam) & (uintptr(1) << 29)) != 0
-			if key != WIN32_VK_SPACE && alt_context {
+			if key == win.VK_MENU {
+				if len(state.labels) > 0 {
+					state.menu_mode = true
+					state.active_menu = 0
+					state.hovered = -1
+					state.menu.chrome_redraw_pending = true
+					return 0
+				}
+			} else if key != WIN32_VK_SPACE && alt_context {
 				for menu, index in state.menu.application.menus {
 					if len(menu.label) > 0 {
 						first := int(menu.label[0])
 						if first >= 'a' && first <= 'z' { first -= ('a' - 'A') }
 						if first == key {
+							state.menu_mode = true
+							state.active_menu = index
+							state.hovered = -1
+							state.menu.chrome_redraw_pending = true
 							win32_menu_open_popup(state, index)
 							return 0
 						}
@@ -336,21 +679,33 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 	}
 
 	result := win.DefSubclassProc(hwnd, message, wparam, lparam)
-	if message == win.WM_NCPAINT || message == win.WM_NCACTIVATE || message == win.WM_THEMECHANGED || message == win.WM_SETTINGCHANGE {
-		if message == win.WM_NCACTIVATE { state.active = wparam != 0 }
-		win32_menu_draw_caption_labels(state)
+	if message == win.WM_DWMCOMPOSITIONCHANGED && integrated {
+		if !win32_menu_reapply_frame(state) { win32_menu_disable_frame(state) }
+	} else if message == win.WM_NCACTIVATE {
+		state.active = wparam != 0
+		if state.menu != nil { state.menu.chrome_redraw_pending = true }
 	} else if message == win.WM_ACTIVATE {
 		state.active = (u16(uintptr(wparam)) & 0xffff) != 0
-		win32_menu_draw_caption_labels(state)
-	} else if message == win.WM_DPICHANGED {
+		if state.menu != nil { state.menu.chrome_redraw_pending = true }
+	} else if message == win.WM_DPICHANGED && integrated {
+		// SDL owns the HWND and processes the suggested RECT through the chained
+		// procedure above. Observe the resulting DPI/size; do not SetWindowPos here.
 		state.dpi = win.GetDpiForWindow(hwnd)
-		win32_menu_draw_caption_labels(state)
-		_ = win.RedrawWindow(hwnd, nil, nil, win.RedrawWindowFlags(0x0401))
-	} else if message == win.WM_WINDOWPOSCHANGED {
+		if !win32_menu_extend_frame(state) { win32_menu_disable_frame(state) }
+		else { win32_menu_layout_labels(state) }
+		if state.menu != nil { state.menu.chrome_redraw_pending = true }
+	} else if (message == win.WM_WINDOWPOSCHANGED || message == win.WM_SIZE) && integrated {
 		position := cast(^win.WINDOWPOS)uintptr(lparam)
-		if position != nil && (position.flags & win.SWP_NOSIZE) == 0 {
-			win32_menu_draw_caption_labels(state)
-		}
+		if message == win.WM_SIZE || (position != nil && (position.flags & win.SWP_NOSIZE) == 0) { win32_menu_layout_labels(state) }
+		if state.menu != nil { state.menu.chrome_redraw_pending = true }
+	} else if (message == win.WM_THEMECHANGED || message == win.WM_SETTINGCHANGE) && integrated {
+		win32_menu_layout_labels(state)
+		if state.menu != nil { state.menu.chrome_redraw_pending = true }
+	} else if message == win.WM_KILLFOCUS && integrated {
+		state.menu_mode = false
+		state.active_menu = -1
+		state.hovered = -1
+		if state.menu != nil { state.menu.chrome_redraw_pending = true }
 	}
 	return result
 }
@@ -370,6 +725,8 @@ native_menu_prepare :: proc(menu: ^Native_Menu_Runtime) -> bool {
 	state.allocator = context.allocator
 	state.hovered = -1
 	state.active = true
+	state.active_menu = -1
+	state.frame_enabled = menu.application.window_decorations == .Integrated_Title_Bar
 	menu.platform_data = rawptr(state)
 	state.commands = make([dynamic]Application_Command_ID, 1, allocator=state.allocator)
 	if state.commands == nil { return false }
@@ -412,9 +769,9 @@ native_menu_prepare :: proc(menu: ^Native_Menu_Runtime) -> bool {
 		if !win.SetMenu(hwnd, state.root) { return false }
 		state.menu_attached = true
 		_ = DrawMenuBar(hwnd)
+	} else if state.frame_enabled {
+		if !win32_menu_reapply_frame(state) { return false }
 	}
-	win32_menu_draw_caption_labels(state)
-	_ = win.RedrawWindow(hwnd, nil, nil, win.RedrawWindowFlags(0x0401))
 	return true
 }
 
@@ -427,11 +784,14 @@ native_menu_destroy :: proc(menu: ^Native_Menu_Runtime) {
 		_ = win.DestroyMenu(state.root)
 	}
 	for label in state.labels { if label.text != nil { delete(label.text, state.allocator) } }
+	if state.title.text != nil { delete(state.title.text, state.allocator) }
 	if state.labels != nil { delete(state.labels, state.allocator) }
 	if state.commands != nil { delete(state.commands) }
 	if state.bindings != nil { delete(state.bindings) }
 	free(state, allocator=state.allocator)
 	menu.platform_data = nil
+	menu.content_inset_top = 0
+	menu.chrome_redraw_pending = false
 }
 
 native_menu_take_pending :: proc(menu: ^Native_Menu_Runtime) -> (Application_Command_ID, bool) {

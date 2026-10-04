@@ -10,13 +10,44 @@ import "vendor:sdl3"
 Window_Metrics :: struct {
 	logical_width:  int,
 	logical_height: int,
+	// window_logical_height is the full SDL client area. logical_height is the
+	// application viewport after host-owned chrome has been reserved.
+	window_logical_height: int,
 	pixel_width:    int,
 	pixel_height:   int,
 	pixel_density:  f32,
 	display_scale:  f32,
 }
 
-read_window_metrics :: proc(window: ^sdl3.Window, metrics: ^Window_Metrics) -> bool {
+Native_Content_Transform :: struct {
+	window_height: f32,
+	app_height:    f32,
+	inset_top:     f32,
+}
+
+native_content_transform_make :: proc(window_height, inset_top: f32) -> Native_Content_Transform {
+	clamped_height := max(window_height, 0)
+	clamped_inset := clamp(inset_top, 0, clamped_height)
+	app_height := max(clamped_height-clamped_inset, min(clamped_height, 1))
+	return Native_Content_Transform{
+		window_height=clamped_height,
+		app_height=app_height,
+		inset_top=clamped_inset,
+	}
+}
+
+native_application_point_from_window :: proc(transform: Native_Content_Transform, x, y: f32) -> (f32, f32, bool) {
+	if y < transform.inset_top || y >= transform.window_height { return x, 0, false }
+	return x, y-transform.inset_top, true
+}
+
+native_application_rect_to_window :: proc(transform: Native_Content_Transform, rect: alicorn.Rect) -> alicorn.Rect {
+	result := rect
+	result.y += transform.inset_top
+	return result
+}
+
+read_window_metrics :: proc(window: ^sdl3.Window, metrics: ^Window_Metrics, content_inset_top: f32 = 0) -> bool {
 	logical_width, logical_height: c.int
 	pixel_width, pixel_height: c.int
 	if !sdl3.GetWindowSize(window, &logical_width, &logical_height) {
@@ -25,9 +56,11 @@ read_window_metrics :: proc(window: ^sdl3.Window, metrics: ^Window_Metrics) -> b
 	if !sdl3.GetWindowSizeInPixels(window, &pixel_width, &pixel_height) {
 		return false
 	}
+	transform := native_content_transform_make(f32(logical_height), content_inset_top)
 	metrics^ = Window_Metrics{
 		logical_width = int(logical_width),
-		logical_height = int(logical_height),
+		logical_height = int(transform.app_height),
+		window_logical_height = int(logical_height),
 		pixel_width = int(pixel_width),
 		pixel_height = int(pixel_height),
 		pixel_density = sdl3.GetWindowPixelDensity(window),
@@ -64,7 +97,9 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	native_host_scratch_reset(state.host_scratch)
 
 	current_metrics: Window_Metrics
-	if !read_window_metrics(state.window, &current_metrics) { return }
+	inset_top := f32(0)
+	if state.native_menu != nil { inset_top = state.native_menu.content_inset_top }
+	if !read_window_metrics(state.window, &current_metrics, inset_top) { return }
 	cause_scope := alicorn.cause_begin(state.rt, .Host_Event, "SDL live resize expose")
 	defer alicorn.cause_end(state.rt, cause_scope)
 	cause := cause_scope.cause
@@ -90,6 +125,7 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	native_inspector_update(state.inspector, state.rt,
 		alicorn.Rect{0, 0, f32(current_metrics.logical_width), f32(current_metrics.logical_height)}, &inspector_summary)
 	if state.text_input_state != nil {
+		state.text_input_state.content_inset_top = inset_top
 		state.text_input_state.suspended = native_inspector_visible(state.inspector) ||
 			(state.inspector != nil && state.inspector.suppress_text_until_drain)
 		sync_text_input_focus(state.window, state.rt, state.text_input_state, state.application)
@@ -126,7 +162,7 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	state.metrics.pixel_width = int(swap_w)
 	state.metrics.pixel_height = int(swap_h)
 	scale_x := f32(swap_w)/f32(state.metrics.logical_width)
-	scale_y := f32(swap_h)/f32(state.metrics.logical_height)
+	scale_y := f32(swap_h)/f32(state.metrics.window_logical_height)
 	preview_time := u64(sdl3.GetTicksNS())
 	preview := native_devtools_make_sample(
 		state.devtools_cursor, state.rt, state.timing, state.text_events,
@@ -146,6 +182,8 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 		state.text_renderer, state.surface_renderer, state.solid_renderer, state.rt.display[:],
 		scale_x, scale_y,
 		debug_bounds=state.debug_bounds,
+		content_inset_top=inset_top,
+		native_menu=state.native_menu,
 		reserve_solid_vertices=hud_vertex_reserve,
 		scratch_allocator=state.host_scratch.allocator,
 	) {
@@ -281,6 +319,7 @@ Native_Live_Resize_State :: struct {
 	devtools_cursor: ^Native_DevTools_Cursor,
 	devtools_hud: ^Native_DevTools_HUD,
 	inspector: ^Native_Inspector_Overlay,
+	native_menu: ^Native_Menu_Runtime,
 	debug_bounds: bool,
 }
 

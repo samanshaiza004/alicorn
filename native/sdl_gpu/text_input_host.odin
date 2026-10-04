@@ -15,6 +15,7 @@ Native_Text_Input_State :: struct {
 	suspended: bool,
 	last_area: alicorn.Text_Input_Area,
 	last_area_valid: bool,
+	content_inset_top: f32,
 }
 
 native_text_input_owner_is_valid :: proc(rt: ^alicorn.Runtime, id: alicorn.Node_ID) -> bool {
@@ -239,14 +240,20 @@ sync_text_input_focus :: proc(
 		height := int(area.rect.h)
 		if width < 1 { width = 1 }
 		if height < 1 { height = 1 }
+		window_rect := native_application_rect_to_window(
+			native_content_transform_make(f32(rt.viewport.h)+state.content_inset_top, state.content_inset_top),
+			area.rect,
+		)
 		input_area := sdl3.Rect{
-			x=c.int(area.rect.x), y=c.int(area.rect.y), w=c.int(width), h=c.int(height),
+			x=c.int(window_rect.x), y=c.int(window_rect.y), w=c.int(width), h=c.int(height),
 		}
-		if native_text_input_area_update_required(state, area, true) {
+		cache_area := area
+		cache_area.rect = window_rect
+		if native_text_input_area_update_required(state, cache_area, true) {
 			if !sdl3.SetTextInputArea(window, &input_area, c.int(area.cursor_x)) {
 				fail("SDL_SetTextInputArea failed for focused text-input target")
 			}
-			state.last_area = area
+			state.last_area = cache_area
 			state.last_area_valid = true
 		}
 	}
