@@ -1,0 +1,11 @@
+{
+  "name": "Alicorn Hello",
+  "version": "0.1.0",
+  "bundleIdentifier": "org.alicorn.hello",
+  "executableName": "AlicornHello",
+  "odinPackage": "examples/01_hello",
+  "minimumMacOSVersion": "13.0",
+  "icon": null,
+  "resources": [],
+  "privateLibraries": []
+}

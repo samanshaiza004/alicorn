@@ -1,0 +1,52 @@
+name: Native packaging
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-static-sdl:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Odin
+        uses: laytan/setup-odin@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          release: nightly
+      - name: Build, package, audit, and smoke-test 01_hello
+        shell: pwsh
+        run: .\tools\build_native_release.ps1 -Odin odin -SDLLinkage Static -OutputDirectory out\native-package\windows-x86_64
+      - name: Verify the static audit rejects SDL3.dll
+        shell: pwsh
+        run: .\tools\test_package_windows.ps1 -Odin odin
+      - name: Upload verified package
+        uses: actions/upload-artifact@v4
+        with:
+          name: alicorn-hello-windows-x86_64
+          path: out/native-package/windows-x86_64
+
+  macos-static-sdl:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Odin
+        uses: laytan/setup-odin@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          release: nightly
+      - name: Install packaging tools
+        run: brew install cmake pkgconf
+      - name: Build, package, audit, and smoke-test 01_hello
+        shell: bash
+        run: bash tools/build_native_release.sh --odin "$(command -v odin)" --sdl-linkage static --output out/native-package/macos
+      - name: Verify Homebrew/developer paths are rejected
+        run: python3 tools/test_package_macos.py
+      - name: Upload verified package
+        uses: actions/upload-artifact@v4
+        with:
+          name: alicorn-hello-macos
+          path: out/native-package/macos

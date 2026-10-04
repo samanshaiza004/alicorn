@@ -27,6 +27,9 @@ the prerequisites, build the project, and run an editable native example.
 For this release's scope and limitations, see the
 [v0.1.0 release notes](RELEASE_NOTES_v0.1.0.md).
 
+For the reusable native distribution path, see
+[Native application packaging](docs/packaging.md).
+
 Then explore the [application guide](docs/guide.md), [API reference](docs/reference.md),
 [Choosing Alicorn](docs/choosing-alicorn.md), [examples](examples/README.md),
 [performance evidence](docs/performance.md), [architecture](docs/architecture.md),
