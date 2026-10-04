@@ -372,14 +372,76 @@ Text_Overflow :: enum {
 	Ellipsis,
 }
 
-// Style_Environment contains intentionally subtree-wide presentation inputs.
-// The first retained dependency implemented here is text_scale; theme, density,
-// and paint/material inputs will be added when their consumers are implemented.
-Style_Environment :: struct {
-	text_scale: f32,
+Style_Theme_ID :: distinct u64
+
+Style_Color_Role :: enum {
+	Window_Background,
+	Surface,
+	Subtle_Surface,
+	Editor_Background,
+	Text,
+	Muted_Text,
+	Accent,
+	Accent_Hover,
+	Accent_Pressed,
+	Accent_Text,
+	Selection,
+	Focus,
+	Semantic_Focus,
+	Border,
+	Danger,
+	Success,
+	Scrollbar_Track,
+	Scrollbar_Thumb,
+	Count,
 }
 
-DEFAULT_STYLE_ENVIRONMENT :: Style_Environment{text_scale=1}
+STYLE_COLOR_ROLE_COUNT :: int(Style_Color_Role.Count)
+
+// A registered theme is immutable and retained once per Runtime. Nodes carry
+// only the compact ID through Style_Environment, not a copy of this palette.
+Style_Theme :: struct {
+	colors: [STYLE_COLOR_ROLE_COUNT]Color,
+}
+
+DEFAULT_STYLE_THEME :: Style_Theme{colors={
+	Color{0.055, 0.065, 0.09, 1},
+	Color{0.08, 0.095, 0.13, 1},
+	Color{0.08, 0.10, 0.14, 1},
+	Color{0.04, 0.05, 0.07, 1},
+	Color{0.88, 0.91, 0.96, 1},
+	Color{0.57, 0.63, 0.74, 1},
+	Color{0.27, 0.48, 0.70, 1},
+	Color{0.33, 0.57, 0.80, 1},
+	Color{0.36, 0.62, 0.86, 1},
+	Color{0.94, 0.97, 1, 1},
+	Color{0.20, 0.42, 0.78, 0.45},
+	Color{0.76, 0.86, 1, 1},
+	Color{0.12, 0.78, 0.82, 1},
+	Color{0.20, 0.24, 0.31, 1},
+	Color{0.55, 0.18, 0.20, 1},
+	Color{0.17, 0.39, 0.34, 1},
+	Color{0.08, 0.10, 0.14, 1},
+	Color{0.38, 0.48, 0.62, 1},
+}}
+
+DEFAULT_STYLE_THEME_ID :: Style_Theme_ID(1)
+
+// Style_Environment contains intentionally subtree-wide presentation inputs.
+// Zero values in a pushed environment mean "inherit"; this keeps compact
+// scopes such as Style_Environment{text_scale=1.25} composable.
+Style_Environment :: struct {
+	theme: Style_Theme_ID,
+	density: f32,
+	text_scale: f32,
+	accent: Color,
+}
+
+DEFAULT_STYLE_ENVIRONMENT :: Style_Environment{
+	theme=DEFAULT_STYLE_THEME_ID,
+	density=1,
+	text_scale=1,
+}
 
 Style_Environment_Scope :: struct {
 	runtime: ^Runtime,
@@ -924,6 +986,7 @@ Runtime :: struct {
 	identity_key_pair: [dynamic]UI_Key_Pair,
 	viewport:    Rect,
 	style_environment: Style_Environment,
+	style_themes: [dynamic]Style_Theme,
 	style_scope_stack: [dynamic]Style_Environment_Scope,
 	layout_roots: [dynamic]Node_ID,
 	layout_visit_probe: map[Node_ID]u64,

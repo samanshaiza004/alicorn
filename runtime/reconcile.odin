@@ -30,6 +30,14 @@ hash_color :: proc(color: Color) -> u64 {
 	return h
 }
 
+hash_style_environment :: proc(environment: Style_Environment) -> u64 {
+	h := hash_mix(1469598103934665603, u64(environment.theme))
+	h = hash_mix(h, u64(transmute(u32)environment.density))
+	h = hash_mix(h, u64(transmute(u32)environment.text_scale))
+	h = hash_mix(h, hash_color(environment.accent))
+	return h
+}
+
 hash_text_paint_spans :: proc(spans: []Text_Paint_Span) -> u64 {
 	h: u64 = 1469598103934665603
 	effective_count: u64 = 0
@@ -87,8 +95,8 @@ description_hash :: proc(d: Description) -> u64 {
 	if node_has_text_product(d.kind) {
 		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
 		h = hash_mix(h, u64(d.text_style.overflow))
-		h = hash_mix(h, u64(transmute(u32)d.style_environment.text_scale))
 	}
+	h = hash_mix(h, hash_style_environment(d.style_environment))
 	h = hash_mix(h, u64(d.style_scope_boundary ? 1 : 0))
 	h = hash_mix(h, d.paint_value)
 	h = hash_mix(h, u64(d.text_input_target ? 1 : 0))
@@ -795,6 +803,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.identity_key_numeric)
 	delete(rt.identity_key_kind)
 	delete(rt.identity_key_pair)
+	delete(rt.style_themes)
 	delete(rt.style_scope_stack)
 	delete(rt.layout_roots)
 	delete(rt.layout_visit_probe)

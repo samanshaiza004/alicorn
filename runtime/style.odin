@@ -3,7 +3,84 @@ package alicorn
 style_environment_changed_domains :: proc(previous, next: Style_Environment) -> Style_Domains {
 	changed: Style_Domains = {}
 	if previous.text_scale != next.text_scale { changed += {.Metrics, .Typography} }
+	if previous.density != next.density { changed += {.Metrics} }
+	if previous.theme != next.theme || !color_equal(previous.accent, next.accent) { changed += {.Paint} }
 	return changed
+}
+
+style_color_is_valid :: proc(color: Color) -> bool {
+	return color.r == color.r && color.g == color.g && color.b == color.b && color.a == color.a &&
+	       color.r >= 0 && color.r <= 1 && color.g >= 0 && color.g <= 1 &&
+	       color.b >= 0 && color.b <= 1 && color.a > 0 && color.a <= 1
+}
+
+style_theme_is_valid :: proc(theme: Style_Theme) -> bool {
+	for color in theme.colors {
+		if !style_color_is_valid(color) { return false }
+	}
+	return true
+}
+
+// style_theme_register appends an immutable palette and returns a compact ID.
+// IDs remain stable for the lifetime of this Runtime.
+style_theme_register :: proc(rt: ^Runtime, theme: Style_Theme) -> Style_Theme_ID {
+	if rt == nil || !style_theme_is_valid(theme) {
+		if rt != nil { append_diagnostic(rt, "style theme colors must be finite, opaque-or-visible normalized RGBA values") }
+		return 0
+	}
+	append(&rt.style_themes, theme)
+	return Style_Theme_ID(u64(len(rt.style_themes)))
+}
+
+style_theme_color :: proc(rt: ^Runtime, theme: Style_Theme_ID, role: Style_Color_Role) -> Color {
+	default_theme := DEFAULT_STYLE_THEME
+	if int(role) < 0 || role >= .Count { return default_theme.colors[int(Style_Color_Role.Text)] }
+	index := u64(theme)
+	if rt != nil && index > 0 && index <= u64(len(rt.style_themes)) {
+		return rt.style_themes[index-1].colors[int(role)]
+	}
+	return default_theme.colors[int(role)]
+}
+
+style_color :: proc(ui: ^UI, role: Style_Color_Role) -> Color {
+	if ui == nil || ui.runtime == nil { return style_theme_color(nil, DEFAULT_STYLE_THEME_ID, role) }
+	return style_environment_color(ui.runtime, ui.runtime.style_environment, role)
+}
+
+style_environment_color :: proc(rt: ^Runtime, environment: Style_Environment, role: Style_Color_Role) -> Color {
+	if role == .Accent && environment.accent.a > 0 { return environment.accent }
+	return style_theme_color(rt, environment.theme, role)
+}
+
+// style_metric scales an application-authored logical metric by the active
+// density. It leaves ownership and the meaning of each metric with the app.
+style_metric :: proc(ui: ^UI, value: f32) -> f32 {
+	if ui == nil || ui.runtime == nil { return value }
+	return value * ui.runtime.style_environment.density
+}
+
+style_environment_resolve :: proc(previous, override: Style_Environment, rt: ^Runtime) -> (resolved: Style_Environment, valid: bool) {
+	resolved = previous
+	valid = false
+	if override.theme != 0 {
+		index := u64(override.theme)
+		if index == 0 || index > u64(len(rt.style_themes)) { return }
+		resolved.theme = override.theme
+	}
+	if override.density != 0 {
+		if override.density != override.density || override.density < 0.5 || override.density > 3 { return }
+		resolved.density = override.density
+	}
+	if override.text_scale != 0 {
+		if override.text_scale != override.text_scale || override.text_scale <= 0 || override.text_scale >= 100 { return }
+		resolved.text_scale = override.text_scale
+	}
+	if override.accent.a != 0 {
+		if !style_color_is_valid(override.accent) { return }
+		resolved.accent = override.accent
+	}
+	valid = true
+	return
 }
 
 // style_domain_dirty_stages maps style dependencies to retained work. Typography
@@ -33,8 +110,9 @@ style_domains_dirty_stages :: proc(domains: Style_Domains) -> Dirty_Stages {
 style_environment_push :: proc(ui: ^UI, environment: Style_Environment) -> Style_Environment_Scope {
 	if ui == nil || ui.runtime == nil { return Style_Environment_Scope{} }
 	rt := ui.runtime
-	if !rt.frame_open || environment.text_scale <= 0 || environment.text_scale >= 100 || environment.text_scale != environment.text_scale {
-		append_diagnostic(rt, "style environment requires an open description frame and a finite positive text scale")
+	resolved, valid := style_environment_resolve(rt.style_environment, environment, rt)
+	if !rt.frame_open || !valid {
+		append_diagnostic(rt, "style environment requires an open description frame and valid theme, density, text scale, and accent inputs")
 		return Style_Environment_Scope{}
 	}
 	if len(rt.stack) == 0 {
@@ -64,7 +142,7 @@ style_environment_push :: proc(ui: ^UI, environment: Style_Environment) -> Style
 	append(&rt.style_scope_stack, scope)
 	scope.depth = len(rt.style_scope_stack)-1
 	rt.style_scope_stack[len(rt.style_scope_stack)-1].depth = scope.depth
-	rt.style_environment = environment
+	rt.style_environment = resolved
 	return scope
 }
 

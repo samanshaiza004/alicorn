@@ -102,23 +102,38 @@ error and its correction hint.
 | `layout_style` | Set direction, size constraints, growth, padding, gap, alignment, and clipping. |
 | `button_content_style` | Set label alignment and padding inside a button. |
 | `Text_Style` | Select weight, overflow behavior, and other text presentation options. |
+| `Style_Theme` / `style_theme_register` | Register an immutable typed color palette for one runtime. |
+| `style_color` / `style_metric` | Resolve a semantic color or scale an app-owned metric in the active environment. |
 
 The default layout direction is column. Use `.Row` for horizontal children;
 `grow` shares available space. Layout is in logical window coordinates.
 
-### Scoped text scale
+### Scoped style environment
 
-`Style_Environment` currently carries one inherited input: `text_scale`. Place
-`style_environment_push` immediately after beginning a container, describe the
-subtree, then pair it with `style_environment_pop` before ending that container.
-Text products in the subtree shape at `DEFAULT_TEXT_SIZE * text_scale`. A scale
-change invalidates typography and metrics, then repaints and lays out only from
-the scope container downward; unrelated siblings are not laid out. The scope
-container must keep parent-assigned bounds stable while its contents reflow.
+`Style_Environment` carries a compact theme ID, density, text scale, and accent
+override. Register an immutable `Style_Theme` with `style_theme_register`; its
+typed `Style_Color_Role` entries provide semantic colors. `style_color` resolves
+a role in the current scope, and `style_metric` scales a logical metric by the
+active density. The application still chooses which app-authored dimensions and
+paint surfaces use those values.
 
-This is the first retained styling dependency, not a complete theme API. Theme,
-density, accent, paint-token resolution, and material styles are not implemented
-by `Style_Environment` yet.
+Place `style_environment_push` immediately after beginning a container, describe
+the subtree, then pair it with `style_environment_pop` before ending that
+container. Zero-valued fields in the pushed value inherit from the enclosing
+scope, so focused overrides such as `Style_Environment{text_scale=1.25}` remain
+composable. Density must be in `[0.5, 3]`; text scale must be positive and below
+100; explicit colors use normalized RGBA channels with nonzero alpha.
+
+Text scale invalidates typography and metrics. Density invalidates metrics.
+Theme and accent changes invalidate paint only. These changes are retained and
+scoped: unrelated siblings are not laid out or repainted. Text products shape at
+`DEFAULT_TEXT_SIZE * text_scale`. The scope container must keep parent-assigned
+bounds stable while its contents reflow. Theme IDs are immutable and local to a
+runtime; do not reuse IDs across runtimes.
+
+This is the styling dependency spine and typed palette foundation, not a full
+theme compiler or cascade. Computed styles, token files, recipes, and material
+rendering remain separate follow-up work.
 
 Checkboxes toggle by pointer or Space; Enter is reserved for button activation.
 Sliders drag with the pointer, adjust down with Left/Down and up with Right/Up,

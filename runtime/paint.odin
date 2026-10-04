@@ -180,16 +180,16 @@ append_focus_outline :: proc(node: ^Node, color: Color, thickness: f32) {
 append_scrollbar_display :: proc(rt: ^Runtime, node: ^Node) {
 	if node.kind != .Scroll_Region { return }
 	if node.scrollbar_vertical_visible {
-		append(&rt.display, Display_Command{node.id, .Scrollbar_Track, node.scrollbar_vertical_track, node.clip, "", Color{0.08, 0.10, 0.14, 1}, []Text_Paint_Span{}})
-		append(&rt.display, Display_Command{node.id, .Scrollbar_Thumb, node.scrollbar_vertical_thumb, node.clip, "", Color{0.38, 0.48, 0.62, 1}, []Text_Paint_Span{}})
+		append(&rt.display, Display_Command{node.id, .Scrollbar_Track, node.scrollbar_vertical_track, node.clip, "", style_environment_color(rt, node.style_environment, .Scrollbar_Track), []Text_Paint_Span{}})
+		append(&rt.display, Display_Command{node.id, .Scrollbar_Thumb, node.scrollbar_vertical_thumb, node.clip, "", style_environment_color(rt, node.style_environment, .Scrollbar_Thumb), []Text_Paint_Span{}})
 	}
 	if node.scrollbar_horizontal_visible {
-		append(&rt.display, Display_Command{node.id, .Scrollbar_Track, node.scrollbar_horizontal_track, node.clip, "", Color{0.08, 0.10, 0.14, 1}, []Text_Paint_Span{}})
-		append(&rt.display, Display_Command{node.id, .Scrollbar_Thumb, node.scrollbar_horizontal_thumb, node.clip, "", Color{0.38, 0.48, 0.62, 1}, []Text_Paint_Span{}})
+		append(&rt.display, Display_Command{node.id, .Scrollbar_Track, node.scrollbar_horizontal_track, node.clip, "", style_environment_color(rt, node.style_environment, .Scrollbar_Track), []Text_Paint_Span{}})
+		append(&rt.display, Display_Command{node.id, .Scrollbar_Thumb, node.scrollbar_horizontal_thumb, node.clip, "", style_environment_color(rt, node.style_environment, .Scrollbar_Thumb), []Text_Paint_Span{}})
 	}
 	if node.scrollbar_vertical_visible && node.scrollbar_horizontal_visible {
 		corner := Rect{node.scrollbar_vertical_track.x, node.scrollbar_horizontal_track.y, node.scrollbar_vertical_track.w, node.scrollbar_horizontal_track.h}
-		append(&rt.display, Display_Command{node.id, .Scrollbar_Corner, corner, node.clip, "", Color{0.06, 0.08, 0.11, 1}, []Text_Paint_Span{}})
+		append(&rt.display, Display_Command{node.id, .Scrollbar_Corner, corner, node.clip, "", style_environment_color(rt, node.style_environment, .Surface), []Text_Paint_Span{}})
 	}
 }
 
@@ -278,7 +278,7 @@ update_paint :: proc(rt: ^Runtime) {
 						bounds.y += node.bounds.y
 						append(&node.paint, Display_Command{
 							node.id, .Text_Selection, bounds, node.clip, "",
-							Color{0.20, 0.42, 0.78, 0.45}, []Text_Paint_Span{},
+							style_environment_color(rt, node.style_environment, .Selection), []Text_Paint_Span{},
 						})
 					}
 					delete(selection)
@@ -303,7 +303,7 @@ update_paint :: proc(rt: ^Runtime) {
 						bounds.h = 1
 						append(&node.paint, Display_Command{
 							node.id, .Text_Selection, bounds, node.clip, "",
-							Color{0.70, 0.86, 1.0, 0.95}, []Text_Paint_Span{},
+							style_environment_color(rt, node.style_environment, .Accent), []Text_Paint_Span{},
 						})
 					}
 					delete(selection)
@@ -318,10 +318,10 @@ update_paint :: proc(rt: ^Runtime) {
 				}
 				append_visual_row_background(rt, node)
 				if node.kind == .Context_Menu_Panel {
-					append_rect_outline(node, .Context_Menu_Panel, Color{0.22, 0.27, 0.34, 1}, 1)
+					append_rect_outline(node, .Context_Menu_Panel, style_environment_color(rt, node.style_environment, .Border), 1)
 				}
 				if node.kind == .Scroll_Region && semantic_focus_owner_needs_outline(rt, node.id) {
-					append_focus_outline(node, Color{0.76, 0.86, 1.0, 1}, 1.5)
+					append_focus_outline(node, style_environment_color(rt, node.style_environment, .Focus), 1.5)
 				}
 			} else if node.kind == .Button {
 				padding_x := maxf(node.button_content_style.padding_x, 0)
@@ -348,41 +348,44 @@ update_paint :: proc(rt: ^Runtime) {
 					}
 				}
 				text_clip := rect_intersection(node.clip, content_bounds)
-				text_color := Color{0.90, 0.95, 1.0, 1.0}
+				text_color := style_environment_color(rt, node.style_environment, .Text)
 				parent_is_context_menu := false
 				if parent, ok := rt.nodes[node.parent]; ok {
 					parent_is_context_menu = parent.kind == .Context_Menu_Panel
 				}
 				if parent_is_context_menu {
 					if node.disabled {
-						text_color = Color{0.48, 0.53, 0.62, 1.0}
+						text_color = style_environment_color(rt, node.style_environment, .Muted_Text)
 					} else if node.pressed {
-						append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", Color{0.20, 0.31, 0.46, 1}, []Text_Paint_Span{}})
+						append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", style_environment_color(rt, node.style_environment, .Accent_Pressed), []Text_Paint_Span{}})
+						text_color = style_environment_color(rt, node.style_environment, .Accent_Text)
 					} else if node.hovered || node.selected || rt.focused == node.id {
-						append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", Color{0.17, 0.24, 0.36, 1}, []Text_Paint_Span{}})
+						append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", style_environment_color(rt, node.style_environment, .Accent_Hover), []Text_Paint_Span{}})
+						text_color = style_environment_color(rt, node.style_environment, .Accent_Text)
 					}
 				} else {
 					quiet := (node.paint_value & 4) != 0
-					button_color := Color{0.08, 0.10, 0.14, 1}
-					if !quiet { button_color = Color{0.15, 0.25, 0.42, 1} }
-					if node.selected { button_color = Color{0.27, 0.48, 0.70, 1} }
+					button_color := style_environment_color(rt, node.style_environment, .Subtle_Surface)
+					if !quiet { button_color = style_environment_color(rt, node.style_environment, .Accent) }
+					if node.selected { button_color = style_environment_color(rt, node.style_environment, .Accent) }
 					if node.pressed {
-						button_color = Color{0.15, 0.22, 0.32, 1}
-						if !quiet { button_color = Color{0.24, 0.42, 0.68, 1} }
-						if node.selected { button_color = Color{0.36, 0.62, 0.86, 1} }
+						button_color = style_environment_color(rt, node.style_environment, .Surface)
+						if !quiet { button_color = style_environment_color(rt, node.style_environment, .Accent_Pressed) }
+						if node.selected { button_color = style_environment_color(rt, node.style_environment, .Accent_Pressed) }
 					} else if node.hovered {
-						button_color = Color{0.12, 0.16, 0.23, 1}
-						if !quiet { button_color = Color{0.20, 0.34, 0.54, 1} }
-						if node.selected { button_color = Color{0.33, 0.57, 0.80, 1} }
+						button_color = style_environment_color(rt, node.style_environment, .Surface)
+						if !quiet { button_color = style_environment_color(rt, node.style_environment, .Accent_Hover) }
+						if node.selected { button_color = style_environment_color(rt, node.style_environment, .Accent_Hover) }
 					}
-					if node.drop_position == .On { button_color = Color{0.17, 0.39, 0.34, 1} }
-					if node.disabled { button_color = Color{0.10, 0.13, 0.18, 1}; text_color = Color{0.48, 0.53, 0.62, 1.0} }
+					if node.drop_position == .On { button_color = style_environment_color(rt, node.style_environment, .Success) }
+					if node.disabled { button_color = style_environment_color(rt, node.style_environment, .Subtle_Surface); text_color = style_environment_color(rt, node.style_environment, .Muted_Text) }
+					if !quiet && !node.disabled { text_color = style_environment_color(rt, node.style_environment, .Accent_Text) }
 					append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", button_color, []Text_Paint_Span{}})
-					if node.semantic_active { append_focus_outline(node, Color{0.12, 0.78, 0.82, 1}, 1) }
+					if node.semantic_active { append_focus_outline(node, style_environment_color(rt, node.style_environment, .Semantic_Focus), 1) }
 					if rt.focused == node.id && !node.disabled {
 						// Focus is an independent outline so it remains visible without
 						// replacing the selected, hover, or pressed fill.
-						focus_color := Color{0.76, 0.86, 1.0, 1}
+						focus_color := style_environment_color(rt, node.style_environment, .Focus)
 						append_focus_outline(node, focus_color, 1.5)
 					}
 				}
@@ -480,7 +483,7 @@ update_paint :: proc(rt: ^Runtime) {
 						bounds.y += node.bounds.y
 						append(&node.paint, Display_Command{
 							node.id, .Text_Selection, bounds, text_clip, "",
-							Color{0.20, 0.42, 0.78, 0.45}, []Text_Paint_Span{},
+					style_environment_color(rt, node.style_environment, .Selection), []Text_Paint_Span{},
 						})
 					}
 					delete(selection)
@@ -498,7 +501,7 @@ update_paint :: proc(rt: ^Runtime) {
 						// empty run). Keep it clipped by the containing viewport,
 						// not by the text node's glyph-sized bounds.
 						node.id, .Text_Caret, caret.rect, node.clip, "",
-						Color{0.92, 0.95, 1.0, 1.0}, []Text_Paint_Span{},
+						style_environment_color(rt, node.style_environment, .Accent), []Text_Paint_Span{},
 					})
 				}
 			}
@@ -512,14 +515,14 @@ update_paint :: proc(rt: ^Runtime) {
 					bounds.y += node.bounds.y
 					append(&node.paint, Display_Command{
 						node.id, .Text_Caret, bounds, node.clip, "",
-						Color{0.92, 0.95, 1.0, 1.0}, []Text_Paint_Span{},
+						style_environment_color(rt, node.style_environment, .Accent), []Text_Paint_Span{},
 					})
 				}
 			}
 			if node.drop_position == .On {
 				append(&node.paint, Display_Command{
 					node.id, .Text_Selection, node.bounds, node.clip, "",
-					Color{0.17, 0.39, 0.34, 0.30}, []Text_Paint_Span{},
+					style_environment_color(rt, node.style_environment, .Success), []Text_Paint_Span{},
 				})
 			} else if node.drop_position == .Before || node.drop_position == .After {
 				marker := Rect{}
@@ -532,7 +535,7 @@ update_paint :: proc(rt: ^Runtime) {
 				}
 				append(&node.paint, Display_Command{
 					node.id, .Text_Selection, marker, node.clip, "",
-					Color{0.44, 0.83, 0.76, 1}, []Text_Paint_Span{},
+					style_environment_color(rt, node.style_environment, .Accent), []Text_Paint_Span{},
 				})
 			}
 			rt.stats.paint_updates += 1
