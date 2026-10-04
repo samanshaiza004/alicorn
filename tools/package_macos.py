@@ -199,7 +199,7 @@ def package(args: argparse.Namespace) -> None:
 
     images = [app_executable, *private_libraries.values()]
     for image in images:
-        run("lipo", "-verify_arch", os.uname().machine, str(image))
+        run("lipo", str(image), "-verify_arch", os.uname().machine)
         for dependency in otool_dependencies(image):
             basename = pathlib.Path(dependency).name
             bundled = frameworks / basename
