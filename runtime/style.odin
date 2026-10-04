@@ -4,7 +4,7 @@ style_environment_changed_domains :: proc(previous, next: Style_Environment) -> 
 	changed: Style_Domains = {}
 	if previous.text_scale != next.text_scale { changed += {.Metrics, .Typography} }
 	if previous.density != next.density { changed += {.Metrics} }
-	if previous.theme != next.theme || !color_equal(previous.accent, next.accent) { changed += {.Paint} }
+	if previous.theme != next.theme || previous.accent != next.accent { changed += {.Paint} }
 	return changed
 }
 
@@ -21,6 +21,26 @@ style_theme_is_valid :: proc(theme: Style_Theme) -> bool {
 	return true
 }
 
+// style_accent packs an opaque accent into the compact value stored per node.
+// Invalid or fully transparent values return zero, which means inherit.
+style_accent :: proc(color: Color) -> Style_Accent {
+	if !style_color_is_valid(color) { return 0 }
+	r := u32(clamp(int(color.r*255+0.5), 0, 255))
+	g := u32(clamp(int(color.g*255+0.5), 0, 255))
+	b := u32(clamp(int(color.b*255+0.5), 0, 255))
+	return Style_Accent(0xFF000000 | (r << 16) | (g << 8) | b)
+}
+
+style_accent_color :: proc(accent: Style_Accent) -> Color {
+	packed := u32(accent)
+	return Color{
+		f32((packed >> 16) & 0xFF)/255,
+		f32((packed >> 8) & 0xFF)/255,
+		f32(packed & 0xFF)/255,
+		1,
+	}
+}
+
 // style_theme_register appends an immutable palette and returns a compact ID.
 // IDs remain stable for the lifetime of this Runtime.
 style_theme_register :: proc(rt: ^Runtime, theme: Style_Theme) -> Style_Theme_ID {
@@ -29,13 +49,13 @@ style_theme_register :: proc(rt: ^Runtime, theme: Style_Theme) -> Style_Theme_ID
 		return 0
 	}
 	append(&rt.style_themes, theme)
-	return Style_Theme_ID(u64(len(rt.style_themes)))
+	return Style_Theme_ID(u32(len(rt.style_themes)))
 }
 
 style_theme_color :: proc(rt: ^Runtime, theme: Style_Theme_ID, role: Style_Color_Role) -> Color {
 	default_theme := DEFAULT_STYLE_THEME
 	if int(role) < 0 || role >= .Count { return default_theme.colors[int(Style_Color_Role.Text)] }
-	index := u64(theme)
+	index := u64(u32(theme))
 	if rt != nil && index > 0 && index <= u64(len(rt.style_themes)) {
 		return rt.style_themes[index-1].colors[int(role)]
 	}
@@ -48,7 +68,7 @@ style_color :: proc(ui: ^UI, role: Style_Color_Role) -> Color {
 }
 
 style_environment_color :: proc(rt: ^Runtime, environment: Style_Environment, role: Style_Color_Role) -> Color {
-	if role == .Accent && environment.accent.a > 0 { return environment.accent }
+	if role == .Accent && environment.accent != 0 { return style_accent_color(environment.accent) }
 	return style_theme_color(rt, environment.theme, role)
 }
 
@@ -63,7 +83,7 @@ style_environment_resolve :: proc(previous, override: Style_Environment, rt: ^Ru
 	resolved = previous
 	valid = false
 	if override.theme != 0 {
-		index := u64(override.theme)
+		index := u64(u32(override.theme))
 		if index == 0 || index > u64(len(rt.style_themes)) { return }
 		resolved.theme = override.theme
 	}
@@ -75,10 +95,7 @@ style_environment_resolve :: proc(previous, override: Style_Environment, rt: ^Ru
 		if override.text_scale != override.text_scale || override.text_scale <= 0 || override.text_scale >= 100 { return }
 		resolved.text_scale = override.text_scale
 	}
-	if override.accent.a != 0 {
-		if !style_color_is_valid(override.accent) { return }
-		resolved.accent = override.accent
-	}
+	if override.accent != 0 { resolved.accent = override.accent }
 	valid = true
 	return
 }

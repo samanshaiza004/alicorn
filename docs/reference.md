@@ -110,8 +110,8 @@ The default layout direction is column. Use `.Row` for horizontal children;
 
 ### Scoped style environment
 
-`Style_Environment` carries a compact theme ID, density, text scale, and accent
-override. Register an immutable `Style_Theme` with `style_theme_register`; its
+`Style_Environment` carries a compact theme ID, density, text scale, and packed
+accent override (`style_accent` quantizes RGB to 8 bits per channel). Register an immutable `Style_Theme` with `style_theme_register`; its
 typed `Style_Color_Role` entries provide semantic colors. `style_color` resolves
 a role in the current scope, and `style_metric` scales a logical metric by the
 active density. The application still chooses which app-authored dimensions and
@@ -122,7 +122,8 @@ the subtree, then pair it with `style_environment_pop` before ending that
 container. Zero-valued fields in the pushed value inherit from the enclosing
 scope, so focused overrides such as `Style_Environment{text_scale=1.25}` remain
 composable. Density must be in `[0.5, 3]`; text scale must be positive and below
-100; explicit colors use normalized RGBA channels with nonzero alpha.
+100; theme colors use normalized RGBA channels with nonzero alpha. Accent
+overrides are opaque and quantized to 8-bit RGB.
 
 Text scale invalidates typography and metrics. Density invalidates metrics.
 Theme and accent changes invalidate paint only. These changes are retained and
@@ -212,6 +213,16 @@ overlay. Use a stable key so retained input state survives rebuilds. The
 overlay fills the viewport, but generic child containers do not auto-size to
 their descendants; transient panels need an explicit or application-computed
 height.
+
+### Tooltips
+
+Call `tooltip(ui, text, delay_ms)` immediately after describing the control that
+owns the help text. The default delay is 500 ms; Alicorn retains the label with
+that node and anchors a small popup to its bounds. The native event loop waits
+for the one-shot hover deadline instead of polling. The popup flips and clamps
+to the viewport, remains hit-test transparent, and never takes keyboard focus.
+Pointer exit, a press, keyboard input, focus loss, or a modal/context menu
+dismisses it. Once shown or dismissed, no recurring timer remains armed.
 
 ### Context menus
 

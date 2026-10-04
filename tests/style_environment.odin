@@ -88,7 +88,7 @@ test_style_environment_domains_and_density :: proc(state: ^Test_State) {
 	expect(state, alicorn.Style_Domain.Paint in domains && alicorn.Style_Domain.Metrics not_in domains,
 		"theme changes must invalidate paint only")
 	accent := previous
-	accent.accent = alicorn.Color{0.7, 0.3, 0.2, 1}
+	accent.accent = alicorn.style_accent(alicorn.Color{0.7, 0.3, 0.2, 1})
 	domains = alicorn.style_environment_changed_domains(previous, accent)
 	expect(state, alicorn.Style_Domain.Paint in domains && alicorn.Style_Domain.Metrics not_in domains,
 		"accent changes must invalidate paint only")

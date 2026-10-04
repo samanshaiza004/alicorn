@@ -439,6 +439,7 @@ modal_overlay_begin :: proc(
 		append_diagnostic(ui.runtime, "modal_overlay_begin must be called after closing the ordinary root")
 		return 0
 	}
+	tooltip_dismiss(ui.runtime)
 	return container_begin_simple(
 		ui,
 		.Modal_Overlay,
