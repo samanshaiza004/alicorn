@@ -63,4 +63,8 @@ test_style_environment_local_typography_invalidation :: proc(state: ^Test_State)
 	expect(state, rt.stats.layout_nodes_visited > base_layout_visits, "style change must perform measurable retained layout work")
 	expect(state, rt.layout_visit_probe[sidebar] == base_sidebar_layout && rt.layout_visit_probe[sidebar_text] == base_sidebar_text_layout, "editor-only typography change must not visit sidebar layout")
 	expect(state, sidebar_text_node.text_run_generation == base_sidebar_run, "editor-only typography change must not reshape sidebar text")
+	idle_stats := rt.stats
+	_, should_build := alicorn.begin_frame(&rt)
+	expect(state, !should_build && rt.stats.layout_nodes_visited == idle_stats.layout_nodes_visited,
+		"editor-local typography invalidation must settle without layout work on idle frames")
 }
