@@ -65,6 +65,9 @@ Close the window to return to the terminal. The Windows runner copies the
 matching `SDL3.dll` from the Odin distribution into `out/` before launch. The
 macOS runner links against the SDL3 installation from step 1.
 
+For an unsigned distributable folder or `.app`, including the static-SDL release
+path and dependency audit, see [Native application packaging](packaging.md).
+
 ## 4. Make a change
 
 Open [`examples/01_hello/main.odin`](../examples/01_hello/main.odin).
