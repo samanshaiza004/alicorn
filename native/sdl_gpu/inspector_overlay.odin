@@ -230,6 +230,8 @@ native_inspector_route_event :: proc(
 	application: ^Application = nil,
 	text_input: ^Native_Text_Input_State = nil,
 	window: ^sdl3.Window = nil,
+	translated_pointer: alicorn.Pointer_Event = {},
+	translated_pointer_ok := false,
 ) -> bool {
 	if overlay == nil || !overlay.enabled { return false }
 	visible := overlay.state.visible
@@ -266,7 +268,12 @@ native_inspector_route_event :: proc(
 		// Diagnostics remain available while the overlay owns keyboard input.
 		return true
 	}
-	if pointer, ok := pointer_from_sdl_with_modifiers(event, modifiers); ok {
+	pointer := translated_pointer
+	ok := translated_pointer_ok
+	if !translated_pointer_ok {
+		pointer, ok = pointer_from_sdl_with_modifiers(event, modifiers)
+	}
+	if ok {
 		mask := native_inspector_pointer_button_mask(pointer.button)
 		was_swallowed := overlay.swallowed_buttons & mask != 0
 		if pointer.kind == .Down {

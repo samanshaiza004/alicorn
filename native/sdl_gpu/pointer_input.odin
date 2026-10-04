@@ -33,6 +33,16 @@ pointer_modifiers_from_sdl :: proc(mod: sdl3.Keymod) -> alicorn.Input_Modifiers 
 	}
 }
 
+Native_Pointer_Button_State :: struct {
+	// SDL button numbers are small positive integers. Zero means there is no
+	// active press mapping for that physical button.
+	logical_by_physical: [8]int,
+}
+
+native_pointer_button_state_clear :: proc(state: ^Native_Pointer_Button_State) {
+	if state != nil { state^ = {} }
+}
+
 native_pointer_button_from_sdl :: proc(button: int, modifiers: alicorn.Input_Modifiers) -> int {
 	when ODIN_OS == .Darwin {
 		// Cocoa's conventional context-click gesture is Control + primary click.
@@ -45,10 +55,18 @@ native_pointer_button_from_sdl :: proc(button: int, modifiers: alicorn.Input_Mod
 	return button
 }
 
-pointer_from_sdl_with_modifiers :: proc(event: sdl3.Event, mod: sdl3.Keymod) -> (value: alicorn.Pointer_Event, ok: bool) {
+pointer_from_sdl_with_modifiers :: proc(
+	event: sdl3.Event,
+	mod: sdl3.Keymod,
+	button_state: ^Native_Pointer_Button_State = nil,
+) -> (value: alicorn.Pointer_Event, ok: bool) {
 	// SDL mouse coordinates are window-logical coordinates. They are passed
 	// through unchanged; only the compositor converts logical geometry to pixels.
 	modifiers := pointer_modifiers_from_sdl(mod)
+	if event.type == .WINDOW_FOCUS_LOST {
+		// SDL may not deliver the matching button-up after focus/capture is lost.
+		native_pointer_button_state_clear(button_state)
+	}
 	if event.type == .MOUSE_MOTION {
 		return alicorn.Pointer_Event{
 			kind=.Move,
@@ -58,7 +76,11 @@ pointer_from_sdl_with_modifiers :: proc(event: sdl3.Event, mod: sdl3.Keymod) -> 
 		}, true
 	}
 	if event.type == .MOUSE_BUTTON_DOWN {
-		button := native_pointer_button_from_sdl(int(event.button.button), modifiers)
+		physical_button := int(event.button.button)
+		button := native_pointer_button_from_sdl(physical_button, modifiers)
+		if button_state != nil && physical_button > 0 && physical_button < len(button_state.logical_by_physical) {
+			button_state.logical_by_physical[physical_button] = button
+		}
 		return alicorn.Pointer_Event{
 			kind=.Down,
 			x=event.button.x,
@@ -69,7 +91,14 @@ pointer_from_sdl_with_modifiers :: proc(event: sdl3.Event, mod: sdl3.Keymod) -> 
 		}, true
 	}
 	if event.type == .MOUSE_BUTTON_UP {
-		button := native_pointer_button_from_sdl(int(event.button.button), modifiers)
+		physical_button := int(event.button.button)
+		button := native_pointer_button_from_sdl(physical_button, modifiers)
+		if button_state != nil && physical_button > 0 && physical_button < len(button_state.logical_by_physical) {
+			if logical_button := button_state.logical_by_physical[physical_button]; logical_button != 0 {
+				button = logical_button
+			}
+			button_state.logical_by_physical[physical_button] = 0
+		}
 		return alicorn.Pointer_Event{
 			kind=.Up,
 			x=event.button.x,

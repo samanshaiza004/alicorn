@@ -83,6 +83,7 @@ test_pointer_event_carries_native_selection_metadata :: proc(t: ^testing.T) {
 
 @(test)
 test_control_click_context_mapping_is_macos_only :: proc(t: ^testing.T) {
+	button_state := Native_Pointer_Button_State{}
 	event := sdl3.Event{}
 	event.type = .MOUSE_BUTTON_DOWN
 	event.button.button = 1
@@ -92,14 +93,46 @@ test_control_click_context_mapping_is_macos_only :: proc(t: ^testing.T) {
 	when ODIN_OS == .Darwin {
 		expected_button = alicorn.POINTER_BUTTON_SECONDARY
 	}
-	pointer, ok := pointer_from_sdl_with_modifiers(event, sdl3.KMOD_CTRL)
+	pointer, ok := pointer_from_sdl_with_modifiers(event, sdl3.KMOD_CTRL, &button_state)
 	testing.expect(t, ok && pointer.kind == .Down && pointer.button == expected_button,
 		"Control-primary click becomes a context gesture on macOS only")
 	testing.expect(t, pointer.modifiers.control && pointer.x == 41 && pointer.y == 57,
 		"Control-click should preserve its modifier and logical pointer coordinates")
 
 	event.type = .MOUSE_BUTTON_UP
-	pointer, ok = pointer_from_sdl_with_modifiers(event, sdl3.KMOD_CTRL)
+	pointer, ok = pointer_from_sdl_with_modifiers(event, sdl3.KMOD_CTRL, &button_state)
 	testing.expect(t, ok && pointer.kind == .Up && pointer.button == expected_button,
 		"the release half of Control-click should use the same platform-mapped button")
+
+	// Modifier changes during a held gesture must not reinterpret its release.
+	event.type = .MOUSE_BUTTON_DOWN
+	pointer, ok = pointer_from_sdl_with_modifiers(event, sdl3.KMOD_CTRL, &button_state)
+	testing.expect(t, ok && pointer.button == expected_button,
+		"Control state at primary press chooses that gesture's logical button")
+	event.type = .MOUSE_BUTTON_UP
+	pointer, ok = pointer_from_sdl_with_modifiers(event, {}, &button_state)
+	testing.expect(t, ok && pointer.button == expected_button,
+		"releasing Control before mouse-up must preserve the press mapping")
+
+	event.type = .MOUSE_BUTTON_DOWN
+	pointer, ok = pointer_from_sdl_with_modifiers(event, {}, &button_state)
+	testing.expect(t, ok && pointer.button == alicorn.POINTER_BUTTON_PRIMARY,
+		"primary press without Control remains primary for its full gesture")
+	event.type = .MOUSE_BUTTON_UP
+	pointer, ok = pointer_from_sdl_with_modifiers(event, sdl3.KMOD_CTRL, &button_state)
+	testing.expect(t, ok && pointer.button == alicorn.POINTER_BUTTON_PRIMARY,
+		"pressing Control before mouse-up must not change the press mapping")
+
+	event.type = .MOUSE_BUTTON_DOWN
+	pointer, ok = pointer_from_sdl_with_modifiers(event, sdl3.KMOD_CTRL, &button_state)
+	testing.expect(t, ok && pointer.button == expected_button,
+		"a new press after prior gestures starts with a fresh modifier mapping")
+	event.type = .WINDOW_FOCUS_LOST
+	_, ok = pointer_from_sdl_with_modifiers(event, {}, &button_state)
+	testing.expect(t, !ok && button_state == Native_Pointer_Button_State{},
+		"focus loss cancels all held physical-to-logical button mappings")
+	event.type = .MOUSE_BUTTON_UP
+	pointer, ok = pointer_from_sdl_with_modifiers(event, {}, &button_state)
+	testing.expect(t, ok && pointer.button == alicorn.POINTER_BUTTON_PRIMARY,
+		"a late release after focus loss cannot retain the cancelled mapping")
 }

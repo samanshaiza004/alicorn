@@ -47,6 +47,7 @@ pump_events :: proc(
 	last_user_interaction_ns: ^u64 = nil,
 	text_input_state: ^Native_Text_Input_State = nil,
 	pointer_modifier_state: ^sdl3.Keymod = nil,
+	pointer_button_state: ^Native_Pointer_Button_State = nil,
 	devtools_hud: ^Native_DevTools_HUD = nil,
 	devtools_hud_redraw_pending: ^bool = nil,
 	devtools_last_cause: ^alicorn.Cause_Context = nil,
@@ -79,11 +80,15 @@ pump_events :: proc(
 			event.type == .WINDOW_FOCUS_LOST || event.type == .WINDOW_FOCUS_GAINED {
 			if pointer_modifier_state != nil { mod_state = pointer_modifier_state^ }
 		}
+		pointer, pointer_ok := pointer_from_sdl_with_modifiers(event, mod_state, pointer_button_state)
 		if telemetry != nil { telemetry.events_received_sequence += 1 }
 		if last_user_interaction_ns != nil && native_event_is_user_interaction(event.type) {
 			last_user_interaction_ns^ = u64(sdl3.GetTicksNS())
 		}
-		if native_inspector_route_event(inspector, rt, event, mod_state, application, text_input_state, window) {
+		if native_inspector_route_event(
+			inspector, rt, event, mod_state, application, text_input_state, window,
+			translated_pointer=pointer, translated_pointer_ok=pointer_ok,
+		) {
 			// Host diagnostics are available while the inspector owns input. Do
 			// not pass these keys through app shortcut or text routing first.
 			if event.type == .KEY_DOWN && event.key.down && !event.key.repeat {
@@ -161,7 +166,7 @@ pump_events :: proc(
 			application.on_wake(application.state, rt)
 			alicorn.cause_end(rt, wake_cause)
 		}
-		if pointer, ok := pointer_from_sdl_with_modifiers(event, mod_state); ok {
+		if pointer_ok {
 			pointer_cause := alicorn.pointer_cause_begin(rt, pointer.kind)
 			if devtools_last_cause != nil { devtools_last_cause^ = pointer_cause.cause }
 			target := alicorn.process_pointer(rt, pointer)
