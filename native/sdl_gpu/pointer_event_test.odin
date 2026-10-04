@@ -26,14 +26,14 @@ test_pointer_event_carries_native_selection_metadata :: proc(t: ^testing.T) {
 	event.button.clicks = 2
 	event.button.x = 17.5
 	event.button.y = 22.25
-	pointer, ok = pointer_from_sdl_with_modifiers(event, sdl3.KMOD_SHIFT | sdl3.KMOD_CTRL)
+	pointer, ok = pointer_from_sdl_with_modifiers(event, sdl3.KMOD_SHIFT)
 	testing.expect(t, ok && pointer.kind == .Down && pointer.button == 1,
 		"button-down should preserve the pointer kind and button identity")
 	testing.expect(t, pointer.click_count == 2,
 		"SDL double-click count should reach the runtime unchanged")
 	testing.expect(t, pointer.x == 17.5 && pointer.y == 22.25,
 		"button coordinates should remain in window-logical units")
-	testing.expect(t, pointer.modifiers.shift && pointer.modifiers.control &&
+	testing.expect(t, pointer.modifiers.shift && !pointer.modifiers.control &&
 		!pointer.modifiers.alt && !pointer.modifiers.super,
 		"Shift-click should expose Shift and preserve other modifier state")
 
@@ -79,4 +79,27 @@ test_pointer_event_carries_native_selection_metadata :: proc(t: ^testing.T) {
 	_, ok = pointer_from_sdl_with_modifiers(event, {})
 	testing.expect(t, !ok,
 		"non-pointer SDL events should not be converted to runtime pointer events")
+}
+
+@(test)
+test_control_click_context_mapping_is_macos_only :: proc(t: ^testing.T) {
+	event := sdl3.Event{}
+	event.type = .MOUSE_BUTTON_DOWN
+	event.button.button = 1
+	event.button.x = 41
+	event.button.y = 57
+	expected_button := alicorn.POINTER_BUTTON_PRIMARY
+	when ODIN_OS == .Darwin {
+		expected_button = alicorn.POINTER_BUTTON_SECONDARY
+	}
+	pointer, ok := pointer_from_sdl_with_modifiers(event, sdl3.KMOD_CTRL)
+	testing.expect(t, ok && pointer.kind == .Down && pointer.button == expected_button,
+		"Control-primary click becomes a context gesture on macOS only")
+	testing.expect(t, pointer.modifiers.control && pointer.x == 41 && pointer.y == 57,
+		"Control-click should preserve its modifier and logical pointer coordinates")
+
+	event.type = .MOUSE_BUTTON_UP
+	pointer, ok = pointer_from_sdl_with_modifiers(event, sdl3.KMOD_CTRL)
+	testing.expect(t, ok && pointer.kind == .Up && pointer.button == expected_button,
+		"the release half of Control-click should use the same platform-mapped button")
 }

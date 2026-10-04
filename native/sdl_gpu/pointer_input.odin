@@ -33,6 +33,18 @@ pointer_modifiers_from_sdl :: proc(mod: sdl3.Keymod) -> alicorn.Input_Modifiers 
 	}
 }
 
+native_pointer_button_from_sdl :: proc(button: int, modifiers: alicorn.Input_Modifiers) -> int {
+	when ODIN_OS == .Darwin {
+		// Cocoa's conventional context-click gesture is Control + primary click.
+		// Preserve the modifier snapshot, but expose the gesture as secondary so
+		// applications can use one portable context-menu path.
+		if button == alicorn.POINTER_BUTTON_PRIMARY && modifiers.control {
+			return alicorn.POINTER_BUTTON_SECONDARY
+		}
+	}
+	return button
+}
+
 pointer_from_sdl_with_modifiers :: proc(event: sdl3.Event, mod: sdl3.Keymod) -> (value: alicorn.Pointer_Event, ok: bool) {
 	// SDL mouse coordinates are window-logical coordinates. They are passed
 	// through unchanged; only the compositor converts logical geometry to pixels.
@@ -46,21 +58,23 @@ pointer_from_sdl_with_modifiers :: proc(event: sdl3.Event, mod: sdl3.Keymod) -> 
 		}, true
 	}
 	if event.type == .MOUSE_BUTTON_DOWN {
+		button := native_pointer_button_from_sdl(int(event.button.button), modifiers)
 		return alicorn.Pointer_Event{
 			kind=.Down,
 			x=event.button.x,
 			y=event.button.y,
-			button=int(event.button.button),
+			button=button,
 			modifiers=modifiers,
 			click_count=event.button.clicks,
 		}, true
 	}
 	if event.type == .MOUSE_BUTTON_UP {
+		button := native_pointer_button_from_sdl(int(event.button.button), modifiers)
 		return alicorn.Pointer_Event{
 			kind=.Up,
 			x=event.button.x,
 			y=event.button.y,
-			button=int(event.button.button),
+			button=button,
 			modifiers=modifiers,
 			click_count=event.button.clicks,
 		}, true
