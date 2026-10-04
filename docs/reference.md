@@ -106,6 +106,20 @@ error and its correction hint.
 The default layout direction is column. Use `.Row` for horizontal children;
 `grow` shares available space. Layout is in logical window coordinates.
 
+### Scoped text scale
+
+`Style_Environment` currently carries one inherited input: `text_scale`. Place
+`style_environment_push` immediately after beginning a container, describe the
+subtree, then pair it with `style_environment_pop` before ending that container.
+Text products in the subtree shape at `DEFAULT_TEXT_SIZE * text_scale`. A scale
+change invalidates typography and metrics, then repaints and lays out only from
+the scope container downward; unrelated siblings are not laid out. The scope
+container must keep parent-assigned bounds stable while its contents reflow.
+
+This is the first retained styling dependency, not a complete theme API. Theme,
+density, accent, paint-token resolution, and material styles are not implemented
+by `Style_Environment` yet.
+
 Checkboxes toggle by pointer or Space; Enter is reserved for button activation.
 Sliders drag with the pointer, adjust down with Left/Down and up with Right/Up,
 and jump to their exact minimum/maximum with Home/End. A slider's `step=0` means

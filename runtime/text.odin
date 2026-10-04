@@ -1153,12 +1153,14 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 	}
 	requested_width := max_width
 	font_weight := effective_font_weight(node.text_style.font_weight)
+	requested_size := DEFAULT_TEXT_SIZE * node.style_environment.text_scale
 	style_hash := hash_text_style_spans(node.text_style_spans[:])
 	if requested_width < 0 {
 		// For auto-width text, the parent layout pass owns the real wrapping
 		// constraint. Once that pass has produced a valid run, do not rebuild it
 		// here with the temporary unconstrained value on every root wake.
 		if node.style.width <= 0 && node.text_run_valid &&
+			node.text_run.size == requested_size &&
 			node.text_run.font_generation == rt.text_engine.font_generation &&
 			node.text_run.font_weight == font_weight &&
 			node.text_run.style_hash == style_hash &&
@@ -1169,6 +1171,7 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 		if node.style.width > 0 { requested_width = node.style.width }
 	}
 	if node.text_run_valid &&
+		node.text_run.size == requested_size &&
 		node.text_run.font_generation == rt.text_engine.font_generation &&
 		node.text_run.max_width == requested_width &&
 		node.text_run.font_weight == font_weight &&
@@ -1178,7 +1181,7 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 	}
 	if node.text_run_valid { text_run_destroy(&node.text_run) }
 	run, built := text_run_build_with_overflow(
-		&rt.text_engine, text_value, 16, requested_width,
+		&rt.text_engine, text_value, requested_size, requested_width,
 		rt.persistent_allocator, rt.scratch_allocator,
 		node.font, font_weight, text_overflow, editable=node.kind == .Text_Field,
 		text_style_spans=node.text_style_spans[:],

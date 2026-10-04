@@ -372,6 +372,31 @@ Text_Overflow :: enum {
 	Ellipsis,
 }
 
+// Style_Environment contains intentionally subtree-wide presentation inputs.
+// The first retained dependency implemented here is text_scale; theme, density,
+// and paint/material inputs will be added when their consumers are implemented.
+Style_Environment :: struct {
+	text_scale: f32,
+}
+
+DEFAULT_STYLE_ENVIRONMENT :: Style_Environment{text_scale=1}
+
+Style_Environment_Scope :: struct {
+	runtime: ^Runtime,
+	previous: Style_Environment,
+	depth: int,
+	active: bool,
+}
+
+Style_Domain :: enum {
+	Metrics,
+	Typography,
+	Paint,
+	Material,
+}
+
+Style_Domains :: distinct bit_set[Style_Domain; u8]
+
 // Text_Style controls typography and single-line overflow independently from
 // Layout_Style. Font weight is an OpenType `wght` user coordinate; 400 is the
 // default regular face. Wrap remains the backwards-compatible default.
@@ -504,6 +529,8 @@ Description :: struct {
 	text_style_spans: []Text_Style_Span,
 	font:        Font_Role,
 	text_style:  Text_Style,
+	style_environment: Style_Environment,
+	style_scope_boundary: bool,
 	button_content_style: Button_Content_Style,
 	style:       Layout_Style,
 	context_menu_bounds: Rect,
@@ -592,6 +619,8 @@ Node :: struct {
 	text_style_spans: [dynamic]Text_Style_Span,
 	font:        Font_Role,
 	text_style:  Text_Style,
+	style_environment: Style_Environment,
+	style_scope_boundary: bool,
 	button_content_style: Button_Content_Style,
 	style:       Layout_Style,
 	context_menu_bounds: Rect,
@@ -703,6 +732,7 @@ Node :: struct {
 	paint:       [dynamic]Display_Command,
 	display_index: int,
 	paint_queued: bool,
+	layout_root_queued: bool,
 }
 
 Cause_Kind :: enum {
@@ -893,6 +923,10 @@ Runtime :: struct {
 	identity_key_kind: [dynamic]u8,
 	identity_key_pair: [dynamic]UI_Key_Pair,
 	viewport:    Rect,
+	style_environment: Style_Environment,
+	style_scope_stack: [dynamic]Style_Environment_Scope,
+	layout_roots: [dynamic]Node_ID,
+	layout_visit_probe: map[Node_ID]u64,
 	focused:     Node_ID,
 	context_menu: Context_Menu_State,
 	selected:    Node_ID,

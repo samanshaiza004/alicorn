@@ -283,6 +283,15 @@ pump_events :: proc(
 					case sdl3.K_F2: application_key = .Workspace_Rename
 					case sdl3.K_F3:
 						application_key = .Find_Previous if native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) else .Find_Next
+					case sdl3.K_EQUALS, sdl3.K_PLUS, sdl3.K_KP_PLUS:
+						if native_text_primary_modifier(event.key.mod) { application_key = .Zoom_In }
+						else { mapped = false }
+					case sdl3.K_MINUS, sdl3.K_KP_MINUS:
+						if native_text_primary_modifier(event.key.mod) { application_key = .Zoom_Out }
+						else { mapped = false }
+					case sdl3.K_0, sdl3.K_KP_0:
+						if native_text_primary_modifier(event.key.mod) { application_key = .Zoom_Reset }
+						else { mapped = false }
 					case: mapped = false
 					}
 					if mapped && application_key_can_preempt_text_field(application_key, composition_active) &&
@@ -383,6 +392,15 @@ pump_events :: proc(
 						}
 					case sdl3.K_F3:
 						application_key = .Find_Previous if native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) else .Find_Next
+					case sdl3.K_EQUALS, sdl3.K_PLUS, sdl3.K_KP_PLUS:
+						if native_text_primary_modifier(event.key.mod) { application_key = .Zoom_In }
+						else { handled = false }
+					case sdl3.K_MINUS, sdl3.K_KP_MINUS:
+						if native_text_primary_modifier(event.key.mod) { application_key = .Zoom_Out }
+						else { handled = false }
+					case sdl3.K_0, sdl3.K_KP_0:
+						if native_text_primary_modifier(event.key.mod) { application_key = .Zoom_Reset }
+						else { handled = false }
 					case sdl3.K_F2: application_key = .Workspace_Rename
 					case sdl3.K_O:
 						if len(application.menus) == 0 && native_text_primary_modifier(event.key.mod) {

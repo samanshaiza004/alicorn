@@ -56,6 +56,15 @@ dirty state. An input-only change can update retained presentation without
 asking the application to describe the whole UI again. Changed constraints
 can require layout even when the description itself is reused.
 
+`Style_Environment` is the first inherited dependency surface. Its initial
+`text_scale` input maps to typography and metric invalidation, which reshapes
+and lays out descendants only within an explicitly declared scope boundary.
+Style dependencies are classified as metrics, typography, paint, or material;
+the current slice implements only text-scale metrics and typography. This is
+scoped retained dependency tracking, not a general cascade or implicit
+observation of application state. Scope containers need stable parent-assigned
+bounds while their contents reflow.
+
 This is explicit reuse, not automatic dependency tracking. A stale region
 revision can produce stale content.
 
