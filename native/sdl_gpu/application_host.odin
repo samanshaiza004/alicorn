@@ -44,6 +44,10 @@ Native_Menu_Runtime :: struct {
 	runtime:         ^alicorn.Runtime,
 	inspector:       ^Native_Inspector_Overlay,
 	platform_data:   rawptr,
+	// The window/client coordinate space includes this host-owned top chrome;
+	// application logical coordinates begin immediately below it.
+	content_inset_top: f32,
+	chrome_redraw_pending: bool,
 	pending_command: Application_Command_ID,
 	has_pending:     bool,
 }

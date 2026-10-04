@@ -20,24 +20,35 @@ non-client caption messages. macOS uses `NSApplication.mainMenu`, `NSMenu`, and
 `NSMenuItem` on the `NSWindow` SDL owns.
 
 On Windows, system-decorated windows attach a normal HMENU below the caption.
-The opt-in integrated mode keeps the SDL-created decorated/resizable window and
-its DWM caption buttons, resize borders, system menu, and native title text. The
-host draws the top-level menu labels into the existing caption using GDI and
-opens native HMENU popups. The menu hit rectangles are host-owned static
-geometry, so `WM_NCHITTEST` does not call application code. Empty caption space
-and native caption buttons continue through the original SDL/window procedure.
-Calling DWM first preserves its caption-button hit testing, including the
-Windows 11 maximize-button path used by Snap Layouts. Alicorn does not redraw
-caption buttons or emulate Snap Layouts.
-The integrated labels use Windows caption, inactive-caption, and highlight
-system colors; HMENU popup surfaces remain OS-drawn.
+The opt-in integrated mode extends the DWM frame into the SDL-created window,
+then removes the standard non-client frame while retaining the native window
+styles needed for resize, system menu, minimize, maximize, and restore. The
+host draws integrated menu labels with SDL_GPU and opens native HMENU popups.
+The labels and their hit rectangles belong to the SDL host; they are not
+application-retained nodes, and hover only schedules host presentation work.
 
-The Windows integrated proof uses GDI for non-client labels instead of the
-SDL_GPU renderer. That keeps native caption painting and GPU client rendering
-separate, and avoids adding a retained title-bar layout contract before the
-proof establishes a need for one. It currently places labels after the native
-window title, so this is a structural integration seam rather than a finished
-product title bar.
+The host owns two explicit logical coordinate spaces. The window space includes
+the integrated chrome. The application space begins below that chrome, keeps an
+origin of `(0, 0)`, and has a viewport shortened by the chrome height. Rendering
+translates application display geometry down by that height; pointer and wheel
+input is translated back into application coordinates; native text-input
+candidate geometry is translated into window coordinates. Applications do not
+need to know that an integrated title/menu band exists.
+
+Win32 non-client handling asks `DwmDefWindowProc` first for caption-button
+behavior. DWM therefore retains ownership of the native caption buttons and
+Windows 11 Snap Layout affordance whenever it handles the message. Alicorn owns
+only menu-label, blank-caption, and resize-border hit testing. It does not paint
+caption buttons or emulate the system menu, resizing, or Snap Layouts. The
+integrated labels use Windows caption, inactive-caption, and highlight system
+colors; HMENU popup surfaces remain OS-drawn.
+
+Windows menu navigation keeps the system-menu shortcut separate: Alt+Space
+continues to open the native system menu. Alt+F/E/V opens the matching
+application menu, and bare Alt enters top-level menu navigation. Left/Right
+moves between top-level menus, and Escape leaves menu mode. F10 remains
+Alicorn's DevTools HUD shortcut. Native HMENU owns navigation after a popup
+opens.
 
 On macOS, the menu is the normal system menu bar and the SDL window retains its
 standard title bar and traffic lights. `Integrated_Title_Bar` does not remove
@@ -92,11 +103,14 @@ unreported host details below are deferred rather than claimed as tested.
 
 Remaining manual acceptance is platform-specific. Windows still needs native
 command selection and keyboard menu navigation, drag/no-drag regions, all
-resize edges, minimize, maximize/restore, caption double-click, Alt+Space, DPI
-and monitor movement, light/dark and active/inactive appearance, and hover over
-maximize for Snap Layouts. macOS traffic-light behavior and focus reacquisition
-were not separately recorded. Headless menu-model tests and native smoke do not
-replace those interaction checks.
+resize edges, minimize, maximize/restore, dragging a maximized window to
+restore, caption double-click, Alt+Space, DPI and monitor movement, light/dark
+and active/inactive appearance, taskbar/work-area behavior while maximized, and
+hover over maximize for Snap Layouts. The SDL-owned window must apply a
+`WM_DPICHANGED` suggested rectangle exactly once; Alicorn should observe the
+resulting geometry and refresh chrome metrics. macOS traffic-light behavior and
+focus reacquisition were not separately recorded. Headless geometry/menu tests
+and native smoke do not replace those interaction checks.
 
 ## Platform references
 

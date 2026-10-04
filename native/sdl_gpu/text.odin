@@ -36,6 +36,11 @@ Native_Text_Draw :: struct {
 	is_color:     bool,
 }
 
+Native_Host_Text_Run :: struct {
+	node: alicorn.Node_ID,
+	run:  alicorn.Text_Run,
+}
+
 Native_Text_Renderer :: struct {
 	device:         ^sdl3.GPUDevice,
 	swapchain_format: sdl3.GPUTextureFormat,
@@ -49,6 +54,7 @@ Native_Text_Renderer :: struct {
 	vertices:       [dynamic]Native_Text_Vertex,
 	vertex_capacity: int,
 	draws:          [dynamic]Native_Text_Draw,
+	host_runs:      [dynamic]Native_Host_Text_Run,
 	pending_dirty:  [dynamic]runa.Atlas_Dirty_View,
 	mesh_valid:     bool,
 	vertex_upload_pending: bool,
@@ -126,6 +132,7 @@ native_text_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUText
 	renderer.pages = make([dynamic]Native_Atlas_Page, 0, 4)
 	renderer.vertices = make([dynamic]Native_Text_Vertex, 0, 4096)
 	renderer.draws = make([dynamic]Native_Text_Draw, 0, 512)
+	renderer.host_runs = make([dynamic]Native_Host_Text_Run, 0, 8)
 	renderer.pending_dirty = make([dynamic]runa.Atlas_Dirty_View, 0, 4)
 
 	vertex_shader := native_text_shader(device, .VERTEX, false)
@@ -197,7 +204,26 @@ native_text_destroy :: proc(renderer: ^Native_Text_Renderer) {
 	delete(renderer.vertices)
 	delete(renderer.draws)
 	delete(renderer.pending_dirty)
+	for &host_run in renderer.host_runs { alicorn.text_run_destroy(&host_run.run) }
+	delete(renderer.host_runs)
 	renderer^ = {}
+}
+
+native_text_register_host_run :: proc(renderer: ^Native_Text_Renderer, node: alicorn.Node_ID, run: alicorn.Text_Run) -> bool {
+	if renderer == nil || node == 0 { return false }
+	for host_run in renderer.host_runs {
+		if host_run.node == node { return false }
+	}
+	append(&renderer.host_runs, Native_Host_Text_Run{node, run})
+	return true
+}
+
+native_text_host_run :: proc(renderer: ^Native_Text_Renderer, node: alicorn.Node_ID) -> ^alicorn.Text_Run {
+	if renderer == nil || node == 0 { return nil }
+	for &host_run in renderer.host_runs {
+		if host_run.node == node { return &host_run.run }
+	}
+	return nil
 }
 
 native_text_is_text :: proc(kind: alicorn.Node_Kind) -> bool {
@@ -553,6 +579,9 @@ native_text_command_run :: proc(renderer: ^Native_Text_Renderer, command: alicor
 		if !renderer.runtime.drag_preview.ready { return }
 		return renderer.runtime.drag_preview.run, true
 	}
+	if host_run := native_text_host_run(renderer, command.node); host_run != nil {
+		return host_run^, true
+	}
 	node, found := renderer.runtime.nodes[command.node]
 	if !found { return }
 	if command.kind == .Text_Composition {
@@ -645,6 +674,12 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 				fingerprint = native_text_hash_mix(fingerprint, u64(transmute(u32)run.font_weight))
 				fingerprint = native_text_hash_mix(fingerprint, run.style_hash)
 			}
+		} else if host_run := native_text_host_run(renderer, command.node); host_run != nil {
+			fingerprint = native_text_hash_mix(fingerprint, u64(host_run.font))
+			fingerprint = native_text_hash_mix(fingerprint, u64(host_run.font_source))
+			fingerprint = native_text_hash_mix(fingerprint, u64(transmute(u32)host_run.size))
+			fingerprint = native_text_hash_mix(fingerprint, u64(transmute(u32)host_run.font_weight))
+			fingerprint = native_text_hash_mix(fingerprint, host_run.style_hash)
 		} else if node, found := renderer.runtime.nodes[command.node]; found {
 			generation := node.text_run_generation
 			if command.kind == .Text_Composition { generation = node.composition_run_generation }

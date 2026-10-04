@@ -86,6 +86,7 @@ run_application_loop :: proc(
 	start := time.now()
 	window_flags := sdl3.GetWindowFlags(window)
 	text_input_state := Native_Text_Input_State{window_focused=(window_flags & sdl3.WindowFlags{.INPUT_FOCUS}) != sdl3.WindowFlags{}}
+	if native_menu != nil { text_input_state.content_inset_top = native_menu.content_inset_top }
 	text_input_state.suspended = native_inspector_visible(&inspector)
 	pointer_modifier_state := sdl3.GetModState()
 	pointer_button_state := Native_Pointer_Button_State{}
@@ -121,6 +122,7 @@ run_application_loop :: proc(
 		devtools_hud=&devtools_hud,
 		inspector=&inspector,
 		debug_bounds=debug_bounds,
+		native_menu=native_menu,
 	}
 	if !sdl3.AddEventWatch(native_live_resize_event_watch, rawptr(&live_resize_state)) {
 		fail("SDL live-resize event watch registration failed")
@@ -311,6 +313,7 @@ run_application_loop :: proc(
 		native_inspector_finish_input_pump(&inspector, &text_input_state)
 		sync_text_input_focus(window, rt, &text_input_state, &application_instance)
 		application_submission_pending := alicorn.frame_needs_submission(rt)
+		native_chrome_submission_pending := native_menu != nil && native_menu.chrome_redraw_pending
 		inspector_submission_pending := native_inspector_submission_pending(&inspector)
 		devtools_cause := devtools_last_cause
 		if devtools_cause.kind == .None { devtools_cause = rt.frame_cause }
@@ -337,7 +340,7 @@ run_application_loop :: proc(
 		if devtools_hud.visible && (devtools_wake_observed || devtools_hud_deadline_wake) {
 			devtools_hud_redraw_pending = true
 		}
-		if application_submission_pending || devtools_hud_redraw_pending || inspector_submission_pending {
+		if application_submission_pending || native_chrome_submission_pending || devtools_hud_redraw_pending || inspector_submission_pending {
 			if len(in_flight) >= 2 {
 				if !wait_and_retire_oldest(device, &in_flight, &query_before_wait_true, &query_after_wait_true, &wait_count, &timing) {
 					fail("SDL application fence retirement failed")
@@ -368,16 +371,20 @@ run_application_loop :: proc(
 			metrics.pixel_width = int(swap_w)
 			metrics.pixel_height = int(swap_h)
 			logical_to_pixel_x := f32(swap_w) / f32(metrics.logical_width)
-			logical_to_pixel_y := f32(swap_h) / f32(metrics.logical_height)
+			logical_to_pixel_y := f32(swap_h) / f32(metrics.window_logical_height)
 			renderer_metrics_before := native_devtools_renderer_metrics_capture(text_renderer, surface_renderer, solid_renderer)
 			hud_vertex_reserve := 0
 			if devtools_hud.visible { hud_vertex_reserve = NATIVE_DEVTOOLS_HUD_RESERVE_VERTICES }
+			content_inset_top := f32(0)
+			if native_menu != nil { content_inset_top = native_menu.content_inset_top }
 			if !draw_display_list(
 				command, swapchain, swap_w, swap_h,
 				text_renderer, surface_renderer, solid_renderer, rt.display[:],
 				logical_to_pixel_x, logical_to_pixel_y,
 				debug_bounds=debug_bounds,
 				reserve_solid_vertices=hud_vertex_reserve,
+				content_inset_top=content_inset_top,
+				native_menu=native_menu,
 				scratch_allocator=host_scratch.allocator,
 			) {
 				_ = sdl3.CancelGPUCommandBuffer(command)
@@ -446,6 +453,7 @@ run_application_loop :: proc(
 				native_note_input_submission(&text_events)
 			}
 			devtools_hud_redraw_pending = false
+			if native_menu != nil { native_menu.chrome_redraw_pending = false }
 			if len(in_flight) > max_in_flight { max_in_flight = len(in_flight) }
 			// Refresh source submit/revision truth once after an app submit. The
 			// resulting inspector-only submission never acknowledges the app,
@@ -455,7 +463,8 @@ run_application_loop :: proc(
 				native_inspector_update(&inspector, rt, inspector.runtime.viewport, &post_submit_summary)
 			}
 		}
-		if !native_application_has_pending_work(rt, suspend_hard_error=inspector.enabled) && !native_inspector_submission_pending(&inspector) && !devtools_hud_redraw_pending {
+		if !native_application_has_pending_work(rt, suspend_hard_error=inspector.enabled) && !native_inspector_submission_pending(&inspector) && !devtools_hud_redraw_pending &&
+			!(native_menu != nil && native_menu.chrome_redraw_pending) {
 			if application_instance.on_tick == nil {
 				// Event-driven apps wait for either input, a worker wake, or their
 				// nearest scheduled deadline; there is no display-cadence tick.

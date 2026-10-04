@@ -81,11 +81,59 @@ pump_events :: proc(
 			if pointer_modifier_state != nil { mod_state = pointer_modifier_state^ }
 		}
 		pointer, pointer_ok := pointer_from_sdl_with_modifiers(event, mod_state, pointer_button_state)
+		pointer_in_application := true
+		wheel_in_application := true
+		if native_menu != nil {
+			inset_top := native_menu.content_inset_top
+			if text_input_state != nil { text_input_state.content_inset_top = inset_top }
+			if inset_top > 0 && pointer_ok {
+				mapped_x, mapped_y, in_app := native_application_point_from_window(
+					native_content_transform_make(f32(metrics.window_logical_height), inset_top), pointer.x, pointer.y,
+				)
+				pointer_in_application = in_app
+				pointer_ok = in_app
+				if in_app {
+					pointer.x, pointer.y = mapped_x, mapped_y
+				} else if rt.captured_node != 0 {
+					// Preserve the captured interaction until native chrome takes
+					// ownership; a later nonclient event sends its explicit Cancel.
+					pointer.y = 0
+					pointer_ok = true
+				}
+			}
+			if inset_top > 0 && event.type == .MOUSE_WHEEL {
+				mapped_x, mapped_y, in_app := native_application_point_from_window(
+					native_content_transform_make(f32(metrics.window_logical_height), inset_top),
+					event.wheel.mouse_x, event.wheel.mouse_y,
+				)
+				wheel_in_application = in_app
+				if in_app {
+					event.wheel.mouse_x = mapped_x
+					event.wheel.mouse_y = mapped_y
+				}
+			}
+		}
 		if telemetry != nil { telemetry.events_received_sequence += 1 }
 		if last_user_interaction_ns != nil && native_event_is_user_interaction(event.type) {
 			last_user_interaction_ns^ = u64(sdl3.GetTicksNS())
 		}
-		if native_inspector_route_event(
+		menu_key_handled := false
+		when ODIN_OS == .Windows {
+			if event.type == .KEY_DOWN && event.key.down {
+				menu_key_handled = native_menu_handle_keydown(native_menu, int(event.key.key), event.key.mod)
+			}
+		}
+		if menu_key_handled {
+			has_event = poll_sdl_event(&event)
+			continue
+		}
+		event_inside_app := true
+		if event.type == .MOUSE_MOTION || event.type == .MOUSE_BUTTON_DOWN || event.type == .MOUSE_BUTTON_UP {
+			event_inside_app = pointer_in_application && pointer_ok
+		} else if event.type == .MOUSE_WHEEL {
+			event_inside_app = wheel_in_application
+		}
+		if event_inside_app && native_inspector_route_event(
 			inspector, rt, event, mod_state, application, text_input_state, window,
 			translated_pointer=pointer, translated_pointer_ok=pointer_ok,
 		) {
@@ -191,8 +239,8 @@ pump_events :: proc(
 			}
 			alicorn.cause_end(rt, pointer_cause)
 		}
-		if application != nil && event.type == .MOUSE_WHEEL {
-			alicorn.tooltip_dismiss(rt)
+		if application != nil && event.type == .MOUSE_WHEEL { alicorn.tooltip_dismiss(rt) }
+		if application != nil && event.type == .MOUSE_WHEEL && wheel_in_application {
 			scroll_cause := alicorn.cause_begin(rt, .Scroll, "mouse wheel")
 			if devtools_last_cause != nil { devtools_last_cause^ = scroll_cause.cause }
 			delta_x := event.wheel.x
@@ -435,7 +483,11 @@ pump_events :: proc(
 			if devtools_last_cause != nil { devtools_last_cause^ = host_cause.cause }
 			// data1/data2 are logical window coordinates for this event.
 			metrics.logical_width = int(event.window.data1)
-			metrics.logical_height = int(event.window.data2)
+			metrics.window_logical_height = int(event.window.data2)
+			inset_top := f32(0)
+			if native_menu != nil { inset_top = native_menu.content_inset_top }
+			transform := native_content_transform_make(f32(metrics.window_logical_height), inset_top)
+			metrics.logical_height = int(transform.app_height)
 			logical_resize_events^ += 1
 			rt.viewport.w = f32(metrics.logical_width)
 			rt.viewport.h = f32(metrics.logical_height)
@@ -530,11 +582,19 @@ pump_events :: proc(
 			event.type == .WINDOW_PIXEL_SIZE_CHANGED ||
 			event.type == .WINDOW_METAL_VIEW_RESIZED ||
 			event.type == .WINDOW_DISPLAY_SCALE_CHANGED {
-			if !read_window_metrics(window, metrics) {
+			inset_top := f32(0)
+			if native_menu != nil { inset_top = native_menu.content_inset_top }
+			if !read_window_metrics(window, metrics, inset_top) {
 				fail("window metrics became unavailable after a window event")
+			}
+			if rt.viewport.w != f32(metrics.logical_width) || rt.viewport.h != f32(metrics.logical_height) {
+				rt.viewport.w = f32(metrics.logical_width)
+				rt.viewport.h = f32(metrics.logical_height)
+				alicorn.invalidate_root(rt, "SDL host content viewport changed")
 			}
 		}
 		if text_input_state != nil {
+			if native_menu != nil { text_input_state.content_inset_top = native_menu.content_inset_top }
 			sync_text_input_focus(window, rt, text_input_state, application)
 		}
 		has_event = poll_sdl_event(&event)

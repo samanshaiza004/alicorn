@@ -64,16 +64,44 @@ draw_display_list :: proc(
 	debug_bounds := false,
 	clear_background := true,
 	reserve_solid_vertices := 0,
+	content_inset_top: f32 = 0,
+	native_menu: ^Native_Menu_Runtime = nil,
 	scratch_allocator := context.temp_allocator,
 ) -> bool {
 	solid_renderer.runtime = text_renderer.runtime
-	if !native_text_rebuild_mesh(text_renderer, display, logical_to_pixel_x, logical_to_pixel_y, scratch_allocator) { return false }
+	render_display := display
+	chrome: []alicorn.Display_Command
+	when ODIN_OS == .Windows {
+		if native_menu != nil {
+			chrome = native_menu_overlay_commands(
+				native_menu,
+				f32(swap_w)/logical_to_pixel_x,
+				f32(swap_h)/logical_to_pixel_y,
+				scratch_allocator,
+			)
+		}
+	}
+	if content_inset_top > 0 || len(chrome) > 0 {
+		owned := make([dynamic]alicorn.Display_Command, 0, len(display)+len(chrome), allocator=scratch_allocator)
+		if owned == nil && len(display)+len(chrome) > 0 { return false }
+		for original in display {
+			draw := original
+			if content_inset_top > 0 {
+				draw.bounds.y += content_inset_top
+				draw.clip.y += content_inset_top
+			}
+			append(&owned, draw)
+		}
+		for overlay in chrome { append(&owned, overlay) }
+		render_display = owned[:]
+	}
+	if !native_text_rebuild_mesh(text_renderer, render_display, logical_to_pixel_x, logical_to_pixel_y, scratch_allocator) { return false }
 	if !native_text_sync_atlas(text_renderer, command, scratch_allocator) { return false }
 	if !native_text_upload_vertices(text_renderer, command) { return false }
-	if !native_solid_build(solid_renderer, display, logical_to_pixel_x, logical_to_pixel_y, swap_w, swap_h, skip_root) { return false }
+	if !native_solid_build(solid_renderer, render_display, logical_to_pixel_x, logical_to_pixel_y, swap_w, swap_h, skip_root) { return false }
 	debug_draw_start := len(solid_renderer.draws)
 	if debug_bounds {
-		native_solid_append_debug_bounds(solid_renderer, display, logical_to_pixel_x, logical_to_pixel_y, swap_w, swap_h, skip_root)
+		native_solid_append_debug_bounds(solid_renderer, render_display, logical_to_pixel_x, logical_to_pixel_y, swap_w, swap_h, skip_root)
 	}
 	// Optional host overlays (currently the DevTools HUD) append to this mesh
 	// after app draws are recorded. Reserve their bounded space now, before any
@@ -95,8 +123,8 @@ draw_display_list :: proc(
 	}
 
 	display_index := 0
-	for display_index < len(display) {
-		draw := display[display_index]
+	for display_index < len(render_display) {
+		draw := render_display[display_index]
 		if native_text_is_text(draw.kind) {
 			if !native_text_render_command(text_renderer, command, draw, swapchain, swap_w, swap_h, logical_to_pixel_x, logical_to_pixel_y) {
 				return false
@@ -105,15 +133,15 @@ draw_display_list :: proc(
 			continue
 		}
 		if draw.kind == .Custom_Surface {
-			if !native_surface_render_command(surface_renderer, command, draw, swapchain, swap_w, swap_h, logical_to_pixel_x, logical_to_pixel_y) {
+			if !native_surface_render_command(surface_renderer, command, draw, swapchain, swap_w, swap_h, logical_to_pixel_x, logical_to_pixel_y, content_inset_top=content_inset_top) {
 				return false
 			}
 			display_index += 1
 			continue
 		}
 		batch_start := display_index
-		for display_index < len(display) {
-			batch_draw := display[display_index]
+		for display_index < len(render_display) {
+			batch_draw := render_display[display_index]
 			if native_text_is_text(batch_draw.kind) || batch_draw.kind == .Custom_Surface { break }
 			display_index += 1
 		}

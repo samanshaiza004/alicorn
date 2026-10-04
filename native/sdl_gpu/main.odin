@@ -65,7 +65,7 @@ Run :: proc(application: Application, smoke := false) {
 		fmt.println("sdl_input_debug", "window_flags", sdl3.GetWindowFlags(window))
 	}
 	metrics: Window_Metrics
-	if !read_window_metrics(window, &metrics) { fail("initial application window metrics unavailable") }
+	if !read_window_metrics(window, &metrics, native_menu.content_inset_top) { fail("initial application window metrics unavailable") }
 	formats := sdl3.GPUShaderFormat{.SPIRV, .DXIL, .MSL}
 	gpu_driver_name: cstring = nil
 	when ODIN_OS == .Darwin { gpu_driver_name = "metal" }
@@ -91,6 +91,11 @@ Run :: proc(application: Application, smoke := false) {
 	text_renderer, text_ok := native_text_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
 	if !text_ok { fail("application GPU text pipeline initialization failed") }
 	defer native_text_destroy(&text_renderer)
+	when ODIN_OS == .Windows {
+		if !native_menu_prepare_gpu(&native_menu, &rt, &text_renderer) {
+			fail("integrated title bar GPU text initialization failed")
+		}
+	}
 	surface_renderer, surface_ok := native_surface_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
 	if !surface_ok { fail("application GPU surface pipeline initialization failed") }
 	defer native_surface_destroy(&surface_renderer)
