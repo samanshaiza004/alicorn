@@ -132,14 +132,17 @@ drag_preview_begin :: proc(rt: ^Runtime) {
 // ordinary retained list without waking the application.
 drag_preview_clear :: proc(rt: ^Runtime) {
 	if rt == nil { return }
-	write_index := 0
-	for read_index := 0; read_index < len(rt.display); read_index += 1 {
-		command := rt.display[read_index]
-		if command.node == 0 { continue }
-		rt.display[write_index] = command
-		write_index += 1
+	if rt.transient_overlay_kind == .Drag_Preview {
+		write_index := 0
+		for read_index := 0; read_index < len(rt.display); read_index += 1 {
+			command := rt.display[read_index]
+			if command.node == 0 { continue }
+			rt.display[write_index] = command
+			write_index += 1
+		}
+		for len(rt.display) > write_index { _ = pop(&rt.display) }
 	}
-	for len(rt.display) > write_index { _ = pop(&rt.display) }
+	if rt.transient_overlay_kind == .Drag_Preview { rt.transient_overlay_kind = .None }
 	if rt.drag_preview.ready { text_run_destroy(&rt.drag_preview.run) }
 	rt.drag_preview = Drag_Preview{}
 	rt.composition_rebuild = true
@@ -151,6 +154,7 @@ drag_preview_clear :: proc(rt: ^Runtime) {
 // commands and never participates in hit testing.
 append_drag_preview :: proc(rt: ^Runtime) {
 	if rt == nil || rt.drag.phase != .Dragging { return }
+	rt.transient_overlay_kind = .Drag_Preview
 	preview := rt.drag_preview
 	shadow := Rect{2, 3, preview.width, preview.height}
 	card := Rect{0, 0, preview.width, preview.height}

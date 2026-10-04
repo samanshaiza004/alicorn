@@ -40,6 +40,8 @@ Node_Kind :: enum {
 	Modal_Overlay,
 	Context_Menu_Overlay,
 	Context_Menu_Panel,
+	Tooltip_Background,
+	Tooltip_Text,
 	Container,
 	Button,
 	Checkbox,
@@ -307,6 +309,7 @@ Pointer_Event :: struct {
 	button:      int,
 	modifiers:   Input_Modifiers, // keyboard modifiers held when the host dispatches this event
 	click_count: u8,               // platform click sequence count for button events; zero when unavailable
+	timestamp_ns: u64,             // monotonic host time used by delayed interactions; zero for synthetic events
 	// target_key is filled by the native host after hit testing and is available
 	// to application pointer callbacks. Direct process_pointer callers should
 	// use the returned Node_ID with node_identity_key when they need the key.
@@ -372,14 +375,77 @@ Text_Overflow :: enum {
 	Ellipsis,
 }
 
-// Style_Environment contains intentionally subtree-wide presentation inputs.
-// The first retained dependency implemented here is text_scale; theme, density,
-// and paint/material inputs will be added when their consumers are implemented.
-Style_Environment :: struct {
-	text_scale: f32,
+Style_Theme_ID :: distinct u32
+Style_Accent :: distinct u32
+
+Style_Color_Role :: enum {
+	Window_Background,
+	Surface,
+	Subtle_Surface,
+	Editor_Background,
+	Text,
+	Muted_Text,
+	Accent,
+	Accent_Hover,
+	Accent_Pressed,
+	Accent_Text,
+	Selection,
+	Focus,
+	Semantic_Focus,
+	Border,
+	Danger,
+	Success,
+	Scrollbar_Track,
+	Scrollbar_Thumb,
+	Count,
 }
 
-DEFAULT_STYLE_ENVIRONMENT :: Style_Environment{text_scale=1}
+STYLE_COLOR_ROLE_COUNT :: int(Style_Color_Role.Count)
+
+// A registered theme is immutable and retained once per Runtime. Nodes carry
+// only the compact ID through Style_Environment, not a copy of this palette.
+Style_Theme :: struct {
+	colors: [STYLE_COLOR_ROLE_COUNT]Color,
+}
+
+DEFAULT_STYLE_THEME :: Style_Theme{colors={
+	Color{0.055, 0.065, 0.09, 1},
+	Color{0.08, 0.095, 0.13, 1},
+	Color{0.08, 0.10, 0.14, 1},
+	Color{0.04, 0.05, 0.07, 1},
+	Color{0.88, 0.91, 0.96, 1},
+	Color{0.57, 0.63, 0.74, 1},
+	Color{0.27, 0.48, 0.70, 1},
+	Color{0.33, 0.57, 0.80, 1},
+	Color{0.36, 0.62, 0.86, 1},
+	Color{0.94, 0.97, 1, 1},
+	Color{0.20, 0.42, 0.78, 0.45},
+	Color{0.76, 0.86, 1, 1},
+	Color{0.12, 0.78, 0.82, 1},
+	Color{0.20, 0.24, 0.31, 1},
+	Color{0.55, 0.18, 0.20, 1},
+	Color{0.17, 0.39, 0.34, 1},
+	Color{0.08, 0.10, 0.14, 1},
+	Color{0.38, 0.48, 0.62, 1},
+}}
+
+DEFAULT_STYLE_THEME_ID :: Style_Theme_ID(1)
+
+// Style_Environment contains intentionally subtree-wide presentation inputs.
+// Zero values in a pushed environment mean "inherit"; this keeps compact
+// scopes such as Style_Environment{text_scale=1.25} composable.
+Style_Environment :: struct {
+	theme: Style_Theme_ID,
+	density: f32,
+	text_scale: f32,
+	accent: Style_Accent,
+}
+
+DEFAULT_STYLE_ENVIRONMENT :: Style_Environment{
+	theme=DEFAULT_STYLE_THEME_ID,
+	density=1,
+	text_scale=1,
+}
 
 Style_Environment_Scope :: struct {
 	runtime: ^Runtime,
@@ -525,6 +591,8 @@ Description :: struct {
 	kind:        Node_Kind,
 	label:       string,
 	text:        string,
+	tooltip_text: string,
+	tooltip_delay_ms: u32,
 	text_paint_spans: []Text_Paint_Span,
 	text_style_spans: []Text_Style_Span,
 	font:        Font_Role,
@@ -615,6 +683,8 @@ Node :: struct {
 	kind:        Node_Kind,
 	label:       string,
 	text:        string,
+	tooltip_text: string,
+	tooltip_delay_ms: u32,
 	text_paint_spans: [dynamic]Text_Paint_Span,
 	text_style_spans: [dynamic]Text_Style_Span,
 	font:        Font_Role,
@@ -811,6 +881,20 @@ Context_Menu_Key :: enum {
 	Cancel,
 }
 
+Tooltip_State :: struct {
+	target: Node_ID,
+	deadline_ns: u64,
+	visible: bool,
+	run: Text_Run,
+	run_ready: bool,
+}
+
+Transient_Overlay_Kind :: enum {
+	None,
+	Drag_Preview,
+	Tooltip,
+}
+
 Action_Entry :: struct {
 	descriptor: Action_Descriptor,
 	state:      Action_State,
@@ -924,11 +1008,14 @@ Runtime :: struct {
 	identity_key_pair: [dynamic]UI_Key_Pair,
 	viewport:    Rect,
 	style_environment: Style_Environment,
+	style_themes: [dynamic]Style_Theme,
 	style_scope_stack: [dynamic]Style_Environment_Scope,
 	layout_roots: [dynamic]Node_ID,
 	layout_visit_probe: map[Node_ID]u64,
 	focused:     Node_ID,
 	context_menu: Context_Menu_State,
+	tooltip: Tooltip_State,
+	transient_overlay_kind: Transient_Overlay_Kind,
 	selected:    Node_ID,
 	semantic_focus: Semantic_Focus_State,
 	last_hovered: Node_ID,

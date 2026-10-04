@@ -47,6 +47,7 @@ context_menu_open :: proc(
 ) -> bool {
 	if rt == nil { return false }
 	if width <= 0 || item_height <= 0 { return false }
+	tooltip_dismiss(rt)
 
 	was_open := rt.context_menu.open
 	restore := restore_focus_to

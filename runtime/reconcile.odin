@@ -30,6 +30,14 @@ hash_color :: proc(color: Color) -> u64 {
 	return h
 }
 
+hash_style_environment :: proc(environment: Style_Environment) -> u64 {
+	h := hash_mix(1469598103934665603, u64(environment.theme))
+	h = hash_mix(h, u64(transmute(u32)environment.density))
+	h = hash_mix(h, u64(transmute(u32)environment.text_scale))
+	h = hash_mix(h, u64(u32(environment.accent)))
+	return h
+}
+
 hash_text_paint_spans :: proc(spans: []Text_Paint_Span) -> u64 {
 	h: u64 = 1469598103934665603
 	effective_count: u64 = 0
@@ -77,6 +85,8 @@ hash_button_content_style :: proc(style: Button_Content_Style) -> u64 {
 
 description_hash :: proc(d: Description) -> u64 {
 	h := hash_mix(hash_string(d.label), hash_string(d.text))
+	h = hash_mix(h, hash_string(d.tooltip_text))
+	h = hash_mix(h, u64(d.tooltip_delay_ms))
 	h = hash_mix(h, hash_text_paint_spans(d.text_paint_spans))
 	h = hash_mix(h, hash_text_style_spans(d.text_style_spans))
 	h = hash_mix(h, u64(d.kind))
@@ -87,8 +97,8 @@ description_hash :: proc(d: Description) -> u64 {
 	if node_has_text_product(d.kind) {
 		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
 		h = hash_mix(h, u64(d.text_style.overflow))
-		h = hash_mix(h, u64(transmute(u32)d.style_environment.text_scale))
 	}
+	h = hash_mix(h, hash_style_environment(d.style_environment))
 	h = hash_mix(h, u64(d.style_scope_boundary ? 1 : 0))
 	h = hash_mix(h, d.paint_value)
 	h = hash_mix(h, u64(d.text_input_target ? 1 : 0))
@@ -231,12 +241,13 @@ release_node_strings :: proc(node: ^Node, allocator := context.allocator) {
 	if len(node.key) > 0 { delete(node.key, allocator) }
 	if len(node.label) > 0 { delete(node.label, allocator) }
 	if len(node.text) > 0 { delete(node.text, allocator) }
+	if len(node.tooltip_text) > 0 { delete(node.tooltip_text, allocator) }
 	if len(node.text_paint_spans) > 0 { delete(node.text_paint_spans) }
 	if len(node.text_style_spans) > 0 { delete(node.text_style_spans) }
 	if len(node.identity_key) > 0 { delete(node.identity_key, allocator) }
 	if len(node.last_reason) > 0 { delete(node.last_reason, allocator) }
 	node.site = Source_Site{}
-	node.key, node.label, node.text, node.identity_key, node.last_reason = "", "", "", "", ""
+	node.key, node.label, node.text, node.tooltip_text, node.identity_key, node.last_reason = "", "", "", "", "", ""
 }
 
 node_has_text_product :: proc(kind: Node_Kind) -> bool {
@@ -247,6 +258,7 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	// Runtime-owned copies are important: a generic description may borrow a
 	// caller's string for only the duration of this procedure.
 	label_changed := (d.kind == .Button || d.kind == .Checkbox || d.kind == .Slider) && node.label != d.label
+	tooltip_changed := node.tooltip_text != d.tooltip_text || node.tooltip_delay_ms != d.tooltip_delay_ms
 	text_changed := node.text != d.text || label_changed
 	style_changes := style_environment_changed_domains(node.style_environment, d.style_environment)
 	typography_changed := Style_Domain.Typography in style_changes
@@ -266,6 +278,9 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	replace_owned(&node.key, d.key, rt.persistent_allocator)
 	replace_owned(&node.label, d.label, rt.persistent_allocator)
 	replace_owned(&node.text, d.text, rt.persistent_allocator)
+	replace_owned(&node.tooltip_text, d.tooltip_text, rt.persistent_allocator)
+	node.tooltip_delay_ms = d.tooltip_delay_ms
+	if tooltip_changed && rt.tooltip.target == node.id { tooltip_dismiss(rt) }
 	effective_count := 0
 	for span in d.text_paint_spans { if text_paint_span_has_effect(span) { effective_count += 1 } }
 	spans_same := len(node.text_paint_spans) == effective_count
@@ -474,6 +489,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	if desired[id] { return }
 	node, ok := rt.nodes[id]
 	if !ok { return }
+	if rt.tooltip.target == id { tooltip_dismiss(rt) }
 	children := node.children[:]
 	for child in children {
 		retire_subtree(rt, child, desired)
@@ -770,6 +786,7 @@ end_presentation_frame :: proc(ui: ^UI) {
 
 destroy_runtime :: proc(rt: ^Runtime) {
 	if rt.drag_preview.ready { text_run_destroy(&rt.drag_preview.run) }
+	if rt.tooltip.run_ready { text_run_destroy(&rt.tooltip.run) }
 	for _, node in rt.nodes {
 		for command in node.paint { if len(command.text) > 0 { delete(command.text, rt.persistent_allocator) } }
 		delete(node.paint)
@@ -795,6 +812,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.identity_key_numeric)
 	delete(rt.identity_key_kind)
 	delete(rt.identity_key_pair)
+	delete(rt.style_themes)
 	delete(rt.style_scope_stack)
 	delete(rt.layout_roots)
 	delete(rt.layout_visit_probe)
