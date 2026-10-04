@@ -45,9 +45,10 @@ colors; HMENU popup surfaces remain OS-drawn.
 
 Windows menu navigation keeps the system-menu shortcut separate: Alt+Space
 continues to open the native system menu. Alt+F/E/V opens the matching
-application menu, bare Alt or F10 enters top-level menu navigation, Left/Right
-moves between top-level menus, and Escape leaves menu mode. Native HMENU owns
-navigation after a popup opens.
+application menu, and bare Alt enters top-level menu navigation. Left/Right
+moves between top-level menus, and Escape leaves menu mode. F10 remains
+Alicorn's DevTools HUD shortcut. Native HMENU owns navigation after a popup
+opens.
 
 On macOS, the menu is the normal system menu bar and the SDL window retains its
 standard title bar and traffic lights. `Integrated_Title_Bar` does not remove

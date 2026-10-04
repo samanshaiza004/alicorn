@@ -494,15 +494,6 @@ native_menu_handle_keydown :: proc(menu: ^Native_Menu_Runtime, keycode: int, mod
 			}
 		}
 	}
-	if keycode == int(sdl3.K_F10) && !native_text_modifier(modifiers, sdl3.KMOD_SHIFT) &&
-		!control && !alt {
-		if len(state.labels) == 0 { return false }
-		state.menu_mode = true
-		state.active_menu = 0
-		state.hovered = -1
-		menu.chrome_redraw_pending = true
-		return true
-	}
 	if !state.menu_mode { return false }
 	if keycode == int(sdl3.K_ESCAPE) {
 		state.menu_mode = false
