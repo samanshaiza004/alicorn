@@ -196,6 +196,64 @@ input while disabled. They do not own application state: store the returned
 `value` when `changed` is true. Their default sizes are content-aware; set
 `Layout_Style` when a specific size is desired.
 
+### Tab bars
+
+`tab_bar(ui, key, items, options, style)` describes a complete tab bar as one
+composite control and returns a `Tab_Bar_Result`. Internally, the retained
+tree uses a `Scroll_Region` labelled `tab-bar`, a `Virtual_List` row, semantic
+`Tab` controls, a content row, and an internal `Tab_Close` action. The selected
+underline and dirty marker are composed with semantic surface nodes; their
+bounds and clipping come from normal layout, and the renderer sees only the
+resulting generic surface/text commands. This is the first built-in consumer
+of Alicorn's high-level visual-part composition path. The separate `.Tab`
+`Button_Variant` remains available for simple selectable buttons.
+
+Each `Tab_Bar_Item` contains:
+
+| Field | Meaning |
+| --- | --- |
+| `key: UI_Key` | Required, unique, stable identity for this item across descriptions and reordering. |
+| `label: string` | Display label for the tab. |
+| `selected: bool` | Application-provided selected state. |
+| `closable: bool` | Whether the tab presents its internal close action. |
+| `dirty: bool` | Whether the tab presents its dirty-state indicator. |
+| `semantic_id: Semantic_ID` | Stable logical identity used by the existing semantic drag/drop events. |
+
+`Tab_Bar_Options` supplies `min_tab_width`, `max_tab_width`, `height`, `gap`,
+`close_policy`, and `drag_type`. Width, height, and gap are in logical window
+units. Tabs shrink by equal amounts from the maximum width toward the minimum
+width as space becomes constrained. If the bar is still too narrow when tabs
+reach their minimum width, it uses horizontal overflow; the selected tab is
+kept visible. The close affordance is internal to the tab surface and its
+visibility does not change tab layout or width.
+
+The close policies are `Always`, `Hover`, `Selected_Or_Hover`, and `Auto`.
+`Auto` delegates close-affordance visibility to the component's responsive
+policy; applications should not depend on a particular width breakpoint.
+`Tab_Bar_Result.action` is `None`, `Select`, or `Close`; for `Select` and
+`Close`, `item_index` identifies the corresponding item in the input `items`
+slice. The result is a request: the application updates its own selected state
+or performs its own close workflow, then describes the resulting state on the
+next build.
+
+Provide a nonzero `drag_type` and stable item `semantic_id`s to participate in
+Alicorn's existing drag/drop events. The bar identifies semantic sources and
+reorder targets; the application handles those events and changes its own item
+order. The widget does not mutate the supplied slice or own application data.
+
+`tab_bar_navigate(item_count, selected_index, navigation) -> (index, found)`
+computes a navigation target using `Next`, `Previous`, `Index_1` through
+`Index_8`, or `Last`. When `found` is true, `index` identifies the target in
+the item sequence; otherwise there is no navigation target. Applications
+apply a found index to their own state. This helper does not install global
+key bindings: Ctrl/Cmd shortcuts and their platform policy remain application
+commands.
+
+The retained node kinds distinguish tabs and their close actions internally,
+but Alicorn does not yet expose a native platform accessibility tree. This
+component therefore does not make tabs available to VoiceOver, Narrator, or
+other screen readers.
+
 ## Identity and repeated UI
 
 `UI_Key` forms:

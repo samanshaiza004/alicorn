@@ -125,7 +125,7 @@ scroll_bar_geometry :: proc(
 intrinsic_main :: proc(node: ^Node, direction: Layout_Direction) -> f32 {
 	padding_x: f32 = 0
 	padding_y: f32 = 0
-	if node.kind == .Button {
+	if node.kind == .Button || node.kind == .Tab {
 		padding_x = maxf(node.button_content_style.padding_x, 0)
 		padding_y = maxf(node.button_content_style.padding_y, 0)
 	}
@@ -136,7 +136,11 @@ intrinsic_main :: proc(node: ^Node, direction: Layout_Direction) -> f32 {
 			return 116
 		}
 		if node.kind == .Slider { return 180 }
-		if node.text_run_valid { return node.text_run.width + 2*padding_x }
+		if node.text_run_valid {
+			tab_slot_width := f32(0)
+			if node.kind == .Tab { tab_slot_width = tab_trailing_slot_width(node) }
+			return node.text_run.width + 2*padding_x + tab_slot_width
+		}
 		return 80 + 2*padding_x
 	}
 	if node.style.height >= 0 { return node.style.height }
@@ -236,8 +240,11 @@ layout_text_constraint :: proc(parent: ^Node, child: ^Node, cross_size: f32) -> 
 	}
 	if constraint <= 0 { return 0 }
 	constraint = clampf(constraint, child.style.min_width, child.style.max_width)
-	if child.kind == .Button {
+	if child.kind == .Button || child.kind == .Tab {
 		constraint = maxf(constraint-2*maxf(child.button_content_style.padding_x, 0), 0)
+		if child.kind == .Tab {
+			constraint = maxf(constraint-tab_trailing_slot_width(child), 0)
+		}
 	} else if child.kind == .Checkbox {
 		constraint = maxf(constraint-36, 0)
 	}

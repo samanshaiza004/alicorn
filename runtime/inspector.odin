@@ -210,13 +210,15 @@ inspect :: proc(rt: ^Runtime) -> string {
 			style_inspector_semantic_surface(&sb, rt, node, semantic_style)
 		}
 		fmt.sbprintf(&sb, "  selected=%t semantic_active=%t hovered=%t pressed=%t caret=(%d,%v) selection=(%d,%v)->(%d,%v) reason: %s\n", node.selected, node.semantic_active, node.hovered, node.pressed, node.caret.byte, node.caret.affinity, node.selection_anchor.byte, node.selection_anchor.affinity, node.selection_focus.byte, node.selection_focus.affinity, node.last_reason)
-		if node.kind == .Button {
+		if node.kind == .Button || node.kind == .Tab {
 			recipe := style_button_recipe(rt, node.style_environment, node.button_variant)
-			fmt.sbprintf(&sb, "  button state: selected=%t hovered=%t pressed=%t disabled=%t focused=%t\n",
-				node.selected, node.hovered, node.pressed, node.disabled, rt.focused == node.id)
+			hovered := node.hovered
+			if node.kind == .Tab { hovered = tab_bar_node_hovered(rt, node) }
+			fmt.sbprintf(&sb, "  button/tab state: selected=%t hovered=%t pressed=%t disabled=%t focused=%t\n",
+				node.selected, hovered, node.pressed, node.disabled, rt.focused == node.id)
 			resolved := style_button_resolve_retained(rt, node, Button_Visual_State{
 				selected=node.selected,
-				hovered=node.hovered,
+				hovered=hovered,
 				pressed=node.pressed,
 				disabled=node.disabled,
 			}, node.drop_position == .On)

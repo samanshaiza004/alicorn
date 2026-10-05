@@ -42,6 +42,8 @@ Node_Kind :: enum {
 	Context_Menu_Panel,
 	Container,
 	Button,
+	Tab,
+	Tab_Close,
 	Checkbox,
 	Slider,
 	Text,
@@ -110,6 +112,11 @@ Layout_Direction :: enum { Row, Column }
 Align :: enum { Start, Center, End, Stretch }
 
 Button_Content_Alignment :: enum { Start, Center, End }
+
+// Tab_Close_Policy controls the embedded close affordance without changing
+// the tab's geometry. Auto keeps it visible at comfortable widths and reveals
+// it on hover for compact tabs.
+Tab_Close_Policy :: enum { Always, Hover, Selected_Or_Hover, Auto }
 
 // Button_Content_Style controls only where a button places its label inside
 // its outer bounds. It is independent from Layout_Style.padding, which pads
@@ -858,6 +865,9 @@ Node :: struct {
 	style_generations: Style_Generations,
 	button_content_style: Button_Content_Style,
 	button_variant: Button_Variant,
+	tab_close_policy: Tab_Close_Policy,
+	tab_closable: bool,
+	tab_dirty: bool,
 	style:       Layout_Style,
 	context_menu_bounds: Rect,
 	color:       Color,

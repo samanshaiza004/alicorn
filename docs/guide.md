@@ -60,6 +60,42 @@ has no idle fill, and `.Tab` provides a selection treatment. Recipes define
 their semantic colors and state transforms; selected, hovered, pressed, then
 disabled transforms apply in that order. Focus remains a separate outline.
 
+For document-style tabs, use the composite `tab_bar` contract rather than
+assembling a tab button beside a separate close button. Each item has a stable
+`UI_Key`; the application still owns the selected item, document lifecycle,
+and item order. See the [Tab Bar reference](reference.md#tab-bars) for sizing,
+close policies, navigation semantics, and drag/drop behavior. The `.Tab`
+button variant remains appropriate for a standalone selectable button.
+
+The Tab Bar reports selection and close requests by item index. Apply those
+requests to application state and describe the updated items on the next build:
+
+```odin
+result := alicorn.tab_bar(
+	&ui,
+	alicorn.key_string("document-tabs"),
+	items,
+	options,
+	style,
+)
+if result.action == .Select {
+	app.active_tab_key = items[result.item_index].key
+} else if result.action == .Close {
+	request_close(items[result.item_index].key)
+}
+```
+
+`items` supplies each tab's selected, closable, and dirty state. Use
+`tab_bar_navigate(item_count, selected_index, navigation)` from the
+application's command handling to share the component's
+Next/Previous/index/Last navigation semantics. It returns `(index, found)`;
+apply `index` only when `found` is true. Choose Ctrl/Cmd bindings in the
+application rather than assuming the runtime installs them.
+
+For reordering, consume the existing drag/drop events and update the
+application-owned order. `Semantic_ID` supports Alicorn's internal semantics
+and drag identity, but is not a native screen-reader accessibility interface.
+
 ## Give repeated data stable identity
 
 For a repeated item, its logical key—not its current row number or visible

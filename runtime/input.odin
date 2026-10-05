@@ -147,7 +147,7 @@ hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 		id := rt.order[i]
 		if node, ok := rt.nodes[id]; ok && node.active && !node.disabled &&
 			node_is_in_modal_overlay(rt, id, modal_root) && rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
-			if node.kind == .Button || node.kind == .Checkbox || node.kind == .Slider || node.kind == .Text_Field ||
+			if node.kind == .Button || node.kind == .Tab || node.kind == .Tab_Close || node.kind == .Checkbox || node.kind == .Slider || node.kind == .Text_Field ||
 			   (node.kind == .Custom_Surface && node.surface_interaction == .Pointer) ||
 			   (node.text_input_target && node.focusable) {
 				return id
@@ -172,6 +172,23 @@ hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 		if overlay.kind == .Modal_Overlay || overlay.kind == .Context_Menu_Overlay { return modal_root }
 	}
 	return 0
+}
+
+invalidate_tab_hover_dependents :: proc(rt: ^Runtime, id: Node_ID, reason: string) {
+	node, found := rt.nodes[id]
+	if !found { return }
+	if node.kind == .Tab_Close {
+		if parent := tab_ancestor(rt, node); parent != nil {
+			invalidate_interaction_paint(rt, parent.id, reason)
+		}
+	} else if node.kind == .Tab {
+		for child_id in rt.order {
+			child, child_found := rt.nodes[child_id]
+			if child_found && child.active && child.kind == .Tab_Close && tab_ancestor(rt, child) == node {
+				invalidate_interaction_paint(rt, child_id, reason)
+			}
+		}
+	}
 }
 
 split_drag_coordinate :: proc(node: ^Node, x, y: f32) -> f32 {
@@ -309,7 +326,7 @@ activate_focused :: proc(rt: ^Runtime, key: Activation_Key) -> bool {
 	id := rt.focused
 	node, ok := rt.nodes[id]
 	if !ok { return false }
-	can_activate := node.kind == .Button || (node.kind == .Checkbox && key == .Space)
+	can_activate := node.kind == .Button || node.kind == .Tab || (node.kind == .Checkbox && key == .Space)
 	if !node.active || !node.focusable || node.disabled || !can_activate {
 		return false
 	}
@@ -488,12 +505,14 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 				if old, ok := rt.nodes[rt.last_hovered]; ok {
 					old.hovered = false
 					invalidate_interaction_paint(rt, old.id, "hover lost")
+					invalidate_tab_hover_dependents(rt, old.id, "tab hover presentation changed")
 				}
 			}
 			if hover_target != 0 {
 				if next, ok := rt.nodes[hover_target]; ok {
 					next.hovered = true
 					invalidate_interaction_paint(rt, next.id, "hover gained")
+					invalidate_tab_hover_dependents(rt, next.id, "tab hover presentation changed")
 				}
 			}
 			rt.last_hovered = hover_target
@@ -505,21 +524,27 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 	} else if event.kind == .Down {
 		if target != 0 {
 			if event.button == 0 || event.button == POINTER_BUTTON_PRIMARY {
-				if source_node, drag_type, source_id, found := drag_source_at(rt, target); found {
-					rt.drag = Drag_Session{
-						phase=.Candidate,
-						drag_type=drag_type,
-						source=source_id,
-						source_node=source_node,
-						start_x=event.x,
-						start_y=event.y,
-						x=event.x,
-						y=event.y,
+				if target_node, target_found := rt.nodes[target]; target_found && target_node.kind != .Tab_Close {
+					if source_node, drag_type, source_id, found := drag_source_at(rt, target); found {
+						rt.drag = Drag_Session{
+							phase=.Candidate,
+							drag_type=drag_type,
+							source=source_id,
+							source_node=source_node,
+							start_x=event.x,
+							start_y=event.y,
+							x=event.x,
+							y=event.y,
+						}
 					}
 				}
 			}
 			if node, ok := rt.nodes[target]; ok {
-				if node.kind != .Split_Handle { focus(rt, target) }
+				focus_target := target
+				if node.kind == .Tab_Close {
+					if tab := tab_ancestor(rt, node); tab != nil { focus_target = tab.id }
+				}
+				if node.kind != .Split_Handle { _ = focus(rt, focus_target) }
 				// Pointer placement is an explicit cancellation boundary for a
 				// platform preedit. The next hit test must use committed text
 				// geometry, not the temporary composition projection.
@@ -592,7 +617,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 		}
 		if !captured_is_split && captured != 0 && captured == target {
 			rt.activation_sequence += 1
-			if node, ok := rt.nodes[captured]; ok && (node.kind == .Button || node.kind == .Checkbox) {
+			if node, ok := rt.nodes[captured]; ok && (node.kind == .Button || node.kind == .Tab || node.kind == .Tab_Close || node.kind == .Checkbox) {
 				rt.activation_node = captured
 			} else {
 				rt.activation_node = 0

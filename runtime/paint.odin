@@ -177,6 +177,18 @@ append_focus_outline :: proc(node: ^Node, color: Color, thickness: f32) {
 	append_rect_outline(node, color, thickness)
 }
 
+tab_bar_node_hovered :: proc(rt: ^Runtime, node: ^Node) -> bool {
+	if node == nil { return false }
+	if node.hovered { return true }
+	if rt == nil { return false }
+	for candidate_id in rt.order {
+		candidate, found := rt.nodes[candidate_id]
+		if !found || !candidate.active || candidate.kind != .Tab_Close || !candidate.hovered { continue }
+		if tab_ancestor(rt, candidate) == node { return true }
+	}
+	return false
+}
+
 append_scrollbar_display :: proc(rt: ^Runtime, node: ^Node) {
 	if node.kind != .Scroll_Region { return }
 	resolved_style := style_scrollbar_resolve_retained(rt, node, Scrollbar_Visual_State{
@@ -338,13 +350,15 @@ update_paint :: proc(rt: ^Runtime) {
 				if node.kind == .Scroll_Region && semantic_focus_owner_needs_outline(rt, node.id) {
 					append_focus_outline(node, style_environment_color(rt, node.style_environment, .Focus), 1.5)
 				}
-			} else if node.kind == .Button {
+			} else if node.kind == .Button || node.kind == .Tab {
 				padding_x := maxf(node.button_content_style.padding_x, 0)
 				padding_y := maxf(node.button_content_style.padding_y, 0)
+				close_slot_width := f32(0)
+				if node.kind == .Tab { close_slot_width = minf(tab_trailing_slot_width(node), node.bounds.w) }
 				content_bounds := Rect{
 					node.bounds.x + padding_x,
 					node.bounds.y + padding_y,
-					maxf(node.bounds.w - 2*padding_x, 0),
+					maxf(node.bounds.w - 2*padding_x-close_slot_width, 0),
 					maxf(node.bounds.h - 2*padding_y, 0),
 				}
 				text_bounds := content_bounds
@@ -385,7 +399,7 @@ update_paint :: proc(rt: ^Runtime) {
 				} else {
 					resolved_style := style_button_resolve_retained(rt, node, Button_Visual_State{
 						selected=node.selected,
-						hovered=node.hovered,
+						hovered=tab_bar_node_hovered(rt, node),
 						pressed=node.pressed,
 						disabled=node.disabled,
 					}, node.drop_position == .On)
@@ -393,7 +407,8 @@ update_paint :: proc(rt: ^Runtime) {
 					if resolved_style.surface.a > 0 {
 						append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, resolved_style.surface))
 					}
-					if resolved_style.selected_indicator == .Underline {
+					if resolved_style.selected_indicator == .Underline &&
+					   !(node.kind == .Tab && node.paint_value&(1<<5) != 0) {
 						indicator_height := minf(2, node.bounds.h)
 						indicator := Rect{node.bounds.x, node.bounds.y+node.bounds.h-indicator_height, node.bounds.w, indicator_height}
 						append(&node.paint, paint_surface_command(node.id, indicator, node.clip, resolved_style.selected_indicator_color))
@@ -406,6 +421,52 @@ update_paint :: proc(rt: ^Runtime) {
 					}
 				}
 				append(&node.paint, paint_text_command(node.id, text_bounds, text_clip, paint_text_handle_for_node(node), text_color))
+			} else if node.kind == .Tab_Close {
+				parent := tab_ancestor(rt, node)
+				show_close := parent != nil && tab_close_should_show(parent, node)
+				if show_close {
+					close_style := style_button_resolve_retained(rt, node, Button_Visual_State{
+						hovered=node.hovered,
+						pressed=node.pressed,
+						disabled=node.disabled,
+					})
+					if close_style.surface.a > 0 {
+						append(&node.paint, paint_surface_command(
+							node.id,
+							node.bounds,
+							node.clip,
+							close_style.surface,
+						))
+					}
+					if rt.focused == node.id && !node.disabled { append_focus_outline(node, close_style.focus, 1.5) }
+					text_bounds := node.bounds
+					if node.text_run_valid {
+						text_bounds.x += (text_bounds.w-node.text_run.width)*0.5
+						text_bounds.y += (text_bounds.h-node.text_run.height)*0.5
+					}
+					append(&node.paint, paint_text_command(
+						node.id,
+						text_bounds,
+						rect_intersection(node.clip, node.bounds),
+						paint_text_handle_for_node(node),
+						close_style.text,
+					))
+				} else if parent != nil && parent.tab_dirty {
+					dot_size := minf(6, minf(node.bounds.w, node.bounds.h))
+					dot := Rect{
+						node.bounds.x+(node.bounds.w-dot_size)*0.5,
+						node.bounds.y+(node.bounds.h-dot_size)*0.5,
+						dot_size,
+						dot_size,
+					}
+					append(&node.paint, paint_surface_command(
+						node.id,
+						dot,
+						node.clip,
+						style_environment_color(rt, node.style_environment, .Accent),
+						shape=Surface_Shape{kind=.Rounded_Rectangle, corner_radius=dot_size*0.5},
+					))
+				}
 			} else if node.kind == .Checkbox {
 				box_size := minf(18, maxf(node.bounds.h-6, 12))
 				box := Rect{node.bounds.x+4, node.bounds.y+(node.bounds.h-box_size)*0.5, box_size, box_size}
