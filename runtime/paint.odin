@@ -148,48 +148,48 @@ append_text_paint_geometry :: proc(node: ^Node, geometry: ^Text_Paint_Geometry, 
 			bounds.x += node.bounds.x
 			bounds.y += node.bounds.y
 			if backgrounds && span.background_set {
-				append(&node.paint, Display_Command{node.id, .Text_Selection, bounds, command_clip, "", span.background, []Text_Paint_Span{}})
+				append(&node.paint, paint_surface_command(node.id, bounds, command_clip, span.background))
 			}
 			if !backgrounds {
 				if span.underline {
-					append(&node.paint, Display_Command{node.id, .Text_Selection, Rect{bounds.x, bounds.y+line.baseline+1, bounds.w, 1}, command_clip, "", span.color if span.color_set else node.color, []Text_Paint_Span{}})
+					append(&node.paint, paint_surface_command(node.id, Rect{bounds.x, bounds.y+line.baseline+1, bounds.w, 1}, command_clip, span.color if span.color_set else node.color))
 				}
 				if span.strikethrough {
-					append(&node.paint, Display_Command{node.id, .Text_Selection, Rect{bounds.x, bounds.y+line.baseline-node.text_run.size*0.32, bounds.w, 1}, command_clip, "", span.color if span.color_set else node.color, []Text_Paint_Span{}})
+					append(&node.paint, paint_surface_command(node.id, Rect{bounds.x, bounds.y+line.baseline-node.text_run.size*0.32, bounds.w, 1}, command_clip, span.color if span.color_set else node.color))
 				}
 			}
 		}
 	}
 }
 
-append_rect_outline :: proc(node: ^Node, kind: Node_Kind, color: Color, thickness: f32) {
+append_rect_outline :: proc(node: ^Node, color: Color, thickness: f32) {
 	width := min(max(thickness, 0), node.bounds.w/2)
 	height := min(max(thickness, 0), node.bounds.h/2)
 	if width <= 0 || height <= 0 { return }
-	append(&node.paint, Display_Command{node.id, kind, Rect{node.bounds.x, node.bounds.y, node.bounds.w, height}, node.clip, "", color, []Text_Paint_Span{}})
-	append(&node.paint, Display_Command{node.id, kind, Rect{node.bounds.x, node.bounds.y+node.bounds.h-height, node.bounds.w, height}, node.clip, "", color, []Text_Paint_Span{}})
+	append(&node.paint, paint_surface_command(node.id, Rect{node.bounds.x, node.bounds.y, node.bounds.w, height}, node.clip, color))
+	append(&node.paint, paint_surface_command(node.id, Rect{node.bounds.x, node.bounds.y+node.bounds.h-height, node.bounds.w, height}, node.clip, color))
 	interior_height := max(0, node.bounds.h-height*2)
-	append(&node.paint, Display_Command{node.id, kind, Rect{node.bounds.x, node.bounds.y+height, width, interior_height}, node.clip, "", color, []Text_Paint_Span{}})
-	append(&node.paint, Display_Command{node.id, kind, Rect{node.bounds.x+node.bounds.w-width, node.bounds.y+height, width, interior_height}, node.clip, "", color, []Text_Paint_Span{}})
+	append(&node.paint, paint_surface_command(node.id, Rect{node.bounds.x, node.bounds.y+height, width, interior_height}, node.clip, color))
+	append(&node.paint, paint_surface_command(node.id, Rect{node.bounds.x+node.bounds.w-width, node.bounds.y+height, width, interior_height}, node.clip, color))
 }
 
 append_focus_outline :: proc(node: ^Node, color: Color, thickness: f32) {
-	append_rect_outline(node, .Button, color, thickness)
+	append_rect_outline(node, color, thickness)
 }
 
 append_scrollbar_display :: proc(rt: ^Runtime, node: ^Node) {
 	if node.kind != .Scroll_Region { return }
 	if node.scrollbar_vertical_visible {
-		append(&rt.display, Display_Command{node.id, .Scrollbar_Track, node.scrollbar_vertical_track, node.clip, "", style_environment_color(rt, node.style_environment, .Scrollbar_Track), []Text_Paint_Span{}})
-		append(&rt.display, Display_Command{node.id, .Scrollbar_Thumb, node.scrollbar_vertical_thumb, node.clip, "", style_environment_color(rt, node.style_environment, .Scrollbar_Thumb), []Text_Paint_Span{}})
+		append(&rt.display, paint_surface_command(node.id, node.scrollbar_vertical_track, node.clip, style_environment_color(rt, node.style_environment, .Scrollbar_Track)))
+		append(&rt.display, paint_surface_command(node.id, node.scrollbar_vertical_thumb, node.clip, style_environment_color(rt, node.style_environment, .Scrollbar_Thumb)))
 	}
 	if node.scrollbar_horizontal_visible {
-		append(&rt.display, Display_Command{node.id, .Scrollbar_Track, node.scrollbar_horizontal_track, node.clip, "", style_environment_color(rt, node.style_environment, .Scrollbar_Track), []Text_Paint_Span{}})
-		append(&rt.display, Display_Command{node.id, .Scrollbar_Thumb, node.scrollbar_horizontal_thumb, node.clip, "", style_environment_color(rt, node.style_environment, .Scrollbar_Thumb), []Text_Paint_Span{}})
+		append(&rt.display, paint_surface_command(node.id, node.scrollbar_horizontal_track, node.clip, style_environment_color(rt, node.style_environment, .Scrollbar_Track)))
+		append(&rt.display, paint_surface_command(node.id, node.scrollbar_horizontal_thumb, node.clip, style_environment_color(rt, node.style_environment, .Scrollbar_Thumb)))
 	}
 	if node.scrollbar_vertical_visible && node.scrollbar_horizontal_visible {
 		corner := Rect{node.scrollbar_vertical_track.x, node.scrollbar_horizontal_track.y, node.scrollbar_vertical_track.w, node.scrollbar_horizontal_track.h}
-		append(&rt.display, Display_Command{node.id, .Scrollbar_Corner, corner, node.clip, "", style_environment_color(rt, node.style_environment, .Surface), []Text_Paint_Span{}})
+		append(&rt.display, paint_surface_command(node.id, corner, node.clip, style_environment_color(rt, node.style_environment, .Surface)))
 	}
 }
 
@@ -198,7 +198,9 @@ compose_subtree :: proc(rt: ^Runtime, id: Node_ID) {
 	if !ok || !node.active { return }
 
 	node.display_index = -1
-	for command in node.paint {
+	for cached_command in node.paint {
+		command := cached_command
+		command.opacity = drag_source_opacity(rt, node.id)
 		if node.display_index < 0 { node.display_index = len(rt.display) }
 		append(&rt.display, command)
 		rt.stats.composition_nodes_visited += 1
@@ -236,9 +238,7 @@ append_visual_row_background :: proc(rt: ^Runtime, row: ^Node) {
 	line := text.text_run.lines[line_index]
 	bounds := Rect{row.bounds.x, text.bounds.y+line.y, row.bounds.w, line.height}
 	if bounds.w <= 0 || bounds.h <= 0 { return }
-	append(&row.paint, Display_Command{
-		row.id, .Text_Selection, bounds, row.clip, "", row.visual_row_color, []Text_Paint_Span{},
-	})
+	append(&row.paint, paint_surface_command(row.id, bounds, row.clip, row.visual_row_color))
 }
 
 update_paint :: proc(rt: ^Runtime) {
@@ -255,16 +255,7 @@ update_paint :: proc(rt: ^Runtime) {
 			if node.kind == .Text_Field && node.composition.active {
 				prepare_text_composition_node(rt, node)
 			}
-			for command in node.paint { if len(command.text) > 0 { delete(command.text, rt.persistent_allocator) } }
 			clear(&node.paint)
-			display_text := node.label if node.label != "" else node.text
-			display_kind := node.kind
-			if node.kind == .Text_Field && node.composition.active && node.composition_run_valid {
-				// A composition command renders the temporary projection once;
-				// the committed selection is not rendered underneath it.
-				display_text = node.composition_run.value
-				display_kind = .Text_Composition
-			}
 			if node.kind == .Text_Field && node.text_run_valid {
 				if !node.composition.active {
 					selection := text_run_selection_rects(
@@ -278,10 +269,7 @@ update_paint :: proc(rt: ^Runtime) {
 						bounds := selected.rect
 						bounds.x += node.bounds.x
 						bounds.y += node.bounds.y
-						append(&node.paint, Display_Command{
-							node.id, .Text_Selection, bounds, node.clip, "",
-							style_environment_color(rt, node.style_environment, .Selection), []Text_Paint_Span{},
-						})
+						append(&node.paint, paint_surface_command(node.id, bounds, node.clip, style_environment_color(rt, node.style_environment, .Selection)))
 					}
 					delete(selection)
 				} else if node.composition_run_valid {
@@ -303,10 +291,7 @@ update_paint :: proc(rt: ^Runtime) {
 						bounds.x += node.bounds.x
 						bounds.y += node.bounds.y + bounds.h - 2
 						bounds.h = 1
-						append(&node.paint, Display_Command{
-							node.id, .Text_Selection, bounds, node.clip, "",
-							style_environment_color(rt, node.style_environment, .Accent), []Text_Paint_Span{},
-						})
+						append(&node.paint, paint_surface_command(node.id, bounds, node.clip, style_environment_color(rt, node.style_environment, .Accent)))
 					}
 					delete(selection)
 				}
@@ -316,11 +301,11 @@ update_paint :: proc(rt: ^Runtime) {
 				// supplied a background. This keeps structural wrappers from
 				// producing accidental rectangles in the compositor.
 				if node.paint_background {
-					append(&node.paint, Display_Command{node.id, node.kind, node.bounds, node.clip, "", node.color, []Text_Paint_Span{}})
+					append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, node.color))
 				}
 				append_visual_row_background(rt, node)
 				if node.kind == .Context_Menu_Panel {
-					append_rect_outline(node, .Context_Menu_Panel, style_environment_color(rt, node.style_environment, .Border), 1)
+					append_rect_outline(node, style_environment_color(rt, node.style_environment, .Border), 1)
 				}
 				if node.kind == .Scroll_Region && semantic_focus_owner_needs_outline(rt, node.id) {
 					append_focus_outline(node, style_environment_color(rt, node.style_environment, .Focus), 1.5)
@@ -367,7 +352,7 @@ update_paint :: proc(rt: ^Runtime) {
 					})
 					text_color = resolved_style.text
 					if resolved_style.surface.a > 0 {
-						append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", resolved_style.surface, []Text_Paint_Span{}})
+						append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, resolved_style.surface))
 					}
 				} else {
 					resolved_style := style_button_resolve_retained(rt, node, Button_Visual_State{
@@ -378,12 +363,12 @@ update_paint :: proc(rt: ^Runtime) {
 					}, node.drop_position == .On)
 					text_color = resolved_style.text
 					if resolved_style.surface.a > 0 {
-						append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", resolved_style.surface, []Text_Paint_Span{}})
+						append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, resolved_style.surface))
 					}
 					if resolved_style.selected_indicator == .Underline {
 						indicator_height := minf(2, node.bounds.h)
 						indicator := Rect{node.bounds.x, node.bounds.y+node.bounds.h-indicator_height, node.bounds.w, indicator_height}
-						append(&node.paint, Display_Command{node.id, .Button, indicator, node.clip, "", resolved_style.selected_indicator_color, []Text_Paint_Span{}})
+						append(&node.paint, paint_surface_command(node.id, indicator, node.clip, resolved_style.selected_indicator_color))
 					}
 					if node.semantic_active { append_focus_outline(node, resolved_style.semantic_active, 1) }
 					if rt.focused == node.id && !node.disabled {
@@ -392,7 +377,7 @@ update_paint :: proc(rt: ^Runtime) {
 						append_focus_outline(node, resolved_style.focus, 1.5)
 					}
 				}
-				append(&node.paint, Display_Command{node.id, .Text, text_bounds, text_clip, owned(display_text, rt.persistent_allocator), text_color, []Text_Paint_Span{}})
+				append(&node.paint, paint_text_command(node.id, text_bounds, text_clip, paint_text_handle_for_node(node), text_color))
 			} else if node.kind == .Checkbox {
 				box_size := minf(18, maxf(node.bounds.h-6, 12))
 				box := Rect{node.bounds.x+4, node.bounds.y+(node.bounds.h-box_size)*0.5, box_size, box_size}
@@ -400,7 +385,7 @@ update_paint :: proc(rt: ^Runtime) {
 				if node.disabled { box_color = Color{0.20, 0.23, 0.29, 1} }
 				if node.hovered && !node.disabled { box_color = Color{0.48, 0.60, 0.76, 1} }
 				if node.pressed && !node.disabled { box_color = Color{0.58, 0.70, 0.86, 1} }
-				append(&node.paint, Display_Command{node.id, .Button, box, node.clip, "", box_color, []Text_Paint_Span{}})
+				append(&node.paint, paint_surface_command(node.id, box, node.clip, box_color))
 				inner := Rect{box.x+2, box.y+2, maxf(box.w-4, 0), maxf(box.h-4, 0)}
 				inner_color := Color{0.035, 0.045, 0.065, 1}
 				if node.paint_value&1 != 0 { inner_color = Color{0.20, 0.48, 0.76, 1} }
@@ -408,13 +393,13 @@ update_paint :: proc(rt: ^Runtime) {
 					inner_color = Color{0.08, 0.09, 0.12, 1}
 					if node.paint_value&1 != 0 { inner_color = Color{0.18, 0.24, 0.31, 1} }
 				}
-				append(&node.paint, Display_Command{node.id, .Button, inner, node.clip, "", inner_color, []Text_Paint_Span{}})
+				append(&node.paint, paint_surface_command(node.id, inner, node.clip, inner_color))
 				if node.paint_value&1 != 0 {
 					check_color := Color{0.94, 0.97, 1, 1}
 					append(&node.paint,
-						Display_Command{node.id, .Button, Rect{box.x+4, box.y+box.h*0.55, box.w*0.24, 2}, node.clip, "", check_color, []Text_Paint_Span{}},
-						Display_Command{node.id, .Button, Rect{box.x+7, box.y+box.h*0.48, box.w*0.27, 2}, node.clip, "", check_color, []Text_Paint_Span{}},
-						Display_Command{node.id, .Button, Rect{box.x+10, box.y+box.h*0.36, box.w*0.26, 2}, node.clip, "", check_color, []Text_Paint_Span{}},
+						paint_surface_command(node.id, Rect{box.x+4, box.y+box.h*0.55, box.w*0.24, 2}, node.clip, check_color),
+						paint_surface_command(node.id, Rect{box.x+7, box.y+box.h*0.48, box.w*0.27, 2}, node.clip, check_color),
+						paint_surface_command(node.id, Rect{box.x+10, box.y+box.h*0.36, box.w*0.26, 2}, node.clip, check_color),
 					)
 				}
 				if rt.focused == node.id && !node.disabled {
@@ -424,12 +409,12 @@ update_paint :: proc(rt: ^Runtime) {
 				if node.disabled { text_color = Color{0.48, 0.53, 0.62, 1} }
 				text_bounds := Rect{node.bounds.x+30, node.bounds.y, maxf(node.bounds.w-34, 0), node.bounds.h}
 				if node.text_run_valid { text_bounds.y += (text_bounds.h-node.text_run.height)*0.5 }
-				append(&node.paint, Display_Command{node.id, .Text, text_bounds, rect_intersection(node.clip, text_bounds), owned(display_text, rt.persistent_allocator), text_color, []Text_Paint_Span{}})
+				append(&node.paint, paint_text_command(node.id, text_bounds, rect_intersection(node.clip, text_bounds), paint_text_handle_for_node(node), text_color))
 			} else if node.kind == .Slider {
 				text_color := Color{0.88, 0.91, 0.96, 1}
 				if node.disabled { text_color = Color{0.48, 0.53, 0.62, 1} }
 				label_bounds := Rect{node.bounds.x+8, node.bounds.y+1, maxf(node.bounds.w-16, 0), minf(maxf(node.bounds.h-14, 0), node.text_run.height)}
-				append(&node.paint, Display_Command{node.id, .Text, label_bounds, rect_intersection(node.clip, label_bounds), owned(display_text, rt.persistent_allocator), text_color, []Text_Paint_Span{}})
+				append(&node.paint, paint_text_command(node.id, label_bounds, rect_intersection(node.clip, label_bounds), paint_text_handle_for_node(node), text_color))
 				track_x := node.bounds.x + minf(8, node.bounds.w*0.25)
 				track_width := maxf(node.bounds.w-minf(16, node.bounds.w*0.5), 1)
 				track_y := node.bounds.y + node.bounds.h - 8
@@ -450,9 +435,9 @@ update_paint :: proc(rt: ^Runtime) {
 					thumb_color = Color{0.94, 0.97, 1, 1}
 				}
 				append(&node.paint,
-					Display_Command{node.id, .Button, track, node.clip, "", track_color, []Text_Paint_Span{}},
-					Display_Command{node.id, .Button, Rect{track_x, track_y-2, maxf(thumb_x-track_x, 0), 4}, node.clip, "", fill_color, []Text_Paint_Span{}},
-					Display_Command{node.id, .Button, Rect{thumb_x-5, track_y-6, 10, 12}, node.clip, "", thumb_color, []Text_Paint_Span{}},
+					paint_surface_command(node.id, track, node.clip, track_color),
+					paint_surface_command(node.id, Rect{track_x, track_y-2, maxf(thumb_x-track_x, 0), 4}, node.clip, fill_color),
+					paint_surface_command(node.id, Rect{thumb_x-5, track_y-6, 10, 12}, node.clip, thumb_color),
 				)
 				if rt.focused == node.id && !node.disabled {
 					append_focus_outline(node, Color{0.76, 0.86, 1.0, 1}, 1.5)
@@ -461,7 +446,14 @@ update_paint :: proc(rt: ^Runtime) {
 				handle_color := Color{0.20, 0.24, 0.31, 1}
 				if node.hovered { handle_color = Color{0.35, 0.53, 0.72, 1} }
 				if node.pressed { handle_color = Color{0.42, 0.66, 0.90, 1} }
-				append(&node.paint, Display_Command{node.id, .Split_Handle, node.bounds, node.clip, "", handle_color, []Text_Paint_Span{}})
+				append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, handle_color))
+			} else if node.kind == .Custom_Surface {
+				// Waveforms retain their backing surface as an ordinary paint
+				// primitive. Geometry remains transparent unless it supplies fills.
+				if node.surface_kind == .Waveform {
+					append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, Color{0.08, 0.14, 0.24, 1}))
+				}
+				append(&node.paint, paint_geometry_command(node.id, node.bounds, node.clip, paint_geometry_handle_for_node(node)))
 			} else {
 				text_clip := node.clip
 				if node.text_style.overflow != .Wrap {
@@ -484,28 +476,24 @@ update_paint :: proc(rt: ^Runtime) {
 						bounds := selected.rect
 						bounds.x += node.bounds.x
 						bounds.y += node.bounds.y
-						append(&node.paint, Display_Command{
-							node.id, .Text_Selection, bounds, text_clip, "",
-					style_environment_color(rt, node.style_environment, .Selection), []Text_Paint_Span{},
-						})
+						append(&node.paint, paint_surface_command(node.id, bounds, text_clip, style_environment_color(rt, node.style_environment, .Selection)))
 					}
 					delete(selection)
 				}
-				append(&node.paint, Display_Command{node.id, display_kind, node.bounds, text_clip, owned(display_text, rt.persistent_allocator), node.color, node.text_paint_spans[:]})
+				text_run_handle := paint_text_handle_for_node(node)
+				if node.kind == .Text_Field && node.composition.active && node.composition_run_valid {
+					text_run_handle = paint_text_handle_for_composition(node)
+				}
+				append(&node.paint, paint_text_command(node.id, node.bounds, text_clip, text_run_handle, node.color, node.text_paint_spans[:]))
 				append_text_paint_geometry(node, &paint_geometry, text_clip, false)
 				text_paint_geometry_destroy(&paint_geometry)
 			}
 			if node.kind == .Text && node.text_interaction && node.text_interaction_show_caret && node.text_run_valid {
 				caret := text_node_caret_geometry(rt, node.id, node.text_interaction_focus)
 				if caret.valid {
-					append(&node.paint, Display_Command{
-						// A caret belongs to a text boundary, which can sit just
-						// beyond the glyph extent (including at byte 0 of an
-						// empty run). Keep it clipped by the containing viewport,
-						// not by the text node's glyph-sized bounds.
-						node.id, .Text_Caret, caret.rect, node.clip, "",
-						style_environment_color(rt, node.style_environment, .Accent), []Text_Paint_Span{},
-					})
+					// A caret belongs to a text boundary, which can sit just beyond the
+					// glyph extent. Clip it by the containing viewport.
+					append(&node.paint, paint_surface_command(node.id, caret.rect, node.clip, style_environment_color(rt, node.style_environment, .Accent)))
 				}
 			}
 			if node.kind == .Text_Field && rt.focused == node.id {
@@ -516,17 +504,11 @@ update_paint :: proc(rt: ^Runtime) {
 					bounds := caret.rect
 					bounds.x += node.bounds.x
 					bounds.y += node.bounds.y
-					append(&node.paint, Display_Command{
-						node.id, .Text_Caret, bounds, node.clip, "",
-						style_environment_color(rt, node.style_environment, .Accent), []Text_Paint_Span{},
-					})
+					append(&node.paint, paint_surface_command(node.id, bounds, node.clip, style_environment_color(rt, node.style_environment, .Accent)))
 				}
 			}
 			if node.drop_position == .On {
-				append(&node.paint, Display_Command{
-					node.id, .Text_Selection, node.bounds, node.clip, "",
-					style_environment_color(rt, node.style_environment, .Success), []Text_Paint_Span{},
-				})
+				append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, style_environment_color(rt, node.style_environment, .Success)))
 			} else if node.drop_position == .Before || node.drop_position == .After {
 				marker := Rect{}
 				if node.drop_target_mode == .Between_Horizontal {
@@ -536,10 +518,7 @@ update_paint :: proc(rt: ^Runtime) {
 					marker_y := node.bounds.y if node.drop_position == .Before else node.bounds.y+node.bounds.h-2
 					marker = Rect{node.bounds.x+2, marker_y, maxf(node.bounds.w-4, 0), 2}
 				}
-				append(&node.paint, Display_Command{
-					node.id, .Text_Selection, marker, node.clip, "",
-					style_environment_color(rt, node.style_environment, .Accent), []Text_Paint_Span{},
-				})
+				append(&node.paint, paint_surface_command(node.id, marker, node.clip, style_environment_color(rt, node.style_environment, .Accent)))
 			}
 			rt.stats.paint_updates += 1
 			dirty_set(&node.dirty, .Composite, true)

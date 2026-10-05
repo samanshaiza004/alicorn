@@ -51,6 +51,7 @@ text_composition_run_destroy :: proc(node: ^Node) {
 		text_run_destroy(&node.composition_run)
 		node.composition_run_valid = false
 	}
+	node.composition_run_handle_generation = 0
 }
 
 clear_text_composition :: proc(node: ^Node, allocator := context.allocator) -> bool {
@@ -120,6 +121,7 @@ prepare_text_composition_node :: proc(rt: ^Runtime, node: ^Node) -> bool {
 	node.composition_run = run
 	node.composition_run_valid = true
 	node.composition_run_generation += 1
+	node.composition_run_handle_generation = paint_next_resource_generation(rt)
 	return true
 }
 

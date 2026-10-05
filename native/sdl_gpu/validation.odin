@@ -76,7 +76,7 @@ native_text_readback_probe :: proc(
 	text_renderer: ^Native_Text_Renderer,
 	surface_renderer: ^Native_Surface_Renderer,
 	solid_renderer: ^Native_Solid_Renderer,
-	display: []alicorn.Display_Command,
+	display: []alicorn.Paint_Command,
 	width, height: sdl3.Uint32,
 	scratch_allocator := context.temp_allocator,
 ) -> (ok: bool, non_background: int) {
@@ -102,7 +102,7 @@ native_text_readback_probe :: proc(
 		sdl3.ReleaseGPUTexture(device, probe_texture)
 		return false, 0
 	}
-	if !draw_display_list(command, probe_texture, width, height, text_renderer, surface_renderer, solid_renderer, display, 1, 1, false, scratch_allocator=scratch_allocator) {
+	if !draw_display_list(command, probe_texture, width, height, text_renderer, surface_renderer, solid_renderer, display, 1, 1, scratch_allocator=scratch_allocator) {
 		_ = sdl3.CancelGPUCommandBuffer(command)
 		sdl3.ReleaseGPUTransferBuffer(device, download)
 		sdl3.ReleaseGPUTexture(device, probe_texture)
@@ -142,7 +142,7 @@ native_text_readback_probe :: proc(
 	text_bounds: alicorn.Rect
 	text_found := false
 	for draw in display {
-		if native_text_is_text(draw.kind) {
+		if alicorn.paint_command_is_text(draw) {
 			text_bounds = draw.bounds
 			text_found = true
 			break
@@ -410,7 +410,9 @@ RunFoundation :: proc() {
 	render_native_ui(&rt, app_text)
 	composition_command_found := false
 	for command in rt.display {
-		if command.kind == .Text_Composition { composition_command_found = true; break }
+		if alicorn.paint_command_is_text(command) {
+			if text_paint, ok := command.payload.(alicorn.Text_Paint); ok && text_paint.run.source == .Composition { composition_command_found = true; break }
+		}
 	}
 	if !composition_command_found { fail("SDL text-editing probe did not produce a composition display command") }
 	commit_event := sdl3.Event{type=.TEXT_INPUT}

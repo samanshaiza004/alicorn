@@ -41,17 +41,6 @@ native_surface_vertex :: proc(x, y: f32, color: [4]f32) -> Native_Text_Vertex {
 	return Native_Text_Vertex{[3]f32{x, y, 0}, color, [2]f32{0.5, 0.5}}
 }
 
-native_surface_append_quad :: proc(vertices: ^[dynamic]Native_Text_Vertex, x0, y0, x1, y1, scale_x, scale_y: f32, color: [4]f32) {
-	append(vertices,
-		native_surface_vertex(x0*scale_x, y0*scale_y, color),
-		native_surface_vertex(x1*scale_x, y0*scale_y, color),
-		native_surface_vertex(x1*scale_x, y1*scale_y, color),
-		native_surface_vertex(x0*scale_x, y0*scale_y, color),
-		native_surface_vertex(x1*scale_x, y1*scale_y, color),
-		native_surface_vertex(x0*scale_x, y1*scale_y, color),
-	)
-}
-
 native_surface_append_segment :: proc(vertices: ^[dynamic]Native_Text_Vertex, ax, ay, bx, by, scale_x, scale_y, thickness: f32, color: [4]f32) -> bool {
 	dx := bx - ax
 	dy := by - ay
@@ -97,20 +86,25 @@ native_surface_append_geometry :: proc(
 	scale_x, scale_y: f32,
 	segments: []alicorn.GPU_Surface_Line_Segment,
 	circles: []alicorn.GPU_Surface_Filled_Circle,
+	opacity: f32 = 1,
 ) -> bool {
 	for segment in segments {
 		ax := bounds.x + segment.start.x
 		ay := bounds.y + segment.start.y
 		bx := bounds.x + segment.end.x
 		by := bounds.y + segment.end.y
-		if !native_surface_append_segment(vertices, ax, ay, bx, by, scale_x, scale_y, segment.thickness, native_surface_color_from(segment.color)) {
+		color := segment.color
+		color.a *= opacity
+		if !native_surface_append_segment(vertices, ax, ay, bx, by, scale_x, scale_y, segment.thickness, native_surface_color_from(color)) {
 			return false
 		}
 	}
 	for circle in circles {
 		cx := bounds.x + circle.center.x
 		cy := bounds.y + circle.center.y
-		if !native_surface_append_circle(vertices, cx, cy, scale_x, scale_y, circle.radius, native_surface_color_from(circle.color)) {
+		color := circle.color
+		color.a *= opacity
+		if !native_surface_append_circle(vertices, cx, cy, scale_x, scale_y, circle.radius, native_surface_color_from(color)) {
 			return false
 		}
 	}
@@ -162,19 +156,29 @@ native_surface_geometry_self_test :: proc() -> Native_Validation_Result {
 		vertices=make([dynamic]Native_Text_Vertex, 0, 128, allocator=context.temp_allocator),
 	}
 	defer delete(renderer.vertices)
-	if !native_surface_rebuild_mesh(&renderer, surface, 2, 2) { return native_validation_failed() }
+	first_command, first_found := native_surface_test_geometry_command(&rt, surface)
+	if !first_found || !native_surface_rebuild_mesh(&renderer, first_command, 2, 2) { return native_validation_failed() }
 	if len(renderer.vertices) != 6+alicorn.GPU_SURFACE_CIRCLE_SEGMENTS*3 { return native_validation_failed() }
 	first_fingerprint := renderer.mesh_fingerprint
 	changed := [1]alicorn.GPU_Surface_Line_Segment{{
 		start={8, 3}, end={18, 13}, thickness=2, color={1, 0, 0, 1},
 	}}
 	if !alicorn.gpu_surface_update_geometry(&rt, surface, changed[:], circles[:]) { return native_validation_failed() }
-	if !native_surface_rebuild_mesh(&renderer, surface, 2, 2) { return native_validation_failed() }
+	changed_command, changed_found := native_surface_test_geometry_command(&rt, surface)
+	if !changed_found || !native_surface_rebuild_mesh(&renderer, changed_command, 2, 2) { return native_validation_failed() }
 	if renderer.mesh_fingerprint == first_fingerprint || len(renderer.vertices) != 6+alicorn.GPU_SURFACE_CIRCLE_SEGMENTS*3 { return native_validation_failed() }
-	// Geometry surfaces are transparent by default, while the original waveform
-	// mesh retains its opaque dark background quad.
-	if !native_surface_rebuild_mesh(&renderer, waveform, 2, 2) { return native_validation_failed() }
-	if len(renderer.vertices) == 12 && renderer.vertices[0].color[0] == 0.08 && renderer.vertices[0].color[1] == 0.14 && renderer.vertices[0].color[2] == 0.24 { return Native_Validation_Result{ok=true} }
+	// Geometry surfaces are transparent by default. A waveform backdrop is a
+	// separate generic Surface_Paint command; the payload renderer only emits
+	// its sample-derived line geometry.
+	waveform_command, waveform_found := native_surface_test_geometry_command(&rt, waveform)
+	if !waveform_found || !native_surface_rebuild_mesh(&renderer, waveform_command, 2, 2) { return native_validation_failed() }
+	background_found := false
+	for command in rt.display {
+		if command.owner != waveform || !alicorn.paint_command_is_surface(command) { continue }
+		color, color_ok := alicorn.paint_surface_color(command)
+		if color_ok && color == (alicorn.Color{0.08, 0.14, 0.24, 1}) { background_found = true }
+	}
+	if len(renderer.vertices) == 6 && background_found { return Native_Validation_Result{ok=true} }
 	return native_validation_failed()
 }
 
@@ -246,41 +250,55 @@ native_surface_destroy :: proc(renderer: ^Native_Surface_Renderer) {
 	renderer^ = {}
 }
 
-native_surface_rebuild_mesh :: proc(renderer: ^Native_Surface_Renderer, id: alicorn.Node_ID, scale_x, scale_y: f32) -> bool {
-	node, ok := renderer.runtime.nodes[id]
-	if !ok || node == nil || !node.active || node.kind != .Custom_Surface { return false }
+native_surface_test_geometry_command :: proc(rt: ^alicorn.Runtime, owner: alicorn.Node_ID) -> (command: alicorn.Paint_Command, found: bool) {
+	for command in rt.display {
+		if command.owner == owner && alicorn.paint_command_is_geometry(command) { return command, true }
+	}
+	return
+}
+
+native_surface_rebuild_mesh :: proc(renderer: ^Native_Surface_Renderer, command: alicorn.Paint_Command, scale_x, scale_y: f32) -> bool {
+	geometry, is_geometry := command.payload.(alicorn.Geometry_Paint)
+	if !is_geometry { return false }
+	payload, payload_valid := alicorn.gpu_surface_payload_resolve(renderer.runtime, geometry.geometry)
+	// A stale generation is a rejected retained command, not a reason to read
+	// the node currently occupying the old resource identity.
+	if !payload_valid { clear(&renderer.vertices); renderer.mesh_valid = true; renderer.mesh_fingerprint = 0; return true }
 	h: u64 = 1469598103934665603
-	h = native_surface_mix(h, u64(id))
-	h = native_surface_mix(h, u64(node.surface_payload_revision))
-	h = native_surface_mix(h, u64(len(node.surface_samples)))
-	h = native_surface_mix(h, u64(node.surface_geometry_active ? 1 : 0))
-	h = native_surface_mix(h, u64(len(node.surface_segments)))
-	h = native_surface_mix(h, u64(len(node.surface_circles)))
+	h = native_surface_mix(h, geometry.geometry.generation)
+	h = native_surface_mix(h, u64(payload.revision))
+	h = native_surface_mix(h, u64(len(payload.samples)))
+	h = native_surface_mix(h, u64(len(payload.segments)))
+	h = native_surface_mix(h, u64(len(payload.circles)))
 	h = native_surface_mix(h, u64(transmute(u32)scale_x))
 	h = native_surface_mix(h, u64(transmute(u32)scale_y))
-	h = native_surface_mix(h, native_text_hash_rect(h, node.bounds))
-	h = native_surface_mix(h, native_text_hash_rect(h, node.clip))
+	h = native_surface_mix(h, native_text_hash_rect(h, command.bounds))
+	h = native_surface_mix(h, native_text_hash_rect(h, command.clip))
+	h = native_surface_mix(h, u64(transmute(u32)command.opacity))
+	h = native_surface_mix(h, u64(transmute(u32)command.translation[0]))
+	h = native_surface_mix(h, u64(transmute(u32)command.translation[1]))
 	if renderer.mesh_valid && renderer.mesh_fingerprint == h { return true }
 	clear(&renderer.vertices)
-	geometry_surface := node.surface_geometry_active || node.surface_kind == .Geometry
-	if !geometry_surface {
-		native_surface_append_quad(&renderer.vertices, node.bounds.x, node.bounds.y, node.bounds.x+node.bounds.w, node.bounds.y+node.bounds.h, scale_x, scale_y, native_surface_color(0.08, 0.14, 0.24, 1))
-	}
-	if node.surface_geometry_active {
-		if !native_surface_append_geometry(&renderer.vertices, node.bounds, scale_x, scale_y, node.surface_segments[:], node.surface_circles[:]) {
+	bounds := command.bounds
+	bounds.x += command.translation[0]
+	bounds.y += command.translation[1]
+	if len(payload.segments) > 0 || len(payload.circles) > 0 {
+		if !native_surface_append_geometry(&renderer.vertices, bounds, scale_x, scale_y, payload.segments, payload.circles, command.opacity) {
 			return false
 		}
-	} else if len(node.surface_samples) > 1 {
+	}
+	if len(payload.samples) > 1 {
 		line_color := native_surface_color(0.30, 0.88, 0.96, 1)
-		for i := 0; i+1 < len(node.surface_samples); i += 1 {
-			a := node.surface_samples[i]
-			b := node.surface_samples[i+1]
+		line_color[3] *= command.opacity
+		for i := 0; i+1 < len(payload.samples); i += 1 {
+			a := payload.samples[i]
+			b := payload.samples[i+1]
 			if a < 0 { a = 0 }; if a > 1 { a = 1 }
 			if b < 0 { b = 0 }; if b > 1 { b = 1 }
-			x0 := node.bounds.x + node.bounds.w * f32(i) / f32(len(node.surface_samples)-1)
-			x1 := node.bounds.x + node.bounds.w * f32(i+1) / f32(len(node.surface_samples)-1)
-			y0 := node.bounds.y + node.bounds.h * (1-a)
-			y1 := node.bounds.y + node.bounds.h * (1-b)
+			x0 := bounds.x + bounds.w * f32(i) / f32(len(payload.samples)-1)
+			x1 := bounds.x + bounds.w * f32(i+1) / f32(len(payload.samples)-1)
+			y0 := bounds.y + bounds.h * (1-a)
+			y1 := bounds.y + bounds.h * (1-b)
 			if !native_surface_append_segment(&renderer.vertices, x0, y0, x1, y1, scale_x, scale_y, 2, line_color) { return false }
 		}
 	}
@@ -327,14 +345,14 @@ native_surface_commit_submission :: proc(renderer: ^Native_Surface_Renderer) {
 native_surface_render_command :: proc(
 	renderer: ^Native_Surface_Renderer,
 	command_buffer: ^sdl3.GPUCommandBuffer,
-	command: alicorn.Display_Command,
+	command: alicorn.Paint_Command,
 	target: ^sdl3.GPUTexture,
 	target_w, target_h: sdl3.Uint32,
 	scale_x, scale_y: f32,
 	content_inset_top: f32 = 0,
 ) -> bool {
 	if !native_surface_prepare_white_texture(renderer, command_buffer) { return false }
-	if !native_surface_rebuild_mesh(renderer, command.node, scale_x, scale_y) { return false }
+	if !native_surface_rebuild_mesh(renderer, command, scale_x, scale_y) { return false }
 	if !native_surface_upload_vertices(renderer, command_buffer) { return false }
 	if len(renderer.vertices) == 0 { return true }
 	uniforms := Native_Text_Uniforms{
@@ -355,13 +373,16 @@ native_surface_render_command :: proc(
 	// A surface cannot draw outside either its retained parent clip or its own
 	// logical bounds. The intersection is the surface's effective scissor.
 	clip := command.clip
-	left := command.clip.x if command.clip.x > command.bounds.x else command.bounds.x
-	top := command.clip.y if command.clip.y > command.bounds.y else command.bounds.y
+	bounds := command.bounds
+	bounds.x += command.translation[0]
+	bounds.y += command.translation[1]
+	left := command.clip.x if command.clip.x > bounds.x else bounds.x
+	top := command.clip.y if command.clip.y > bounds.y else bounds.y
 	right_clip := command.clip.x + command.clip.w
-	right_bounds := command.bounds.x + command.bounds.w
+	right_bounds := bounds.x + bounds.w
 	right := right_clip if right_clip < right_bounds else right_bounds
 	bottom_clip := command.clip.y + command.clip.h
-	bottom_bounds := command.bounds.y + command.bounds.h
+	bottom_bounds := bounds.y + bounds.h
 	bottom := bottom_clip if bottom_clip < bottom_bounds else bottom_bounds
 	clip = alicorn.Rect{left, top, right-left, bottom-top}
 	x0, y0, x1, y1 := logical_to_pixel_bounds(clip, scale_x, scale_y)

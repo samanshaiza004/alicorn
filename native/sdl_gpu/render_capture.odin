@@ -14,7 +14,7 @@ native_capture_display_ppm :: proc(
 	text_renderer: ^Native_Text_Renderer,
 	surface_renderer: ^Native_Surface_Renderer,
 	solid_renderer: ^Native_Solid_Renderer,
-	display: []alicorn.Display_Command,
+	display: []alicorn.Paint_Command,
 	width, height: sdl3.Uint32,
 	scale_x, scale_y: f32,
 	path: string,

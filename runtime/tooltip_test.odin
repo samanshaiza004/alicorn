@@ -43,9 +43,13 @@ test_tooltip_hover_delay_presentation_and_true_idle :: proc(t: ^testing.T) {
 	background_bounds := Rect{}
 	text_found := false
 	for command in rt.display {
-		if command.kind == .Tooltip_Background { background_found = true; background_bounds = command.bounds; break }
+		if color, ok := paint_surface_color(command); ok && color.r == 0.075 && color.g == 0.09 { background_found = true; background_bounds = command.bounds; break }
 	}
-	for command in rt.display { if command.kind == .Tooltip_Text && command.text == "Match case" { text_found = true } }
+	for command in rt.display {
+		if text_paint, ok := command.payload.(Text_Paint); ok {
+			if run, found := paint_text_run_resolve(&rt, text_paint.run); found && run.value == "Match case" { text_found = true }
+		}
+	}
 	testing.expect(t, background_found && text_found, "the top-level tooltip layer should retain a background and shaped label")
 	if background_found {
 		bounds := background_bounds
@@ -62,7 +66,7 @@ test_tooltip_hover_delay_presentation_and_true_idle :: proc(t: ^testing.T) {
 	ui, ready = begin_presentation_frame(&rt)
 	testing.expect(t, ready, "dismissing a visible tooltip should request one retained repaint")
 	if ready { end_presentation_frame(&ui) }
-	for command in rt.display { testing.expect(t, command.node != Node_ID(0), "dismissed tooltip commands must be removed before releasing their shaped text") }
+	for command in rt.display { testing.expect(t, command.owner != Node_ID(0), "dismissed tooltip commands must be removed before releasing their shaped text") }
 	testing.expect(t, rt.tooltip.target == 0 && tooltip_next_deadline(&rt) == 0 &&
 		!rt.invalidated && !presentation_needs_frame(&rt),
 		"after dismissal Alicorn should return to true idle with no timer or whole-tree invalidation")

@@ -7,6 +7,18 @@ import "core:strings"
 import alicorn "../runtime"
 import runa "../third_party/Runa"
 
+test_paint_surface_matches_color :: proc(command: alicorn.Paint_Command, expected: alicorn.Color) -> bool {
+	color, ok := alicorn.paint_surface_color(command)
+	return ok && color == expected
+}
+
+test_first_surface_color :: proc(node: ^alicorn.Node) -> (color: alicorn.Color, ok: bool) {
+	if node == nil { return }
+	for command in node.paint {
+		if color, ok := alicorn.paint_surface_color(command); ok { return color, true }
+	}
+	return
+}
 TEST_UI_FONT_DATA :: #load("../assets/fonts/AtkinsonHyperlegibleNext-Variable.ttf")
 TEST_UI_ITALIC_FONT_DATA :: #load("../assets/fonts/AtkinsonHyperlegibleNext-Italic-Variable.ttf")
 TEST_MONO_FONT_DATA :: #load("../assets/fonts/AtkinsonHyperlegibleMono-Variable.ttf")
@@ -329,7 +341,7 @@ capture_button_label_geometry :: proc(rt: ^alicorn.Runtime, id: alicorn.Node_ID)
 	geometry.run_generation = node.text_run_generation
 	geometry.line_count = len(node.text_run.lines)
 	for command in node.paint {
-		if command.kind == .Text {
+		if alicorn.paint_command_is_text(command) {
 			geometry.bounds = command.bounds
 			geometry.clip = command.clip
 			return geometry, true
@@ -347,7 +359,7 @@ button_label_geometry_matches :: proc(rt: ^alicorn.Runtime, id: alicorn.Node_ID,
 		return false
 	}
 	for command in node.paint {
-		if command.kind == .Text {
+		if alicorn.paint_command_is_text(command) {
 			return command.bounds.x == expected.bounds.x && command.bounds.y == expected.bounds.y &&
 				command.bounds.w == expected.bounds.w && command.bounds.h == expected.bounds.h &&
 				command.clip.x == expected.clip.x && command.clip.y == expected.clip.y &&
@@ -595,14 +607,14 @@ test_retained_text_paint_spans :: proc(state: ^Test_State) {
 	clipped_geometry_seen := false
 	text_snapshot: []alicorn.Text_Paint_Span
 	for command in node.paint {
-		if command.kind == .Text {
+		if text_paint, is_text := command.payload.(alicorn.Text_Paint); is_text {
 			text_commands += 1
-			text_snapshot = command.text_paint_spans
+			text_snapshot = text_paint.spans
 		}
-		if command.kind == .Text_Selection {
-			if command.color == spans[0].background { background_commands += 1 }
+		if color, is_surface := alicorn.paint_surface_color(command); is_surface {
+			if color == spans[0].background { background_commands += 1 }
 			if command.bounds.x+command.bounds.w > command.clip.x+command.clip.w { clipped_geometry_seen = true }
-			if command.color == blue && command.bounds.h == 1 {
+			if color == blue && command.bounds.h == 1 {
 				line := node.text_run.lines[0]
 				if command.bounds.y == node.bounds.y+line.y+line.baseline-node.text_run.size*0.32 { strike_commands += 1 }
 				if command.bounds.y == node.bounds.y+line.y+line.baseline+1 { underline_commands += 1 }
@@ -619,7 +631,7 @@ test_retained_text_paint_spans :: proc(state: ^Test_State) {
 	id, _ = render_spanned_text(&rt, disabled_span)
 	node = rt.nodes[id]
 	decorations := 0
-	for command in node.paint { if command.kind == .Text_Selection { decorations += 1 } }
+	for command in node.paint { if alicorn.paint_command_is_surface(command) { decorations += 1 } }
 	expect(state, decorations == 0 && len(node.paint) == baseline_paint_commands && node.text_run_generation == baseline_generation, "unset span attributes must behave like no spans without reshaping or extra paint commands")
 
 	bidi_value := "ab שלום cd\nwrapped words"
@@ -635,7 +647,7 @@ test_retained_text_paint_spans :: proc(state: ^Test_State) {
 	)
 	actual_background_rects := 0
 	for command in bidi_node.paint {
-		if command.kind != .Text_Selection || command.color != bidi_background { continue }
+		if !test_paint_surface_matches_color(command, bidi_background) { continue }
 		actual_background_rects += 1
 		matched := false
 		for expected in expected_rects {
@@ -662,7 +674,7 @@ test_retained_text_paint_spans :: proc(state: ^Test_State) {
 		cluster_actual_count := 0
 		cluster_geometry_matches := true
 		for command in cluster_node.paint {
-			if command.kind != .Text_Selection || command.color != bidi_background { continue }
+			if !test_paint_surface_matches_color(command, bidi_background) { continue }
 			cluster_actual_count += 1
 			matched := false
 			for expected in cluster_expected {
@@ -691,7 +703,7 @@ test_retained_text_paint_spans :: proc(state: ^Test_State) {
 		ligature_spans := []alicorn.Text_Paint_Span{{start=1, end=2, background=ligature_paint_color, background_set=true}}
 		ligature_node := alicorn.Node{
 			text_paint_spans=make([dynamic]alicorn.Text_Paint_Span, 0, 1, context.allocator),
-			paint=make([dynamic]alicorn.Display_Command, 0, 2, context.allocator),
+			paint=make([dynamic]alicorn.Paint_Command, 0, 2, context.allocator),
 			text_run=ligature_run,
 			text_run_valid=true,
 			bounds=alicorn.Rect{5, 7, 40, 24},
@@ -787,7 +799,7 @@ test_full_width_wrapped_visual_row_background :: proc(state: ^Test_State) {
 	row_highlight_found, gutter_highlight_found := false, false
 	row_highlight_index, gutter_highlight_index, gutter_base_index := -1, -1, -1
 	for command, index in row.paint {
-		if command.kind == .Text_Selection && command.color == highlight_color {
+		if test_paint_surface_matches_color(command, highlight_color) {
 			row_highlight_found = true
 			row_highlight_index = index
 			expect(state, command.bounds.x == row.bounds.x && command.bounds.w == row.bounds.w, "active editor highlight should span the full visual-row width")
@@ -795,8 +807,8 @@ test_full_width_wrapped_visual_row_background :: proc(state: ^Test_State) {
 		}
 	}
 	for command, index in gutter.paint {
-		if command.kind == .Virtual_List { gutter_base_index = index }
-		if command.kind == .Text_Selection && command.color == highlight_color {
+		if alicorn.paint_command_is_surface(command) && command.bounds == gutter.bounds && !test_paint_surface_matches_color(command, highlight_color) { gutter_base_index = index }
+		if test_paint_surface_matches_color(command, highlight_color) {
 			gutter_highlight_found = true
 			gutter_highlight_index = index
 			expect(state, command.bounds.x == gutter.bounds.x && command.bounds.w == gutter.bounds.w, "active gutter highlight should fill the gutter lane")
@@ -807,8 +819,8 @@ test_full_width_wrapped_visual_row_background :: proc(state: ^Test_State) {
 	expect(state, gutter_base_index >= 0 && gutter_highlight_index > gutter_base_index, "gutter highlight should paint over its base background")
 	text_display_index, row_display_index := -1, -1
 	for command, index in rt.display {
-		if command.node == row_id && command.kind == .Text_Selection { row_display_index = index }
-		if command.node == text_id && command.kind == .Text { text_display_index = index }
+		if command.owner == row_id && test_paint_surface_matches_color(command, highlight_color) { row_display_index = index }
+		if command.owner == text_id && alicorn.paint_command_is_text(command) { text_display_index = index }
 	}
 	expect(state, row_display_index >= 0 && text_display_index > row_display_index, "active-row background should compose behind source text")
 }
@@ -1445,7 +1457,8 @@ test_keyboard_focus_and_activation :: proc(state: ^Test_State) {
 
 	rt.focused = 0
 	button_id, _ := render_canonical_button(&rt)
-	unfocused_color := rt.nodes[button_id].paint[0].color
+	unfocused_color, unfocused_ok := test_first_surface_color(rt.nodes[button_id])
+	expect(state, unfocused_ok, "button fill should be a generic surface command")
 	expect(state, alicorn.focus(&rt, button_id), "button must accept keyboard focus")
 	expect(state, alicorn.activate_focused(&rt, .Enter), "focused button must accept Enter activation")
 	_, clicked := render_canonical_button(&rt)
@@ -1458,7 +1471,8 @@ test_keyboard_focus_and_activation :: proc(state: ^Test_State) {
 	_, clicked = render_canonical_button(&rt)
 	expect(state, !clicked, "Space button activation is consumed exactly once")
 	focused_button := rt.nodes[button_id]
-	expect(state, focused_button.paint[0].color == unfocused_color, "focus must stay independent from the button fill")
+	focused_color, focused_ok := test_first_surface_color(focused_button)
+	expect(state, focused_ok && focused_color == unfocused_color, "focus must stay independent from the button fill")
 	expect(state, len(focused_button.paint) >= 6 && focused_button.paint[1].bounds.h <= 1.5, "focused button must have a separate visible outline")
 	alicorn.destroy_runtime(&rt)
 }
@@ -1492,17 +1506,20 @@ test_button_states_and_content_layout :: proc(state: ^Test_State) {
 
 	state_rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 80})
 	button_id, _ := render_canonical_button(&state_rt, alicorn.Button_State{selected=true})
-	initial_fill := state_rt.nodes[button_id].paint[0].color
+	initial_fill, initial_fill_ok := test_first_surface_color(state_rt.nodes[button_id])
+	expect(state, initial_fill_ok, "selected button fill should be represented by a surface payload")
 	node = state_rt.nodes[button_id]
 	alicorn.process_pointer(&state_rt, alicorn.Pointer_Event{kind=.Move, x=node.bounds.x+2, y=node.bounds.y+2, button=0})
 	_, _ = render_canonical_button(&state_rt, alicorn.Button_State{selected=true})
-	hover_fill := state_rt.nodes[button_id].paint[0].color
+	hover_fill, hover_fill_ok := test_first_surface_color(state_rt.nodes[button_id])
+	expect(state, hover_fill_ok, "hovered button fill should be represented by a surface payload")
 	expect(state, hover_fill != initial_fill, "selected button hover must change its fill")
 	node = state_rt.nodes[button_id]
 	alicorn.process_pointer(&state_rt, alicorn.Pointer_Event{kind=.Down, x=node.bounds.x+2, y=node.bounds.y+2, button=1})
 	_, _ = render_canonical_button(&state_rt, alicorn.Button_State{selected=true})
 	pressed_node := state_rt.nodes[button_id]
-	pressed_fill := pressed_node.paint[0].color
+	pressed_fill, pressed_fill_ok := test_first_surface_color(pressed_node)
+	expect(state, pressed_fill_ok, "pressed button fill should be represented by a surface payload")
 	expect(state, pressed_fill != hover_fill, "selected button press must remain distinct from selected hover")
 	expect(state, len(pressed_node.paint) >= 6 && pressed_node.paint[1].bounds.h <= 1.5, "focused button paints a separate thin outline")
 	alicorn.destroy_runtime(&state_rt)
@@ -1519,7 +1536,7 @@ test_button_label_geometry_stable_across_states :: proc(state: ^Test_State) {
 	if node.text_run_valid {
 		text_command_found := false
 		for command in node.paint {
-			if command.kind == .Text {
+			if alicorn.paint_command_is_text(command) {
 				text_command_found = true
 				expect(state, command.bounds.y >= command.clip.y && command.bounds.y+node.text_run.height <= command.clip.y+command.clip.h, "single-line label glyphs fit vertically inside their content box")
 			}
@@ -1792,12 +1809,14 @@ test_disabled_button_semantics :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 200})
 	id, _ := render_canonical_button(&rt)
 	node := rt.nodes[id]
-	enabled_color := node.paint[0].color
+	enabled_color, enabled_color_ok := test_first_surface_color(node)
+	expect(state, enabled_color_ok, "enabled button should have a generic surface fill")
 	alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=node.bounds.x+2, y=node.bounds.y+2, button=1})
 	expect(state, rt.captured_node == id, "enabled button must capture pointer down")
 	_, _ = render_canonical_button(&rt, alicorn.Button_State{disabled=true})
 	expect(state, rt.captured_node == 0 && !rt.nodes[id].pressed, "disabling a captured button must clear press state")
-	expect(state, rt.nodes[id].paint[0].color != enabled_color, "disabled button must change its paint state")
+	disabled_color, disabled_color_ok := test_first_surface_color(rt.nodes[id])
+	expect(state, disabled_color_ok && disabled_color != enabled_color, "disabled button must change its paint state")
 	expect(state, alicorn.hit_test(&rt, node.bounds.x+2, node.bounds.y+2) == 0, "disabled button must not hit-test")
 	expect(state, !alicorn.focus(&rt, id), "disabled button must not receive focus")
 	_, clicked := render_canonical_button(&rt, alicorn.Button_State{disabled=true})
@@ -2175,9 +2194,9 @@ test_retained_text_interaction :: proc(state: ^Test_State) {
 		node.bounds.y+node.text_run.height/2,
 	)
 	expect(state, hit_ok && hit.byte == len(value), "retained text hit testing must return a local UTF-8 byte offset at the end of the run")
-	caret := alicorn.text_node_caret_geometry(&rt, id, anchor)
-	local_caret := alicorn.text_run_caret_geometry(&node.text_run, anchor)
-	expect(state, caret.valid && caret.position.byte == len(value), "retained text caret geometry must resolve a valid local byte position")
+	caret := alicorn.text_node_caret_geometry(&rt, id, focus)
+	local_caret := alicorn.text_run_caret_geometry(&node.text_run, focus)
+	expect(state, caret.valid && caret.position.byte == focus.byte, "retained text caret geometry must resolve the focused local byte position")
 	expect(state,
 		caret.rect.x == node.bounds.x+local_caret.rect.x && caret.rect.y == node.bounds.y+local_caret.rect.y,
 		"retained text caret geometry must be translated to absolute logical window coordinates",
@@ -2185,16 +2204,19 @@ test_retained_text_interaction :: proc(state: ^Test_State) {
 
 	selection_commands, text_commands, caret_commands := 0, 0, 0
 	selection_index, text_index, caret_index := -1, -1, -1
+	selection_color := alicorn.style_environment_color(&rt, node.style_environment, .Selection)
+	caret_color := alicorn.style_environment_color(&rt, node.style_environment, .Accent)
 	for command, index in rt.display {
-		if command.node != id { continue }
-		#partial switch command.kind {
-		case .Text_Selection:
+		if command.owner != id { continue }
+		if test_paint_surface_matches_color(command, selection_color) {
 			selection_commands += 1
 			if selection_index < 0 { selection_index = index }
-		case .Text:
+		}
+		if alicorn.paint_command_is_text(command) {
 			text_commands += 1
 			if text_index < 0 { text_index = index }
-		case .Text_Caret:
+		}
+		if test_paint_surface_matches_color(command, caret_color) && command.bounds == caret.rect {
 			caret_commands += 1
 			if caret_index < 0 { caret_index = index }
 		}
@@ -2206,8 +2228,8 @@ test_retained_text_interaction :: proc(state: ^Test_State) {
 	node = rt.nodes[id]
 	selection_commands, caret_commands = 0, 0
 	for command in node.paint {
-		if command.kind == .Text_Selection { selection_commands += 1 }
-		if command.kind == .Text_Caret { caret_commands += 1 }
+		if test_paint_surface_matches_color(command, selection_color) { selection_commands += 1 }
+		if test_paint_surface_matches_color(command, caret_color) { caret_commands += 1 }
 	}
 	expect(state, accepted && selection_commands > 0 && caret_commands == 0, "selection remains visible without focus while show_caret=false suppresses only the caret")
 	expect(state, node.text_interaction_anchor == anchor && node.text_interaction_focus == focus, "selection direction must survive a retained rebuild")
@@ -2227,8 +2249,9 @@ test_interactive_text_caret_at_end_and_empty_line :: proc(state: ^Test_State) {
 	end_caret := alicorn.text_node_caret_geometry(&rt, id, end_position)
 	expect(state, end_caret.valid && end_caret.position.byte == len(value), "caret geometry must remain valid at the trailing text boundary")
 	caret_commands := 0
+	caret_color := alicorn.style_environment_color(&rt, node.style_environment, .Accent)
 	for command in rt.display {
-		if command.node != id || command.kind != .Text_Caret { continue }
+		if command.owner != id || !test_paint_surface_matches_color(command, caret_color) || command.bounds != end_caret.rect { continue }
 		caret_commands += 1
 		expect(state, command.clip == node.clip, "trailing caret must use the containing clip instead of glyph bounds")
 		expect(state, command.clip.w > node.bounds.w, "trailing caret clip must extend past the natural-width glyph bounds")
@@ -2244,7 +2267,7 @@ test_interactive_text_caret_at_end_and_empty_line :: proc(state: ^Test_State) {
 	expect(state, empty_caret.valid && empty_caret.position.byte == 0, "empty text must provide valid caret geometry at byte zero")
 	caret_commands = 0
 	for command in rt.display {
-		if command.node != id || command.kind != .Text_Caret { continue }
+		if command.owner != id || !test_paint_surface_matches_color(command, caret_color) || command.bounds != empty_caret.rect { continue }
 		caret_commands += 1
 		expect(state, command.clip == node.clip && command.clip.w > 0 && command.clip.h > 0, "empty-line caret must retain the nonempty ancestor viewport clip")
 	}
@@ -3362,25 +3385,25 @@ test_modal_scrollbar_composition :: proc(state: ^Test_State) {
 	modal_text_index, modal_inner_bar_index, modal_bar_index := -1, -1, -1
 	modal_sibling_index := -1
 	for command, index in rt.display {
-		if command.node == nodes.workspace && command.kind == .Scrollbar_Track && workspace_bar_index < 0 {
+		if command.owner == nodes.workspace && command.bounds == rt.nodes[nodes.workspace].scrollbar_vertical_track && workspace_bar_index < 0 {
 			workspace_bar_index = index
 		}
-		if command.node == nodes.overlay && command.kind == .Modal_Overlay {
+		if command.owner == nodes.overlay && alicorn.paint_command_is_surface(command) && command.bounds == rt.nodes[nodes.overlay].bounds {
 			backdrop_index = index
 		}
-		if command.node == nodes.modal_panel && command.kind == .Container {
+		if command.owner == nodes.modal_panel && alicorn.paint_command_is_surface(command) && command.bounds == rt.nodes[nodes.modal_panel].bounds {
 			modal_panel_index = index
 		}
-		if command.node == nodes.modal_text && command.kind == .Text {
+		if command.owner == nodes.modal_text && alicorn.paint_command_is_text(command) {
 			modal_text_index = index
 		}
-		if command.node == nodes.modal_inner_scroll && command.kind == .Scrollbar_Track && modal_inner_bar_index < 0 {
+		if command.owner == nodes.modal_inner_scroll && command.bounds == rt.nodes[nodes.modal_inner_scroll].scrollbar_vertical_track && modal_inner_bar_index < 0 {
 			modal_inner_bar_index = index
 		}
-		if command.node == nodes.modal_scroll && command.kind == .Scrollbar_Track && modal_bar_index < 0 {
+		if command.owner == nodes.modal_scroll && command.bounds == rt.nodes[nodes.modal_scroll].scrollbar_vertical_track && modal_bar_index < 0 {
 			modal_bar_index = index
 		}
-		if command.node == nodes.modal_sibling && command.kind == .Button && modal_sibling_index < 0 {
+		if command.owner == nodes.modal_sibling && alicorn.paint_command_is_surface(command) && command.bounds == rt.nodes[nodes.modal_sibling].bounds && modal_sibling_index < 0 {
 			modal_sibling_index = index
 		}
 	}
@@ -3431,7 +3454,7 @@ test_scrollbar_layout_projection :: proc(state: ^Test_State) {
 	expect(state, node.scrollbar_vertical_track.h == 48 && node.scrollbar_horizontal_track.w == 88, "both scrollbar tracks stop before the shared corner")
 	corner_found := false
 	for command in rt.display {
-		if command.kind == .Scrollbar_Corner && command.bounds.x == node.scrollbar_vertical_track.x && command.bounds.y == node.scrollbar_horizontal_track.y {
+		if command.owner == id && alicorn.paint_command_is_surface(command) && command.bounds.x == node.scrollbar_vertical_track.x && command.bounds.y == node.scrollbar_horizontal_track.y {
 			corner_found = command.bounds.w == alicorn.SCROLLBAR_THICKNESS && command.bounds.h == alicorn.SCROLLBAR_THICKNESS
 		}
 	}
@@ -3441,8 +3464,12 @@ test_scrollbar_layout_projection :: proc(state: ^Test_State) {
 
 	text_index, bar_index := -1, -1
 	for command, i in rt.display {
-		if command.kind == .Text && command.node != id { text_index = i }
-		if (command.kind == .Scrollbar_Track || command.kind == .Scrollbar_Thumb) && bar_index < 0 { bar_index = i }
+		if alicorn.paint_command_is_text(command) && command.owner != id { text_index = i }
+		if command.owner == id && alicorn.paint_command_is_surface(command) &&
+			(command.bounds == node.scrollbar_vertical_track || command.bounds == node.scrollbar_vertical_thumb ||
+			 command.bounds == node.scrollbar_horizontal_track || command.bounds == node.scrollbar_horizontal_thumb) && bar_index < 0 {
+			bar_index = i
+		}
 	}
 	expect(state, text_index >= 0 && bar_index > text_index, "scrollbar display commands are composed after content and remain visible")
 
@@ -3450,7 +3477,11 @@ test_scrollbar_layout_projection :: proc(state: ^Test_State) {
 	node = rt.nodes[id]
 	expect(state, !handle.horizontal_bar_visible && !handle.vertical_bar_visible, "Auto hides bars when content fits the base viewport")
 	for command in rt.display {
-		expect(state, command.kind != .Scrollbar_Track && command.kind != .Scrollbar_Thumb && command.kind != .Scrollbar_Corner, "hidden Auto bars emit no geometry")
+		if command.owner == id {
+			expect(state, command.bounds != node.scrollbar_vertical_track && command.bounds != node.scrollbar_vertical_thumb &&
+				command.bounds != node.scrollbar_horizontal_track && command.bounds != node.scrollbar_horizontal_thumb,
+				"hidden Auto bars emit no geometry")
+		}
 	}
 
 	id, handle = render_scrollbar_fixture(&rt, 10, 10, .Both, .Always)

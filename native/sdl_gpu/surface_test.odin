@@ -62,8 +62,14 @@ test_waveform_mesh_fits_exact_runtime_sample_limit :: proc(t: ^testing.T) {
 		vertices=make([dynamic]Native_Text_Vertex, 0, alicorn.GPU_SURFACE_MAX_VERTICES),
 	}
 	defer delete(renderer.vertices)
-	testing.expect(t, native_surface_rebuild_mesh(&renderer, surface, 1, 1),
+	node := rt.nodes[surface]
+	command := alicorn.paint_geometry_command(surface, node.bounds, node.clip, alicorn.paint_geometry_handle_for_node(node))
+	testing.expect(t, native_surface_rebuild_mesh(&renderer, command, 1, 1),
 		"native waveform mesh at the documented maximum should build")
-	testing.expect(t, len(renderer.vertices) == alicorn.GPU_SURFACE_MAX_WAVEFORM_SAMPLES*6,
-		"maximum waveform should use 8,190 vertices, within the 8,192-vertex budget")
+	testing.expect(t, len(node.paint) == 2 && alicorn.paint_command_is_surface(node.paint[0]),
+		"waveform backdrop should be retained as a generic surface command")
+	testing.expect(t, len(renderer.vertices) == (alicorn.GPU_SURFACE_MAX_WAVEFORM_SAMPLES-1)*6,
+		"maximum waveform geometry should use 8,184 vertices; its separate backdrop uses six")
+	testing.expect(t, len(renderer.vertices)+6 <= alicorn.GPU_SURFACE_MAX_VERTICES,
+		"waveform geometry plus its generic backdrop should remain within the 8,192-vertex budget")
 }

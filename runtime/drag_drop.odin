@@ -113,6 +113,7 @@ drag_preview_begin :: proc(rt: ^Runtime) {
 			)
 			if built {
 				rt.drag_preview.run = run
+				rt.drag_preview.run_generation = paint_next_resource_generation(rt)
 				rt.drag_preview.width = minf(run.width+24, DRAG_PREVIEW_MAX_WIDTH)
 				rt.drag_preview.height = maxf(run.height+12, 28)
 				rt.drag_preview.ready = true
@@ -136,7 +137,7 @@ drag_preview_clear :: proc(rt: ^Runtime) {
 		write_index := 0
 		for read_index := 0; read_index < len(rt.display); read_index += 1 {
 			command := rt.display[read_index]
-			if command.node == 0 { continue }
+			if command.owner == 0 { continue }
 			rt.display[write_index] = command
 			write_index += 1
 		}
@@ -159,23 +160,33 @@ append_drag_preview :: proc(rt: ^Runtime) {
 	shadow := Rect{2, 3, preview.width, preview.height}
 	card := Rect{0, 0, preview.width, preview.height}
 	append(&rt.display,
-		Display_Command{Node_ID(0), .Button, shadow, rt.viewport, "", Color{0, 0, 0, 0.38}, []Text_Paint_Span{}},
-		Display_Command{Node_ID(0), .Button, card, rt.viewport, "", Color{0.12, 0.16, 0.23, 0.96}, []Text_Paint_Span{}},
+		paint_surface_command(Node_ID(0), shadow, rt.viewport, Color{0, 0, 0, 0.38}, translation=drag_preview_translation(rt)),
+		paint_surface_command(Node_ID(0), card, rt.viewport, Color{0.12, 0.16, 0.23, 0.96}, translation=drag_preview_translation(rt)),
 	)
 	if preview.ready {
 		text_bounds := Rect{11, (preview.height-preview.run.height)/2, maxf(preview.width-22, 0), preview.run.height}
-		append(&rt.display, Display_Command{
-			Node_ID(0), .Text, text_bounds, rt.viewport, preview.run.value,
-			Color{0.91, 0.94, 0.98, 0.96}, []Text_Paint_Span{},
-		})
+		append(&rt.display, paint_text_command(
+			Node_ID(0), text_bounds, rt.viewport, paint_text_handle_for_drag_preview(rt),
+			Color{0.91, 0.94, 0.98, 0.96}, translation=drag_preview_translation(rt),
+		))
 	}
+}
+
+drag_preview_translation :: proc(rt: ^Runtime) -> [2]f32 {
+	if rt == nil { return {} }
+	return [2]f32{rt.drag.x+DRAG_PREVIEW_POINTER_OFFSET, rt.drag.y+DRAG_PREVIEW_POINTER_OFFSET}
 }
 
 drag_preview_pointer_moved :: proc(rt: ^Runtime) {
 	if rt == nil || rt.drag.phase != .Dragging { return }
-	// The native compositor translates the node-zero overlay from the current
-	// drag coordinates, so moving within a target changes no app descriptions
-	// and does not recompose the retained display list.
+	// Translation is ordinary command state. Refresh only the transient preview
+	// commands; retain its shaped mesh and do not recompose the app tree.
+	translation := drag_preview_translation(rt)
+	if rt.transient_overlay_kind == .Drag_Preview {
+		for &command in rt.display {
+			if command.owner == 0 { command.translation = translation }
+		}
+	}
 	request_presentation(rt, "drag preview followed pointer")
 }
 

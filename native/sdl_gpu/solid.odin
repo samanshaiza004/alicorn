@@ -5,10 +5,9 @@ import alicorn "../../runtime"
 import "vendor:sdl3"
 
 // Solid rectangles use the same simple sampled-white shader contract as the
-// custom-surface renderer, but own their vertex storage so rectangle batches
-// cannot overwrite a surface mesh that is still needed later in the display
-// list. Geometry is clipped on the CPU; text and custom surfaces remain hard
-// ordering boundaries in the compositor.
+// geometry renderer, but own their vertex storage so surface batches cannot
+// overwrite a geometry mesh that is still needed later in the display list.
+// Geometry is clipped on the CPU; text and geometry remain ordering barriers.
 NATIVE_SOLID_INITIAL_VERTICES :: 65536
 
 Native_Solid_Draw :: struct {
@@ -18,7 +17,6 @@ Native_Solid_Draw :: struct {
 
 Native_Solid_Renderer :: struct {
 	device:          ^sdl3.GPUDevice,
-	runtime:         ^alicorn.Runtime,
 	pipeline:        ^sdl3.GPUGraphicsPipeline,
 	sampler:         ^sdl3.GPUSampler,
 	white_texture:   ^sdl3.GPUTexture,
@@ -154,21 +152,14 @@ native_solid_append_quad :: proc(vertices: ^[dynamic]Native_Text_Vertex, x0, y0,
 }
 
 native_solid_pixel_bounds :: proc(
-	renderer: ^Native_Solid_Renderer,
-	draw: alicorn.Display_Command,
+	draw: alicorn.Paint_Command,
 	scale_x, scale_y: f32,
 	target_w, target_h: sdl3.Uint32,
 ) -> (x0, y0, x1, y1: int, visible: bool) {
-	drag_offset_x: f32 = 0
-	drag_offset_y: f32 = 0
-	if draw.node == alicorn.Node_ID(0) && renderer.runtime != nil && renderer.runtime.transient_overlay_kind == .Drag_Preview {
-		drag_offset_x = renderer.runtime.drag.x + alicorn.DRAG_PREVIEW_POINTER_OFFSET
-		drag_offset_y = renderer.runtime.drag.y + alicorn.DRAG_PREVIEW_POINTER_OFFSET
-	}
-	left := draw.bounds.x + drag_offset_x
-	top := draw.bounds.y + drag_offset_y
-	right := draw.bounds.x + draw.bounds.w + drag_offset_x
-	bottom := draw.bounds.y + draw.bounds.h + drag_offset_y
+	left := draw.bounds.x + draw.translation[0]
+	top := draw.bounds.y + draw.translation[1]
+	right := draw.bounds.x + draw.bounds.w + draw.translation[0]
+	bottom := draw.bounds.y + draw.bounds.h + draw.translation[1]
 	if draw.clip.x > left { left = draw.clip.x }
 	if draw.clip.y > top { top = draw.clip.y }
 	if draw.clip.x + draw.clip.w < right { right = draw.clip.x + draw.clip.w }
@@ -187,18 +178,16 @@ native_solid_pixel_bounds :: proc(
 
 native_solid_build :: proc(
 	renderer: ^Native_Solid_Renderer,
-	display: []alicorn.Display_Command,
+	display: []alicorn.Paint_Command,
 	scale_x, scale_y: f32,
 	target_w, target_h: sdl3.Uint32,
-	skip_root := false,
 ) -> bool {
 	clear(&renderer.vertices)
 	clear(&renderer.draws)
 	visible_rect_count := 0
 	for draw in display {
-		if native_text_is_text(draw.kind) || draw.kind == .Custom_Surface { continue }
-		if skip_root && draw.kind == .Root { continue }
-		_, _, _, _, visible := native_solid_pixel_bounds(renderer, draw, scale_x, scale_y, target_w, target_h)
+		if !alicorn.paint_command_is_surface(draw) { continue }
+		_, _, _, _, visible := native_solid_pixel_bounds(draw, scale_x, scale_y, target_w, target_h)
 		if visible { visible_rect_count += 1 }
 	}
 	required_vertices := visible_rect_count * 6
@@ -209,16 +198,16 @@ native_solid_build :: proc(
 		append(&renderer.draws, Native_Solid_Draw{})
 	}
 	for draw, i in display {
-		if native_text_is_text(draw.kind) || draw.kind == .Custom_Surface { continue }
-		if skip_root && draw.kind == .Root { continue }
-		x0, y0, x1, y1, visible := native_solid_pixel_bounds(renderer, draw, scale_x, scale_y, target_w, target_h)
+		if !alicorn.paint_command_is_surface(draw) { continue }
+		x0, y0, x1, y1, visible := native_solid_pixel_bounds(draw, scale_x, scale_y, target_w, target_h)
 		if !visible { continue }
 		if len(renderer.vertices) + 6 > renderer.vertex_capacity && !native_solid_ensure_vertex_capacity(renderer, len(renderer.vertices) + 6) {
 			return false
 		}
 		first := sdl3.Uint32(len(renderer.vertices))
-		opacity := alicorn.drag_source_opacity(renderer.runtime, draw.node)
-		color := [4]f32{draw.color.r, draw.color.g, draw.color.b, draw.color.a*opacity}
+		surface, surface_ok := draw.payload.(alicorn.Surface_Paint)
+		if !surface_ok { continue }
+		color := [4]f32{surface.fill.r, surface.fill.g, surface.fill.b, surface.fill.a*draw.opacity}
 		native_solid_append_quad(&renderer.vertices, f32(x0), f32(y0), f32(x1), f32(y1), color)
 		renderer.draws[i] = Native_Solid_Draw{first, 6}
 	}
@@ -231,25 +220,17 @@ native_solid_build :: proc(
 // inspection geometry and disappear when the diagnostic mode is disabled.
 native_solid_append_debug_bounds :: proc(
 	renderer: ^Native_Solid_Renderer,
-	display: []alicorn.Display_Command,
+	display: []alicorn.Paint_Command,
 	scale_x, scale_y: f32,
 	target_w, target_h: sdl3.Uint32,
-	skip_root := false,
 ) {
 	color := [4]f32{1.0, 0.78, 0.16, 0.72}
 	visible_bounds_count := 0
 	for draw in display {
-		if skip_root && draw.kind == .Root { continue }
-		drag_offset_x: f32 = 0
-		drag_offset_y: f32 = 0
-		if draw.node == alicorn.Node_ID(0) && renderer.runtime != nil && renderer.runtime.transient_overlay_kind == .Drag_Preview {
-			drag_offset_x = renderer.runtime.drag.x + alicorn.DRAG_PREVIEW_POINTER_OFFSET
-			drag_offset_y = renderer.runtime.drag.y + alicorn.DRAG_PREVIEW_POINTER_OFFSET
-		}
-		left := (draw.bounds.x + drag_offset_x) * scale_x
-		top := (draw.bounds.y + drag_offset_y) * scale_y
-		right := (draw.bounds.x + draw.bounds.w + drag_offset_x) * scale_x
-		bottom := (draw.bounds.y + draw.bounds.h + drag_offset_y) * scale_y
+		left := (draw.bounds.x + draw.translation[0]) * scale_x
+		top := (draw.bounds.y + draw.translation[1]) * scale_y
+		right := (draw.bounds.x + draw.bounds.w + draw.translation[0]) * scale_x
+		bottom := (draw.bounds.y + draw.bounds.h + draw.translation[1]) * scale_y
 		if left < 0 { left = 0 }
 		if top < 0 { top = 0 }
 		if right > f32(target_w) { right = f32(target_w) }
@@ -262,17 +243,10 @@ native_solid_append_debug_bounds :: proc(
 		reserve(&renderer.vertices, required_vertices)
 	}
 	for draw in display {
-		if skip_root && draw.kind == .Root { continue }
-		drag_offset_x: f32 = 0
-		drag_offset_y: f32 = 0
-		if draw.node == alicorn.Node_ID(0) && renderer.runtime != nil && renderer.runtime.transient_overlay_kind == .Drag_Preview {
-			drag_offset_x = renderer.runtime.drag.x + alicorn.DRAG_PREVIEW_POINTER_OFFSET
-			drag_offset_y = renderer.runtime.drag.y + alicorn.DRAG_PREVIEW_POINTER_OFFSET
-		}
-		left := (draw.bounds.x + drag_offset_x) * scale_x
-		top := (draw.bounds.y + drag_offset_y) * scale_y
-		right := (draw.bounds.x + draw.bounds.w + drag_offset_x) * scale_x
-		bottom := (draw.bounds.y + draw.bounds.h + drag_offset_y) * scale_y
+		left := (draw.bounds.x + draw.translation[0]) * scale_x
+		top := (draw.bounds.y + draw.translation[1]) * scale_y
+		right := (draw.bounds.x + draw.bounds.w + draw.translation[0]) * scale_x
+		bottom := (draw.bounds.y + draw.bounds.h + draw.translation[1]) * scale_y
 		if left < 0 { left = 0 }
 		if top < 0 { top = 0 }
 		if right > f32(target_w) { right = f32(target_w) }

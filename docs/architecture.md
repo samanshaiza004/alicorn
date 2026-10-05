@@ -94,6 +94,26 @@ layout products are kept separate from DPI-specific GPU glyph residency.
 Bundled fonts and their licenses are documented in
 [`assets/fonts/README.md`](../assets/fonts/README.md).
 
+Paint producers include runtime widgets, retained overlays, and native host
+chrome. They resolve their presentation decisions into a small generic paint
+stream: `Surface_Paint`, `Text_Paint`, and `Geometry_Paint`. Every command carries
+its bounds, clip, opacity, and translation; `owner` identifies the producer
+for diagnostics and transient cleanup, and does not select renderer behavior.
+Translation and opacity affect composition only, never layout or hit testing.
+
+Text and geometry handles are generation-checked references to payloads. Their
+resolvers return shaped text or surface geometry data only; placement, clipping,
+and other presentation state stay on the command. Stale handles are skipped.
+The retained stream order is authoritative: the SDL compositor batches adjacent
+surface primitives and treats text and geometry as ordering barriers. It does
+not sort by primitive family or inspect `Node_Kind` to decide how to draw.
+
+The current surface material identity is flat, with physical height zero and
+no material group. Image paint is deferred until Alicorn defines its image
+resource lifetime and upload contract. Applications author semantic widgets
+and host integrations; the generic paint payload union is an internal renderer
+boundary, not a replacement UI authoring API.
+
 The host waits for events when idle. Worker completions can wake it through an
 opaque `Application_Waker`; the UI remains on the window thread. The runtime
 does not create application threads or observe external state.
