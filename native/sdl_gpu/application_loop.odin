@@ -58,11 +58,11 @@ run_application_loop :: proc(
 	host_scratch := native_host_scratch_make()
 	defer native_host_scratch_destroy(&host_scratch)
 	wake_event_id := sdl3.RegisterEvents(1)
-	if wake_event_id == 0xFFFFFFFF { fail("SDL_RegisterEvents failed for application wakeups") }
+	if wake_event_id == 0 { fail("SDL_RegisterEvents failed for application wakeups") }
 	wake_state := Native_Application_Waker{event_type=sdl3.EventType(wake_event_id), active=true}
 	application_waker := Application_Waker{data=rawptr(&wake_state), wake=native_application_wake}
 	host_wake_event_id := sdl3.RegisterEvents(1)
-	if host_wake_event_id == 0xFFFFFFFF { fail("SDL_RegisterEvents failed for host redraw wakeups") }
+	if host_wake_event_id == 0 { fail("SDL_RegisterEvents failed for host redraw wakeups") }
 	host_wake_state := Native_Host_Event_Waker{event_type=sdl3.EventType(host_wake_event_id), active=true}
 	if native_menu != nil { native_menu.host_waker = &host_wake_state }
 	scheduler_state := Native_Scheduled_Wake_State{active=true}

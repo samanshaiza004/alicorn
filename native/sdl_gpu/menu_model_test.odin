@@ -22,7 +22,7 @@ menu_application_wake_test_callback :: proc(data: rawptr, rt: ^alicorn.Runtime) 
 
 	application_event_id := sdl3.RegisterEvents(1)
 	host_event_id := sdl3.RegisterEvents(1)
-	if application_event_id == 0xFFFFFFFF || host_event_id == 0xFFFFFFFF {
+	if application_event_id == 0 || host_event_id == 0 {
 		testing.expect(t, false, "SDL should register distinct application and host wake events")
 		return
 	}
