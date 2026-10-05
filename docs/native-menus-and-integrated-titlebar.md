@@ -23,9 +23,10 @@ On Windows, system-decorated windows attach a normal HMENU below the caption.
 The opt-in integrated mode extends the DWM frame into the SDL-created window,
 then removes the standard non-client frame while retaining the native window
 styles needed for resize, system menu, minimize, maximize, and restore. The
-host draws integrated menu labels with SDL_GPU and opens native HMENU popups.
-The labels and their hit rectangles belong to the SDL host; they are not
-application-retained nodes, and hover only schedules host presentation work.
+host draws the title, menu labels, and caption glyphs with SDL_GPU and opens
+native HMENU popups. Menu-label and caption-control rectangles belong to the
+SDL host; they are not application-retained nodes, and hover only schedules
+host presentation work.
 
 The host owns two explicit logical coordinate spaces. The window space includes
 the integrated chrome. The application space begins below that chrome, keeps an
@@ -36,12 +37,14 @@ candidate geometry is translated into window coordinates. Applications do not
 need to know that an integrated title/menu band exists.
 
 Win32 non-client handling asks `DwmDefWindowProc` first for caption-button
-behavior. DWM therefore retains ownership of the native caption buttons and
-Windows 11 Snap Layout affordance whenever it handles the message. Alicorn owns
-only menu-label, blank-caption, and resize-border hit testing. It does not paint
-caption buttons or emulate the system menu, resizing, or Snap Layouts. The
-integrated labels use Windows caption, inactive-caption, and highlight system
-colors; HMENU popup surfaces remain OS-drawn.
+behavior. Caption-control bounds come from `DWMWA_CAPTION_BUTTON_BOUNDS` and are
+split into minimize, maximize, and close rectangles. Those same rectangles
+position the GPU glyphs and return `HTMINBUTTON`, `HTMAXBUTTON`, and `HTCLOSE`;
+DWM receives the caption messages and performs the system actions, including
+Windows 11 Snap Layout for `HTMAXBUTTON`. The host draws its own caption glyphs
+because SDL_GPU rejects transparent windows on the current D3D12 path. The
+integrated labels and button states use Windows caption, inactive-caption, and
+highlight system colors; HMENU popup surfaces remain OS-drawn.
 
 Windows menu navigation keeps the system-menu shortcut separate: Alt+Space
 continues to open the native system menu. Alt+F/E/V opens the matching
