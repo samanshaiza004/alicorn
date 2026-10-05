@@ -68,8 +68,9 @@ tracking, not a general cascade or implicit observation of app state. The
 button component has an explicit recipe family for default, primary, toolbar,
 quiet, and tab intent. Its selected, hover, press, and disabled transforms
 compose in a fixed order; focus and semantic-active remain separate overlays.
-General token references, a shared `Computed_Style`, and material/shape
-rendering remain outside this slice.
+Typed color and logical-length tokens now have a small compiler/runtime path,
+including namespaced application/vendor roles. A general cascade, shared
+`Computed_Style`, and material/shape rendering remain outside this slice.
 
 This is explicit reuse, not automatic dependency tracking. A stale region
 revision can produce stale content.

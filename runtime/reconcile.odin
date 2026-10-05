@@ -814,6 +814,12 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.identity_key_numeric)
 	delete(rt.identity_key_kind)
 	delete(rt.identity_key_pair)
+	for theme in rt.style_themes {
+		if len(theme.color_tokens) > 0 { delete(theme.color_tokens, rt.persistent_allocator) }
+		if len(theme.length_tokens) > 0 { delete(theme.length_tokens, rt.persistent_allocator) }
+		if len(theme.extension_color_roles) > 0 { delete(theme.extension_color_roles, rt.persistent_allocator) }
+		if len(theme.extension_length_roles) > 0 { delete(theme.extension_length_roles, rt.persistent_allocator) }
+	}
 	delete(rt.style_themes)
 	delete(rt.style_scope_stack)
 	delete(rt.layout_roots)

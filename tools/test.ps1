@@ -25,6 +25,18 @@ Copy-Item -LiteralPath $SDL3 -Destination 'out\SDL3.dll' -Force
 
 & $Odin test runtime
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Odin test theme
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Odin build tools\theme -out:out\alicorn_theme.exe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& .\out\alicorn_theme.exe check theme\testdata\minimal.json
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& .\out\alicorn_theme.exe check theme\testdata\extends_base.json
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& .\out\alicorn_theme.exe explain theme\testdata\minimal.json color.primary
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& .\out\alicorn_theme.exe check theme\testdata\invalid.json
+if ($LASTEXITCODE -eq 0) { throw "Theme CLI accepted an unsupported length unit." }
 & $Odin test native\sdl_gpu -out:out\alicorn_native_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

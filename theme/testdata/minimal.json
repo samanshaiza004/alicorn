@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "contract": "0.2",
+  "tokens": {
+    "color.source": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [0.5, 0.25, 0.0],
+        "alpha": 1
+      }
+    },
+    "color.primary": {
+      "$type": "color",
+      "$value": "{color.source}"
+    },
+    "space.gutter": {
+      "$type": "dimension",
+      "$value": {"value": 12, "unit": "px"}
+    }
+  },
+  "roles": {
+    "core": {"text": "{color.primary}"},
+    "extensions": {
+      "app.editor.gutter": {
+        "$type": "dimension",
+        "$value": "{space.gutter}"
+      }
+    }
+  }
+}

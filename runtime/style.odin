@@ -43,6 +43,27 @@ style_theme_is_valid :: proc(theme: Style_Theme) -> bool {
 	for color in theme.colors {
 		if !style_color_is_valid(color) { return false }
 	}
+	for color in theme.color_tokens {
+		if !style_color_is_valid(color) { return false }
+	}
+	for length in theme.length_tokens {
+		if length.logical_units != length.logical_units || length.logical_units < 0 || length.logical_units > 1_000_000 { return false }
+	}
+	for token in theme.core_color_tokens {
+		if token != 0 && u64(u32(token)) > u64(len(theme.color_tokens)) { return false }
+	}
+	for binding, i in theme.extension_color_roles {
+		if binding.role == 0 || binding.token == 0 || u64(u32(binding.token)) > u64(len(theme.color_tokens)) { return false }
+		for previous in 0..<i {
+			if theme.extension_color_roles[previous].role == binding.role { return false }
+		}
+	}
+	for binding, i in theme.extension_length_roles {
+		if binding.role == 0 || binding.token == 0 || u64(u32(binding.token)) > u64(len(theme.length_tokens)) { return false }
+		for previous in 0..<i {
+			if theme.extension_length_roles[previous].role == binding.role { return false }
+		}
+	}
 	for recipe in theme.button_recipes.recipes {
 		if !style_button_recipe_is_valid(recipe) { return false }
 	}
@@ -73,10 +94,29 @@ style_accent_color :: proc(accent: Style_Accent) -> Color {
 // IDs remain stable for the lifetime of this Runtime.
 style_theme_register :: proc(rt: ^Runtime, theme: Style_Theme) -> Style_Theme_ID {
 	if rt == nil || !style_theme_is_valid(theme) {
-		if rt != nil { append_diagnostic(rt, "style theme contains invalid colors or button recipes") }
+		if rt != nil { append_diagnostic(rt, "style theme contains invalid colors, token bindings, logical lengths, or button recipes") }
 		return 0
 	}
-	append(&rt.style_themes, theme)
+	// Registered themes are immutable snapshots. Copy variable-sized token and
+	// binding data so callers may release or reuse their source buffers.
+	registered := theme
+	if len(theme.color_tokens) > 0 {
+		registered.color_tokens = make([]Color, len(theme.color_tokens), allocator=rt.persistent_allocator)
+		copy(registered.color_tokens, theme.color_tokens)
+	}
+	if len(theme.length_tokens) > 0 {
+		registered.length_tokens = make([]Style_Length, len(theme.length_tokens), allocator=rt.persistent_allocator)
+		copy(registered.length_tokens, theme.length_tokens)
+	}
+	if len(theme.extension_color_roles) > 0 {
+		registered.extension_color_roles = make([]Style_Extension_Color_Role_Binding, len(theme.extension_color_roles), allocator=rt.persistent_allocator)
+		copy(registered.extension_color_roles, theme.extension_color_roles)
+	}
+	if len(theme.extension_length_roles) > 0 {
+		registered.extension_length_roles = make([]Style_Extension_Length_Role_Binding, len(theme.extension_length_roles), allocator=rt.persistent_allocator)
+		copy(registered.extension_length_roles, theme.extension_length_roles)
+	}
+	append(&rt.style_themes, registered)
 	return Style_Theme_ID(u32(len(rt.style_themes)))
 }
 
@@ -85,7 +125,11 @@ style_theme_color :: proc(rt: ^Runtime, theme: Style_Theme_ID, role: Style_Color
 	if int(role) < 0 || role >= .Count { return default_theme.colors[int(Style_Color_Role.Text)] }
 	index := u64(u32(theme))
 	if rt != nil && index > 0 && index <= u64(len(rt.style_themes)) {
-		return rt.style_themes[index-1].colors[int(role)]
+		theme_data := rt.style_themes[index-1]
+		if token := theme_data.core_color_tokens[int(role)]; token != 0 {
+			if value, found := style_token_color(rt, theme, token); found { return value }
+		}
+		return theme_data.colors[int(role)]
 	}
 	return default_theme.colors[int(role)]
 }
