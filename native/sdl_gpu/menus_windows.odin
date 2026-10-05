@@ -742,13 +742,43 @@ native_menu_overlay_commands :: proc(menu: ^Native_Menu_Runtime, width, height: 
 }
 
 win32_menu_dispatch_native_id :: proc(state: ^Win32_Menu_State, native_id: u32) {
-	if state == nil || state.menu == nil || native_id == 0 || int(native_id) >= len(state.commands) || native_inspector_visible(state.menu.inspector) { return }
-	state.menu.pending_command = state.commands[native_id]
-	state.menu.has_pending = true
+	if state == nil { return }
+	if state.menu != nil && native_id != 0 && int(native_id) < len(state.commands) && !native_inspector_visible(state.menu.inspector) {
+		state.menu.pending_command = state.commands[native_id]
+		state.menu.has_pending = true
+	}
+	win32_menu_exit_mode(state, -1)
+}
+
+win32_menu_exit_mode_state :: proc(state: ^Win32_Menu_State, hovered_index: int) {
+	if state == nil { return }
 	state.menu_mode = false
 	state.active_menu = -1
-	state.hovered = -1
-	native_menu_request_chrome_redraw(state.menu)
+	state.hovered = hovered_index
+}
+
+win32_menu_exit_mode :: proc(state: ^Win32_Menu_State, hovered_index: int) {
+	if state == nil { return }
+	win32_menu_exit_mode_state(state, hovered_index)
+	if state.menu != nil { native_menu_request_chrome_redraw(state.menu) }
+}
+
+win32_menu_hovered_label_at_cursor :: proc(state: ^Win32_Menu_State) -> int {
+	if state == nil { return -1 }
+	point := win.POINT{}
+	if !win.GetCursorPos(&point) { return -1 }
+	x, y, ok := win32_menu_screen_point_to_window(state, i32(point.x), i32(point.y))
+	if !ok { return -1 }
+	return win32_menu_label_at_window_point(state, x, y)
+}
+
+win32_menu_finish_popup :: proc(state: ^Win32_Menu_State, native_id: u32, hovered_index: int) {
+	if state == nil { return }
+	if native_id == 0 {
+		win32_menu_exit_mode(state, hovered_index)
+	} else {
+		win32_menu_dispatch_native_id(state, native_id)
+	}
 }
 
 win32_menu_open_popup :: proc(state: ^Win32_Menu_State, index: int) {
@@ -766,8 +796,9 @@ win32_menu_open_popup :: proc(state: ^Win32_Menu_State, index: int) {
 		win.INT(i32(client_origin.x)+i32(f32(label.bounds.left)*to_pixels)),
 		win.INT(i32(client_origin.y)+i32(f32(label.bounds.bottom)*to_pixels)),
 		0, state.hwnd, nil)
-	win32_menu_dispatch_native_id(state, u32(command))
-	if command == 0 && state.menu != nil { native_menu_request_chrome_redraw(state.menu) }
+	hovered_index := -1
+	if command == 0 { hovered_index = win32_menu_hovered_label_at_cursor(state) }
+	win32_menu_finish_popup(state, u32(command), hovered_index)
 	_ = win.PostMessageW(state.hwnd, win.WM_NULL, 0, 0)
 }
 
@@ -805,10 +836,7 @@ native_menu_handle_keydown :: proc(menu: ^Native_Menu_Runtime, keycode: int, mod
 	}
 	if !state.menu_mode { return false }
 	if keycode == int(sdl3.K_ESCAPE) {
-		state.menu_mode = false
-		state.active_menu = -1
-		state.hovered = -1
-		native_menu_request_chrome_redraw(menu)
+		win32_menu_exit_mode(state, win32_menu_hovered_label_at_cursor(state))
 		return true
 	}
 	if keycode == int(sdl3.K_LEFT) || keycode == int(sdl3.K_RIGHT) {
@@ -941,9 +969,7 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 				}
 			}
 			if state.menu_mode {
-				state.menu_mode = false
-				state.active_menu = -1
-				native_menu_request_chrome_redraw(state.menu)
+				win32_menu_exit_mode(state, state.hovered)
 			}
 		} else if message == win.WM_MOUSEMOVE {
 			if state.caption_hovered >= 0 {
@@ -1027,12 +1053,9 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 		win32_menu_layout_labels(state)
 		native_menu_request_chrome_redraw(state.menu)
 	} else if message == win.WM_KILLFOCUS && integrated {
-		state.menu_mode = false
-		state.active_menu = -1
-		state.hovered = -1
+		win32_menu_exit_mode(state, -1)
 		state.caption_hovered = -1
 		state.caption_pressed = -1
-		native_menu_request_chrome_redraw(state.menu)
 	}
 	return result
 }

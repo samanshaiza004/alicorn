@@ -20,6 +20,19 @@ test_native_chrome_feedback_uses_distinct_derived_states :: proc(t: ^testing.T) 
 }
 
 @(test)
+test_cancelled_native_menu_popup_exits_mode_and_uses_current_hover :: proc(t: ^testing.T) {
+	state := Win32_Menu_State{menu_mode=true, active_menu=1, hovered=1}
+	win32_menu_finish_popup(&state, 0, -1)
+	closed := !state.menu_mode && state.active_menu == -1 && state.hovered == -1
+
+	state = Win32_Menu_State{menu_mode=true, active_menu=1, hovered=1}
+	win32_menu_finish_popup(&state, 0, 2)
+	hover_restored := !state.menu_mode && state.active_menu == -1 && state.hovered == 2
+	testing.expect(t, closed && hover_restored,
+		"canceling a native popup should leave menu mode immediately and keep only the actual pointer hover")
+}
+
+@(test)
 test_system_window_without_menus_needs_no_gpu_chrome_state :: proc(t: ^testing.T) {
 	app := Application{window_decorations=.System}
 	menu := Native_Menu_Runtime{application=&app}
