@@ -40,7 +40,7 @@ tooltip_remove_display_commands :: proc(rt: ^Runtime) {
 	write_index := 0
 	for read_index := 0; read_index < len(rt.display); read_index += 1 {
 		command := rt.display[read_index]
-		if command.node == Node_ID(0) { continue }
+		if command.owner == Node_ID(0) { continue }
 		rt.display[write_index] = command
 		write_index += 1
 	}
@@ -118,6 +118,7 @@ tooltip_advance :: proc(rt: ^Runtime, now_ns: u64) -> bool {
 	}
 	rt.tooltip.run = run
 	rt.tooltip.run_ready = true
+	rt.tooltip.run_generation = paint_next_resource_generation(rt)
 	rt.tooltip.visible = true
 	rt.tooltip.deadline_ns = 0
 	rt.composition_rebuild = true
@@ -140,16 +141,16 @@ append_tooltip_overlay :: proc(rt: ^Runtime) {
 	background := Color{0.075, 0.09, 0.125, 0.99}
 	border := Color{0.24, 0.29, 0.37, 1}
 	append(&rt.display,
-		Display_Command{Node_ID(0), .Tooltip_Background, bounds, rt.viewport, "", background, []Text_Paint_Span{}},
-		Display_Command{Node_ID(0), .Tooltip_Background, Rect{bounds.x, bounds.y, bounds.w, 1}, rt.viewport, "", border, []Text_Paint_Span{}},
-		Display_Command{Node_ID(0), .Tooltip_Background, Rect{bounds.x, bounds.y+bounds.h-1, bounds.w, 1}, rt.viewport, "", border, []Text_Paint_Span{}},
-		Display_Command{Node_ID(0), .Tooltip_Background, Rect{bounds.x, bounds.y, 1, bounds.h}, rt.viewport, "", border, []Text_Paint_Span{}},
-		Display_Command{Node_ID(0), .Tooltip_Background, Rect{bounds.x+bounds.w-1, bounds.y, 1, bounds.h}, rt.viewport, "", border, []Text_Paint_Span{}},
-		Display_Command{
-			Node_ID(0), .Tooltip_Text,
+		paint_surface_command(Node_ID(0), bounds, rt.viewport, background),
+		paint_surface_command(Node_ID(0), Rect{bounds.x, bounds.y, bounds.w, 1}, rt.viewport, border),
+		paint_surface_command(Node_ID(0), Rect{bounds.x, bounds.y+bounds.h-1, bounds.w, 1}, rt.viewport, border),
+		paint_surface_command(Node_ID(0), Rect{bounds.x, bounds.y, 1, bounds.h}, rt.viewport, border),
+		paint_surface_command(Node_ID(0), Rect{bounds.x+bounds.w-1, bounds.y, 1, bounds.h}, rt.viewport, border),
+		paint_text_command(
+			Node_ID(0),
 			Rect{bounds.x+TOOLTIP_HORIZONTAL_PADDING, bounds.y+(bounds.h-run.height)/2, maxf(bounds.w-2*TOOLTIP_HORIZONTAL_PADDING, 0), run.height},
-			rt.viewport, run.value, Color{0.91, 0.94, 0.98, 1}, []Text_Paint_Span{},
-		},
+			rt.viewport, paint_text_handle_for_tooltip(rt), Color{0.91, 0.94, 0.98, 1},
+		),
 	)
 	rt.transient_overlay_kind = .Tooltip
 }

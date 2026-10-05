@@ -66,10 +66,14 @@ test_context_menu_navigation_skips_disabled_items_and_dispatches_action :: proc(
 	testing.expect(t, separator_line_node.bounds.x > separator_slot_node.bounds.x && separator_line_node.bounds.x+separator_line_node.bounds.w < separator_slot_node.bounds.x+separator_slot_node.bounds.w,
 		"separator line should be inset from the menu edges")
 	button_paints := 0
-	for command in rt.nodes[first].paint { if command.kind == .Button { button_paints += 1 } }
+	for command in rt.nodes[first].paint {
+		if color, ok := paint_surface_color(command); ok && same_rect(command.bounds, rt.nodes[first].bounds) && color.a > 0 { button_paints += 1 }
+	}
 	testing.expect(t, button_paints == 1, "keyboard focus on a menu item should use a row highlight without the ordinary button outline")
 	panel_outline_segments := 0
-	for command in panel.paint { if command.kind == .Context_Menu_Panel && !same_rect(command.bounds, panel.bounds) { panel_outline_segments += 1 } }
+	for command in panel.paint {
+		if paint_command_is_surface(command) && !same_rect(command.bounds, panel.bounds) { panel_outline_segments += 1 }
+	}
 	testing.expect(t, panel_outline_segments == 4, "the popup should have a subtle four-sided border")
 	testing.expect(t, rt.focused == first, "opening should focus the first enabled menu item")
 	testing.expect(t, panel.clip.x == rt.viewport.x && panel.clip.y == rt.viewport.y && panel.clip.w == rt.viewport.w && panel.clip.h == rt.viewport.h,

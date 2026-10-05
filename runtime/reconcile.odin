@@ -311,6 +311,13 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	}
 	node.parent = d.parent
 	node.kind = d.kind
+	if d.kind == .Custom_Surface {
+		if node.surface_resource_generation == 0 {
+			node.surface_resource_generation = paint_next_resource_generation(rt)
+		}
+	} else {
+		node.surface_resource_generation = 0
+	}
 	node.style = d.style
 	node.context_menu_bounds = d.context_menu_bounds
 	node.font = d.font
@@ -510,7 +517,8 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	}
 	if id == rt.selected { rt.selected = 0 }
 	delete_key(&rt.nodes, id)
-	for command in node.paint { if len(command.text) > 0 { delete(command.text, rt.persistent_allocator) } }
+	// Paint commands contain only inline values and generation-checked resource
+	// handles. Their referenced runs and span storage are owned by the node.
 	delete(node.paint)
 	delete(node.children)
 	delete(node.surface_samples)
@@ -595,7 +603,7 @@ reconcile :: proc(rt: ^Runtime) {
 			node.display_index = -1
 			node.hit_bounds = {}
 			node.children = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
-			node.paint = make([dynamic]Display_Command, 0, allocator=rt.persistent_allocator)
+			node.paint = make([dynamic]Paint_Command, 0, allocator=rt.persistent_allocator)
 			node.surface_samples = make([dynamic]f32, 0, allocator=rt.persistent_allocator)
 			node.surface_segments = make([dynamic]GPU_Surface_Line_Segment, 0, allocator=rt.persistent_allocator)
 			node.surface_circles = make([dynamic]GPU_Surface_Filled_Circle, 0, allocator=rt.persistent_allocator)
@@ -790,7 +798,6 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	if rt.drag_preview.ready { text_run_destroy(&rt.drag_preview.run) }
 	if rt.tooltip.run_ready { text_run_destroy(&rt.tooltip.run) }
 	for _, node in rt.nodes {
-		for command in node.paint { if len(command.text) > 0 { delete(command.text, rt.persistent_allocator) } }
 		delete(node.paint)
 		delete(node.children)
 		delete(node.surface_samples)

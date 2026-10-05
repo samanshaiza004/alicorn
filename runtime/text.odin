@@ -1142,12 +1142,14 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 		text_run_destroy(&node.text_run)
 		node.text_run_valid = false
 		node.text_run_generation += 1
+		node.text_run_handle_generation = 0
 	}
 	_, role_loaded := text_engine_font(&rt.text_engine, node.font)
 	if !role_loaded {
 		if node.text_run_valid {
 			text_run_destroy(&node.text_run)
 			node.text_run_valid = false
+			node.text_run_handle_generation = 0
 		}
 		return false
 	}
@@ -1179,7 +1181,11 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 		node.text_run.overflow == text_overflow {
 		return false
 	}
-	if node.text_run_valid { text_run_destroy(&node.text_run) }
+	if node.text_run_valid {
+		text_run_destroy(&node.text_run)
+		node.text_run_valid = false
+		node.text_run_handle_generation = 0
+	}
 	run, built := text_run_build_with_overflow(
 		&rt.text_engine, text_value, requested_size, requested_width,
 		rt.persistent_allocator, rt.scratch_allocator,
@@ -1190,6 +1196,7 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 		node.text_run = run
 		node.text_run_valid = true
 		node.text_run_generation += 1
+		node.text_run_handle_generation = paint_next_resource_generation(rt)
 		return true
 	}
 	return false

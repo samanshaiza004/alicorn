@@ -117,7 +117,8 @@ test_button_variant_is_retained_and_inspectable :: proc(t: ^testing.T) {
 	button_id = style_recipe_test_button(&rt, "Save")
 	button_node := rt.nodes[button_id]
 	testing.expect(t, button_node.button_variant == .Primary, "changing variant should update retained state")
-	testing.expect(t, button_node.paint[0].color == style_environment_color(&rt, button_node.style_environment, .Accent),
+	primary_surface, primary_surface_ok := paint_surface_color(button_node.paint[0])
+	testing.expect(t, primary_surface_ok && primary_surface == style_environment_color(&rt, button_node.style_environment, .Accent),
 		"changing variant should select the primary recipe paint")
 	inspector := inspect(&rt)
 	defer delete(inspector)

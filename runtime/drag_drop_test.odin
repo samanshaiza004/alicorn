@@ -156,9 +156,11 @@ test_drag_source_identity_survives_virtualized_node_retirement :: proc(t: ^testi
 	if presentation_ready { end_presentation_frame(&ui) }
 	preview_card_found, preview_text_found := false, false
 	for command in rt.display {
-		if command.node != 0 { continue }
-		if command.kind == .Button { preview_card_found = true }
-		if command.kind == .Text && command.text == "source" { preview_text_found = true }
+		if command.owner != 0 { continue }
+		if paint_command_is_surface(command) { preview_card_found = true }
+		if text_paint, ok := command.payload.(Text_Paint); ok {
+			if run, found := paint_text_run_resolve(&rt, text_paint.run); found && run.value == "source" { preview_text_found = true }
+		}
 	}
 	testing.expect(t, presentation_ready && preview_card_found && preview_text_found,
 		"the retained display should compose a non-hit-testable card and source label for the drag preview")
@@ -181,7 +183,11 @@ test_drag_source_identity_survives_virtualized_node_retirement :: proc(t: ^testi
 	if presentation_ready { end_presentation_frame(&ui) }
 	preview_text_found = false
 	for command in rt.display {
-		if command.node == 0 && command.kind == .Text && command.text == "source" { preview_text_found = true }
+		if command.owner == 0 {
+			if text_paint, ok := command.payload.(Text_Paint); ok {
+				if run, found := paint_text_run_resolve(&rt, text_paint.run); found && run.value == "source" { preview_text_found = true }
+			}
+		}
 	}
 	testing.expect(t, preview_text_found, "virtualized source retirement should not remove the pointer-following preview")
 	target_node = rt.nodes[target_button_after]
@@ -192,7 +198,7 @@ test_drag_source_identity_survives_virtualized_node_retirement :: proc(t: ^testi
 	ui, presentation_ready = begin_presentation_frame(&rt)
 	if presentation_ready { end_presentation_frame(&ui) }
 	preview_commands_remain := false
-	for command in rt.display { if command.node == 0 { preview_commands_remain = true } }
+	for command in rt.display { if command.owner == 0 { preview_commands_remain = true } }
 	testing.expect(t, !rt.drag_preview.ready && !preview_commands_remain && drag_source_opacity(&rt, source) == 1,
 		"drop completion should remove the ghost and restore the source presentation state")
 }

@@ -614,6 +614,7 @@ invalidate_text_product :: proc(rt: ^Runtime, node: ^Node, reason := "retained t
 		text_run_destroy(&node.text_run)
 		node.text_run_valid = false
 		node.text_run_generation += 1
+		node.text_run_handle_generation = 0
 	}
 	text_composition_run_destroy(node)
 	dirty_set(&node.dirty, .Layout, true)

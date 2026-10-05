@@ -31,14 +31,16 @@ Native_Atlas_Page :: struct {
 
 Native_Text_Draw :: struct {
 	first_vertex: sdl3.Uint32,
-	node:         alicorn.Node_ID,
+	command_index: int,
+	run_handle:   alicorn.Text_Run_Handle,
 	page_index:   u16,
 	is_color:     bool,
 }
 
 Native_Host_Text_Run :: struct {
-	node: alicorn.Node_ID,
-	run:  alicorn.Text_Run,
+	host_id: alicorn.Node_ID,
+	handle:  alicorn.Text_Run_Handle,
+	run:     alicorn.Text_Run,
 }
 
 Native_Text_Renderer :: struct {
@@ -55,6 +57,7 @@ Native_Text_Renderer :: struct {
 	vertex_capacity: int,
 	draws:          [dynamic]Native_Text_Draw,
 	host_runs:      [dynamic]Native_Host_Text_Run,
+	host_run_generation: u64,
 	pending_dirty:  [dynamic]runa.Atlas_Dirty_View,
 	mesh_valid:     bool,
 	vertex_upload_pending: bool,
@@ -212,22 +215,61 @@ native_text_destroy :: proc(renderer: ^Native_Text_Renderer) {
 native_text_register_host_run :: proc(renderer: ^Native_Text_Renderer, node: alicorn.Node_ID, run: alicorn.Text_Run) -> bool {
 	if renderer == nil || node == 0 { return false }
 	for host_run in renderer.host_runs {
-		if host_run.node == node { return false }
+		if host_run.host_id == node { return false }
 	}
-	append(&renderer.host_runs, Native_Host_Text_Run{node, run})
+	renderer.host_run_generation += 1
+	if renderer.host_run_generation == 0 { renderer.host_run_generation = 1 }
+	handle := alicorn.Text_Run_Handle{.Host, u64(node), renderer.host_run_generation}
+	append(&renderer.host_runs, Native_Host_Text_Run{node, handle, run})
 	return true
 }
 
 native_text_host_run :: proc(renderer: ^Native_Text_Renderer, node: alicorn.Node_ID) -> ^alicorn.Text_Run {
 	if renderer == nil || node == 0 { return nil }
 	for &host_run in renderer.host_runs {
-		if host_run.node == node { return &host_run.run }
+		if host_run.host_id == node { return &host_run.run }
 	}
 	return nil
 }
 
-native_text_is_text :: proc(kind: alicorn.Node_Kind) -> bool {
-	return kind == .Text || kind == .Text_Field || kind == .Text_Composition || kind == .Tooltip_Text
+native_text_host_handle :: proc(renderer: ^Native_Text_Renderer, node: alicorn.Node_ID) -> alicorn.Text_Run_Handle {
+	if renderer == nil || node == 0 { return {} }
+	for host_run in renderer.host_runs {
+		if host_run.host_id == node { return host_run.handle }
+	}
+	return {}
+}
+
+native_text_host_resolve :: proc(renderer: ^Native_Text_Renderer, handle: alicorn.Text_Run_Handle) -> ^alicorn.Text_Run {
+	if renderer == nil || handle.source != .Host || handle.generation == 0 { return nil }
+	for &host_run in renderer.host_runs {
+		if host_run.handle == handle { return &host_run.run }
+	}
+	return nil
+}
+
+native_text_run_resolve :: proc(renderer: ^Native_Text_Renderer, handle: alicorn.Text_Run_Handle) -> ^alicorn.Text_Run {
+	if renderer == nil || renderer.runtime == nil || handle.generation == 0 { return nil }
+	if handle.source == .Host { return native_text_host_resolve(renderer, handle) }
+	if run, ok := alicorn.paint_text_run_resolve(renderer.runtime, handle); ok { return run }
+	return nil
+}
+
+native_text_command_payload :: proc(command: alicorn.Paint_Command) -> (paint: alicorn.Text_Paint, ok: bool) {
+	return command.payload.(alicorn.Text_Paint)
+}
+
+native_text_command_handle :: proc(command: alicorn.Paint_Command) -> (handle: alicorn.Text_Run_Handle, ok: bool) {
+	if paint, ok := native_text_command_payload(command); ok { return paint.run, true }
+	return {}, false
+}
+
+native_text_command :: proc(command: alicorn.Paint_Command) -> bool {
+	return alicorn.paint_command_is_text(command)
+}
+
+native_text_handle_equal :: proc(a, b: alicorn.Text_Run_Handle) -> bool {
+	return a.source == b.source && a.resource == b.resource && a.generation == b.generation
 }
 
 native_text_hash_mix :: proc(h, value: u64) -> u64 {
@@ -525,10 +567,10 @@ native_text_rects_intersect :: proc(a, b: alicorn.Rect) -> bool {
 	return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y
 }
 
-native_text_command_intersects_clip :: proc(command: alicorn.Display_Command) -> bool {
-	// Drag-preview text is translated at draw time. Its mesh-space bounds do
-	// not describe the final clip-space location, so leave it to exact culling.
-	if command.node == alicorn.Node_ID(0) && command.kind != .Tooltip_Text { return true }
+native_text_command_intersects_clip :: proc(command: alicorn.Paint_Command) -> bool {
+	// Translation is applied by the command model at draw time. Keep a moving
+	// command's full run in the retained mesh so pointer motion stays cheap.
+	if command.translation[0] != 0 || command.translation[1] != 0 { return true }
 	return native_text_rects_intersect(command.bounds, command.clip)
 }
 
@@ -539,12 +581,12 @@ native_text_command_intersects_clip :: proc(command: alicorn.Display_Command) ->
 native_text_glyph_may_intersect_clip :: proc(
 	glyph: alicorn.Text_Glyph,
 	run_size: f32,
-	command: alicorn.Display_Command,
+	command: alicorn.Paint_Command,
 	scale_x, scale_y: f32,
 ) -> bool {
-	// The drag preview receives a host-side model translation after mesh build.
-	// Do not apply an untransformed logical bound that could drop its glyphs.
-	if command.node == alicorn.Node_ID(0) && command.kind != .Tooltip_Text { return true }
+	// A translated command can move after this mesh is built. Its draw scissor
+	// remains authoritative, so retain its glyphs without position culling.
+	if command.translation[0] != 0 || command.translation[1] != 0 { return true }
 	if command.clip.w <= 0 || command.clip.h <= 0 { return false }
 	clip_xa := command.clip.x * scale_x
 	clip_ya := command.clip.y * scale_y
@@ -570,38 +612,22 @@ native_text_glyph_may_intersect_clip :: proc(
 	return x0 < clip_x1 && x1 > clip_x0 && y0 < clip_y1 && y1 > clip_y0
 }
 
-native_text_command_run :: proc(renderer: ^Native_Text_Renderer, command: alicorn.Display_Command) -> (run: alicorn.Text_Run, ok: bool) {
-	if command.node == alicorn.Node_ID(0) {
-		if command.kind == .Tooltip_Text {
-			if !renderer.runtime.tooltip.run_ready { return }
-			return renderer.runtime.tooltip.run, true
-		}
-		if !renderer.runtime.drag_preview.ready { return }
-		return renderer.runtime.drag_preview.run, true
-	}
-	if host_run := native_text_host_run(renderer, command.node); host_run != nil {
-		return host_run^, true
-	}
-	node, found := renderer.runtime.nodes[command.node]
-	if !found { return }
-	if command.kind == .Text_Composition {
-		if !node.composition_run_valid { return }
-		return node.composition_run, true
-	}
-	if !node.text_run_valid { return }
-	return node.text_run, true
+native_text_command_run :: proc(renderer: ^Native_Text_Renderer, command: alicorn.Paint_Command) -> ^alicorn.Text_Run {
+	handle, ok := native_text_command_handle(command)
+	if !ok { return nil }
+	return native_text_run_resolve(renderer, handle)
 }
 
 native_text_reserve_shaped_vertices :: proc(
 	renderer: ^Native_Text_Renderer,
-	display: []alicorn.Display_Command,
+	display: []alicorn.Paint_Command,
 	scale_x, scale_y: f32,
 ) {
 	visible_glyphs := 0
 	for command in display {
-		if !native_text_is_text(command.kind) || !native_text_command_intersects_clip(command) { continue }
-		run, ok := native_text_command_run(renderer, command)
-		if !ok { continue }
+		if !native_text_command(command) || !native_text_command_intersects_clip(command) { continue }
+		run := native_text_command_run(renderer, command)
+		if run == nil { continue }
 		for glyph in run.glyphs {
 			if glyph.control_advance || !native_text_glyph_may_intersect_clip(glyph, run.size, command, scale_x, scale_y) { continue }
 			visible_glyphs += 1
@@ -622,69 +648,55 @@ native_text_reserve_shaped_vertices :: proc(
 // The mesh fingerprint includes only the ordered display state that can affect
 // text pixels. Solid and surface commands are intentionally excluded: their
 // changes must not invalidate the retained text vertex mesh.
-native_text_mesh_fingerprint :: proc(display: []alicorn.Display_Command, scale_x, scale_y: f32) -> (fingerprint: u64, bytes_hashed: u64) {
+native_text_mesh_fingerprint :: proc(renderer: ^Native_Text_Renderer, display: []alicorn.Paint_Command, scale_x, scale_y: f32) -> (fingerprint: u64, bytes_hashed: u64) {
 	h: u64 = 1469598103934665603
 	bytes_hashed = 0
 	h = native_text_hash_mix(h, u64(transmute(u32)scale_x))
 	h = native_text_hash_mix(h, u64(transmute(u32)scale_y))
 	text_index: u64 = 0
-	for command in display {
-		if !native_text_is_text(command.kind) { continue }
-		bytes_hashed += u64(len(command.text))
+	for command, command_index in display {
+		paint, is_text := native_text_command_payload(command)
+		if !is_text { continue }
+		handle := paint.run
+		run := native_text_run_resolve(renderer, handle)
+		if run == nil { continue }
+		bytes_hashed += u64(len(run.value))
 		// Span hashing makes one count pass and one content pass.
-		bytes_hashed += u64(len(command.text_paint_spans) * size_of(alicorn.Text_Paint_Span) * 2)
+		bytes_hashed += u64(len(paint.spans) * size_of(alicorn.Text_Paint_Span) * 2)
 		h = native_text_hash_mix(h, text_index)
+		h = native_text_hash_mix(h, u64(command_index))
 		text_index += 1
-		h = native_text_hash_mix(h, u64(command.node))
-		h = native_text_hash_mix(h, u64(command.kind))
+		h = native_text_hash_mix(h, u64(handle.source))
+		h = native_text_hash_mix(h, handle.resource)
+		h = native_text_hash_mix(h, handle.generation)
 		h = native_text_hash_rect(h, command.bounds)
 		h = native_text_hash_rect(h, command.clip)
-		h = native_text_hash_color(h, command.color)
-		h = native_text_hash_mix(h, native_text_hash_string(command.text))
-		h = native_text_hash_spans(h, command.text_paint_spans)
+		h = native_text_hash_mix(h, u64(transmute(u32)command.opacity))
+		// A transition between culled and translated commands changes which
+		// glyphs enter the mesh; the translation values themselves are only a
+		// draw transform and must not rebuild the retained vertices.
+		translated := command.translation[0] != 0 || command.translation[1] != 0
+		h = native_text_hash_mix(h, u64(translated))
+		h = native_text_hash_color(h, paint.color)
+		h = native_text_hash_mix(h, native_text_hash_string(run.value))
+		h = native_text_hash_spans(h, paint.spans)
+		h = native_text_hash_mix(h, u64(run.font))
+		h = native_text_hash_mix(h, u64(run.font_source))
+		h = native_text_hash_mix(h, u64(transmute(u32)run.size))
+		h = native_text_hash_mix(h, u64(transmute(u32)run.font_weight))
+		h = native_text_hash_mix(h, run.style_hash)
 	}
 	h = native_text_hash_mix(h, text_index)
 	return h, bytes_hashed
 }
 
-native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []alicorn.Display_Command, scale_x, scale_y: f32, scratch_allocator := context.temp_allocator) -> bool {
+native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []alicorn.Paint_Command, scale_x, scale_y: f32, scratch_allocator := context.temp_allocator) -> bool {
 	fingerprint_start := time.now()
-	fingerprint, fingerprint_bytes := native_text_mesh_fingerprint(display, scale_x, scale_y)
+	fingerprint, fingerprint_bytes := native_text_mesh_fingerprint(renderer, display, scale_x, scale_y)
 	text_command_count: u64 = 0
 	for command in display {
-		if !native_text_is_text(command.kind) { continue }
+		if !native_text_command(command) { continue }
 		text_command_count += 1
-		fingerprint = native_text_hash_mix(
-			fingerprint,
-		u64(transmute(u32)alicorn.drag_source_opacity(renderer.runtime, command.node)),
-		)
-		if command.node == alicorn.Node_ID(0) {
-			if command.kind == .Tooltip_Text && renderer.runtime.tooltip.run_ready {
-				run := &renderer.runtime.tooltip.run
-				fingerprint = native_text_hash_mix(fingerprint, u64(run.font))
-				fingerprint = native_text_hash_mix(fingerprint, u64(run.font_source))
-				fingerprint = native_text_hash_mix(fingerprint, u64(transmute(u32)run.size))
-				fingerprint = native_text_hash_mix(fingerprint, u64(transmute(u32)run.font_weight))
-				fingerprint = native_text_hash_mix(fingerprint, run.style_hash)
-			} else if renderer.runtime.drag_preview.ready {
-				run := &renderer.runtime.drag_preview.run
-				fingerprint = native_text_hash_mix(fingerprint, u64(run.font))
-				fingerprint = native_text_hash_mix(fingerprint, u64(run.font_source))
-				fingerprint = native_text_hash_mix(fingerprint, u64(transmute(u32)run.size))
-				fingerprint = native_text_hash_mix(fingerprint, u64(transmute(u32)run.font_weight))
-				fingerprint = native_text_hash_mix(fingerprint, run.style_hash)
-			}
-		} else if host_run := native_text_host_run(renderer, command.node); host_run != nil {
-			fingerprint = native_text_hash_mix(fingerprint, u64(host_run.font))
-			fingerprint = native_text_hash_mix(fingerprint, u64(host_run.font_source))
-			fingerprint = native_text_hash_mix(fingerprint, u64(transmute(u32)host_run.size))
-			fingerprint = native_text_hash_mix(fingerprint, u64(transmute(u32)host_run.font_weight))
-			fingerprint = native_text_hash_mix(fingerprint, host_run.style_hash)
-		} else if node, found := renderer.runtime.nodes[command.node]; found {
-			generation := node.text_run_generation
-			if command.kind == .Text_Composition { generation = node.composition_run_generation }
-			fingerprint = native_text_hash_mix(fingerprint, generation)
-		}
 	}
 	// Font replacement can preserve every display-command field while changing
 	// the retained run's atlas slots. Include the runtime text generation so a
@@ -708,15 +720,18 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 	// Reserve once from the shaped glyphs that can plausibly reach a text
 	// command's clip; don't couple CPU allocation to maximum GPU capacity.
 	native_text_reserve_shaped_vertices(renderer, display, scale_x, scale_y)
-	for command in display {
-		if !native_text_is_text(command.kind) || !native_text_command_intersects_clip(command) { continue }
-		run, run_ok := native_text_command_run(renderer, command)
-		if !run_ok { continue }
-		span_strategy, single_span_index, starts_sorted := native_text_span_strategy(len(command.text), command.text_paint_spans)
+	for command, command_index in display {
+		if !native_text_command(command) || !native_text_command_intersects_clip(command) { continue }
+		paint, is_text := native_text_command_payload(command)
+		if !is_text { continue }
+		run := native_text_command_run(renderer, command)
+		if run == nil { continue }
+		value := run.value
+		span_strategy, single_span_index, starts_sorted := native_text_span_strategy(len(value), paint.spans)
 		clusters_ordered := native_text_glyph_clusters_are_ordered(run.glyphs[:])
 		winners: []int
 		if span_strategy == .Segment_Tree || (span_strategy == .Sorted_Non_Overlapping && !clusters_ordered && !starts_sorted) {
-			winners = native_text_span_winners(command.text, command.text_paint_spans, scratch_allocator)
+			winners = native_text_span_winners(value, paint.spans, scratch_allocator)
 		}
 		span_cursor := 0
 		for glyph in run.glyphs {
@@ -743,28 +758,29 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 			y0 := snapped_y + slot_view.Bearing[1]
 			x1 := x0 + f32(slot_view.Px_Size[0])
 			y1 := y0 + f32(slot_view.Px_Size[1])
-			if !native_text_quad_visible(x0, y0, x1, y1, command.clip, scale_x, scale_y) { continue }
+			if command.translation[0] == 0 && command.translation[1] == 0 &&
+			   !native_text_quad_visible(x0, y0, x1, y1, command.clip, scale_x, scale_y) { continue }
 			if len(renderer.vertices) + 6 > renderer.vertex_capacity && !native_text_ensure_vertex_capacity(renderer, len(renderer.vertices) + 6) {
 				if len(winners) > 0 { delete(winners, scratch_allocator) }
 				renderer.mesh_rebuild_ns += u64(time.duration_nanoseconds(time.since(mesh_rebuild_start)))
 				return false
 			}
 			u0, v0, u1, v1 := slot_view.UV_Rect[0], slot_view.UV_Rect[1], slot_view.UV_Rect[2], slot_view.UV_Rect[3]
-			glyph_color := command.color
+			glyph_color := paint.color
 			if span_strategy == .Single {
-				glyph_color = native_text_color_for_single_span(len(command.text), command.text_paint_spans, single_span_index, glyph.cluster_start, glyph.cluster_end, command.color)
+				glyph_color = native_text_color_for_single_span(len(value), paint.spans, single_span_index, glyph.cluster_start, glyph.cluster_end, paint.color)
 			} else if span_strategy == .Sorted_Non_Overlapping {
 				if clusters_ordered {
-					glyph_color = native_text_color_for_sorted_cluster(len(command.text), command.text_paint_spans, &span_cursor, glyph.cluster_start, glyph.cluster_end, command.color)
+					glyph_color = native_text_color_for_sorted_cluster(len(value), paint.spans, &span_cursor, glyph.cluster_start, glyph.cluster_end, paint.color)
 				} else if starts_sorted {
-					glyph_color = native_text_color_for_sorted_cluster_binary(len(command.text), command.text_paint_spans, glyph.cluster_start, glyph.cluster_end, command.color)
+					glyph_color = native_text_color_for_sorted_cluster_binary(len(value), paint.spans, glyph.cluster_start, glyph.cluster_end, paint.color)
 				} else {
-					glyph_color = native_text_color_for_cluster(command.text_paint_spans, winners, glyph.cluster_start, glyph.cluster_end, command.color)
+					glyph_color = native_text_color_for_cluster(paint.spans, winners, glyph.cluster_start, glyph.cluster_end, paint.color)
 				}
 			} else if span_strategy == .Segment_Tree {
-				glyph_color = native_text_color_for_cluster(command.text_paint_spans, winners, glyph.cluster_start, glyph.cluster_end, command.color)
+				glyph_color = native_text_color_for_cluster(paint.spans, winners, glyph.cluster_start, glyph.cluster_end, paint.color)
 			}
-			glyph_color.a *= alicorn.drag_source_opacity(renderer.runtime, command.node)
+			glyph_color.a *= command.opacity
 			color := [4]f32{glyph_color.r, glyph_color.g, glyph_color.b, glyph_color.a}
 			first := sdl3.Uint32(len(renderer.vertices))
 			append(&renderer.vertices,
@@ -775,7 +791,7 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 				Native_Text_Vertex{[3]f32{x1, y1, 0}, color, [2]f32{u1, v1}},
 				Native_Text_Vertex{[3]f32{x0, y1, 0}, color, [2]f32{u0, v1}},
 			)
-			append(&renderer.draws, Native_Text_Draw{first, command.node, slot_view.Page_Index, slot_view.Is_Color})
+			append(&renderer.draws, Native_Text_Draw{first, command_index, paint.run, slot_view.Page_Index, slot_view.Is_Color})
 		}
 		if len(winners) > 0 { delete(winners, scratch_allocator) }
 	}
@@ -868,14 +884,18 @@ native_text_upload_vertices :: proc(renderer: ^Native_Text_Renderer, command: ^s
 native_text_render_command :: proc(
 	renderer: ^Native_Text_Renderer,
 	command_buffer: ^sdl3.GPUCommandBuffer,
-	command: alicorn.Display_Command,
+	command: alicorn.Paint_Command,
+	display_command_index: int,
 	target: ^sdl3.GPUTexture,
 	target_w, target_h: sdl3.Uint32,
 	scale_x, scale_y: f32,
 ) -> bool {
+	paint, is_text := native_text_command_payload(command)
+	if !is_text { return true }
+	handle := paint.run
 	has_draw := false
 	for draw in renderer.draws {
-		if draw.node == command.node {
+		if draw.command_index == display_command_index && native_text_handle_equal(draw.run_handle, handle) {
 			has_draw = true
 			break
 		}
@@ -888,12 +908,12 @@ native_text_render_command :: proc(
 			{0, 0, 1, 0},
 			{-1, 1, 0, 1},
 		},
-		model = [4][4]f32{{1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1}},
-	}
-	if command.node == alicorn.Node_ID(0) && command.kind != .Tooltip_Text &&
-	   renderer.runtime.transient_overlay_kind == .Drag_Preview {
-		uniforms.model[3][0] = (renderer.runtime.drag.x+alicorn.DRAG_PREVIEW_POINTER_OFFSET)*scale_x
-		uniforms.model[3][1] = (renderer.runtime.drag.y+alicorn.DRAG_PREVIEW_POINTER_OFFSET)*scale_y
+		model = [4][4]f32{
+			{1,0,0,0},
+			{0,1,0,0},
+			{0,0,1,0},
+			{command.translation[0]*scale_x,command.translation[1]*scale_y,0,1},
+		},
 	}
 	sdl3.PushGPUVertexUniformData(command_buffer, 0, &uniforms, sdl3.Uint32(size_of(Native_Text_Uniforms)))
 	target_info := sdl3.GPUColorTargetInfo{texture=target, clear_color=sdl3.FColor{}, load_op=.LOAD, store_op=.STORE}
@@ -914,7 +934,7 @@ native_text_render_command :: proc(
 	vertex_binding := sdl3.GPUBufferBinding{buffer=renderer.vertex_buffer, offset=0}
 	sdl3.BindGPUVertexBuffers(pass, 0, &vertex_binding, 1)
 	for draw in renderer.draws {
-		if draw.node != command.node { continue }
+		if draw.command_index != display_command_index || !native_text_handle_equal(draw.run_handle, handle) { continue }
 		page := native_text_page(renderer, draw.page_index, draw.is_color)
 		if page == nil || page.texture == nil { continue }
 		binding := sdl3.GPUTextureSamplerBinding{texture=page.texture, sampler=renderer.sampler}

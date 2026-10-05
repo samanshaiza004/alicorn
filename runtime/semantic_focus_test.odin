@@ -70,7 +70,7 @@ test_semantic_focus_survives_virtualization_and_lod :: proc(t: ^testing.T) {
 	row_node := rt.nodes[row]
 	semantic_outline := false
 	for command in row_node.paint {
-		if command.kind == .Button && command.color.g == 0.78 && command.color.b == 0.82 {
+		if color, ok := paint_surface_color(command); ok && color.g == 0.78 && color.b == 0.82 {
 			semantic_outline = true
 			break
 		}
@@ -78,7 +78,7 @@ test_semantic_focus_survives_virtualization_and_lod :: proc(t: ^testing.T) {
 	testing.expect(t, semantic_outline, "the active semantic presentation should have a distinct visual outline")
 	owner_outline := false
 	for command in rt.nodes[owner].paint {
-		if command.kind == .Button && command.color.r == 0.76 && command.color.g == 0.86 {
+		if color, ok := paint_surface_color(command); ok && color.r == 0.76 && color.g == 0.86 {
 			owner_outline = true
 			break
 		}
@@ -95,7 +95,7 @@ test_semantic_focus_survives_virtualization_and_lod :: proc(t: ^testing.T) {
 	testing.expect(t, rt.focused == owner, "keyboard focus should move to the opted-in list owner, not an unrelated control")
 	owner_outline = false
 	for command in rt.nodes[owner].paint {
-		if command.kind == .Button && command.color.r == 0.76 && command.color.g == 0.86 {
+		if color, ok := paint_surface_color(command); ok && color.r == 0.76 && color.g == 0.86 {
 			owner_outline = true
 			break
 		}
@@ -116,7 +116,7 @@ test_semantic_focus_survives_virtualization_and_lod :: proc(t: ^testing.T) {
 	}
 	owner_outline = false
 	for command in rt.nodes[owner].paint {
-		if command.kind == .Button && command.color.r == 0.76 && command.color.g == 0.86 {
+		if color, ok := paint_surface_color(command); ok && color.r == 0.76 && color.g == 0.86 {
 			owner_outline = true
 			break
 		}

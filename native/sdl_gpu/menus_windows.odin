@@ -603,20 +603,18 @@ win32_menu_high_contrast_selection_colors :: proc() -> (background, foreground: 
 }
 
 win32_caption_fill :: proc(
-	commands: ^[dynamic]alicorn.Display_Command,
+	commands: ^[dynamic]alicorn.Paint_Command,
 	node: alicorn.Node_ID,
 	clip: alicorn.Rect,
 	x, y, width, height: f32,
 	color: alicorn.Color,
 ) {
 	if width <= 0 || height <= 0 { return }
-	append(commands, alicorn.Display_Command{
-		node, .Button, alicorn.Rect{x, y, width, height}, clip, "", color, nil,
-	})
+	append(commands, alicorn.paint_surface_command(node, alicorn.Rect{x, y, width, height}, clip, color))
 }
 
 win32_caption_outline :: proc(
-	commands: ^[dynamic]alicorn.Display_Command,
+	commands: ^[dynamic]alicorn.Paint_Command,
 	node: alicorn.Node_ID,
 	clip: alicorn.Rect,
 	x, y, width, height, stroke: f32,
@@ -646,7 +644,7 @@ win32_caption_control_visual_rect :: proc(
 }
 
 win32_caption_append_glyph :: proc(
-	commands: ^[dynamic]alicorn.Display_Command,
+	commands: ^[dynamic]alicorn.Paint_Command,
 	state: ^Win32_Menu_State,
 	index: int,
 	color: alicorn.Color,
@@ -674,22 +672,23 @@ win32_caption_append_glyph :: proc(
 		if run == nil { return }
 		x := left+(width-run.width)/2
 		y := top+(height-run.height)/2
-		append(commands, alicorn.Display_Command{
-			state.close_glyph_host_node, .Text, alicorn.Rect{x, y, run.width, run.height},
-			clip, "", color, nil,
-		})
+		append(commands, alicorn.paint_text_command(
+			state.close_glyph_host_node,
+			alicorn.Rect{x, y, run.width, run.height}, clip,
+			native_text_host_handle(state.text_renderer, state.close_glyph_host_node), color,
+		))
 	}
 }
 
-native_menu_overlay_commands :: proc(menu: ^Native_Menu_Runtime, width, height: f32, allocator: mem.Allocator) -> []alicorn.Display_Command {
+native_menu_overlay_commands :: proc(menu: ^Native_Menu_Runtime, width, height: f32, allocator: mem.Allocator) -> []alicorn.Paint_Command {
 	if menu == nil || menu.application == nil || menu.application.window_decorations != .Integrated_Title_Bar || menu.platform_data == nil { return nil }
 	state := cast(^Win32_Menu_State)menu.platform_data
 	if !state.frame_enabled || state.chrome_height <= 0 { return nil }
-	commands := make([dynamic]alicorn.Display_Command, 0, len(state.labels)*2+32, allocator=allocator)
+	commands := make([dynamic]alicorn.Paint_Command, 0, len(state.labels)*2+32, allocator=allocator)
 	background, foreground := win32_menu_chrome_colors(state)
 	hover_background, open_background, pressed_background := win32_menu_feedback_colors(background, foreground)
 	full := alicorn.Rect{0, 0, width, min(state.chrome_height, height)}
-	append(&commands, alicorn.Display_Command{NATIVE_MENU_HOST_SOLID_NODE, .Root, full, full, "", background, nil})
+	append(&commands, alicorn.paint_surface_command(NATIVE_MENU_HOST_SOLID_NODE, full, full, background))
 	active_index := state.hovered
 	if state.menu_mode && state.active_menu >= 0 { active_index = state.active_menu }
 	selection_background, selection_foreground := alicorn.Color{}, alicorn.Color{}
@@ -704,11 +703,11 @@ native_menu_overlay_commands :: proc(menu: ^Native_Menu_Runtime, width, height: 
 			if state.high_contrast {
 				label_background = selection_background
 			}
-			append(&commands, alicorn.Display_Command{
-				NATIVE_MENU_HOST_SOLID_NODE+1, .Button,
+			append(&commands, alicorn.paint_surface_command(
+				NATIVE_MENU_HOST_SOLID_NODE+1,
 				alicorn.Rect{f32(bounds.left), 2, f32(bounds.right-bounds.left), max(state.chrome_height-4, 0)},
-				full, "", label_background, nil,
-			})
+				full, label_background,
+			))
 		}
 	}
 	maximized := win.IsZoomed(state.hwnd) != false
@@ -727,20 +726,21 @@ native_menu_overlay_commands :: proc(menu: ^Native_Menu_Runtime, width, height: 
 			} else if index == state.caption_pressed {
 				hover_color = pressed_background
 			}
-			append(&commands, alicorn.Display_Command{
-				NATIVE_MENU_HOST_SOLID_NODE+2+alicorn.Node_ID(index), .Button,
+			append(&commands, alicorn.paint_surface_command(
+				NATIVE_MENU_HOST_SOLID_NODE+2+alicorn.Node_ID(index),
 				win32_caption_control_visual_rect(control.bounds, index, width, full.h),
-				full, "", hover_color, nil,
-			})
+				full, hover_color,
+			))
 		}
 		win32_caption_append_glyph(&commands, state, index, button_foreground, full, maximized)
 	}
 	if title_run := native_text_host_run(state.text_renderer, state.title.host_node); title_run != nil {
 		y := max((state.chrome_height-title_run.height)/2, 0)
-		append(&commands, alicorn.Display_Command{
-			state.title.host_node, .Text, alicorn.Rect{f32(state.title.bounds.left)+8, y, title_run.width, title_run.height},
-			full, state.title_text, foreground, nil,
-		})
+		append(&commands, alicorn.paint_text_command(
+			state.title.host_node,
+			alicorn.Rect{f32(state.title.bounds.left)+8, y, title_run.width, title_run.height},
+			full, native_text_host_handle(state.text_renderer, state.title.host_node), foreground,
+		))
 	}
 	for label, i in state.labels {
 		run := native_text_host_run(state.text_renderer, label.host_node)
@@ -748,10 +748,11 @@ native_menu_overlay_commands :: proc(menu: ^Native_Menu_Runtime, width, height: 
 		y := max((state.chrome_height-run.height)/2, 0)
 		label_color := foreground
 		if i == active_index && state.high_contrast { label_color = selection_foreground }
-		append(&commands, alicorn.Display_Command{
-			label.host_node, .Text, alicorn.Rect{f32(label.bounds.left)+12, y, run.width, run.height},
-			full, menu.application.menus[i].label, label_color, nil,
-		})
+		append(&commands, alicorn.paint_text_command(
+			label.host_node,
+			alicorn.Rect{f32(label.bounds.left)+12, y, run.width, run.height},
+			full, native_text_host_handle(state.text_renderer, label.host_node), label_color,
+		))
 	}
 	return commands[:]
 }

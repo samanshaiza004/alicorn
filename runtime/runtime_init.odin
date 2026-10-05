@@ -58,7 +58,7 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 	rt.style_scope_stack = make([dynamic]Style_Environment_Scope, 0, allocator=rt.persistent_allocator)
 	rt.layout_roots = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.paint_queue = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
-	rt.display = make([dynamic]Display_Command, 0, allocator=rt.persistent_allocator)
+	rt.display = make([dynamic]Paint_Command, 0, allocator=rt.persistent_allocator)
 	rt.trace = Trace_Ring{events = make([dynamic]Trace_Event, capacity, allocator=rt.persistent_allocator)}
 	rt.actions = make([dynamic]Action_Entry, 0, allocator=rt.persistent_allocator)
 	rt.text_engine = new_text_engine("runtime text", false, rt.persistent_allocator)

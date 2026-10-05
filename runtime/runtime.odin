@@ -40,8 +40,6 @@ Node_Kind :: enum {
 	Modal_Overlay,
 	Context_Menu_Overlay,
 	Context_Menu_Panel,
-	Tooltip_Background,
-	Tooltip_Text,
 	Container,
 	Button,
 	Checkbox,
@@ -49,14 +47,9 @@ Node_Kind :: enum {
 	Text,
 	Text_Field,
 	Text_Composition,
-	Text_Selection,
-	Text_Caret,
 	Virtual_List,
 	Virtual_Row,
 	Scroll_Region,
-	Scrollbar_Track,
-	Scrollbar_Thumb,
-	Scrollbar_Corner,
 	Split,
 	Split_Handle,
 	Custom_Surface,
@@ -101,6 +94,16 @@ GPU_Surface_Context :: struct {
 	dpi_scale:      f32,
 	clip:           Rect,
 	payload_revision: GPU_Surface_Update_Revision,
+}
+
+// GPU_Surface_Payload_View is borrowed for the duration of one host render
+// step. It contains resource data only; placement and clipping travel with the
+// generic Paint_Command that refers to it.
+GPU_Surface_Payload_View :: struct {
+	revision: GPU_Surface_Update_Revision,
+	samples:  []f32,
+	segments: []GPU_Surface_Line_Segment,
+	circles:  []GPU_Surface_Filled_Circle,
 }
 
 Layout_Direction :: enum { Row, Column }
@@ -290,6 +293,7 @@ Drag_Session :: struct {
 // remains available while a virtualized source row is temporarily unrealized.
 Drag_Preview :: struct {
 	run: Text_Run,
+	run_generation: u64,
 	width, height: f32,
 	ready: bool,
 }
@@ -651,16 +655,6 @@ Text_Input_Area :: struct {
 	cursor_x: f32,
 }
 
-Display_Command :: struct {
-	node:   Node_ID,
-	kind: Node_Kind,
-	bounds: Rect,
-	clip:   Rect,
-	text:   string,
-	color:  Color,
-	text_paint_spans: []Text_Paint_Span,
-}
-
 Dirty_Stage :: enum {
 	Description,
 	Layout,
@@ -924,11 +918,14 @@ Node :: struct {
 	text_run:  Text_Run,
 	text_run_valid: bool,
 	text_run_generation: u64,
+	text_run_handle_generation: u64,
 	composition: Text_Composition,
 	composition_run: Text_Run,
 	composition_run_valid: bool,
 	composition_run_generation: u64,
-	paint:       [dynamic]Display_Command,
+	composition_run_handle_generation: u64,
+	paint:       [dynamic]Paint_Command,
+	surface_resource_generation: u64,
 	display_index: int,
 	paint_queued: bool,
 	layout_root_queued: bool,
@@ -1016,6 +1013,7 @@ Tooltip_State :: struct {
 	visible: bool,
 	run: Text_Run,
 	run_ready: bool,
+	run_generation: u64,
 }
 
 Transient_Overlay_Kind :: enum {
@@ -1191,7 +1189,8 @@ Runtime :: struct {
 	submission_cause: Cause_Context,
 	submission_cause_seen: bool,
 	submission_cause_mixed: bool,
-	display:     [dynamic]Display_Command,
+	display:     [dynamic]Paint_Command,
+	paint_resource_generation: u64,
 	text_engine: Text_Engine,
 	text_font_generation_seen: u64,
 	surface_frame_pending: bool,
