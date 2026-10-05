@@ -193,6 +193,9 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	encode_elapsed := u64(time.duration_nanoseconds(time.since(encode_start)))
 	if application_submission_pending { state.timing.application_gpu_encode_ns += encode_elapsed }
 	else if inspector_submission_pending { state.timing.inspector_encode_ns += encode_elapsed }
+	else if state.native_menu != nil && state.native_menu.chrome_redraw_pending {
+		state.timing.native_chrome_encode_ns += encode_elapsed
+	}
 	else { state.timing.devtools_hud_encode_ns += encode_elapsed }
 	hud_start := time.now()
 	if !native_devtools_hud_render(

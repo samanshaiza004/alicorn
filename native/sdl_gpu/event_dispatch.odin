@@ -38,9 +38,12 @@ pump_events :: proc(
 	telemetry: ^Native_Text_Event_Telemetry = nil,
 	wake_event: sdl3.EventType = .FIRST,
 	wake_event_enabled := false,
+	host_wake_event: sdl3.EventType = .FIRST,
+	host_wake_event_enabled := false,
 	wait_for_event := false,
 	event_waits: ^u64 = nil,
 	wake_events: ^u64 = nil,
+	native_host_wake_events: ^u64 = nil,
 	wait_timeout_ms: sdl3.Sint32 = -1,
 	wait_timed_out: ^bool = nil,
 	native_menu: ^Native_Menu_Runtime = nil,
@@ -73,6 +76,14 @@ pump_events :: proc(
 		has_event = poll_sdl_event(&event)
 	}
 	for has_event {
+		// This event only returns the sleeping host loop to its compositor. It
+		// must not enter application callbacks, pointer routing, or interaction
+		// telemetry. Application producers use the distinct wake_event below.
+		if host_wake_event_enabled && event.type == host_wake_event {
+			if native_host_wake_events != nil { native_host_wake_events^ += 1 }
+			has_event = poll_sdl_event(&event)
+			continue
+		}
 		// SDL mouse-button events carry no modifier snapshot. Track keyboard
 		// snapshots in queue order; GetModState seeds the pump and focus gain.
 		pointer_modifier_state_update(pointer_modifier_state, event)

@@ -58,10 +58,13 @@ run_application_loop :: proc(
 	host_scratch := native_host_scratch_make()
 	defer native_host_scratch_destroy(&host_scratch)
 	wake_event_id := sdl3.RegisterEvents(1)
-	if wake_event_id == 0 { fail("SDL_RegisterEvents failed for application wakeups") }
+	if wake_event_id == 0xFFFFFFFF { fail("SDL_RegisterEvents failed for application wakeups") }
 	wake_state := Native_Application_Waker{event_type=sdl3.EventType(wake_event_id), active=true}
 	application_waker := Application_Waker{data=rawptr(&wake_state), wake=native_application_wake}
-	if native_menu != nil { native_menu.waker = application_waker }
+	host_wake_event_id := sdl3.RegisterEvents(1)
+	if host_wake_event_id == 0xFFFFFFFF { fail("SDL_RegisterEvents failed for host redraw wakeups") }
+	host_wake_state := Native_Host_Event_Waker{event_type=sdl3.EventType(host_wake_event_id), active=true}
+	if native_menu != nil { native_menu.host_waker = &host_wake_state }
 	scheduler_state := Native_Scheduled_Wake_State{active=true}
 	application_scheduler := Application_Scheduler{
 		data=rawptr(&scheduler_state),
@@ -221,9 +224,12 @@ run_application_loop :: proc(
 			telemetry=&text_events,
 			wake_event=sdl3.EventType(wake_event_id),
 			wake_event_enabled=true,
+			host_wake_event=sdl3.EventType(host_wake_event_id),
+			host_wake_event_enabled=true,
 			wait_for_event=wait_for_event,
 			event_waits=&event_waits,
 			wake_events=&wake_events,
+			native_host_wake_events=&timing.native_host_wake_events,
 			wait_timeout_ms=wait_timeout_ms,
 			wait_timed_out=&wait_timed_out,
 			native_menu=native_menu,
@@ -341,7 +347,12 @@ run_application_loop :: proc(
 		if devtools_hud.visible && (devtools_wake_observed || devtools_hud_deadline_wake) {
 			devtools_hud_redraw_pending = true
 		}
-		if application_submission_pending || native_chrome_submission_pending || devtools_hud_redraw_pending || inspector_submission_pending {
+		if native_frame_submission_requested(
+			application_submission_pending,
+			native_chrome_submission_pending,
+			devtools_hud_redraw_pending,
+			inspector_submission_pending,
+		) {
 			if len(in_flight) >= 2 {
 				if !wait_and_retire_oldest(device, &in_flight, &query_before_wait_true, &query_after_wait_true, &wait_count, &timing) {
 					fail("SDL application fence retirement failed")
@@ -396,10 +407,11 @@ run_application_loop :: proc(
 				timing.application_gpu_encode_ns += application_encode_elapsed
 			} else if inspector_submission_pending {
 				timing.inspector_encode_ns += application_encode_elapsed
+			} else if native_chrome_submission_pending {
+				timing.native_chrome_encode_ns += application_encode_elapsed
 			} else {
-				// A HUD-only wake must redraw the swapchain's base scene too, but
-				// those host-forced draw costs are attributed to DevTools rather
-				// than to the application interaction sample.
+				// A HUD-only wake redraws the swapchain's base scene too; attribute
+				// those host-forced draw costs to DevTools, not app interaction.
 				timing.devtools_hud_encode_ns += application_encode_elapsed
 			}
 			hud_encode_start := time.now()
@@ -529,6 +541,8 @@ run_application_loop :: proc(
 	scheduler_state.active = false
 	for &pending in scheduler_state.pending { pending = false }
 	wake_state.active = false
+	host_wake_state.active = false
+	if native_menu != nil { native_menu.host_waker = nil }
 	for entry in in_flight {
 		sdl3.ReleaseGPUFence(device, entry.fence)
 		retired += 1
@@ -574,6 +588,8 @@ run_application_loop :: proc(
 		"application_stabilization_limit_hits", timing.application_stabilization_limit_hits,
 		"event_waits", event_waits,
 		"application_wake_events", wake_events,
+		"native_host_wake_events", timing.native_host_wake_events,
+		"native_chrome_encode_ns", timing.native_chrome_encode_ns,
 		"gpu_encode_max_ns", timing.gpu_encode_max_ns,
 		"fence_wait_max_ns", timing.fence_wait_max_ns,
 	)
