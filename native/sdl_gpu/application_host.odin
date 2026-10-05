@@ -7,6 +7,15 @@ import "vendor:sdl3"
 
 NATIVE_DESCRIPTION_STABILIZATION_LIMIT :: 4
 
+// Host presentation can be requested by app content, native chrome, DevTools,
+// or the inspector. Keep this decision explicit so host-only wake paths can
+// be verified without attributing them to application work.
+native_frame_submission_requested :: proc(
+	application, native_chrome, devtools_hud, inspector: bool,
+) -> bool {
+	return application || native_chrome || devtools_hud || inspector
+}
+
 Native_Description_Stabilization :: struct {
 	passes: int,
 	stable: bool,
@@ -48,8 +57,18 @@ Native_Menu_Runtime :: struct {
 	// application logical coordinates begin immediately below it.
 	content_inset_top: f32,
 	chrome_redraw_pending: bool,
+	host_waker: ^Native_Host_Event_Waker,
 	pending_command: Application_Command_ID,
 	has_pending:     bool,
+}
+
+// A native chrome transition must wake the SDL loop when it is waiting for
+// events. Coalesce repeated pointer messages until the requested frame lands.
+native_menu_request_chrome_redraw :: proc(menu: ^Native_Menu_Runtime) {
+	if menu == nil { return }
+	was_pending := menu.chrome_redraw_pending
+	menu.chrome_redraw_pending = true
+	if !was_pending { native_host_event_wake(menu.host_waker) }
 }
 
 native_menu_dispatch_command :: proc(menu: ^Native_Menu_Runtime, command: Application_Command_ID) {
@@ -68,6 +87,13 @@ native_menu_dispatch_command :: proc(menu: ^Native_Menu_Runtime, command: Applic
 }
 
 Native_Application_Waker :: struct {
+	event_type: sdl3.EventType,
+	active:     bool,
+}
+
+// Host redraw events are separate from Application_Waker so a chrome repaint
+// cannot be mistaken for an asynchronous application producer wake.
+Native_Host_Event_Waker :: struct {
 	event_type: sdl3.EventType,
 	active:     bool,
 }
@@ -134,6 +160,12 @@ native_dispatch_scheduled_wakes :: proc(
 
 native_application_wake :: proc(data: rawptr) {
 	state := cast(^Native_Application_Waker)data
+	if state == nil || !state.active { return }
+	event := sdl3.Event{type=state.event_type}
+	_ = sdl3.PushEvent(&event)
+}
+
+native_host_event_wake :: proc(state: ^Native_Host_Event_Waker) {
 	if state == nil || !state.active { return }
 	event := sdl3.Event{type=state.event_type}
 	_ = sdl3.PushEvent(&event)
