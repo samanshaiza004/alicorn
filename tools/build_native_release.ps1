@@ -83,7 +83,7 @@ try {
         $SDKRoot = Split-Path -Parent $Odin
         $OverlayRoot = Join-Path $OutRoot 'odin-static-overlay'
         New-Item -ItemType Directory -Force -Path $OverlayRoot, (Join-Path $OverlayRoot 'vendor') | Out-Null
-        foreach ($SdkDirectory in @('base', 'core', 'shared')) {
+        foreach ($SdkDirectory in @('base', 'core', 'shared', 'bin')) {
             $LinkPath = Join-Path $OverlayRoot $SdkDirectory
             if (-not (Test-Path -LiteralPath $LinkPath)) {
                 New-Item -ItemType Junction -Path $LinkPath -Target (Join-Path $SDKRoot $SdkDirectory) | Out-Null
