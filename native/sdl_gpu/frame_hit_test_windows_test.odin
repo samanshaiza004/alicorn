@@ -4,6 +4,33 @@ package alicorn_sdl_gpu
 
 import "core:testing"
 import win "core:sys/windows"
+import alicorn "../../runtime"
+
+@(test)
+test_native_chrome_feedback_uses_distinct_derived_states :: proc(t: ^testing.T) {
+	background := alicorn.Color{1, 1, 1, 1}
+	foreground := alicorn.Color{0, 0, 0, 1}
+	hover, open, pressed := win32_menu_feedback_colors(background, foreground)
+	ordered := hover.r < background.r && open.r < hover.r && pressed.r < open.r
+	strengths := hover.r > 0.89 && hover.r < 0.91 &&
+		open.r > 0.85 && open.r < 0.87 && pressed.r > 0.79 && pressed.r < 0.81
+	alpha_preserved := hover.a == 1 && open.a == 1 && pressed.a == 1
+	testing.expect(t, ordered && strengths && alpha_preserved,
+		"normal caption hover, open-menu, and pressed fills should be visibly distinct foreground mixes")
+}
+
+@(test)
+test_cancelled_native_menu_popup_exits_mode_and_uses_current_hover :: proc(t: ^testing.T) {
+	state := Win32_Menu_State{menu_mode=true, active_menu=1, hovered=1}
+	win32_menu_finish_popup(&state, 0, -1)
+	closed := !state.menu_mode && state.active_menu == -1 && state.hovered == -1
+
+	state = Win32_Menu_State{menu_mode=true, active_menu=1, hovered=1}
+	win32_menu_finish_popup(&state, 0, 2)
+	hover_restored := !state.menu_mode && state.active_menu == -1 && state.hovered == 2
+	testing.expect(t, closed && hover_restored,
+		"canceling a native popup should leave menu mode immediately and keep only the actual pointer hover")
+}
 
 @(test)
 test_system_window_without_menus_needs_no_gpu_chrome_state :: proc(t: ^testing.T) {
@@ -68,6 +95,30 @@ test_caption_control_geometry_is_shared_by_draw_and_hit_testing :: proc(t: ^test
 	testing.expect(t,
 		win32_integrated_frame_hit_test(1150, 20, 1200, 800, 40, 8, 8, false, controls[:], nil) == win.LRESULT(win.HTCLOSE),
 		"the close hit target should use the same rectangle as its glyph")
+}
+
+@(test)
+test_close_caption_backplate_bleeds_to_edge_without_expanding_hit_target :: proc(t: ^testing.T) {
+	close_hit_bounds := win.RECT{left=1100, top=0, right=1192, bottom=32}
+	close_visual := win32_caption_control_visual_rect(close_hit_bounds, 2, 1200, 32)
+	controls := [3]Win32_Caption_Control{
+		{},
+		{},
+		{bounds=close_hit_bounds, hit_test=win.LRESULT(win.HTCLOSE)},
+	}
+	hit_stays_inside_dwm_bounds := win32_integrated_frame_hit_test(
+		1190, 16, 1200, 800, 32, 8, 8, false, controls[:], nil) == win.LRESULT(win.HTCLOSE)
+	right_edge_keeps_resize_behavior := win32_integrated_frame_hit_test(
+		1195, 16, 1200, 800, 32, 8, 8, false, controls[:], nil) == win.LRESULT(win.HTRIGHT)
+	maximized_edge_remains_caption := win32_integrated_frame_hit_test(
+		1195, 16, 1200, 800, 32, 8, 8, true, controls[:], nil) == win.LRESULT(win.HTCAPTION)
+	hit_center := (f32(close_hit_bounds.left)+f32(close_hit_bounds.right))/2
+	glyph_center := close_visual.x+close_visual.w/2
+	geometry_is_split := close_hit_bounds.right == 1192 && close_visual.x == f32(close_hit_bounds.left) &&
+		close_visual.x+close_visual.w == 1200 && close_visual.y == 0 && close_visual.h == 32 &&
+		hit_center == 1146 && glyph_center == 1150
+	testing.expect(t, geometry_is_split && hit_stays_inside_dwm_bounds && right_edge_keeps_resize_behavior && maximized_edge_remains_caption,
+		"the close glyph should center in its full-bleed visual bounds while hit testing retains DWM's narrower rectangle")
 }
 
 @(test)

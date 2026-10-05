@@ -42,6 +42,9 @@ WIN32_VK_LEFT             :: 0x25
 WIN32_VK_RIGHT            :: 0x27
 WIN32_DWMWA_CAPTION_BUTTON_BOUNDS :: u32(5)
 WIN32_HCF_HIGHCONTRASTON          :: win.DWORD(0x00000001)
+WIN32_MENU_HOVER_MIX              :: 0.10
+WIN32_MENU_OPEN_MIX               :: 0.14
+WIN32_MENU_PRESSED_MIX            :: 0.20
 
 Win32_High_Contrast :: struct {
 	cb_size: win.UINT,
@@ -559,6 +562,25 @@ win32_color_rgb :: proc(red, green, blue: u8) -> alicorn.Color {
 	return alicorn.Color{f32(red)/255, f32(green)/255, f32(blue)/255, 1}
 }
 
+win32_color_mix :: proc(background, foreground: alicorn.Color, amount: f32) -> alicorn.Color {
+	mix := clamp(amount, 0, 1)
+	return alicorn.Color{
+		background.r+(foreground.r-background.r)*mix,
+		background.g+(foreground.g-background.g)*mix,
+		background.b+(foreground.b-background.b)*mix,
+		background.a+(foreground.a-background.a)*mix,
+	}
+}
+
+win32_menu_feedback_colors :: proc(background, foreground: alicorn.Color) -> (hover, open, pressed: alicorn.Color) {
+	// Derive the interactive surfaces from the actual chrome colors. Legacy
+	// button/menu system colors can collapse to the same value on modern themes.
+	hover = win32_color_mix(background, foreground, WIN32_MENU_HOVER_MIX)
+	open = win32_color_mix(background, foreground, WIN32_MENU_OPEN_MIX)
+	pressed = win32_color_mix(background, foreground, WIN32_MENU_PRESSED_MIX)
+	return
+}
+
 win32_menu_high_contrast_enabled :: proc() -> bool {
 	value := Win32_High_Contrast{cb_size=win.UINT(size_of(Win32_High_Contrast))}
 	if win.SystemParametersInfoW(win.UINT(win.SPI_GETHIGHCONTRAST), value.cb_size, rawptr(&value), 0) == false {
@@ -575,13 +597,9 @@ win32_menu_chrome_colors :: proc(state: ^Win32_Menu_State) -> (background, foreg
 	return
 }
 
-win32_menu_selection_colors :: proc(high_contrast: bool) -> (background, foreground: alicorn.Color) {
-	if high_contrast {
-		return win32_color_ref(win.GetSysColor(win.COLOR_HIGHLIGHT)),
-			win32_color_ref(win.GetSysColor(win.COLOR_HIGHLIGHTTEXT))
-	}
-	return win32_color_ref(win.GetSysColor(win.COLOR_BTNFACE)),
-		win32_color_ref(win.GetSysColor(win.COLOR_BTNTEXT))
+win32_menu_high_contrast_selection_colors :: proc() -> (background, foreground: alicorn.Color) {
+	return win32_color_ref(win.GetSysColor(win.COLOR_HIGHLIGHT)),
+		win32_color_ref(win.GetSysColor(win.COLOR_HIGHLIGHTTEXT))
 }
 
 win32_caption_fill :: proc(
@@ -610,6 +628,23 @@ win32_caption_outline :: proc(
 	win32_caption_fill(commands, node+4, clip, x+width-stroke, y+stroke, stroke, max(height-2*stroke, 0), color)
 }
 
+win32_caption_control_visual_rect :: proc(
+	hit_bounds: win.RECT,
+	index: int,
+	client_width, chrome_height: f32,
+) -> alicorn.Rect {
+	left, top := f32(hit_bounds.left), f32(hit_bounds.top)
+	right, bottom := f32(hit_bounds.right), f32(hit_bounds.bottom)
+	if index == 2 {
+		// The visual close backplate is full bleed. Keep hit_bounds unchanged so
+		// the narrow outer frame can still receive resize hit tests.
+		top = 0
+		right = client_width
+		bottom = chrome_height
+	}
+	return alicorn.Rect{left, top, max(right-left, 0), max(bottom-top, 0)}
+}
+
 win32_caption_append_glyph :: proc(
 	commands: ^[dynamic]alicorn.Display_Command,
 	state: ^Win32_Menu_State,
@@ -620,8 +655,9 @@ win32_caption_append_glyph :: proc(
 ) {
 	if state == nil || index < 0 || index >= len(state.caption_controls) { return }
 	control := state.caption_controls[index].bounds
-	left, top := f32(control.left), f32(control.top)
-	width, height := f32(control.right-control.left), f32(control.bottom-control.top)
+	visual := win32_caption_control_visual_rect(control, index, clip.w, clip.h)
+	left, top := visual.x, visual.y
+	width, height := visual.w, visual.h
 	cx, cy := left+width/2, top+height/2
 	stroke := f32(1.25)
 	base := NATIVE_MENU_HOST_SOLID_NODE+alicorn.Node_ID(32+index*8)
@@ -651,18 +687,27 @@ native_menu_overlay_commands :: proc(menu: ^Native_Menu_Runtime, width, height: 
 	if !state.frame_enabled || state.chrome_height <= 0 { return nil }
 	commands := make([dynamic]alicorn.Display_Command, 0, len(state.labels)*2+32, allocator=allocator)
 	background, foreground := win32_menu_chrome_colors(state)
+	hover_background, open_background, pressed_background := win32_menu_feedback_colors(background, foreground)
 	full := alicorn.Rect{0, 0, width, min(state.chrome_height, height)}
 	append(&commands, alicorn.Display_Command{NATIVE_MENU_HOST_SOLID_NODE, .Root, full, full, "", background, nil})
 	active_index := state.hovered
-	if active_index < 0 && state.menu_mode { active_index = state.active_menu }
-	selection_background, selection_foreground := win32_menu_selection_colors(state.high_contrast)
+	if state.menu_mode && state.active_menu >= 0 { active_index = state.active_menu }
+	selection_background, selection_foreground := alicorn.Color{}, alicorn.Color{}
+	if state.high_contrast {
+		selection_background, selection_foreground = win32_menu_high_contrast_selection_colors()
+	}
 	if active_index >= 0 && active_index < len(state.labels) {
 		bounds := state.labels[active_index].bounds
 		if bounds.right > bounds.left {
+			label_background := hover_background
+			if state.menu_mode && state.active_menu == active_index { label_background = open_background }
+			if state.high_contrast {
+				label_background = selection_background
+			}
 			append(&commands, alicorn.Display_Command{
 				NATIVE_MENU_HOST_SOLID_NODE+1, .Button,
 				alicorn.Rect{f32(bounds.left), 2, f32(bounds.right-bounds.left), max(state.chrome_height-4, 0)},
-				full, "", selection_background, nil,
+				full, "", label_background, nil,
 			})
 		}
 	}
@@ -671,21 +716,20 @@ native_menu_overlay_commands :: proc(menu: ^Native_Menu_Runtime, width, height: 
 		if control.bounds.right <= control.bounds.left || control.bounds.bottom <= control.bounds.top { continue }
 		button_foreground := foreground
 		if index == state.caption_hovered {
-			hover_color := selection_background
-			button_foreground = selection_foreground
+			hover_color := hover_background
 			if index == 2 && !state.high_contrast {
 				hover_color = win32_color_rgb(196, 43, 28)
 				button_foreground = win32_color_rgb(255, 255, 255)
 				if index == state.caption_pressed { hover_color = win32_color_rgb(164, 38, 44) }
-			} else if index == state.caption_pressed && !state.high_contrast {
-				hover_color = win32_color_ref(win.GetSysColor(win.COLOR_BTNSHADOW))
+			} else if state.high_contrast {
+				hover_color = selection_background
+				button_foreground = selection_foreground
+			} else if index == state.caption_pressed {
+				hover_color = pressed_background
 			}
 			append(&commands, alicorn.Display_Command{
 				NATIVE_MENU_HOST_SOLID_NODE+2+alicorn.Node_ID(index), .Button,
-				alicorn.Rect{
-					f32(control.bounds.left), f32(control.bounds.top),
-					f32(control.bounds.right-control.bounds.left), f32(control.bounds.bottom-control.bounds.top),
-				},
+				win32_caption_control_visual_rect(control.bounds, index, width, full.h),
 				full, "", hover_color, nil,
 			})
 		}
@@ -703,7 +747,7 @@ native_menu_overlay_commands :: proc(menu: ^Native_Menu_Runtime, width, height: 
 		if run == nil || label.bounds.right <= label.bounds.left { continue }
 		y := max((state.chrome_height-run.height)/2, 0)
 		label_color := foreground
-		if i == active_index { label_color = selection_foreground }
+		if i == active_index && state.high_contrast { label_color = selection_foreground }
 		append(&commands, alicorn.Display_Command{
 			label.host_node, .Text, alicorn.Rect{f32(label.bounds.left)+12, y, run.width, run.height},
 			full, menu.application.menus[i].label, label_color, nil,
@@ -713,13 +757,43 @@ native_menu_overlay_commands :: proc(menu: ^Native_Menu_Runtime, width, height: 
 }
 
 win32_menu_dispatch_native_id :: proc(state: ^Win32_Menu_State, native_id: u32) {
-	if state == nil || state.menu == nil || native_id == 0 || int(native_id) >= len(state.commands) || native_inspector_visible(state.menu.inspector) { return }
-	state.menu.pending_command = state.commands[native_id]
-	state.menu.has_pending = true
+	if state == nil { return }
+	if state.menu != nil && native_id != 0 && int(native_id) < len(state.commands) && !native_inspector_visible(state.menu.inspector) {
+		state.menu.pending_command = state.commands[native_id]
+		state.menu.has_pending = true
+	}
+	win32_menu_exit_mode(state, -1)
+}
+
+win32_menu_exit_mode_state :: proc(state: ^Win32_Menu_State, hovered_index: int) {
+	if state == nil { return }
 	state.menu_mode = false
 	state.active_menu = -1
-	state.hovered = -1
-	native_menu_request_chrome_redraw(state.menu)
+	state.hovered = hovered_index
+}
+
+win32_menu_exit_mode :: proc(state: ^Win32_Menu_State, hovered_index: int) {
+	if state == nil { return }
+	win32_menu_exit_mode_state(state, hovered_index)
+	if state.menu != nil { native_menu_request_chrome_redraw(state.menu) }
+}
+
+win32_menu_hovered_label_at_cursor :: proc(state: ^Win32_Menu_State) -> int {
+	if state == nil { return -1 }
+	point := win.POINT{}
+	if !win.GetCursorPos(&point) { return -1 }
+	x, y, ok := win32_menu_screen_point_to_window(state, i32(point.x), i32(point.y))
+	if !ok { return -1 }
+	return win32_menu_label_at_window_point(state, x, y)
+}
+
+win32_menu_finish_popup :: proc(state: ^Win32_Menu_State, native_id: u32, hovered_index: int) {
+	if state == nil { return }
+	if native_id == 0 {
+		win32_menu_exit_mode(state, hovered_index)
+	} else {
+		win32_menu_dispatch_native_id(state, native_id)
+	}
 }
 
 win32_menu_open_popup :: proc(state: ^Win32_Menu_State, index: int) {
@@ -737,8 +811,9 @@ win32_menu_open_popup :: proc(state: ^Win32_Menu_State, index: int) {
 		win.INT(i32(client_origin.x)+i32(f32(label.bounds.left)*to_pixels)),
 		win.INT(i32(client_origin.y)+i32(f32(label.bounds.bottom)*to_pixels)),
 		0, state.hwnd, nil)
-	win32_menu_dispatch_native_id(state, u32(command))
-	if command == 0 && state.menu != nil { native_menu_request_chrome_redraw(state.menu) }
+	hovered_index := -1
+	if command == 0 { hovered_index = win32_menu_hovered_label_at_cursor(state) }
+	win32_menu_finish_popup(state, u32(command), hovered_index)
 	_ = win.PostMessageW(state.hwnd, win.WM_NULL, 0, 0)
 }
 
@@ -776,10 +851,7 @@ native_menu_handle_keydown :: proc(menu: ^Native_Menu_Runtime, keycode: int, mod
 	}
 	if !state.menu_mode { return false }
 	if keycode == int(sdl3.K_ESCAPE) {
-		state.menu_mode = false
-		state.active_menu = -1
-		state.hovered = -1
-		native_menu_request_chrome_redraw(menu)
+		win32_menu_exit_mode(state, win32_menu_hovered_label_at_cursor(state))
 		return true
 	}
 	if keycode == int(sdl3.K_LEFT) || keycode == int(sdl3.K_RIGHT) {
@@ -912,9 +984,7 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 				}
 			}
 			if state.menu_mode {
-				state.menu_mode = false
-				state.active_menu = -1
-				native_menu_request_chrome_redraw(state.menu)
+				win32_menu_exit_mode(state, state.hovered)
 			}
 		} else if message == win.WM_MOUSEMOVE {
 			if state.caption_hovered >= 0 {
@@ -998,12 +1068,9 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 		win32_menu_layout_labels(state)
 		native_menu_request_chrome_redraw(state.menu)
 	} else if message == win.WM_KILLFOCUS && integrated {
-		state.menu_mode = false
-		state.active_menu = -1
-		state.hovered = -1
+		win32_menu_exit_mode(state, -1)
 		state.caption_hovered = -1
 		state.caption_pressed = -1
-		native_menu_request_chrome_redraw(state.menu)
 	}
 	return result
 }
