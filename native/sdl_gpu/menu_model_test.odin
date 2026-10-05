@@ -3,6 +3,26 @@ package alicorn_sdl_gpu
 import "core:testing"
 import alicorn "../../runtime"
 
+Menu_Wake_Test_State :: struct { calls: int }
+
+menu_wake_test_callback :: proc(data: rawptr) {
+	state := cast(^Menu_Wake_Test_State)data
+	state.calls += 1
+}
+
+@(test)
+test_native_chrome_redraw_wakes_once_per_pending_frame :: proc(t: ^testing.T) {
+	state := Menu_Wake_Test_State{}
+	menu := Native_Menu_Runtime{waker=Application_Waker{data=rawptr(&state), wake=menu_wake_test_callback}}
+	native_menu_request_chrome_redraw(&menu)
+	native_menu_request_chrome_redraw(&menu)
+	testing.expect(t, menu.chrome_redraw_pending, "chrome invalidation should remain pending until presentation")
+	testing.expect(t, state.calls == 1, "repeated chrome transitions should coalesce to one host wake")
+	menu.chrome_redraw_pending = false
+	native_menu_request_chrome_redraw(&menu)
+	testing.expect(t, state.calls == 2, "a later frame invalidation should wake the sleeping host again")
+}
+
 Menu_Dispatch_Test_State :: struct {
 	calls:        int,
 	last_command: Application_Command_ID,

@@ -48,8 +48,18 @@ Native_Menu_Runtime :: struct {
 	// application logical coordinates begin immediately below it.
 	content_inset_top: f32,
 	chrome_redraw_pending: bool,
+	waker: Application_Waker,
 	pending_command: Application_Command_ID,
 	has_pending:     bool,
+}
+
+// A native chrome transition must wake the SDL loop when it is waiting for
+// events. Coalesce repeated pointer messages until the requested frame lands.
+native_menu_request_chrome_redraw :: proc(menu: ^Native_Menu_Runtime) {
+	if menu == nil { return }
+	was_pending := menu.chrome_redraw_pending
+	menu.chrome_redraw_pending = true
+	if !was_pending { application_wake(menu.waker) }
 }
 
 native_menu_dispatch_command :: proc(menu: ^Native_Menu_Runtime, command: Application_Command_ID) {

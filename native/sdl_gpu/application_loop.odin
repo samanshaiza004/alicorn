@@ -61,6 +61,7 @@ run_application_loop :: proc(
 	if wake_event_id == 0 { fail("SDL_RegisterEvents failed for application wakeups") }
 	wake_state := Native_Application_Waker{event_type=sdl3.EventType(wake_event_id), active=true}
 	application_waker := Application_Waker{data=rawptr(&wake_state), wake=native_application_wake}
+	if native_menu != nil { native_menu.waker = application_waker }
 	scheduler_state := Native_Scheduled_Wake_State{active=true}
 	application_scheduler := Application_Scheduler{
 		data=rawptr(&scheduler_state),

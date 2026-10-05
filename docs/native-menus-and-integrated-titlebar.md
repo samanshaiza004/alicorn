@@ -41,10 +41,13 @@ behavior. Caption-control bounds come from `DWMWA_CAPTION_BUTTON_BOUNDS` and are
 split into minimize, maximize, and close rectangles. Those same rectangles
 position the GPU glyphs and return `HTMINBUTTON`, `HTMAXBUTTON`, and `HTCLOSE`;
 DWM receives the caption messages and performs the system actions, including
-Windows 11 Snap Layout for `HTMAXBUTTON`. The host draws its own caption glyphs
+Windows 11 Snap Layout for `HTMAXBUTTON`. The host draws its own caption marks
 because SDL_GPU rejects transparent windows on the current D3D12 path. The
-integrated labels and button states use Windows caption, inactive-caption, and
-highlight system colors; HMENU popup surfaces remain OS-drawn.
+integrated band uses Windows menu surface/text colors, keeps ordinary hover
+neutral, and uses the conventional red close-button hover. High-contrast mode
+uses Windows highlight colors. Caption state changes post one coalesced SDL wake
+so hover and press feedback redraws even while the app loop is waiting. HMENU
+popup surfaces remain OS-drawn.
 
 Windows menu navigation keeps the system-menu shortcut separate: Alt+Space
 continues to open the native system menu. Alt+F/E/V opens the matching
@@ -106,10 +109,11 @@ unreported host details below are deferred rather than claimed as tested.
 
 Remaining manual acceptance is platform-specific. Windows still needs native
 command selection and keyboard menu navigation, drag/no-drag regions, all
-resize edges, minimize, maximize/restore, dragging a maximized window to
-restore, caption double-click, Alt+Space, DPI and monitor movement, light/dark
-and active/inactive appearance, taskbar/work-area behavior while maximized, and
-hover over maximize for Snap Layouts. The SDL-owned window must apply a
+resize edges, minimize, maximize/restore and its restore glyph, dragging a
+maximized window to restore, caption double-click, Alt+Space, DPI and monitor
+movement, light/dark and active/inactive appearance, high-contrast colors,
+caption hover/press/leave feedback, taskbar/work-area behavior while maximized,
+and hover over maximize for Snap Layouts. The SDL-owned window must apply a
 `WM_DPICHANGED` suggested rectangle exactly once; Alicorn should observe the
 resulting geometry and refresh chrome metrics. macOS traffic-light behavior and
 focus reacquisition were not separately recorded. Headless geometry/menu tests
