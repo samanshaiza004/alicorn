@@ -179,7 +179,7 @@ append_focus_outline :: proc(node: ^Node, color: Color, thickness: f32) {
 
 append_scrollbar_display :: proc(rt: ^Runtime, node: ^Node) {
 	if node.kind != .Scroll_Region { return }
-	resolved_style := style_scrollbar_resolve(rt, node.style_environment, style_scrollbar_recipe(rt, node.style_environment), Scrollbar_Visual_State{
+	resolved_style := style_scrollbar_resolve_retained(rt, node, Scrollbar_Visual_State{
 		hovered=node.hovered,
 		pressed=rt.scrollbar_drag_node == node.id,
 	})
@@ -258,7 +258,7 @@ update_paint :: proc(rt: ^Runtime) {
 		if dirty_has(node.dirty, .Paint) || len(node.paint) == 0 {
 			field_style := Text_Field_Resolved_Style{}
 			if node.kind == .Text_Field {
-				field_style = style_text_field_resolve(rt, node.style_environment, style_text_field_recipe(rt, node.style_environment), Text_Field_Visual_State{
+				field_style = style_text_field_resolve_retained(rt, node, Text_Field_Visual_State{
 					hovered=node.hovered,
 					focused=rt.focused == node.id,
 				})
@@ -315,12 +315,13 @@ update_paint :: proc(rt: ^Runtime) {
 				// supplied a background. This keeps structural wrappers from
 				// producing accidental rectangles in the compositor.
 				if semantic_surface_style, found := rt.semantic_surfaces[node.id]; found {
-					if color, role_ok := semantic_surface_role_resolve(rt, node.style_environment, semantic_surface_style.role); role_ok {
+					resolved_surface := style_semantic_surface_resolve_retained(rt, node, semantic_surface_style)
+					if resolved_surface.fill.a > 0 {
 						append(&node.paint, paint_surface_command(
 							node.id,
 							node.bounds,
 							node.clip,
-							color,
+							resolved_surface.fill,
 							shape=semantic_surface_style.shape,
 							material=semantic_surface_style.material,
 							physical_height=semantic_surface_style.physical_height,

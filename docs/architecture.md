@@ -71,23 +71,29 @@ compose in a fixed order; focus and semantic-active remain separate overlays.
 Typed color and logical-length tokens now have a small compiler/runtime path,
 including namespaced application/vendor roles. Retained nodes keep compact
 per-domain style generations; scope updates advance only affected nodes.
-Button `Computed_Style` records the domains it depends on, snapshots only those
-generations, and retains semantic recipe inputs for inspector provenance.
-Token aliases are already flattened in runtime values; readable alias names
-and source locations stay in optional compiler debug metadata. Rectangular
-semantic surfaces can use registered flat or analytic-relief materials; a
-general cascade and richer native shapes remain outside this slice.
+Button, Text Field, Scrollbar, and Semantic Surface `Computed_Style` entries
+live in Runtime side storage keyed by `Node_ID`, keeping the retained `Node`
+under its byte budget. Each entry records its recipe family, semantic inputs,
+dependency domains, and only the matching generation snapshots. Buttons,
+Text Fields, and Scrollbars depend on Paint; Semantic Surfaces depend on Paint
+for role color and Material for shape/material/height/group. Inspector
+provenance reports these retained results. Node retirement and runtime
+destruction release sidecar entries. Token aliases are flattened in runtime
+values; readable alias names and source locations stay in optional compiler
+debug metadata. Rectangular semantic surfaces can use registered flat or
+analytic-relief materials; a general cascade and richer native shapes remain
+outside this slice.
 
-Buttons are currently the only built-in recipe with a retained computed-style
-cache. Text Fields and Scrollbars resolve their color recipes during paint or
-composition, and semantic surfaces resolve from a retained description
-sidecar; the inspector reports these as uncached paths. Theme changes remain
-Paint-only because current recipes consume color roles only. Length tokens do
-not yet drive recipe metrics, typography, or material selection, so this does
-not claim token-level alias/source-span provenance or metric-token invalidation.
-Semantic-surface role changes advance Paint generation, while shape/material/
-height/group changes advance Material generation; immutable theme/material
-registries and description hashes provide the current redraw path.
+Theme/accent changes are Paint-only today because current recipes consume color
+roles only. No theme length token drives recipe metrics, typography, or material
+selection. A text-scale scope advances Metrics and Typography only for its
+subtree and triggers layout there, while the color-only computed-style cache
+remains valid. Material-only surface description changes advance Material,
+preserve Paint and leave layout/hit geometry untouched. Themes/materials are
+immutable after registration, and semantic recipe or surface description
+inputs participate in cache signatures. Compiled alias names and source spans
+remain tooling-only; current inspector provenance does not claim token-level
+alias/source-span tracing or metric-token invalidation.
 
 This is explicit reuse, not automatic dependency tracking. A stale region
 revision can produce stale content.

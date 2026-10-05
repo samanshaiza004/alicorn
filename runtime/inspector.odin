@@ -97,8 +97,11 @@ style_inspector_text_field_provenance :: proc(sb: ^strings.Builder, rt: ^Runtime
 	environment := node.style_environment
 	recipe := style_text_field_recipe(rt, environment)
 	state := Text_Field_Visual_State{hovered=node.hovered, focused=rt.focused == node.id}
-	fmt.sbprintf(sb, "  text field style: recipe=text_field.default resolution=resolve-on-paint retained-cache=no state=(hovered=%t focused=%t) dependencies=paint generations=(paint=%d)\n",
-		state.hovered, state.focused, node.style_generations.paint)
+	_ = style_text_field_resolve_retained(rt, node, state)
+	computed, cached := rt.computed_styles[node.id]
+	if !cached { return }
+	fmt.sbprintf(sb, "  text field style: recipe=text_field.default resolution=retained-cache state=(hovered=%t focused=%t) dependencies=paint generations=(paint=%d)\n",
+		state.hovered, state.focused, computed.generations.paint)
 	fmt.sbprintf(sb, "  token provenance: text_field.default")
 	style_inspector_token_role(sb, rt, environment.theme, "surface", "base", recipe.surface_role, environment.accent)
 	style_inspector_token_role(sb, rt, environment.theme, "text", "base", recipe.text_role, environment.accent)
@@ -116,8 +119,11 @@ style_inspector_scrollbar_provenance :: proc(sb: ^strings.Builder, rt: ^Runtime,
 	environment := node.style_environment
 	recipe := style_scrollbar_recipe(rt, environment)
 	state := Scrollbar_Visual_State{hovered=node.hovered, pressed=rt.scrollbar_drag_node == node.id}
-	fmt.sbprintf(sb, "  scrollbar style: recipe=scrollbar.default resolution=resolve-on-composition retained-cache=no state=(hovered=%t pressed=%t) dependencies=paint generations=(paint=%d)\n",
-		state.hovered, state.pressed, node.style_generations.paint)
+	_ = style_scrollbar_resolve_retained(rt, node, state)
+	computed, cached := rt.computed_styles[node.id]
+	if !cached { return }
+	fmt.sbprintf(sb, "  scrollbar style: recipe=scrollbar.default resolution=retained-cache state=(hovered=%t pressed=%t) dependencies=paint generations=(paint=%d)\n",
+		state.hovered, state.pressed, computed.generations.paint)
 	fmt.sbprintf(sb, "  token provenance: scrollbar.default")
 	style_inspector_token_role(sb, rt, environment.theme, "track", "base", recipe.track_role, environment.accent)
 	style_inspector_token_role(sb, rt, environment.theme, "thumb", "base", recipe.thumb_role, environment.accent)
@@ -129,15 +135,19 @@ style_inspector_scrollbar_provenance :: proc(sb: ^strings.Builder, rt: ^Runtime,
 
 style_inspector_semantic_surface :: proc(sb: ^strings.Builder, rt: ^Runtime, node: ^Node, style: Semantic_Surface_Style) {
 	if rt == nil || node == nil || !style.defined { return }
+	resolved := style_semantic_surface_resolve_retained(rt, node, style)
+	computed, cached := rt.computed_styles[node.id]
+	if !cached { return }
 	fmt.sbprintf(sb, "  semantic surface: ")
 	style_inspector_surface_role(sb, rt, node.style_environment.theme, style.role)
 	material, material_found := style_material_resolve(rt, style.material)
 	material_kind := "unavailable"
 	if material_found { material_kind = style_inspector_material_kind_name(material.kind) }
-	fmt.sbprintf(sb, " shape=%s radius=%.2f material=%d(%s) height=%.2f group=%d resolution=description-hashed retained-cache=no dependencies=paint,material generations=(paint=%d material=%d)\n",
+	fmt.sbprintf(sb, " shape=%s radius=%.2f material=%d(%s) height=%.2f group=%d fill=(%.3f,%.3f,%.3f,%.3f) resolution=retained-cache dependencies=paint,material generations=(paint=%d material=%d)\n",
 		style_inspector_surface_shape_name(style.shape.kind), style.shape.corner_radius,
 		u32(style.material), material_kind, style.physical_height, u32(style.material_group),
-		node.style_generations.paint, node.style_generations.material)
+		resolved.fill.r, resolved.fill.g, resolved.fill.b, resolved.fill.a,
+		computed.generations.paint, computed.generations.material)
 }
 
 inspect :: proc(rt: ^Runtime) -> string {
@@ -210,6 +220,7 @@ inspect :: proc(rt: ^Runtime) -> string {
 				pressed=node.pressed,
 				disabled=node.disabled,
 			}, node.drop_position == .On)
+			computed_style := rt.computed_styles[node.id]
 			fmt.sbprintf(&sb, "  button recipe: variant=%s recipe=button.%s base=(%v,%v) surface=(%.3f,%.3f,%.3f,%.3f) text=(%.3f,%.3f,%.3f,%.3f) indicator=%v/%v\n",
 				button_variant_name(node.button_variant), button_variant_name(node.button_variant), recipe.surface_role, recipe.text_role,
 				resolved.surface.r, resolved.surface.g, resolved.surface.b, resolved.surface.a,
@@ -223,7 +234,7 @@ inspect :: proc(rt: ^Runtime) -> string {
 			fmt.sbprintf(&sb, "  computed style: dependencies=")
 			first_domain := true
 			for domain in Style_Domain {
-				if domain not_in node.computed_style.dependencies { continue }
+				if domain not_in computed_style.dependencies { continue }
 				if !first_domain { fmt.sbprintf(&sb, ",") }
 				first_domain = false
 				switch domain {
@@ -234,9 +245,9 @@ inspect :: proc(rt: ^Runtime) -> string {
 				}
 			}
 			fmt.sbprintf(&sb, " resolution=retained-cache generations=(metrics=%d typography=%d paint=%d material=%d)\n",
-				node.computed_style.generations.metrics, node.computed_style.generations.typography,
-				node.computed_style.generations.paint, node.computed_style.generations.material)
-			provenance := node.computed_style.provenance
+				computed_style.generations.metrics, computed_style.generations.typography,
+				computed_style.generations.paint, computed_style.generations.material)
+			provenance := computed_style.provenance
 			provenance_variant := Button_Variant(provenance.variant)
 			provenance_state := style_button_state_from_bits(provenance.state_bits)
 			fmt.sbprintf(&sb, "  token provenance: button.%s", button_variant_name(provenance_variant))

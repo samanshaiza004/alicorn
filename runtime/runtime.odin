@@ -462,8 +462,7 @@ Button_Visual_State :: struct {
 	disabled: bool,
 }
 
-// This is the resolved output of the button recipe family, not a general
-// computed-style cache. Focus and semantic-active remain separate overlays.
+// Resolved outputs are small renderer-facing values, not widget state.
 Button_Resolved_Style :: struct {
 	surface:                 Color,
 	text:                    Color,
@@ -483,13 +482,23 @@ Style_Provenance :: struct {
 	variant:        u8,
 	state_bits:     u8,
 	drop_target_on: bool,
+	surface_signature: u64,
 }
 
-// Computed_Style retains the resolved recipe result, its domain dependencies,
-// and the dependency generations/provenance that produced it. The first
-// recipe-family payload is the button style; cache metadata is shared.
+Computed_Style_Family :: enum { Button, Text_Field, Scrollbar, Semantic_Surface }
+
+Computed_Style_Payload :: union #no_nil {
+	Button_Resolved_Style,
+	Text_Field_Resolved_Style,
+	Scrollbar_Resolved_Style,
+	Semantic_Surface_Resolved_Style,
+}
+
+// Computed_Style entries live in Runtime side storage keyed by Node_ID so
+// resolved values do not consume the retained Node byte budget.
 Computed_Style :: struct {
-	button:       Button_Resolved_Style,
+	family:       Computed_Style_Family,
+	payload:      Computed_Style_Payload,
 	dependencies: Style_Domains,
 	generations:  Style_Generations,
 	provenance:   Style_Provenance,
@@ -849,7 +858,6 @@ Node :: struct {
 	style_generations: Style_Generations,
 	button_content_style: Button_Content_Style,
 	button_variant: Button_Variant,
-	computed_style: Computed_Style,
 	style:       Layout_Style,
 	context_menu_bounds: Rect,
 	color:       Color,
@@ -1156,6 +1164,7 @@ Runtime :: struct {
 	persistent_allocator_state: ^Runtime_Allocator_State,
 	scratch_allocator_state:    ^Runtime_Allocator_State,
 	nodes:       map[Node_ID]^Node,
+	computed_styles: map[Node_ID]Computed_Style,
 	semantic_surfaces: map[Node_ID]Semantic_Surface_Style,
 	order:       [dynamic]Node_ID,
 	top_level:   [dynamic]Node_ID,

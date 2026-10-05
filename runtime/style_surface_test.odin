@@ -95,7 +95,7 @@ test_semantic_surface_composes_children_and_resolves_extension_role :: proc(t: ^
 	defer delete(inspection)
 	testing.expect(t, strings.contains(inspection, "semantic surface: role=extension.") &&
 		strings.contains(inspection, "token=1 shape=rectangle radius=0.00 material=1(analytic-relief) height=1.25 group=7") &&
-		strings.contains(inspection, "resolution=description-hashed retained-cache=no dependencies=paint,material generations=(paint=") &&
+		strings.contains(inspection, "resolution=retained-cache dependencies=paint,material generations=(paint=") &&
 		node.style_generations.paint > 0 && node.style_generations.material > 0,
 		"inspector should explain extension-role token, optical surface inputs, and paint/material generation context")
 }
@@ -171,27 +171,38 @@ test_semantic_surface_sidecar_is_retired_with_its_node :: proc(t: ^testing.T) {
 test_semantic_surface_material_input_advances_material_generation :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 120, 80})
 	defer destroy_runtime(&rt)
-	describe := proc(rt: ^Runtime, height: f32) -> Node_ID {
+	analytic_material := style_material_register(&rt, Style_Material{kind=.Analytic_Relief, bevel_width=1, bevel_strength=0.12})
+	describe := proc(rt: ^Runtime, height: f32, material: Material_ID) -> Node_ID {
 		invalidate_root(rt, "semantic surface material generation fixture")
 		ui, build := begin_frame(rt)
 		if !build { return 0 }
 		container_begin(&ui, .Root, key=key_string("material-generation-root"), style=layout_style())
 		id := surface_begin(&ui, surface_core_color_role(.Surface), key=key_string("material-generation-surface"),
-			style=layout_style(width=64, height=40), physical_height=height)
+			style=layout_style(width=64, height=40), material=material, physical_height=height)
 		surface_end(&ui)
 		container_end(&ui)
 		end_frame(&ui)
 		return id
 	}
 
-	id := describe(&rt, 0.25)
+	id := describe(&rt, 0.25, MATERIAL_FLAT)
 	first, found := rt.nodes[id]
 	testing.expect(t, found && first.style_generations.material > 0,
 		"first semantic surface description should establish its material dependency generation")
 	if !found { return }
 	first_generation := first.style_generations.material
-	_ = describe(&rt, 0.75)
+	first_paint_generation := first.style_generations.paint
+	first_bounds := first.bounds
+	first_hit_bounds := first.hit_bounds
+	first_layout_visits := rt.stats.layout_nodes_visited
+	_ = describe(&rt, 0.75, analytic_material)
 	second := rt.nodes[id]
 	testing.expect(t, second.style_generations.material > first_generation,
-		"changing optical height on the same retained surface should advance only its material dependency generation")
+		"changing optical height/material on the same retained surface should advance its material dependency generation")
+	testing.expect(t, second.style_generations.paint == first_paint_generation,
+		"a material-only surface change should not advance Paint generation")
+	testing.expect(t, second.bounds == first_bounds && second.hit_bounds == first_hit_bounds,
+		"a material-only surface change should preserve layout and hit geometry")
+	testing.expect(t, rt.stats.layout_nodes_visited == first_layout_visits,
+		"changing only surface material inputs should not visit nodes during layout")
 }

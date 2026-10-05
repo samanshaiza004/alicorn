@@ -262,7 +262,7 @@ test_inspector_loaded_monospace_lines_reach_their_final_glyph :: proc(t: ^testin
 }
 
 @(test)
-test_inspector_reports_uncached_control_recipe_provenance :: proc(t: ^testing.T) {
+test_inspector_reports_retained_control_recipe_provenance :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 480, 240})
 	defer destroy_runtime(&rt)
 	theme := DEFAULT_STYLE_THEME
@@ -304,19 +304,22 @@ test_inspector_reports_uncached_control_recipe_provenance :: proc(t: ^testing.T)
 	inspection := inspect(&rt)
 	defer delete(inspection)
 	testing.expect(t, strings.contains(inspection,
-		"text field style: recipe=text_field.default resolution=resolve-on-paint retained-cache=no state=(hovered=true focused=true) dependencies=paint generations=(paint=") &&
+		"text field style: recipe=text_field.default resolution=retained-cache state=(hovered=true focused=true) dependencies=paint generations=(paint=") &&
 		strings.contains(inspection, "token provenance: text_field.default") &&
 		strings.contains(inspection, "surface.base=Editor_Background") &&
 		strings.contains(inspection, "surface.hovered=Accent"),
-		"inspector should explain text-field state and the semantic roles used by its uncached paint resolver")
+		"inspector should explain the retained text-field result, state, and semantic roles")
 	testing.expect(t, strings.contains(inspection,
-		"scrollbar style: recipe=scrollbar.default resolution=resolve-on-composition retained-cache=no state=(hovered=true pressed=true) dependencies=paint generations=(paint=") &&
+		"scrollbar style: recipe=scrollbar.default resolution=retained-cache state=(hovered=true pressed=true) dependencies=paint generations=(paint=") &&
 		strings.contains(inspection, "token provenance: scrollbar.default") &&
 		strings.contains(inspection, "thumb.hovered=Accent_Hover") &&
 		strings.contains(inspection, "thumb.pressed=Accent_Pressed"),
 		"inspector should explain scrollbar interaction state and applied thumb roles")
-	testing.expect(t, !rt.nodes[field].computed_style.valid && !rt.nodes[scroll.id].computed_style.valid,
-		"the inspector should describe these direct-resolve paths without implying a retained Computed_Style cache")
+	field_style, field_cached := rt.computed_styles[field]
+	scroll_style, scroll_cached := rt.computed_styles[scroll.id]
+	testing.expect(t, field_cached && field_style.valid && field_style.family == .Text_Field &&
+		scroll_cached && scroll_style.valid && scroll_style.family == .Scrollbar,
+		"the inspector should populate the corresponding retained Computed_Style sidecar entries")
 }
 
 inspector_test_lines_build :: proc(panel: ^Runtime,lines: []string) {

@@ -17,21 +17,26 @@ describing a frame.
   theme. A token ID is only meaningful together with its immutable theme ID.
 - Extension-role IDs are typed, namespaced hashes. The compiler rejects a
   collision among roles of the same type instead of letting one binding win.
-- The runtime retains a per-node button `Computed_Style` with explicit domain
-  dependencies and generation snapshots. Scope changes advance only affected
-  nodes; unchanged dependencies reuse their cached result. Compact semantic
-  recipe inputs let the inspector show role and theme-local token provenance
-  without retaining duplicate theme strings on every node.
-- Button is currently the only built-in recipe family with a retained
-  `Computed_Style` cache. Text Field and Scrollbar recipes resolve directly
-  during paint/composition; semantic surfaces resolve from their retained
-  description sidecar. The inspector labels these paths as uncached and derives
-  their current role/state provenance from the immutable theme and description.
-- Theme changes are Paint-only today because these recipes consume color roles
-  only. No theme length token currently drives layout metrics, typography, or
-  material selection. This is not a claim of token-level alias/source-span
-  provenance or metric-token invalidation; either needs explicit dependency
-  wiring before such tokens affect a control recipe.
+- The runtime retains one `Computed_Style` entry per resolved node in a
+  Runtime-owned sidecar map, keyed by `Node_ID`; the retained `Node` stays under
+  its byte budget. Button, Text Field, Scrollbar, and Semantic Surface results
+  share exact dependency-domain snapshots and semantic input signatures.
+  Scope changes advance only affected nodes; cache hits reuse the resolved
+  payload and its provenance. Retirement and runtime destruction release the
+  corresponding sidecar storage.
+- Button, Text Field, and Scrollbar recipes depend on Paint. Semantic Surface
+  resolution depends on Paint for its role color and Material for its shape,
+  material, optical height, and group. Theme registrations and material
+  registrations are immutable; recipe/state/theme identity is part of the
+  computed-style signature, and semantic-surface description changes are
+  hashed into its signature and advance their respective domains.
+- Theme and accent changes are Paint-only today because built-in recipes consume
+  color roles only. No theme length token currently drives layout metrics,
+  typography, or material selection. Text scale still advances Metrics and
+  Typography for its scoped subtree, while color-only recipe caches remain
+  valid. This is not a claim of token-level alias/source-span provenance or
+  metric-token invalidation; either needs explicit dependency wiring before
+  such tokens affect a control recipe.
 
 ## Built-in control recipes
 

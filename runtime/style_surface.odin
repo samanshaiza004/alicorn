@@ -27,6 +27,10 @@ Semantic_Surface_Style :: struct {
 	material_group: Material_Group_ID,
 }
 
+Semantic_Surface_Resolved_Style :: struct {
+	fill: Color,
+}
+
 SURFACE_PHYSICAL_HEIGHT_LIMIT :: 2.0
 
 semantic_surface_role_resolve :: proc(rt: ^Runtime, environment: Style_Environment, role: Semantic_Surface_Color_Role) -> (color: Color, ok: bool) {

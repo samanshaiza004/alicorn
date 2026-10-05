@@ -41,6 +41,7 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 	}
 	rt.scratch_allocator = runtime_allocator(rt.scratch_allocator_state)
 	rt.nodes = make(map[Node_ID]^Node, allocator=rt.persistent_allocator)
+	rt.computed_styles = make(map[Node_ID]Computed_Style, allocator=rt.persistent_allocator)
 	rt.semantic_surfaces = make(map[Node_ID]Semantic_Surface_Style, allocator=rt.persistent_allocator)
 	rt.order = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.top_level = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)

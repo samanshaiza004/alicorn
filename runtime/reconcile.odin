@@ -299,7 +299,7 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description, semanti
 		style_changes += {.Material}
 	}
 	if style_generations_advance(&node.style_generations, style_changes) {
-		node.computed_style.valid = false
+		style_computed_cache_invalidate(rt, node.id)
 	}
 	typography_changed := Style_Domain.Typography in style_changes
 	font_changed := node.font != d.font
@@ -371,6 +371,9 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description, semanti
 		rt.semantic_surfaces[node.id] = semantic_surface_style
 	} else {
 		delete_key(&rt.semantic_surfaces, node.id)
+	}
+	if d.kind != .Button && d.kind != .Text_Field && d.kind != .Scroll_Region && !semantic_surface_style.defined {
+		delete_key(&rt.computed_styles, node.id)
 	}
 	node.paint_value = d.paint_value
 	node.control_value = d.control_value
@@ -543,6 +546,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	node, ok := rt.nodes[id]
 	if !ok { return }
 	if rt.tooltip.target == id { tooltip_dismiss(rt) }
+	delete_key(&rt.computed_styles, id)
 	delete_key(&rt.semantic_surfaces, id)
 	children := node.children[:]
 	for child in children {
@@ -854,6 +858,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		free(node, allocator=rt.persistent_allocator)
 	}
 	delete(rt.nodes)
+	delete(rt.computed_styles)
 	delete(rt.semantic_surfaces)
 	delete(rt.order)
 	delete(rt.top_level)
