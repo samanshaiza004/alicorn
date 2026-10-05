@@ -8,6 +8,16 @@ stage_word :: proc(value: bool) -> string {
 	return "reused"
 }
 
+style_button_state_name :: proc(state: Style_Button_State) -> string {
+	switch state {
+	case .Selected: return "selected"
+	case .Hovered: return "hovered"
+	case .Pressed: return "pressed"
+	case .Disabled: return "disabled"
+	}
+	return "unknown"
+}
+
 inspect :: proc(rt: ^Runtime) -> string {
 	sb := strings.builder_make()
 	fmt.sbprintln(&sb, "Alicorn inspector")
@@ -65,6 +75,27 @@ inspect :: proc(rt: ^Runtime) -> string {
 			fmt.sbprintf(&sb, "  surface: payload-revision=%d interaction=%v kind=%v samples=%d segments=%d circles=%d pixels=%dx%d dpi=%.2f clip=(%.1f,%.1f %.1fx%.1f)\n", u64(node.surface_payload_revision), node.surface_interaction, node.surface_geometry_active ? GPU_Surface_Kind.Geometry : GPU_Surface_Kind.Waveform, len(node.surface_samples), len(node.surface_segments), len(node.surface_circles), node.surface_pixel_width, node.surface_pixel_height, node.surface_dpi_scale, node.clip.x, node.clip.y, node.clip.w, node.clip.h)
 		}
 		fmt.sbprintf(&sb, "  selected=%t semantic_active=%t hovered=%t pressed=%t caret=(%d,%v) selection=(%d,%v)->(%d,%v) reason: %s\n", node.selected, node.semantic_active, node.hovered, node.pressed, node.caret.byte, node.caret.affinity, node.selection_anchor.byte, node.selection_anchor.affinity, node.selection_focus.byte, node.selection_focus.affinity, node.last_reason)
+		if node.kind == .Button {
+			recipe := style_button_recipe(rt, node.style_environment, node.button_variant)
+			fmt.sbprintf(&sb, "  button state: selected=%t hovered=%t pressed=%t disabled=%t focused=%t\n",
+				node.selected, node.hovered, node.pressed, node.disabled, rt.focused == node.id)
+			resolved := style_button_resolve_retained(rt, node, Button_Visual_State{
+				selected=node.selected,
+				hovered=node.hovered,
+				pressed=node.pressed,
+				disabled=node.disabled,
+			}, node.drop_position == .On)
+			fmt.sbprintf(&sb, "  button recipe: variant=%s recipe=button.%s base=(%v,%v) surface=(%.3f,%.3f,%.3f,%.3f) text=(%.3f,%.3f,%.3f,%.3f) indicator=%v/%v\n",
+				button_variant_name(node.button_variant), button_variant_name(node.button_variant), recipe.surface_role, recipe.text_role,
+				resolved.surface.r, resolved.surface.g, resolved.surface.b, resolved.surface.a,
+				resolved.text.r, resolved.text.g, resolved.text.b, resolved.text.a,
+				resolved.selected_indicator, recipe.selected_indicator_role)
+			fmt.sbprintf(&sb, "  applied transforms:")
+			for style_state in Style_Button_State {
+				if style_state in resolved.applied_transforms { fmt.sbprintf(&sb, " %s", style_button_state_name(style_state)) }
+			}
+			fmt.sbprintf(&sb, " | focus overlay=%v semantic-active overlay=%v\n", recipe.focus_role, recipe.semantic_active_role)
+		}
 		if node.composition.active {
 			fmt.sbprintf(&sb, "  composition: active text-bytes=%d selection=(%d,%d) replaces=(%d,%v)->(%d,%v)\n", len(node.composition.text), node.composition.selection_start, node.composition.selection_end, node.composition.replace_anchor.byte, node.composition.replace_anchor.affinity, node.composition.replace_focus.byte, node.composition.replace_focus.affinity)
 		}

@@ -273,12 +273,12 @@ inspector_overlay_tree :: proc(ui: ^UI, state: ^Inspector_Overlay, inspected: ^R
 			container_begin(ui, .Virtual_Row, label="inspector-tree-row", key=key_u64(u64(row.id)), style=layout_style(.Row, height=INSPECTOR_ROW_HEIGHT))
 			container_begin(ui, .Container, label="tree-indent", style=layout_style(width=f32(min(row.depth,64))*14)); container_end(ui)
 			if button(ui, "+" if state.collapsed[row.id] else "-", key=key_string("collapse"),
-				style=layout_style(.Row, width=26, height=INSPECTOR_ROW_HEIGHT), state=Button_State{quiet=true, disabled=!row.has_children}) {
+				style=layout_style(.Row, width=26, height=INSPECTOR_ROW_HEIGHT), state=Button_State{disabled=!row.has_children}, variant=.Quiet) {
 				_ = inspector_overlay_toggle_collapsed(state, inspected, row.id)
 				invalidate_root(ui.runtime, "inspector hierarchy toggled")
 			}
 			if button(ui, fmt.tprintf("%v  %s  #%d", node.kind, node.label if len(node.label)>0 else node.site.component, row.id), key=key_string("node"),
-				style=layout_style(.Row, height=INSPECTOR_ROW_HEIGHT, grow=1), state=Button_State{quiet=true, selected=state.selected==row.id},
+				style=layout_style(.Row, height=INSPECTOR_ROW_HEIGHT, grow=1), state=Button_State{selected=state.selected==row.id}, variant=.Quiet,
 				content_style=button_content_style(.Start,.Center,padding_x=6)) {
 				state.selected = row.id
 				invalidate_root(ui.runtime, "inspector selection changed")
@@ -415,7 +415,7 @@ inspector_overlay_build :: proc(ui: ^UI, state: ^Inspector_Overlay, inspected: ^
 	container_end(ui)
 	container_begin(ui,.Container,label="inspector-tabs",style=layout_style(.Row,height=30,gap=4))
 	for tab in Inspector_Tab {
-		if button(ui,fmt.tprintf("%v",tab),key=key_u64(u64(tab)),style=layout_style(.Row,height=30,grow=1),state=Button_State{selected=state.tab==tab,quiet=true}) {
+		if button(ui,fmt.tprintf("%v",tab),key=key_u64(u64(tab)),style=layout_style(.Row,height=30,grow=1),state=Button_State{selected=state.tab==tab},variant=.Tab) {
 			state.tab = tab
 			invalidate_root(ui.runtime,"inspector tab changed")
 		}

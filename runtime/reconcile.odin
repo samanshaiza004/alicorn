@@ -93,6 +93,7 @@ description_hash :: proc(d: Description) -> u64 {
 	h = hash_mix(h, u64(d.font))
 	if d.kind == .Button {
 		h = hash_mix(h, hash_button_content_style(d.button_content_style))
+		h = hash_mix(h, u64(d.button_variant))
 	}
 	if node_has_text_product(d.kind) {
 		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
@@ -317,6 +318,7 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description) {
 	node.style_environment = d.style_environment
 	node.style_scope_boundary = d.style_scope_boundary
 	node.button_content_style = d.button_content_style
+	node.button_variant = d.button_variant
 	node.color = d.color
 	node.paint_background = d.paint_background
 	node.paint_value = d.paint_value
@@ -812,6 +814,12 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.identity_key_numeric)
 	delete(rt.identity_key_kind)
 	delete(rt.identity_key_pair)
+	for theme in rt.style_themes {
+		if len(theme.color_tokens) > 0 { delete(theme.color_tokens, rt.persistent_allocator) }
+		if len(theme.length_tokens) > 0 { delete(theme.length_tokens, rt.persistent_allocator) }
+		if len(theme.extension_color_roles) > 0 { delete(theme.extension_color_roles, rt.persistent_allocator) }
+		if len(theme.extension_length_roles) > 0 { delete(theme.extension_length_roles, rt.persistent_allocator) }
+	}
 	delete(rt.style_themes)
 	delete(rt.style_scope_stack)
 	delete(rt.layout_roots)

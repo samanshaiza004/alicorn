@@ -356,39 +356,40 @@ update_paint :: proc(rt: ^Runtime) {
 					parent_is_context_menu = parent.kind == .Context_Menu_Panel
 				}
 				if parent_is_context_menu {
-					if node.disabled {
-						text_color = style_environment_color(rt, node.style_environment, .Muted_Text)
-					} else if node.pressed {
-						append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", style_environment_color(rt, node.style_environment, .Accent_Pressed), []Text_Paint_Span{}})
-						text_color = style_environment_color(rt, node.style_environment, .Accent_Text)
-					} else if node.hovered || node.selected || rt.focused == node.id {
-						append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", style_environment_color(rt, node.style_environment, .Accent_Hover), []Text_Paint_Span{}})
-						text_color = style_environment_color(rt, node.style_environment, .Accent_Text)
+					// Menu navigation and pointer hover share the menu's active-row
+					// highlight. Ordinary buttons still receive their independent
+					// focus outline below.
+					resolved_style := style_button_resolve_retained(rt, node, Button_Visual_State{
+						selected=node.selected,
+						hovered=node.hovered || rt.focused == node.id,
+						pressed=node.pressed,
+						disabled=node.disabled,
+					})
+					text_color = resolved_style.text
+					if resolved_style.surface.a > 0 {
+						append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", resolved_style.surface, []Text_Paint_Span{}})
 					}
 				} else {
-					quiet := (node.paint_value & 4) != 0
-					button_color := style_environment_color(rt, node.style_environment, .Subtle_Surface)
-					if !quiet { button_color = style_environment_color(rt, node.style_environment, .Accent) }
-					if node.selected { button_color = style_environment_color(rt, node.style_environment, .Accent) }
-					if node.pressed {
-						button_color = style_environment_color(rt, node.style_environment, .Surface)
-						if !quiet { button_color = style_environment_color(rt, node.style_environment, .Accent_Pressed) }
-						if node.selected { button_color = style_environment_color(rt, node.style_environment, .Accent_Pressed) }
-					} else if node.hovered {
-						button_color = style_environment_color(rt, node.style_environment, .Surface)
-						if !quiet { button_color = style_environment_color(rt, node.style_environment, .Accent_Hover) }
-						if node.selected { button_color = style_environment_color(rt, node.style_environment, .Accent_Hover) }
+					resolved_style := style_button_resolve_retained(rt, node, Button_Visual_State{
+						selected=node.selected,
+						hovered=node.hovered,
+						pressed=node.pressed,
+						disabled=node.disabled,
+					}, node.drop_position == .On)
+					text_color = resolved_style.text
+					if resolved_style.surface.a > 0 {
+						append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", resolved_style.surface, []Text_Paint_Span{}})
 					}
-					if node.drop_position == .On { button_color = style_environment_color(rt, node.style_environment, .Success) }
-					if node.disabled { button_color = style_environment_color(rt, node.style_environment, .Subtle_Surface); text_color = style_environment_color(rt, node.style_environment, .Muted_Text) }
-					if !quiet && !node.disabled { text_color = style_environment_color(rt, node.style_environment, .Accent_Text) }
-					append(&node.paint, Display_Command{node.id, .Button, node.bounds, node.clip, "", button_color, []Text_Paint_Span{}})
-					if node.semantic_active { append_focus_outline(node, style_environment_color(rt, node.style_environment, .Semantic_Focus), 1) }
+					if resolved_style.selected_indicator == .Underline {
+						indicator_height := minf(2, node.bounds.h)
+						indicator := Rect{node.bounds.x, node.bounds.y+node.bounds.h-indicator_height, node.bounds.w, indicator_height}
+						append(&node.paint, Display_Command{node.id, .Button, indicator, node.clip, "", resolved_style.selected_indicator_color, []Text_Paint_Span{}})
+					}
+					if node.semantic_active { append_focus_outline(node, resolved_style.semantic_active, 1) }
 					if rt.focused == node.id && !node.disabled {
 						// Focus is an independent outline so it remains visible without
 						// replacing the selected, hover, or pressed fill.
-						focus_color := style_environment_color(rt, node.style_environment, .Focus)
-						append_focus_outline(node, focus_color, 1.5)
+						append_focus_outline(node, resolved_style.focus, 1.5)
 					}
 				}
 				append(&node.paint, Display_Command{node.id, .Text, text_bounds, text_clip, owned(display_text, rt.persistent_allocator), text_color, []Text_Paint_Span{}})

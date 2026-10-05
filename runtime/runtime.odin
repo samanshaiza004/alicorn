@@ -402,10 +402,133 @@ Style_Color_Role :: enum {
 
 STYLE_COLOR_ROLE_COUNT :: int(Style_Color_Role.Count)
 
+// Button variants express component intent. They all resolve through one
+// recipe family so themes do not need a separate state table per product
+// control.
+Button_Variant :: enum {
+	Default,
+	Primary,
+	Toolbar,
+	Quiet,
+	Tab,
+	Count,
+}
+
+BUTTON_VARIANT_COUNT :: int(Button_Variant.Count)
+
+// Style_Transform blends semantic surface/text roles into the current recipe
+// result. A zero mix leaves that channel unchanged; one replaces it. State
+// transforms compose in the documented selected → hovered → pressed →
+// disabled order.
+Style_Transform :: struct {
+	surface_role: Style_Color_Role,
+	surface_mix:  f32,
+	text_role:    Style_Color_Role,
+	text_mix:     f32,
+}
+
+Button_Recipe :: struct {
+	defined:                bool,
+	surface_role:           Style_Color_Role,
+	text_role:              Style_Color_Role,
+	surface_visible:        bool,
+	selected:               Style_Transform,
+	hovered:                Style_Transform,
+	pressed:                Style_Transform,
+	disabled:               Style_Transform,
+	selected_indicator:     Button_Indicator,
+	selected_indicator_role: Style_Color_Role,
+	focus_role:             Style_Color_Role,
+	semantic_active_role:   Style_Color_Role,
+}
+
+Button_Recipe_Set :: struct {
+	recipes: [BUTTON_VARIANT_COUNT]Button_Recipe,
+}
+
+Button_Indicator :: enum { None, Underline }
+
+Style_Button_State :: enum { Selected, Hovered, Pressed, Disabled }
+Style_Button_States :: distinct bit_set[Style_Button_State; u8]
+
+Button_Visual_State :: struct {
+	selected: bool,
+	hovered:  bool,
+	pressed:  bool,
+	disabled: bool,
+}
+
+// This is the resolved output of the button recipe family, not a general
+// computed-style cache. Focus and semantic-active remain separate overlays.
+Button_Resolved_Style :: struct {
+	surface:                 Color,
+	text:                    Color,
+	focus:                   Color,
+	semantic_active:         Color,
+	selected_indicator:      Button_Indicator,
+	selected_indicator_color: Color,
+	applied_transforms:      Style_Button_States,
+}
+
+DEFAULT_BUTTON_RECIPES :: Button_Recipe_Set{recipes={
+	Button_Recipe{
+		defined=true, surface_role=.Subtle_Surface, text_role=.Text, surface_visible=true,
+		selected=Style_Transform{surface_role=.Accent, surface_mix=0.24},
+		hovered=Style_Transform{surface_role=.Surface, surface_mix=0.60},
+		pressed=Style_Transform{surface_role=.Border, surface_mix=0.45},
+		disabled=Style_Transform{surface_role=.Surface, surface_mix=1, text_role=.Muted_Text, text_mix=1},
+		selected_indicator_role=.Text,
+		focus_role=.Focus, semantic_active_role=.Semantic_Focus,
+	},
+	Button_Recipe{
+		defined=true, surface_role=.Accent, text_role=.Accent_Text, surface_visible=true,
+		selected=Style_Transform{surface_role=.Accent_Hover, surface_mix=0.35},
+		hovered=Style_Transform{surface_role=.Accent_Hover, surface_mix=1},
+		pressed=Style_Transform{surface_role=.Accent_Pressed, surface_mix=1},
+		disabled=Style_Transform{surface_role=.Subtle_Surface, surface_mix=1, text_role=.Muted_Text, text_mix=1},
+		selected_indicator_role=.Text,
+		focus_role=.Focus, semantic_active_role=.Semantic_Focus,
+	},
+	Button_Recipe{
+		defined=true, surface_role=.Surface, text_role=.Text, surface_visible=true,
+		selected=Style_Transform{surface_role=.Accent, surface_mix=0.22},
+		hovered=Style_Transform{surface_role=.Subtle_Surface, surface_mix=0.70},
+		pressed=Style_Transform{surface_role=.Border, surface_mix=0.55},
+		disabled=Style_Transform{surface_role=.Window_Background, surface_mix=1, text_role=.Muted_Text, text_mix=1},
+		selected_indicator_role=.Text,
+		focus_role=.Focus, semantic_active_role=.Semantic_Focus,
+	},
+	Button_Recipe{
+		defined=true, surface_role=.Subtle_Surface, text_role=.Text, surface_visible=false,
+		selected=Style_Transform{surface_role=.Accent, surface_mix=0.18},
+		hovered=Style_Transform{surface_role=.Subtle_Surface, surface_mix=1},
+		pressed=Style_Transform{surface_role=.Border, surface_mix=1},
+		disabled=Style_Transform{text_role=.Muted_Text, text_mix=1},
+		selected_indicator_role=.Text,
+		focus_role=.Focus, semantic_active_role=.Semantic_Focus,
+	},
+	Button_Recipe{
+		defined=true, surface_role=.Subtle_Surface, text_role=.Muted_Text, surface_visible=false,
+		selected=Style_Transform{surface_role=.Subtle_Surface, surface_mix=1, text_role=.Text, text_mix=1},
+		hovered=Style_Transform{surface_role=.Subtle_Surface, surface_mix=0.55, text_role=.Text, text_mix=0.45},
+		pressed=Style_Transform{surface_role=.Border, surface_mix=0.4},
+		disabled=Style_Transform{text_role=.Muted_Text, text_mix=1},
+		selected_indicator=.Underline,
+		selected_indicator_role=.Text,
+		focus_role=.Focus, semantic_active_role=.Semantic_Focus,
+	},
+}}
+
 // A registered theme is immutable and retained once per Runtime. Nodes carry
 // only the compact ID through Style_Environment, not a copy of this palette.
 Style_Theme :: struct {
-	colors: [STYLE_COLOR_ROLE_COUNT]Color,
+	colors:                 [STYLE_COLOR_ROLE_COUNT]Color,
+	button_recipes:         Button_Recipe_Set,
+	color_tokens:           []Color,
+	length_tokens:          []Style_Length,
+	core_color_tokens:      [STYLE_COLOR_ROLE_COUNT]Style_Color_Token_ID,
+	extension_color_roles:  []Style_Extension_Color_Role_Binding,
+	extension_length_roles: []Style_Extension_Length_Role_Binding,
 }
 
 DEFAULT_STYLE_THEME :: Style_Theme{colors={
@@ -427,7 +550,7 @@ DEFAULT_STYLE_THEME :: Style_Theme{colors={
 	Color{0.17, 0.39, 0.34, 1},
 	Color{0.08, 0.10, 0.14, 1},
 	Color{0.38, 0.48, 0.62, 1},
-}}
+}, button_recipes=DEFAULT_BUTTON_RECIPES}
 
 DEFAULT_STYLE_THEME_ID :: Style_Theme_ID(1)
 
@@ -484,6 +607,7 @@ DEFAULT_BUTTON_TEXT_STYLE :: Text_Style{font_weight=FONT_WEIGHT_REGULAR, overflo
 Button_State :: struct {
 	selected: bool,
 	disabled: bool,
+	// Deprecated compatibility flag. New code should use Button_Variant.Quiet.
 	quiet:    bool,
 }
 
@@ -600,6 +724,7 @@ Description :: struct {
 	style_environment: Style_Environment,
 	style_scope_boundary: bool,
 	button_content_style: Button_Content_Style,
+	button_variant: Button_Variant,
 	style:       Layout_Style,
 	context_menu_bounds: Rect,
 	color:       Color,
@@ -692,6 +817,10 @@ Node :: struct {
 	style_environment: Style_Environment,
 	style_scope_boundary: bool,
 	button_content_style: Button_Content_Style,
+	button_variant: Button_Variant,
+	computed_button_style: Button_Resolved_Style,
+	computed_button_style_signature: Style_Resolution_Signature,
+	computed_button_style_valid: bool,
 	style:       Layout_Style,
 	context_menu_bounds: Rect,
 	color:       Color,

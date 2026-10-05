@@ -46,14 +46,19 @@ alicorn.container_begin(
 	label="toolbar",
 	style=alicorn.layout_style(.Row, padding=8, gap=6, align=.Center),
 )
-alicorn.button(&ui, "Open", style=alicorn.layout_style(.Row, width=100, height=32))
-alicorn.button(&ui, "Save", style=alicorn.layout_style(.Row, width=100, height=32))
+alicorn.button(&ui, "Open", style=alicorn.layout_style(.Row, width=100, height=32), variant=.Toolbar)
+alicorn.button(&ui, "Save", style=alicorn.layout_style(.Row, width=100, height=32), variant=.Primary)
+alicorn.button(&ui, "Dismiss", style=alicorn.layout_style(.Row, width=100, height=32), variant=.Quiet)
 alicorn.container_end(&ui)
 ```
 
 `layout_style` is a small constructor, not a stylesheet. Button label alignment
 and inner padding use `button_content_style`; parent layout padding controls
-space around the button.
+space around the button. Button variants express intent explicitly: the
+default and `.Toolbar` are neutral, `.Primary` uses the theme accent, `.Quiet`
+has no idle fill, and `.Tab` provides a selection treatment. Recipes define
+their semantic colors and state transforms; selected, hovered, pressed, then
+disabled transforms apply in that order. Focus remains a separate outline.
 
 ## Give repeated data stable identity
 
