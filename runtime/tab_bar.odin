@@ -3,6 +3,7 @@ package alicorn
 TAB_CLOSE_SLOT_WIDTH :: f32(28)
 TAB_CLOSE_CONTROL_SIZE :: f32(24)
 TAB_AUTO_CLOSE_ALWAYS_WIDTH :: f32(156)
+TAB_BAR_SCROLL_CONTROL_WIDTH :: f32(22)
 
 Tab_Bar_Item :: struct {
 	key:         UI_Key,
@@ -85,19 +86,101 @@ tab_bar :: proc(
 
 	opts.min_tab_width = clampf(opts.min_tab_width, 48, 1024)
 	opts.max_tab_width = clampf(opts.max_tab_width, opts.min_tab_width, 2048)
-	opts.height = clampf(opts.height, 18, 256)
+	// Closable tabs retain a 24x24 logical hit target. Keep the row tall enough
+	// for that target rather than silently shrinking it below the intended size.
+	opts.height = clampf(opts.height, 26, 256)
 	opts.gap = clampf(opts.gap, 0, 64)
-	bar_style.direction = .Column
+	bar_style.direction = .Row
 	bar_style.clip = true
 	viewport_guess := tab_bar_viewport_guess(ui, bar_style)
-	initial_content_width := maxf(viewport_guess, f32(len(items))*(opts.min_tab_width+opts.gap)-opts.gap)
+	minimum_content_width := f32(0)
+	if len(items) > 0 {
+		minimum_content_width = f32(len(items))*opts.min_tab_width + f32(len(items)-1)*opts.gap
+	}
+	show_scroll_controls := minimum_content_width > viewport_guess
+	scroll_control_width := minf(TAB_BAR_SCROLL_CONTROL_WIDTH, maxf(viewport_guess*0.25, 0))
+	scroll_viewport_guess := viewport_guess
+	if show_scroll_controls { scroll_viewport_guess = maxf(viewport_guess-2*scroll_control_width, 0) }
+	initial_content_width := maxf(scroll_viewport_guess, minimum_content_width)
+	selected_index := -1
+	selected_key_hash: u64 = 0
+	for item, index in items {
+		if !item.selected { continue }
+		selected_index = index
+		selected_key_hash = u64(identity_hash_key(0, Source_Site{}, item.key))
+		break
+	}
+	selected_state_hash := hash_mix(selected_key_hash, u64(selected_index+1))
+
+	previous_selection_hash: u64 = 0
+	previous_state_valid := false
+	previous_scroll_width: f32 = 0
+	previous_content_width: f32 = 0
+	if previous_bar_id, found := node_by_key(rt, key, .Container); found {
+		previous_bar := rt.nodes[previous_bar_id]
+		previous_selection_hash = previous_bar.paint_value
+		previous_state_valid = true
+		for child_id in previous_bar.children {
+			if child, child_found := rt.nodes[child_id]; child_found && child.kind == .Scroll_Region {
+				previous_scroll_width = child.scroll_viewport_width
+				previous_content_width = child.scroll_content_width
+				break
+			}
+		}
+	} else if previous_scroll_id, found := node_by_key(rt, key, .Scroll_Region); found {
+		// One-time compatibility with a tab bar retained by the pre-composite
+		// structure. Its current selected state will be initialized below.
+		previous_scroll := rt.nodes[previous_scroll_id]
+		previous_scroll_width = previous_scroll.scroll_viewport_width
+		previous_content_width = previous_scroll.scroll_content_width
+	}
+	previous_offset_x: f32 = 0
+	if previous_bar_id, found := node_by_key(rt, key, .Container); found {
+		previous_bar := rt.nodes[previous_bar_id]
+		for child_id in previous_bar.children {
+			if child, child_found := rt.nodes[child_id]; child_found && child.kind == .Scroll_Region {
+				previous_offset_x = child.scroll_offset_x
+				break
+			}
+		}
+	} else if previous_scroll_id, found := node_by_key(rt, key, .Scroll_Region); found {
+		previous_offset_x = rt.nodes[previous_scroll_id].scroll_offset_x
+	}
+	outer_id := container_begin_simple(
+		ui,
+		.Container,
+		label="tab-bar-control",
+		key=key,
+		style=bar_style,
+		loc=loc,
+	)
+	if outer_id == 0 { return result }
+	outer_pending := &rt.pending[len(rt.pending)-1].description
+	outer_pending.paint_value = selected_state_hash
+
+	left_scroll_clicked := false
+	left_scroll_id: Node_ID = 0
+	if show_scroll_controls {
+		left_scroll_id, left_scroll_clicked = tab_bar_scroll_button(
+			ui,
+			key_u64(2),
+			"Scroll tabs left",
+			"‹",
+			scroll_control_width,
+			opts.height,
+			previous_offset_x <= 0,
+			loc,
+		)
+	}
+
+	scroll_style := layout_style(.Column, width=scroll_viewport_guess, height=opts.height, clip=true)
 	scroll := scroll_region_begin(
 		ui,
-		key=key,
-		viewport_width=viewport_guess,
+		key=key_u64(1),
+		viewport_width=scroll_viewport_guess,
 		content_width=initial_content_width,
 		line_width=maxf(opts.min_tab_width, 24),
-		style=bar_style,
+		style=scroll_style,
 		label="tab-bar",
 		loc=loc,
 		axes=.Horizontal,
@@ -107,21 +190,18 @@ tab_bar :: proc(
 	if scroll.id == 0 { return result }
 
 	viewport_width := maxf(scroll.viewport_width, 0)
-	content_width := maxf(viewport_width, f32(len(items))*(opts.min_tab_width+opts.gap)-opts.gap)
+	content_width := maxf(viewport_width, minimum_content_width)
 	tab_width: f32 = 0
 	if len(items) > 0 {
 		available := maxf(content_width-opts.gap*f32(len(items)-1), 0)
 		tab_width = clampf(available/f32(len(items)), opts.min_tab_width, opts.max_tab_width)
 		content_width = maxf(viewport_width, tab_width*f32(len(items))+opts.gap*f32(len(items)-1))
 	}
-	selected_index := -1
-	for item, index in items {
-		if !item.selected { continue }
-		selected_index = index
-		break
-	}
 	offset_x := scroll.offset_x
-	if selected_index >= 0 && tab_width > 0 {
+	selection_changed := !previous_state_valid || previous_selection_hash != selected_state_hash
+	viewport_changed := previous_scroll_width > 0 && abs(previous_scroll_width-viewport_width) > 0.5
+	content_changed := previous_content_width > 0 && abs(previous_content_width-content_width) > 0.5
+	if selected_index >= 0 && tab_width > 0 && (selection_changed || viewport_changed || content_changed) {
 		left := f32(selected_index)*(tab_width+opts.gap)
 		right := left+tab_width
 		if left < offset_x {
@@ -131,14 +211,11 @@ tab_bar :: proc(
 		}
 	}
 	offset_x = clampf(offset_x, 0, maxf(content_width-viewport_width, 0))
-	for index := len(rt.pending)-1; index >= 0; index -= 1 {
-		pending := &rt.pending[index]
-		if pending.kind != .Description || pending.description.id != scroll.id { continue }
-		pending.description.scroll_content_width = content_width
-		pending.description.scroll_offset_x = offset_x
-		pending.description.layout_scroll_offset_x = 0
-		break
+	if left_scroll_clicked {
+		offset_x = maxf(offset_x-maxf(viewport_width*0.75, opts.min_tab_width+opts.gap), 0)
 	}
+	offset_x = clampf(offset_x, 0, maxf(content_width-viewport_width, 0))
+	tab_bar_pending_scroll_set(rt, scroll.id, offset_x, content_width)
 
 	row_style := layout_style(.Row, width=content_width, height=scroll.viewport_height, gap=opts.gap, clip=true)
 	container_begin_simple(
@@ -251,7 +328,79 @@ tab_bar :: proc(
 	}
 	container_end(ui)
 	scroll_region_end(ui)
+	if show_scroll_controls {
+		right_scroll_id: Node_ID
+		right_scroll_clicked: bool
+		right_scroll_id, right_scroll_clicked = tab_bar_scroll_button(
+			ui,
+			key_u64(3),
+			"Scroll tabs right",
+			"›",
+			scroll_control_width,
+			opts.height,
+			offset_x >= maxf(content_width-viewport_width, 0),
+			loc,
+		)
+		if right_scroll_clicked {
+			offset_x = minf(offset_x+maxf(viewport_width*0.75, opts.min_tab_width+opts.gap), maxf(content_width-viewport_width, 0))
+			tab_bar_pending_scroll_set(rt, scroll.id, offset_x, content_width)
+		}
+		tab_bar_pending_button_disabled_set(rt, left_scroll_id, offset_x <= 0)
+		tab_bar_pending_button_disabled_set(rt, right_scroll_id, offset_x >= maxf(content_width-viewport_width, 0))
+	}
+	container_end(ui)
 	return result
+}
+
+tab_bar_scroll_button :: proc(
+	ui: ^UI,
+	key: UI_Key,
+	accessible_label, glyph: string,
+	width, height: f32,
+	disabled: bool,
+	loc := #caller_location,
+) -> (id: Node_ID, clicked: bool) {
+	if ui == nil || ui.runtime == nil { return }
+	id = emit_key(
+		ui,
+		.Button,
+		resolve_source(Source_Site{}, "tab_bar_scroll_button", loc),
+		label=accessible_label,
+		text=glyph,
+		key=key,
+		style=layout_style(.Row, width=width, height=height, align=.Center),
+		focusable=true,
+		disabled=disabled,
+		button_variant=.Toolbar,
+	)
+	return id, id != 0 && !disabled && consume_activation(ui.runtime, id)
+}
+
+tab_bar_pending_button_disabled_set :: proc(rt: ^Runtime, id: Node_ID, disabled: bool) {
+	if rt == nil || id == 0 { return }
+	for index := len(rt.pending)-1; index >= 0; index -= 1 {
+		pending := &rt.pending[index]
+		if pending.kind == .Description && pending.description.id == id {
+			pending.description.disabled = disabled
+			return
+		}
+	}
+}
+
+tab_bar_pending_scroll_set :: proc(rt: ^Runtime, scroll_id: Node_ID, offset_x, content_width: f32) {
+	if rt == nil { return }
+	for index := len(rt.pending)-1; index >= 0; index -= 1 {
+		pending := &rt.pending[index]
+		if pending.kind != .Description { continue }
+		if pending.description.id == scroll_id {
+			pending.description.scroll_content_width = content_width
+			pending.description.scroll_offset_x = offset_x
+			pending.description.layout_scroll_offset_x = 0
+		} else if pending.description.kind == .Virtual_List && pending.description.parent == scroll_id {
+			pending.description.scroll_offset_x = offset_x
+			pending.description.layout_scroll_offset_x = offset_x
+		}
+	}
 }
 
 // tab_bar_navigate maps a semantic navigation command to an item index. It
@@ -281,7 +430,7 @@ tab_bar_navigate :: proc(item_count, selected_index: int, navigation: Tab_Bar_Na
 
 tab_close_should_show :: proc(tab, close: ^Node) -> bool {
 	if tab == nil || close == nil || !tab.tab_closable { return false }
-	hovered := tab.hovered || close.hovered
+	hovered := tab.hovered || close.hovered || close.pressed
 	switch tab.tab_close_policy {
 	case .Always: return true
 	case .Hover: return hovered

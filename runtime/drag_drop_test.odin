@@ -240,6 +240,33 @@ drag_autoscroll_test_build :: proc(rt: ^Runtime) -> (source: Node_ID, scroll: No
 	return
 }
 
+drag_horizontal_autoscroll_test_build :: proc(rt: ^Runtime) -> (source: Node_ID, scroll: Node_ID, target: Node_ID) {
+	ui, should_build := begin_frame(rt)
+	if !should_build { return }
+	container_begin_simple(&ui, .Root, label="drag-horizontal-scroll-root", key=key_string("drag-horizontal-scroll-root"), style=layout_style(.Column, width=240, height=120, gap=8))
+	source, _ = button_ex(&ui, "source", key="drag-horizontal-scroll-source", style=layout_style(width=100, height=36))
+	_ = drag_source(&ui, DRAG_TEST_TYPE, DRAG_SCROLL_SOURCE)
+	region := scroll_region_begin(
+		&ui,
+		key=key_string("drag-horizontal-scroll-region"),
+		viewport_width=160,
+		content_width=720,
+		line_width=120,
+		style=layout_style(.Row, width=160, height=48),
+		label="drag-horizontal-scroll-region",
+		axes=.Horizontal,
+	)
+	scroll = region.id
+	container_begin_simple(&ui, .Virtual_List, label="drag-horizontal-content", key=key_u64(1), style=layout_style(.Row, width=720, height=48))
+	target, _ = button_ex(&ui, "target", key="drag-horizontal-scroll-target", style=layout_style(width=700, height=36))
+	_ = drop_target(&ui, DRAG_TEST_TYPE, DRAG_SCROLL_TARGET, .On)
+	container_end(&ui)
+	scroll_region_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+	return
+}
+
 @(test)
 test_drag_autoscroll_repeats_at_scroll_edges_without_pointer_motion :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 240, 240})
@@ -270,4 +297,40 @@ test_drag_autoscroll_repeats_at_scroll_edges_without_pointer_motion :: proc(t: ^
 	_ = process_pointer(&rt, Pointer_Event{kind=.Cancel})
 	event, cancelled := drag_event_take(&rt)
 	testing.expect(t, cancelled && event.kind == .Cancelled && !drag_autoscroll_can_step(&rt), "canceling the drag should stop scheduled autoscroll")
+}
+
+@(test)
+test_drag_autoscroll_repeats_at_horizontal_scroll_edges :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 120})
+	defer destroy_runtime(&rt)
+	source, scroll, _ := drag_horizontal_autoscroll_test_build(&rt)
+	if source == 0 || scroll == 0 {
+		testing.expect(t, false, "horizontal drag fixture should retain its source and scroll region")
+		return
+	}
+	viewport := scroll_region_state(&rt, scroll).viewport_bounds
+	source_node := rt.nodes[source]
+	_ = process_pointer(&rt, Pointer_Event{
+		kind=.Down,
+		x=source_node.bounds.x+source_node.bounds.w*0.5,
+		y=source_node.bounds.y+source_node.bounds.h*0.5,
+		button=POINTER_BUTTON_PRIMARY,
+	})
+	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=viewport.x+viewport.w-2, y=viewport.y+viewport.h*0.5})
+	_, started := drag_event_take(&rt)
+	initial_offset := scroll_region_state(&rt, scroll).offset_x
+	testing.expect(t, started && drag_autoscroll_can_step(&rt),
+		"holding a drag near a horizontally overflowing edge should request a scheduled tick")
+	_ = drag_autoscroll_step(&rt, 16_000_000)
+	after_right_tick := scroll_region_state(&rt, scroll).offset_x
+	testing.expect(t, after_right_tick > initial_offset,
+		"a horizontal edge tick should reveal later content without additional pointer motion")
+	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=viewport.x+2, y=viewport.y+viewport.h*0.5})
+	_ = drag_autoscroll_step(&rt, 16_000_000)
+	testing.expect(t, scroll_region_state(&rt, scroll).offset_x < after_right_tick,
+		"moving the captured drag to the leading edge should scroll back toward earlier content")
+	_ = process_pointer(&rt, Pointer_Event{kind=.Cancel})
+	_, cancelled := drag_event_take(&rt)
+	testing.expect(t, cancelled && !drag_autoscroll_can_step(&rt),
+		"cancelling horizontal drag should release scheduled autoscroll")
 }

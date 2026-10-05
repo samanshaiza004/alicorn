@@ -224,8 +224,14 @@ Each `Tab_Bar_Item` contains:
 units. Tabs shrink by equal amounts from the maximum width toward the minimum
 width as space becomes constrained. If the bar is still too narrow when tabs
 reach their minimum width, it uses horizontal overflow; the selected tab is
-kept visible. The close affordance is internal to the tab surface and its
-visibility does not change tab layout or width.
+kept visible. Accessible Scroll tabs left/right controls appear while the bar
+overflows, and the bar also accepts horizontal wheel/trackpad scrolling. The
+close affordance is internal to the tab surface, retains a 24×24 logical hit
+target, and its hover visibility does not change tab layout or width. Inactive
+tabs show a distinct rounded close-action surface on hover; dirty state uses
+the same reserved trailing slot, so switching between its marker and close
+action does not shift the title. Selection remains visible independently of
+the keyboard-focus ring; pointer focus does not add a second focus outline.
 
 The close policies are `Always`, `Hover`, `Selected_Or_Hover`, and `Auto`.
 `Auto` delegates close-affordance visibility to the component's responsive
@@ -238,8 +244,10 @@ next build.
 
 Provide a nonzero `drag_type` and stable item `semantic_id`s to participate in
 Alicorn's existing drag/drop events. The bar identifies semantic sources and
-reorder targets; the application handles those events and changes its own item
-order. The widget does not mutate the supplied slice or own application data.
+reorder targets, paints a clear insertion marker, and edge-autoscrolls while a
+drag is held near an overflowing edge; the application handles the events and
+changes its own item order. The widget does not mutate the supplied slice or
+own application data.
 
 `tab_bar_navigate(item_count, selected_index, navigation) -> (index, found)`
 computes a navigation target using `Next`, `Previous`, `Index_1` through

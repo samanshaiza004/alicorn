@@ -417,28 +417,51 @@ update_paint :: proc(rt: ^Runtime) {
 						append(&node.paint, paint_surface_command(node.id, indicator, node.clip, resolved_style.selected_indicator_color))
 					}
 					if node.semantic_active { append_focus_outline(node, resolved_style.semantic_active, 1) }
-					if rt.focused == node.id && !node.disabled {
+					if rt.focused == node.id && !node.disabled && node.kind != .Tab {
 						// Focus is an independent outline so it remains visible without
 						// replacing the selected, hover, or pressed fill.
 						append_focus_outline(node, resolved_style.focus, 1.5)
 					}
 				}
 				append(&node.paint, paint_text_command(node.id, text_bounds, text_clip, paint_text_handle_for_node(node), text_color))
+				// A Tab's focus outline is the outermost part of its composed
+				// control. The embedded close surface is inset, so it remains a
+				// visually distinct action inside that boundary.
+				if node.kind == .Tab && rt.focus_visible && rt.focused == node.id && !node.disabled {
+					resolved_style := style_button_resolve_retained(rt, node, Button_Visual_State{
+						selected=node.selected,
+						hovered=tab_bar_node_hovered(rt, node),
+						pressed=node.pressed,
+						disabled=node.disabled,
+					}, node.drop_position == .On)
+					append_focus_outline(node, resolved_style.focus, 1.5)
+				}
 			} else if node.kind == .Tab_Close {
 				parent := tab_ancestor(rt, node)
 				show_close := parent != nil && tab_close_should_show(parent, node)
 				if show_close {
+					close_hot := (node.hovered || node.pressed) && !node.disabled
 					close_style := style_button_resolve_retained(rt, node, Button_Visual_State{
 						hovered=node.hovered,
 						pressed=node.pressed,
 						disabled=node.disabled,
 					})
+					if close_hot { close_style.surface.a = 1 }
+					if close_hot { close_style.text = style_environment_color(rt, node.style_environment, .Text) }
 					if close_style.surface.a > 0 {
+						inset := minf(3, minf(node.bounds.w, node.bounds.h)*0.14)
+						close_surface := Rect{
+							node.bounds.x+inset,
+							node.bounds.y+inset,
+							maxf(node.bounds.w-2*inset, 0),
+							maxf(node.bounds.h-2*inset, 0),
+						}
 						append(&node.paint, paint_surface_command(
 							node.id,
-							node.bounds,
+							close_surface,
 							node.clip,
 							close_style.surface,
+							shape=Surface_Shape{kind=.Rounded_Rectangle, corner_radius=minf(5, inset+2)},
 						))
 					}
 					if rt.focused == node.id && !node.disabled { append_focus_outline(node, close_style.focus, 1.5) }
@@ -612,8 +635,14 @@ update_paint :: proc(rt: ^Runtime) {
 			} else if node.drop_position == .Before || node.drop_position == .After {
 				marker := Rect{}
 				if node.drop_target_mode == .Between_Horizontal {
-					marker_x := node.bounds.x if node.drop_position == .Before else node.bounds.x+node.bounds.w-2
-					marker = Rect{marker_x, node.bounds.y+2, 2, maxf(node.bounds.h-4, 0)}
+					marker_edge := node.bounds.x if node.drop_position == .Before else node.bounds.x+node.bounds.w
+					marker = Rect{marker_edge-1.5, node.bounds.y+2, 3, maxf(node.bounds.h-4, 0)}
+					if node.kind == .Tab {
+						halo := Rect{marker_edge-3.5, node.bounds.y+2, 7, maxf(node.bounds.h-4, 0)}
+						halo_color := style_environment_color(rt, node.style_environment, .Accent)
+						halo_color.a *= 0.24
+						append(&node.paint, paint_surface_command(node.id, halo, node.clip, halo_color))
+					}
 				} else {
 					marker_y := node.bounds.y if node.drop_position == .Before else node.bounds.y+node.bounds.h-2
 					marker = Rect{node.bounds.x+2, marker_y, maxf(node.bounds.w-4, 0), 2}

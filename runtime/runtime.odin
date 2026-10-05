@@ -1196,6 +1196,9 @@ Runtime :: struct {
 	layout_roots: [dynamic]Node_ID,
 	layout_visit_probe: map[Node_ID]u64,
 	focused:     Node_ID,
+	// focus_visible tracks keyboard modality for controls whose persistent
+	// selected state is already conveyed separately (notably tabs).
+	focus_visible: bool,
 	context_menu: Context_Menu_State,
 	tooltip: Tooltip_State,
 	transient_overlay_kind: Transient_Overlay_Kind,

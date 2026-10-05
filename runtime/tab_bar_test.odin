@@ -126,6 +126,44 @@ tab_bar_test_part :: proc(rt: ^Runtime, tab: Node_ID, label: string) -> (id: Nod
 	return
 }
 
+tab_bar_test_button :: proc(rt: ^Runtime, label: string) -> (id: Node_ID, count: int) {
+	for candidate in rt.order {
+		node, found := rt.nodes[candidate]
+		if found && node.active && node.kind == .Button && node.label == label {
+			id = candidate
+			count += 1
+		}
+	}
+	return
+}
+
+tab_bar_test_click :: proc(rt: ^Runtime, id: Node_ID) {
+	if rt == nil || id == 0 { return }
+	node, found := rt.nodes[id]
+	if !found { return }
+	x, y := node.bounds.x+node.bounds.w*0.5, node.bounds.y+node.bounds.h*0.5
+	_ = process_pointer(rt, Pointer_Event{kind=.Down, x=x, y=y, button=POINTER_BUTTON_PRIMARY})
+	_ = process_pointer(rt, Pointer_Event{kind=.Up, x=x, y=y, button=POINTER_BUTTON_PRIMARY})
+}
+
+tab_bar_test_focus_outline_count :: proc(node: ^Node) -> int {
+	if node == nil { return 0 }
+	count := 0
+	for command in node.paint {
+		if _, ok := command.payload.(Surface_Paint); !ok { continue }
+		if abs(command.bounds.w-1.5) < 0.01 || abs(command.bounds.h-1.5) < 0.01 { count += 1 }
+	}
+	return count
+}
+
+tab_bar_test_text_bounds :: proc(node: ^Node) -> (bounds: Rect, found: bool) {
+	if node == nil { return }
+	for command in node.paint {
+		if _, ok := command.payload.(Text_Paint); ok { return command.bounds, true }
+	}
+	return
+}
+
 @(test)
 test_tab_bar_builds_retained_scroll_list_tab_and_close_hierarchy :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 720, 120})
@@ -239,6 +277,27 @@ test_tab_bar_shrinks_tabs_then_overflows_at_minimum_width :: proc(t: ^testing.T)
 	}
 	testing.expect(t, shrunk_tab_count > 0,
 		"reducing available width should shrink tabs before horizontal overflow")
+	left_id, left_count := tab_bar_test_button(&rt, "Scroll tabs left")
+	right_id, right_count := tab_bar_test_button(&rt, "Scroll tabs right")
+	testing.expect(t, left_count == 1 && right_count == 1,
+		"overflow should expose accessible previous/next controls so hidden tabs are discoverable")
+	if left_count != 1 || right_count != 1 { return }
+	testing.expect(t, rt.nodes[left_id].disabled && !rt.nodes[right_id].disabled,
+		"the left control should be disabled at the leading edge while the right control remains actionable")
+	tab_bar_test_click(&rt, right_id)
+	_ = tab_bar_test_build(&rt, items[:], 180, options)
+	right_offset := scroll_region_state(&rt, bar_id).offset_x
+	testing.expect(t, right_offset > 0,
+		"activating the right overflow control should reveal later tabs without taking ownership of selection")
+	left_id, left_count = tab_bar_test_button(&rt, "Scroll tabs left")
+	testing.expect(t, left_count == 1 && !rt.nodes[left_id].disabled,
+		"the left overflow control should become actionable after scrolling right")
+	if left_count == 1 {
+		tab_bar_test_click(&rt, left_id)
+		_ = tab_bar_test_build(&rt, items[:], 180, options)
+		testing.expect(t, scroll_region_state(&rt, bar_id).offset_x < right_offset,
+			"activating the left overflow control should return toward earlier tabs")
+	}
 }
 
 @(test)
@@ -320,6 +379,70 @@ test_tab_bar_click_select_and_tab_close_are_distinct_requests :: proc(t: ^testin
 }
 
 @(test)
+test_tab_bar_selection_is_distinct_from_keyboard_focus_indicator :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 480, 120})
+	defer destroy_runtime(&rt)
+	items := tab_bar_test_items()
+	options := tab_bar_test_options_always_close()
+	_ = tab_bar_test_build(&rt, items[:], 440, options)
+	selected_id, selected_count := tab_bar_test_item_node(&rt, items[0].semantic_id)
+	other_id, other_count := tab_bar_test_item_node(&rt, items[1].semantic_id)
+	testing.expect(t, selected_count == 1 && other_count == 1,
+		"selected and inactive tabs should both be retained for focus-modality checks")
+	if selected_count != 1 || other_count != 1 { return }
+	selected_bounds := rt.nodes[selected_id].bounds
+	x, y := selected_bounds.x+selected_bounds.w*0.4, selected_bounds.y+selected_bounds.h*0.5
+	_ = process_pointer(&rt, Pointer_Event{kind=.Down, x=x, y=y, button=POINTER_BUTTON_PRIMARY})
+	_ = process_pointer(&rt, Pointer_Event{kind=.Up, x=x, y=y, button=POINTER_BUTTON_PRIMARY})
+	_ = tab_bar_test_build(&rt, items[:], 440, options)
+	testing.expect(t, rt.focused == selected_id && !rt.focus_visible && tab_bar_test_focus_outline_count(rt.nodes[selected_id]) == 0,
+		"pointer selection should keep logical focus but avoid visually duplicating the selected treatment with a keyboard ring")
+
+	keyboard_focus := focus_traverse(&rt, .Next)
+	_ = tab_bar_test_build(&rt, items[:], 440, options)
+	testing.expect(t, keyboard_focus == other_id,
+		"Tab traversal should move keyboard focus to the next document tab")
+	testing.expect(t, rt.focus_visible,
+		"keyboard traversal should enable the keyboard-focus visual modality")
+	testing.expect(t, tab_bar_test_focus_outline_count(rt.nodes[other_id]) == 4,
+		"keyboard traversal should paint the distinct four-edge focus outline on the focused tab")
+	testing.expect(t, rt.nodes[selected_id].selected && !rt.nodes[other_id].selected,
+		"keyboard focus movement must not mutate the application-owned selected tab")
+}
+
+@(test)
+test_tab_bar_drag_shows_a_clear_between_tab_insertion_marker :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 480, 120})
+	defer destroy_runtime(&rt)
+	items := tab_bar_test_items()
+	_ = tab_bar_test_build(&rt, items[:], 440, tab_bar_test_options_always_close())
+	source_id, source_count := tab_bar_test_item_node(&rt, items[0].semantic_id)
+	target_id, target_count := tab_bar_test_item_node(&rt, items[1].semantic_id)
+	testing.expect(t, source_count == 1 && target_count == 1,
+		"drag reorder should begin and end on retained tab nodes")
+	if source_count != 1 || target_count != 1 { return }
+	source, target := rt.nodes[source_id], rt.nodes[target_id]
+	sx, sy := source.bounds.x+source.bounds.w*0.5, source.bounds.y+source.bounds.h*0.5
+	tx, ty := target.bounds.x+2, target.bounds.y+target.bounds.h*0.5
+	_ = process_pointer(&rt, Pointer_Event{kind=.Down, x=sx, y=sy, button=POINTER_BUTTON_PRIMARY})
+	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=tx, y=ty})
+	event, found := drag_event_take(&rt)
+	testing.expect(t, found && event.kind == .Started && event.target == items[1].semantic_id && event.position == .Before,
+		"dragging across tabs should report a semantic before-position request")
+	_ = tab_bar_test_build(&rt, items[:], 440, tab_bar_test_options_always_close())
+	target = rt.nodes[target_id]
+	marker_found, halo_found := false, false
+	for command in rt.nodes[target_id].paint {
+		if _, ok := command.payload.(Surface_Paint); !ok { continue }
+		if abs(command.bounds.w-3) < 0.01 { marker_found = true }
+		if abs(command.bounds.w-7) < 0.01 { halo_found = true }
+	}
+	testing.expect(t, marker_found && halo_found,
+		"the insertion edge should be legible through both a crisp marker and a soft halo")
+	_ = process_pointer(&rt, Pointer_Event{kind=.Cancel})
+}
+
+@(test)
 test_tab_bar_navigation_wraps_and_selects_one_based_indices :: proc(t: ^testing.T) {
 	count := 8
 	index, found := tab_bar_navigate(count, 7, .Next)
@@ -390,6 +513,10 @@ test_tab_bar_close_policy_keeps_dirty_marker_and_reveals_on_hover :: proc(t: ^te
 		"a hidden close glyph should leave the dirty tab's marker visible")
 	testing.expect(t, len(clean_paint) == 0,
 		"an unselected clean compact tab should not paint its hidden close action")
+	clean_title_bounds, clean_title_found := tab_bar_test_text_bounds(rt.nodes[clean_tab])
+	hidden_close_bounds := rt.nodes[clean_close].bounds
+	testing.expect(t, hit_test(&rt, hidden_close_bounds.x+hidden_close_bounds.w*0.5, hidden_close_bounds.y+hidden_close_bounds.h*0.5) == clean_tab,
+		"an invisible reserved close slot should fall through to its tab instead of acting like a hidden button")
 
 	invalidate_root(&rt, "tab-bar responsive width increased")
 	_ = tab_bar_test_build(&rt, items[:], 640, options)
@@ -423,6 +550,39 @@ test_tab_bar_close_policy_keeps_dirty_marker_and_reveals_on_hover :: proc(t: ^te
 		"hovering any part of a compact tab should reveal its close glyph without changing geometry")
 	testing.expect(t, same_rect(rt.nodes[clean_tab].bounds, clean_bounds),
 		"revealing the close glyph should not shift or resize its tab")
+
+	close_bounds := rt.nodes[clean_close].bounds
+	testing.expect(t, close_bounds.w == TAB_CLOSE_CONTROL_SIZE && close_bounds.h == TAB_CLOSE_CONTROL_SIZE,
+		"the embedded close hit target should remain at least 24x24 logical units")
+	close_target := process_pointer(&rt, Pointer_Event{
+		kind=.Move,
+		x=close_bounds.x+close_bounds.w*0.5,
+		y=close_bounds.y+close_bounds.h*0.5,
+	})
+	testing.expect(t, close_target == clean_close,
+		"the visible internal close slot should receive pointer hits independently from the tab body")
+	ui, ready = begin_presentation_frame(&rt)
+	if ready { end_presentation_frame(&ui) }
+	close_paint = rt.nodes[clean_close].paint
+	hover_surface_found, hover_surface_clear := false, false
+	for command in close_paint {
+		if surface, ok := command.payload.(Surface_Paint); ok {
+			if surface.shape.kind != .Rounded_Rectangle { continue }
+			hover_surface_found = true
+			hover_surface_clear = command.bounds.x > close_bounds.x &&
+				command.bounds.y > close_bounds.y &&
+				command.bounds.x+command.bounds.w < close_bounds.x+close_bounds.w &&
+				command.bounds.y+command.bounds.h < close_bounds.y+close_bounds.h &&
+				surface.fill.a >= 0.9
+		}
+	}
+	testing.expect(t, hover_surface_found && hover_surface_clear,
+		"hovering close should paint a high-contrast rounded surface inset from the tab focus perimeter")
+	testing.expect(t, same_rect(rt.nodes[clean_tab].bounds, clean_bounds),
+		"hovering the close action must not resize or reflow its tab")
+	close_title_bounds, close_title_found := tab_bar_test_text_bounds(rt.nodes[clean_tab])
+	testing.expect(t, clean_title_found && close_title_found && same_rect(clean_title_bounds, close_title_bounds),
+		"showing and hovering the close affordance must not move or rewrap the tab title")
 }
 
 @(test)

@@ -147,6 +147,12 @@ hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 		id := rt.order[i]
 		if node, ok := rt.nodes[id]; ok && node.active && !node.disabled &&
 			node_is_in_modal_overlay(rt, id, modal_root) && rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
+			// A hidden tab-close affordance is only a reserved dirty/close slot,
+			// not an invisible click target. Let the parent Tab receive the hit.
+			if node.kind == .Tab_Close {
+				parent := tab_ancestor(rt, node)
+				if parent == nil || !tab_close_should_show(parent, node) { continue }
+			}
 			if node.kind == .Button || node.kind == .Tab || node.kind == .Tab_Close || node.kind == .Checkbox || node.kind == .Slider || node.kind == .Text_Field ||
 			   (node.kind == .Custom_Surface && node.surface_interaction == .Pointer) ||
 			   (node.text_input_target && node.focusable) {
@@ -292,6 +298,14 @@ focus :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 	return true
 }
 
+focus_indicator_set :: proc(rt: ^Runtime, visible: bool) {
+	if rt == nil || rt.focus_visible == visible { return }
+	rt.focus_visible = visible
+	if focused, found := rt.nodes[rt.focused]; found && focused.kind == .Tab {
+		invalidate_interaction_paint(rt, focused.id, "keyboard focus indicator visibility changed")
+	}
+}
+
 // focus_traverse moves focus through the retained preorder used by the
 // runtime. This keeps keyboard navigation independent of application-owned
 // widget objects while preserving the same keyed focus state as pointer input.
@@ -321,7 +335,10 @@ focus_traverse :: proc(rt: ^Runtime, direction: Focus_Direction) -> Node_ID {
 		id := rt.order[index]
 		node, ok := rt.nodes[id]
 		if ok && node.active && node.focusable && !node.disabled && node_is_in_modal_overlay(rt, id, modal_root) {
-			if focus(rt, id) { return id }
+			if focus(rt, id) {
+				focus_indicator_set(rt, true)
+				return id
+			}
 		}
 	}
 	return 0
@@ -338,6 +355,7 @@ activate_focused :: proc(rt: ^Runtime, key: Activation_Key) -> bool {
 	if !node.active || !node.focusable || node.disabled || !can_activate {
 		return false
 	}
+	focus_indicator_set(rt, true)
 	rt.activation_sequence += 1
 	rt.activation_node = id
 	reason := "focused control activated by Enter" if key == .Enter else "focused control activated by Space"
@@ -421,6 +439,7 @@ select :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 
 process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 	rt.stats.pointer_events += 1
+	if event.kind == .Down { focus_indicator_set(rt, false) }
 	drag_event_clear(rt)
 	menu_active := context_menu_input_active(rt)
 	rt.context_menu.pointer_consumed = menu_active
