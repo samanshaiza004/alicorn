@@ -182,11 +182,19 @@ invalidate_tab_hover_dependents :: proc(rt: ^Runtime, id: Node_ID, reason: strin
 			invalidate_interaction_paint(rt, parent.id, reason)
 		}
 	} else if node.kind == .Tab {
-		for child_id in rt.order {
-			child, child_found := rt.nodes[child_id]
-			if child_found && child.active && child.kind == .Tab_Close && tab_ancestor(rt, child) == node {
-				invalidate_interaction_paint(rt, child_id, reason)
-			}
+		invalidate_tab_close_descendants(rt, node, reason)
+	}
+}
+
+invalidate_tab_close_descendants :: proc(rt: ^Runtime, node: ^Node, reason: string) {
+	if rt == nil || node == nil { return }
+	for child_id in node.children {
+		child, found := rt.nodes[child_id]
+		if !found || !child.active { continue }
+		if child.kind == .Tab_Close {
+			invalidate_interaction_paint(rt, child.id, reason)
+		} else {
+			invalidate_tab_close_descendants(rt, child, reason)
 		}
 	}
 }

@@ -181,10 +181,11 @@ tab_bar_node_hovered :: proc(rt: ^Runtime, node: ^Node) -> bool {
 	if node == nil { return false }
 	if node.hovered { return true }
 	if rt == nil { return false }
-	for candidate_id in rt.order {
-		candidate, found := rt.nodes[candidate_id]
-		if !found || !candidate.active || candidate.kind != .Tab_Close || !candidate.hovered { continue }
-		if tab_ancestor(rt, candidate) == node { return true }
+	for child_id in node.children {
+		child, found := rt.nodes[child_id]
+		if !found || !child.active { continue }
+		if child.kind == .Tab_Close && child.hovered { return true }
+		if tab_bar_node_hovered(rt, child) { return true }
 	}
 	return false
 }
@@ -397,9 +398,11 @@ update_paint :: proc(rt: ^Runtime) {
 						append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, resolved_style.surface))
 					}
 				} else {
+					hovered := node.hovered
+					if node.kind == .Tab { hovered = tab_bar_node_hovered(rt, node) }
 					resolved_style := style_button_resolve_retained(rt, node, Button_Visual_State{
 						selected=node.selected,
-						hovered=tab_bar_node_hovered(rt, node),
+						hovered=hovered,
 						pressed=node.pressed,
 						disabled=node.disabled,
 					}, node.drop_position == .On)
