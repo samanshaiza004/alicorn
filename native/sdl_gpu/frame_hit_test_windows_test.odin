@@ -4,6 +4,20 @@ package alicorn_sdl_gpu
 
 import "core:testing"
 import win "core:sys/windows"
+import alicorn "../../runtime"
+
+@(test)
+test_native_chrome_feedback_uses_distinct_derived_states :: proc(t: ^testing.T) {
+	background := alicorn.Color{1, 1, 1, 1}
+	foreground := alicorn.Color{0, 0, 0, 1}
+	hover, open, pressed := win32_menu_feedback_colors(background, foreground)
+	ordered := hover.r < background.r && open.r < hover.r && pressed.r < open.r
+	strengths := hover.r > 0.89 && hover.r < 0.91 &&
+		open.r > 0.85 && open.r < 0.87 && pressed.r > 0.79 && pressed.r < 0.81
+	alpha_preserved := hover.a == 1 && open.a == 1 && pressed.a == 1
+	testing.expect(t, ordered && strengths && alpha_preserved,
+		"normal caption hover, open-menu, and pressed fills should be visibly distinct foreground mixes")
+}
 
 @(test)
 test_system_window_without_menus_needs_no_gpu_chrome_state :: proc(t: ^testing.T) {
