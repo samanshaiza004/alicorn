@@ -8,6 +8,73 @@ style_environment_changed_domains :: proc(previous, next: Style_Environment) -> 
 	return changed
 }
 
+style_generation_value :: proc(generations: Style_Generations, domain: Style_Domain) -> u32 {
+	switch domain {
+	case .Metrics: return generations.metrics
+	case .Typography: return generations.typography
+	case .Paint: return generations.paint
+	case .Material: return generations.material
+	}
+	return 0
+}
+
+style_generation_advance :: proc(value: ^u32) -> bool {
+	if value^ == 0xFFFFFFFF {
+		value^ = 1
+		return true
+	}
+	value^ += 1
+	return false
+}
+
+// style_generations_advance bumps only the dependencies changed on this node.
+// It returns true only on counter wrap so callers can invalidate any cache
+// whose old snapshot might otherwise collide with the wrapped value.
+style_generations_advance :: proc(generations: ^Style_Generations, domains: Style_Domains) -> (wrapped: bool) {
+	if generations == nil { return }
+	for domain in Style_Domain {
+		if domain not_in domains { continue }
+		switch domain {
+		case .Metrics: wrapped = style_generation_advance(&generations.metrics) || wrapped
+		case .Typography: wrapped = style_generation_advance(&generations.typography) || wrapped
+		case .Paint: wrapped = style_generation_advance(&generations.paint) || wrapped
+		case .Material: wrapped = style_generation_advance(&generations.material) || wrapped
+		}
+	}
+	return
+}
+
+style_generations_snapshot :: proc(generations: Style_Generations, domains: Style_Domains) -> Style_Generations {
+	snapshot: Style_Generations
+	for domain in Style_Domain {
+		if domain not_in domains { continue }
+		value := style_generation_value(generations, domain)
+		switch domain {
+		case .Metrics: snapshot.metrics = value
+		case .Typography: snapshot.typography = value
+		case .Paint: snapshot.paint = value
+		case .Material: snapshot.material = value
+		}
+	}
+	return snapshot
+}
+
+style_generations_match :: proc(current, resolved: Style_Generations, domains: Style_Domains) -> bool {
+	for domain in Style_Domain {
+		if domain in domains && style_generation_value(current, domain) != style_generation_value(resolved, domain) {
+			return false
+		}
+	}
+	return true
+}
+
+style_theme_color_token :: proc(rt: ^Runtime, theme: Style_Theme_ID, role: Style_Color_Role) -> Style_Color_Token_ID {
+	if rt == nil || !style_color_role_is_valid(role) { return 0 }
+	theme_index := u64(u32(theme))
+	if theme_index == 0 || theme_index > u64(len(rt.style_themes)) { return 0 }
+	return rt.style_themes[theme_index-1].core_color_tokens[int(role)]
+}
+
 style_color_is_valid :: proc(color: Color) -> bool {
 	return color.r == color.r && color.g == color.g && color.b == color.b && color.a == color.a &&
 	       color.r >= 0 && color.r <= 1 && color.g >= 0 && color.g <= 1 &&
@@ -67,6 +134,8 @@ style_theme_is_valid :: proc(theme: Style_Theme) -> bool {
 	for recipe in theme.button_recipes.recipes {
 		if !style_button_recipe_is_valid(recipe) { return false }
 	}
+	if !style_text_field_recipe_is_valid(theme.text_field_recipe) { return false }
+	if !style_scrollbar_recipe_is_valid(theme.scrollbar_recipe) { return false }
 	return true
 }
 

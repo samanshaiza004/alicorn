@@ -179,17 +179,21 @@ append_focus_outline :: proc(node: ^Node, color: Color, thickness: f32) {
 
 append_scrollbar_display :: proc(rt: ^Runtime, node: ^Node) {
 	if node.kind != .Scroll_Region { return }
+	resolved_style := style_scrollbar_resolve(rt, node.style_environment, style_scrollbar_recipe(rt, node.style_environment), Scrollbar_Visual_State{
+		hovered=node.hovered,
+		pressed=rt.scrollbar_drag_node == node.id,
+	})
 	if node.scrollbar_vertical_visible {
-		append(&rt.display, paint_surface_command(node.id, node.scrollbar_vertical_track, node.clip, style_environment_color(rt, node.style_environment, .Scrollbar_Track)))
-		append(&rt.display, paint_surface_command(node.id, node.scrollbar_vertical_thumb, node.clip, style_environment_color(rt, node.style_environment, .Scrollbar_Thumb)))
+		append(&rt.display, paint_surface_command(node.id, node.scrollbar_vertical_track, node.clip, resolved_style.track))
+		append(&rt.display, paint_surface_command(node.id, node.scrollbar_vertical_thumb, node.clip, resolved_style.thumb))
 	}
 	if node.scrollbar_horizontal_visible {
-		append(&rt.display, paint_surface_command(node.id, node.scrollbar_horizontal_track, node.clip, style_environment_color(rt, node.style_environment, .Scrollbar_Track)))
-		append(&rt.display, paint_surface_command(node.id, node.scrollbar_horizontal_thumb, node.clip, style_environment_color(rt, node.style_environment, .Scrollbar_Thumb)))
+		append(&rt.display, paint_surface_command(node.id, node.scrollbar_horizontal_track, node.clip, resolved_style.track))
+		append(&rt.display, paint_surface_command(node.id, node.scrollbar_horizontal_thumb, node.clip, resolved_style.thumb))
 	}
 	if node.scrollbar_vertical_visible && node.scrollbar_horizontal_visible {
 		corner := Rect{node.scrollbar_vertical_track.x, node.scrollbar_horizontal_track.y, node.scrollbar_vertical_track.w, node.scrollbar_horizontal_track.h}
-		append(&rt.display, paint_surface_command(node.id, corner, node.clip, style_environment_color(rt, node.style_environment, .Surface)))
+		append(&rt.display, paint_surface_command(node.id, corner, node.clip, resolved_style.corner))
 	}
 }
 
@@ -252,10 +256,20 @@ update_paint :: proc(rt: ^Runtime) {
 		rt.stats.paint_nodes_visited += 1
 		rt.stats.stage_visits[.Paint] += 1
 		if dirty_has(node.dirty, .Paint) || len(node.paint) == 0 {
+			field_style := Text_Field_Resolved_Style{}
+			if node.kind == .Text_Field {
+				field_style = style_text_field_resolve(rt, node.style_environment, style_text_field_recipe(rt, node.style_environment), Text_Field_Visual_State{
+					hovered=node.hovered,
+					focused=rt.focused == node.id,
+				})
+			}
 			if node.kind == .Text_Field && node.composition.active {
 				prepare_text_composition_node(rt, node)
 			}
 			clear(&node.paint)
+			if node.kind == .Text_Field {
+				append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, field_style.surface))
+			}
 			if node.kind == .Text_Field && node.text_run_valid {
 				if !node.composition.active {
 					selection := text_run_selection_rects(
@@ -269,7 +283,7 @@ update_paint :: proc(rt: ^Runtime) {
 						bounds := selected.rect
 						bounds.x += node.bounds.x
 						bounds.y += node.bounds.y
-						append(&node.paint, paint_surface_command(node.id, bounds, node.clip, style_environment_color(rt, node.style_environment, .Selection)))
+						append(&node.paint, paint_surface_command(node.id, bounds, node.clip, field_style.selection))
 					}
 					delete(selection)
 				} else if node.composition_run_valid {
@@ -300,7 +314,20 @@ update_paint :: proc(rt: ^Runtime) {
 				// Layout containers are non-painting unless the caller explicitly
 				// supplied a background. This keeps structural wrappers from
 				// producing accidental rectangles in the compositor.
-				if node.paint_background {
+				if semantic_surface_style, found := rt.semantic_surfaces[node.id]; found {
+					if color, role_ok := semantic_surface_role_resolve(rt, node.style_environment, semantic_surface_style.role); role_ok {
+						append(&node.paint, paint_surface_command(
+							node.id,
+							node.bounds,
+							node.clip,
+							color,
+							shape=semantic_surface_style.shape,
+							material=semantic_surface_style.material,
+							physical_height=semantic_surface_style.physical_height,
+							material_group=semantic_surface_style.material_group,
+						))
+					}
+				} else if node.paint_background {
 					append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, node.color))
 				}
 				append_visual_row_background(rt, node)
@@ -484,7 +511,11 @@ update_paint :: proc(rt: ^Runtime) {
 				if node.kind == .Text_Field && node.composition.active && node.composition_run_valid {
 					text_run_handle = paint_text_handle_for_composition(node)
 				}
-				append(&node.paint, paint_text_command(node.id, node.bounds, text_clip, text_run_handle, node.color, node.text_paint_spans[:]))
+				text_color := node.color
+				if node.kind == .Text_Field {
+					text_color = field_style.text
+				}
+				append(&node.paint, paint_text_command(node.id, node.bounds, text_clip, text_run_handle, text_color, node.text_paint_spans[:]))
 				append_text_paint_geometry(node, &paint_geometry, text_clip, false)
 				text_paint_geometry_destroy(&paint_geometry)
 			}
@@ -504,8 +535,12 @@ update_paint :: proc(rt: ^Runtime) {
 					bounds := caret.rect
 					bounds.x += node.bounds.x
 					bounds.y += node.bounds.y
-					append(&node.paint, paint_surface_command(node.id, bounds, node.clip, style_environment_color(rt, node.style_environment, .Accent)))
+					append(&node.paint, paint_surface_command(node.id, bounds, node.clip, field_style.caret))
 				}
+			}
+			if node.kind == .Text_Field {
+				append_rect_outline(node, field_style.border, 1)
+				if field_style.focused { append_focus_outline(node, field_style.focus, 1.5) }
 			}
 			if node.drop_position == .On {
 				append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, style_environment_color(rt, node.style_environment, .Success)))

@@ -261,6 +261,64 @@ test_inspector_loaded_monospace_lines_reach_their_final_glyph :: proc(t: ^testin
 	}
 }
 
+@(test)
+test_inspector_reports_uncached_control_recipe_provenance :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 480, 240})
+	defer destroy_runtime(&rt)
+	theme := DEFAULT_STYLE_THEME
+	theme.text_field_recipe.surface_role = .Editor_Background
+	theme.text_field_recipe.hovered.surface_role = .Accent
+	theme.scrollbar_recipe.hovered_thumb.role = .Accent_Hover
+	theme.scrollbar_recipe.pressed_thumb.role = .Accent_Pressed
+	theme_id := style_theme_register(&rt, theme)
+	testing.expect(t, theme_id != 0, "control provenance fixture theme should register")
+
+	ui, build := begin_frame(&rt)
+	if !build { testing.expect(t, false, "control provenance fixture should build"); return }
+	container_begin(&ui, .Root, key=key_string("control-provenance-root"), style=layout_style())
+	scope := style_environment_push(&ui, Style_Environment{theme=theme_id})
+	field := text_field(&ui, "query", key=key_string("provenance-field"), style=layout_style(width=180, height=32))
+	scroll := scroll_region_begin(
+		&ui,
+		key=key_string("provenance-scroll"),
+		viewport_height=64,
+		content_height=160,
+		style=layout_style(.Column, width=180, height=64),
+		axes=.Vertical,
+		label="provenance-scroll",
+	)
+	scroll_region_end(&ui)
+	style_environment_pop(&ui, scope)
+	container_end(&ui)
+	end_frame(&ui)
+
+	_ = focus(&rt, field)
+	field_node := rt.nodes[field]
+	field_node.hovered = true
+	rt.nodes[field] = field_node
+	scroll_node := rt.nodes[scroll.id]
+	scroll_node.hovered = true
+	rt.nodes[scroll.id] = scroll_node
+	rt.scrollbar_drag_node = scroll.id
+
+	inspection := inspect(&rt)
+	defer delete(inspection)
+	testing.expect(t, strings.contains(inspection,
+		"text field style: recipe=text_field.default resolution=resolve-on-paint retained-cache=no state=(hovered=true focused=true) dependencies=paint generations=(paint=") &&
+		strings.contains(inspection, "token provenance: text_field.default") &&
+		strings.contains(inspection, "surface.base=Editor_Background") &&
+		strings.contains(inspection, "surface.hovered=Accent"),
+		"inspector should explain text-field state and the semantic roles used by its uncached paint resolver")
+	testing.expect(t, strings.contains(inspection,
+		"scrollbar style: recipe=scrollbar.default resolution=resolve-on-composition retained-cache=no state=(hovered=true pressed=true) dependencies=paint generations=(paint=") &&
+		strings.contains(inspection, "token provenance: scrollbar.default") &&
+		strings.contains(inspection, "thumb.hovered=Accent_Hover") &&
+		strings.contains(inspection, "thumb.pressed=Accent_Pressed"),
+		"inspector should explain scrollbar interaction state and applied thumb roles")
+	testing.expect(t, !rt.nodes[field].computed_style.valid && !rt.nodes[scroll.id].computed_style.valid,
+		"the inspector should describe these direct-resolve paths without implying a retained Computed_Style cache")
+}
+
 inspector_test_lines_build :: proc(panel: ^Runtime,lines: []string) {
 	invalidate_root(panel,"inspector line fixture rebuild")
 	ui,build := begin_frame(panel)

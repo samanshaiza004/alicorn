@@ -138,9 +138,12 @@ runtime; do not reuse IDs across runtimes.
 
 The separate [`theme` compiler contract](themes.md) compiles typed color and
 logical-length tokens, aliases, core roles, and namespaced extension roles.
-This is not a general selector/cascade system: arbitrary style properties, a
-shared `Computed_Style`, and material/shape rendering remain outside the
-current contract. Button recipes are the first component recipe family.
+This is not a general selector/cascade system. Button, Text Field, and
+Scrollbar recipes currently describe semantic color treatment; only Button
+has a retained `Computed_Style` cache. Rectangular semantic surfaces can use
+registered flat or analytic-relief materials. General property resolution,
+metric-token dependencies, and richer native surface shapes remain outside the
+current contract.
 
 ### Button variants and recipes
 

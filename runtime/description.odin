@@ -157,7 +157,7 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 		scroll_content_width=scroll_content_width, scroll_viewport_width=scroll_viewport_width, scroll_line_width=scroll_line_width,
 		scroll_axes=scroll_axes, scroll_axis_behavior=scroll_axis_behavior,
 	}
-	append(&rt.pending, Pending_Item{.Description, description, 0})
+	append(&rt.pending, Pending_Item{.Description, description, 0, {}})
 	rt.stats.descriptions_emitted += 1
 	rt.stats.stage_visits[.Description] += 1
 	return id
@@ -228,7 +228,7 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 		scroll_content_width=scroll_content_width, scroll_viewport_width=scroll_viewport_width, scroll_line_width=scroll_line_width,
 		scroll_axes=scroll_axes, scroll_axis_behavior=scroll_axis_behavior,
 	}
-	append(&rt.pending, Pending_Item{.Description, description, 0})
+	append(&rt.pending, Pending_Item{.Description, description, 0, {}})
 	rt.stats.descriptions_emitted += 1
 	rt.stats.stage_visits[.Description] += 1
 	return id

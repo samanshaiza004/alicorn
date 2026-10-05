@@ -33,6 +33,11 @@ mkdir -p "$OUT_DIR"
 "$ODIN" build tools/theme "-out:$OUT_DIR/alicorn_theme"
 "$OUT_DIR/alicorn_theme" check theme/testdata/minimal.json
 "$OUT_DIR/alicorn_theme" check theme/testdata/extends_base.json
+mkdir -p "$OUT_DIR/theme_codegen_smoke"
+"$OUT_DIR/alicorn_theme" compile theme/testdata/minimal.json \
+    --output "$OUT_DIR/theme_codegen_smoke/generated.odin" \
+    --symbol TEST_THEME --runtime-import ../../runtime
+"$ODIN" check "$OUT_DIR/theme_codegen_smoke" -no-entry-point
 "$OUT_DIR/alicorn_theme" explain theme/testdata/minimal.json color.primary
 if "$OUT_DIR/alicorn_theme" check theme/testdata/invalid.json; then
     echo 'theme CLI accepted an unsupported length unit' >&2

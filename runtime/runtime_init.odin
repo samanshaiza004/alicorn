@@ -41,6 +41,7 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 	}
 	rt.scratch_allocator = runtime_allocator(rt.scratch_allocator_state)
 	rt.nodes = make(map[Node_ID]^Node, allocator=rt.persistent_allocator)
+	rt.semantic_surfaces = make(map[Node_ID]Semantic_Surface_Style, allocator=rt.persistent_allocator)
 	rt.order = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.top_level = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.pending = make([dynamic]Pending_Item, 0, allocator=rt.persistent_allocator)
@@ -55,6 +56,7 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 	rt.identity_key_pair = make([dynamic]UI_Key_Pair, 0, allocator=rt.persistent_allocator)
 	rt.style_themes = make([dynamic]Style_Theme, 0, allocator=rt.persistent_allocator)
 	append(&rt.style_themes, DEFAULT_STYLE_THEME)
+	rt.style_materials = make([dynamic]Style_Material, 0, allocator=rt.persistent_allocator)
 	rt.style_scope_stack = make([dynamic]Style_Environment_Scope, 0, allocator=rt.persistent_allocator)
 	rt.layout_roots = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.paint_queue = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)

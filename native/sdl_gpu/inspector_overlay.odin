@@ -63,7 +63,7 @@ native_inspector_init :: proc(
 	text_ok, solid_ok: bool
 	overlay.text_renderer, text_ok = native_text_make(device, format, &overlay.runtime)
 	if !text_ok { return false }
-	overlay.solid_renderer, solid_ok = native_solid_make(device, format)
+	overlay.solid_renderer, solid_ok = native_solid_make(device, format, &overlay.runtime)
 	if !solid_ok { return false }
 	overlay.gpu_ready = true
 	return true

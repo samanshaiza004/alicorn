@@ -33,6 +33,11 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & .\out\alicorn_theme.exe check theme\testdata\extends_base.json
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+New-Item -ItemType Directory -Force -Path 'out\theme_codegen_smoke' | Out-Null
+& .\out\alicorn_theme.exe compile theme\testdata\minimal.json --output out\theme_codegen_smoke\generated.odin --symbol TEST_THEME --runtime-import ../../runtime
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Odin check out\theme_codegen_smoke -no-entry-point
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & .\out\alicorn_theme.exe explain theme\testdata\minimal.json color.primary
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & .\out\alicorn_theme.exe check theme\testdata\invalid.json

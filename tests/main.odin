@@ -1718,7 +1718,13 @@ test_generic_text_input_target :: proc(state: ^Test_State) {
 test_interaction_paint_invalidation :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 200})
 	id := render_text_field(&rt, "caret")
-	expect(state, len(rt.nodes[id].paint) == 1, "unfocused text field starts with only its text command")
+	text_commands, surface_commands: i32
+	for command in rt.nodes[id].paint {
+		if alicorn.paint_command_is_text(command) { text_commands += 1 }
+		if alicorn.paint_command_is_surface(command) { surface_commands += 1 }
+	}
+	expect(state, text_commands == 1 && surface_commands == 5,
+		"unfocused text field paints its text, inset surface, and four border edges")
 	paint_before_focus := rt.stats.paint_updates
 	expect(state, alicorn.focus(&rt, id), "text field must accept focus")
 	ui, build := alicorn.begin_frame(&rt)

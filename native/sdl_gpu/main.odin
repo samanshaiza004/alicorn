@@ -99,7 +99,7 @@ Run :: proc(application: Application, smoke := false) {
 	surface_renderer, surface_ok := native_surface_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
 	if !surface_ok { fail("application GPU surface pipeline initialization failed") }
 	defer native_surface_destroy(&surface_renderer)
-	solid_renderer, solid_ok := native_solid_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window))
+	solid_renderer, solid_ok := native_solid_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
 	if !solid_ok { fail("application solid rectangle pipeline initialization failed") }
 	defer native_solid_destroy(&solid_renderer)
 	// Metal/text/surface setup can briefly return focus to the launching

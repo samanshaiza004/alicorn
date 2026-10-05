@@ -2,6 +2,7 @@ package main
 
 import "core:fmt"
 import "core:os"
+import "core:strings"
 import theme "../../theme"
 
 main :: proc() {
@@ -31,6 +32,58 @@ main :: proc() {
 		} else {
 			status = theme_cli_run(args[2], args[3])
 		}
+	case "compile":
+		if len(args) < 7 {
+			fmt.eprintln("theme compile expects a source, --output path, and --symbol name")
+			theme_cli_usage(os.stderr)
+			status = 2
+		} else {
+			output_path, symbol := "", ""
+			package_name, runtime_import := "main", "alicorn:runtime"
+			output_seen, symbol_seen, package_seen, runtime_import_seen := false, false, false, false
+			option_error := false
+			index := 3
+			for index < len(args) {
+				option := args[index]
+				if index+1 >= len(args) {
+					fmt.eprintfln("missing value for {:s}", option)
+					option_error = true
+					break
+				}
+				value := args[index+1]
+				switch option {
+				case "--output":
+					if output_seen { fmt.eprintln("--output may only be specified once"); option_error = true; break }
+					output_path, output_seen = value, true
+				case "--symbol":
+					if symbol_seen { fmt.eprintln("--symbol may only be specified once"); option_error = true; break }
+					symbol, symbol_seen = value, true
+				case "--package":
+					if package_seen { fmt.eprintln("--package may only be specified once"); option_error = true; break }
+					package_name = value
+					package_seen = true
+				case "--runtime-import":
+					if runtime_import_seen { fmt.eprintln("--runtime-import may only be specified once"); option_error = true; break }
+					runtime_import = value
+					runtime_import_seen = true
+				case:
+					fmt.eprintfln("unknown theme compile option: {:s}", option)
+					option_error = true
+				}
+				if option_error { break }
+				index += 2
+			}
+			if !output_seen || !symbol_seen {
+				fmt.eprintln("theme compile requires --output and --symbol")
+				option_error = true
+			}
+			if option_error {
+				theme_cli_usage(os.stderr)
+				status = 2
+			} else {
+				status = theme_cli_compile(args[2], output_path, symbol, package_name, runtime_import)
+			}
+		}
 	case:
 		fmt.eprintfln("unknown theme command: {}", args[1])
 		theme_cli_usage(os.stderr)
@@ -43,25 +96,55 @@ main :: proc() {
 }
 
 theme_cli_usage :: proc(output: ^os.File) {
-	fmt.fprintln(output, "Alicorn theme source checker")
+	fmt.fprintln(output, "Alicorn theme compiler and source tools")
 	fmt.fprintln(output, "")
 	fmt.fprintln(output, "Usage:")
 	fmt.fprintln(output, "  theme check <file>                 Validate strict theme JSON")
 	fmt.fprintln(output, "  theme explain <file> <token-name>  Show a token value and provenance")
+	fmt.fprintln(output, "  theme compile <file> --output <file> --symbol <name> [--package <name>] [--runtime-import <path>]")
 	fmt.fprintln(output, "  theme help                         Show this help")
 	fmt.fprintln(output, "")
 	fmt.fprintln(output, "Only schema/contract versions supported by this build are accepted.")
 	fmt.fprintln(output, "JSON color components are sRGB; explain reports converted linear-sRGB channels (alpha unchanged).")
 	fmt.fprintln(output, "Only extends = alicorn.base is supported; it uses typed built-in defaults and never loads a path.")
+	fmt.fprintln(output, "compile emits an Odin factory and matching destroy procedure; generated sources default to package main and import alicorn:runtime.")
 }
 
 // All file/parser/compiler/adapter allocations are released before returning.
 // The process argument storage is owned by core:os and lives for process life.
 theme_cli_run :: proc(path, token_name: string) -> int {
+	compiled, schema_version, includes_base, compiled_ok := theme_cli_compile_file(path)
+	if !compiled_ok { return 1 }
+	defer theme.theme_output_destroy(&compiled)
+
+	// Validate that the compiled source can be applied over Alicorn's typed
+	// built-in runtime defaults. The adapter performs no file lookup.
+	runtime_theme, adapter_ok := theme.theme_runtime_style_theme(compiled)
+	if !adapter_ok {
+		fmt.eprintfln("{:s}: error: compiled theme cannot be represented by the current Alicorn runtime style contract", path)
+		return 1
+	}
+	defer theme.theme_runtime_style_theme_destroy(&runtime_theme)
+
+	if token_name == "" {
+		fmt.printfln("valid theme: {}", path)
+		fmt.printfln("schema {}, contract {}.{}; {} color tokens, {} length tokens",
+			schema_version, compiled.theme.contract.major, compiled.theme.contract.minor,
+			len(compiled.theme.colors), len(compiled.theme.lengths))
+		if includes_base {
+			fmt.println("base: alicorn.base (typed built-in layer; no filesystem lookup)")
+		}
+		return 0
+	}
+
+	return theme_cli_explain(compiled, path, token_name)
+}
+
+theme_cli_compile_file :: proc(path: string) -> (output: theme.Theme_Compile_Output, schema_version: u32, includes_base, ok: bool) {
 	data, read_error := os.read_entire_file(path, context.allocator)
 	if read_error != nil {
 		fmt.eprintln("could not read theme file:", path, "error:", read_error)
-		return 1
+		return {}, 0, false, false
 	}
 	defer delete(data)
 
@@ -76,15 +159,13 @@ theme_cli_run :: proc(path, token_name: string) -> int {
 				diagnostic.span.line, diagnostic.span.column, diagnostic.message)
 		}
 	}
-	if !parsed.ok {
-		return 1
-	}
+	if !parsed.ok { return {}, 0, false, false }
 
 	if parsed.extends != "" && parsed.extends != "alicorn.base" {
 		span := parsed.source.metadata.span
 		fmt.eprintfln("{:s}:{:d}:{:d}: error: unsupported extends '{:s}'; only the built-in 'alicorn.base' source is supported (arbitrary paths are never loaded)",
 			span.path, span.line, span.column, parsed.extends)
-		return 1
+		return {}, 0, false, false
 	}
 
 	compiled, source_layers_ok := theme_cli_compile_source(parsed.source, parsed.extends == "alicorn.base")
@@ -92,9 +173,8 @@ theme_cli_run :: proc(path, token_name: string) -> int {
 		span := parsed.source.metadata.span
 		fmt.eprintfln("{:s}:{:d}:{:d}: error: Alicorn's built-in base source could not be constructed",
 			span.path, span.line, span.column)
-		return 1
+		return {}, 0, false, false
 	}
-	defer theme.theme_output_destroy(&compiled)
 	for diagnostic in compiled.diagnostics {
 		fmt.eprintf("{:s}:{:d}:{:d}: error: {:s}", diagnostic.path, diagnostic.span.line,
 			diagnostic.span.column, theme_cli_compile_diagnostic_message(diagnostic))
@@ -109,32 +189,75 @@ theme_cli_run :: proc(path, token_name: string) -> int {
 		fmt.eprintln("")
 	}
 	if !compiled.ok {
-		return 1
+		theme.theme_output_destroy(&compiled)
+		return {}, 0, false, false
+	}
+	return compiled, parsed.schema_version, parsed.extends == "alicorn.base", true
+}
+
+theme_cli_compile :: proc(input_path, output_path, symbol, package_name, runtime_import: string) -> int {
+	if !theme_cli_codegen_identifier_is_valid(symbol) {
+		fmt.eprintln("invalid Odin symbol name:", symbol)
+		return 2
+	}
+	if !theme_cli_codegen_identifier_is_valid(package_name) {
+		fmt.eprintln("invalid Odin package name:", package_name)
+		return 2
+	}
+	if !theme_cli_codegen_import_is_valid(runtime_import) {
+		fmt.eprintln("invalid Odin runtime import path:", runtime_import)
+		return 2
 	}
 
-	// Validate that the compiled source can be applied over Alicorn's typed
-	// built-in runtime defaults. The adapter performs no file lookup.
-	runtime_theme, adapter_ok := theme.theme_runtime_style_theme(compiled)
-	if !adapter_ok {
-		span := parsed.source.metadata.span
-		fmt.eprintln("{:s}:{:d}:{:d}: error: compiled theme cannot be represented by the current Alicorn runtime style contract",
-			span.path, span.line, span.column)
+	input_absolute, input_path_error := os.get_absolute_path(input_path, context.allocator)
+	if input_path_error != nil {
+		fmt.eprintln("could not resolve theme source path:", input_path, "error:", input_path_error)
+		return 1
+	}
+	defer delete(input_absolute)
+	output_absolute, output_path_error := os.get_absolute_path(output_path, context.allocator)
+	if output_path_error != nil {
+		fmt.eprintln("could not resolve output path:", output_path, "error:", output_path_error)
+		return 1
+	}
+	defer delete(output_absolute)
+	if strings.equal_fold(input_absolute, output_absolute) {
+		fmt.eprintln("theme source and generated output must be different files")
+		return 2
+	}
+	input_info, input_stat_error := os.stat(input_path, context.allocator)
+	if input_stat_error == nil { defer os.file_info_delete(input_info, context.allocator) }
+	output_info, output_stat_error := os.stat(output_path, context.allocator)
+	if output_stat_error == nil {
+		defer os.file_info_delete(output_info, context.allocator)
+		if input_stat_error == nil && os.same_file(input_info, output_info) {
+			fmt.eprintln("theme source and generated output must be different files")
+			return 2
+		}
+	}
+
+	compiled, _, _, compiled_ok := theme_cli_compile_file(input_path)
+	if !compiled_ok { return 1 }
+	defer theme.theme_output_destroy(&compiled)
+	runtime_theme, adapted := theme.theme_runtime_style_theme(compiled)
+	if !adapted {
+		fmt.eprintln("compiled theme cannot be represented by the current Alicorn runtime style contract")
 		return 1
 	}
 	defer theme.theme_runtime_style_theme_destroy(&runtime_theme)
 
-	if token_name == "" {
-		fmt.printfln("valid theme: {}", path)
-		fmt.printfln("schema {}, contract {}.{}; {} color tokens, {} length tokens",
-			parsed.schema_version, compiled.theme.contract.major, compiled.theme.contract.minor,
-			len(compiled.theme.colors), len(compiled.theme.lengths))
-		if parsed.extends == "alicorn.base" {
-			fmt.println("base: alicorn.base (typed built-in layer; no filesystem lookup)")
-		}
-		return 0
+	generated, generated_ok := theme_cli_codegen_odin(runtime_theme, symbol, package_name, runtime_import)
+	if !generated_ok {
+		fmt.eprintln("could not generate valid Odin theme source")
+		return 1
 	}
-
-	return theme_cli_explain(compiled, path, token_name)
+	defer delete(generated)
+	if write_error := os.write_entire_file_from_string(output_path, generated); write_error != nil {
+		fmt.eprintln("could not write generated theme source:", output_path, "error:", write_error)
+		return 1
+	}
+	fmt.printfln("compiled theme source {} -> {} ({})", input_path, output_path, symbol)
+	return 0
 }
 
 theme_cli_compile_source :: proc(source: theme.Theme_Source_Model, include_base: bool) -> (theme.Theme_Compile_Output, bool) {

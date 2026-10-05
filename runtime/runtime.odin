@@ -474,6 +474,28 @@ Button_Resolved_Style :: struct {
 	applied_transforms:      Style_Button_States,
 }
 
+// Style_Provenance retains semantic inputs, not duplicated theme data. Token
+// IDs and role-to-value mapping are derived from the immutable theme while an
+// inspector query is formatted. Alias names/spans remain compiler debug data.
+Style_Provenance :: struct {
+	theme:          Style_Theme_ID,
+	accent:         Style_Accent,
+	variant:        u8,
+	state_bits:     u8,
+	drop_target_on: bool,
+}
+
+// Computed_Style retains the resolved recipe result, its domain dependencies,
+// and the dependency generations/provenance that produced it. The first
+// recipe-family payload is the button style; cache metadata is shared.
+Computed_Style :: struct {
+	button:       Button_Resolved_Style,
+	dependencies: Style_Domains,
+	generations:  Style_Generations,
+	provenance:   Style_Provenance,
+	valid:        bool,
+}
+
 DEFAULT_BUTTON_RECIPES :: Button_Recipe_Set{recipes={
 	Button_Recipe{
 		defined=true, surface_role=.Subtle_Surface, text_role=.Text, surface_visible=true,
@@ -528,6 +550,8 @@ DEFAULT_BUTTON_RECIPES :: Button_Recipe_Set{recipes={
 Style_Theme :: struct {
 	colors:                 [STYLE_COLOR_ROLE_COUNT]Color,
 	button_recipes:         Button_Recipe_Set,
+	text_field_recipe:      Text_Field_Recipe,
+	scrollbar_recipe:       Scrollbar_Recipe,
 	color_tokens:           []Color,
 	length_tokens:          []Style_Length,
 	core_color_tokens:      [STYLE_COLOR_ROLE_COUNT]Style_Color_Token_ID,
@@ -554,7 +578,7 @@ DEFAULT_STYLE_THEME :: Style_Theme{colors={
 	Color{0.17, 0.39, 0.34, 1},
 	Color{0.08, 0.10, 0.14, 1},
 	Color{0.38, 0.48, 0.62, 1},
-}, button_recipes=DEFAULT_BUTTON_RECIPES}
+}, button_recipes=DEFAULT_BUTTON_RECIPES, text_field_recipe=DEFAULT_TEXT_FIELD_RECIPE, scrollbar_recipe=DEFAULT_SCROLLBAR_RECIPE}
 
 DEFAULT_STYLE_THEME_ID :: Style_Theme_ID(1)
 
@@ -589,6 +613,17 @@ Style_Domain :: enum {
 }
 
 Style_Domains :: distinct bit_set[Style_Domain; u8]
+
+// Generations are local to a retained node. A scope change advances only the
+// nodes whose inherited environment changed, leaving sibling caches intact.
+// u32 keeps retained-node growth bounded; reconciliation invalidates a style
+// cache if a counter wraps before its generation can be reused.
+Style_Generations :: struct {
+	metrics:    u32,
+	typography: u32,
+	paint:      u32,
+	material:   u32,
+}
 
 // Text_Style controls typography and single-line overflow independently from
 // Layout_Style. Font weight is an OpenType `wght` user coordinate; 400 is the
@@ -790,6 +825,7 @@ Pending_Item :: struct {
 	kind:        Pending_Kind,
 	description: Description,
 	subtree:     Node_ID,
+	semantic_surface_style: Semantic_Surface_Style,
 }
 
 Node :: struct {
@@ -810,11 +846,10 @@ Node :: struct {
 	text_style:  Text_Style,
 	style_environment: Style_Environment,
 	style_scope_boundary: bool,
+	style_generations: Style_Generations,
 	button_content_style: Button_Content_Style,
 	button_variant: Button_Variant,
-	computed_button_style: Button_Resolved_Style,
-	computed_button_style_signature: Style_Resolution_Signature,
-	computed_button_style_valid: bool,
+	computed_style: Computed_Style,
 	style:       Layout_Style,
 	context_menu_bounds: Rect,
 	color:       Color,
@@ -1121,6 +1156,7 @@ Runtime :: struct {
 	persistent_allocator_state: ^Runtime_Allocator_State,
 	scratch_allocator_state:    ^Runtime_Allocator_State,
 	nodes:       map[Node_ID]^Node,
+	semantic_surfaces: map[Node_ID]Semantic_Surface_Style,
 	order:       [dynamic]Node_ID,
 	top_level:   [dynamic]Node_ID,
 	pending:     [dynamic]Pending_Item,
@@ -1136,6 +1172,7 @@ Runtime :: struct {
 	viewport:    Rect,
 	style_environment: Style_Environment,
 	style_themes: [dynamic]Style_Theme,
+	style_materials: [dynamic]Style_Material,
 	style_scope_stack: [dynamic]Style_Environment_Scope,
 	layout_roots: [dynamic]Node_ID,
 	layout_visit_probe: map[Node_ID]u64,

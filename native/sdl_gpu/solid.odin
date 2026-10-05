@@ -17,6 +17,7 @@ Native_Solid_Draw :: struct {
 
 Native_Solid_Renderer :: struct {
 	device:          ^sdl3.GPUDevice,
+	runtime:         ^alicorn.Runtime,
 	pipeline:        ^sdl3.GPUGraphicsPipeline,
 	sampler:         ^sdl3.GPUSampler,
 	white_texture:   ^sdl3.GPUTexture,
@@ -31,8 +32,9 @@ Native_Solid_Renderer :: struct {
 	vertices_uploaded: u64,
 }
 
-native_solid_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTextureFormat) -> (renderer: Native_Solid_Renderer, ok: bool) {
+native_solid_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTextureFormat, runtime: ^alicorn.Runtime) -> (renderer: Native_Solid_Renderer, ok: bool) {
 	renderer.device = device
+	renderer.runtime = runtime
 	renderer.vertex_capacity = NATIVE_SOLID_INITIAL_VERTICES
 	renderer.vertices = make([dynamic]Native_Text_Vertex, 0, 4096)
 	renderer.draws = make([dynamic]Native_Solid_Draw, 0, 1024)
@@ -176,6 +178,19 @@ native_solid_pixel_bounds :: proc(
 	return
 }
 
+native_solid_material_for_command :: proc(rt: ^alicorn.Runtime, command: alicorn.Paint_Command) -> (material: alicorn.Style_Material, surface: alicorn.Surface_Paint, valid: bool) {
+	surface, valid = command.payload.(alicorn.Surface_Paint)
+	if !valid { return }
+	material, valid = alicorn.style_material_resolve(rt, surface.material)
+	if !valid {
+		// An invalid handle falls back to the canonical flat treatment. The
+		// renderer never dereferences an unknown material ID.
+		material = alicorn.STYLE_MATERIAL_FLAT
+		valid = true
+	}
+	return material, surface, valid
+}
+
 native_solid_build :: proc(
 	renderer: ^Native_Solid_Renderer,
 	display: []alicorn.Paint_Command,
@@ -184,13 +199,17 @@ native_solid_build :: proc(
 ) -> bool {
 	clear(&renderer.vertices)
 	clear(&renderer.draws)
-	visible_rect_count := 0
+	required_vertices := 0
 	for draw in display {
 		if !alicorn.paint_command_is_surface(draw) { continue }
+		_, surface, valid := native_solid_material_for_command(renderer.runtime, draw)
+		if !valid { continue }
 		_, _, _, _, visible := native_solid_pixel_bounds(draw, scale_x, scale_y, target_w, target_h)
-		if visible { visible_rect_count += 1 }
+		if visible {
+			material, _, _ := native_solid_material_for_command(renderer.runtime, draw)
+			required_vertices += native_solid_material_vertex_count(material, surface.physical_height)
+		}
 	}
-	required_vertices := visible_rect_count * 6
 	if required_vertices > cap(renderer.vertices) {
 		reserve(&renderer.vertices, required_vertices)
 	}
@@ -201,15 +220,29 @@ native_solid_build :: proc(
 		if !alicorn.paint_command_is_surface(draw) { continue }
 		x0, y0, x1, y1, visible := native_solid_pixel_bounds(draw, scale_x, scale_y, target_w, target_h)
 		if !visible { continue }
-		if len(renderer.vertices) + 6 > renderer.vertex_capacity && !native_solid_ensure_vertex_capacity(renderer, len(renderer.vertices) + 6) {
+		material, surface, valid := native_solid_material_for_command(renderer.runtime, draw)
+		if !valid { continue }
+		needed := native_solid_material_vertex_count(material, surface.physical_height)
+		if len(renderer.vertices) + needed > renderer.vertex_capacity && !native_solid_ensure_vertex_capacity(renderer, len(renderer.vertices) + needed) {
 			return false
 		}
 		first := sdl3.Uint32(len(renderer.vertices))
-		surface, surface_ok := draw.payload.(alicorn.Surface_Paint)
-		if !surface_ok { continue }
-		color := [4]f32{surface.fill.r, surface.fill.g, surface.fill.b, surface.fill.a*draw.opacity}
-		native_solid_append_quad(&renderer.vertices, f32(x0), f32(y0), f32(x1), f32(y1), color)
-		renderer.draws[i] = Native_Solid_Draw{first, 6}
+		base := alicorn.Rect{f32(x0), f32(y0), f32(x1-x0), f32(y1-y0)}
+		shadow := base
+		if material.kind == .Analytic_Relief && surface.physical_height > 0 && material.outer_shadow_radius > 0 && material.outer_shadow_strength > 0 {
+			expand := material.outer_shadow_radius * max(scale_x, scale_y)
+			shadow_command := draw
+			shadow_command.bounds = alicorn.Rect{
+				draw.bounds.x-expand,
+				draw.bounds.y-expand,
+				draw.bounds.w+expand*2,
+				draw.bounds.h+expand*2,
+			}
+			sx0, sy0, sx1, sy1, shadow_visible := native_solid_pixel_bounds(shadow_command, scale_x, scale_y, target_w, target_h)
+			if shadow_visible { shadow = alicorn.Rect{f32(sx0), f32(sy0), f32(sx1-sx0), f32(sy1-sy0)} }
+		}
+		native_solid_append_material_surface(&renderer.vertices, base, shadow, surface.fill, material, surface.physical_height, draw.opacity)
+		renderer.draws[i] = Native_Solid_Draw{first, sdl3.Uint32(len(renderer.vertices)-int(first))}
 	}
 	renderer.upload_pending = len(renderer.vertices) > 0
 	return true

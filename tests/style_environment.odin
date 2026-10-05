@@ -45,6 +45,8 @@ test_style_environment_local_typography_invalidation :: proc(state: ^Test_State)
 	base_editor_text_layout := rt.layout_visit_probe[editor_text]
 	base_sidebar_layout := rt.layout_visit_probe[sidebar]
 	base_sidebar_text_layout := rt.layout_visit_probe[sidebar_text]
+	base_editor_generations := rt.nodes[editor_text].style_generations
+	base_sidebar_generations := rt.nodes[sidebar_text].style_generations
 	base_layout_visits := rt.stats.layout_nodes_visited
 	base_size := rt.nodes[editor_text].text_run.size
 	base_height := rt.nodes[editor_text].text_run.height
@@ -62,6 +64,11 @@ test_style_environment_local_typography_invalidation :: proc(state: ^Test_State)
 	expect(state, rt.layout_visit_probe[editor] > base_editor_layout && rt.layout_visit_probe[editor_text] > base_editor_text_layout, "editor text scale change must visit editor layout")
 	expect(state, rt.stats.layout_nodes_visited > base_layout_visits, "style change must perform measurable retained layout work")
 	expect(state, rt.layout_visit_probe[sidebar] == base_sidebar_layout && rt.layout_visit_probe[sidebar_text] == base_sidebar_text_layout, "editor-only typography change must not visit sidebar layout")
+	expect(state, editor_text_node.style_generations.metrics > base_editor_generations.metrics &&
+		editor_text_node.style_generations.typography > base_editor_generations.typography,
+		"local text scale changes must advance only the affected node's metric and typography dependencies")
+	expect(state, sidebar_text_node.style_generations == base_sidebar_generations,
+		"an unaffected sibling must retain all style generations")
 	expect(state, sidebar_text_node.text_run_generation == base_sidebar_run, "editor-only typography change must not reshape sidebar text")
 	idle_stats := rt.stats
 	_, should_build := alicorn.begin_frame(&rt)
@@ -92,6 +99,10 @@ test_style_environment_domains_and_density :: proc(state: ^Test_State) {
 	domains = alicorn.style_environment_changed_domains(previous, accent)
 	expect(state, alicorn.Style_Domain.Paint in domains && alicorn.Style_Domain.Metrics not_in domains,
 		"accent changes must invalidate paint only")
+	material_stages := alicorn.style_domain_dirty_stages(.Material)
+	expect(state, alicorn.Dirty_Stage.Paint in material_stages && alicorn.Dirty_Stage.Composite in material_stages &&
+		alicorn.Dirty_Stage.Layout not_in material_stages,
+		"material changes must repaint/recompose without visiting layout")
 
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 400, 220})
 	defer alicorn.destroy_runtime(&rt)
@@ -102,9 +113,14 @@ test_style_environment_domains_and_density :: proc(state: ^Test_State) {
 	initial_width := rt.nodes[editor_text].bounds.w
 	editor_visits := rt.layout_visit_probe[editor_text]
 	sidebar_visits := rt.layout_visit_probe[sidebar]
+	initial_metrics_generation := rt.nodes[editor_text].style_generations.metrics
+	initial_paint_generation := rt.nodes[editor_text].style_generations.paint
 	_, _, _, _ = render_style_environment_fixture(&rt, alicorn.Style_Environment{density=1.25})
 	expect(state, rt.nodes[editor_text].bounds.w > initial_width+1, "density must scale metrics explicitly requested through style_metric")
 	expect(state, rt.layout_visit_probe[editor_text] > editor_visits, "density change must relayout the styled subtree")
+	expect(state, rt.nodes[editor_text].style_generations.metrics > initial_metrics_generation &&
+		rt.nodes[editor_text].style_generations.paint == initial_paint_generation,
+		"density change must advance only the metric generation before downstream paint")
 	expect(state, rt.layout_visit_probe[sidebar] == sidebar_visits, "density change must not visit sibling layout")
 	expect(state, rt.nodes[sidebar_text].style_environment.density == 1, "density scope must not leak to siblings")
 	_ = editor
@@ -125,6 +141,8 @@ test_style_environment_theme_paint_locality :: proc(state: ^Test_State) {
 	editor, editor_text, sidebar, sidebar_text := render_style_environment_fixture(&rt, alicorn.Style_Environment{theme=alicorn.DEFAULT_STYLE_THEME_ID})
 	initial_layout_visits := rt.stats.layout_nodes_visited
 	initial_paint_visits := rt.stats.paint_nodes_visited
+	initial_editor_generations := rt.nodes[editor_text].style_generations
+	initial_sidebar_generations := rt.nodes[sidebar_text].style_generations
 	initial_editor_color := rt.nodes[editor_text].color
 	initial_sidebar_color := rt.nodes[sidebar_text].color
 	_, _, _, _ = render_style_environment_fixture(&rt, alicorn.Style_Environment{theme=theme_id})
@@ -135,6 +153,12 @@ test_style_environment_theme_paint_locality :: proc(state: ^Test_State) {
 	expect(state, updated_sidebar_color == initial_sidebar_color, "scoped theme must not change sibling text")
 	expect(state, rt.stats.layout_nodes_visited == initial_layout_visits, "paint-only theme change must not visit layout")
 	expect(state, rt.stats.paint_nodes_visited > initial_paint_visits, "theme change must repaint the styled subtree")
+	expect(state, rt.nodes[editor_text].style_generations.paint > initial_editor_generations.paint &&
+		rt.nodes[editor_text].style_generations.metrics == initial_editor_generations.metrics &&
+		rt.nodes[editor_text].style_generations.typography == initial_editor_generations.typography,
+		"a theme-only change must advance paint without advancing layout dependencies")
+	expect(state, rt.nodes[sidebar_text].style_generations == initial_sidebar_generations,
+		"a scoped theme change must not advance style generations in a sibling subtree")
 	_ = editor
 	_ = sidebar
 }

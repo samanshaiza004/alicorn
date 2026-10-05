@@ -17,9 +17,93 @@ describing a frame.
   theme. A token ID is only meaningful together with its immutable theme ID.
 - Extension-role IDs are typed, namespaced hashes. The compiler rejects a
   collision among roles of the same type instead of letting one binding win.
-- The runtime retains resolved button style per node with the theme and
-  environment signature that produced it. This is invalidation state, not a
-  global style memoization table.
+- The runtime retains a per-node button `Computed_Style` with explicit domain
+  dependencies and generation snapshots. Scope changes advance only affected
+  nodes; unchanged dependencies reuse their cached result. Compact semantic
+  recipe inputs let the inspector show role and theme-local token provenance
+  without retaining duplicate theme strings on every node.
+- Button is currently the only built-in recipe family with a retained
+  `Computed_Style` cache. Text Field and Scrollbar recipes resolve directly
+  during paint/composition; semantic surfaces resolve from their retained
+  description sidecar. The inspector labels these paths as uncached and derives
+  their current role/state provenance from the immutable theme and description.
+- Theme changes are Paint-only today because these recipes consume color roles
+  only. No theme length token currently drives layout metrics, typography, or
+  material selection. This is not a claim of token-level alias/source-span
+  provenance or metric-token invalidation; either needs explicit dependency
+  wiring before such tokens affect a control recipe.
+
+## Built-in control recipes
+
+The built-in recipe families describe semantic visual parts; layout and input
+geometry remain with their existing control APIs. `Button_Recipe_Set` supplies
+explicit button variants, `Text_Field_Recipe` supplies the field surface,
+text, border, selection, caret, and independent focus treatment, and
+`Scrollbar_Recipe` supplies the track, thumb, and corner. Hover/press color
+transforms compose in a fixed order and do not replace the separate focus
+overlay.
+
+Themes can override these recipes before registration:
+
+```odin
+theme := alicorn.DEFAULT_STYLE_THEME
+theme.text_field_recipe.focused_border_role = .Accent
+theme.scrollbar_recipe.thumb_role = .Muted_Text
+theme_id := alicorn.style_theme_register(&runtime, theme)
+```
+
+Recipes contain semantic color roles and state transforms, not padding,
+thickness, or scroll geometry. The current JSON token frontend compiles colors
+and lengths; it does not yet encode control recipes, so its runtime adapter
+inherits the built-in recipes unless the application overrides them in Odin.
+
+## Semantic surface composition
+
+Applications can wrap ordinary layout content in a semantic surface without
+calculating paint bounds or constructing renderer commands. A surface resolves
+either a core color role or an app/vendor extension role against the active
+theme scope, then paints its resolved container bounds and clip. This
+high-level helper currently accepts rectangular surfaces only. Rounded and
+other shapes remain in the lower-level paint contract but are rejected here
+until the native renderer can draw them. Registered material and optical
+height describe appearance only; optical height does not affect layout or
+ordering.
+
+```odin
+paper_role := alicorn.style_extension_color_role_id(
+  "app.scratchpad.editor",
+  "paper_surface",
+)
+paper_material := alicorn.style_material_register(&runtime, alicorn.Style_Material{
+  kind=.Analytic_Relief,
+  bevel_width=1,
+  bevel_strength=0.12,
+})
+
+scope := alicorn.style_environment_push(&ui, alicorn.Style_Environment{theme=paper_theme})
+alicorn.surface_begin(
+  &ui,
+  alicorn.surface_extension_color_role(paper_role),
+  key="editor-paper",
+  style=alicorn.layout_style(width=640, height=480, padding=12),
+  shape=alicorn.Surface_Shape{kind=.Rectangle},
+  material=paper_material,
+  physical_height=0.5,
+)
+alicorn.text(&ui, "content is laid out inside the resolved paper bounds")
+alicorn.surface_end(&ui)
+alicorn.style_environment_pop(&ui, scope)
+```
+
+Use `surface_core_color_role(.Surface)` for a built-in role or
+`surface_extension_color_role(role_id)` for a namespaced theme role. The
+extension role must be present in the active theme when the surface is
+described. Register materials during setup; runtime descriptions carry only
+the immutable `Material_ID`. Surface role changes advance the node's Paint
+generation; shape/material/height/group changes advance its Material
+generation, while the description/paint hashes schedule the actual redraw.
+Material registrations and registered themes are immutable, so a registry
+append cannot change an already-resolved surface.
 
 Complete document/theme ownership stays outside the runtime: parsing and
 compilation happen in the `theme` package, then
@@ -134,7 +218,31 @@ token values/alias chains:
 ```sh
 odin run tools/theme -- check path/to/theme.json
 odin run tools/theme -- explain path/to/theme.json text.primary
+odin run tools/theme -- compile path/to/theme.json --output generated_theme.odin --symbol APP_THEME
 ```
+
+`theme compile` validates and compiles the source through the same runtime
+adapter, then emits deterministic Odin source containing a factory procedure
+for an owned `Style_Theme`. The generated file is parser-free at application
+startup. Its matching `<symbol>_destroy` procedure releases the token and role
+binding slices after use; after `style_theme_register` copies the theme, call
+that destroy helper immediately. The generated package defaults to `main`
+and the runtime import defaults to `alicorn:runtime`. Use `--package` and
+`--runtime-import` when the consuming Odin package uses different names, for
+example:
+
+```sh
+odin run tools/theme -- compile themes/workbench.json \
+  --output generated/workbench_theme.odin \
+  --symbol WORKBENCH_THEME \
+  --package main \
+  --runtime-import alicorn:runtime
+```
+
+The factory accepts an optional allocator and returns owned slices. The
+generated source only captures what the current runtime adapter supports; it
+does not broaden the runtime style contract or add a theme file parser to the
+application.
 
 This is intentionally a narrow v0.2 foundation rather than a general cascade:
 there are no selectors, arbitrary properties, inheritance filesystem loader,

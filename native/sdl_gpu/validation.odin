@@ -315,7 +315,7 @@ RunFoundation :: proc() {
 		fail("GPU surface pipeline initialization failed")
 	}
 	defer native_surface_destroy(&surface_renderer)
-	solid_renderer, solid_ok := native_solid_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window))
+	solid_renderer, solid_ok := native_solid_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
 	if !solid_ok { fail("GPU solid rectangle pipeline initialization failed") }
 	defer native_solid_destroy(&solid_renderer)
 	// Establish a deterministic visual validation before the resize stress. The

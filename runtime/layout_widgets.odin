@@ -556,7 +556,7 @@ region_begin :: proc(ui: ^UI, key: string, revision: u64, source := Source_Site{
 		// The cached retained hierarchy is already authoritative. A marker is
 		// enough to keep the subtree present; descendants are not copied into a
 		// flat pending description list.
-		append(&rt.pending, Pending_Item{.Reuse_Subtree, Description{}, id})
+		append(&rt.pending, Pending_Item{.Reuse_Subtree, Description{}, id, {}})
 		record_trace(rt, .Reconcile, id, "retained subtree reused without descendant descriptions")
 		return id, true
 	}

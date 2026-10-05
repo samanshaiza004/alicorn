@@ -69,8 +69,25 @@ button component has an explicit recipe family for default, primary, toolbar,
 quiet, and tab intent. Its selected, hover, press, and disabled transforms
 compose in a fixed order; focus and semantic-active remain separate overlays.
 Typed color and logical-length tokens now have a small compiler/runtime path,
-including namespaced application/vendor roles. A general cascade, shared
-`Computed_Style`, and material/shape rendering remain outside this slice.
+including namespaced application/vendor roles. Retained nodes keep compact
+per-domain style generations; scope updates advance only affected nodes.
+Button `Computed_Style` records the domains it depends on, snapshots only those
+generations, and retains semantic recipe inputs for inspector provenance.
+Token aliases are already flattened in runtime values; readable alias names
+and source locations stay in optional compiler debug metadata. Rectangular
+semantic surfaces can use registered flat or analytic-relief materials; a
+general cascade and richer native shapes remain outside this slice.
+
+Buttons are currently the only built-in recipe with a retained computed-style
+cache. Text Fields and Scrollbars resolve their color recipes during paint or
+composition, and semantic surfaces resolve from a retained description
+sidecar; the inspector reports these as uncached paths. Theme changes remain
+Paint-only because current recipes consume color roles only. Length tokens do
+not yet drive recipe metrics, typography, or material selection, so this does
+not claim token-level alias/source-span provenance or metric-token invalidation.
+Semantic-surface role changes advance Paint generation, while shape/material/
+height/group changes advance Material generation; immutable theme/material
+registries and description hashes provide the current redraw path.
 
 This is explicit reuse, not automatic dependency tracking. A stale region
 revision can produce stale content.
@@ -108,11 +125,13 @@ The retained stream order is authoritative: the SDL compositor batches adjacent
 surface primitives and treats text and geometry as ordering barriers. It does
 not sort by primitive family or inspect `Node_Kind` to decide how to draw.
 
-The current surface material identity is flat, with physical height zero and
-no material group. Image paint is deferred until Alicorn defines its image
-resource lifetime and upload contract. Applications author semantic widgets
-and host integrations; the generic paint payload union is an internal renderer
-boundary, not a replacement UI authoring API.
+Semantic surfaces carry a registered material ID, optical height, and group in
+their generic paint command. The native renderer expands flat or analytic
+rectangular relief into bounded ordinary vertices; optical height never affects
+layout or stacking order. Image paint is deferred until Alicorn defines its
+image resource lifetime and upload contract. Applications author semantic
+widgets and host integrations; the generic paint payload union is an internal
+renderer boundary, not a replacement UI authoring API.
 
 The host waits for events when idle. Worker completions can wake it through an
 opaque `Application_Waker`; the UI remains on the window thread. The runtime

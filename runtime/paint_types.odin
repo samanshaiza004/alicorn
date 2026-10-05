@@ -90,6 +90,10 @@ paint_surface_command :: proc(
 	color: Color,
 	opacity: f32 = 1,
 	translation: [2]f32 = {},
+	shape: Surface_Shape = Surface_Shape{kind=.Rectangle},
+	material: Material_ID = MATERIAL_FLAT,
+	physical_height: f32 = 0,
+	material_group: Material_Group_ID = MATERIAL_GROUP_NONE,
 ) -> Paint_Command {
 	return Paint_Command{
 		owner=owner,
@@ -98,10 +102,11 @@ paint_surface_command :: proc(
 		opacity=opacity,
 		translation=translation,
 		payload=Surface_Paint{
-			shape=Surface_Shape{.Rectangle, 0},
+			shape=shape,
 			fill=color,
-			material=MATERIAL_FLAT,
-			material_group=MATERIAL_GROUP_NONE,
+			material=material,
+			physical_height=physical_height,
+			material_group=material_group,
 		},
 	}
 }
