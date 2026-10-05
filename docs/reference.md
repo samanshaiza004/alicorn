@@ -104,6 +104,9 @@ error and its correction hint.
 | `Text_Style` | Select weight, overflow behavior, and other text presentation options. |
 | `Style_Theme` / `style_theme_register` | Register an immutable typed color palette for one runtime. |
 | `style_color` / `style_metric` | Resolve a semantic color or scale an app-owned metric in the active environment. |
+| `Style_Color_Token_ID` / `Style_Length_Token_ID` | Address theme-local typed token arrays without string lookup. |
+| `style_token_color` / `style_token_length` | Resolve a typed token against its registered theme ID. |
+| `Style_Extension_*_Role_ID` / `style_extension_*` | Resolve namespaced app/vendor roles during setup, then retain the typed token ID. |
 | `Button_Variant` / `Button_Recipe` | Select an explicit button recipe such as `.Toolbar`, `.Primary`, `.Quiet`, or `.Tab`. |
 
 The default layout direction is column. Use `.Row` for horizontal children;
@@ -133,10 +136,11 @@ scoped: unrelated siblings are not laid out or repainted. Text products shape at
 bounds stable while its contents reflow. Theme IDs are immutable and local to a
 runtime; do not reuse IDs across runtimes.
 
-This is the styling dependency spine and typed palette foundation, not a full
-theme compiler or cascade. Button recipes are the first component recipe
-family; general typed tokens and references, a shared `Computed_Style`, and
-material/shape rendering remain follow-up work tracked by the styling issues.
+The separate [`theme` compiler contract](themes.md) compiles typed color and
+logical-length tokens, aliases, core roles, and namespaced extension roles.
+This is not a general selector/cascade system: arbitrary style properties, a
+shared `Computed_Style`, and material/shape rendering remain outside the
+current contract. Button recipes are the first component recipe family.
 
 ### Button variants and recipes
 

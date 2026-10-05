@@ -33,3 +33,12 @@ git diff --check
 
 "$OUT_DIR/alicorn_tests"
 "$ODIN" test runtime
+"$ODIN" test theme
+"$ODIN" build tools/theme "-out:$OUT_DIR/alicorn_theme"
+"$OUT_DIR/alicorn_theme" check theme/testdata/minimal.json
+"$OUT_DIR/alicorn_theme" check theme/testdata/extends_base.json
+"$OUT_DIR/alicorn_theme" explain theme/testdata/minimal.json color.primary
+if "$OUT_DIR/alicorn_theme" check theme/testdata/invalid.json; then
+    echo 'theme CLI accepted an unsupported length unit' >&2
+    exit 1
+fi

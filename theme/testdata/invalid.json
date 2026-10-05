@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "contract": "0.2",
+  "tokens": {
+    "space.bad": {
+      "$type": "dimension",
+      "$value": {"value": 2, "unit": "em"}
+    }
+  }
+}

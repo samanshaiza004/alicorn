@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "contract": "0.2",
+  "extends": "alicorn.base",
+  "tokens": {
+    "app.editor.primary_text": {
+      "$type": "color",
+      "$value": "{alicorn.color.text}"
+    }
+  },
+  "roles": {
+    "core": {"text": "{app.editor.primary_text}"}
+  }
+}

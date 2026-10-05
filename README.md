@@ -32,6 +32,7 @@ For the reusable native distribution path, see
 
 Then explore the [application guide](docs/guide.md), [API reference](docs/reference.md),
 [Choosing Alicorn](docs/choosing-alicorn.md), [examples](examples/README.md),
+[typed themes](docs/themes.md),
 [performance evidence](docs/performance.md), [architecture](docs/architecture.md),
 or [contributor guide](docs/development.md).
 
