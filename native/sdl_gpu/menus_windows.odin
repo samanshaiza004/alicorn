@@ -628,6 +628,23 @@ win32_caption_outline :: proc(
 	win32_caption_fill(commands, node+4, clip, x+width-stroke, y+stroke, stroke, max(height-2*stroke, 0), color)
 }
 
+win32_caption_control_hover_rect :: proc(
+	hit_bounds: win.RECT,
+	index: int,
+	client_width, chrome_height: f32,
+) -> alicorn.Rect {
+	left, top := f32(hit_bounds.left), f32(hit_bounds.top)
+	right, bottom := f32(hit_bounds.right), f32(hit_bounds.bottom)
+	if index == 2 {
+		// The visual close backplate is full bleed. Keep hit_bounds unchanged so
+		// the narrow outer frame can still receive resize hit tests.
+		top = 0
+		right = client_width
+		bottom = chrome_height
+	}
+	return alicorn.Rect{left, top, max(right-left, 0), max(bottom-top, 0)}
+}
+
 win32_caption_append_glyph :: proc(
 	commands: ^[dynamic]alicorn.Display_Command,
 	state: ^Win32_Menu_State,
@@ -711,10 +728,7 @@ native_menu_overlay_commands :: proc(menu: ^Native_Menu_Runtime, width, height: 
 			}
 			append(&commands, alicorn.Display_Command{
 				NATIVE_MENU_HOST_SOLID_NODE+2+alicorn.Node_ID(index), .Button,
-				alicorn.Rect{
-					f32(control.bounds.left), f32(control.bounds.top),
-					f32(control.bounds.right-control.bounds.left), f32(control.bounds.bottom-control.bounds.top),
-				},
+				win32_caption_control_hover_rect(control.bounds, index, width, full.h),
 				full, "", hover_color, nil,
 			})
 		}

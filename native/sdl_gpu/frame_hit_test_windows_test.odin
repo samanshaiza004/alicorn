@@ -98,6 +98,28 @@ test_caption_control_geometry_is_shared_by_draw_and_hit_testing :: proc(t: ^test
 }
 
 @(test)
+test_close_caption_backplate_bleeds_to_edge_without_expanding_hit_target :: proc(t: ^testing.T) {
+	close_hit_bounds := win.RECT{left=1100, top=0, right=1192, bottom=32}
+	close_paint := win32_caption_control_hover_rect(close_hit_bounds, 2, 1200, 32)
+	controls := [3]Win32_Caption_Control{
+		{},
+		{},
+		{bounds=close_hit_bounds, hit_test=win.LRESULT(win.HTCLOSE)},
+	}
+	hit_stays_inside_dwm_bounds := win32_integrated_frame_hit_test(
+		1190, 16, 1200, 800, 32, 8, 8, false, controls[:], nil) == win.LRESULT(win.HTCLOSE)
+	right_edge_keeps_resize_behavior := win32_integrated_frame_hit_test(
+		1195, 16, 1200, 800, 32, 8, 8, false, controls[:], nil) == win.LRESULT(win.HTRIGHT)
+	maximized_edge_remains_caption := win32_integrated_frame_hit_test(
+		1195, 16, 1200, 800, 32, 8, 8, true, controls[:], nil) == win.LRESULT(win.HTCAPTION)
+	glyph_center := (f32(close_hit_bounds.left)+f32(close_hit_bounds.right))/2
+	geometry_is_split := close_hit_bounds.right == 1192 && close_paint.x == f32(close_hit_bounds.left) &&
+		close_paint.x+close_paint.w == 1200 && close_paint.y == 0 && close_paint.h == 32 && glyph_center == 1146
+	testing.expect(t, geometry_is_split && hit_stays_inside_dwm_bounds && right_edge_keeps_resize_behavior && maximized_edge_remains_caption,
+		"close hover paint should reach the edge while glyph and native hit testing retain DWM's bounds")
+}
+
+@(test)
 test_integrated_frame_hit_test_resizing_and_menu_regions :: proc(t: ^testing.T) {
 	labels := [?]win.RECT{{left=10, top=0, right=90, bottom=32}}
 	testing.expect(
