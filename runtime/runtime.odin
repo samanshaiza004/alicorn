@@ -482,7 +482,8 @@ Button_Resolved_Style :: struct {
 
 // Style_Provenance retains semantic inputs, not duplicated theme data. Token
 // IDs and role-to-value mapping are derived from the immutable theme while an
-// inspector query is formatted. Alias names/spans remain compiler debug data.
+// inspector query is formatted. Optional authored names/alias edges are kept
+// as lightweight theme metadata; source spans remain compiler-only.
 Style_Provenance :: struct {
 	theme:          Style_Theme_ID,
 	accent:         Style_Accent,
@@ -573,6 +574,10 @@ Style_Theme :: struct {
 	core_color_tokens:      [STYLE_COLOR_ROLE_COUNT]Style_Color_Token_ID,
 	extension_color_roles:  []Style_Extension_Color_Role_Binding,
 	extension_length_roles: []Style_Extension_Length_Role_Binding,
+	color_token_provenance:  []Style_Token_Provenance,
+	length_token_provenance: []Style_Token_Provenance,
+	extension_color_role_provenance: []Style_Extension_Color_Role_Provenance,
+	extension_length_role_provenance: []Style_Extension_Length_Role_Provenance,
 }
 
 DEFAULT_STYLE_THEME :: Style_Theme{colors={
@@ -1141,6 +1146,10 @@ Frame_Stats :: struct {
 	layout_nodes_visited: u64,
 	paint_nodes_visited: u64,
 	composition_nodes_visited: u64,
+	// style_resolutions counts computed-style cache misses; style_cache_hits
+	// counts retained values reused while rebuilding paint. Both are cumulative.
+	style_resolutions: u64,
+	style_cache_hits: u64,
 	stage_visits:      [Runtime_Stage]u64,
 	layout_updates:    u64,
 	paint_updates:     u64,
@@ -1175,6 +1184,7 @@ Runtime :: struct {
 	scratch_allocator_state:    ^Runtime_Allocator_State,
 	nodes:       map[Node_ID]^Node,
 	computed_styles: map[Node_ID]Computed_Style,
+	style_stats_suppressed: bool,
 	semantic_surfaces: map[Node_ID]Semantic_Surface_Style,
 	order:       [dynamic]Node_ID,
 	top_level:   [dynamic]Node_ID,

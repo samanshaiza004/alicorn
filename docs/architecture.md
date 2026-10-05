@@ -77,12 +77,13 @@ under its byte budget. Each entry records its recipe family, semantic inputs,
 dependency domains, and only the matching generation snapshots. Buttons,
 Text Fields, and Scrollbars depend on Paint; Semantic Surfaces depend on Paint
 for role color and Material for shape/material/height/group. Inspector
-provenance reports these retained results. Node retirement and runtime
-destruction release sidecar entries. Token aliases are flattened in runtime
-values; readable alias names and source locations stay in optional compiler
-debug metadata. Rectangular semantic surfaces can use registered flat or
-analytic-relief materials; a general cascade and richer native shapes remain
-outside this slice.
+provenance reports these retained results, including optional compiled token
+names and alias chains. Node retirement and runtime destruction release
+sidecar entries. Token aliases are flattened in runtime values; readable names
+and immediate alias edges are optional runtime diagnostic metadata while
+source locations remain compiler-only. Rectangular semantic surfaces can use
+registered flat or analytic-relief materials; a general cascade and richer
+native shapes remain outside this slice.
 
 Theme/accent changes are Paint-only today because current recipes consume color
 roles only. No theme length token drives recipe metrics, typography, or material
@@ -91,9 +92,11 @@ subtree and triggers layout there, while the color-only computed-style cache
 remains valid. Material-only surface description changes advance Material,
 preserve Paint and leave layout/hit geometry untouched. Themes/materials are
 immutable after registration, and semantic recipe or surface description
-inputs participate in cache signatures. Compiled alias names and source spans
-remain tooling-only; current inspector provenance does not claim token-level
-alias/source-span tracing or metric-token invalidation.
+inputs participate in cache signatures. Optional authored token names,
+immediate alias edges, and qualified extension-role names flow into the runtime
+inspector; source spans remain compiler-only. Runtime work counters expose
+computed-style resolutions and retained cache hits, and inspector reads do not
+alter those counts.
 
 This is explicit reuse, not automatic dependency tracking. A stale region
 revision can produce stale content.

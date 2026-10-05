@@ -79,8 +79,8 @@ style_semantic_surface_provenance :: proc(environment: Style_Environment, style:
 }
 
 // A cache hit is allowed only for the same recipe family, semantic inputs and
-// declared dependency generations. This is also used by focused tests to
-// assert exact cache boundaries without adding renderer counters to Runtime.
+// declared dependency generations. Focused tests and the inspector use this
+// same predicate to assert exact cache boundaries.
 style_computed_cache_matches :: proc(
 	rt: ^Runtime,
 	node: ^Node,
@@ -111,6 +111,14 @@ style_computed_cache_store :: proc(rt: ^Runtime, node: ^Node, computed: Computed
 	rt.computed_styles[node.id] = entry
 }
 
+style_computed_cache_record_hit :: proc(rt: ^Runtime) {
+	if rt != nil && !rt.style_stats_suppressed { rt.stats.style_cache_hits += 1 }
+}
+
+style_computed_cache_record_resolution :: proc(rt: ^Runtime) {
+	if rt != nil && !rt.style_stats_suppressed { rt.stats.style_resolutions += 1 }
+}
+
 // Each retained node owns at most one current recipe-family result in
 // Runtime side storage. Button, Text Field, Scrollbar, and Semantic Surface
 // cache values share the same domain/provenance checks without growing Node.
@@ -125,9 +133,11 @@ style_button_resolve_retained :: proc(
 	}
 	provenance := style_button_provenance(node.style_environment, node.button_variant, state, drop_target_on)
 	if style_computed_cache_matches(rt, node, .Button, provenance, BUTTON_STYLE_DEPENDENCIES) {
+		style_computed_cache_record_hit(rt)
 		computed := rt.computed_styles[node.id]
 		return computed.payload.(Button_Resolved_Style)
 	}
+	style_computed_cache_record_resolution(rt)
 	resolved := style_button_resolve(rt, node.style_environment, node.button_variant, state, drop_target_on)
 	style_computed_cache_store(rt, node, Computed_Style{
 		family=.Button,
@@ -148,9 +158,11 @@ style_text_field_resolve_retained :: proc(
 	}
 	provenance := style_text_field_provenance(node.style_environment, state)
 	if style_computed_cache_matches(rt, node, .Text_Field, provenance, TEXT_FIELD_STYLE_DEPENDENCIES) {
+		style_computed_cache_record_hit(rt)
 		computed := rt.computed_styles[node.id]
 		return computed.payload.(Text_Field_Resolved_Style)
 	}
+	style_computed_cache_record_resolution(rt)
 	recipe := style_text_field_recipe(rt, node.style_environment)
 	resolved := style_text_field_resolve(rt, node.style_environment, recipe, state)
 	style_computed_cache_store(rt, node, Computed_Style{
@@ -172,9 +184,11 @@ style_scrollbar_resolve_retained :: proc(
 	}
 	provenance := style_scrollbar_provenance(node.style_environment, state)
 	if style_computed_cache_matches(rt, node, .Scrollbar, provenance, SCROLLBAR_STYLE_DEPENDENCIES) {
+		style_computed_cache_record_hit(rt)
 		computed := rt.computed_styles[node.id]
 		return computed.payload.(Scrollbar_Resolved_Style)
 	}
+	style_computed_cache_record_resolution(rt)
 	recipe := style_scrollbar_recipe(rt, node.style_environment)
 	resolved := style_scrollbar_resolve(rt, node.style_environment, recipe, state)
 	style_computed_cache_store(rt, node, Computed_Style{
@@ -194,9 +208,11 @@ style_semantic_surface_resolve_retained :: proc(
 	if rt == nil || node == nil || !style.defined { return {} }
 	provenance := style_semantic_surface_provenance(node.style_environment, style)
 	if style_computed_cache_matches(rt, node, .Semantic_Surface, provenance, SEMANTIC_SURFACE_STYLE_DEPENDENCIES) {
+		style_computed_cache_record_hit(rt)
 		computed := rt.computed_styles[node.id]
 		return computed.payload.(Semantic_Surface_Resolved_Style)
 	}
+	style_computed_cache_record_resolution(rt)
 	fill, fill_ok := semantic_surface_role_resolve(rt, node.style_environment, style.role)
 	if !fill_ok { return {} }
 	resolved := Semantic_Surface_Resolved_Style{fill=fill}

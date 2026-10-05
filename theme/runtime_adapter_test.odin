@@ -54,6 +54,11 @@ test_theme_runtime_adapter_preserves_typed_bindings_and_owns_its_values :: proc(
 		"extension color role names should map to Alicorn's namespaced role identity")
 	testing.expect(t, len(runtime_theme.extension_length_roles) == 1 && runtime_theme.extension_length_roles[0].role == gutter_width,
 		"extension length roles should remain distinct and namespaced")
+	testing.expect(t, len(runtime_theme.extension_color_role_provenance) == 1 &&
+		runtime_theme.extension_color_role_provenance[0].name == "app.editor.current_line" &&
+		len(runtime_theme.extension_length_role_provenance) == 1 &&
+		runtime_theme.extension_length_role_provenance[0].name == "vendor.editor.gutter.width",
+		"the adapter should preserve qualified extension-role names for style provenance")
 	testing.expect(t, u32(runtime_theme.extension_color_roles[0].token) == u32(output.theme.extension_color_roles[0].token),
 		"extension color bindings should preserve typed local token indices")
 	testing.expect(t, u32(runtime_theme.extension_length_roles[0].token) == u32(output.theme.extension_length_roles[0].token),
@@ -72,15 +77,25 @@ test_theme_runtime_adapter_preserves_typed_bindings_and_owns_its_values :: proc(
 test_theme_runtime_adapter_output_survives_compiler_destruction_and_registration :: proc(t: ^testing.T) {
 	source := Theme_Source_Model{
 		metadata=TEST_THEME_METADATA,
-		tokens={test_definition("color.text", .Color, Theme_Color{0.7, 0.6, 0.5, 1}, 1)},
-		core_roles={Core_Role_Binding{role=.Text, token="color.text", span=test_span(2)}},
+		tokens={
+			test_definition("palette.ink", .Color, Theme_Color{0.7, 0.6, 0.5, 1}, 1),
+			test_definition("text.primary", .Color, test_alias("palette.ink"), 2),
+		},
+		core_roles={Core_Role_Binding{role=.Text, token="text.primary", span=test_span(3)}},
 	}
 	output := theme_compile({source})
 	runtime_theme, adapted := theme_runtime_style_theme(output)
-	theme_output_destroy(&output)
 	defer theme_runtime_style_theme_destroy(&runtime_theme)
 	testing.expect(t, adapted, "the adapter should return an owned unregistered value")
 	if !adapted { return }
+	testing.expect(t, len(runtime_theme.color_token_provenance) == 2 &&
+		runtime_theme.color_token_provenance[0].name == "palette.ink" &&
+		runtime_theme.color_token_provenance[1].name == "text.primary" &&
+		runtime_theme.color_token_provenance[1].alias_target == "palette.ink",
+		"the adapter should preserve typed token names and immediate alias edges for runtime inspection")
+	theme_output_destroy(&output)
+	testing.expect(t, runtime_theme.color_token_provenance[1].alias_target == "palette.ink",
+		"adapted token provenance must remain owned after compiler debug metadata is destroyed")
 
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 100, 100})
 	defer alicorn.destroy_runtime(&rt)
@@ -94,6 +109,10 @@ test_theme_runtime_adapter_output_survives_compiler_destruction_and_registration
 	resolved := alicorn.style_theme_color(&rt, registered_id, .Text)
 	testing.expect(t, resolved == alicorn.Color{0.7, 0.6, 0.5, 1},
 		"registered runtime themes must remain valid after compiler and adapter storage are destroyed")
+	registered_provenance, provenance_found := alicorn.style_token_provenance(&rt, registered_id, alicorn.Style_Color_Token_ID(2))
+	testing.expect(t, provenance_found && registered_provenance.name == "text.primary" &&
+		registered_provenance.alias_target == "palette.ink",
+		"registered themes must own readable alias provenance independently of compiler and adapter storage")
 }
 
 @(test)

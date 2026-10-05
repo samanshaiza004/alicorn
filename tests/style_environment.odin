@@ -112,7 +112,9 @@ test_style_environment_domains_and_density :: proc(state: ^Test_State) {
 	editor, editor_text, sidebar, sidebar_text := render_style_environment_fixture(&rt, alicorn.Style_Environment{density=1})
 	initial_width := rt.nodes[editor_text].bounds.w
 	editor_visits := rt.layout_visit_probe[editor_text]
+	styled_container_visits := rt.layout_visit_probe[editor]
 	sidebar_visits := rt.layout_visit_probe[sidebar]
+	sidebar_text_visits := rt.layout_visit_probe[sidebar_text]
 	initial_metrics_generation := rt.nodes[editor_text].style_generations.metrics
 	initial_paint_generation := rt.nodes[editor_text].style_generations.paint
 	_, _, _, _ = render_style_environment_fixture(&rt, alicorn.Style_Environment{density=1.25})
@@ -121,7 +123,10 @@ test_style_environment_domains_and_density :: proc(state: ^Test_State) {
 	expect(state, rt.nodes[editor_text].style_generations.metrics > initial_metrics_generation &&
 		rt.nodes[editor_text].style_generations.paint == initial_paint_generation,
 		"density change must advance only the metric generation before downstream paint")
-	expect(state, rt.layout_visit_probe[sidebar] == sidebar_visits, "density change must not visit sibling layout")
+	expect(state, rt.layout_visit_probe[editor] > styled_container_visits,
+		"density changes may revisit the containing editor layout needed to place the affected subtree")
+	expect(state, rt.layout_visit_probe[sidebar] == sidebar_visits && rt.layout_visit_probe[sidebar_text] == sidebar_text_visits,
+		"density change must not visit layout in the unaffected sidebar subtree")
 	expect(state, rt.nodes[sidebar_text].style_environment.density == 1, "density scope must not leak to siblings")
 	_ = editor
 	_ = sidebar_text
@@ -136,6 +141,12 @@ test_style_environment_theme_paint_locality :: proc(state: ^Test_State) {
 	theme := alicorn.DEFAULT_STYLE_THEME
 	theme.colors[int(alicorn.Style_Color_Role.Text)] = alicorn.Color{0.18, 0.16, 0.14, 1}
 	theme.colors[int(alicorn.Style_Color_Role.Accent)] = alicorn.Color{0.7, 0.35, 0.18, 1}
+	theme.color_tokens = {
+		theme.colors[int(alicorn.Style_Color_Role.Text)],
+		theme.colors[int(alicorn.Style_Color_Role.Accent)],
+	}
+	theme.core_color_tokens[int(alicorn.Style_Color_Role.Text)] = alicorn.Style_Color_Token_ID(1)
+	theme.core_color_tokens[int(alicorn.Style_Color_Role.Accent)] = alicorn.Style_Color_Token_ID(2)
 	theme_id := alicorn.style_theme_register(&rt, theme)
 	expect(state, theme_id != 0, "valid immutable theme must register")
 	editor, editor_text, sidebar, sidebar_text := render_style_environment_fixture(&rt, alicorn.Style_Environment{theme=alicorn.DEFAULT_STYLE_THEME_ID})
@@ -161,4 +172,38 @@ test_style_environment_theme_paint_locality :: proc(state: ^Test_State) {
 		"a scoped theme change must not advance style generations in a sibling subtree")
 	_ = editor
 	_ = sidebar
+}
+
+render_primary_button_with_accent :: proc(rt: ^alicorn.Runtime, accent: alicorn.Color) -> alicorn.Node_ID {
+	alicorn.invalidate_root(rt, "accent paint-domain fixture")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return 0 }
+	alicorn.container_begin(&ui, .Root, key="accent-root", style=alicorn.layout_style(.Row, width=360, height=80))
+	scope := alicorn.style_environment_push(&ui, alicorn.Style_Environment{accent=alicorn.style_accent(accent)})
+	_ = alicorn.button(&ui, "Primary", key="accent-primary", style=alicorn.layout_style(width=110, height=32), variant=.Primary)
+	alicorn.style_environment_pop(&ui, scope)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	for id in rt.order {
+		node, found := rt.nodes[id]
+		if found && node.kind == .Button && node.label == "Primary" { return id }
+	}
+	return 0
+}
+
+test_accent_override_repaints_primary_control_without_layout :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 360, 80})
+	defer alicorn.destroy_runtime(&rt)
+	red := alicorn.Color{0.82, 0.16, 0.12, 1}
+	green := alicorn.Color{0.12, 0.68, 0.28, 1}
+	button := render_primary_button_with_accent(&rt, red)
+	if button == 0 { expect(state, false, "accent fixture should retain its Primary button"); return }
+	first_layout_visits := rt.stats.layout_nodes_visited
+	first_style := rt.computed_styles[button].payload.(alicorn.Button_Resolved_Style)
+	button = render_primary_button_with_accent(&rt, green)
+	updated_style := rt.computed_styles[button].payload.(alicorn.Button_Resolved_Style)
+	expect(state, updated_style.surface == green && updated_style.surface != first_style.surface,
+		"an accent-token change must resolve the Primary button through its new Paint input")
+	expect(state, rt.stats.layout_nodes_visited == first_layout_visits,
+		"changing only the accent Paint input must visit zero layout nodes")
 }

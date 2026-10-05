@@ -320,7 +320,7 @@ inspector_overlay_work :: proc(ui: ^UI, inspected: ^Runtime, host: ^Inspector_Ho
 	append(&lines,fmt.tprintf("Retained nodes: %d   frame: %d",len(inspected.nodes),stats.frame))
 	append(&lines,fmt.tprintf("Descriptions: built=%d emitted=%d reused=%d",stats.frames_built,stats.descriptions_emitted,stats.descriptions_reused))
 	append(&lines,fmt.tprintf("Regions skipped=%d subtrees reused=%d",stats.regions_skipped,stats.retained_subtrees_reused))
-	append(&lines,fmt.tprintf("Visited: reconcile=%d layout=%d",stats.reconcile_nodes_visited,stats.layout_nodes_visited))
+	append(&lines,fmt.tprintf("Visited: reconcile=%d layout=%d style resolutions=%d cache hits=%d",stats.reconcile_nodes_visited,stats.layout_nodes_visited,stats.style_resolutions,stats.style_cache_hits))
 	append(&lines,fmt.tprintf("Visited: paint=%d composite=%d",stats.paint_nodes_visited,stats.composition_nodes_visited))
 	append(&lines,fmt.tprintf("Updates: layout=%d paint=%d composite=%d",stats.layout_updates,stats.paint_updates,stats.composite_updates))
 	append(&lines,fmt.tprintf("Nodes: created=%d retired=%d adjacency=%d",stats.nodes_created,stats.nodes_retired,stats.adjacency_rebuilds))

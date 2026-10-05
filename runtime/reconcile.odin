@@ -882,6 +882,20 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		if len(theme.length_tokens) > 0 { delete(theme.length_tokens, rt.persistent_allocator) }
 		if len(theme.extension_color_roles) > 0 { delete(theme.extension_color_roles, rt.persistent_allocator) }
 		if len(theme.extension_length_roles) > 0 { delete(theme.extension_length_roles, rt.persistent_allocator) }
+		for provenance in theme.color_token_provenance {
+			delete(provenance.name, rt.persistent_allocator)
+			delete(provenance.alias_target, rt.persistent_allocator)
+		}
+		delete(theme.color_token_provenance, rt.persistent_allocator)
+		for provenance in theme.length_token_provenance {
+			delete(provenance.name, rt.persistent_allocator)
+			delete(provenance.alias_target, rt.persistent_allocator)
+		}
+		delete(theme.length_token_provenance, rt.persistent_allocator)
+		for provenance in theme.extension_color_role_provenance { delete(provenance.name, rt.persistent_allocator) }
+		delete(theme.extension_color_role_provenance, rt.persistent_allocator)
+		for provenance in theme.extension_length_role_provenance { delete(provenance.name, rt.persistent_allocator) }
+		delete(theme.extension_length_role_provenance, rt.persistent_allocator)
 	}
 	delete(rt.style_themes)
 	delete(rt.style_materials)

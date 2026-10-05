@@ -70,6 +70,22 @@ theme_cli_codegen_odin :: proc(
 		fmt.sbprintfln(&builder, "        token=alicorn.Style_Length_Token_ID({:d}),", u32(binding.token))
 		fmt.sbprintln(&builder, "    }")
 	}
+	fmt.sbprintfln(&builder, "    result.color_token_provenance = make([]alicorn.Style_Token_Provenance, %d, allocator)", len(value.color_token_provenance))
+	for provenance, index in value.color_token_provenance {
+		fmt.sbprintf(&builder, "    result.color_token_provenance[%d] = alicorn.Style_Token_Provenance{{id=%d, name=%q, alias_target=%q}}\n", index, provenance.id, provenance.name, provenance.alias_target)
+	}
+	fmt.sbprintfln(&builder, "    result.length_token_provenance = make([]alicorn.Style_Token_Provenance, %d, allocator)", len(value.length_token_provenance))
+	for provenance, index in value.length_token_provenance {
+		fmt.sbprintf(&builder, "    result.length_token_provenance[%d] = alicorn.Style_Token_Provenance{{id=%d, name=%q, alias_target=%q}}\n", index, provenance.id, provenance.name, provenance.alias_target)
+	}
+	fmt.sbprintfln(&builder, "    result.extension_color_role_provenance = make([]alicorn.Style_Extension_Color_Role_Provenance, %d, allocator)", len(value.extension_color_role_provenance))
+	for provenance, index in value.extension_color_role_provenance {
+		fmt.sbprintf(&builder, "    result.extension_color_role_provenance[%d] = alicorn.Style_Extension_Color_Role_Provenance{{role=alicorn.Style_Extension_Color_Role_ID(u64(%d)), name=%q}}\n", index, u64(provenance.role), provenance.name)
+	}
+	fmt.sbprintfln(&builder, "    result.extension_length_role_provenance = make([]alicorn.Style_Extension_Length_Role_Provenance, %d, allocator)", len(value.extension_length_role_provenance))
+	for provenance, index in value.extension_length_role_provenance {
+		fmt.sbprintf(&builder, "    result.extension_length_role_provenance[%d] = alicorn.Style_Extension_Length_Role_Provenance{{role=alicorn.Style_Extension_Length_Role_ID(u64(%d)), name=%q}}\n", index, u64(provenance.role), provenance.name)
+	}
 	fmt.sbprintln(&builder, "    return result")
 	fmt.sbprintln(&builder, "}")
 	fmt.sbprintln(&builder, "")
@@ -79,10 +95,22 @@ theme_cli_codegen_odin :: proc(
 	fmt.sbprintln(&builder, "    delete(value.length_tokens, allocator)")
 	fmt.sbprintln(&builder, "    delete(value.extension_color_roles, allocator)")
 	fmt.sbprintln(&builder, "    delete(value.extension_length_roles, allocator)")
+	fmt.sbprintln(&builder, "    for provenance in value.color_token_provenance { delete(provenance.name, allocator); delete(provenance.alias_target, allocator) }")
+	fmt.sbprintln(&builder, "    delete(value.color_token_provenance, allocator)")
+	fmt.sbprintln(&builder, "    for provenance in value.length_token_provenance { delete(provenance.name, allocator); delete(provenance.alias_target, allocator) }")
+	fmt.sbprintln(&builder, "    delete(value.length_token_provenance, allocator)")
+	fmt.sbprintln(&builder, "    for provenance in value.extension_color_role_provenance { delete(provenance.name, allocator) }")
+	fmt.sbprintln(&builder, "    delete(value.extension_color_role_provenance, allocator)")
+	fmt.sbprintln(&builder, "    for provenance in value.extension_length_role_provenance { delete(provenance.name, allocator) }")
+	fmt.sbprintln(&builder, "    delete(value.extension_length_role_provenance, allocator)")
 	fmt.sbprintln(&builder, "    value.color_tokens = nil")
 	fmt.sbprintln(&builder, "    value.length_tokens = nil")
 	fmt.sbprintln(&builder, "    value.extension_color_roles = nil")
 	fmt.sbprintln(&builder, "    value.extension_length_roles = nil")
+	fmt.sbprintln(&builder, "    value.color_token_provenance = nil")
+	fmt.sbprintln(&builder, "    value.length_token_provenance = nil")
+	fmt.sbprintln(&builder, "    value.extension_color_role_provenance = nil")
+	fmt.sbprintln(&builder, "    value.extension_length_role_provenance = nil")
 	fmt.sbprintln(&builder, "}")
 
 	cloned, builder_clone_error := strings.clone(strings.to_string(builder))

@@ -86,8 +86,9 @@ theme_builtin_base_source_destroy :: proc(owner: ^Theme_Builtin_Base_Source, all
 // theme_runtime_style_theme_destroy.
 //
 // Extension role IDs use the same stable namespaced hash contract in the
-// compiler and runtime, so the typed IDs are copied numerically without
-// retaining or consulting debug provenance.
+// compiler and runtime, so the typed IDs are copied numerically. Authored
+// names and alias edges are copied as small optional inspector metadata;
+// source spans and parser structures remain compiler-only.
 theme_runtime_style_theme :: proc(
 	output: Theme_Compile_Output,
 	allocator := context.allocator,
@@ -153,6 +154,79 @@ theme_runtime_style_theme :: proc(
 		result.extension_length_roles = make([]alicorn.Style_Extension_Length_Role_Binding, len(length_roles), allocator)
 		copy(result.extension_length_roles, length_roles[:])
 	}
+
+	if len(output.debug.tokens) == len(compiled.colors)+len(compiled.lengths) {
+		color_metadata := make([]alicorn.Style_Token_Provenance, len(compiled.colors), allocator)
+		length_metadata := make([]alicorn.Style_Token_Provenance, len(compiled.lengths), allocator)
+		color_seen := make([]bool, len(compiled.colors), allocator)
+		length_seen := make([]bool, len(compiled.lengths), allocator)
+		valid_metadata := true
+		for source in output.debug.tokens {
+			if source.id == 0 || source.name == "" { valid_metadata = false; break }
+			index := int(source.id)-1
+			if source.kind == .Color {
+				if index < 0 || index >= len(color_metadata) || color_seen[index] { valid_metadata = false; break }
+				color_seen[index] = true
+				color_metadata[index] = alicorn.Style_Token_Provenance{
+					id=source.id,
+					name=theme_clone_string(source.name, allocator),
+					alias_target=theme_clone_string(source.alias_target, allocator),
+				}
+			} else {
+				if index < 0 || index >= len(length_metadata) || length_seen[index] { valid_metadata = false; break }
+				length_seen[index] = true
+				length_metadata[index] = alicorn.Style_Token_Provenance{
+					id=source.id,
+					name=theme_clone_string(source.name, allocator),
+					alias_target=theme_clone_string(source.alias_target, allocator),
+				}
+			}
+		}
+		for seen in color_seen { valid_metadata = valid_metadata && seen }
+		for seen in length_seen { valid_metadata = valid_metadata && seen }
+		delete(color_seen, allocator)
+		delete(length_seen, allocator)
+		if valid_metadata {
+			result.color_token_provenance = color_metadata
+			result.length_token_provenance = length_metadata
+		} else {
+			for value in color_metadata { delete(value.name, allocator); delete(value.alias_target, allocator) }
+			for value in length_metadata { delete(value.name, allocator); delete(value.alias_target, allocator) }
+			delete(color_metadata, allocator)
+			delete(length_metadata, allocator)
+		}
+	}
+
+	color_role_provenance_count := 0
+	length_role_provenance_count := 0
+	for source in output.debug.extension_roles {
+		if source.color_id != 0 { color_role_provenance_count += 1 }
+		if source.length_id != 0 { length_role_provenance_count += 1 }
+	}
+	if color_role_provenance_count > 0 {
+		result.extension_color_role_provenance = make([]alicorn.Style_Extension_Color_Role_Provenance, color_role_provenance_count, allocator)
+		index := 0
+		for source in output.debug.extension_roles {
+			if source.color_id == 0 { continue }
+			result.extension_color_role_provenance[index] = alicorn.Style_Extension_Color_Role_Provenance{
+				role=alicorn.Style_Extension_Color_Role_ID(u64(source.color_id)),
+				name=theme_clone_string(source.name, allocator),
+			}
+			index += 1
+		}
+	}
+	if length_role_provenance_count > 0 {
+		result.extension_length_role_provenance = make([]alicorn.Style_Extension_Length_Role_Provenance, length_role_provenance_count, allocator)
+		index := 0
+		for source in output.debug.extension_roles {
+			if source.length_id == 0 { continue }
+			result.extension_length_role_provenance[index] = alicorn.Style_Extension_Length_Role_Provenance{
+				role=alicorn.Style_Extension_Length_Role_ID(u64(source.length_id)),
+				name=theme_clone_string(source.name, allocator),
+			}
+			index += 1
+		}
+	}
 	return result, true
 }
 
@@ -167,10 +241,28 @@ theme_runtime_style_theme_destroy :: proc(
 	delete(theme.length_tokens, allocator)
 	delete(theme.extension_color_roles, allocator)
 	delete(theme.extension_length_roles, allocator)
+	for provenance in theme.color_token_provenance {
+		delete(provenance.name, allocator)
+		delete(provenance.alias_target, allocator)
+	}
+	delete(theme.color_token_provenance, allocator)
+	for provenance in theme.length_token_provenance {
+		delete(provenance.name, allocator)
+		delete(provenance.alias_target, allocator)
+	}
+	delete(theme.length_token_provenance, allocator)
+	for provenance in theme.extension_color_role_provenance { delete(provenance.name, allocator) }
+	delete(theme.extension_color_role_provenance, allocator)
+	for provenance in theme.extension_length_role_provenance { delete(provenance.name, allocator) }
+	delete(theme.extension_length_role_provenance, allocator)
 	theme.color_tokens = nil
 	theme.length_tokens = nil
 	theme.extension_color_roles = nil
 	theme.extension_length_roles = nil
+	theme.color_token_provenance = nil
+	theme.length_token_provenance = nil
+	theme.extension_color_role_provenance = nil
+	theme.extension_length_role_provenance = nil
 }
 
 theme_runtime_adapter_compiled_is_valid :: proc(compiled: Compiled_Theme) -> bool {

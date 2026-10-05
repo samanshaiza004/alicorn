@@ -32,7 +32,38 @@ style_inspector_token_role :: proc(
 	}
 	token := style_theme_color_token(rt, theme, role)
 	fmt.sbprintf(sb, " %s.%s=%v", property, source, role)
-	if token != 0 { fmt.sbprintf(sb, "(token=%d)", u32(token)) }
+	if token != 0 {
+		fmt.sbprintf(sb, "(token=%d)", u32(token))
+		style_inspector_color_token_chain(sb, rt, theme, token)
+	}
+}
+
+style_inspector_color_token_chain :: proc(sb: ^strings.Builder, rt: ^Runtime, theme: Style_Theme_ID, token: Style_Color_Token_ID) {
+	current := token
+	first := true
+	theme_index := u64(u32(theme))
+	if rt == nil || theme_index == 0 || theme_index > u64(len(rt.style_themes)) { return }
+	metadata := rt.style_themes[theme_index-1].color_token_provenance
+	for _ in 0..<len(metadata) {
+		provenance, found := style_token_provenance(rt, theme, current)
+		if !found { break }
+		if first {
+			fmt.sbprintf(sb, " provenance=[%s", provenance.name)
+			first = false
+		}
+		if provenance.alias_target == "" { break }
+		fmt.sbprintf(sb, " -> %s", provenance.alias_target)
+		next := Style_Color_Token_ID(0)
+		for candidate, index in metadata {
+			if candidate.name == provenance.alias_target {
+				next = Style_Color_Token_ID(index+1)
+				break
+			}
+		}
+		if next == 0 { break }
+		current = next
+	}
+	if !first { fmt.sbprintf(sb, "]") }
 }
 
 style_inspector_transform_provenance :: proc(
@@ -85,9 +116,11 @@ style_inspector_surface_role :: proc(sb: ^strings.Builder, rt: ^Runtime, theme: 
 			fmt.sbprintf(sb, " token=%d", u32(token))
 		}
 	case Style_Extension_Color_Role_ID:
-		fmt.sbprintf(sb, "role=extension.%d", u64(value))
+		name, named := style_extension_color_role_name(rt, theme, value)
+		if named { fmt.sbprintf(sb, "role=%s", name) } else { fmt.sbprintf(sb, "role=extension.%d", u64(value)) }
 		if token, found := style_extension_color_token(rt, theme, value); found {
 			fmt.sbprintf(sb, " token=%d", u32(token))
+			style_inspector_color_token_chain(sb, rt, theme, token)
 		}
 	}
 }
@@ -151,6 +184,14 @@ style_inspector_semantic_surface :: proc(sb: ^strings.Builder, rt: ^Runtime, nod
 }
 
 inspect :: proc(rt: ^Runtime) -> string {
+	previous_suppression := false
+	if rt != nil {
+		previous_suppression = rt.style_stats_suppressed
+		rt.style_stats_suppressed = true
+	}
+	defer {
+		if rt != nil { rt.style_stats_suppressed = previous_suppression }
+	}
 	sb := strings.builder_make()
 	fmt.sbprintln(&sb, "Alicorn inspector")
 	fmt.sbprintf(&sb, "keyboard focus: %d selected node: %d captured: %d\n", rt.focused, rt.selected, rt.captured_node)
@@ -164,7 +205,7 @@ inspect :: proc(rt: ^Runtime) -> string {
 	fmt.sbprintf(&sb, "retained nodes: %d\n", len(rt.nodes))
 	fmt.sbprintf(&sb, "last invalidation: %s\n", rt.last_invalidation_reason)
 	fmt.sbprintf(&sb, "frame: %d built=%d idle=%d regions-skipped=%d subtrees-reused=%d adjacency-rebuilds=%d surface-updates=%d geometry-updates=%d surface-clears=%d stale-surface-updates=%d geometry-overflow-rejections=%d surface-pending=%t presentation=%d submitted=%d\n", rt.stats.frame, rt.stats.frames_built, rt.stats.idle_frames, rt.stats.regions_skipped, rt.stats.retained_subtrees_reused, rt.stats.adjacency_rebuilds, rt.stats.surface_updates, rt.stats.surface_geometry_updates, rt.stats.surface_clear_count, rt.stats.surface_stale_update_rejections, rt.stats.surface_geometry_overflow_rejections, rt.surface_frame_pending, rt.presentation_revision, rt.submitted_revision)
-	fmt.sbprintf(&sb, "work: reconcile=%d layout=%d paint=%d compose=%d created=%d retired=%d\n", rt.stats.reconcile_nodes_visited, rt.stats.layout_nodes_visited, rt.stats.paint_nodes_visited, rt.stats.composition_nodes_visited, rt.stats.nodes_created, rt.stats.nodes_retired)
+	fmt.sbprintf(&sb, "work: reconcile=%d layout=%d paint=%d compose=%d style_resolutions=%d style_cache_hits=%d created=%d retired=%d\n", rt.stats.reconcile_nodes_visited, rt.stats.layout_nodes_visited, rt.stats.paint_nodes_visited, rt.stats.composition_nodes_visited, rt.stats.style_resolutions, rt.stats.style_cache_hits, rt.stats.nodes_created, rt.stats.nodes_retired)
 	fmt.sbprintln(&sb, "actions:")
 	for entry in rt.actions {
 		fmt.sbprintf(&sb, "  %s · %s (id=%d enabled=%t checked=%t)\n", entry.descriptor.name, entry.descriptor.label, u32(entry.descriptor.id), entry.state.enabled, entry.state.checked)
@@ -223,6 +264,11 @@ inspect :: proc(rt: ^Runtime) -> string {
 				disabled=node.disabled,
 			}, node.drop_position == .On)
 			computed_style := rt.computed_styles[node.id]
+			if node.kind == .Tab {
+				fmt.sbprintf(&sb, "  tab identity: label=%q recipe=tab.document variant=button.tab\n", node.label)
+			} else {
+				fmt.sbprintf(&sb, "  button identity: label=%q\n", node.label)
+			}
 			fmt.sbprintf(&sb, "  button recipe: variant=%s recipe=button.%s base=(%v,%v) surface=(%.3f,%.3f,%.3f,%.3f) text=(%.3f,%.3f,%.3f,%.3f) indicator=%v/%v\n",
 				button_variant_name(node.button_variant), button_variant_name(node.button_variant), recipe.surface_role, recipe.text_role,
 				resolved.surface.r, resolved.surface.g, resolved.surface.b, resolved.surface.a,

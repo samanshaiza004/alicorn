@@ -34,9 +34,10 @@ describing a frame.
   color roles only. No theme length token currently drives layout metrics,
   typography, or material selection. Text scale still advances Metrics and
   Typography for its scoped subtree, while color-only recipe caches remain
-  valid. This is not a claim of token-level alias/source-span provenance or
-  metric-token invalidation; either needs explicit dependency wiring before
-  such tokens affect a control recipe.
+  valid. Optional authored token names, immediate alias edges, and qualified
+  extension-role names are copied into registered themes for inspector output;
+  source spans and parser structures remain compiler-only. These names are
+  diagnostic metadata, not runtime lookup keys.
 
 ## Built-in control recipes
 

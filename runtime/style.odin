@@ -131,6 +131,28 @@ style_theme_is_valid :: proc(theme: Style_Theme) -> bool {
 			if theme.extension_length_roles[previous].role == binding.role { return false }
 		}
 	}
+	if len(theme.color_token_provenance) > 0 && len(theme.color_token_provenance) != len(theme.color_tokens) { return false }
+	for provenance, index in theme.color_token_provenance {
+		if provenance.id != u32(index+1) || provenance.name == "" { return false }
+	}
+	if len(theme.length_token_provenance) > 0 && len(theme.length_token_provenance) != len(theme.length_tokens) { return false }
+	for provenance, index in theme.length_token_provenance {
+		if provenance.id != u32(index+1) || provenance.name == "" { return false }
+	}
+	for provenance, i in theme.extension_color_role_provenance {
+		if provenance.role == 0 || provenance.name == "" { return false }
+		found := false
+		for binding in theme.extension_color_roles { found = found || binding.role == provenance.role }
+		if !found { return false }
+		for previous in 0..<i { if theme.extension_color_role_provenance[previous].role == provenance.role { return false } }
+	}
+	for provenance, i in theme.extension_length_role_provenance {
+		if provenance.role == 0 || provenance.name == "" { return false }
+		found := false
+		for binding in theme.extension_length_roles { found = found || binding.role == provenance.role }
+		if !found { return false }
+		for previous in 0..<i { if theme.extension_length_role_provenance[previous].role == provenance.role { return false } }
+	}
 	for recipe in theme.button_recipes.recipes {
 		if !style_button_recipe_is_valid(recipe) { return false }
 	}
@@ -184,6 +206,44 @@ style_theme_register :: proc(rt: ^Runtime, theme: Style_Theme) -> Style_Theme_ID
 	if len(theme.extension_length_roles) > 0 {
 		registered.extension_length_roles = make([]Style_Extension_Length_Role_Binding, len(theme.extension_length_roles), allocator=rt.persistent_allocator)
 		copy(registered.extension_length_roles, theme.extension_length_roles)
+	}
+	if len(theme.color_token_provenance) > 0 {
+		registered.color_token_provenance = make([]Style_Token_Provenance, len(theme.color_token_provenance), allocator=rt.persistent_allocator)
+		for source, index in theme.color_token_provenance {
+			registered.color_token_provenance[index] = Style_Token_Provenance{
+				id=source.id,
+				name=owned(source.name, rt.persistent_allocator),
+				alias_target=owned(source.alias_target, rt.persistent_allocator),
+			}
+		}
+	}
+	if len(theme.length_token_provenance) > 0 {
+		registered.length_token_provenance = make([]Style_Token_Provenance, len(theme.length_token_provenance), allocator=rt.persistent_allocator)
+		for source, index in theme.length_token_provenance {
+			registered.length_token_provenance[index] = Style_Token_Provenance{
+				id=source.id,
+				name=owned(source.name, rt.persistent_allocator),
+				alias_target=owned(source.alias_target, rt.persistent_allocator),
+			}
+		}
+	}
+	if len(theme.extension_color_role_provenance) > 0 {
+		registered.extension_color_role_provenance = make([]Style_Extension_Color_Role_Provenance, len(theme.extension_color_role_provenance), allocator=rt.persistent_allocator)
+		for source, index in theme.extension_color_role_provenance {
+			registered.extension_color_role_provenance[index] = Style_Extension_Color_Role_Provenance{
+				role=source.role,
+				name=owned(source.name, rt.persistent_allocator),
+			}
+		}
+	}
+	if len(theme.extension_length_role_provenance) > 0 {
+		registered.extension_length_role_provenance = make([]Style_Extension_Length_Role_Provenance, len(theme.extension_length_role_provenance), allocator=rt.persistent_allocator)
+		for source, index in theme.extension_length_role_provenance {
+			registered.extension_length_role_provenance[index] = Style_Extension_Length_Role_Provenance{
+				role=source.role,
+				name=owned(source.name, rt.persistent_allocator),
+			}
+		}
 	}
 	append(&rt.style_themes, registered)
 	return Style_Theme_ID(u32(len(rt.style_themes)))

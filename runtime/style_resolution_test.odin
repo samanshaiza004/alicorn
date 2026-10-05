@@ -116,6 +116,97 @@ test_computed_style_inspector_reports_dependency_and_token_provenance :: proc(t:
 }
 
 @(test)
+test_computed_style_inspector_explains_selected_tab_and_alias_chain :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 80})
+	defer destroy_runtime(&rt)
+	theme := DEFAULT_STYLE_THEME
+	theme.color_tokens = {
+		Color{0.34, 0.36, 0.37, 1},
+		Color{0.39, 0.41, 0.42, 1},
+	}
+	theme.core_color_tokens[int(Style_Color_Role.Surface)] = Style_Color_Token_ID(1)
+	theme.color_token_provenance = {
+		Style_Token_Provenance{id=1, name="surface.active", alias_target="chrome.active"},
+		Style_Token_Provenance{id=2, name="chrome.active"},
+	}
+	theme_id := style_theme_register(&rt, theme)
+	testing.expect(t, theme_id != 0, "the inspector theme with alias provenance should register")
+	if theme_id == 0 { return }
+
+	ui, should_build := begin_frame(&rt)
+	if !should_build { testing.expect(t, false, "the first selected-tab style frame should build"); return }
+	container_begin(&ui, .Root, key=key_string("inspector-tab-root"), style=layout_style(.Row, width=240, height=40))
+	scope := style_environment_push(&ui, Style_Environment{theme=theme_id})
+	items := [1]Tab_Bar_Item{{key=key_string("readme"), label="#readme", selected=true}}
+	_ = tab_bar(&ui, key_string("inspector-tab-strip"), items[:],
+		Tab_Bar_Options{min_tab_width=100, max_tab_width=180, height=36},
+		layout_style(.Row, width=240, height=36))
+	style_environment_pop(&ui, scope)
+	container_end(&ui)
+	end_frame(&ui)
+
+	tab_id: Node_ID = 0
+	for id in rt.order {
+		node, found := rt.nodes[id]
+		if found && node.kind == .Tab && node.label == "#readme" { tab_id = id; break }
+	}
+	testing.expect(t, tab_id != 0 && focus(&rt, tab_id), "the selected document tab should be focusable for inspection")
+	if tab_id == 0 { return }
+	computed, cached := rt.computed_styles[tab_id]
+	testing.expect(t, cached && computed.family == .Button && computed.dependencies == Style_Domains{.Paint},
+		"the tab should retain its resolved Button recipe with a Paint-only dependency")
+	resolutions_before := rt.stats.style_resolutions
+	hits_before := rt.stats.style_cache_hits
+	inspection := inspect(&rt)
+	defer delete(inspection)
+	testing.expect(t, strings.contains(inspection, "tab identity: label=\"#readme\" recipe=tab.document variant=button.tab"),
+		"the inspector should name the document tab and its recipe")
+	testing.expect(t, strings.contains(inspection, "button/tab state: selected=true hovered=false pressed=false disabled=false focused=true"),
+		"the inspector should report selected, hover, and focus state independently")
+	testing.expect(t, strings.contains(inspection, "computed style: dependencies=paint") &&
+		strings.contains(inspection, "resolution=retained-cache generations="),
+		"the inspector should report the retained dependency domain and generation snapshot")
+	testing.expect(t, strings.contains(inspection, "provenance=[surface.active -> chrome.active]"),
+		"the inspector should explain the authored token and its resolved alias edge")
+	testing.expect(t, rt.stats.style_resolutions == resolutions_before && rt.stats.style_cache_hits == hits_before,
+		"inspector queries must not count as application style resolutions or cache hits")
+}
+
+@(test)
+test_style_resolution_counters_prove_cache_reuse_and_idle_frames :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 160, 80})
+	defer destroy_runtime(&rt)
+	ui, should_build := begin_frame(&rt)
+	if !should_build { testing.expect(t, false, "the first style-counter frame should build"); return }
+	container_begin(&ui, .Root, key=key_string("style-counter-root"), style=layout_style())
+	_ = button(&ui, "Save", key=key_string("style-counter-button"), variant=.Tab)
+	container_end(&ui)
+	end_frame(&ui)
+	button_id, found := node_by_key(&rt, key_string("style-counter-button"), .Button)
+	testing.expect(t, found, "the style-counter fixture button should be retained")
+	if !found { return }
+	resolutions_after_build := rt.stats.style_resolutions
+	hits_after_build := rt.stats.style_cache_hits
+	layout_after_build := rt.stats.layout_nodes_visited
+	testing.expect(t, resolutions_after_build > 0, "a newly painted control should resolve its computed style")
+
+	invalidate_interaction_paint(&rt, button_id, "style cache presentation regression")
+	presentation, ready := begin_presentation_frame(&rt)
+	testing.expect(t, ready, "paint-only invalidation should schedule a retained presentation frame")
+	if ready { end_presentation_frame(&presentation) }
+	testing.expect(t, rt.stats.style_resolutions == resolutions_after_build && rt.stats.style_cache_hits > hits_after_build,
+		"an unchanged control repainted for interaction presentation should reuse its computed style")
+	testing.expect(t, rt.stats.layout_nodes_visited == layout_after_build,
+		"paint-only presentation work must not visit layout")
+
+	resolutions_before_idle := rt.stats.style_resolutions
+	hits_before_idle := rt.stats.style_cache_hits
+	_, should_build = begin_frame(&rt)
+	testing.expect(t, !should_build && rt.stats.style_resolutions == resolutions_before_idle && rt.stats.style_cache_hits == hits_before_idle,
+		"an unchanged idle frame should perform zero computed-style resolutions and cache lookups")
+}
+
+@(test)
 test_retained_recipe_families_use_exact_paint_and_material_dependencies :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 240, 120})
 	defer destroy_runtime(&rt)

@@ -26,6 +26,19 @@ test_theme_codegen_emits_owned_runtime_factory_and_cleanup :: proc(t: ^testing.T
 		token=alicorn.Style_Length_Token_ID(1),
 	}
 	defer delete(value.extension_length_roles)
+	value.color_token_provenance = make([]alicorn.Style_Token_Provenance, 1)
+	value.color_token_provenance[0] = alicorn.Style_Token_Provenance{
+		id=1,
+		name="surface.active",
+		alias_target="chrome.active",
+	}
+	defer delete(value.color_token_provenance)
+	value.extension_color_role_provenance = make([]alicorn.Style_Extension_Color_Role_Provenance, 1)
+	value.extension_color_role_provenance[0] = alicorn.Style_Extension_Color_Role_Provenance{
+		role=alicorn.Style_Extension_Color_Role_ID(7),
+		name="app.shell.surface",
+	}
+	defer delete(value.extension_color_role_provenance)
 
 	generated, ok := theme_cli_codegen_odin(value,
 		"TEST_THEME", "main", "../runtime")
@@ -55,6 +68,12 @@ test_theme_codegen_emits_owned_runtime_factory_and_cleanup :: proc(t: ^testing.T
 		"extension color bindings should be emitted")
 	testing.expect(t, strings.contains(generated, "Style_Extension_Length_Role_Binding{"),
 		"extension length bindings should be emitted")
+	testing.expect(t, strings.contains(generated, "name=\"surface.active\", alias_target=\"chrome.active\""),
+		"generated themes should carry token names and alias edges into the runtime inspector")
+	testing.expect(t, strings.contains(generated, "name=\"app.shell.surface\""),
+		"generated themes should carry namespaced extension-role names into the runtime inspector")
+	testing.expect(t, strings.contains(generated, "delete(provenance.alias_target, allocator)"),
+		"generated cleanup should release provenance strings together with typed token arrays")
 }
 
 @(test)
