@@ -64,8 +64,12 @@ typography, and theme/accent to paint. The scope boundary confines the resulting
 layout or paint work to that subtree; scope containers keep stable
 parent-assigned bounds while contents reflow. `style_metric` leaves the meaning
 and use of each dimension with the application. This is explicit dependency
-tracking, not a general cascade or implicit observation of app state. Computed
-styles, token files, recipes, and material rendering are not part of this slice.
+tracking, not a general cascade or implicit observation of app state. The
+button component has an explicit recipe family for default, primary, toolbar,
+quiet, and tab intent. Its selected, hover, press, and disabled transforms
+compose in a fixed order; focus and semantic-active remain separate overlays.
+General token references, a shared `Computed_Style`, and material/shape
+rendering remain outside this slice.
 
 This is explicit reuse, not automatic dependency tracking. A stale region
 revision can produce stale content.

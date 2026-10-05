@@ -45,7 +45,7 @@ test_modal_overlay_blocks_workspace_and_limits_focus :: proc(t: ^testing.T) {
 		color=Color{0.06, 0.08, 0.12, 1},
 	)
 	field_id := text_field(&ui, "", key=key_string("query"), style=layout_style(.Row, height=32))
-	button(&ui, "Run command", key=key_string("overlay-command"), style=layout_style(.Row, height=32), state=Button_State{quiet=true})
+	button(&ui, "Run command", key=key_string("overlay-command"), style=layout_style(.Row, height=32), variant=.Quiet)
 	container_end(&ui)
 	modal_overlay_end(&ui)
 	end_frame(&ui)
@@ -56,13 +56,8 @@ test_modal_overlay_blocks_workspace_and_limits_focus :: proc(t: ^testing.T) {
 		"workspace and modal controls should both remain retained")
 	if overlay_id == 0 || field_id == 0 || underlying_id == 0 || overlay_button_id == 0 { return }
 	quiet_button, quiet_button_ok := rt.nodes[overlay_button_id]
-	quiet_fill_found := false
-	if quiet_button_ok {
-		for command in quiet_button.paint {
-			if command.color.r == 0.08 && command.color.g == 0.10 && command.color.b == 0.14 { quiet_fill_found = true; break }
-		}
-	}
-	testing.expect(t, quiet_fill_found, "quiet buttons should use a neutral fill while remaining interactive")
+	testing.expect(t, quiet_button_ok && quiet_button.button_variant == .Quiet,
+		"quiet buttons should resolve an explicit quiet recipe while remaining interactive")
 
 	testing.expect(t, hit_test(&rt, 10, 590) == overlay_id,
 		"an empty backdrop hit must stop at the modal layer instead of reaching the workspace")

@@ -14,9 +14,37 @@ style_color_is_valid :: proc(color: Color) -> bool {
 	       color.b >= 0 && color.b <= 1 && color.a > 0 && color.a <= 1
 }
 
+style_color_role_is_valid :: proc(role: Style_Color_Role) -> bool {
+	return int(role) >= 0 && role < .Count
+}
+
+style_transform_is_valid :: proc(transform: Style_Transform) -> bool {
+	return style_color_role_is_valid(transform.surface_role) &&
+	       style_color_role_is_valid(transform.text_role) &&
+	       transform.surface_mix == transform.surface_mix && transform.surface_mix >= 0 && transform.surface_mix <= 1 &&
+	       transform.text_mix == transform.text_mix && transform.text_mix >= 0 && transform.text_mix <= 1
+}
+
+style_button_recipe_is_valid :: proc(recipe: Button_Recipe) -> bool {
+	if !recipe.defined { return true }
+	return style_color_role_is_valid(recipe.surface_role) &&
+	       style_color_role_is_valid(recipe.text_role) &&
+	       style_color_role_is_valid(recipe.selected_indicator_role) &&
+	       style_color_role_is_valid(recipe.focus_role) &&
+	       style_color_role_is_valid(recipe.semantic_active_role) &&
+	       (recipe.selected_indicator == .None || recipe.selected_indicator == .Underline) &&
+	       style_transform_is_valid(recipe.selected) &&
+	       style_transform_is_valid(recipe.hovered) &&
+	       style_transform_is_valid(recipe.pressed) &&
+	       style_transform_is_valid(recipe.disabled)
+}
+
 style_theme_is_valid :: proc(theme: Style_Theme) -> bool {
 	for color in theme.colors {
 		if !style_color_is_valid(color) { return false }
+	}
+	for recipe in theme.button_recipes.recipes {
+		if !style_button_recipe_is_valid(recipe) { return false }
 	}
 	return true
 }
@@ -45,7 +73,7 @@ style_accent_color :: proc(accent: Style_Accent) -> Color {
 // IDs remain stable for the lifetime of this Runtime.
 style_theme_register :: proc(rt: ^Runtime, theme: Style_Theme) -> Style_Theme_ID {
 	if rt == nil || !style_theme_is_valid(theme) {
-		if rt != nil { append_diagnostic(rt, "style theme colors must be finite, opaque-or-visible normalized RGBA values") }
+		if rt != nil { append_diagnostic(rt, "style theme contains invalid colors or button recipes") }
 		return 0
 	}
 	append(&rt.style_themes, theme)
@@ -70,6 +98,110 @@ style_color :: proc(ui: ^UI, role: Style_Color_Role) -> Color {
 style_environment_color :: proc(rt: ^Runtime, environment: Style_Environment, role: Style_Color_Role) -> Color {
 	if role == .Accent && environment.accent != 0 { return style_accent_color(environment.accent) }
 	return style_theme_color(rt, environment.theme, role)
+}
+
+style_color_mix :: proc(from, to: Color, amount: f32) -> Color {
+	mix := clamp(amount, 0, 1)
+	if mix == 0 { return from }
+	if mix == 1 { return to }
+	return Color{
+		from.r+(to.r-from.r)*mix,
+		from.g+(to.g-from.g)*mix,
+		from.b+(to.b-from.b)*mix,
+		from.a+(to.a-from.a)*mix,
+	}
+}
+
+style_button_recipe :: proc(rt: ^Runtime, environment: Style_Environment, variant: Button_Variant) -> Button_Recipe {
+	index := int(variant)
+	if index < 0 || index >= BUTTON_VARIANT_COUNT { index = int(Button_Variant.Default) }
+	theme := DEFAULT_STYLE_THEME
+	if rt != nil {
+		id := u64(u32(environment.theme))
+		if id > 0 && id <= u64(len(rt.style_themes)) { theme = rt.style_themes[id-1] }
+	}
+	recipe := theme.button_recipes.recipes[index]
+	if !recipe.defined {
+		fallbacks := DEFAULT_BUTTON_RECIPES
+		recipe = fallbacks.recipes[index]
+	}
+	return recipe
+}
+
+style_button_variant_is_valid :: proc(variant: Button_Variant) -> bool {
+	return int(variant) >= 0 && int(variant) < BUTTON_VARIANT_COUNT
+}
+
+style_button_variant_resolve :: proc(rt: ^Runtime, variant: Button_Variant) -> Button_Variant {
+	if style_button_variant_is_valid(variant) { return variant }
+	if rt != nil { append_diagnostic(rt, "button variant must be one of the declared Button_Variant values; using .Default") }
+	return .Default
+}
+
+style_button_apply_transform :: proc(style: ^Button_Resolved_Style, transform: Style_Transform, rt: ^Runtime, environment: Style_Environment) {
+	if transform.surface_mix > 0 {
+		target := style_environment_color(rt, environment, transform.surface_role)
+		style.surface = style_color_mix(style.surface, target, transform.surface_mix)
+	}
+	if transform.text_mix > 0 {
+		target := style_environment_color(rt, environment, transform.text_role)
+		style.text = style_color_mix(style.text, target, transform.text_mix)
+	}
+}
+
+// style_button_resolve applies the recipe's independent transforms in this
+// fixed order: selected, hovered, pressed, disabled. Focus and semantic-active
+// are returned as separate overlays and never replace a state fill.
+style_button_resolve :: proc(
+	rt: ^Runtime,
+	environment: Style_Environment,
+	variant: Button_Variant,
+	state: Button_Visual_State,
+	drop_target_on := false,
+) -> Button_Resolved_Style {
+	recipe := style_button_recipe(rt, environment, variant)
+	style := Button_Resolved_Style{
+		surface=style_environment_color(rt, environment, recipe.surface_role),
+		text=style_environment_color(rt, environment, recipe.text_role),
+		focus=style_environment_color(rt, environment, recipe.focus_role),
+		semantic_active=style_environment_color(rt, environment, recipe.semantic_active_role),
+		selected_indicator=.None,
+		selected_indicator_color=style_environment_color(rt, environment, recipe.selected_indicator_role),
+	}
+	if !recipe.surface_visible { style.surface.a = 0 }
+	if state.selected {
+		style.applied_transforms += {.Selected}
+		style_button_apply_transform(&style, recipe.selected, rt, environment)
+	}
+	if state.hovered {
+		style.applied_transforms += {.Hovered}
+		style_button_apply_transform(&style, recipe.hovered, rt, environment)
+	}
+	if state.pressed {
+		style.applied_transforms += {.Pressed}
+		style_button_apply_transform(&style, recipe.pressed, rt, environment)
+	}
+	if state.disabled {
+		style.applied_transforms += {.Disabled}
+		style_button_apply_transform(&style, recipe.disabled, rt, environment)
+	}
+	if state.selected && !state.disabled { style.selected_indicator = recipe.selected_indicator }
+	if drop_target_on && !state.disabled {
+		style.surface = style_environment_color(rt, environment, .Success)
+	}
+	return style
+}
+
+button_variant_name :: proc(variant: Button_Variant) -> string {
+	switch variant {
+	case .Default: return "default"
+	case .Primary: return "primary"
+	case .Toolbar: return "toolbar"
+	case .Quiet: return "quiet"
+	case .Tab: return "tab"
+	case .Count: return "invalid"
+	}
+	return "invalid"
 }
 
 // style_metric scales an application-authored logical metric by the active

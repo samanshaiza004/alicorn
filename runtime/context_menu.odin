@@ -217,6 +217,7 @@ context_menu_item :: proc(
 		disabled=!item_enabled,
 		text_style=DEFAULT_BUTTON_TEXT_STYLE,
 		button_content=button_content_style(.Start, .Center, padding_x=10, padding_y=3),
+		button_variant=.Quiet,
 	)
 	if len(rt.pending) > 0 {
 		pending := &rt.pending[len(rt.pending)-1]

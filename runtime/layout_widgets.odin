@@ -302,9 +302,10 @@ virtual_list_ensure_visible :: proc(rt: ^Runtime, id: Node_ID, index: int, reaso
 	return scroll_region_set_offset(rt, id, next, reason)
 }
 
-button_ex :: proc(ui: ^UI, label: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, paint_value: u64 = 0, loc := #caller_location, text_style := DEFAULT_BUTTON_TEXT_STYLE, content_style := DEFAULT_BUTTON_CONTENT_STYLE) -> (id: Node_ID, clicked: bool) {
+button_ex :: proc(ui: ^UI, label: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, paint_value: u64 = 0, loc := #caller_location, text_style := DEFAULT_BUTTON_TEXT_STYLE, content_style := DEFAULT_BUTTON_CONTENT_STYLE, variant := Button_Variant.Default) -> (id: Node_ID, clicked: bool) {
 	resolved_source := resolve_source(source, "button", loc)
-	id = emit(ui, .Button, resolved_source, label=label, key=key, explicit_key=explicit_key, style=style, paint_value=paint_value, focusable=true, text_style=text_style, button_content=content_style)
+	resolved_variant := style_button_variant_resolve(ui.runtime, variant)
+	id = emit(ui, .Button, resolved_source, label=label, key=key, explicit_key=explicit_key, style=style, paint_value=paint_value, focusable=true, text_style=text_style, button_content=content_style, button_variant=resolved_variant)
 	clicked = consume_activation(ui.runtime, id)
 	return
 }
@@ -489,13 +490,14 @@ slider_f32 :: proc(
 	return result
 }
 
-button_simple :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, state := Button_State{}, loc := #caller_location, text_style := DEFAULT_BUTTON_TEXT_STYLE, content_style := DEFAULT_BUTTON_CONTENT_STYLE) -> bool {
+button_simple :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, state := Button_State{}, loc := #caller_location, text_style := DEFAULT_BUTTON_TEXT_STYLE, content_style := DEFAULT_BUTTON_CONTENT_STYLE, variant := Button_Variant.Default) -> bool {
 	resolved_source := resolve_source(Source_Site{}, "button", loc)
 	paint_state: u64 = 0
 	if state.selected { paint_state |= 1 }
 	if state.disabled { paint_state |= 2 }
-	if state.quiet { paint_state |= 4 }
-	id := emit_key(ui, .Button, resolved_source, label=label, key=key, style=style, state_bits=paint_state, selected=state.selected, disabled=state.disabled, focusable=!state.disabled, text_style=text_style, button_content=content_style)
+	resolved_variant := style_button_variant_resolve(ui.runtime, variant)
+	if state.quiet && variant == .Default { resolved_variant = .Quiet }
+	id := emit_key(ui, .Button, resolved_source, label=label, key=key, style=style, state_bits=paint_state, selected=state.selected, disabled=state.disabled, focusable=!state.disabled, text_style=text_style, button_content=content_style, button_variant=resolved_variant)
 	if id == 0 || state.disabled { return false }
 	return consume_activation(ui.runtime, id)
 }
@@ -508,8 +510,8 @@ text_field_simple :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, st
 	return emit_key(ui, .Text_Field, resolve_source(Source_Site{}, "text_field", loc), text=value, key=key, style=style, focusable=true, font=font, text_style=text_style)
 }
 
-button :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, state := Button_State{}, loc := #caller_location, text_style := DEFAULT_BUTTON_TEXT_STYLE, content_style := DEFAULT_BUTTON_CONTENT_STYLE) -> bool {
-	return button_simple(ui, label, key, style, state, loc, text_style, content_style)
+button :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, state := Button_State{}, loc := #caller_location, text_style := DEFAULT_BUTTON_TEXT_STYLE, content_style := DEFAULT_BUTTON_CONTENT_STYLE, variant := Button_Variant.Default) -> bool {
+	return button_simple(ui, label, key, style, state, loc, text_style, content_style, variant)
 }
 
 // semantic_bind associates the most recently described presentation node with

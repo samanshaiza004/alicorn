@@ -104,6 +104,7 @@ error and its correction hint.
 | `Text_Style` | Select weight, overflow behavior, and other text presentation options. |
 | `Style_Theme` / `style_theme_register` | Register an immutable typed color palette for one runtime. |
 | `style_color` / `style_metric` | Resolve a semantic color or scale an app-owned metric in the active environment. |
+| `Button_Variant` / `Button_Recipe` | Select an explicit button recipe such as `.Toolbar`, `.Primary`, `.Quiet`, or `.Tab`. |
 
 The default layout direction is column. Use `.Row` for horizontal children;
 `grow` shares available space. Layout is in logical window coordinates.
@@ -133,8 +134,50 @@ bounds stable while its contents reflow. Theme IDs are immutable and local to a
 runtime; do not reuse IDs across runtimes.
 
 This is the styling dependency spine and typed palette foundation, not a full
-theme compiler or cascade. Computed styles, token files, recipes, and material
-rendering remain separate follow-up work.
+theme compiler or cascade. Button recipes are the first component recipe
+family; general typed tokens and references, a shared `Computed_Style`, and
+material/shape rendering remain follow-up work tracked by the styling issues.
+
+### Button variants and recipes
+
+Buttons use one recipe family with explicit intent rather than inferring their
+appearance from their parent container. The default and `.Toolbar` variants
+use neutral surfaces; `.Primary` uses the theme accent; `.Quiet` has no idle
+surface; and `.Tab` keeps an idle tab quiet, then marks the selected tab with
+both a surface treatment and an underline.
+Select them at the call site:
+
+```odin
+alicorn.button(&ui, "Open", variant=.Toolbar)
+alicorn.button(&ui, "Save", variant=.Primary)
+alicorn.button(&ui, "Dismiss", variant=.Quiet)
+alicorn.button(&ui, "Files", state=alicorn.Button_State{selected=true}, variant=.Tab)
+```
+
+Each `Button_Recipe` names semantic surface/text roles and defines transforms
+for selection, hover, press, and disabled state. Transforms blend semantic
+roles in a fixed order: selected, hovered, pressed, then disabled. Later states
+therefore take precedence while still composing with the earlier result.
+Focus and semantic-active outlines are independent overlays and remain visible
+alongside those fills. The inspector reports the selected variant, base recipe,
+active state transforms, and focus overlay roles.
+
+An immutable `Style_Theme` may override any variant in its
+`button_recipes.recipes` array; an undefined variant uses Alicorn's built-in
+recipe for that intent, resolved against the active palette. Theme registration
+validates transform roles and blend amounts. `Button_State.quiet` remains as a
+compatibility spelling for `.Quiet`; new call sites should use `variant`.
+
+For example, copy a built-in toolbar recipe, adjust its hover transform, then
+register the containing immutable theme:
+
+```odin
+theme := alicorn.DEFAULT_STYLE_THEME
+toolbar := theme.button_recipes.recipes[int(alicorn.Button_Variant.Toolbar)]
+toolbar.hovered = alicorn.Style_Transform{surface_role=.Accent, surface_mix=0.08}
+theme.button_recipes.recipes[int(alicorn.Button_Variant.Toolbar)] = toolbar
+theme_id := alicorn.style_theme_register(&rt, theme)
+```
 
 Checkboxes toggle by pointer or Space; Enter is reserved for button activation.
 Sliders drag with the pointer, adjust down with Left/Down and up with Right/Up,
