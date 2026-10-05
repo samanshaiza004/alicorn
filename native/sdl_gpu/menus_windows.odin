@@ -628,7 +628,7 @@ win32_caption_outline :: proc(
 	win32_caption_fill(commands, node+4, clip, x+width-stroke, y+stroke, stroke, max(height-2*stroke, 0), color)
 }
 
-win32_caption_control_hover_rect :: proc(
+win32_caption_control_visual_rect :: proc(
 	hit_bounds: win.RECT,
 	index: int,
 	client_width, chrome_height: f32,
@@ -655,8 +655,9 @@ win32_caption_append_glyph :: proc(
 ) {
 	if state == nil || index < 0 || index >= len(state.caption_controls) { return }
 	control := state.caption_controls[index].bounds
-	left, top := f32(control.left), f32(control.top)
-	width, height := f32(control.right-control.left), f32(control.bottom-control.top)
+	visual := win32_caption_control_visual_rect(control, index, clip.w, clip.h)
+	left, top := visual.x, visual.y
+	width, height := visual.w, visual.h
 	cx, cy := left+width/2, top+height/2
 	stroke := f32(1.25)
 	base := NATIVE_MENU_HOST_SOLID_NODE+alicorn.Node_ID(32+index*8)
@@ -728,7 +729,7 @@ native_menu_overlay_commands :: proc(menu: ^Native_Menu_Runtime, width, height: 
 			}
 			append(&commands, alicorn.Display_Command{
 				NATIVE_MENU_HOST_SOLID_NODE+2+alicorn.Node_ID(index), .Button,
-				win32_caption_control_hover_rect(control.bounds, index, width, full.h),
+				win32_caption_control_visual_rect(control.bounds, index, width, full.h),
 				full, "", hover_color, nil,
 			})
 		}
