@@ -522,13 +522,8 @@ DEFAULT_BUTTON_RECIPES :: Button_Recipe_Set{recipes={
 // A registered theme is immutable and retained once per Runtime. Nodes carry
 // only the compact ID through Style_Environment, not a copy of this palette.
 Style_Theme :: struct {
-	colors:                 [STYLE_COLOR_ROLE_COUNT]Color,
-	button_recipes:         Button_Recipe_Set,
-	color_tokens:           []Color,
-	length_tokens:          []Style_Length,
-	core_color_tokens:      [STYLE_COLOR_ROLE_COUNT]Style_Color_Token_ID,
-	extension_color_roles:  []Style_Extension_Color_Role_Binding,
-	extension_length_roles: []Style_Extension_Length_Role_Binding,
+	colors:         [STYLE_COLOR_ROLE_COUNT]Color,
+	button_recipes: Button_Recipe_Set,
 }
 
 DEFAULT_STYLE_THEME :: Style_Theme{colors={
