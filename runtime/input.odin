@@ -94,6 +94,52 @@ scrollbar_handle_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> bool {
 	return true
 }
 
+text_field_pointer_selection_cancel :: proc(rt: ^Runtime) {
+	if rt == nil { return }
+	rt.text_field_selection_owner = 0
+	rt.text_field_selection_drag = Text_Selection_Drag_State{}
+}
+
+text_field_pointer_selection_affinities :: proc(
+	state: Text_Selection_Drag_State,
+	endpoints: Text_Selection_Endpoints,
+	position_affinity: Text_Affinity,
+	anchor_affinity: Text_Affinity,
+) -> (anchor, focus: Text_Affinity) {
+	if state.granularity == .Character { return anchor_affinity, position_affinity }
+	if endpoints.anchor <= endpoints.focus { return .Leading, .Trailing }
+	return .Trailing, .Leading
+}
+
+text_field_pointer_selection_update :: proc(rt: ^Runtime, owner: Node_ID, x, y: f32) -> bool {
+	if rt == nil || owner == 0 || rt.text_field_selection_owner != owner ||
+		rt.captured_node != owner || !rt.text_field_selection_drag.active { return false }
+	node, ok := rt.nodes[owner]
+	if !ok || !node.active || node.kind != .Text_Field || !node.text_run_valid { return false }
+	position := text_run_hit_test(&node.text_run, x-node.bounds.x, y-node.bounds.y, rt.scratch_allocator)
+	endpoints, changed := text_selection_drag_extend(
+		node.text,
+		rt.text_field_selection_drag,
+		position.byte,
+		rt.scratch_allocator,
+	)
+	if !changed { return false }
+	anchor_affinity, focus_affinity := text_field_pointer_selection_affinities(
+		rt.text_field_selection_drag,
+		endpoints,
+		position.affinity,
+		node.selection_anchor.affinity,
+	)
+	anchor := Text_Position{endpoints.anchor, anchor_affinity}
+	focus_position := Text_Position{endpoints.focus, focus_affinity}
+	if node.selection_anchor == anchor && node.selection_focus == focus_position && node.caret == focus_position { return false }
+	node.selection_anchor = anchor
+	node.selection_focus = focus_position
+	node.caret = focus_position
+	invalidate_interaction_paint(rt, owner, "text field pointer selection extended")
+	return true
+}
+
 // cancel_pointer_capture is the host boundary for focus loss or native input
 // cancellation. SDL auto-captures mouse motion while a button is held, but a
 // focus transition can interrupt the matching pointer-up; clearing runtime
@@ -102,7 +148,8 @@ cancel_pointer_capture :: proc(rt: ^Runtime) -> bool {
 	captured := rt.captured_node
 	dragging := rt.scrollbar_drag_node != 0
 	drag_candidate := rt.drag.phase != .Idle
-	if captured == 0 && !dragging && !drag_candidate { return false }
+	selection_drag := rt.text_field_selection_owner != 0
+	if captured == 0 && !dragging && !drag_candidate && !selection_drag { return false }
 	if drag_candidate { drag_cancel_session(rt) }
 	if node, ok := rt.nodes[captured]; ok {
 		if node.pressed {
@@ -113,6 +160,7 @@ cancel_pointer_capture :: proc(rt: ^Runtime) -> bool {
 			if owner, owner_ok := rt.nodes[node.split_owner]; owner_ok { owner.split_dragging = false }
 		}
 	}
+	text_field_pointer_selection_cancel(rt)
 	rt.captured_node = 0
 	rt.scrollbar_drag_node = 0
 	rt.activation_node = 0
@@ -453,7 +501,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 		return target
 	}
 	if event.kind == .Down {
-		if rt.captured_node != 0 || rt.scrollbar_drag_node != 0 {
+		if rt.captured_node != 0 || rt.scrollbar_drag_node != 0 || rt.text_field_selection_owner != 0 {
 			_ = cancel_pointer_capture(rt)
 		}
 		bar_hit := scrollbar_hit_test(rt, event.x, event.y)
@@ -491,6 +539,9 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 	}
 	if event.kind == .Move {
 		_ = drag_process_pointer(rt, event, target)
+		if rt.text_field_selection_owner != 0 {
+			_ = text_field_pointer_selection_update(rt, rt.text_field_selection_owner, event.x, event.y)
+		}
 		hover_target := target
 		if captured, ok := rt.nodes[rt.captured_node]; ok && captured.active && captured.kind == .Split_Handle {
 			hover_target = captured.id
@@ -558,13 +609,32 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 						owner.split_drag_start_coordinate = split_drag_coordinate(node, event.x, event.y)
 					}
 				}
-				if node.kind == .Text_Field && node.text_run_valid {
+				if node.kind == .Text_Field && node.text_run_valid &&
+					(event.button == 0 || event.button == POINTER_BUTTON_PRIMARY) {
 					position := text_run_hit_test(&node.text_run, event.x-node.bounds.x, event.y-node.bounds.y, rt.scratch_allocator)
-					node.caret = position
-					node.selection_anchor = position
-					node.selection_focus = position
-					invalidate_interaction_paint(rt, node.id, "pointer assigned text caret")
-					record_trace(rt, .Focus, target, "pointer assigned text caret at visual boundary")
+					drag_state, endpoints := text_selection_drag_begin(
+						node.text,
+						position.byte,
+						event.click_count,
+						event.modifiers.shift,
+						node.selection_anchor.byte,
+						rt.scratch_allocator,
+					)
+					rt.text_field_selection_owner = node.id
+					rt.text_field_selection_drag = drag_state
+					selection_anchor_affinity := position.affinity
+					if event.modifiers.shift { selection_anchor_affinity = node.selection_anchor.affinity }
+					anchor_affinity, focus_affinity := text_field_pointer_selection_affinities(
+						drag_state,
+						endpoints,
+						position.affinity,
+						selection_anchor_affinity,
+					)
+					node.caret = Text_Position{endpoints.focus, focus_affinity}
+					node.selection_anchor = Text_Position{endpoints.anchor, anchor_affinity}
+					node.selection_focus = node.caret
+					invalidate_interaction_paint(rt, node.id, "pointer assigned text selection")
+					record_trace(rt, .Focus, target, "pointer assigned text selection at visual boundary")
 				}
 			}
 			rt.captured_node = target
@@ -577,7 +647,11 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 			}
 		}
 	} else if event.kind == .Up {
+		if rt.text_field_selection_owner != 0 {
+			_ = text_field_pointer_selection_update(rt, rt.text_field_selection_owner, event.x, event.y)
+		}
 		if drag_process_pointer(rt, event, target) {
+			text_field_pointer_selection_cancel(rt)
 			record_trace(rt, .Pointer, target, "drag dropped")
 			return target
 		}
@@ -594,6 +668,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 			}
 			rt.captured_node = 0
 		}
+		text_field_pointer_selection_cancel(rt)
 		captured_is_split := false
 		if node, ok := rt.nodes[captured]; ok { captured_is_split = node.kind == .Split_Handle }
 		if captured_is_split && captured != target {

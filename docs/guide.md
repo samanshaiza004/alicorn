@@ -162,7 +162,10 @@ need:
 - `region_begin/end` with an application-owned revision when an unchanged
   subtree is expensive to describe;
 - `split_begin/end` for retained, draggable panes;
-- `text_field` and the host text-change callback for editable text;
+- `text_field` and the host text-change callback for editable text. Text
+  fields also own normal mouse selection: click-drag selects graphemes,
+  double-click selects a word, triple-click selects a logical line, and
+  Shift-click extends the current selection;
 - a custom GPU surface for a bounded, high-frequency visualization.
 
 These APIs do not replace application state. In particular, Alicorn does not

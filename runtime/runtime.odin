@@ -1368,6 +1368,8 @@ Runtime :: struct {
 	semantic_focus: Semantic_Focus_State,
 	last_hovered: Node_ID,
 	captured_node: Node_ID,
+	text_field_selection_owner: Node_ID,
+	text_field_selection_drag: Text_Selection_Drag_State,
 	drag: Drag_Session,
 	drag_preview: Drag_Preview,
 	drag_event: Drag_Event,

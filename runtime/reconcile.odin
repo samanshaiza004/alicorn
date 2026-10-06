@@ -502,6 +502,11 @@ copy_node_description :: proc(
 	node.identity_key_u64 = d.identity_key_u64
 	node.identity_key_numeric = d.identity_key_numeric
 	if text_changed {
+		if rt.text_field_selection_owner == node.id {
+			text_field_pointer_selection_cancel(rt)
+			rt.captured_node = 0
+			node.pressed = false
+		}
 		node.caret = Text_Position{len(d.text), .Leading}
 		node.selection_anchor = node.caret
 		node.selection_focus = node.caret
@@ -512,6 +517,7 @@ copy_node_description :: proc(
 		node.control_pending = false
 		if rt.focused == node.id { rt.focused = 0 }
 		if rt.captured_node == node.id { rt.captured_node = 0 }
+		if rt.text_field_selection_owner == node.id { text_field_pointer_selection_cancel(rt) }
 		if rt.activation_node == node.id { rt.activation_node = 0 }
 	}
 }
@@ -602,6 +608,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 		}
 		rt.captured_node = 0
 	}
+	if id == rt.text_field_selection_owner { text_field_pointer_selection_cancel(rt) }
 	if id == rt.selected { rt.selected = 0 }
 	semantic_retire_node(rt, node)
 	delete_key(&rt.nodes, id)
