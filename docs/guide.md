@@ -124,8 +124,8 @@ apply `index` only when `found` is true. Choose Ctrl/Cmd bindings in the
 application rather than assuming the runtime installs them.
 
 For reordering, consume the existing drag/drop events and update the
-application-owned order. `Semantic_ID` supports Alicorn's internal semantics
-and drag identity, but is not a native screen-reader accessibility interface.
+application-owned order. `Semantic_ID` is also used by Alicorn's backend-neutral
+semantic model; it is not a native screen-reader accessibility interface.
 
 ## Give repeated data stable identity
 
@@ -201,7 +201,37 @@ native text-input path, including composition events. Focus has a visible
 runtime presentation. Applications can also publish stable `Action_ID`s for
 commands and use `Semantic_ID` to keep logical focus attached to an item whose
 visual row may be virtualized; these APIs keep app behavior and identity
-explicit.
+explicit. The runtime can retain semantic entities separately from visual
+nodes, publish a full `semantic_snapshot`, or expose the newest
+`semantic_update_since` delta. Deltas describe one `from_revision` →
+`to_revision` transition; only the latest transition is retained. If a consumer
+asks from a different base revision, it must obtain a new snapshot rather than
+apply a discontinuous delta. A caller already at the current revision gets an
+empty update; any other base must match the single retained transition or
+requires a snapshot. This API is currently an internal, backend-neutral
+runtime API and is not connected to a native adapter.
+
+Virtual collections use `semantic_collection_begin` with
+`semantic_collection_item` for realized rows and `semantic_collection_virtual_item`
+for logical items that need description without visual realization. The
+application supplies only its semantic working set; Alicorn retains collection
+metadata rather than eagerly constructing one semantic record for every
+logical item. Items described for a collection are pruned as its working set
+moves, except items pinned as current, selected, or semantic-focus targets.
+Collection item records carry their logical position and total set size. The
+application remains responsible for describing useful items and for handling
+requests: `semantic_action_request` can route supported realized actions
+through Alicorn's normal activation/focus paths or queue a logical Perform
+event; `semantic_reveal_request` queues a distinct Reveal event. During the
+resulting application wake, the app drains queued events with
+`semantic_request_pop` and releases transferred event data with
+`semantic_request_event_destroy`.
+
+Tests exercise a million-item collection while retaining a small working set,
+including visible-only, horizon, and current/selected/focused-pinned cases.
+This is an implementation and bounded-memory proof, not evidence that an
+assistive-technology client can navigate gaps in a platform accessibility
+tree.
 
 These features are **not** a platform accessibility bridge. Alicorn does not
 currently expose its retained controls as UI Automation elements on Windows
@@ -213,12 +243,12 @@ role, label, value, or platform element. Native application menus and dialogs
 use OS facilities; that does not make Alicorn-rendered context menus or
 controls accessible to assistive technology.
 
-For v0.1, treat keyboard reachability and screen-reader accessibility as
-separate capabilities. The intended direction is to build any future platform
-bridge from the existing control, action, focus, and semantic state rather
-than infer accessibility from paint output or add a parallel application
-command model. See the [reference](reference.md#accessibility-boundary) for
-the API boundary and limitations.
+Semantic updates are dirty-driven; they do not poll while idle. A future
+activation path may request a bounded initial projection, but activation and
+platform adapter work belong to #51 and are not implemented. For now, treat
+keyboard reachability and screen-reader accessibility as separate
+capabilities. See the [reference](reference.md#semantic-model-and-collections)
+for the API boundary and limitations.
 
 ## When something looks wrong
 

@@ -18,11 +18,16 @@ native_devtools_sample_has_activity :: proc(sample: Native_DevTools_Sample) -> b
 	return sample.host_wakes > 0 || sample.app_builds > 0 || sample.presentation_updates > 0 ||
 		sample.gpu_submissions > 0 || sample.surface_updates > 0 || sample.persistent_allocations > 0 || sample.reconcile_visits > 0 ||
 		sample.layout_visits > 0 || sample.paint_visits > 0 || sample.composition_visits > 0 ||
-		sample.pointer_events > 0 || sample.hover_target_transitions > 0
+		sample.pointer_events > 0 || sample.hover_target_transitions > 0 ||
+		sample.semantic_descriptions_emitted > 0 || sample.semantic_entities_resolved > 0 ||
+		sample.semantic_structure_changes > 0 || sample.semantic_property_changes > 0 ||
+		sample.semantic_projection_nodes_added+sample.semantic_projection_nodes_updated+sample.semantic_projection_nodes_removed > 0 ||
+		sample.accessibility_activation_wakes > 0 || sample.accessibility_action_wakes > 0 || sample.accessibility_reveal_wakes > 0 || sample.accessibility_updates_submitted > 0
 }
 
 native_devtools_activity_class :: proc(sample: Native_DevTools_Sample) -> Native_DevTools_Activity_Class {
-	if sample.app_builds > 0 { return .App }
+	if sample.app_builds > 0 || sample.semantic_descriptions_emitted > 0 || sample.semantic_entities_resolved > 0 ||
+		sample.semantic_structure_changes > 0 || sample.semantic_property_changes > 0 { return .App }
 	// Retained stage visits distinguish actual UI presentation work from the
 	// presentation revision that a custom-surface-only update also advances.
 	if sample.reconcile_visits+sample.layout_visits+sample.paint_visits+sample.composition_visits > 0 ||
@@ -30,7 +35,9 @@ native_devtools_activity_class :: proc(sample: Native_DevTools_Sample) -> Native
 		return .Present
 	}
 	if sample.surface_updates > 0 { return .Surface }
-	if sample.presentation_updates+sample.gpu_submissions+sample.persistent_allocations > 0 { return .Present }
+	if sample.presentation_updates+sample.gpu_submissions+sample.persistent_allocations > 0 ||
+		sample.semantic_projection_nodes_added+sample.semantic_projection_nodes_updated+sample.semantic_projection_nodes_removed > 0 ||
+		 sample.accessibility_reveal_wakes > 0 || sample.accessibility_updates_submitted > 0 { return .Present }
 	if sample.host_wakes+sample.pointer_events+sample.hover_target_transitions > 0 { return .Host }
 	return .Idle
 }
@@ -104,6 +111,10 @@ Native_DevTools_HUD_Recent :: struct {
 	persistent_allocations: u64,
 	pointer_events:      u64,
 	hover_target_transitions: u64,
+	semantic_entity_changes: u64,
+	semantic_projection_changes: u64,
+	accessibility_action_wakes: u64,
+	accessibility_reveal_wakes: u64,
 }
 
 Native_DevTools_HUD_Line :: struct {
@@ -139,6 +150,10 @@ native_devtools_hud_recent :: proc(
 		recent.persistent_allocations += sample.persistent_allocations
 		recent.pointer_events += sample.pointer_events
 		recent.hover_target_transitions += sample.hover_target_transitions
+		recent.semantic_entity_changes += sample.semantic_entities_resolved
+		recent.semantic_projection_changes += sample.semantic_projection_nodes_added + sample.semantic_projection_nodes_updated + sample.semantic_projection_nodes_removed
+		recent.accessibility_action_wakes += sample.accessibility_action_wakes
+		recent.accessibility_reveal_wakes += sample.accessibility_reveal_wakes
 	}
 	if preview_valid && preview.timestamp_ns >= cutoff && preview.timestamp_ns <= now_ns {
 		recent.app_builds += preview.app_builds
@@ -149,6 +164,10 @@ native_devtools_hud_recent :: proc(
 		recent.persistent_allocations += preview.persistent_allocations
 		recent.pointer_events += preview.pointer_events
 		recent.hover_target_transitions += preview.hover_target_transitions
+		recent.semantic_entity_changes += preview.semantic_entities_resolved
+		recent.semantic_projection_changes += preview.semantic_projection_nodes_added + preview.semantic_projection_nodes_updated + preview.semantic_projection_nodes_removed
+		recent.accessibility_action_wakes += preview.accessibility_action_wakes
+		recent.accessibility_reveal_wakes += preview.accessibility_reveal_wakes
 		last = preview
 		has_last = true
 	}
@@ -175,7 +194,8 @@ native_devtools_hud_next_wake_ns :: proc(recorder: ^Native_Flight_Recorder, now_
 		}
 		has_recent_count := sample.app_builds+sample.presentation_updates+sample.gpu_submissions+
 			sample.host_wakes+sample.surface_updates+sample.persistent_allocations+
-			sample.pointer_events+sample.hover_target_transitions > 0
+			sample.pointer_events+sample.hover_target_transitions+sample.semantic_entities_resolved+
+			sample.accessibility_action_wakes+sample.accessibility_reveal_wakes > 0
 		if has_recent_count && sample.timestamp_ns <= now_ns && now_ns-sample.timestamp_ns < 1_000_000_000 {
 			if !oldest_recent_found || sample.timestamp_ns < oldest_recent_ns {
 				oldest_recent_ns = sample.timestamp_ns
@@ -357,7 +377,7 @@ native_devtools_hud_render :: proc(
 	margin := 12 * font_scale
 	panel_w := min(int(target_w)-2*margin, 410*font_scale)
 	if panel_w < 150*font_scale { return true }
-	panel_h := 116 * font_scale
+	panel_h := 126 * font_scale
 	if int(target_h) < panel_h+2*margin { return true }
 	panel_x := int(target_w)-panel_w-margin
 	panel_y := margin
@@ -429,13 +449,13 @@ native_devtools_hud_render :: proc(
 		for logical_index := count-1; logical_index >= 0; logical_index -= 1 {
 			sample, ok := native_flight_sample_at(recorder, logical_index)
 			if !ok { continue }
-			if sample.host_wakes > 0 || sample.app_builds+sample.presentation_updates+sample.gpu_submissions+sample.surface_updates > 0 {
+			if sample.host_wakes > 0 || sample.app_builds+sample.presentation_updates+sample.gpu_submissions+sample.surface_updates+sample.semantic_entities_resolved+sample.accessibility_action_wakes+sample.accessibility_reveal_wakes > 0 {
 				last_work = sample
 				break
 			}
 		}
 	}
-	if preview_valid && (preview.host_wakes > 0 || preview.app_builds+preview.presentation_updates+preview.gpu_submissions+preview.surface_updates > 0) {
+	if preview_valid && (preview.host_wakes > 0 || preview.app_builds+preview.presentation_updates+preview.gpu_submissions+preview.surface_updates+preview.semantic_entities_resolved+preview.accessibility_action_wakes+preview.accessibility_reveal_wakes > 0) {
 		last_work = preview
 	}
 	line = {}
@@ -487,9 +507,20 @@ native_devtools_hud_render :: proc(
 	native_hud_build_line(renderer, &line, content_x, line_y+6*line_height, font_scale, clip_right, white)
 
 	line = {}
+	native_hud_line_append(&line, "SEM E")
+	native_hud_line_append_u64(&line, recent.semantic_entity_changes)
+	native_hud_line_append(&line, " P")
+	native_hud_line_append_u64(&line, recent.semantic_projection_changes)
+	native_hud_line_append(&line, " ACT")
+	native_hud_line_append_u64(&line, recent.accessibility_action_wakes)
+	native_hud_line_append(&line, " REV")
+	native_hud_line_append_u64(&line, recent.accessibility_reveal_wakes)
+	native_hud_build_line(renderer, &line, content_x, line_y+7*line_height, font_scale, clip_right, cyan)
+
+	line = {}
 	native_hud_line_append(&line, "INV ")
 	native_hud_line_append(&line, last_invalidation)
-	native_hud_build_line(renderer, &line, content_x, line_y+7*line_height, font_scale, clip_right, muted)
+	native_hud_build_line(renderer, &line, content_x, line_y+8*line_height, font_scale, clip_right, muted)
 
 	// Draw a bounded oldest-to-newest activity strip. Colors distinguish the
 	// classified work without implying a fixed frame rate.
@@ -503,14 +534,14 @@ native_devtools_hud_render :: proc(
 	for logical_index := max(native_flight_sample_count(recorder)-bar_count, 0); logical_index < native_flight_sample_count(recorder); logical_index += 1 {
 		sample, ok := native_flight_sample_at(recorder, logical_index)
 		if !ok { continue }
-		work := sample.app_builds + sample.presentation_updates + sample.gpu_submissions + sample.host_wakes
+		work := sample.app_builds + sample.presentation_updates + sample.gpu_submissions + sample.host_wakes + sample.semantic_entities_resolved + sample.accessibility_action_wakes + sample.accessibility_reveal_wakes
 		if work > max_work { max_work = work }
 	}
 	for bar_index := 0; bar_index < bar_count; bar_index += 1 {
 		logical_index := native_flight_sample_count(recorder)-bar_count+bar_index
 		sample, ok := native_flight_sample_at(recorder, logical_index)
 		if !ok { continue }
-		work := sample.app_builds + sample.presentation_updates + sample.gpu_submissions + sample.host_wakes
+		work := sample.app_builds + sample.presentation_updates + sample.gpu_submissions + sample.host_wakes + sample.semantic_entities_resolved + sample.accessibility_action_wakes + sample.accessibility_reveal_wakes
 		bar_h := font_scale + int(u64(10*font_scale)*work/max_work)
 		bar_color := [4]f32{0.23, 0.34, 0.44, 1}
 		switch native_devtools_activity_class(sample) {

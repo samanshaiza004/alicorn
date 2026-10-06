@@ -36,10 +36,10 @@ Then explore the [application guide](docs/guide.md), [API reference](docs/refere
 [performance evidence](docs/performance.md), [architecture](docs/architecture.md),
 or [contributor guide](docs/development.md).
 
-**Accessibility status:** Alicorn provides keyboard focus/navigation, keyboard
-control behavior, and semantic action/focus identities, but it does not yet
-expose its GPU-rendered UI as a platform accessibility tree for screen readers.
-See the guide's [accessibility status](docs/guide.md#accessibility-status).
+**Accessibility status:** Alicorn provides keyboard focus/navigation and a
+backend-neutral semantic runtime model, but no OS accessibility bridge is
+implemented. Its GPU-rendered controls are not exposed to screen readers. See
+the guide's [accessibility status](docs/guide.md#accessibility-status).
 
 For live debugging, the native host includes an opt-in
 [visual inspector](docs/development.md#native-diagnostics): retained tree,

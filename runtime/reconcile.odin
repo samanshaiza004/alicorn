@@ -285,7 +285,7 @@ semantic_surface_role_changed :: proc(previous, next: Semantic_Surface_Style) ->
 	return false
 }
 
-copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description, semantic_surface_style := Semantic_Surface_Style{}, visual_part := Visual_Part_Style{}) {
+copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description, semantic: Semantic_Descriptor, semantic_surface_style := Semantic_Surface_Style{}, visual_part := Visual_Part_Style{}) {
 	// Runtime-owned copies are important: a generic description may borrow a
 	// caller's string for only the duration of this procedure.
 	label_changed := (d.kind == .Button || d.kind == .Checkbox || d.kind == .Slider) && node.label != d.label
@@ -408,7 +408,9 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description, semanti
 	// the procedural description does not mention selection, while allowing a
 	// description to opt a node into the selected visual state.
 	node.selected = d.selected || rt.selected == node.id
+	previous_semantic_id := node.semantic_id
 	node.semantic_id = d.semantic_id
+	semantic_sync_node(rt, node, semantic, previous_semantic_id)
 	node.drag_source_type = d.drag_source_type
 	node.drag_source_id = d.drag_source_id
 	node.drop_target_type = d.drop_target_type
@@ -572,6 +574,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 		rt.captured_node = 0
 	}
 	if id == rt.selected { rt.selected = 0 }
+	semantic_retire_node(rt, node)
 	delete_key(&rt.nodes, id)
 	// Paint commands contain only inline values and generation-checked resource
 	// handles. Their referenced runs and span storage are owned by the node.
@@ -592,6 +595,7 @@ append_order_subtree :: proc(rt: ^Runtime, id: Node_ID) {
 	node, ok := rt.nodes[id]
 	if !ok || !node.active { return }
 	append(&rt.order, id)
+	semantic_sync_tree_order(rt, id, u64(len(rt.order)-1))
 	for child in node.children {
 		append_order_subtree(rt, child)
 	}
@@ -665,7 +669,7 @@ reconcile :: proc(rt: ^Runtime) {
 			node.surface_circles = make([dynamic]GPU_Surface_Filled_Circle, 0, allocator=rt.persistent_allocator)
 			rt.nodes[d.id] = node
 			rt.stats.nodes_created += 1
-			copy_node_description(rt, node, d, item.semantic_surface_style, item.visual_part)
+			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part)
 			node.description_hash = description_hash(d, item.semantic_surface_style, item.visual_part)
 			node.layout_hash = layout_hash(d)
 			node.paint_hash = paint_hash(d, item.semantic_surface_style, item.visual_part)
@@ -689,7 +693,7 @@ reconcile :: proc(rt: ^Runtime) {
 			layout_changed := node.layout_hash != new_layout_hash || text_changed || Dirty_Stage.Layout in style_stages
 			paint_changed := node.paint_hash != new_paint_hash || Dirty_Stage.Paint in style_stages
 			composite_changed := Dirty_Stage.Composite in style_stages
-			copy_node_description(rt, node, d, item.semantic_surface_style, item.visual_part)
+			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part)
 			if was_selected != node.selected {
 				visual_part_invalidate_dependents(rt, d.id, "visual part owner selection changed")
 			}
@@ -808,9 +812,12 @@ reconcile :: proc(rt: ^Runtime) {
 		owner, owner_ok := rt.nodes[rt.semantic_focus.owner]
 		if !owner_ok || !owner.active { rt.semantic_focus.owner = 0 }
 	}
+	semantic_keyboard_focus_refresh(rt)
+	semantic_prune_touched_collections(rt)
 
 	prepare_text_runs(rt)
 	layout_tree(rt)
+	semantic_commit(rt)
 	update_paint(rt)
 	rt.frame_open = false
 	// Preserve application invalidations raised while this description was
@@ -872,6 +879,19 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.computed_styles)
 	delete(rt.semantic_surfaces)
 	delete(rt.visual_parts)
+	for _, &entity in rt.semantic_entities { semantic_entity_strings_destroy(&entity, rt.persistent_allocator) }
+	delete(rt.semantic_entities)
+	delete(rt.semantic_pending_changed)
+	delete(rt.semantic_pending_added)
+	delete(rt.semantic_pending_structure)
+	delete(rt.semantic_pending_removed)
+	delete(rt.semantic_last_changed)
+	delete(rt.semantic_last_removed)
+	delete(rt.semantic_collection_touched)
+	for event in rt.semantic_requests {
+		if len(event.text_value) > 0 { delete(event.text_value, rt.persistent_allocator) }
+	}
+	delete(rt.semantic_requests)
 	delete(rt.order)
 	delete(rt.top_level)
 	delete(rt.pending)

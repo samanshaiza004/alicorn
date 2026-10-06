@@ -157,7 +157,10 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 		scroll_content_width=scroll_content_width, scroll_viewport_width=scroll_viewport_width, scroll_line_width=scroll_line_width,
 		scroll_axes=scroll_axes, scroll_axis_behavior=scroll_axis_behavior,
 	}
-	append(&rt.pending, Pending_Item{.Description, description, 0, {}, {}})
+	semantic := Semantic_Descriptor{}
+	semantic_description_defaults(&description, &semantic)
+	if semantic.role != .None { rt.stats.semantic_descriptions_emitted += 1 }
+	append(&rt.pending, Pending_Item{kind=.Description, description=description, semantic=semantic})
 	rt.stats.descriptions_emitted += 1
 	rt.stats.stage_visits[.Description] += 1
 	return id
@@ -228,7 +231,10 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 		scroll_content_width=scroll_content_width, scroll_viewport_width=scroll_viewport_width, scroll_line_width=scroll_line_width,
 		scroll_axes=scroll_axes, scroll_axis_behavior=scroll_axis_behavior,
 	}
-	append(&rt.pending, Pending_Item{.Description, description, 0, {}, {}})
+	semantic := Semantic_Descriptor{}
+	semantic_description_defaults(&description, &semantic)
+	if semantic.role != .None { rt.stats.semantic_descriptions_emitted += 1 }
+	append(&rt.pending, Pending_Item{kind=.Description, description=description, semantic=semantic})
 	rt.stats.descriptions_emitted += 1
 	rt.stats.stage_visits[.Description] += 1
 	return id

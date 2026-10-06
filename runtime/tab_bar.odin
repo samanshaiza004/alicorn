@@ -1,5 +1,7 @@
 package alicorn
 
+import "core:fmt"
+
 TAB_CLOSE_SLOT_WIDTH :: f32(28)
 TAB_CLOSE_CONTROL_SIZE :: f32(24)
 TAB_AUTO_CLOSE_ALWAYS_WIDTH :: f32(156)
@@ -157,6 +159,17 @@ tab_bar :: proc(
 	if outer_id == 0 { return result }
 	outer_pending := &rt.pending[len(rt.pending)-1].description
 	outer_pending.paint_value = selected_state_hash
+	selected_semantic_id := Semantic_ID{}
+	collection := semantic_collection_begin(
+		ui,
+		outer_id,
+		semantic_visual_id(outer_id),
+		.Tab_List,
+		"Open documents",
+		u64(len(items)),
+		realized_first=0,
+		realized_last=u64(len(items)),
+	)
 
 	left_scroll_clicked := false
 	left_scroll_id: Node_ID = 0
@@ -244,7 +257,26 @@ tab_bar :: proc(
 		)
 		if tab_id == 0 { continue }
 		_ = visual_part_attach(ui, tab_id, tab_id, visual_part_core(.Surface))
-		if semantic_id_is_valid(item.semantic_id) { _ = semantic_bind(ui, item.semantic_id) }
+		pending := &rt.pending[len(rt.pending)-1].description
+		// Keep the fixed-size description contract compact by encoding the
+		// tab-only presentation flags in the existing paint state word.
+		pending.paint_value |= u64(opts.close_policy) << 1
+		pending.paint_value |= 1 << 5 // selected underline is a composed surface part
+		if item.closable { pending.paint_value |= 1 << 3 }
+		if item.dirty { pending.paint_value |= 1 << 4 }
+		item_semantic_id := item.semantic_id
+		if !semantic_id_is_valid(item_semantic_id) { item_semantic_id = semantic_visual_id(tab_id) }
+		pending.semantic_id = item_semantic_id
+		tab_states := rt.pending[len(rt.pending)-1].semantic.states
+		if item.dirty { tab_states = semantic_states_add(tab_states, .Modified) }
+		_ = semantic_collection_item(ui, collection, u64(index), Semantic_Node_Description{
+			id=item_semantic_id,
+			role=.Tab,
+			label=item.label,
+			states=tab_states,
+			actions=semantic_actions_add({}, .Select),
+		})
+		if item.selected { selected_semantic_id = item_semantic_id }
 		if opts.drag_type != Drag_Type(0) && semantic_id_is_valid(item.semantic_id) {
 			_ = drag_source(ui, opts.drag_type, item.semantic_id)
 			_ = drop_target(ui, opts.drag_type, item.semantic_id, .Between_Horizontal)
@@ -311,6 +343,10 @@ tab_bar :: proc(
 					variant=.Quiet,
 					focusable=false,
 				)
+				if close_id != 0 {
+					_ = semantic_description(ui, .Button, fmt.tprintf("Close %s", item.label),
+						actions=semantic_actions_add({}, .Press))
+				}
 				_ = visual_part_attach(ui, close_id, tab_id, visual_part_core(.Overlay), close_visibility,
 					reveal_on_direct_hover=dirty_close_reveal)
 				if close_activated && result.action == .None { result = Tab_Bar_Result{.Close, index} }
@@ -356,6 +392,7 @@ tab_bar :: proc(
 	}
 	container_end(ui)
 	scroll_region_end(ui)
+	_ = semantic_collection_selection_set(ui, outer_id, selected_semantic_id, selected_semantic_id)
 	if show_scroll_controls {
 		right_scroll_id: Node_ID
 		right_scroll_clicked: bool

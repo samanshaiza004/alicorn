@@ -362,15 +362,68 @@ on that row. A later matching `semantic_bind` reconnects the presentation.
 application's selected item. `semantic_focus_state` and `inspect(runtime)` show
 the identity, owner, and current realization.
 
+### Semantic model and collections
+
+The runtime maintains backend-neutral semantic entities independently of
+retained visual nodes. Built-in controls receive semantic descriptions, and
+applications can describe additional roles, labels, values, states, actions,
+and parent relationships. The first composite proof is the Tab Bar: its
+TabList contains semantic Tab items and per-tab close actions; underline,
+dirty marker, hover surface, and other paint-only parts do not become separate
+semantic entities.
+
+`semantic_snapshot(runtime, allocator)` returns an owned full snapshot; release
+it with `semantic_snapshot_destroy`. `semantic_update_since(runtime, from_revision)`
+exposes the current keyboard-focus ID and at most the newest revision
+transition (`from_revision` → `to_revision`). A consumer can apply a delta
+only when its base equals `from_revision`. A caller already at the current
+revision gets an empty update; any other base must match the single retained
+transition or requires a full snapshot. Delta ID slices are runtime-owned and
+valid only until the next semantic
+commit or runtime destruction. These APIs currently belong to the internal
+runtime package; no native accessibility adapter consumes them.
+The snapshot's keyboard-focus ID is distinct from application selection and
+logical semantic focus; Alicorn does not currently define a separate
+screen-reader review-focus state.
+
+For a large collection, `semantic_collection_begin` describes the collection
+and its logical count, realized range, selected ID, and current ID.
+`semantic_collection_item` attaches semantics to a presented row, while
+`semantic_collection_virtual_item` records a logical item without creating a
+visual node. `semantic_collection_selection_set` updates the collection's
+selected/current identities during description. Virtual items include their
+logical position and total set size. Describe only a bounded working set—such
+as visible rows plus a small navigation horizon—and let Alicorn prune items
+that leave it. Current, selected, and semantic-focused items remain pinned
+outside that range. Applications own the logical identities and must describe
+the items they want retained; this is not a callback that can discover an
+arbitrary item on demand.
+
+`semantic_action_request` requests an advertised action. Supported realized
+Press/Select/Focus operations use Alicorn's existing activation or focus path;
+logical-only operations and other domain actions are queued for the
+application. `semantic_reveal_request` is separate: it queues a Reveal request
+for a logical collection item and does not synthesize a click or require that
+item to have a visual node. Drain queued events with `semantic_request_pop`
+during the application wake and release an event's transferred text value with
+`semantic_request_event_destroy`. The application decides how to perform the
+operation or reveal/scroll the item and then describes the resulting state.
+
+The million-item tests exercise bounded retained semantics with visible-only,
+visible-plus-horizon, and current/selected/focused-pinned policies. This proves
+the implementation's working-set behavior, not real screen-reader navigation
+across gaps in a native accessibility tree.
+
 ### Accessibility boundary
 
-These semantic IDs and focus states are runtime interaction data, not a
-platform accessibility tree. `Action_ID` names an application command; it does
-not automatically expose a control's accessible role, name, value, or actions
-to UI Automation, NSAccessibility, or a screen reader. The current runtime has
-no bridge that publishes its GPU-rendered node tree to those platform APIs.
-Native host menus and dialogs are OS-owned services, but custom Alicorn
-controls and context menus remain outside that accessibility tree. See the
+The semantic store and snapshot/delta API are backend-neutral runtime data,
+not a platform accessibility tree. They are not currently wired to UI
+Automation, NSAccessibility, AccessKit, or another native adapter. Therefore
+they do not make Alicorn's GPU-rendered controls available to VoiceOver,
+Narrator, or other screen readers. Native host menus and dialogs are OS-owned
+services, but custom Alicorn controls and context menus remain outside native
+accessibility APIs. Semantic updates are dirty-driven and do not poll while
+idle; activation and the platform adapter remain future #51 work. See the
 [guide's accessibility status](guide.md#accessibility-status).
 
 ## Transient modal surfaces

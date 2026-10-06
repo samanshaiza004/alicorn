@@ -129,6 +129,38 @@ to their Alicorn runtime. The application still owns dispatch and behavior;
 menus, shortcuts, direct controls, and palettes can share the same `Action_ID`
 without introducing a global command registry or reactive state system.
 
+## Backend-neutral semantics and bounded collections
+
+Semantic entities are retained independently from visual nodes; they are not a
+platform accessibility tree. Ordinary controls can contribute roles, names,
+values, state, actions, and relationships. The composite Tab Bar illustrates
+the boundary: a TabList contains Tab entities and close actions, while
+underlines, dirty markers, and hover/selection paint remain presentation only.
+
+Large virtual collections retain collection metadata and only the item
+descriptions in the application's semantic working set. Applications may
+describe realized rows and logical-only items; they should submit a bounded
+visible range plus any useful navigation horizon. Items that leave that set
+are pruned unless they are current, selected, or the logical semantic-focus
+target. This keeps semantic identity independent of visual realization without
+allocating one retained descriptor per logical row. The million-item fixture
+tests visible-only, horizon, and pinned-item policies; it does not demonstrate
+screen-reader traversal across a native tree's unexported gaps.
+
+The internal runtime API can return an owned `semantic_snapshot` or the single
+newest `semantic_update_since` transition. Deltas carry `from_revision` and
+`to_revision`; a caller already at the current revision gets an empty update,
+while any other base must match the retained transition or request a snapshot.
+This API is backend-neutral and is not currently
+connected to a native accessibility adapter. `semantic_action_request` routes
+supported realized Press/Select/Focus actions through Alicorn's existing
+interaction path; logical-only and other domain actions queue app-owned Perform
+events. `semantic_reveal_request` separately queues an app-owned Reveal event.
+Apps drain queued events with `semantic_request_pop` and decide how to perform
+the domain action or reveal an item; Reveal is not a synthetic click. Semantic
+state is dirty-driven and introduces no idle polling. Platform activation and
+adapter work remain future #51.
+
 ## Native and text boundaries
 
 The runtime is platform-neutral Odin code. `native/sdl_gpu` adapts SDL3 input,

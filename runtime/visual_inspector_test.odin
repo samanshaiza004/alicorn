@@ -303,6 +303,9 @@ test_inspector_reports_retained_control_recipe_provenance :: proc(t: ^testing.T)
 
 	inspection := inspect(&rt)
 	defer delete(inspection)
+	testing.expect(t, strings.contains(inspection, "semantics: revision=") && strings.contains(inspection, "focus-search=") &&
+		strings.contains(inspection, "active-update="),
+		"the inspector should expose the current semantic working set, delta, request queue, and focus-scan costs")
 	testing.expect(t, strings.contains(inspection,
 		"text field style: recipe=text_field.default resolution=retained-cache state=(hovered=true focused=true) dependencies=paint generations=(paint=") &&
 		strings.contains(inspection, "token provenance: text_field.default") &&

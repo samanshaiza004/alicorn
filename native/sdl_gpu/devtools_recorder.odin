@@ -128,6 +128,19 @@ native_devtools_make_sample :: proc(
 		composition_visits=current.composition_nodes_visited-previous.composition_nodes_visited,
 		nodes_created=current.nodes_created-previous.nodes_created,
 		nodes_retired=current.nodes_retired-previous.nodes_retired,
+		semantic_descriptions_emitted=current.semantic_descriptions_emitted-previous.semantic_descriptions_emitted,
+		semantic_entities_resolved=current.semantic_entities_resolved-previous.semantic_entities_resolved,
+		semantic_structure_changes=current.semantic_structure_changes-previous.semantic_structure_changes,
+		semantic_property_changes=current.semantic_property_changes-previous.semantic_property_changes,
+		semantic_projection_nodes_added=current.semantic_projection_nodes_added-previous.semantic_projection_nodes_added,
+		semantic_projection_nodes_updated=current.semantic_projection_nodes_updated-previous.semantic_projection_nodes_updated,
+		semantic_projection_nodes_removed=current.semantic_projection_nodes_removed-previous.semantic_projection_nodes_removed,
+		accessibility_activation_wakes=current.accessibility_activation_wakes-previous.accessibility_activation_wakes,
+		accessibility_action_wakes=current.accessibility_action_wakes-previous.accessibility_action_wakes,
+		accessibility_reveal_wakes=current.accessibility_reveal_wakes-previous.accessibility_reveal_wakes,
+		accessibility_updates_submitted=current.accessibility_updates_submitted-previous.accessibility_updates_submitted,
+		semantic_focus_search_visits=current.semantic_focus_search_visits-previous.semantic_focus_search_visits,
+		semantic_active_update_visits=current.semantic_active_update_visits-previous.semantic_active_update_visits,
 	}
 	if rt.allocation_stats != nil {
 		sample.persistent_allocations = rt.allocation_stats.persistent_alloc_calls-cursor.persistent_allocations
@@ -150,6 +163,11 @@ native_devtools_observed_wake :: proc(
 		sample.surface_updates > 0 || sample.reconcile_visits > 0 || sample.layout_visits > 0 ||
 		sample.paint_visits > 0 || sample.composition_visits > 0 || sample.nodes_created > 0 ||
 		sample.nodes_retired > 0 || sample.pointer_events > 0 || sample.hover_target_transitions > 0 ||
+		sample.semantic_descriptions_emitted > 0 || sample.semantic_entities_resolved > 0 ||
+		sample.semantic_structure_changes > 0 || sample.semantic_property_changes > 0 ||
+		sample.semantic_projection_nodes_added > 0 || sample.semantic_projection_nodes_updated > 0 ||
+		sample.semantic_projection_nodes_removed > 0 || sample.accessibility_activation_wakes > 0 ||
+		sample.accessibility_action_wakes > 0 || sample.accessibility_reveal_wakes > 0 || sample.accessibility_updates_submitted > 0 ||
 		sample.persistent_allocations > 0 || timing.application_tick_calls != cursor.application_tick_calls ||
 		timing.scheduled_wakes != cursor.scheduled_wakes ||
 		text_events.events_received_sequence != cursor.events_received_sequence
@@ -184,7 +202,12 @@ native_devtools_record_wake :: proc(
 		sample.app_builds > 0 || sample.presentation_updates > 0 ||
 		sample.gpu_submissions > 0 || sample.surface_updates > 0 || sample.reconcile_visits > 0 ||
 		sample.layout_visits > 0 || sample.paint_visits > 0 || sample.composition_visits > 0 ||
-		sample.nodes_created > 0 || sample.nodes_retired > 0 || sample.persistent_allocations > 0
+		sample.nodes_created > 0 || sample.nodes_retired > 0 || sample.persistent_allocations > 0 ||
+		sample.semantic_descriptions_emitted > 0 || sample.semantic_entities_resolved > 0 ||
+		sample.semantic_structure_changes > 0 || sample.semantic_property_changes > 0 ||
+		sample.semantic_projection_nodes_added > 0 || sample.semantic_projection_nodes_updated > 0 ||
+		sample.semantic_projection_nodes_removed > 0 || sample.accessibility_activation_wakes > 0 ||
+		sample.accessibility_action_wakes > 0 || sample.accessibility_reveal_wakes > 0 || sample.accessibility_updates_submitted > 0
 	if write_sample { native_flight_record(recorder, sample) }
 	cursor^ = native_devtools_cursor_init(rt, timing, text_events)
 }

@@ -290,6 +290,14 @@ inspect :: proc(rt: ^Runtime) -> string {
 		fmt.sbprintln(&sb, "semantic focus: none")
 	}
 	fmt.sbprintf(&sb, "retained nodes: %d\n", len(rt.nodes))
+	queued_semantic_requests := max(len(rt.semantic_requests)-rt.semantic_request_read_index, 0)
+	fmt.sbprintf(&sb,
+		"semantics: revision=%d entities=%d latest=(%d>%d +%d -%d) requests=%d work=(described=%d resolved=%d structure=%d properties=%d focus-search=%d active-update=%d)\n",
+		rt.semantic_revision, len(rt.semantic_entities), rt.semantic_last_from_revision, rt.semantic_last_to_revision,
+		len(rt.semantic_last_changed), len(rt.semantic_last_removed), queued_semantic_requests,
+		rt.stats.semantic_descriptions_emitted, rt.stats.semantic_entities_resolved,
+		rt.stats.semantic_structure_changes, rt.stats.semantic_property_changes,
+		rt.stats.semantic_focus_search_visits, rt.stats.semantic_active_update_visits)
 	fmt.sbprintf(&sb, "last invalidation: %s\n", rt.last_invalidation_reason)
 	fmt.sbprintf(&sb, "frame: %d built=%d idle=%d regions-skipped=%d subtrees-reused=%d adjacency-rebuilds=%d surface-updates=%d geometry-updates=%d surface-clears=%d stale-surface-updates=%d geometry-overflow-rejections=%d surface-pending=%t presentation=%d submitted=%d\n", rt.stats.frame, rt.stats.frames_built, rt.stats.idle_frames, rt.stats.regions_skipped, rt.stats.retained_subtrees_reused, rt.stats.adjacency_rebuilds, rt.stats.surface_updates, rt.stats.surface_geometry_updates, rt.stats.surface_clear_count, rt.stats.surface_stale_update_rejections, rt.stats.surface_geometry_overflow_rejections, rt.surface_frame_pending, rt.presentation_revision, rt.submitted_revision)
 	fmt.sbprintf(&sb, "work: reconcile=%d layout=%d paint=%d compose=%d style_resolutions=%d style_cache_hits=%d created=%d retired=%d\n", rt.stats.reconcile_nodes_visited, rt.stats.layout_nodes_visited, rt.stats.paint_nodes_visited, rt.stats.composition_nodes_visited, rt.stats.style_resolutions, rt.stats.style_cache_hits, rt.stats.nodes_created, rt.stats.nodes_retired)

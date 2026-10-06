@@ -212,6 +212,7 @@ refresh_semantic_focus_realization :: proc(rt: ^Runtime) {
 	fallback := Node_ID(0)
 	if semantic_id_is_valid(rt.semantic_focus.id) {
 		for id in rt.order {
+			rt.stats.semantic_focus_search_visits += 1
 			node, ok := rt.nodes[id]
 			if !ok || !node.active || node.semantic_id != rt.semantic_focus.id { continue }
 			if fallback == 0 { fallback = id }
@@ -223,6 +224,7 @@ refresh_semantic_focus_realization :: proc(rt: ^Runtime) {
 		if next == 0 { next = fallback }
 	}
 	for id, node in rt.nodes {
+		rt.stats.semantic_active_update_visits += 1
 		should_be_active := id == next
 		if node.semantic_active != should_be_active {
 			node.semantic_active = should_be_active
@@ -413,6 +415,7 @@ begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
 	rt.frame_open = true
 	rt.context_menu.described = false
 	clear(&rt.pending)
+	clear(&rt.semantic_collection_touched)
 	clear(&rt.seen)
 	clear(&rt.identity_scopes)
 	clear(&rt.stack)

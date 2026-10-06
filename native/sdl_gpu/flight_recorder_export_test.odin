@@ -19,6 +19,17 @@ test_native_flight_timeline_is_versioned_and_oldest_first :: proc(t: ^testing.T)
 		persistent_allocations = 2,
 		persistent_bytes_live = 640,
 		scratch_requested_bytes = 128,
+		semantic_descriptions_emitted = 5,
+		semantic_entities_resolved = 3,
+		semantic_structure_changes = 1,
+		semantic_property_changes = 2,
+		semantic_projection_nodes_added = 1,
+		semantic_projection_nodes_updated = 2,
+		semantic_projection_nodes_removed = 1,
+		accessibility_action_wakes = 1,
+		accessibility_reveal_wakes = 2,
+		semantic_focus_search_visits = 4,
+		semantic_active_update_visits = 9,
 		build_ns = 900,
 		input_to_submit_ns = 1_200,
 	})
@@ -62,4 +73,18 @@ test_native_flight_timeline_is_versioned_and_oldest_first :: proc(t: ^testing.T)
 		"timeline exports retained reuse and allocator deltas")
 	testing.expect(t, strings.contains(json, `"persistent_bytes_live": 640`) && strings.contains(json, `"scratch_requested_bytes": 128`),
 		"timeline exports allocator live and scratch byte telemetry")
+	testing.expect(t, strings.contains(json, `"semantic_descriptions_emitted": 5`) &&
+		strings.contains(json, `"semantic_entities_resolved": 3`) &&
+		strings.contains(json, `"semantic_structure_changes": 1`) &&
+		strings.contains(json, `"semantic_property_changes": 2`),
+		"timeline exports backend-neutral semantic description and delta counters")
+	testing.expect(t, strings.contains(json, `"semantic_projection_nodes_added": 1`) &&
+		strings.contains(json, `"semantic_projection_nodes_updated": 2`) &&
+		strings.contains(json, `"semantic_projection_nodes_removed": 1`) &&
+		strings.contains(json, `"accessibility_action_wakes": 1`) &&
+		strings.contains(json, `"accessibility_reveal_wakes": 2`),
+		"timeline exports semantic working-set projection and assistive-action telemetry")
+	testing.expect(t, strings.contains(json, `"semantic_focus_search_visits": 4`) &&
+		strings.contains(json, `"semantic_active_update_visits": 9`),
+		"timeline exports the two independently instrumented semantic-focus scans")
 }

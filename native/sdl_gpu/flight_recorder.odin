@@ -16,6 +16,11 @@ Native_DevTools_Sample :: struct {
 	descriptions_emitted, descriptions_reused, regions_skipped, retained_subtrees_reused: u64,
 	reconcile_visits, layout_visits, paint_visits, composition_visits: u64,
 	nodes_created, nodes_retired: u64,
+	semantic_descriptions_emitted, semantic_entities_resolved: u64,
+	semantic_structure_changes, semantic_property_changes: u64,
+	semantic_projection_nodes_added, semantic_projection_nodes_updated, semantic_projection_nodes_removed: u64,
+	accessibility_activation_wakes, accessibility_action_wakes, accessibility_reveal_wakes, accessibility_updates_submitted: u64,
+	semantic_focus_search_visits, semantic_active_update_visits: u64,
 	persistent_allocations, persistent_bytes_live, scratch_requested_bytes: u64,
 	cause_kind: alicorn.Cause_Kind,
 }

@@ -363,6 +363,7 @@ context_menu_layout_children :: proc(rt: ^Runtime, parent: ^Node, children: []No
 	old_bounds := child.bounds
 	old_clip := child.clip
 	child.bounds = child.context_menu_bounds
+	semantic_sync_bounds(rt, child)
 	child.hit_bounds = child.bounds
 	child.clip = parent.clip
 	if !same_rect(old_bounds, child.bounds) || !same_rect(old_clip, child.clip) || dirty_has(child.dirty, .Layout) {

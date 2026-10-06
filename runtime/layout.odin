@@ -298,6 +298,7 @@ layout_split_children :: proc(rt: ^Runtime, parent: ^Node, inner: Rect, children
 				child.hit_bounds = Rect{inner.x, inner.y+hit_offset, inner.w, hit_size}
 			}
 		}
+		semantic_sync_bounds(rt, child)
 		old_clip := child.clip
 		if parent.style.clip { child.clip = rect_intersection(parent.clip, parent.bounds) } else { child.clip = parent.clip }
 		bounds_changed := !same_rect(old_bounds, child.bounds)
@@ -448,6 +449,7 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 			if parent.style.align == .End { cross_pos += cross_size-cross }
 			child.bounds = Rect{cross_pos, inner.y+main_offset, cross, clampf(main, child.style.min_height, child.style.max_height)}
 		}
+		semantic_sync_bounds(rt, child)
 		old_clip := child.clip
 		if parent.kind == .Scroll_Region {
 			child.clip = rect_intersection(parent.clip, parent.scroll_viewport_bounds)
@@ -494,6 +496,7 @@ layout_tree :: proc(rt: ^Runtime) {
 		if node.parent == 0 {
 			old := node.bounds
 			node.bounds = rt.viewport
+			semantic_sync_bounds(rt, node)
 			node.clip = rt.viewport
 			if !same_rect(old, node.bounds) {
 				dirty_set(&node.dirty, .Layout, true)

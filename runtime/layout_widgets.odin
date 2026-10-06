@@ -490,7 +490,10 @@ checkbox :: proc(
 	if consume_activation(ui.runtime, id) {
 		result.value = !checked
 		result.changed = true
-		ui.runtime.pending[len(ui.runtime.pending)-1].description.paint_value = 1 if result.value else 0
+		pending := &ui.runtime.pending[len(ui.runtime.pending)-1]
+		pending.description.paint_value = 1 if result.value else 0
+		if result.value { pending.semantic.states = semantic_states_add(pending.semantic.states, .Checked) }
+		else { pending.semantic.states = semantic_states_remove(pending.semantic.states, .Checked) }
 	}
 	return result
 }
@@ -534,6 +537,12 @@ slider_f32 :: proc(
 	description.control_minimum = minimum
 	description.control_maximum = maximum
 	description.control_step = step
+	semantic := &ui.runtime.pending[len(ui.runtime.pending)-1].semantic
+	semantic.numeric_value = f64(result.value)
+	semantic.numeric_minimum = f64(minimum)
+	semantic.numeric_maximum = f64(maximum)
+	semantic.numeric_step = f64(step)
+	semantic.has_numeric_value = true
 	return result
 }
 
@@ -603,7 +612,7 @@ region_begin :: proc(ui: ^UI, key: string, revision: u64, source := Source_Site{
 		// The cached retained hierarchy is already authoritative. A marker is
 		// enough to keep the subtree present; descendants are not copied into a
 		// flat pending description list.
-		append(&rt.pending, Pending_Item{.Reuse_Subtree, Description{}, id, {}, {}})
+		append(&rt.pending, Pending_Item{kind=.Reuse_Subtree, subtree=id})
 		record_trace(rt, .Reconcile, id, "retained subtree reused without descendant descriptions")
 		return id, true
 	}
