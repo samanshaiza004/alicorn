@@ -212,9 +212,21 @@ drag_source_at :: proc(rt: ^Runtime, hit: Node_ID) -> (node: Node_ID, drag_type:
 		if candidate.active && candidate.drag_source_type != Drag_Type(0) && semantic_id_is_valid(candidate.drag_source_id) {
 			return current, candidate.drag_source_type, candidate.drag_source_id, true
 		}
+		// A nested interactive target owns the click unless it explicitly opts
+		// into dragging. Do not let an ancestor row/tab steal actions such as a
+		// close button just because it is also a drag source.
+		if drag_source_interaction_boundary(candidate) { return }
 		current = candidate.parent
 	}
 	return
+}
+
+drag_source_interaction_boundary :: proc(node: ^Node) -> bool {
+	if node == nil { return false }
+	return node.kind == .Button ||
+		node.kind == .Checkbox || node.kind == .Slider || node.kind == .Text_Field ||
+		(node.kind == .Custom_Surface && node.surface_interaction == .Pointer) ||
+		(node.text_input_target && node.focusable)
 }
 
 drag_target_at :: proc(rt: ^Runtime, hit: Node_ID, drag_type: Drag_Type, x, y: f32) -> (node: Node_ID, identity: Semantic_ID, position: Drop_Position, mode: Drop_Target_Mode) {

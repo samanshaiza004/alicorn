@@ -253,6 +253,27 @@ inspector_overlay_node_lines :: proc(inspected: ^Runtime, id: Node_ID, allocator
 	append(&lines, fmt.tprintf("caret: (%d,%v) selection: (%d,%v) -> (%d,%v)", node.caret.byte, node.caret.affinity, node.selection_anchor.byte, node.selection_anchor.affinity, node.selection_focus.byte, node.selection_focus.affinity))
 	append(&lines, fmt.tprintf("dirty: description=%t layout=%t paint=%t composite=%t", dirty_has(node.dirty,.Description), dirty_has(node.dirty,.Layout), dirty_has(node.dirty,.Paint), dirty_has(node.dirty,.Composite)))
 	append(&lines, fmt.tprintf("reason: %s", node.last_reason))
+	if part, attached := inspected.visual_parts[id]; attached && part.defined {
+		owner_component := "<missing>"
+		if owner, owner_found := inspected.nodes[part.owner]; owner_found { owner_component = owner.site.component }
+		append(&lines, fmt.tprintf("visual part: %s identity=%d owner=%d component=%s visibility=%s visible=%t",
+			visual_part_role_name(part.identity), visual_part_identity_hash(part.identity), part.owner,
+			owner_component, visual_part_visibility_name(part.visibility), visual_part_is_visible(inspected, id)))
+	}
+	for child_id in inspected.order {
+		part, attached := inspected.visual_parts[child_id]
+		if !attached || !part.defined || part.owner != id { continue }
+		hovered := visual_part_owner_hovered(inspected, id)
+		state := ""
+		switch part.visibility {
+		case .Always: state = "unconditional"
+		case .Owner_Hovered: state = fmt.tprintf("owner hovered=%t", hovered)
+		case .Owner_Selected_Or_Hovered: state = fmt.tprintf("owner selected=%t hovered=%t", node.selected, hovered)
+		}
+		append(&lines, fmt.tprintf("visual child: node=%d identity=%s hash=%d owner=%d component=%s visibility=%s (%s) visible=%t",
+			child_id, visual_part_role_name(part.identity), visual_part_identity_hash(part.identity), id, node.site.component,
+			visual_part_visibility_name(part.visibility), state, visual_part_is_visible(inspected, child_id)))
+	}
 	if node.region { append(&lines, fmt.tprintf("region: revision=%d cached=%t", node.region_revision, node.region_cached)) }
 	if node.kind == .Custom_Surface { append(&lines, fmt.tprintf("surface: payload-revision=%d kind=%v pixels=%dx%d dpi=%.2f", u64(node.surface_payload_revision), node.surface_kind, node.surface_pixel_width, node.surface_pixel_height, node.surface_dpi_scale)) }
 	return lines

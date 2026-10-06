@@ -145,15 +145,9 @@ hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 	}
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
 		id := rt.order[i]
-		if node, ok := rt.nodes[id]; ok && node.active && !node.disabled &&
+		if node, ok := rt.nodes[id]; ok && node.active && !node.disabled && visual_part_is_visible(rt, id) &&
 			node_is_in_modal_overlay(rt, id, modal_root) && rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
-			// A hidden tab-close affordance is only a reserved dirty/close slot,
-			// not an invisible click target. Let the parent Tab receive the hit.
-			if node.kind == .Tab_Close {
-				parent := tab_ancestor(rt, node)
-				if parent == nil || !tab_close_should_show(parent, node) { continue }
-			}
-			if node.kind == .Button || node.kind == .Tab || node.kind == .Tab_Close || node.kind == .Checkbox || node.kind == .Slider || node.kind == .Text_Field ||
+			if node.kind == .Button || node.kind == .Checkbox || node.kind == .Slider || node.kind == .Text_Field ||
 			   (node.kind == .Custom_Surface && node.surface_interaction == .Pointer) ||
 			   (node.text_input_target && node.focusable) {
 				return id
@@ -166,7 +160,7 @@ hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 	if rt.drag.phase == .Dragging {
 		for i := len(rt.order)-1; i >= 0; i -= 1 {
 			id := rt.order[i]
-			if node, ok := rt.nodes[id]; ok && node.active && !node.disabled &&
+			if node, ok := rt.nodes[id]; ok && node.active && !node.disabled && visual_part_is_visible(rt, id) &&
 				node.drop_target_type == rt.drag.drag_type && semantic_id_is_valid(node.drop_target_id) &&
 				node_is_in_modal_overlay(rt, id, modal_root) && rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
 				return id
@@ -178,31 +172,6 @@ hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 		if overlay.kind == .Modal_Overlay || overlay.kind == .Context_Menu_Overlay { return modal_root }
 	}
 	return 0
-}
-
-invalidate_tab_hover_dependents :: proc(rt: ^Runtime, id: Node_ID, reason: string) {
-	node, found := rt.nodes[id]
-	if !found { return }
-	if node.kind == .Tab_Close {
-		if parent := tab_ancestor(rt, node); parent != nil {
-			invalidate_interaction_paint(rt, parent.id, reason)
-		}
-	} else if node.kind == .Tab {
-		invalidate_tab_close_descendants(rt, node, reason)
-	}
-}
-
-invalidate_tab_close_descendants :: proc(rt: ^Runtime, node: ^Node, reason: string) {
-	if rt == nil || node == nil { return }
-	for child_id in node.children {
-		child, found := rt.nodes[child_id]
-		if !found || !child.active { continue }
-		if child.kind == .Tab_Close {
-			invalidate_interaction_paint(rt, child.id, reason)
-		} else {
-			invalidate_tab_close_descendants(rt, child, reason)
-		}
-	}
 }
 
 split_drag_coordinate :: proc(node: ^Node, x, y: f32) -> f32 {
@@ -301,7 +270,7 @@ focus :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 focus_indicator_set :: proc(rt: ^Runtime, visible: bool) {
 	if rt == nil || rt.focus_visible == visible { return }
 	rt.focus_visible = visible
-	if focused, found := rt.nodes[rt.focused]; found && focused.kind == .Tab {
+	if focused, found := rt.nodes[rt.focused]; found && focused.kind == .Button {
 		invalidate_interaction_paint(rt, focused.id, "keyboard focus indicator visibility changed")
 	}
 }
@@ -351,7 +320,7 @@ activate_focused :: proc(rt: ^Runtime, key: Activation_Key) -> bool {
 	id := rt.focused
 	node, ok := rt.nodes[id]
 	if !ok { return false }
-	can_activate := node.kind == .Button || node.kind == .Tab || (node.kind == .Checkbox && key == .Space)
+	can_activate := node.kind == .Button || (node.kind == .Checkbox && key == .Space)
 	if !node.active || !node.focusable || node.disabled || !can_activate {
 		return false
 	}
@@ -427,11 +396,13 @@ select :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 		if old, old_ok := rt.nodes[rt.selected]; old_ok {
 			old.selected = false
 			invalidate_interaction_paint(rt, old.id, "selection lost")
+			visual_part_invalidate_dependents(rt, old.id, "visual part owner selection changed")
 		}
 	}
 	next.selected = true
 	rt.selected = id
 	invalidate_interaction_paint(rt, id, "selection gained")
+	visual_part_invalidate_dependents(rt, id, "visual part owner selection changed")
 	record_trace(rt, .Focus, id, "selection owner assigned")
 	invalidate_root(rt, "selection changed")
 	return true
@@ -532,14 +503,14 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 				if old, ok := rt.nodes[rt.last_hovered]; ok {
 					old.hovered = false
 					invalidate_interaction_paint(rt, old.id, "hover lost")
-					invalidate_tab_hover_dependents(rt, old.id, "tab hover presentation changed")
+				visual_part_invalidate_dependents(rt, old.id, "visual part owner hover changed")
 				}
 			}
 			if hover_target != 0 {
 				if next, ok := rt.nodes[hover_target]; ok {
 					next.hovered = true
 					invalidate_interaction_paint(rt, next.id, "hover gained")
-					invalidate_tab_hover_dependents(rt, next.id, "tab hover presentation changed")
+				visual_part_invalidate_dependents(rt, next.id, "visual part owner hover changed")
 				}
 			}
 			rt.last_hovered = hover_target
@@ -551,7 +522,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 	} else if event.kind == .Down {
 		if target != 0 {
 			if event.button == 0 || event.button == POINTER_BUTTON_PRIMARY {
-				if target_node, target_found := rt.nodes[target]; target_found && target_node.kind != .Tab_Close {
+				if _, target_found := rt.nodes[target]; target_found {
 					if source_node, drag_type, source_id, found := drag_source_at(rt, target); found {
 						rt.drag = Drag_Session{
 							phase=.Candidate,
@@ -568,9 +539,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 			}
 			if node, ok := rt.nodes[target]; ok {
 				focus_target := target
-				if node.kind == .Tab_Close {
-					if tab := tab_ancestor(rt, node); tab != nil { focus_target = tab.id }
-				}
+				if !node.focusable { focus_target = visual_part_interaction_owner(rt, target) }
 				if node.kind != .Split_Handle { _ = focus(rt, focus_target) }
 				// Pointer placement is an explicit cancellation boundary for a
 				// platform preedit. The next hit test must use committed text
@@ -644,7 +613,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 		}
 		if !captured_is_split && captured != 0 && captured == target {
 			rt.activation_sequence += 1
-			if node, ok := rt.nodes[captured]; ok && (node.kind == .Button || node.kind == .Tab || node.kind == .Tab_Close || node.kind == .Checkbox) {
+			if node, ok := rt.nodes[captured]; ok && (node.kind == .Button || node.kind == .Checkbox) {
 				rt.activation_node = captured
 			} else {
 				rt.activation_node = 0

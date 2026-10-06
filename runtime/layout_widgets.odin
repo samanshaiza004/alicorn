@@ -310,6 +310,53 @@ button_ex :: proc(ui: ^UI, label: string, source := Source_Site{}, key := "", ex
 	return
 }
 
+// button_begin/button_end preserve the normal Button interaction contract
+// while allowing callers to describe retained visual children under that
+// semantic control. The children use ordinary Alicorn layout and hit testing.
+button_begin :: proc(
+	ui: ^UI,
+	label: string,
+	key: UI_Key = UI_Unkeyed{},
+	style := DEFAULT_STYLE,
+	state := Button_State{},
+	loc := #caller_location,
+	text_style := DEFAULT_BUTTON_TEXT_STYLE,
+	content_style := DEFAULT_BUTTON_CONTENT_STYLE,
+	variant := Button_Variant.Default,
+	focusable := true,
+) -> (id: Node_ID, activated: bool) {
+	if ui == nil || ui.runtime == nil || !ui.runtime.frame_open { return }
+	resolved_variant := style_button_variant_resolve(ui.runtime, variant)
+	if state.quiet && variant == .Default { resolved_variant = .Quiet }
+	state_bits: u64 = 0
+	if state.selected { state_bits |= 1 }
+	if state.disabled { state_bits |= 2 }
+	id = emit_key(
+		ui,
+		.Button,
+		resolve_source(Source_Site{}, "button", loc),
+		label=label,
+		key=key,
+		style=style,
+		state_bits=state_bits,
+		selected=state.selected,
+		disabled=state.disabled,
+		focusable=focusable && !state.disabled,
+		text_style=text_style,
+		button_content=content_style,
+		button_variant=resolved_variant,
+	)
+	if id == 0 { return }
+	append(&ui.runtime.stack, id)
+	push_identity_scope(ui.runtime, id, "", 0)
+	if !state.disabled { activated = consume_activation(ui.runtime, id) }
+	return
+}
+
+button_end :: proc(ui: ^UI) {
+	container_end(ui)
+}
+
 text_ex :: proc(ui: ^UI, value: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, paint_value: u64 = 0, loc := #caller_location, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE) -> Node_ID {
 	resolved_source := resolve_source(source, "text", loc)
 	return emit(ui, .Text, resolved_source, text=value, key=key, explicit_key=explicit_key, style=style, paint_value=paint_value, font=font, text_style=text_style)
@@ -556,7 +603,7 @@ region_begin :: proc(ui: ^UI, key: string, revision: u64, source := Source_Site{
 		// The cached retained hierarchy is already authoritative. A marker is
 		// enough to keep the subtree present; descendants are not copied into a
 		// flat pending description list.
-		append(&rt.pending, Pending_Item{.Reuse_Subtree, Description{}, id, {}})
+		append(&rt.pending, Pending_Item{.Reuse_Subtree, Description{}, id, {}, {}})
 		record_trace(rt, .Reconcile, id, "retained subtree reused without descendant descriptions")
 		return id, true
 	}

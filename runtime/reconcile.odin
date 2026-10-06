@@ -83,7 +83,7 @@ hash_button_content_style :: proc(style: Button_Content_Style) -> u64 {
 	return h
 }
 
-description_hash :: proc(d: Description, semantic_surface_style := Semantic_Surface_Style{}) -> u64 {
+description_hash :: proc(d: Description, semantic_surface_style := Semantic_Surface_Style{}, visual_part := Visual_Part_Style{}) -> u64 {
 	h := hash_mix(hash_string(d.label), hash_string(d.text))
 	h = hash_mix(h, hash_string(d.tooltip_text))
 	h = hash_mix(h, u64(d.tooltip_delay_ms))
@@ -91,7 +91,7 @@ description_hash :: proc(d: Description, semantic_surface_style := Semantic_Surf
 	h = hash_mix(h, hash_text_style_spans(d.text_style_spans))
 	h = hash_mix(h, u64(d.kind))
 	h = hash_mix(h, u64(d.font))
-	if d.kind == .Button || d.kind == .Tab {
+	if d.kind == .Button {
 		h = hash_mix(h, hash_button_content_style(d.button_content_style))
 		h = hash_mix(h, u64(d.button_variant))
 	}
@@ -110,6 +110,7 @@ description_hash :: proc(d: Description, semantic_surface_style := Semantic_Surf
 	h = hash_mix(h, hash_color(d.color))
 	h = hash_mix(h, u64(d.paint_background ? 1 : 0))
 	h = hash_mix(h, semantic_surface_style_hash(semantic_surface_style))
+	h = hash_mix(h, visual_part_style_hash(visual_part))
 	h = hash_mix(h, u64(d.text_interaction ? 1 : 0))
 	if d.text_interaction {
 		h = hash_mix(h, u64(d.text_interaction_anchor.byte))
@@ -177,9 +178,9 @@ layout_hash :: proc(d: Description) -> u64 {
 	// Text participates in intrinsic measurement. A description can otherwise
 	// look layout-identical while a changing label/value moves its siblings.
 	#partial switch d.kind {
-	case .Button, .Tab, .Checkbox, .Slider:
+	case .Button, .Checkbox, .Slider:
 		h = hash_mix(h, hash_string(d.label))
-		if d.kind == .Button || d.kind == .Tab {
+		if d.kind == .Button {
 			h = hash_mix(h, u64(transmute(u32)d.button_content_style.padding_x))
 			h = hash_mix(h, u64(transmute(u32)d.button_content_style.padding_y))
 		}
@@ -198,8 +199,8 @@ layout_hash :: proc(d: Description) -> u64 {
 	return h
 }
 
-paint_hash :: proc(d: Description, semantic_surface_style := Semantic_Surface_Style{}) -> u64 {
-	h := description_hash(d, semantic_surface_style)
+paint_hash :: proc(d: Description, semantic_surface_style := Semantic_Surface_Style{}, visual_part := Visual_Part_Style{}) -> u64 {
+	h := description_hash(d, semantic_surface_style, visual_part)
 	h = hash_mix(h, u64(d.focusable ? 1 : 0))
 	h = hash_mix(h, u64(d.selected ? 1 : 0))
 	h = hash_mix(h, u64(d.disabled ? 1 : 0))
@@ -253,7 +254,7 @@ release_node_strings :: proc(node: ^Node, allocator := context.allocator) {
 }
 
 node_has_text_product :: proc(kind: Node_Kind) -> bool {
-	return kind == .Text || kind == .Text_Field || kind == .Button || kind == .Tab || kind == .Tab_Close || kind == .Checkbox || kind == .Slider
+	return kind == .Text || kind == .Text_Field || kind == .Button || kind == .Checkbox || kind == .Slider
 }
 
 semantic_surface_material_inputs_changed :: proc(previous, next: Semantic_Surface_Style) -> bool {
@@ -284,10 +285,10 @@ semantic_surface_role_changed :: proc(previous, next: Semantic_Surface_Style) ->
 	return false
 }
 
-copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description, semantic_surface_style := Semantic_Surface_Style{}) {
+copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description, semantic_surface_style := Semantic_Surface_Style{}, visual_part := Visual_Part_Style{}) {
 	// Runtime-owned copies are important: a generic description may borrow a
 	// caller's string for only the duration of this procedure.
-	label_changed := (d.kind == .Button || d.kind == .Tab || d.kind == .Checkbox || d.kind == .Slider) && node.label != d.label
+	label_changed := (d.kind == .Button || d.kind == .Checkbox || d.kind == .Slider) && node.label != d.label
 	tooltip_changed := node.tooltip_text != d.tooltip_text || node.tooltip_delay_ms != d.tooltip_delay_ms
 	text_changed := node.text != d.text || label_changed
 	style_changes := style_environment_changed_domains(node.style_environment, d.style_environment)
@@ -365,11 +366,6 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description, semanti
 	node.style_scope_boundary = d.style_scope_boundary
 	node.button_content_style = d.button_content_style
 	node.button_variant = d.button_variant
-	if d.kind == .Tab {
-		node.tab_close_policy = Tab_Close_Policy((d.paint_value >> 1) & 0x3)
-		node.tab_closable = d.paint_value&(1<<3) != 0
-		node.tab_dirty = d.paint_value&(1<<4) != 0
-	}
 	node.color = d.color
 	node.paint_background = d.paint_background
 	if semantic_surface_style.defined {
@@ -377,7 +373,12 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description, semanti
 	} else {
 		delete_key(&rt.semantic_surfaces, node.id)
 	}
-	if d.kind != .Button && d.kind != .Tab && d.kind != .Text_Field && d.kind != .Scroll_Region && !semantic_surface_style.defined {
+	if visual_part.defined {
+		rt.visual_parts[node.id] = visual_part
+	} else {
+		delete_key(&rt.visual_parts, node.id)
+	}
+	if d.kind != .Button && d.kind != .Text_Field && d.kind != .Scroll_Region && !semantic_surface_style.defined {
 		delete_key(&rt.computed_styles, node.id)
 	}
 	node.paint_value = d.paint_value
@@ -553,6 +554,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	if rt.tooltip.target == id { tooltip_dismiss(rt) }
 	delete_key(&rt.computed_styles, id)
 	delete_key(&rt.semantic_surfaces, id)
+	delete_key(&rt.visual_parts, id)
 	children := node.children[:]
 	for child in children {
 		retire_subtree(rt, child, desired)
@@ -663,20 +665,21 @@ reconcile :: proc(rt: ^Runtime) {
 			node.surface_circles = make([dynamic]GPU_Surface_Filled_Circle, 0, allocator=rt.persistent_allocator)
 			rt.nodes[d.id] = node
 			rt.stats.nodes_created += 1
-			copy_node_description(rt, node, d, item.semantic_surface_style)
-			node.description_hash = description_hash(d, item.semantic_surface_style)
+			copy_node_description(rt, node, d, item.semantic_surface_style, item.visual_part)
+			node.description_hash = description_hash(d, item.semantic_surface_style, item.visual_part)
 			node.layout_hash = layout_hash(d)
-			node.paint_hash = paint_hash(d, item.semantic_surface_style)
+			node.paint_hash = paint_hash(d, item.semantic_surface_style, item.visual_part)
 			mark_dirty(node, "new retained node", true, true, true, true, rt.persistent_allocator)
 			queue_paint(rt, d.id)
 			mark_layout_ancestors(rt, d.id)
 			record_trace(rt, .Reconcile, d.id, "new retained node")
 		} else {
-			new_desc_hash := description_hash(d, item.semantic_surface_style)
+			new_desc_hash := description_hash(d, item.semantic_surface_style, item.visual_part)
 			new_layout_hash := layout_hash(d)
-			new_paint_hash := paint_hash(d, item.semantic_surface_style)
+			new_paint_hash := paint_hash(d, item.semantic_surface_style, item.visual_part)
+			was_selected := node.selected
 			description_changed := node.description_hash != new_desc_hash
-			text_changed := node.text != d.text || ((d.kind == .Button || d.kind == .Tab || d.kind == .Checkbox || d.kind == .Slider) && node.label != d.label)
+			text_changed := node.text != d.text || ((d.kind == .Button || d.kind == .Checkbox || d.kind == .Slider) && node.label != d.label)
 			style_changes := style_environment_changed_domains(node.style_environment, d.style_environment)
 			style_stages := style_domains_dirty_stages(style_changes)
 			// Text/labels are included in layout_hash because they contribute
@@ -686,7 +689,10 @@ reconcile :: proc(rt: ^Runtime) {
 			layout_changed := node.layout_hash != new_layout_hash || text_changed || Dirty_Stage.Layout in style_stages
 			paint_changed := node.paint_hash != new_paint_hash || Dirty_Stage.Paint in style_stages
 			composite_changed := Dirty_Stage.Composite in style_stages
-			copy_node_description(rt, node, d, item.semantic_surface_style)
+			copy_node_description(rt, node, d, item.semantic_surface_style, item.visual_part)
+			if was_selected != node.selected {
+				visual_part_invalidate_dependents(rt, d.id, "visual part owner selection changed")
+			}
 			node.description_hash = new_desc_hash
 			node.layout_hash = new_layout_hash
 			node.paint_hash = new_paint_hash
@@ -865,6 +871,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.nodes)
 	delete(rt.computed_styles)
 	delete(rt.semantic_surfaces)
+	delete(rt.visual_parts)
 	delete(rt.order)
 	delete(rt.top_level)
 	delete(rt.pending)

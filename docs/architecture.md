@@ -85,6 +85,18 @@ source locations remain compiler-only. Rectangular semantic surfaces can use
 registered flat or analytic-relief materials; a general cascade and richer
 native shapes remain outside this slice.
 
+Product-specific control presentation composes over existing interaction
+owners. `button_begin` / `button_end` let an application describe ordinary
+layout children under a Button; `visual_part_attach` records a typed core or
+namespaced extension identity, owner, and limited owner-state visibility rule
+in Runtime side storage. It validates that the part is retained beneath its
+Button owner. The sidecar is available to the inspector and is deleted when
+the retained node retires. It does not add a second event model or geometry
+language: layout remains responsible for order, bounds, and clipping, while
+the owner remains responsible for activation and state. TabBar is the first
+built-in consumer; its close child is independently actionable and its paint
+uses the same generic primitive stream as other controls.
+
 Theme/accent changes are Paint-only today because current recipes consume color
 roles only. No theme length token drives recipe metrics, typography, or material
 selection. A text-scale scope advances Metrics and Typography only for its

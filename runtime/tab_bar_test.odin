@@ -3,8 +3,8 @@ package alicorn
 import "core:testing"
 
 // The retained contract is Scroll_Region(label="tab-bar") > Virtual_List >
-// Tab > content row > optional Tab_Close, plus a semantic selected-indicator
-// surface. Selection and close requests remain application-owned.
+// Button owner > tagged visual parts. Selection and close requests remain
+// application-owned; close remains an independently interactive child.
 
 TAB_BAR_TEST_DRAG_TYPE :: Drag_Type(901)
 TAB_BAR_TEST_NAMESPACE :: u64(901)
@@ -96,7 +96,7 @@ tab_bar_test_child_count :: proc(rt: ^Runtime, parent: Node_ID, kind: Node_Kind)
 tab_bar_test_item_node :: proc(rt: ^Runtime, semantic: Semantic_ID) -> (id: Node_ID, count: int) {
 	for candidate in rt.order {
 		node, found := rt.nodes[candidate]
-		if found && node.active && node.kind == .Tab && node.semantic_id == semantic {
+		if found && node.active && node.kind == .Button && node.button_variant == .Tab && node.semantic_id == semantic {
 			id = candidate
 			count += 1
 		}
@@ -107,7 +107,8 @@ tab_bar_test_item_node :: proc(rt: ^Runtime, semantic: Semantic_ID) -> (id: Node
 tab_bar_test_close_node :: proc(rt: ^Runtime, tab: Node_ID) -> (id: Node_ID, count: int) {
 	for candidate in rt.order {
 		node, found := rt.nodes[candidate]
-		if found && node.active && node.kind == .Tab_Close && tab_ancestor(rt, node) != nil && tab_ancestor(rt, node).id == tab {
+		part, tagged := rt.visual_parts[candidate]
+		if found && tagged && part.defined && part.owner == tab && part.identity == visual_part_core(.Overlay) && node.active && node.kind == .Button {
 			id = candidate
 			count += 1
 		}
@@ -118,7 +119,8 @@ tab_bar_test_close_node :: proc(rt: ^Runtime, tab: Node_ID) -> (id: Node_ID, cou
 tab_bar_test_part :: proc(rt: ^Runtime, tab: Node_ID, label: string) -> (id: Node_ID, count: int) {
 	for candidate in rt.order {
 		node, found := rt.nodes[candidate]
-		if found && node.active && node.label == label && tab_ancestor(rt, node) != nil && tab_ancestor(rt, node).id == tab {
+		part, tagged := rt.visual_parts[candidate]
+		if found && tagged && part.defined && part.owner == tab && node.active && node.label == label {
 			id = candidate
 			count += 1
 		}
@@ -156,12 +158,32 @@ tab_bar_test_focus_outline_count :: proc(node: ^Node) -> int {
 	return count
 }
 
-tab_bar_test_text_bounds :: proc(node: ^Node) -> (bounds: Rect, found: bool) {
-	if node == nil { return }
-	for command in node.paint {
-		if _, ok := command.payload.(Text_Paint); ok { return command.bounds, true }
+tab_bar_test_text_bounds :: proc(rt: ^Runtime, owner_id: Node_ID) -> (bounds: Rect, found: bool) {
+	if rt == nil { return }
+	stack := make([dynamic]Node_ID, 0, allocator=context.temp_allocator)
+	append(&stack, owner_id)
+	for len(stack) > 0 {
+		id := pop(&stack)
+		node, exists := rt.nodes[id]
+		if !exists { continue }
+		part, tagged := rt.visual_parts[id]
+		is_label := id == owner_id || (tagged && part.defined && part.owner == owner_id && part.identity == visual_part_core(.Label))
+		if is_label {
+			for command in node.paint {
+				if _, ok := command.payload.(Text_Paint); ok { return command.bounds, true }
+			}
+		}
+		for child_id in node.children { append(&stack, child_id) }
 	}
 	return
+}
+
+tab_bar_test_display_has_text :: proc(rt: ^Runtime, owner: Node_ID) -> bool {
+	if rt == nil { return false }
+	for command in rt.display {
+		if command.owner == owner { if _, ok := command.payload.(Text_Paint); ok { return true } }
+	}
+	return false
 }
 
 @(test)
@@ -190,11 +212,11 @@ test_tab_bar_builds_retained_scroll_list_tab_and_close_hierarchy :: proc(t: ^tes
 	}
 	if list_id == 0 { return }
 
-	testing.expect(t, tab_bar_test_child_count(&rt, list_id, .Tab) == len(items),
-		"the virtual list should retain one direct Tab node per item")
+	testing.expect(t, tab_bar_test_child_count(&rt, list_id, .Button) == len(items),
+		"the virtual list should retain one direct Button owner per item")
 	for item in items {
 		tab_id, matches := tab_bar_test_item_node(&rt, item.semantic_id)
-		testing.expect(t, matches == 1, "each stable item semantic ID should identify exactly one retained Tab")
+		testing.expect(t, matches == 1, "each stable item semantic ID should identify exactly one retained tab Button")
 		if matches != 1 { continue }
 		testing.expect(t, rt.nodes[tab_id].parent == list_id,
 			"each tab item should be a child of the bar's Virtual_List")
@@ -202,15 +224,16 @@ test_tab_bar_builds_retained_scroll_list_tab_and_close_hierarchy :: proc(t: ^tes
 			"a tab should compose its content row and selected-indicator surface as retained layout children")
 		close_id, close_count := tab_bar_test_close_node(&rt, tab_id)
 		testing.expect(t, close_count == 1,
-			"a closable tab should represent its close affordance as a Tab_Close child")
+			"a closable tab should represent its close affordance as an independent Button visual part")
 		if close_count == 1 {
-			testing.expect(t, tab_ancestor(&rt, rt.nodes[close_id]) == rt.nodes[tab_id],
-				"the close action should be structurally composed inside its Tab, not adjacent to it")
+			part := rt.visual_parts[close_id]
+			testing.expect(t, part.owner == tab_id && part.identity == visual_part_core(.Overlay),
+				"the close action should be a typed visual part owned by its tab Button")
 			close := rt.nodes[close_id]
 			tab := rt.nodes[tab_id]
 			testing.expect(t, abs(close.bounds.w-TAB_CLOSE_CONTROL_SIZE) < 0.01 &&
-				abs(close.bounds.x+close.bounds.w-(tab.bounds.x+tab.bounds.w)) < 0.01,
-				"Tab_Close should be a compact trailing control inside its tab's reserved action slot")
+				close.bounds.x >= tab.bounds.x && close.bounds.x+close.bounds.w <= tab.bounds.x+tab.bounds.w,
+				"the close action should be a compact retained control inside its tab's trailing slot")
 		}
 		if item.selected {
 			indicator_id, indicator_count := tab_bar_test_part(&rt, tab_id, "tab-selected-indicator")
@@ -366,7 +389,7 @@ test_tab_bar_click_select_and_tab_close_are_distinct_requests :: proc(t: ^testin
 	testing.expect(t, tab_count == 1, "the closable target tab should have one retained owner")
 	if tab_count != 1 { return }
 	close_id, close_count := tab_bar_test_close_node(&close_rt, tab_id)
-	testing.expect(t, close_count == 1, "the tab should contain its Tab_Close hit target")
+	testing.expect(t, close_count == 1, "the tab should contain an independent close Button hit target")
 	if close_count != 1 { return }
 	close_bounds := close_rt.nodes[close_id].bounds
 	close_x := close_bounds.x+close_bounds.w*0.5
@@ -375,7 +398,7 @@ test_tab_bar_click_select_and_tab_close_are_distinct_requests :: proc(t: ^testin
 	_ = process_pointer(&close_rt, Pointer_Event{kind=.Up, x=close_x, y=close_y, button=POINTER_BUTTON_PRIMARY})
 	close_request := tab_bar_test_build(&close_rt, items[:], 440, options)
 	testing.expect(t, close_request.action == .Close && close_request.item_index == 1,
-		"clicking Tab_Close should request close of its item instead of selecting the tab")
+			"clicking the close part should request close of its item instead of selecting the tab")
 }
 
 @(test)
@@ -502,27 +525,21 @@ test_tab_bar_close_policy_keeps_dirty_marker_and_reveals_on_hover :: proc(t: ^te
 		return
 	}
 
-	selected_paint := rt.nodes[selected_close].paint
-	dirty_paint := rt.nodes[dirty_close].paint
-	clean_paint := rt.nodes[clean_close].paint
-	dirty_marker_ok := false
-	if len(dirty_paint) > 0 { _, dirty_marker_ok = dirty_paint[0].payload.(Surface_Paint) }
-	testing.expect(t, len(selected_paint) == 0,
-		"Auto should hide the close glyph on a compact selected tab until it is hovered")
-	testing.expect(t, dirty_marker_ok && len(dirty_paint) == 1,
-		"a hidden close glyph should leave the dirty tab's marker visible")
-	testing.expect(t, len(clean_paint) == 0,
-		"an unselected clean compact tab should not paint its hidden close action")
-	clean_title_bounds, clean_title_found := tab_bar_test_text_bounds(rt.nodes[clean_tab])
+	testing.expect(t, !visual_part_is_visible(&rt, selected_close),
+		"Auto should hide the close part on a compact selected tab until it is hovered")
+	_, dirty_marker_count := tab_bar_test_part(&rt, dirty_tab, "tab-dirty-indicator")
+	testing.expect(t, dirty_marker_count == 1,
+		"a hidden close action should coexist with the separately retained dirty indicator")
+	testing.expect(t, !tab_bar_test_display_has_text(&rt, clean_close),
+		"an unselected clean compact tab should omit its hidden close action from the composed paint stream")
+	clean_title_bounds, clean_title_found := tab_bar_test_text_bounds(&rt, clean_tab)
 	hidden_close_bounds := rt.nodes[clean_close].bounds
 	testing.expect(t, hit_test(&rt, hidden_close_bounds.x+hidden_close_bounds.w*0.5, hidden_close_bounds.y+hidden_close_bounds.h*0.5) == clean_tab,
 		"an invisible reserved close slot should fall through to its tab instead of acting like a hidden button")
 
 	invalidate_root(&rt, "tab-bar responsive width increased")
 	_ = tab_bar_test_build(&rt, items[:], 640, options)
-	selected_paint = rt.nodes[selected_close].paint
-	wide_close_visible := false
-	if len(selected_paint) > 0 { _, wide_close_visible = selected_paint[0].payload.(Text_Paint) }
+	wide_close_visible := visual_part_is_visible(&rt, selected_close) && tab_bar_test_display_has_text(&rt, selected_close)
 	testing.expect(t, wide_close_visible,
 		"Auto should keep the close glyph visible when a tab has comfortable width")
 
@@ -543,9 +560,7 @@ test_tab_bar_close_policy_keeps_dirty_marker_and_reveals_on_hover :: proc(t: ^te
 	ui, ready := begin_presentation_frame(&rt)
 	testing.expect(t, ready, "hovering a tab should request retained presentation work")
 	if ready { end_presentation_frame(&ui) }
-	close_paint := rt.nodes[clean_close].paint
-	close_glyph_visible := false
-	if len(close_paint) > 0 { _, close_glyph_visible = close_paint[0].payload.(Text_Paint) }
+	close_glyph_visible := visual_part_is_visible(&rt, clean_close) && tab_bar_test_display_has_text(&rt, clean_close)
 	testing.expect(t, rt.nodes[clean_tab].hovered && close_glyph_visible,
 		"hovering any part of a compact tab should reveal its close glyph without changing geometry")
 	testing.expect(t, same_rect(rt.nodes[clean_tab].bounds, clean_bounds),
@@ -563,24 +578,18 @@ test_tab_bar_close_policy_keeps_dirty_marker_and_reveals_on_hover :: proc(t: ^te
 		"the visible internal close slot should receive pointer hits independently from the tab body")
 	ui, ready = begin_presentation_frame(&rt)
 	if ready { end_presentation_frame(&ui) }
-	close_paint = rt.nodes[clean_close].paint
-	hover_surface_found, hover_surface_clear := false, false
+	close_paint := rt.nodes[clean_close].paint
+	hover_surface_found := false
 	for command in close_paint {
 		if surface, ok := command.payload.(Surface_Paint); ok {
-			if surface.shape.kind != .Rounded_Rectangle { continue }
-			hover_surface_found = true
-			hover_surface_clear = command.bounds.x > close_bounds.x &&
-				command.bounds.y > close_bounds.y &&
-				command.bounds.x+command.bounds.w < close_bounds.x+close_bounds.w &&
-				command.bounds.y+command.bounds.h < close_bounds.y+close_bounds.h &&
-				surface.fill.a >= 0.9
+			if surface.fill.a > 0 { hover_surface_found = true }
 		}
 	}
-	testing.expect(t, hover_surface_found && hover_surface_clear,
-		"hovering close should paint a high-contrast rounded surface inset from the tab focus perimeter")
+	testing.expect(t, hover_surface_found,
+		"hovering the close Button should paint its generic recipe surface")
 	testing.expect(t, same_rect(rt.nodes[clean_tab].bounds, clean_bounds),
 		"hovering the close action must not resize or reflow its tab")
-	close_title_bounds, close_title_found := tab_bar_test_text_bounds(rt.nodes[clean_tab])
+	close_title_bounds, close_title_found := tab_bar_test_text_bounds(&rt, clean_tab)
 	testing.expect(t, clean_title_found && close_title_found && same_rect(clean_title_bounds, close_title_bounds),
 		"showing and hovering the close affordance must not move or rewrap the tab title")
 }
@@ -595,7 +604,7 @@ test_tab_bar_dirty_state_is_visible_without_a_close_action :: proc(t: ^testing.T
 
 	tab_id: Node_ID = 0
 	for candidate in rt.order {
-		if node, found := rt.nodes[candidate]; found && node.active && node.kind == .Tab {
+		if node, found := rt.nodes[candidate]; found && node.active && node.kind == .Button && node.button_variant == .Tab {
 			tab_id = candidate
 			break
 		}

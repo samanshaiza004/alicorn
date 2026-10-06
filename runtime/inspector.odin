@@ -251,10 +251,9 @@ inspect :: proc(rt: ^Runtime) -> string {
 			style_inspector_semantic_surface(&sb, rt, node, semantic_style)
 		}
 		fmt.sbprintf(&sb, "  selected=%t semantic_active=%t hovered=%t pressed=%t caret=(%d,%v) selection=(%d,%v)->(%d,%v) reason: %s\n", node.selected, node.semantic_active, node.hovered, node.pressed, node.caret.byte, node.caret.affinity, node.selection_anchor.byte, node.selection_anchor.affinity, node.selection_focus.byte, node.selection_focus.affinity, node.last_reason)
-		if node.kind == .Button || node.kind == .Tab {
+		if node.kind == .Button {
 			recipe := style_button_recipe(rt, node.style_environment, node.button_variant)
-			hovered := node.hovered
-			if node.kind == .Tab { hovered = tab_bar_node_hovered(rt, node) }
+			hovered := visual_part_owner_hovered(rt, node.id)
 			fmt.sbprintf(&sb, "  button/tab state: selected=%t hovered=%t pressed=%t disabled=%t focused=%t\n",
 				node.selected, hovered, node.pressed, node.disabled, rt.focused == node.id)
 			resolved := style_button_resolve_retained(rt, node, Button_Visual_State{
@@ -264,8 +263,8 @@ inspect :: proc(rt: ^Runtime) -> string {
 				disabled=node.disabled,
 			}, node.drop_position == .On)
 			computed_style := rt.computed_styles[node.id]
-			if node.kind == .Tab {
-				fmt.sbprintf(&sb, "  tab identity: label=%q recipe=tab.document variant=button.tab\n", node.label)
+			if node.button_variant == .Tab {
+				fmt.sbprintf(&sb, "  tab identity: label=%q recipe=tab.document variant=button.tab\n", visual_part_owner_label(rt, node.id))
 			} else {
 				fmt.sbprintf(&sb, "  button identity: label=%q\n", node.label)
 			}
@@ -278,6 +277,7 @@ inspect :: proc(rt: ^Runtime) -> string {
 			for style_state in Style_Button_State {
 				if style_state in resolved.applied_transforms { fmt.sbprintf(&sb, " %s", style_button_state_name(style_state)) }
 			}
+			fmt.sbprintf(&sb, " | focus-mode=%s\n", button_focus_indicator_mode_name(recipe.focus_indicator_mode))
 			fmt.sbprintf(&sb, " | focus overlay=%v semantic-active overlay=%v\n", recipe.focus_role, recipe.semantic_active_role)
 			fmt.sbprintf(&sb, "  computed style: dependencies=")
 			first_domain := true

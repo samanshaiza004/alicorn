@@ -33,6 +33,8 @@ test_button_recipe_variants_use_neutral_defaults_and_explicit_primary :: proc(t:
 	testing.expect(t, tab.surface == style_color(&UI{runtime=&rt}, .Subtle_Surface) && tab.text == style_color(&UI{runtime=&rt}, .Text),
 		"selected tabs should use the tab recipe's selected surface and text transforms")
 	testing.expect(t, tab.selected_indicator == .Underline, "selected tabs should add a non-color selection indicator")
+	testing.expect(t, tab.focus_indicator_mode == .Keyboard_Only,
+		"the Tab recipe should show its focus indicator only for keyboard focus modality")
 }
 
 @(test)

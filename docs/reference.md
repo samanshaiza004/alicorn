@@ -166,8 +166,9 @@ for selection, hover, press, and disabled state. Transforms blend semantic
 roles in a fixed order: selected, hovered, pressed, then disabled. Later states
 therefore take precedence while still composing with the earlier result.
 Focus and semantic-active outlines are independent overlays and remain visible
-alongside those fills. The inspector reports the selected variant, base recipe,
-active state transforms, and focus overlay roles.
+alongside those fills. A recipe may show its focus indicator always or only
+under keyboard focus modality. The inspector reports the selected variant,
+base recipe, active state transforms, focus policy, and overlay roles.
 
 An immutable `Style_Theme` may override any variant in its
 `button_recipes.recipes` array; an undefined variant uses Alicorn's built-in
@@ -196,17 +197,35 @@ input while disabled. They do not own application state: store the returned
 `value` when `changed` is true. Their default sizes are content-aware; set
 `Layout_Style` when a specific size is desired.
 
+### Visual parts
+
+Visual parts compose appearance under an existing semantic control. They do
+not create a second interaction model: the owner remains an ordinary Button,
+and actionable pieces such as a close affordance are ordinary nested controls.
+Use `button_begin` / `button_end` when the button needs retained layout children,
+then tag described descendants with `visual_part_attach`. Layout, clipping,
+hit-testing, activation, and focus continue to come from the normal retained
+tree and control APIs.
+
+Core part roles include `.Surface`, `.Content`, `.Label`, `.Icon`,
+`.Indicator`, `.Selected_Indicator`, `.Overlay`, and `.Focus_Indicator`.
+Applications can use `visual_part_extension_id(namespace, name)` for stable,
+namespaced parts such as `app.history/ref-badge`; app-specific IDs do not add
+new renderer primitives. Parts may be always visible or follow the owning
+control's hover/selection state. Inspector output reports the role, owner, and
+visibility policy. Keep positioning in ordinary layout rather than encoding
+coordinates in a visual-part identity.
+
 ### Tab bars
 
 `tab_bar(ui, key, items, options, style)` describes a complete tab bar as one
 composite control and returns a `Tab_Bar_Result`. Internally, the retained
-tree uses a `Scroll_Region` labelled `tab-bar`, a `Virtual_List` row, semantic
-`Tab` controls, a content row, and an internal `Tab_Close` action. The selected
-underline and dirty marker are composed with semantic surface nodes; their
-bounds and clipping come from normal layout, and the renderer sees only the
-resulting generic surface/text commands. This is the first built-in consumer
-of Alicorn's high-level visual-part composition path. The separate `.Tab`
-`Button_Variant` remains available for simple selectable buttons.
+tree uses a `Scroll_Region` labelled `tab-bar`, a `Virtual_List`, and one
+ordinary `.Tab` Button owner per item. Its label, selected underline, dirty
+indicator, and close action are retained descendants tagged as visual parts.
+The close action remains an independent `.Quiet` Button, so its activation
+does not also select the parent tab. Part bounds and clipping come from normal
+layout, and renderer consumers see only generic surface/text commands.
 
 Each `Tab_Bar_Item` contains:
 

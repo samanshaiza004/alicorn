@@ -148,10 +148,12 @@ test_computed_style_inspector_explains_selected_tab_and_alias_chain :: proc(t: ^
 	tab_id: Node_ID = 0
 	for id in rt.order {
 		node, found := rt.nodes[id]
-		if found && node.kind == .Tab && node.label == "#readme" { tab_id = id; break }
+		if found && node.kind == .Button && node.button_variant == .Tab { tab_id = id; break }
 	}
-	testing.expect(t, tab_id != 0 && focus(&rt, tab_id), "the selected document tab should be focusable for inspection")
+	testing.expect(t, tab_id != 0, "the selected document tab should be retained as a Button owner")
 	if tab_id == 0 { return }
+	testing.expect(t, visual_part_owner_label(&rt, tab_id) == "#readme", "the Tab Button should expose its label through the Label part")
+	testing.expect(t, focus(&rt, tab_id), "the selected document tab should be focusable for inspection")
 	computed, cached := rt.computed_styles[tab_id]
 	testing.expect(t, cached && computed.family == .Button && computed.dependencies == Style_Domains{.Paint},
 		"the tab should retain its resolved Button recipe with a Paint-only dependency")
@@ -163,6 +165,8 @@ test_computed_style_inspector_explains_selected_tab_and_alias_chain :: proc(t: ^
 		"the inspector should name the document tab and its recipe")
 	testing.expect(t, strings.contains(inspection, "button/tab state: selected=true hovered=false pressed=false disabled=false focused=true"),
 		"the inspector should report selected, hover, and focus state independently")
+	testing.expect(t, strings.contains(inspection, "focus-mode=keyboard-only"),
+		"the inspector should expose the recipe's focus-modality policy")
 	testing.expect(t, strings.contains(inspection, "computed style: dependencies=paint") &&
 		strings.contains(inspection, "resolution=retained-cache generations="),
 		"the inspector should report the retained dependency domain and generation snapshot")
