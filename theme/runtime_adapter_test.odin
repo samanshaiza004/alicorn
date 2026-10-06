@@ -186,6 +186,29 @@ test_theme_builtin_base_is_a_typed_source_projection_of_runtime_defaults :: proc
 }
 
 @(test)
+test_sparse_theme_preserves_required_core_defaults_and_optional_extensions :: proc(t: ^testing.T) {
+	source := Theme_Source_Model{metadata=TEST_THEME_METADATA}
+	compiled := theme_compile({source})
+	defer theme_output_destroy(&compiled)
+	testing.expect(t, compiled.ok, "a sparse theme with no role overrides should compile")
+	if !compiled.ok { return }
+
+	runtime_theme, adapted := theme_runtime_style_theme(compiled)
+	defer theme_runtime_style_theme_destroy(&runtime_theme)
+	testing.expect(t, adapted, "the runtime adapter should fill omitted core roles from Alicorn's default theme")
+	if !adapted { return }
+
+	defaults := alicorn.DEFAULT_STYLE_THEME
+	for role in alicorn.Style_Color_Role {
+		if role == .Count { continue }
+		testing.expect(t, runtime_theme.colors[int(role)] == defaults.colors[int(role)],
+			"an omitted core color role should preserve its required default fallback")
+	}
+	testing.expect(t, len(runtime_theme.extension_color_roles) == 0 && len(runtime_theme.extension_length_roles) == 0,
+		"app/vendor extension roles are optional and are not synthesized when absent")
+}
+
+@(test)
 test_theme_child_alias_can_resolve_a_builtin_base_token :: proc(t: ^testing.T) {
 	base := theme_builtin_base_source_create()
 	defer theme_builtin_base_source_destroy(&base)

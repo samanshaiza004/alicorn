@@ -254,6 +254,24 @@ line tool accepts only the built-in `alicorn.base` identifier. File loading,
 inheritance policy, and application-specific theme discovery remain with the
 host application.
 
+### v0.2 source and fallback policy
+
+The source schema is exact (`1`). The style contract is a separate `major.minor`
+version: a compiler accepts the same major and any minor no newer than its
+supported minor; it rejects a different major or a future minor. When compiling
+multiple layers, the compiled contract records the highest compatible minor.
+The initial source requires `schema`, `contract`, and a `tokens` object;
+`roles` and `extends` are optional. `extends: "alicorn.base"` supplies typed
+symbolic defaults for aliases and role overrides. It never loads a file path.
+
+Core color-role bindings are optional overrides. Any omitted role retains its
+required Alicorn `DEFAULT_STYLE_THEME` value in the runtime adapter. An explicit
+unknown core role or unsupported core field is an error rather than a silently
+ignored typo. App/vendor extension roles are also optional, but have no
+implicit runtime value: a role is resolvable only when declared, and its type
+cannot change across source layers. Extension declarations must use `app.*` or
+`vendor.*`; they do not add names to Alicorn's core role vocabulary.
+
 ## Color and length runtime contract
 
 `Theme_Color` channels are linear-sRGB values in `[0,1]`; alpha is linear,
