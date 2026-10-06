@@ -128,7 +128,7 @@ cancel_pointer_capture :: proc(rt: ^Runtime) -> bool {
 	return true
 }
 
-hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
+hit_test :: proc(rt: ^Runtime, x, y: f32, include_hidden_tab_close := false) -> Node_ID {
 	modal_root := modal_overlay_root(rt)
 	// A solid scrollbar owns its reserved strip, including the portion that
 	// overlaps a split divider's deliberately enlarged grab target.
@@ -148,10 +148,12 @@ hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 		if node, ok := rt.nodes[id]; ok && node.active && !node.disabled &&
 			node_is_in_modal_overlay(rt, id, modal_root) && rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
 			// A hidden tab-close affordance is only a reserved dirty/close slot,
-			// not an invisible click target. Let the parent Tab receive the hit.
+			// not an invisible click target. Pointer motion may enter that slot
+			// so it can reveal the affordance; pointer-down still falls through
+			// until the close action is visibly available.
 			if node.kind == .Tab_Close {
 				parent := tab_ancestor(rt, node)
-				if parent == nil || !tab_close_should_show(parent, node) { continue }
+				if parent == nil || (!tab_close_should_show(parent, node) && !include_hidden_tab_close) { continue }
 			}
 			if node.kind == .Button || node.kind == .Tab || node.kind == .Tab_Close || node.kind == .Checkbox || node.kind == .Slider || node.kind == .Text_Field ||
 			   (node.kind == .Custom_Surface && node.surface_interaction == .Pointer) ||
@@ -460,7 +462,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 		tooltip_dismiss(rt)
 		return rt.scrollbar_drag_node if rt.scrollbar_drag_node != 0 else rt.captured_node
 	}
-	target := hit_test(rt, event.x, event.y)
+	target := hit_test(rt, event.x, event.y, include_hidden_tab_close=event.kind == .Move)
 	if event.kind == .Move { tooltip_pointer_update(rt, target, event.timestamp_ns) }
 	if menu_active && rt.context_menu.open && event.kind == .Down && target == rt.context_menu.overlay {
 		inside_panel := false

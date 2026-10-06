@@ -430,6 +430,13 @@ tab_bar_navigate :: proc(item_count, selected_index: int, navigation: Tab_Bar_Na
 
 tab_close_should_show :: proc(tab, close: ^Node) -> bool {
 	if tab == nil || close == nil || !tab.tab_closable { return false }
+	// A dirty marker is more important than a convenience close glyph. Keep
+	// it visible while the pointer is over the tab body; only swap it for the
+	// close action when that action itself is hovered or pressed. Always is an
+	// explicit request to show the close affordance regardless of dirty state.
+	if tab.tab_dirty && tab.tab_close_policy != .Always {
+		return close.hovered || close.pressed
+	}
 	hovered := tab.hovered || close.hovered || close.pressed
 	switch tab.tab_close_policy {
 	case .Always: return true
