@@ -60,6 +60,35 @@ has no idle fill, and `.Tab` provides a selection treatment. Recipes define
 their semantic colors and state transforms; selected, hovered, pressed, then
 disabled transforms apply in that order. Focus remains a separate outline.
 
+For a product-specific visual control, keep the existing Button as the
+interaction owner and describe its retained pieces as ordinary children:
+
+```odin
+owner, activated := alicorn.button_begin(
+	&ui,
+	"",
+	key=alicorn.key_string("commit-row"),
+	style=alicorn.layout_style(.Row, height=32),
+)
+label_id := alicorn.text(&ui, "4f19c2a  Fix editor layout", key=alicorn.key_string("label"))
+_ = alicorn.visual_part_attach(
+	&ui,
+	label_id,
+	owner,
+	alicorn.visual_part_extension_id("app.history", "commit.subject"),
+)
+alicorn.button_end(&ui)
+if activated { app.selected_commit = commit.id }
+```
+
+`button_begin` / `button_end` preserve Button focus and activation. Visual-part
+identity adds inspectable owner/state metadata; ordinary retained layout still
+controls ordering, bounds, and clipping. Use visual parts to describe
+presentation, not to create another interaction system. See
+[Visual parts under an existing control](reference.md#visual-parts-under-an-existing-control)
+for attachment validation, core roles, namespaced identities, and owner-state
+visibility policies.
+
 For document-style tabs, use the composite `tab_bar` contract rather than
 assembling a tab button beside a separate close button. Each item has a stable
 `UI_Key`; the application still owns the selected item, document lifecycle,

@@ -229,102 +229,130 @@ tab_bar :: proc(
 		layout_scroll_offset_x=offset_x,
 	)
 	for item, index in items {
-		// A Tab is a semantic button whose visible pieces are composed from
-		// retained layout nodes: its content row, close/dirty action, and a
-	// theme-resolved selected indicator. The renderer never needs tab-specific
-	// bounds arithmetic for those parts.
-		tab_style := layout_style(.Column, width=tab_width, height=opts.height, gap=0, clip=true)
-		text_style := DEFAULT_BUTTON_TEXT_STYLE
-		text_style.overflow = .Ellipsis
-		tab_id := emit_key(
+		// Selection remains an ordinary Button interaction. Its content, close
+		// action, dirty mark and underline are inspectable retained visual parts.
+		tab_id, tab_activated := button_begin(
 			ui,
-			.Tab,
-			resolve_source(Source_Site{}, "tab", loc),
-			label=item.label,
+			"",
 			key=item.key,
-			style=tab_style,
-			state_bits=1 if item.selected else 0,
-			selected=item.selected,
-			focusable=true,
-			font=Font_Role.UI,
-			text_style=text_style,
-			button_content=button_content_style(.Start, padding_x=10, padding_y=0),
-			button_variant=.Tab,
+			style=layout_style(.Column, width=tab_width, height=opts.height, gap=0, clip=true),
+			state=Button_State{selected=item.selected},
+			loc=loc,
+			text_style=DEFAULT_BUTTON_TEXT_STYLE,
+			content_style=button_content_style(.Start, padding_x=0, padding_y=0),
+			variant=.Tab,
 		)
 		if tab_id == 0 { continue }
-		pending := &rt.pending[len(rt.pending)-1].description
-		// Keep the fixed-size description contract compact by encoding the
-		// tab-only presentation flags in the existing paint state word.
-		pending.paint_value |= u64(opts.close_policy) << 1
-		pending.paint_value |= 1 << 5 // selected underline is a composed surface part
-		if item.closable { pending.paint_value |= 1 << 3 }
-		if item.dirty { pending.paint_value |= 1 << 4 }
-		pending.semantic_id = item.semantic_id
+		_ = visual_part_attach(ui, tab_id, tab_id, visual_part_core(.Surface))
+		if semantic_id_is_valid(item.semantic_id) { _ = semantic_bind(ui, item.semantic_id) }
 		if opts.drag_type != Drag_Type(0) && semantic_id_is_valid(item.semantic_id) {
 			_ = drag_source(ui, opts.drag_type, item.semantic_id)
 			_ = drop_target(ui, opts.drag_type, item.semantic_id, .Between_Horizontal)
 		}
-		if consume_activation(rt, tab_id) && result.action == .None {
-			result = Tab_Bar_Result{.Select, index}
-		}
+		if tab_activated && result.action == .None { result = Tab_Bar_Result{.Select, index} }
 
-		append(&rt.stack, tab_id)
-		push_identity_scope(rt, tab_id, "", 0)
-		container_begin_simple(
+		content_id := container_begin_simple(
 			ui,
 			.Container,
 			label="tab-content",
 			key=key_u64(1),
-			style=layout_style(.Row, width=tab_width, height=maxf(opts.height-2, 0), gap=0, align=.Center, clip=true),
+			style=layout_style(.Row, width=tab_width, height=maxf(opts.height-2, 0), gap=0, align=.Center, clip=true, padding=8),
 		)
-		container_begin_simple(
-			ui,
-			.Container,
-			label="tab-content-spacer",
-			key=key_u64(1),
-			style=layout_style(.Row, height=maxf(opts.height-2, 0), grow=1),
-		)
-		container_end(ui)
+		_ = visual_part_attach(ui, content_id, tab_id, visual_part_core(.Content))
+		label_style := DEFAULT_BUTTON_TEXT_STYLE
+		label_id := text(ui, item.label, key=key_u64(2), style=layout_style(.Row, height=maxf(opts.height-2, 0), grow=1), font=Font_Role.UI, text_style=label_style)
+		_ = visual_part_attach(ui, label_id, tab_id, visual_part_core(.Label))
+
+		trailing_width := f32(0)
+		close_width := TAB_CLOSE_CONTROL_SIZE
+		dirty_close_reveal := item.dirty && item.closable && opts.close_policy != .Always
 		if item.closable {
-			close_id := emit_key(
+			if dirty_close_reveal { close_width = TAB_CLOSE_SLOT_WIDTH }
+			trailing_width = close_width
+		}
+		else if item.dirty { trailing_width = 16 }
+		if trailing_width > 0 {
+			trailing := container_begin_simple(
 				ui,
-				.Tab_Close,
-				resolve_source(Source_Site{}, "tab_close", loc),
-				label="Close tab",
-				text="×",
-				key=key_u64(2),
-				style=layout_style(.Row, width=TAB_CLOSE_CONTROL_SIZE, height=minf(TAB_CLOSE_CONTROL_SIZE, maxf(opts.height-2, 18)), align=.Center),
-				color=style_environment_color(rt, rt.style_environment, .Text),
-				font=Font_Role.UI,
-				text_style=DEFAULT_BUTTON_TEXT_STYLE,
-				button_variant=.Quiet,
+				.Container,
+				label="tab-trailing-parts",
+				key=key_u64(3),
+				style=layout_style(.Row, width=trailing_width, height=maxf(opts.height-2, 0), gap=0, align=.Center),
 			)
-			if consume_activation(rt, close_id) && result.action == .None {
-				result = Tab_Bar_Result{.Close, index}
+			_ = visual_part_attach(ui, trailing, tab_id, visual_part_core(.Content))
+			if item.dirty && !item.closable {
+				marker_id := surface_begin(
+					ui,
+					surface_core_color_role(.Accent),
+					key=key_u64(4),
+					style=layout_style(.Row, width=4, height=4),
+					label="tab-dirty-indicator",
+				)
+				_ = visual_part_attach(ui, marker_id, tab_id, visual_part_core(.Indicator))
+				surface_end(ui)
 			}
-		} else if item.dirty {
-			// The dirty mark is a normal semantic surface part. Its location is
-			// determined by the content row's layout, not paint-time geometry.
-			_ = surface_begin(
-				ui,
-				surface_core_color_role(.Accent),
-				key=key_u64(2),
-				style=layout_style(.Row, width=6, height=6),
-				label="tab-dirty-indicator",
-			)
-			surface_end(ui)
+			if item.closable {
+				close_visibility := Visual_Part_Visibility.Always
+				if !dirty_close_reveal {
+					switch opts.close_policy {
+					case .Always: close_visibility = .Always
+					case .Hover: close_visibility = .Owner_Hovered
+					case .Selected_Or_Hover: close_visibility = .Owner_Selected_Or_Hovered
+					case .Auto:
+						if tab_width < TAB_AUTO_CLOSE_ALWAYS_WIDTH { close_visibility = .Owner_Hovered }
+				}
+				}
+				close_id, close_activated := button_begin(
+					ui,
+					"×" if !dirty_close_reveal else "",
+					key=key_u64(5),
+					style=layout_style(.Row, width=close_width, height=TAB_CLOSE_CONTROL_SIZE, align=.Center),
+					text_style=DEFAULT_BUTTON_TEXT_STYLE,
+					variant=.Quiet,
+					focusable=false,
+				)
+				_ = visual_part_attach(ui, close_id, tab_id, visual_part_core(.Overlay), close_visibility,
+					reveal_on_direct_hover=dirty_close_reveal)
+				if close_activated && result.action == .None { result = Tab_Bar_Result{.Close, index} }
+				if dirty_close_reveal {
+					close_content := container_begin_simple(
+						ui,
+						.Container,
+						label="tab-close-content",
+						key=key_u64(1),
+						style=layout_style(.Row, width=close_width, height=TAB_CLOSE_CONTROL_SIZE, gap=0, align=.Center),
+					)
+					_ = visual_part_attach(ui, close_content, close_id, visual_part_core(.Content))
+					marker_id := surface_begin(
+						ui,
+						surface_core_color_role(.Accent),
+						key=key_u64(2),
+						style=layout_style(.Row, width=4, height=4),
+						label="tab-dirty-indicator",
+					)
+					_ = visual_part_attach(ui, marker_id, close_id, visual_part_core(.Indicator), .Owner_Not_Hovered)
+					surface_end(ui)
+					glyph_id := text(ui, "×", key=key_u64(3),
+						style=layout_style(.Row, width=TAB_CLOSE_CONTROL_SIZE, height=TAB_CLOSE_CONTROL_SIZE, align=.Center),
+						text_style=DEFAULT_BUTTON_TEXT_STYLE)
+					_ = visual_part_attach(ui, glyph_id, close_id, visual_part_core(.Label), .Owner_Hovered)
+					container_end(ui)
+				}
+				button_end(ui)
+			}
+			container_end(ui)
 		}
 		container_end(ui)
-		_ = surface_begin(
+		indicator_id := surface_begin(
 			ui,
 			surface_core_color_role(.Accent),
-			key=key_u64(3),
+			key=key_u64(6),
 			style=layout_style(.Row, width=tab_width, height=2 if item.selected else 0),
 			label="tab-selected-indicator",
 		)
+		_ = visual_part_attach(ui, indicator_id, tab_id, visual_part_core(.Selected_Indicator))
 		surface_end(ui)
-		pop(&rt.stack)
-		pop_identity_scope(rt)
+		button_end(ui)
 	}
 	container_end(ui)
 	scroll_region_end(ui)
@@ -426,45 +454,6 @@ tab_bar_navigate :: proc(item_count, selected_index: int, navigation: Tab_Bar_Na
 	case .Last: return item_count-1, true
 	}
 	return -1, false
-}
-
-tab_close_should_show :: proc(tab, close: ^Node) -> bool {
-	if tab == nil || close == nil || !tab.tab_closable { return false }
-	// A dirty marker is more important than a convenience close glyph. Keep
-	// it visible while the pointer is over the tab body; only swap it for the
-	// close action when that action itself is hovered or pressed. Always is an
-	// explicit request to show the close affordance regardless of dirty state.
-	if tab.tab_dirty && tab.tab_close_policy != .Always {
-		return close.hovered || close.pressed
-	}
-	hovered := tab.hovered || close.hovered || close.pressed
-	switch tab.tab_close_policy {
-	case .Always: return true
-	case .Hover: return hovered
-	case .Selected_Or_Hover: return tab.selected || hovered
-	case .Auto:
-		return tab.bounds.w >= TAB_AUTO_CLOSE_ALWAYS_WIDTH || hovered
-	}
-	return false
-}
-
-tab_ancestor :: proc(rt: ^Runtime, node: ^Node) -> ^Node {
-	if rt == nil || node == nil { return nil }
-	parent_id := node.parent
-	for parent_id != 0 {
-		parent, found := rt.nodes[parent_id]
-		if !found { return nil }
-		if parent.kind == .Tab { return parent }
-		parent_id = parent.parent
-	}
-	return nil
-}
-
-tab_trailing_slot_width :: proc(node: ^Node) -> f32 {
-	if node == nil { return 0 }
-	if node.tab_closable { return TAB_CLOSE_SLOT_WIDTH }
-	if node.tab_dirty { return 16 }
-	return 0
 }
 
 tab_bar_viewport_guess :: proc(ui: ^UI, style: Layout_Style) -> f32 {

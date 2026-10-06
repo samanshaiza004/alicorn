@@ -42,6 +42,8 @@ Node_Kind :: enum {
 	Context_Menu_Panel,
 	Container,
 	Button,
+	// Deprecated compatibility kinds. TabBar now composes ordinary Buttons
+	// and visual-part children; these values remain for existing API callers.
 	Tab,
 	Tab_Close,
 	Checkbox,
@@ -55,6 +57,77 @@ Node_Kind :: enum {
 	Split,
 	Split_Handle,
 	Custom_Surface,
+}
+
+// Visual parts describe the meaning of retained presentation nodes without
+// changing their interaction semantics. Applications may use a namespaced ID
+// when the core roles do not describe a product-specific part.
+Visual_Part_Core_ID :: enum {
+	Surface,
+	Content,
+	Label,
+	Icon,
+	Indicator,
+	Selected_Indicator,
+	Overlay,
+	Focus_Indicator,
+	Count,
+}
+
+Visual_Part_Extension_ID :: distinct u64
+Visual_Part_ID :: union #no_nil { Visual_Part_Core_ID, Visual_Part_Extension_ID }
+
+Visual_Part_Visibility :: enum {
+	Always,
+	Owner_Hovered,
+	Owner_Selected_Or_Hovered,
+	Owner_Not_Hovered,
+}
+
+// Visual_Part_Style lives in Runtime side storage rather than Node or
+// Description. Visibility is deliberately limited to reusable owner-state
+// conditions; layout and positioning remain ordinary retained layout.
+Visual_Part_Style :: struct {
+	defined: bool,
+	owner: Node_ID,
+	identity: Visual_Part_ID,
+	visibility: Visual_Part_Visibility,
+	reveal_on_direct_hover: bool,
+}
+
+visual_part_core :: proc(role: Visual_Part_Core_ID) -> Visual_Part_ID { return role }
+
+visual_part_extension_id :: proc(namespace, name: string) -> Visual_Part_ID {
+	return Visual_Part_Extension_ID(style_extension_role_hash(namespace, name, 3))
+}
+
+visual_part_identity_is_valid :: proc(identity: Visual_Part_ID) -> bool {
+	switch value in identity {
+	case Visual_Part_Core_ID:
+		return value >= .Surface && value < .Count
+	case Visual_Part_Extension_ID:
+		return value != 0
+	}
+	return false
+}
+
+visual_part_identity_hash :: proc(identity: Visual_Part_ID) -> u64 {
+	switch value in identity {
+	case Visual_Part_Core_ID:
+		return hash_mix(1, u64(value))
+	case Visual_Part_Extension_ID:
+		return hash_mix(2, u64(value))
+	}
+	return 0
+}
+
+visual_part_style_hash :: proc(style: Visual_Part_Style) -> u64 {
+	if !style.defined { return 0 }
+	h := hash_mix(1469598103934665603, u64(style.owner))
+	h = hash_mix(h, visual_part_identity_hash(style.identity))
+	h = hash_mix(h, u64(style.visibility))
+	h = hash_mix(h, 1 if style.reveal_on_direct_hover else 0)
+	return h
 }
 
 Split_Axis :: enum { Horizontal, Vertical }
@@ -449,6 +522,7 @@ Button_Recipe :: struct {
 	disabled:               Style_Transform,
 	selected_indicator:     Button_Indicator,
 	selected_indicator_role: Style_Color_Role,
+	focus_indicator_mode:   Button_Focus_Indicator_Mode,
 	focus_role:             Style_Color_Role,
 	semantic_active_role:   Style_Color_Role,
 }
@@ -458,6 +532,7 @@ Button_Recipe_Set :: struct {
 }
 
 Button_Indicator :: enum { None, Underline }
+Button_Focus_Indicator_Mode :: enum { Always, Keyboard_Only }
 
 Style_Button_State :: enum { Selected, Hovered, Pressed, Disabled }
 Style_Button_States :: distinct bit_set[Style_Button_State; u8]
@@ -477,6 +552,7 @@ Button_Resolved_Style :: struct {
 	semantic_active:         Color,
 	selected_indicator:      Button_Indicator,
 	selected_indicator_color: Color,
+	focus_indicator_mode:    Button_Focus_Indicator_Mode,
 	applied_transforms:      Style_Button_States,
 }
 
@@ -558,6 +634,7 @@ DEFAULT_BUTTON_RECIPES :: Button_Recipe_Set{recipes={
 		disabled=Style_Transform{text_role=.Muted_Text, text_mix=1},
 		selected_indicator=.Underline,
 		selected_indicator_role=.Text,
+		focus_indicator_mode=.Keyboard_Only,
 		focus_role=.Focus, semantic_active_role=.Semantic_Focus,
 	},
 }}
@@ -847,6 +924,7 @@ Pending_Item :: struct {
 	description: Description,
 	subtree:     Node_ID,
 	semantic_surface_style: Semantic_Surface_Style,
+	visual_part: Visual_Part_Style,
 }
 
 Node :: struct {
@@ -870,9 +948,6 @@ Node :: struct {
 	style_generations: Style_Generations,
 	button_content_style: Button_Content_Style,
 	button_variant: Button_Variant,
-	tab_close_policy: Tab_Close_Policy,
-	tab_closable: bool,
-	tab_dirty: bool,
 	style:       Layout_Style,
 	context_menu_bounds: Rect,
 	color:       Color,
@@ -1186,6 +1261,7 @@ Runtime :: struct {
 	computed_styles: map[Node_ID]Computed_Style,
 	style_stats_suppressed: bool,
 	semantic_surfaces: map[Node_ID]Semantic_Surface_Style,
+	visual_parts: map[Node_ID]Visual_Part_Style,
 	order:       [dynamic]Node_ID,
 	top_level:   [dynamic]Node_ID,
 	pending:     [dynamic]Pending_Item,

@@ -100,6 +100,7 @@ style_button_recipe_is_valid :: proc(recipe: Button_Recipe) -> bool {
 	       style_color_role_is_valid(recipe.focus_role) &&
 	       style_color_role_is_valid(recipe.semantic_active_role) &&
 	       (recipe.selected_indicator == .None || recipe.selected_indicator == .Underline) &&
+	       (recipe.focus_indicator_mode == .Always || recipe.focus_indicator_mode == .Keyboard_Only) &&
 	       style_transform_is_valid(recipe.selected) &&
 	       style_transform_is_valid(recipe.hovered) &&
 	       style_transform_is_valid(recipe.pressed) &&
@@ -305,6 +306,14 @@ style_button_variant_is_valid :: proc(variant: Button_Variant) -> bool {
 	return int(variant) >= 0 && int(variant) < BUTTON_VARIANT_COUNT
 }
 
+button_focus_indicator_mode_name :: proc(mode: Button_Focus_Indicator_Mode) -> string {
+	switch mode {
+	case .Always: return "always"
+	case .Keyboard_Only: return "keyboard-only"
+	}
+	return "invalid"
+}
+
 style_button_variant_resolve :: proc(rt: ^Runtime, variant: Button_Variant) -> Button_Variant {
 	if style_button_variant_is_valid(variant) { return variant }
 	if rt != nil { append_diagnostic(rt, "button variant must be one of the declared Button_Variant values; using .Default") }
@@ -340,6 +349,7 @@ style_button_resolve :: proc(
 		semantic_active=style_environment_color(rt, environment, recipe.semantic_active_role),
 		selected_indicator=.None,
 		selected_indicator_color=style_environment_color(rt, environment, recipe.selected_indicator_role),
+		focus_indicator_mode=recipe.focus_indicator_mode,
 	}
 	if !recipe.surface_visible { style.surface.a = 0 }
 	if state.selected {

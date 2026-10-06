@@ -177,19 +177,6 @@ append_focus_outline :: proc(node: ^Node, color: Color, thickness: f32) {
 	append_rect_outline(node, color, thickness)
 }
 
-tab_bar_node_hovered :: proc(rt: ^Runtime, node: ^Node) -> bool {
-	if node == nil { return false }
-	if node.hovered { return true }
-	if rt == nil { return false }
-	for child_id in node.children {
-		child, found := rt.nodes[child_id]
-		if !found || !child.active { continue }
-		if child.kind == .Tab_Close && child.hovered { return true }
-		if tab_bar_node_hovered(rt, child) { return true }
-	}
-	return false
-}
-
 append_scrollbar_display :: proc(rt: ^Runtime, node: ^Node) {
 	if node.kind != .Scroll_Region { return }
 	resolved_style := style_scrollbar_resolve_retained(rt, node, Scrollbar_Visual_State{
@@ -213,6 +200,7 @@ append_scrollbar_display :: proc(rt: ^Runtime, node: ^Node) {
 compose_subtree :: proc(rt: ^Runtime, id: Node_ID) {
 	node, ok := rt.nodes[id]
 	if !ok || !node.active { return }
+	if !visual_part_is_visible(rt, id) { return }
 
 	node.display_index = -1
 	for cached_command in node.paint {
@@ -351,15 +339,13 @@ update_paint :: proc(rt: ^Runtime) {
 				if node.kind == .Scroll_Region && semantic_focus_owner_needs_outline(rt, node.id) {
 					append_focus_outline(node, style_environment_color(rt, node.style_environment, .Focus), 1.5)
 				}
-			} else if node.kind == .Button || node.kind == .Tab {
+			} else if node.kind == .Button {
 				padding_x := maxf(node.button_content_style.padding_x, 0)
 				padding_y := maxf(node.button_content_style.padding_y, 0)
-				close_slot_width := f32(0)
-				if node.kind == .Tab { close_slot_width = minf(tab_trailing_slot_width(node), node.bounds.w) }
 				content_bounds := Rect{
 					node.bounds.x + padding_x,
 					node.bounds.y + padding_y,
-					maxf(node.bounds.w - 2*padding_x-close_slot_width, 0),
+					maxf(node.bounds.w - 2*padding_x, 0),
 					maxf(node.bounds.h - 2*padding_y, 0),
 				}
 				text_bounds := content_bounds
@@ -398,8 +384,7 @@ update_paint :: proc(rt: ^Runtime) {
 						append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, resolved_style.surface))
 					}
 				} else {
-					hovered := node.hovered
-					if node.kind == .Tab { hovered = tab_bar_node_hovered(rt, node) }
+					hovered := visual_part_owner_hovered(rt, node.id)
 					resolved_style := style_button_resolve_retained(rt, node, Button_Visual_State{
 						selected=node.selected,
 						hovered=hovered,
@@ -410,88 +395,21 @@ update_paint :: proc(rt: ^Runtime) {
 					if resolved_style.surface.a > 0 {
 						append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, resolved_style.surface))
 					}
-					if resolved_style.selected_indicator == .Underline &&
-					   !(node.kind == .Tab && node.paint_value&(1<<5) != 0) {
+					if resolved_style.selected_indicator == .Underline && !visual_part_owner_has_role(rt, node.id, .Selected_Indicator) {
 						indicator_height := minf(2, node.bounds.h)
 						indicator := Rect{node.bounds.x, node.bounds.y+node.bounds.h-indicator_height, node.bounds.w, indicator_height}
 						append(&node.paint, paint_surface_command(node.id, indicator, node.clip, resolved_style.selected_indicator_color))
 					}
 					if node.semantic_active { append_focus_outline(node, resolved_style.semantic_active, 1) }
-					if rt.focused == node.id && !node.disabled && node.kind != .Tab {
+					show_focus := resolved_style.focus_indicator_mode == .Always || rt.focus_visible
+					if show_focus && rt.focused == node.id && !node.disabled {
 						// Focus is an independent outline so it remains visible without
 						// replacing the selected, hover, or pressed fill.
 						append_focus_outline(node, resolved_style.focus, 1.5)
 					}
 				}
-				append(&node.paint, paint_text_command(node.id, text_bounds, text_clip, paint_text_handle_for_node(node), text_color))
-				// A Tab's focus outline is the outermost part of its composed
-				// control. The embedded close surface is inset, so it remains a
-				// visually distinct action inside that boundary.
-				if node.kind == .Tab && rt.focus_visible && rt.focused == node.id && !node.disabled {
-					resolved_style := style_button_resolve_retained(rt, node, Button_Visual_State{
-						selected=node.selected,
-						hovered=tab_bar_node_hovered(rt, node),
-						pressed=node.pressed,
-						disabled=node.disabled,
-					}, node.drop_position == .On)
-					append_focus_outline(node, resolved_style.focus, 1.5)
-				}
-			} else if node.kind == .Tab_Close {
-				parent := tab_ancestor(rt, node)
-				show_close := parent != nil && tab_close_should_show(parent, node)
-				if show_close {
-					close_hot := (node.hovered || node.pressed) && !node.disabled
-					close_style := style_button_resolve_retained(rt, node, Button_Visual_State{
-						hovered=node.hovered,
-						pressed=node.pressed,
-						disabled=node.disabled,
-					})
-					if close_hot { close_style.surface.a = 1 }
-					if close_hot { close_style.text = style_environment_color(rt, node.style_environment, .Text) }
-					if close_style.surface.a > 0 {
-						inset := minf(3, minf(node.bounds.w, node.bounds.h)*0.14)
-						close_surface := Rect{
-							node.bounds.x+inset,
-							node.bounds.y+inset,
-							maxf(node.bounds.w-2*inset, 0),
-							maxf(node.bounds.h-2*inset, 0),
-						}
-						append(&node.paint, paint_surface_command(
-							node.id,
-							close_surface,
-							node.clip,
-							close_style.surface,
-							shape=Surface_Shape{kind=.Rounded_Rectangle, corner_radius=minf(5, inset+2)},
-						))
-					}
-					if rt.focused == node.id && !node.disabled { append_focus_outline(node, close_style.focus, 1.5) }
-					text_bounds := node.bounds
-					if node.text_run_valid {
-						text_bounds.x += (text_bounds.w-node.text_run.width)*0.5
-						text_bounds.y += (text_bounds.h-node.text_run.height)*0.5
-					}
-					append(&node.paint, paint_text_command(
-						node.id,
-						text_bounds,
-						rect_intersection(node.clip, node.bounds),
-						paint_text_handle_for_node(node),
-						close_style.text,
-					))
-				} else if parent != nil && parent.tab_dirty {
-					dot_size := minf(6, minf(node.bounds.w, node.bounds.h))
-					dot := Rect{
-						node.bounds.x+(node.bounds.w-dot_size)*0.5,
-						node.bounds.y+(node.bounds.h-dot_size)*0.5,
-						dot_size,
-						dot_size,
-					}
-					append(&node.paint, paint_surface_command(
-						node.id,
-						dot,
-						node.clip,
-						style_environment_color(rt, node.style_environment, .Accent),
-						shape=Surface_Shape{kind=.Rounded_Rectangle, corner_radius=dot_size*0.5},
-					))
+				if len(node.label) > 0 {
+					append(&node.paint, paint_text_command(node.id, text_bounds, text_clip, paint_text_handle_for_node(node), text_color))
 				}
 			} else if node.kind == .Checkbox {
 				box_size := minf(18, maxf(node.bounds.h-6, 12))
@@ -602,6 +520,10 @@ update_paint :: proc(rt: ^Runtime) {
 				text_color := node.color
 				if node.kind == .Text_Field {
 					text_color = field_style.text
+				} else if node.kind == .Text {
+					if part_color, found := visual_part_label_color(rt, node.id); found {
+						text_color = part_color
+					}
 				}
 				append(&node.paint, paint_text_command(node.id, node.bounds, text_clip, text_run_handle, text_color, node.text_paint_spans[:]))
 				append_text_paint_geometry(node, &paint_geometry, text_clip, false)
@@ -637,12 +559,10 @@ update_paint :: proc(rt: ^Runtime) {
 				if node.drop_target_mode == .Between_Horizontal {
 					marker_edge := node.bounds.x if node.drop_position == .Before else node.bounds.x+node.bounds.w
 					marker = Rect{marker_edge-1.5, node.bounds.y+2, 3, maxf(node.bounds.h-4, 0)}
-					if node.kind == .Tab {
-						halo := Rect{marker_edge-3.5, node.bounds.y+2, 7, maxf(node.bounds.h-4, 0)}
-						halo_color := style_environment_color(rt, node.style_environment, .Accent)
-						halo_color.a *= 0.24
-						append(&node.paint, paint_surface_command(node.id, halo, node.clip, halo_color))
-					}
+					halo := Rect{marker_edge-3.5, node.bounds.y+2, 7, maxf(node.bounds.h-4, 0)}
+					halo_color := style_environment_color(rt, node.style_environment, .Accent)
+					halo_color.a *= 0.24
+					append(&node.paint, paint_surface_command(node.id, halo, node.clip, halo_color))
 				} else {
 					marker_y := node.bounds.y if node.drop_position == .Before else node.bounds.y+node.bounds.h-2
 					marker = Rect{node.bounds.x+2, marker_y, maxf(node.bounds.w-4, 0), 2}

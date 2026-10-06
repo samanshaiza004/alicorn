@@ -2,6 +2,7 @@ package main
 
 import "core:fmt"
 import "core:os"
+import "core:path/filepath"
 import "core:strings"
 import theme "../../theme"
 
@@ -215,9 +216,17 @@ theme_cli_compile :: proc(input_path, output_path, symbol, package_name, runtime
 		return 1
 	}
 	defer delete(input_absolute)
-	output_absolute, output_path_error := os.get_absolute_path(output_path, context.allocator)
-	if output_path_error != nil {
-		fmt.eprintln("could not resolve output path:", output_path, "error:", output_path_error)
+	output_directory, output_name := filepath.split(output_path)
+	if output_directory == "" { output_directory = "." }
+	output_directory_absolute, output_directory_error := filepath.abs(output_directory, context.allocator)
+	if output_directory_error != nil {
+		fmt.eprintln("could not resolve output directory:", output_directory, "error:", output_directory_error)
+		return 1
+	}
+	defer delete(output_directory_absolute)
+	output_absolute, output_join_error := filepath.join({output_directory_absolute, output_name}, context.allocator)
+	if output_join_error != nil {
+		fmt.eprintln("could not resolve output path:", output_path, "error:", output_join_error)
 		return 1
 	}
 	defer delete(output_absolute)
