@@ -659,7 +659,7 @@ DEFAULT_BUTTON_RECIPES :: Button_Recipe_Set{recipes={
 	},
 	Button_Recipe{
 		defined=true, surface_role=.Danger, text_role=.Danger, surface_visible=false,
-		hovered=Style_Transform{surface_role=.Danger, surface_mix=1, text_role=.Accent_Text, text_mix=1},
+		hovered=Style_Transform{surface_role=.Danger, surface_mix=0.3, text_role=.Accent_Text, text_mix=1},
 		pressed=Style_Transform{surface_role=.Danger, surface_mix=1, text_role=.Accent_Text, text_mix=1},
 		disabled=Style_Transform{surface_role=.Subtle_Surface, surface_mix=1, text_role=.Muted_Text, text_mix=1},
 		focus_role=.Focus, semantic_active_role=.Semantic_Focus,
