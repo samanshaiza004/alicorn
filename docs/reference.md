@@ -388,6 +388,21 @@ TabList contains semantic Tab items and per-tab close actions; underline,
 dirty marker, hover surface, and other paint-only parts do not become separate
 semantic entities.
 
+Ordinary `text()` descriptions do not create semantic entities by default.
+For standalone informational copy, call `semantic_static_text(ui)` immediately
+after `text(&ui, ...)`; the text becomes the value of a `Static_Text` entity,
+which the AccessKit adapter maps to Label. Do not annotate text that already
+names a control, or the accessible name may be announced twice. Editor and
+document contents need a richer text semantic model and are not covered by this
+helper.
+
+For a slider whose numeric value needs a human-readable representation, call
+`semantic_range_value_text(ui, value)` immediately after `slider_f32`. This sets
+the optional semantic string value while preserving numeric value/minimum/
+maximum/step. The application owns units, precision, and locale; for example,
+a normalized `0.65` may be described as `65%`. The string is exposed alongside
+the numeric range through the native accessibility adapter.
+
 `semantic_snapshot(runtime, allocator)` returns an owned full snapshot; release
 it with `semantic_snapshot_destroy`. `semantic_update_since(runtime, from_revision)`
 exposes the current keyboard-focus ID and at most the newest revision

@@ -35,6 +35,46 @@ accessibility_projection_test_find_node :: proc(nodes: []Accessibility_Projectio
 }
 
 @(test)
+test_accessibility_projection_maps_static_text_to_label_value :: proc(t: ^testing.T) {
+	id := alicorn.Semantic_ID{namespace=25, value=1}
+	nodes := [1]alicorn.Semantic_Node{{id=id, role=.Static_Text, value="Build completed"}}
+	snapshot := accessibility_projection_test_snapshot(1, nodes[:])
+	projection, status := accessibility_projection_from_snapshot(snapshot, context.temp_allocator)
+	defer accessibility_projection_destroy(&projection)
+	projected, found := accessibility_projection_node_by_semantic_id(projection, id)
+	testing.expect(t, status == .Success && found && projected.role == .Static_Text &&
+		projected.label == "" && projected.value == "Build completed",
+		"Static_Text should preserve content as value and must not synthesize an accessible label")
+	testing.expect(t, native_accessibility_accesskit_role(projected.role) == ACCESSKIT_ROLE_LABEL,
+		"the AccessKit adapter should expose Static_Text as Label")
+}
+
+@(test)
+test_accessibility_projection_preserves_formatted_slider_value_and_numeric_range :: proc(t: ^testing.T) {
+	id := alicorn.Semantic_ID{namespace=25, value=2}
+	nodes := [1]alicorn.Semantic_Node{{
+		id=id,
+		role=.Slider,
+		label="Gain",
+		value="65%",
+		numeric_value=0.65,
+		numeric_minimum=0,
+		numeric_maximum=1,
+		numeric_step=0.05,
+		has_numeric_value=true,
+	}}
+	snapshot := accessibility_projection_test_snapshot(2, nodes[:])
+	projection, status := accessibility_projection_from_snapshot(snapshot, context.temp_allocator)
+	defer accessibility_projection_destroy(&projection)
+	projected, found := accessibility_projection_node_by_semantic_id(projection, id)
+	testing.expect(t, status == .Success && found && projected.role == .Slider &&
+		projected.label == "Gain" && projected.value == "65%" && projected.has_numeric_value &&
+		projected.numeric_value == 0.65 && projected.numeric_minimum == 0 &&
+		projected.numeric_maximum == 1 && projected.numeric_step == 0.05,
+		"the native projection should preserve the formatted value alongside numeric range properties")
+}
+
+@(test)
 test_accessibility_action_translation_keeps_reveal_separate_from_perform :: proc(t: ^testing.T) {
 	button := Accessibility_Projection_Node{
 		role=.Button,

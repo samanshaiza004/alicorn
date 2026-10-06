@@ -212,6 +212,21 @@ empty update; any other base must match the single retained transition or
 requires a snapshot. The native Windows/macOS host projects these snapshots
 and deltas through AccessKit; the semantic runtime remains the source of truth.
 
+Ordinary visual `Text` is intentionally not exported automatically. For
+standalone informational copy, call `semantic_static_text` immediately after
+`text`; it exposes that text as a `Static_Text` entity (mapped to AccessKit's
+Label role, whose text content is carried as its value). Text that already
+names a control should remain part of that control's semantic name rather than
+being annotated a second time. Rich editor/document text needs a specialized
+text model and is not covered by this helper.
+
+Sliders retain their numeric value, range, and step for assistive technology.
+If the normalized number is not meaningful to users, call
+`semantic_range_value_text(&ui, "65%")` immediately after `slider_f32` to add
+an optional human-readable value such as a percentage, decibels, or a formatted
+frequency without replacing the numeric range. The application owns formatting
+and locale; `02_form` demonstrates this for its sliders.
+
 Virtual collections use `semantic_collection_begin` with
 `semantic_collection_item` for realized rows and `semantic_collection_virtual_item`
 for logical items that need description without visual realization. The

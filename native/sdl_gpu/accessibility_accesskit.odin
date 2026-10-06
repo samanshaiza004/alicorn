@@ -814,6 +814,7 @@ native_accessibility_accesskit_role :: proc(role: Accessibility_Projection_Role)
 	switch role {
 	case .Window: return ACCESSKIT_ROLE_WINDOW
 	case .Group: return ACCESSKIT_ROLE_GROUP
+	case .Static_Text: return ACCESSKIT_ROLE_LABEL
 	case .Button: return ACCESSKIT_ROLE_BUTTON
 	case .Check_Box: return ACCESSKIT_ROLE_CHECK_BOX
 	case .Slider: return ACCESSKIT_ROLE_SLIDER

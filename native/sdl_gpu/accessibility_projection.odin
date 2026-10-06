@@ -10,6 +10,7 @@ import alicorn "../../runtime"
 Accessibility_Projection_Role :: enum {
 	Window,
 	Group,
+	Static_Text,
 	Button,
 	Check_Box,
 	Slider,
@@ -304,6 +305,7 @@ accessibility_projection_role :: proc(role: alicorn.Semantic_Role) -> Accessibil
 	switch role {
 	case .Window: return .Window
 	case .Group: return .Group
+	case .Static_Text: return .Static_Text
 	case .Button: return .Button
 	case .Checkbox: return .Check_Box
 	case .Slider: return .Slider

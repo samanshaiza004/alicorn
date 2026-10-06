@@ -7,6 +7,7 @@ Semantic_Role :: enum {
 	None,
 	Window,
 	Group,
+	Static_Text,
 	Button,
 	Checkbox,
 	Slider,
@@ -658,6 +659,37 @@ semantic_description :: proc(
 	pending.semantic.states = states
 	pending.semantic.actions = actions
 	if d.semantic_id.namespace == 0 { d.semantic_id = semantic_visual_id(d.id) }
+	return true
+}
+
+// semantic_static_text opts the immediately preceding text() description into
+// accessibility as standalone informational text. Its source text is exported
+// as the semantic value (the AccessKit Label convention); ordinary visual
+// Text remains absent from the semantic tree unless explicitly annotated.
+semantic_static_text :: proc(ui: ^UI) -> bool {
+	if ui == nil || ui.runtime == nil || len(ui.runtime.pending) == 0 { return false }
+	last := len(ui.runtime.pending)-1
+	if ui.runtime.pending[last].kind != .Description { return false }
+	pending := &ui.runtime.pending[last]
+	d := &pending.description
+	if d.kind != .Text || len(d.text) == 0 || pending.semantic.role != .None { return false }
+	ui.runtime.stats.semantic_descriptions_emitted += 1
+	pending.semantic.role = .Static_Text
+	pending.semantic.value = d.text
+	if d.semantic_id.namespace == 0 { d.semantic_id = semantic_visual_id(d.id) }
+	return true
+}
+
+// semantic_range_value_text supplies the human-readable value for the most
+// recently described Slider while preserving its numeric range properties.
+// Applications own formatting (units, precision, and locale).
+semantic_range_value_text :: proc(ui: ^UI, value: string) -> bool {
+	if ui == nil || ui.runtime == nil || len(ui.runtime.pending) == 0 { return false }
+	last := len(ui.runtime.pending)-1
+	if ui.runtime.pending[last].kind != .Description { return false }
+	pending := &ui.runtime.pending[last]
+	if pending.semantic.role != .Slider || !pending.semantic.has_numeric_value { return false }
+	pending.semantic.value = value
 	return true
 }
 
