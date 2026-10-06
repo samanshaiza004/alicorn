@@ -60,6 +60,16 @@ style_scrollbar_state_bits :: proc(state: Scrollbar_Visual_State) -> u8 {
 	return bits
 }
 
+style_accessibility_state_bits :: proc(environment: Style_Environment) -> u8 {
+	preferences := environment.accessibility
+	bits := u8(0)
+	if preferences.increased_contrast { bits |= 1 << 0 }
+	if preferences.reduce_motion { bits |= 1 << 1 }
+	if preferences.reduce_transparency { bits |= 1 << 2 }
+	if preferences.differentiate_without_color { bits |= 1 << 3 }
+	return bits
+}
+
 style_button_provenance :: proc(
 	environment: Style_Environment,
 	variant: Button_Variant,
@@ -71,6 +81,7 @@ style_button_provenance :: proc(
 		accent=environment.accent,
 		variant=u8(variant),
 		state_bits=style_button_state_bits(state),
+		accessibility_bits=style_accessibility_state_bits(environment),
 		drop_target_on=drop_target_on,
 	}
 }
@@ -80,6 +91,7 @@ style_text_field_provenance :: proc(environment: Style_Environment, state: Text_
 		theme=environment.theme,
 		accent=environment.accent,
 		state_bits=style_text_field_state_bits(state),
+		accessibility_bits=style_accessibility_state_bits(environment),
 	}
 }
 
@@ -88,6 +100,7 @@ style_checkbox_provenance :: proc(environment: Style_Environment, state: Checkbo
 		theme=environment.theme,
 		accent=environment.accent,
 		state_bits=style_checkbox_state_bits(state),
+		accessibility_bits=style_accessibility_state_bits(environment),
 	}
 }
 
@@ -96,6 +109,7 @@ style_slider_provenance :: proc(environment: Style_Environment, state: Slider_Vi
 		theme=environment.theme,
 		accent=environment.accent,
 		state_bits=style_slider_state_bits(state),
+		accessibility_bits=style_accessibility_state_bits(environment),
 	}
 }
 
@@ -104,6 +118,7 @@ style_scrollbar_provenance :: proc(environment: Style_Environment, state: Scroll
 		theme=environment.theme,
 		accent=environment.accent,
 		state_bits=style_scrollbar_state_bits(state),
+		accessibility_bits=style_accessibility_state_bits(environment),
 	}
 }
 
@@ -111,6 +126,7 @@ style_semantic_surface_provenance :: proc(environment: Style_Environment, style:
 	return Style_Provenance{
 		theme=environment.theme,
 		accent=environment.accent,
+		accessibility_bits=style_accessibility_state_bits(environment),
 		surface_signature=semantic_surface_style_hash(style),
 	}
 }

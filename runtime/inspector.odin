@@ -336,6 +336,11 @@ inspect :: proc(rt: ^Runtime) -> string {
 			fmt.sbprintf(&sb, "Node: %d parent=%d kind=%v source=%s:%d:%d component=%s key=%q scope=%q bounds=(%.1f,%.1f %.1fx%.1f)\n", node.id, node.parent, node.kind, node.site.file, node.site.line, node.site.column, node.site.component, node.key, node.identity_key, node.bounds.x, node.bounds.y, node.bounds.w, node.bounds.h)
 		}
 		fmt.sbprintf(&sb, "  description: %s layout: %s paint: %s composite: %s\n", stage_word(dirty_has(node.dirty, .Description)), stage_word(dirty_has(node.dirty, .Layout)), stage_word(dirty_has(node.dirty, .Paint)), stage_word(dirty_has(node.dirty, .Composite)))
+		appearance := node.style_environment.accessibility
+		fmt.sbprintf(&sb,
+			"  style environment: text-scale=%.2f accessibility-appearance=(increased-contrast=%t reduce-motion=%t reduce-transparency=%t differentiate-without-color=%t)\n",
+			node.style_environment.text_scale, appearance.increased_contrast, appearance.reduce_motion,
+			appearance.reduce_transparency, appearance.differentiate_without_color)
 		if node.region {
 			fmt.sbprintf(&sb, "  region: revision=%d cached=%t\n", node.region_revision, node.region_cached)
 		}

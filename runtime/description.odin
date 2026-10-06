@@ -143,7 +143,7 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	description := Description{
 		id=id, parent=parent_node, site=source, key=key, explicit_key=explicit_key,
 		kind=kind, label=label, text=text, font=font, text_style=text_style,
-		style_environment=rt.style_environment, style_scope_boundary=false,
+		style_environment=style_environment_core(rt.style_environment), style_scope_boundary=false,
 		button_content_style=button_content, button_variant=button_variant, style=style, color=resolved_color, paint_background=paint_background,
 		paint_value=paint_value, region_revision=region_revision, region=is_region,
 		focusable=focusable, identity_key=identity_key,
@@ -160,7 +160,12 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	semantic := Semantic_Descriptor{}
 	semantic_description_defaults(&description, &semantic)
 	if semantic.role != .None { rt.stats.semantic_descriptions_emitted += 1 }
-	append(&rt.pending, Pending_Item{kind=.Description, description=description, semantic=semantic})
+	append(&rt.pending, Pending_Item{
+		kind=.Description,
+		description=description,
+		semantic=semantic,
+		accessibility=rt.style_environment.accessibility,
+	})
 	rt.stats.descriptions_emitted += 1
 	rt.stats.stage_visits[.Description] += 1
 	return id
@@ -218,7 +223,7 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 		id=id, parent=parent_node, site=source, key=key_string_value, explicit_key=ui_key_is_explicit(key),
 		identity_key_kind=key_kind, identity_key_pair=identity_key_pair,
 		kind=kind, label=label, text=text, font=font, text_style=text_style,
-		style_environment=rt.style_environment, style_scope_boundary=false,
+		style_environment=style_environment_core(rt.style_environment), style_scope_boundary=false,
 		button_content_style=button_content, button_variant=button_variant, style=style, color=resolved_color, paint_background=paint_background,
 		paint_value=state_bits, region_revision=region_revision, region=is_region,
 		focusable=focusable, selected=selected, disabled=disabled, identity_key=identity_key,
@@ -234,7 +239,12 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	semantic := Semantic_Descriptor{}
 	semantic_description_defaults(&description, &semantic)
 	if semantic.role != .None { rt.stats.semantic_descriptions_emitted += 1 }
-	append(&rt.pending, Pending_Item{kind=.Description, description=description, semantic=semantic})
+	append(&rt.pending, Pending_Item{
+		kind=.Description,
+		description=description,
+		semantic=semantic,
+		accessibility=rt.style_environment.accessibility,
+	})
 	rt.stats.descriptions_emitted += 1
 	rt.stats.stage_visits[.Description] += 1
 	return id

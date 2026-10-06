@@ -30,11 +30,20 @@ hash_color :: proc(color: Color) -> u64 {
 	return h
 }
 
-hash_style_environment :: proc(environment: Style_Environment) -> u64 {
+hash_style_environment :: proc(environment: Style_Environment_Core) -> u64 {
 	h := hash_mix(1469598103934665603, u64(environment.theme))
 	h = hash_mix(h, u64(transmute(u32)environment.density))
 	h = hash_mix(h, u64(transmute(u32)environment.text_scale))
 	h = hash_mix(h, u64(u32(environment.accent)))
+	return h
+}
+
+hash_accessibility_appearance :: proc(preferences: Accessibility_Appearance_Preferences) -> u64 {
+	h := u64(1469598103934665603)
+	h = hash_mix(h, u64(preferences.increased_contrast ? 1 : 0))
+	h = hash_mix(h, u64(preferences.reduce_motion ? 1 : 0))
+	h = hash_mix(h, u64(preferences.reduce_transparency ? 1 : 0))
+	h = hash_mix(h, u64(preferences.differentiate_without_color ? 1 : 0))
 	return h
 }
 
@@ -83,7 +92,12 @@ hash_button_content_style :: proc(style: Button_Content_Style) -> u64 {
 	return h
 }
 
-description_hash :: proc(d: Description, semantic_surface_style := Semantic_Surface_Style{}, visual_part := Visual_Part_Style{}) -> u64 {
+description_hash :: proc(
+	d: Description,
+	semantic_surface_style: Semantic_Surface_Style,
+	visual_part: Visual_Part_Style,
+	accessibility: Accessibility_Appearance_Preferences,
+) -> u64 {
 	h := hash_mix(hash_string(d.label), hash_string(d.text))
 	h = hash_mix(h, hash_string(d.tooltip_text))
 	h = hash_mix(h, u64(d.tooltip_delay_ms))
@@ -100,6 +114,7 @@ description_hash :: proc(d: Description, semantic_surface_style := Semantic_Surf
 		h = hash_mix(h, u64(d.text_style.overflow))
 	}
 	h = hash_mix(h, hash_style_environment(d.style_environment))
+	h = hash_mix(h, hash_accessibility_appearance(accessibility))
 	h = hash_mix(h, u64(d.style_scope_boundary ? 1 : 0))
 	h = hash_mix(h, d.paint_value)
 	h = hash_mix(h, u64(d.text_input_target ? 1 : 0))
@@ -199,8 +214,13 @@ layout_hash :: proc(d: Description) -> u64 {
 	return h
 }
 
-paint_hash :: proc(d: Description, semantic_surface_style := Semantic_Surface_Style{}, visual_part := Visual_Part_Style{}) -> u64 {
-	h := description_hash(d, semantic_surface_style, visual_part)
+paint_hash :: proc(
+	d: Description,
+	semantic_surface_style: Semantic_Surface_Style,
+	visual_part: Visual_Part_Style,
+	accessibility: Accessibility_Appearance_Preferences,
+) -> u64 {
+	h := description_hash(d, semantic_surface_style, visual_part, accessibility)
 	h = hash_mix(h, u64(d.focusable ? 1 : 0))
 	h = hash_mix(h, u64(d.selected ? 1 : 0))
 	h = hash_mix(h, u64(d.disabled ? 1 : 0))
@@ -285,13 +305,22 @@ semantic_surface_role_changed :: proc(previous, next: Semantic_Surface_Style) ->
 	return false
 }
 
-copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description, semantic: Semantic_Descriptor, semantic_surface_style := Semantic_Surface_Style{}, visual_part := Visual_Part_Style{}) {
+copy_node_description :: proc(
+	rt: ^Runtime,
+	node: ^Node,
+	d: Description,
+	semantic: Semantic_Descriptor,
+	semantic_surface_style: Semantic_Surface_Style,
+	visual_part: Visual_Part_Style,
+	accessibility: Accessibility_Appearance_Preferences,
+) {
 	// Runtime-owned copies are important: a generic description may borrow a
 	// caller's string for only the duration of this procedure.
 	label_changed := (d.kind == .Button || d.kind == .Checkbox || d.kind == .Slider) && node.label != d.label
 	tooltip_changed := node.tooltip_text != d.tooltip_text || node.tooltip_delay_ms != d.tooltip_delay_ms
 	text_changed := node.text != d.text || label_changed
-	style_changes := style_environment_changed_domains(node.style_environment, d.style_environment)
+	next_style_environment := style_environment_with_accessibility(d.style_environment, accessibility)
+	style_changes := style_environment_changed_domains(node.style_environment, next_style_environment)
 	previous_surface_style := rt.semantic_surfaces[node.id]
 	if semantic_surface_role_changed(previous_surface_style, semantic_surface_style) {
 		style_changes += {.Paint}
@@ -362,7 +391,7 @@ copy_node_description :: proc(rt: ^Runtime, node: ^Node, d: Description, semanti
 	node.context_menu_bounds = d.context_menu_bounds
 	node.font = d.font
 	node.text_style = d.text_style
-	node.style_environment = d.style_environment
+	node.style_environment = next_style_environment
 	node.style_scope_boundary = d.style_scope_boundary
 	node.button_content_style = d.button_content_style
 	node.button_variant = d.button_variant
@@ -669,22 +698,23 @@ reconcile :: proc(rt: ^Runtime) {
 			node.surface_circles = make([dynamic]GPU_Surface_Filled_Circle, 0, allocator=rt.persistent_allocator)
 			rt.nodes[d.id] = node
 			rt.stats.nodes_created += 1
-			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part)
-			node.description_hash = description_hash(d, item.semantic_surface_style, item.visual_part)
+			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part, item.accessibility)
+			node.description_hash = description_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
 			node.layout_hash = layout_hash(d)
-			node.paint_hash = paint_hash(d, item.semantic_surface_style, item.visual_part)
+			node.paint_hash = paint_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
 			mark_dirty(node, "new retained node", true, true, true, true, rt.persistent_allocator)
 			queue_paint(rt, d.id)
 			mark_layout_ancestors(rt, d.id)
 			record_trace(rt, .Reconcile, d.id, "new retained node")
 		} else {
-			new_desc_hash := description_hash(d, item.semantic_surface_style, item.visual_part)
+			new_desc_hash := description_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
 			new_layout_hash := layout_hash(d)
-			new_paint_hash := paint_hash(d, item.semantic_surface_style, item.visual_part)
+			new_paint_hash := paint_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
 			was_selected := node.selected
 			description_changed := node.description_hash != new_desc_hash
 			text_changed := node.text != d.text || ((d.kind == .Button || d.kind == .Checkbox || d.kind == .Slider) && node.label != d.label)
-			style_changes := style_environment_changed_domains(node.style_environment, d.style_environment)
+			next_style_environment := style_environment_with_accessibility(d.style_environment, item.accessibility)
+			style_changes := style_environment_changed_domains(node.style_environment, next_style_environment)
 			style_stages := style_domains_dirty_stages(style_changes)
 			// Text/labels are included in layout_hash because they contribute
 			// intrinsic size. Keep this explicit at the reconciliation boundary so
@@ -693,7 +723,7 @@ reconcile :: proc(rt: ^Runtime) {
 			layout_changed := node.layout_hash != new_layout_hash || text_changed || Dirty_Stage.Layout in style_stages
 			paint_changed := node.paint_hash != new_paint_hash || Dirty_Stage.Paint in style_stages
 			composite_changed := Dirty_Stage.Composite in style_stages
-			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part)
+			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part, item.accessibility)
 			if was_selected != node.selected {
 				visual_part_invalidate_dependents(rt, d.id, "visual part owner selection changed")
 			}
