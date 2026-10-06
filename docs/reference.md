@@ -108,7 +108,7 @@ error and its correction hint.
 | `Style_Color_Token_ID` / `Style_Length_Token_ID` | Address theme-local typed token arrays without string lookup. |
 | `style_token_color` / `style_token_length` | Resolve a typed token against its registered theme ID. |
 | `Style_Extension_*_Role_ID` / `style_extension_*` | Resolve namespaced app/vendor roles during setup, then retain the typed token ID. |
-| `Button_Variant` / `Button_Recipe` | Select an explicit button recipe such as `.Toolbar`, `.Primary`, `.Quiet`, or `.Tab`. |
+| `Button_Variant` / `Button_Recipe` | Select an explicit button recipe such as `.Toolbar`, `.Primary`, `.Quiet`, `.Tab`, or `.Danger`. |
 | `Checkbox_Recipe` / `Slider_Recipe` | Theme independent control-part roles and their selected/hovered/pressed/disabled transforms. |
 
 The default layout direction is column. Use `.Row` for horizontal children;
@@ -166,14 +166,16 @@ current contract.
 Buttons use one recipe family with explicit intent rather than inferring their
 appearance from their parent container. The default and `.Toolbar` variants
 use neutral surfaces; `.Primary` uses the theme accent; `.Quiet` has no idle
-surface; and `.Tab` keeps an idle tab quiet, then marks the selected tab with
-both a surface treatment and an underline.
+surface; `.Tab` keeps an idle tab quiet, then marks the selected tab with
+both a surface treatment and an underline; and `.Danger` uses the semantic
+danger role for destructive actions, with a danger fill on hover.
 Select them at the call site:
 
 ```odin
 alicorn.button(&ui, "Open", variant=.Toolbar)
 alicorn.button(&ui, "Save", variant=.Primary)
 alicorn.button(&ui, "Dismiss", variant=.Quiet)
+alicorn.button(&ui, "Delete", variant=.Danger)
 alicorn.button(&ui, "Files", state=alicorn.Button_State{selected=true}, variant=.Tab)
 ```
 
@@ -268,7 +270,7 @@ composite control and returns a `Tab_Bar_Result`. Internally, the retained
 tree uses a `Scroll_Region` labelled `tab-bar`, a `Virtual_List`, and one
 ordinary `.Tab` Button owner per item. Its label, selected underline, dirty
 indicator, and close action are retained descendants tagged as visual parts.
-The close action remains an independent `.Quiet` Button, so its activation
+The close action remains an independent `.Danger` Button, so its activation
 does not also select the parent tab. Part bounds and clipping come from normal
 layout, and renderer consumers see only generic surface/text commands.
 

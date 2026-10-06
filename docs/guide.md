@@ -56,7 +56,8 @@ alicorn.container_end(&ui)
 and inner padding use `button_content_style`; parent layout padding controls
 space around the button. Button variants express intent explicitly: the
 default and `.Toolbar` are neutral, `.Primary` uses the theme accent, `.Quiet`
-has no idle fill, and `.Tab` provides a selection treatment. Recipes define
+has no idle fill, `.Tab` provides a selection treatment, and `.Danger` marks
+destructive actions. Recipes define
 their semantic colors and state transforms; selected, hovered, pressed, then
 disabled transforms apply in that order. Focus remains a separate outline.
 

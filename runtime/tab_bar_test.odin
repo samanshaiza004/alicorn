@@ -270,6 +270,8 @@ test_tab_bar_builds_retained_scroll_list_tab_and_close_hierarchy :: proc(t: ^tes
 				"the close action should be a typed visual part owned by its tab Button")
 			close := rt.nodes[close_id]
 			tab := rt.nodes[tab_id]
+			testing.expect(t, close.button_variant == .Danger && close.button_content_style.padding_x == 0 && close.button_content_style.padding_y == 0,
+				"the close action should use the destructive recipe without squeezing its × glyph into padded overflow")
 			expected_close_width := TAB_CLOSE_CONTROL_SIZE
 			if item.dirty && item.closable && options.close_policy != .Always { expected_close_width = TAB_CLOSE_SLOT_WIDTH }
 			testing.expect(t, abs(close.bounds.w-expected_close_width) < 0.01 &&

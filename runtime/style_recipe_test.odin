@@ -21,6 +21,8 @@ test_button_recipe_variants_use_neutral_defaults_and_explicit_primary :: proc(t:
 	toolbar := style_button_resolve(&rt, environment, .Toolbar, Button_Visual_State{})
 	quiet := style_button_resolve(&rt, environment, .Quiet, Button_Visual_State{})
 	tab := style_button_resolve(&rt, environment, .Tab, Button_Visual_State{selected=true})
+	danger := style_button_resolve(&rt, environment, .Danger, Button_Visual_State{})
+	danger_hover := style_button_resolve(&rt, environment, .Danger, Button_Visual_State{hovered=true})
 
 	testing.expect(t, ordinary.surface == style_color(&UI{runtime=&rt}, .Subtle_Surface),
 		"ordinary buttons should use a neutral surface by default")
@@ -35,6 +37,11 @@ test_button_recipe_variants_use_neutral_defaults_and_explicit_primary :: proc(t:
 	testing.expect(t, tab.selected_indicator == .Underline, "selected tabs should add a non-color selection indicator")
 	testing.expect(t, tab.focus_indicator_mode == .Keyboard_Only,
 		"the Tab recipe should show its focus indicator only for keyboard focus modality")
+	testing.expect(t, danger.surface.a == 0 && danger.text == style_color(&UI{runtime=&rt}, .Danger),
+		"destructive controls should stay transparent at rest and use the semantic danger color for their glyph")
+	testing.expect(t, danger_hover.surface == style_color(&UI{runtime=&rt}, .Danger) &&
+		danger_hover.text == style_color(&UI{runtime=&rt}, .Accent_Text),
+		"hovering a destructive control should show a danger surface with readable contrasting text")
 }
 
 @(test)

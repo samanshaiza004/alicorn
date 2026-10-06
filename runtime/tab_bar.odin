@@ -340,7 +340,8 @@ tab_bar :: proc(
 					key=key_u64(5),
 					style=layout_style(.Row, width=close_width, height=TAB_CLOSE_CONTROL_SIZE, align=.Center),
 					text_style=DEFAULT_BUTTON_TEXT_STYLE,
-					variant=.Quiet,
+					content_style=button_content_style(padding_x=0, padding_y=0),
+					variant=.Danger,
 					focusable=false,
 				)
 				if close_id != 0 {

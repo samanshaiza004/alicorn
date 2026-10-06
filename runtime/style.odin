@@ -513,6 +513,7 @@ button_variant_name :: proc(variant: Button_Variant) -> string {
 	case .Toolbar: return "toolbar"
 	case .Quiet: return "quiet"
 	case .Tab: return "tab"
+	case .Danger: return "danger"
 	case .Count: return "invalid"
 	}
 	return "invalid"

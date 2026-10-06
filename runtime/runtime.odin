@@ -505,6 +505,7 @@ Button_Variant :: enum {
 	Toolbar,
 	Quiet,
 	Tab,
+	Danger,
 	Count,
 }
 
@@ -654,6 +655,13 @@ DEFAULT_BUTTON_RECIPES :: Button_Recipe_Set{recipes={
 		selected_indicator=.Underline,
 		selected_indicator_role=.Text,
 		focus_indicator_mode=.Keyboard_Only,
+		focus_role=.Focus, semantic_active_role=.Semantic_Focus,
+	},
+	Button_Recipe{
+		defined=true, surface_role=.Danger, text_role=.Danger, surface_visible=false,
+		hovered=Style_Transform{surface_role=.Danger, surface_mix=1, text_role=.Accent_Text, text_mix=1},
+		pressed=Style_Transform{surface_role=.Danger, surface_mix=1, text_role=.Accent_Text, text_mix=1},
+		disabled=Style_Transform{surface_role=.Subtle_Surface, surface_mix=1, text_role=.Muted_Text, text_mix=1},
 		focus_role=.Focus, semantic_active_role=.Semantic_Focus,
 	},
 }}
