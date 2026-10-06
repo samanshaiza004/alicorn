@@ -147,6 +147,27 @@ native_dispatch_application_text_key :: proc(
 	return true
 }
 
+// Control+Tab is an application-level document navigation chord. It must be
+// recognized before text owners and ordinary Tab focus traversal, even when
+// the application has no document tabs (in which case it remains a no-op).
+native_dispatch_application_tab_navigation :: proc(
+	application: ^Application,
+	rt: ^alicorn.Runtime,
+	key: sdl3.Keycode,
+	mod: sdl3.Keymod,
+) -> bool {
+	if key != sdl3.K_TAB || !native_text_modifier(mod, sdl3.KMOD_CTRL) { return false }
+	if rt != nil && alicorn.context_menu_input_active(rt) { return true }
+	if application != nil && application.on_key != nil && rt != nil {
+		application_key := Application_Key.Tab_Next
+		if native_text_modifier(mod, sdl3.KMOD_SHIFT) { application_key = .Tab_Previous }
+		if application.on_key(application.state, rt, application_key) {
+			alicorn.invalidate_root(rt, "application handled Control+Tab document navigation")
+		}
+	}
+	return true
+}
+
 // A generic focused text owner gets first refusal on Tab. If it declines the
 // key, retain the host's normal forward/backward focus traversal behavior.
 native_dispatch_application_text_key_or_focus_traverse :: proc(
@@ -155,6 +176,7 @@ native_dispatch_application_text_key_or_focus_traverse :: proc(
 	key: sdl3.Keycode,
 	mod: sdl3.Keymod,
 ) -> bool {
+	if native_dispatch_application_tab_navigation(application, rt, key, mod) { return true }
 	if native_dispatch_application_text_key(application, rt, key, mod) { return true }
 	if key != sdl3.K_TAB || rt == nil { return false }
 	direction: alicorn.Focus_Direction = .Next

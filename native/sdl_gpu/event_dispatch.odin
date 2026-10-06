@@ -319,6 +319,14 @@ pump_events :: proc(
 				devtools_hotkey_handled = true
 			}
 			runtime_key_handled := context_menu_handled || drag_cancelled || menu_shortcut_handled || devtools_hotkey_handled
+			if !runtime_key_handled {
+				runtime_key_handled = native_dispatch_application_tab_navigation(
+					application,
+					rt,
+					event.key.key,
+					event.key.mod,
+				)
+			}
 			if !runtime_key_handled && event.key.key == sdl3.K_F10 &&
 				native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) && !event.key.repeat &&
 				application != nil && application.on_key != nil {

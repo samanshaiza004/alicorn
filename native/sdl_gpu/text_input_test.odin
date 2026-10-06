@@ -69,7 +69,9 @@ native_text_input_suspend_after_commit_callback :: proc(
 Native_Text_Key_Probe :: struct {
 	events: [dynamic]Application_Text_Key_Event,
 	owners: [dynamic]alicorn.Node_ID,
+	application_keys: [dynamic]Application_Key,
 	handled: bool,
+	application_key_handled: bool,
 }
 
 native_text_key_probe_callback :: proc(
@@ -82,6 +84,16 @@ native_text_key_probe_callback :: proc(
 	append(&probe.events, event)
 	append(&probe.owners, owner)
 	return probe.handled
+}
+
+native_application_key_probe_callback :: proc(
+	state: rawptr,
+	rt: ^alicorn.Runtime,
+	key: Application_Key,
+) -> bool {
+	probe := cast(^Native_Text_Key_Probe)state
+	append(&probe.application_keys, key)
+	return probe.application_key_handled
 }
 
 // native_generic_text_input_contract_test exercises the app-facing adapter
@@ -254,7 +266,11 @@ native_generic_text_navigation_contract_test :: proc() -> Native_Validation_Resu
 	if !alicorn.text_input_target_is_active(&rt, owner) { return native_validation_failed() }
 
 	probe := Native_Text_Key_Probe{handled=true}
-	application := Application{state=rawptr(&probe), on_text_key=native_text_key_probe_callback}
+	application := Application{
+		state=rawptr(&probe),
+		on_text_key=native_text_key_probe_callback,
+		on_key=native_application_key_probe_callback,
+	}
 	if !alicorn.focus(&rt, owner) { return native_validation_failed() }
 	rt.invalidated = false
 	if !native_dispatch_application_text_key(&application, &rt, sdl3.K_LEFT, {}) { return native_validation_failed() }
@@ -295,6 +311,48 @@ native_generic_text_navigation_contract_test :: proc() -> Native_Validation_Resu
 	rt.nodes[owner] = owner_node
 	probe.handled = true
 	if !alicorn.focus(&rt, owner) { return native_validation_failed() }
+	probe.application_key_handled = true
+	if !native_dispatch_application_text_key_or_focus_traverse(
+		&application, &rt, sdl3.K_TAB, sdl3.KMOD_CTRL,
+	) { return native_validation_failed() }
+	if rt.focused != owner || len(probe.events) != 5 || len(probe.application_keys) != 1 ||
+		probe.application_keys[0] != .Tab_Next {
+		return native_validation_failed()
+	}
+	probe.application_key_handled = false
+	if !native_dispatch_application_text_key_or_focus_traverse(
+		&application, &rt, sdl3.K_TAB, sdl3.KMOD_CTRL|sdl3.KMOD_SHIFT,
+	) { return native_validation_failed() }
+	if rt.focused != owner || len(probe.events) != 5 || len(probe.application_keys) != 2 ||
+		probe.application_keys[1] != .Tab_Previous {
+		return native_validation_failed()
+	}
+
+	probe.application_key_handled = true
+	if !alicorn.focus(&rt, field) { return native_validation_failed() }
+	field_before, field_before_found := alicorn.text_field_value(&rt, field)
+	if !field_before_found { return native_validation_failed() }
+	if !native_dispatch_application_text_key_or_focus_traverse(
+		&application, &rt, sdl3.K_TAB, sdl3.KMOD_CTRL,
+	) { return native_validation_failed() }
+	field_after, field_after_found := alicorn.text_field_value(&rt, field)
+	if rt.focused != field || !field_after_found || field_after != field_before ||
+		len(probe.events) != 5 || len(probe.application_keys) != 3 ||
+		probe.application_keys[2] != .Tab_Next {
+		return native_validation_failed()
+	}
+
+	// The host consumes the chord even when no application callback exists, so
+	// it can never degrade into a plain Tab focus traversal.
+	application.on_key = nil
+	if !native_dispatch_application_text_key_or_focus_traverse(
+		&application, &rt, sdl3.K_TAB, sdl3.KMOD_CTRL,
+	) || rt.focused != field || len(probe.events) != 5 {
+		return native_validation_failed()
+	}
+	application.on_key = native_application_key_probe_callback
+	if !alicorn.focus(&rt, owner) { return native_validation_failed() }
+	probe.handled = true
 	if !native_dispatch_application_text_key_or_focus_traverse(&application, &rt, sdl3.K_TAB, {}) { return native_validation_failed() }
 	if rt.focused != owner || len(probe.events) != 6 || probe.events[5].key != .Tab { return native_validation_failed() }
 	probe.handled = false

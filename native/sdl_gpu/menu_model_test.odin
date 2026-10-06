@@ -156,6 +156,7 @@ test_application_can_preempt_text_field_navigation_and_dismissal :: proc(t: ^tes
 		Application_Key.Open_Repository, Application_Key.Open_Command_Palette,
 		Application_Key.Find, Application_Key.Workspace_Search, Application_Key.Workspace_Rename,
 		Application_Key.Find_Next, Application_Key.Find_Previous,
+		Application_Key.Tab_Next, Application_Key.Tab_Previous,
 		Application_Key.Zoom_In, Application_Key.Zoom_Out, Application_Key.Zoom_Reset,
 		Application_Key.Escape, Application_Key.Return,
 	}

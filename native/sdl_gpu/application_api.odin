@@ -27,6 +27,8 @@ Application_Key :: enum {
 	Workspace_Rename,
 	Find_Next,
 	Find_Previous,
+	Tab_Next,
+	Tab_Previous,
 	Zoom_In,
 	Zoom_Out,
 	Zoom_Reset,
@@ -43,7 +45,7 @@ application_key_can_preempt_text_field :: proc(key: Application_Key, composition
 	#partial switch key {
 	case .Up, .Down, .Page_Up, .Page_Down, .Open_Repository, .Open_Command_Palette,
 	     .Find, .Workspace_Search, .Workspace_Rename, .Context_Menu, .Find_Next, .Find_Previous,
-	     .Zoom_In, .Zoom_Out, .Zoom_Reset, .Escape, .Return:
+	     .Tab_Next, .Tab_Previous, .Zoom_In, .Zoom_Out, .Zoom_Reset, .Escape, .Return:
 		return true
 	case:
 		return false
