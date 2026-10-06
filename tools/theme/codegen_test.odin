@@ -72,8 +72,10 @@ test_theme_codegen_emits_owned_runtime_factory_and_cleanup :: proc(t: ^testing.T
 		"generated themes should carry token names and alias edges into the runtime inspector")
 	testing.expect(t, strings.contains(generated, "name=\"app.shell.surface\""),
 		"generated themes should carry namespaced extension-role names into the runtime inspector")
-	testing.expect(t, strings.contains(generated, "delete(provenance.alias_target, allocator)"),
-		"generated cleanup should release provenance strings together with typed token arrays")
+	testing.expect(t, strings.contains(generated, "Provenance strings are static generated literals") &&
+		!strings.contains(generated, "delete(provenance.name, allocator)") &&
+		!strings.contains(generated, "delete(provenance.alias_target, allocator)"),
+		"generated cleanup should release owned slices without freeing static provenance literals")
 }
 
 @(test)

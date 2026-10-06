@@ -232,7 +232,9 @@ adapter, then emits deterministic Odin source containing a factory procedure
 for an owned `Style_Theme`. The generated file is parser-free at application
 startup. Its matching `<symbol>_destroy` procedure releases the token and role
 binding slices after use; after `style_theme_register` copies the theme, call
-that destroy helper immediately. The generated package defaults to `main`
+that destroy helper immediately. Token and role provenance text is emitted as
+static Odin string literals; the generated cleanup frees the containing slices
+but does not try to free those literals. The generated package defaults to `main`
 and the runtime import defaults to `alicorn:runtime`. Use `--package` and
 `--runtime-import` when the consuming Odin package uses different names, for
 example:
