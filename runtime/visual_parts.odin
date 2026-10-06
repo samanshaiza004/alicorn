@@ -2,9 +2,11 @@ package alicorn
 
 import "core:fmt"
 
-// visual_part_attach labels an already-described retained node as part of an
-// existing interactive control. It does not create interaction behavior or
-// position the node; ordinary parent layout remains authoritative.
+// visual_part_attach labels an already-described retained node as a visual
+// part of an existing retained owner. Static owners support always-visible
+// parts; interaction-dependent visibility requires an owner that exposes the
+// relevant state. This does not create interaction behavior or position the
+// node; ordinary parent layout remains authoritative.
 visual_part_attach :: proc(
 	ui: ^UI,
 	node, owner: Node_ID,
@@ -20,6 +22,7 @@ visual_part_attach :: proc(
 	rt := ui.runtime
 	part_pending := -1
 	owner_kind := Node_Kind.Root
+	owner_surface_interaction := GPU_Surface_Interaction.Inert
 	owner_found := false
 	for index := len(rt.pending)-1; index >= 0; index -= 1 {
 		item := rt.pending[index]
@@ -27,12 +30,14 @@ visual_part_attach :: proc(
 		if item.description.id == node { part_pending = index }
 		if item.description.id == owner {
 			owner_kind = item.description.kind
+			owner_surface_interaction = item.description.surface_interaction
 			owner_found = true
 		}
 	}
 	if !owner_found {
 		if retained, exists := rt.nodes[owner]; exists && retained.active {
 			owner_kind = retained.kind
+			owner_surface_interaction = retained.surface_interaction
 			owner_found = true
 		}
 	}
@@ -40,8 +45,12 @@ visual_part_attach :: proc(
 		append_diagnostic(rt, "visual-part visibility must be a declared owner-state policy")
 		return false
 	}
-	if part_pending < 0 || !owner_found || owner_kind != .Button {
-		append_diagnostic(rt, "visual_part_attach must tag a node described in this frame and name an existing Button control as its owner")
+	if part_pending < 0 || !owner_found {
+		append_diagnostic(rt, "visual_part_attach must tag a node described in this frame and name an existing retained owner")
+		return false
+	}
+	if !visual_part_owner_supports_visibility(owner_kind, owner_surface_interaction, visibility) {
+		append_diagnostic(rt, "visual-part visibility policy requires state exposed by the owning control; non-control owners support Always")
 		return false
 	}
 	if !visual_part_node_descends_from(rt, node, owner, part_pending) {
@@ -60,6 +69,33 @@ visual_part_attach :: proc(
 		reveal_on_direct_hover=reveal_on_direct_hover,
 	}
 	return true
+}
+
+visual_part_owner_supports_visibility :: proc(
+	kind: Node_Kind,
+	surface_interaction: GPU_Surface_Interaction,
+	visibility: Visual_Part_Visibility,
+) -> bool {
+	switch visibility {
+	case .Always:
+		return true
+	case .Owner_Hovered, .Owner_Not_Hovered:
+		switch kind {
+		case .Button, .Checkbox, .Slider, .Text_Field:
+			return true
+		case .Custom_Surface:
+			return surface_interaction == .Pointer
+		case .Root, .Modal_Overlay, .Context_Menu_Overlay, .Context_Menu_Panel, .Container,
+		     .Tab, .Tab_Close, .Text, .Text_Composition, .Virtual_List, .Virtual_Row,
+		     .Scroll_Region, .Split, .Split_Handle:
+			return false
+		}
+	case .Owner_Selected_Or_Hovered:
+		// Button is currently the only built-in control that exposes a distinct
+		// selected state to visual recipes.
+		return kind == .Button
+	}
+	return false
 }
 
 visual_part_node_descends_from :: proc(rt: ^Runtime, node_id, owner_id: Node_ID, pending_index: int) -> bool {

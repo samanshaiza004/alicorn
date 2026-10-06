@@ -54,6 +54,97 @@ test_visual_part_requires_descendant_and_inspects_owner_state :: proc(t: ^testin
 		"the runtime inspector should report each nested part identity, owner component, and visibility policy")
 }
 
+@(test)
+test_visual_part_static_surface_owner_uses_generic_composition :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 120})
+	defer destroy_runtime(&rt)
+	ui, ready := begin_frame(&rt)
+	if !ready { return }
+	container_begin_simple(&ui, .Root, label="static-part-root", key=key_string("root"), style=layout_style(.Column))
+	owner_id := surface_begin(
+		&ui,
+		surface_core_color_role(.Surface),
+		key=key_string("ref-badge-surface"),
+		style=layout_style(.Row, width=140, height=36, padding=6),
+		label="ref-badge",
+	)
+	label_id := text(&ui, "main", key=key_string("label"), style=layout_style(.Row, width=64, height=24))
+	label_attached := visual_part_attach(&ui, label_id, owner_id, visual_part_core(.Label))
+	indicator_id := surface_begin(
+		&ui,
+		surface_core_color_role(.Accent),
+		key=key_string("indicator"),
+		style=layout_style(.Row, width=6, height=6),
+		label="ref-badge-indicator",
+	)
+	indicator_attached := visual_part_attach(&ui, indicator_id, owner_id, visual_part_core(.Indicator))
+	custom_id := surface_begin(
+		&ui,
+		surface_core_color_role(.Subtle_Surface),
+		key=key_string("custom-part"),
+		style=layout_style(.Row, width=10, height=10),
+		label="ref-badge-custom-mark",
+	)
+	custom_identity := visual_part_extension_id("app.example", "ref-badge.mark")
+	custom_attached := visual_part_attach(&ui, custom_id, owner_id, custom_identity)
+	surface_end(&ui)
+	surface_end(&ui)
+	surface_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+
+	owner, owner_found := rt.nodes[owner_id]
+	owner_has_surface_paint := false
+	if owner_found {
+		for command in owner.paint {
+			if _, is_surface := command.payload.(Surface_Paint); is_surface { owner_has_surface_paint = true }
+		}
+	}
+	label_part, label_found := rt.visual_parts[label_id]
+	indicator_part, indicator_found := rt.visual_parts[indicator_id]
+	custom_part, custom_found := rt.visual_parts[custom_id]
+	_, inherits_button_recipe := visual_part_label_color(&rt, label_id)
+	lines := inspector_overlay_node_lines(&rt, owner_id, rt.scratch_allocator)
+	inspector_reports_indicator := false
+	for line in lines {
+		if strings.contains(line, "identity=indicator") && strings.contains(line, "visibility=always") {
+			inspector_reports_indicator = true
+		}
+	}
+	testing.expect(t, owner_found && owner.kind == .Container && owner_has_surface_paint,
+		"the proof owner should be a non-Button retained semantic surface")
+	testing.expect(t, label_attached && indicator_attached && custom_attached && label_found && indicator_found && custom_found &&
+		label_part.owner == owner_id && indicator_part.owner == owner_id && custom_part.owner == owner_id &&
+		custom_part.identity == custom_identity,
+		"a retained surface should own core and app-defined parts without a parallel control")
+	testing.expect(t, !inherits_button_recipe,
+		"a non-Button visual owner should keep its label's own style instead of inheriting Button recipe state")
+	testing.expect(t, visual_part_owner_has_role(&rt, owner_id, .Label) &&
+		visual_part_owner_has_role(&rt, owner_id, .Indicator) && inspector_reports_indicator,
+		"generic role lookup and inspection should expose parts beneath a non-Button owner")
+}
+
+@(test)
+test_visual_part_non_control_owner_rejects_interaction_visibility :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 100})
+	defer destroy_runtime(&rt)
+	ui, ready := begin_frame(&rt)
+	if !ready { return }
+	container_begin_simple(&ui, .Root, label="static-policy-root", key=key_string("root"), style=layout_style(.Column))
+	owner_id := surface_begin(&ui, surface_core_color_role(.Surface), key=key_string("owner"), style=layout_style(.Column, width=160, height=60))
+	part_id := surface_begin(&ui, surface_core_color_role(.Accent), key=key_string("part"), style=layout_style(.Row, width=12, height=12))
+	attached := visual_part_attach(&ui, part_id, owner_id, visual_part_core(.Indicator), .Owner_Hovered)
+	surface_end(&ui)
+	surface_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+	_, retained := rt.visual_parts[part_id]
+	testing.expect(t, !attached && !retained,
+		"a static surface cannot claim hover-dependent visibility without control hover state")
+	testing.expect(t, strings.contains(rt.diagnostic, "non-control owners support Always"),
+		"the rejected policy should explain the supported static-owner contract")
+}
+
 visual_part_selected_visibility_build :: proc(rt: ^Runtime, owner_selected: bool) -> (owner_id, child_id: Node_ID) {
 	ui, ready := begin_frame(rt)
 	if !ready { return }
