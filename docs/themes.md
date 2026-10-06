@@ -310,3 +310,28 @@ application.
 This is intentionally a narrow v0.2 foundation rather than a general cascade:
 there are no selectors, arbitrary properties, inheritance filesystem loader,
 theme hot reload, or global cross-node memoization.
+
+## Runtime contract conformance
+
+`tests/style_environment.odin` contains the end-to-end styling contract fixture.
+It compiles the strict JSON source through alias resolution and the built-in
+base, adapts and registers the immutable runtime theme, then uses its core and
+app-namespaced roles in a scoped editor subtree with a normal Button recipe and
+a semantic Surface. The fixture also checks retained `Computed_Style`
+provenance and verifies that visual changes leave the semantic entity unchanged.
+
+The retained domain boundary is part of the contract:
+
+- Metrics can drive layout when an application explicitly uses a resolved
+  logical-length token through `style_metric`.
+- Typography reshapes text and relayouts only the affected environment scope.
+- Paint changes repaint that scope and do not visit layout.
+- Material changes repaint/recompose without changing layout bounds or hit
+  geometry.
+- Sibling scopes keep their own generations, and an unchanged idle frame does
+  no style-resolution or layout work.
+
+This fixture closes the runtime architecture proof for issue #28. Declarative
+recipe/material authoring remains a separate compiler task; source schema and
+contract compatibility remain a separate evolution task. The current JSON
+source still accepts explicit sRGB and logical `px` dimensions only.

@@ -4123,6 +4123,7 @@ main :: proc() {
 	test_style_environment_local_typography_invalidation(&state)
 	test_style_environment_domains_and_density(&state)
 	test_style_environment_theme_paint_locality(&state)
+	test_style_contract_end_to_end_domains_and_semantic_separation(&state)
 	test_runtime_allocator_ownership(&state)
 	if state.failures == 0 {
 		fmt.println("Alicorn foundation tests: PASS")
