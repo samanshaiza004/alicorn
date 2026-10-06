@@ -39,7 +39,7 @@ semantic_surface_role_resolve :: proc(rt: ^Runtime, environment: Style_Environme
 		if !style_color_role_is_valid(value) { return }
 		return style_environment_color(rt, environment, value), true
 	case Style_Extension_Color_Role_ID:
-		return style_extension_color(rt, environment.theme, value)
+		return style_environment_extension_color(rt, environment, value)
 	}
 	return
 }
@@ -103,6 +103,7 @@ surface_begin :: proc(
 		append_diagnostic(rt, "surface_begin requires an open frame, resolvable theme role, rectangular shape, bounded optical height, and registered material")
 		return 0
 	}
+	semantic_style.material = style_material_accessibility_variant(rt, rt.style_environment, semantic_style.material)
 	id := container_begin_simple(
 		ui,
 		.Container,

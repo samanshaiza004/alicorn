@@ -1,10 +1,27 @@
 package alicorn
 
+import "core:math"
+
 style_environment_changed_domains :: proc(previous, next: Style_Environment) -> Style_Domains {
 	changed: Style_Domains = {}
 	if previous.text_scale != next.text_scale { changed += {.Metrics, .Typography} }
 	if previous.density != next.density { changed += {.Metrics} }
 	if previous.theme != next.theme || previous.accent != next.accent { changed += {.Paint} }
+	if previous.accessibility.increased_contrast != next.accessibility.increased_contrast {
+		changed += {.Paint, .Material}
+	}
+	if previous.accessibility.differentiate_without_color != next.accessibility.differentiate_without_color {
+		changed += {.Paint}
+	}
+	if previous.accessibility.reduce_transparency != next.accessibility.reduce_transparency {
+		changed += {.Paint, .Material}
+	}
+	if previous.accessibility.reduce_motion != next.accessibility.reduce_motion {
+		// The runtime currently has no animated style transition to shorten.
+		// Keep the material dependency explicit so future animated materials
+		// cannot silently ignore a changed motion preference.
+		changed += {.Material}
+	}
 	return changed
 }
 
@@ -271,9 +288,110 @@ style_color :: proc(ui: ^UI, role: Style_Color_Role) -> Color {
 	return style_environment_color(ui.runtime, ui.runtime.style_environment, role)
 }
 
+style_color_linear_channel :: proc(channel: f32) -> f32 {
+	value := clamp(channel, 0, 1)
+	if value <= 0.04045 { return value / 12.92 }
+	return f32(math.pow(f64((value + 0.055) / 1.055), 2.4))
+}
+
+style_color_luminance :: proc(color: Color) -> f32 {
+	return 0.2126*style_color_linear_channel(color.r) +
+	       0.7152*style_color_linear_channel(color.g) +
+	       0.0722*style_color_linear_channel(color.b)
+}
+
+style_color_contrast_ratio :: proc(foreground, background: Color) -> f32 {
+	fg := style_color_luminance(foreground)
+	bg := style_color_luminance(background)
+	if fg < bg { return (bg + 0.05) / (fg + 0.05) }
+	return (fg + 0.05) / (bg + 0.05)
+}
+
+style_high_contrast_ink :: proc(first_background, second_background, third_background: Color) -> Color {
+	black := Color{0, 0, 0, 1}
+	white := Color{1, 1, 1, 1}
+	black_score := f32(100)
+	white_score := f32(100)
+	black_score = minf(black_score, style_color_contrast_ratio(black, first_background))
+	black_score = minf(black_score, style_color_contrast_ratio(black, second_background))
+	black_score = minf(black_score, style_color_contrast_ratio(black, third_background))
+	white_score = minf(white_score, style_color_contrast_ratio(white, first_background))
+	white_score = minf(white_score, style_color_contrast_ratio(white, second_background))
+	white_score = minf(white_score, style_color_contrast_ratio(white, third_background))
+	if white_score >= black_score { return white }
+	return black
+}
+
+// A theme may choose a custom recipe whose text/focus roles are not the usual
+// semantic roles. Keep the required signal legible after recipe transforms so
+// a theme cannot accidentally bypass increased-contrast fallback behavior.
+style_contrast_fallback :: proc(color, background: Color, minimum_ratio: f32) -> Color {
+	if color.a == 1 && style_color_contrast_ratio(color, background) >= minimum_ratio { return color }
+	return style_high_contrast_ink(background, background, background)
+}
+
+style_accessibility_color :: proc(environment: Style_Environment, color: Color) -> Color {
+	result := color
+	if environment.accessibility.reduce_transparency { result.a = 1 }
+	return result
+}
+
+style_environment_extension_color :: proc(
+	rt: ^Runtime,
+	environment: Style_Environment,
+	role: Style_Extension_Color_Role_ID,
+) -> (color: Color, found: bool) {
+	color, found = style_extension_color(rt, environment.theme, role)
+	if found { color = style_accessibility_color(environment, color) }
+	return
+}
+
 style_environment_color :: proc(rt: ^Runtime, environment: Style_Environment, role: Style_Color_Role) -> Color {
-	if role == .Accent && environment.accent != 0 { return style_accent_color(environment.accent) }
-	return style_theme_color(rt, environment.theme, role)
+	color := style_theme_color(rt, environment.theme, role)
+	if role == .Accent && environment.accent != 0 { color = style_accent_color(environment.accent) }
+	if environment.accessibility.increased_contrast {
+		surface := style_theme_color(rt, environment.theme, .Surface)
+		subtle := style_theme_color(rt, environment.theme, .Subtle_Surface)
+		editor := style_theme_color(rt, environment.theme, .Editor_Background)
+		accent := style_theme_color(rt, environment.theme, .Accent)
+		if environment.accent != 0 { accent = style_accent_color(environment.accent) }
+		#partial switch role {
+		case .Text, .Muted_Text:
+			color = style_high_contrast_ink(surface, subtle, accent)
+		case .Accent_Text:
+			hover := style_theme_color(rt, environment.theme, .Accent_Hover)
+			pressed := style_theme_color(rt, environment.theme, .Accent_Pressed)
+			color = style_high_contrast_ink(accent, hover, pressed)
+		case .Focus, .Semantic_Focus, .Border, .Scrollbar_Thumb:
+			color = style_high_contrast_ink(surface, subtle, editor)
+		case .Selection:
+			color.a = maxf(color.a, 0.72)
+		}
+	}
+	return style_accessibility_color(environment, color)
+}
+
+style_environment_core :: proc(environment: Style_Environment) -> Style_Environment_Core {
+	return Style_Environment_Core{
+		theme=environment.theme,
+		density=environment.density,
+		text_scale=environment.text_scale,
+		accent=environment.accent,
+	}
+}
+
+style_environment_with_accessibility :: proc(
+	core: Style_Environment_Core,
+	accessibility: Accessibility_Appearance_Preferences,
+) -> Style_Environment {
+	return Style_Environment{
+		theme=core.theme,
+		density=core.density,
+		text_scale=core.text_scale,
+		accent=core.accent,
+		accessibility=accessibility,
+		accessibility_set=true,
+	}
 }
 
 style_color_mix :: proc(from, to: Color, amount: f32) -> Color {
@@ -370,9 +488,20 @@ style_button_resolve :: proc(
 		style.applied_transforms += {.Disabled}
 		style_button_apply_transform(&style, recipe.disabled, rt, environment)
 	}
-	if state.selected && !state.disabled { style.selected_indicator = recipe.selected_indicator }
+	if state.selected && !state.disabled {
+		style.selected_indicator = recipe.selected_indicator
+		if environment.accessibility.increased_contrast || environment.accessibility.differentiate_without_color {
+			style.selected_indicator = .Underline
+			style.selected_indicator_color = style_environment_color(rt, environment, .Focus)
+		}
+	}
 	if drop_target_on && !state.disabled {
 		style.surface = style_environment_color(rt, environment, .Success)
+	}
+	if environment.accessibility.increased_contrast {
+		style.text = style_contrast_fallback(style.text, style.surface, 4.5)
+		style.focus = style_contrast_fallback(style.focus, style.surface, 3)
+		style.selected_indicator_color = style_contrast_fallback(style.selected_indicator_color, style.surface, 3)
 	}
 	return style
 }
@@ -413,8 +542,22 @@ style_environment_resolve :: proc(previous, override: Style_Environment, rt: ^Ru
 		resolved.text_scale = override.text_scale
 	}
 	if override.accent != 0 { resolved.accent = override.accent }
+	if override.accessibility_set { resolved.accessibility = override.accessibility }
+	resolved.accessibility_set = true
 	valid = true
 	return
+}
+
+// Focus rings gain physical width as well as a high-contrast semantic color.
+// The returned width affects paint bounds only; it is not layout geometry.
+style_focus_indicator_thickness :: proc(environment: Style_Environment) -> f32 {
+	if environment.accessibility.increased_contrast { return 2.5 }
+	return 1.5
+}
+
+style_structural_border_thickness :: proc(environment: Style_Environment) -> f32 {
+	if environment.accessibility.increased_contrast { return 2 }
+	return 1
 }
 
 // style_domain_dirty_stages maps style dependencies to retained work. Typography
@@ -446,7 +589,7 @@ style_environment_push :: proc(ui: ^UI, environment: Style_Environment) -> Style
 	rt := ui.runtime
 	resolved, valid := style_environment_resolve(rt.style_environment, environment, rt)
 	if !rt.frame_open || !valid {
-		append_diagnostic(rt, "style environment requires an open description frame and valid theme, density, text scale, and accent inputs")
+		append_diagnostic(rt, "style environment requires an open description frame and valid theme, density, text scale, accent, and accessibility appearance inputs")
 		return Style_Environment_Scope{}
 	}
 	if len(rt.stack) == 0 {

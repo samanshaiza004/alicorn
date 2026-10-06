@@ -243,6 +243,13 @@ role, label, value, or platform element. Native application menus and dialogs
 use OS facilities; that does not make Alicorn-rendered context menus or
 controls accessible to assistive technology.
 
+`Style_Environment` can separately carry normalized accessibility appearance
+preferences such as increased contrast, reduced transparency, reduced motion,
+and non-color state cues. These inputs affect visual recipes/materials only;
+they do not create, rename, or modify semantic entities. The application or
+host supplies these values; Alicorn does not yet query OS accessibility
+preferences automatically.
+
 Semantic updates are dirty-driven; they do not poll while idle. A future
 activation path may request a bounded initial projection, but activation and
 platform adapter work belong to #51 and are not implemented. For now, treat

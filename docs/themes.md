@@ -40,6 +40,54 @@ describing a frame.
   source spans and parser structures remain compiler-only. These names are
   diagnostic metadata, not runtime lookup keys.
 
+## Accessibility appearance inputs
+
+`Style_Environment.accessibility` carries normalized visual preferences from
+the application or host. Set `accessibility_set=true` when pushing the value;
+this lets an explicit all-false value reset an inherited scope. The existing
+`Style_Environment.text_scale` is the normalized user/host text scale and
+continues to invalidate Metrics and Typography. Accessibility appearance state
+is separate from `Semantic_Node`: it never changes semantic role, name, value,
+actions, or state.
+
+Increased contrast resolves text and structural roles to stronger ink/boundary
+colors, thickens focus and structural outlines, and strengthens analytic
+material bevels. Built-in control recipes run a final text/focus/indicator
+contrast fallback after theme transforms, so choosing an unusual custom role
+cannot erase these required signals. For opaque resolved control surfaces, the
+fallback targets at least 4.5:1 for control text and 3:1 for focus/selection
+indicators; translucent themes can pair increased contrast with reduced
+transparency for the same visible contrast guarantee.
+`differentiate_without_color` adds an underline to selected
+buttons; Checkbox marks remain glyph-based and Slider values remain marked by
+the outlined thumb. Reduced transparency makes semantic theme surfaces opaque
+and removes analytic materials' translucent outer shadows. Preference-adapted
+materials are immutable, cached variants in the Runtime material registry, so
+re-describing a surface does not append an unbounded series of duplicates.
+
+The runtime currently has no animated style transitions or animated material
+responses. `reduce_motion` is retained and inspectable, and changing it advances
+the Material dependency so future motion-sensitive material behavior must
+consume it. It does not flatten static relief. Native OS preference detection
+and platform accessibility-tree integration remain host/application work; an
+application passes normalized values through `Style_Environment`.
+
+```odin
+appearance := alicorn.Accessibility_Appearance_Preferences{
+  increased_contrast=true,
+  reduce_motion=false,
+  reduce_transparency=true,
+  differentiate_without_color=true,
+}
+scope := alicorn.style_environment_push(&ui, alicorn.Style_Environment{
+  text_scale=1.15,
+  accessibility=appearance,
+  accessibility_set=true,
+})
+// Describe the themed subtree here.
+alicorn.style_environment_pop(&ui, scope)
+```
+
 ## Built-in control recipes
 
 The built-in recipe families describe semantic visual parts; layout and input

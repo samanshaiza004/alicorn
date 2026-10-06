@@ -462,6 +462,16 @@ Text_Overflow :: enum {
 Style_Theme_ID :: distinct u32
 Style_Accent :: distinct u32
 
+// Accessibility_Appearance_Preferences contains normalized host/user
+// preferences that influence visual treatment only. Roles, names, values,
+// actions, and semantic state remain owned by the semantic model.
+Accessibility_Appearance_Preferences :: struct {
+	increased_contrast:         bool,
+	reduce_motion:              bool,
+	reduce_transparency:        bool,
+	differentiate_without_color: bool,
+}
+
 Style_Color_Role :: enum {
 	Window_Background,
 	Surface,
@@ -571,6 +581,7 @@ Style_Provenance :: struct {
 	accent:         Style_Accent,
 	variant:        u8,
 	state_bits:     u8,
+	accessibility_bits: u8,
 	drop_target_on: bool,
 	surface_signature: u64,
 }
@@ -691,9 +702,22 @@ DEFAULT_STYLE_THEME :: Style_Theme{colors={
 DEFAULT_STYLE_THEME_ID :: Style_Theme_ID(1)
 
 // Style_Environment contains intentionally subtree-wide presentation inputs.
-// Zero values in a pushed environment mean "inherit"; this keeps compact
-// scopes such as Style_Environment{text_scale=1.25} composable.
+// Zero values in a pushed environment mean "inherit"; accessibility_set
+// distinguishes an explicit all-disabled preference value from inheritance.
+// text_scale is the normalized user/host text scaling input.
 Style_Environment :: struct {
+	theme: Style_Theme_ID,
+	density: f32,
+	text_scale: f32,
+	accent: Style_Accent,
+	accessibility: Accessibility_Appearance_Preferences,
+	accessibility_set: bool,
+}
+
+// Description keeps only the compact, frequently hashed style values here;
+// accessibility preferences travel beside it in Pending_Item and are retained
+// on Node so the per-description size budget remains stable.
+Style_Environment_Core :: struct {
 	theme: Style_Theme_ID,
 	density: f32,
 	text_scale: f32,
@@ -704,6 +728,7 @@ DEFAULT_STYLE_ENVIRONMENT :: Style_Environment{
 	theme=DEFAULT_STYLE_THEME_ID,
 	density=1,
 	text_scale=1,
+	accessibility_set=true,
 }
 
 Style_Environment_Scope :: struct {
@@ -858,7 +883,7 @@ Description :: struct {
 	text_style_spans: []Text_Style_Span,
 	font:        Font_Role,
 	text_style:  Text_Style,
-	style_environment: Style_Environment,
+	style_environment: Style_Environment_Core,
 	style_scope_boundary: bool,
 	button_content_style: Button_Content_Style,
 	button_variant: Button_Variant,
@@ -936,6 +961,7 @@ Pending_Item :: struct {
 	semantic_surface_style: Semantic_Surface_Style,
 	visual_part: Visual_Part_Style,
 	semantic:    Semantic_Descriptor,
+	accessibility: Accessibility_Appearance_Preferences,
 }
 
 Node :: struct {

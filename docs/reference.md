@@ -116,27 +116,41 @@ The default layout direction is column. Use `.Row` for horizontal children;
 
 ### Scoped style environment
 
-`Style_Environment` carries a compact theme ID, density, text scale, and packed
-accent override (`style_accent` quantizes RGB to 8 bits per channel). Register an immutable `Style_Theme` with `style_theme_register`; its
-typed `Style_Color_Role` entries provide semantic colors. `style_color` resolves
-a role in the current scope, and `style_metric` scales a logical metric by the
-active density. The application still chooses which app-authored dimensions and
-paint surfaces use those values.
+`Style_Environment` carries a compact theme ID, density, normalized text scale,
+packed accent override (`style_accent` quantizes RGB to 8 bits per channel), and
+`Accessibility_Appearance_Preferences`. Register an immutable `Style_Theme`
+with `style_theme_register`; its typed `Style_Color_Role` entries provide
+semantic colors. `style_color` resolves a role in the current scope, and
+`style_metric` scales a logical metric by the active density. The application
+still chooses which app-authored dimensions and paint surfaces use those
+values.
 
 Place `style_environment_push` immediately after beginning a container, describe
 the subtree, then pair it with `style_environment_pop` before ending that
 container. Zero-valued fields in the pushed value inherit from the enclosing
 scope, so focused overrides such as `Style_Environment{text_scale=1.25}` remain
-composable. Density must be in `[0.5, 3]`; text scale must be positive and below
-100; theme colors use normalized RGBA channels with nonzero alpha. Accent
-overrides are opaque and quantized to 8-bit RGB.
+composable. Set `accessibility_set=true` when supplying a preference bundle;
+otherwise it inherits. Density must be in `[0.5, 3]`; text scale must be
+positive and below 100; theme colors use normalized RGBA channels with nonzero
+alpha. Accent overrides are opaque and quantized to 8-bit RGB.
 
 Text scale invalidates typography and metrics. Density invalidates metrics.
-Theme and accent changes invalidate paint only. These changes are retained and
-scoped: unrelated siblings are not laid out or repainted. Text products shape at
-`DEFAULT_TEXT_SIZE * text_scale`. The scope container must keep parent-assigned
-bounds stable while its contents reflow. Theme IDs are immutable and local to a
-runtime; do not reuse IDs across runtimes.
+Theme and accent invalidate Paint. Increased contrast invalidates Paint and
+Material; reduced transparency invalidates Paint and Material; non-color
+differentiation invalidates Paint; reduced motion invalidates Material. These
+changes do not alter the semantic projection, and unrelated siblings are not
+laid out or repainted. Text products shape at
+`DEFAULT_TEXT_SIZE * text_scale`. Increased contrast strengthens semantic text,
+focus/border, selection-edge, and analytic-relief treatment. Built-in control
+recipes apply a final contrast fallback to resolved text, focus, and selection
+indicators so a custom theme's role choices cannot silently remove those
+signals. Reduced transparency makes semantic theme surfaces opaque and
+suppresses translucent analytic outer shadows. Non-color differentiation adds
+selected-button underlines; Checkbox checkmarks and Slider thumb outlines use
+geometric state markers. `reduce_motion` is available to material/style producers, but the
+current runtime has no animated transitions to shorten. The scope container
+must keep parent-assigned bounds stable while its contents reflow. Theme IDs are
+immutable and local to a runtime; do not reuse IDs across runtimes.
 
 The separate [`theme` compiler contract](themes.md) compiles typed color and
 logical-length tokens, aliases, core roles, and namespaced extension roles.

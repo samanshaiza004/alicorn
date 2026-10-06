@@ -308,6 +308,11 @@ update_paint :: proc(rt: ^Runtime) {
 						bounds.x += node.bounds.x
 						bounds.y += node.bounds.y
 						append(&node.paint, paint_surface_command(node.id, bounds, node.clip, field_style.selection))
+						if node.style_environment.accessibility.increased_contrast {
+							append_rect_outline_bounds(node, bounds,
+								style_environment_color(rt, node.style_environment, .Focus),
+								style_structural_border_thickness(node.style_environment))
+						}
 					}
 					delete(selection)
 				} else if node.composition_run_valid {
@@ -357,10 +362,10 @@ update_paint :: proc(rt: ^Runtime) {
 				}
 				append_visual_row_background(rt, node)
 				if node.kind == .Context_Menu_Panel {
-					append_rect_outline(node, style_environment_color(rt, node.style_environment, .Border), 1)
+					append_rect_outline(node, style_environment_color(rt, node.style_environment, .Border), style_structural_border_thickness(node.style_environment))
 				}
 				if node.kind == .Scroll_Region && semantic_focus_owner_needs_outline(rt, node.id) {
-					append_focus_outline(node, style_environment_color(rt, node.style_environment, .Focus), 1.5)
+					append_focus_outline(node, style_environment_color(rt, node.style_environment, .Focus), style_focus_indicator_thickness(node.style_environment))
 				}
 			} else if node.kind == .Button {
 				padding_x := maxf(node.button_content_style.padding_x, 0)
@@ -423,12 +428,12 @@ update_paint :: proc(rt: ^Runtime) {
 						indicator := Rect{node.bounds.x, node.bounds.y+node.bounds.h-indicator_height, node.bounds.w, indicator_height}
 						append(&node.paint, paint_surface_command(node.id, indicator, node.clip, resolved_style.selected_indicator_color))
 					}
-					if node.semantic_active { append_focus_outline(node, resolved_style.semantic_active, 1) }
+					if node.semantic_active { append_focus_outline(node, resolved_style.semantic_active, style_structural_border_thickness(node.style_environment)) }
 					show_focus := resolved_style.focus_indicator_mode == .Always || rt.focus_visible
 					if show_focus && rt.focused == node.id && !node.disabled {
 						// Focus is an independent outline so it remains visible without
 						// replacing the selected, hover, or pressed fill.
-						append_focus_outline(node, resolved_style.focus, 1.5)
+						append_focus_outline(node, resolved_style.focus, style_focus_indicator_thickness(node.style_environment))
 					}
 				}
 				if len(node.label) > 0 {
@@ -450,7 +455,7 @@ update_paint :: proc(rt: ^Runtime) {
 				}
 				show_focus := checkbox_style.focus_indicator_mode == .Always || rt.focus_visible
 				if checkbox_style.focused && show_focus && !checkbox_style.disabled {
-					append_focus_outline(node, checkbox_style.focus, 1.5)
+					append_focus_outline(node, checkbox_style.focus, style_focus_indicator_thickness(node.style_environment))
 				}
 				text_bounds := Rect{node.bounds.x+30, node.bounds.y, maxf(node.bounds.w-34, 0), node.bounds.h}
 				if node.text_run_valid { text_bounds.y += (text_bounds.h-node.text_run.height)*0.5 }
@@ -476,7 +481,7 @@ update_paint :: proc(rt: ^Runtime) {
 				append_rect_outline_bounds(node, thumb, slider_style.thumb.border, 1)
 				show_focus := slider_style.focus_indicator_mode == .Always || rt.focus_visible
 				if slider_style.focused && show_focus && !slider_style.disabled {
-					append_focus_outline(node, slider_style.focus, 1.5)
+					append_focus_outline(node, slider_style.focus, style_focus_indicator_thickness(node.style_environment))
 				}
 			} else if node.kind == .Split_Handle {
 				handle_color := Color{0.20, 0.24, 0.31, 1}
@@ -552,8 +557,8 @@ update_paint :: proc(rt: ^Runtime) {
 				}
 			}
 			if node.kind == .Text_Field {
-				append_rect_outline(node, field_style.border, 1)
-				if field_style.focused { append_focus_outline(node, field_style.focus, 1.5) }
+				append_rect_outline(node, field_style.border, style_structural_border_thickness(node.style_environment))
+				if field_style.focused { append_focus_outline(node, field_style.focus, style_focus_indicator_thickness(node.style_environment)) }
 			}
 			if node.drop_position == .On {
 				append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, style_environment_color(rt, node.style_environment, .Success)))

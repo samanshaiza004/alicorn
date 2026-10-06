@@ -57,11 +57,16 @@ asking the application to describe the whole UI again. Changed constraints
 can require layout even when the description itself is reused.
 
 `Style_Environment` is the inherited dependency surface for a compact theme ID,
-density, text scale, and accent override. Immutable typed palettes resolve
-semantic color roles without copying them into every retained node. Environment
-changes map to retained domains: density to metrics, text scale to metrics and
-typography, and theme/accent to paint. The scope boundary confines the resulting
-layout or paint work to that subtree; scope containers keep stable
+density, normalized text scale, accent override, and backend-neutral
+`Accessibility_Appearance_Preferences`. Applications can provide increased
+contrast, reduced motion/transparency, and non-color state differentiation.
+These preferences alter only resolved paint/material; they never add or rewrite
+semantic roles, names, values, actions, or states. Immutable typed palettes
+resolve semantic color roles without copying them into every retained node.
+Environment changes map to retained domains: density to metrics, text scale to
+metrics and typography, theme/accent and contrast/non-color preferences to
+paint, and preference-aware analytic materials to material. The scope boundary
+confines resulting work to that subtree; scope containers keep stable
 parent-assigned bounds while contents reflow. `style_metric` leaves the meaning
 and use of each dimension with the application. This is explicit dependency
 tracking, not a general cascade or implicit observation of app state. The

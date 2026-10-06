@@ -56,6 +56,37 @@ style_material_resolve :: proc(rt: ^Runtime, id: Material_ID) -> (material: Styl
 	return material, true
 }
 
+// style_material_accessibility_variant resolves appearance preferences into
+// an immutable material handle at the paint-producing boundary. Variants are
+// deduplicated in the existing Runtime registry so repeated descriptions do
+// not grow material storage. Flat materials stay on the zero-cost path.
+style_material_accessibility_variant :: proc(
+	rt: ^Runtime,
+	environment: Style_Environment,
+	source: Material_ID,
+) -> Material_ID {
+	if rt == nil || source == MATERIAL_FLAT { return source }
+	prefs := environment.accessibility
+	if !prefs.increased_contrast && !prefs.reduce_transparency { return source }
+	material, ok := style_material_resolve(rt, source)
+	if !ok || material.kind != .Analytic_Relief { return source }
+	resolved := material
+	if prefs.increased_contrast {
+		resolved.bevel_width = maxf(resolved.bevel_width, 1.5)
+		resolved.bevel_strength = maxf(resolved.bevel_strength, 0.75)
+	}
+	if prefs.reduce_transparency {
+		// Outer shadows are the material's only intrinsically translucent
+		// overlay. The source surface role is made opaque by the same scope.
+		resolved.outer_shadow_strength = 0
+	}
+	if resolved == material { return source }
+	for existing, index in rt.style_materials {
+		if existing == resolved { return Material_ID(u32(index+1)) }
+	}
+	return style_material_register(rt, resolved)
+}
+
 // Material parameters are intentionally bounded. Apart from keeping malformed
 // values out of native paint, the small maximum prevents a theme or app from
 // turning a subtle control treatment into unbounded per-surface geometry.

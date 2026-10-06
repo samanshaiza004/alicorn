@@ -435,6 +435,15 @@ style_checkbox_resolve :: proc(
 		focused=state.focused,
 		focus_indicator_mode=resolved_recipe.focus_indicator_mode,
 	}
+	if environment.accessibility.increased_contrast {
+		border_role := Style_Color_Role.Border
+		if state.checked { border_role = .Focus }
+		style.box.border = style_environment_color(rt, environment, border_role)
+		style.box.border = style_contrast_fallback(style.box.border, style.box.surface, 3)
+		style.checkmark.text = style_contrast_fallback(style.checkmark.text, style.box.surface, 4.5)
+		style.label.text = style_contrast_fallback(style.label.text, style.label.surface, 4.5)
+		style.focus = style_contrast_fallback(style.focus, style.box.surface, 3)
+	}
 	if state.checked { style.applied_transforms += {.Selected} }
 	if state.hovered { style.applied_transforms += {.Hovered} }
 	if state.pressed { style.applied_transforms += {.Pressed} }
@@ -462,6 +471,14 @@ style_slider_resolve :: proc(
 		disabled=state.disabled,
 		focused=state.focused,
 		focus_indicator_mode=resolved_recipe.focus_indicator_mode,
+	}
+	if environment.accessibility.increased_contrast {
+		// The thumb is the value's non-color position marker; a stronger outline
+		// keeps it distinct from the filled track on low-contrast themes.
+		style.thumb.border = style_environment_color(rt, environment, .Focus)
+		style.thumb.border = style_contrast_fallback(style.thumb.border, style.thumb.surface, 3)
+		style.label.text = style_contrast_fallback(style.label.text, style.label.surface, 4.5)
+		style.focus = style_contrast_fallback(style.focus, style.thumb.surface, 3)
 	}
 	if state.hovered { style.applied_transforms += {.Hovered} }
 	if state.pressed { style.applied_transforms += {.Pressed} }
@@ -492,6 +509,11 @@ style_text_field_resolve :: proc(
 	if state.hovered { control_part_transform_apply(resolved_recipe.hovered, &style.surface, &style.text, &style.border, rt, environment) }
 	if state.focused {
 		style.border = style_environment_color(rt, environment, resolved_recipe.focused_border_role)
+	}
+	if environment.accessibility.increased_contrast {
+		style.text = style_contrast_fallback(style.text, style.surface, 4.5)
+		style.border = style_contrast_fallback(style.border, style.surface, 3)
+		style.focus = style_contrast_fallback(style.focus, style.surface, 3)
 	}
 	return style
 }
