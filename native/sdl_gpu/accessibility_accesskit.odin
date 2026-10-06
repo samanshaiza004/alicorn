@@ -318,6 +318,10 @@ native_accessibility_action_to_semantic :: proc(action: u8, node: Accessibility_
 		if accessibility_projection_action_has(node.actions, .Collapse) { return .Collapse, false, true }
 	case ACCESSKIT_ACTION_SCROLL_INTO_VIEW:
 		if accessibility_projection_action_has(node.actions, .Scroll_Into_View) { return .Scroll_Into_View, true, true }
+	case ACCESSKIT_ACTION_SCROLL_DOWN:
+		if accessibility_projection_action_has(node.actions, .Scroll_Forward) { return .Scroll_Forward, false, true }
+	case ACCESSKIT_ACTION_SCROLL_UP:
+		if accessibility_projection_action_has(node.actions, .Scroll_Backward) { return .Scroll_Backward, false, true }
 	}
 	return .None, false, false
 }

@@ -92,6 +92,20 @@ intentional duplicate-key error. These two switches belong to the fixture;
 `--inspector` and `--inspector-open` work with any app using the reusable host,
 without application diagnostics code.
 
+For a real native accessibility working-set experiment with one million logical
+rows, run:
+
+```powershell
+.\tools\native_sdl_gpu.ps1 -MillionRowAccessibility
+```
+
+The fixture exports visible rows plus an eight-row horizon on either side. Its
+status line shows the current range and counts ScrollIntoView, focus, and
+collection scroll requests. Use Narrator or NVDA to navigate beyond the
+exported horizon and verify that the range advances, old platform items retire,
+and the exported item count stays bounded. This fixture is intended to test
+actual AT traversal; the runtime test alone does not establish that behavior.
+
 ```powershell
 .\out\alicorn_sdl_gpu.exe --inspector-fixture --inspector-input-smoke
 .\out\alicorn_sdl_gpu.exe --inspector-fixture --inspector-input-smoke --inspector-identity-error

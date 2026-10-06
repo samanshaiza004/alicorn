@@ -96,6 +96,16 @@ test_accessibility_action_translation_keeps_reveal_separate_from_perform :: proc
 	action, reveal, supported = native_accessibility_action_to_semantic(ACCESSKIT_ACTION_CLICK, virtual_item)
 	testing.expect(t, !supported && action == .None && !reveal,
 		"unadvertised AccessKit actions must not be synthesized")
+	scrollable_collection := Accessibility_Projection_Node{
+		role=.List,
+		actions=transmute(Accessibility_Projection_Actions)(bit_set[Accessibility_Projection_Action; u32]{.Scroll_Forward, .Scroll_Backward}),
+	}
+	action, reveal, supported = native_accessibility_action_to_semantic(ACCESSKIT_ACTION_SCROLL_DOWN, scrollable_collection)
+	testing.expect(t, supported && action == .Scroll_Forward && !reveal,
+		"AccessKit scroll-down should route to the collection's forward semantic action")
+	action, reveal, supported = native_accessibility_action_to_semantic(ACCESSKIT_ACTION_SCROLL_UP, scrollable_collection)
+	testing.expect(t, supported && action == .Scroll_Backward && !reveal,
+		"AccessKit scroll-up should route to the collection's backward semantic action")
 }
 
 @(test)
@@ -254,7 +264,7 @@ test_accessibility_projection_keeps_virtual_collection_bounded_and_positions_abs
 		logical_count=1_000_000,
 		selected_id=item_id,
 		current_id=item_id,
-		actions=transmute(alicorn.Semantic_Actions)(bit_set[alicorn.Semantic_Action; u32]{.Focus}),
+		actions=transmute(alicorn.Semantic_Actions)(bit_set[alicorn.Semantic_Action; u32]{.Focus, .Scroll_Forward, .Scroll_Backward}),
 		tree_order=1,
 	}
 	item := alicorn.Semantic_Node{
@@ -285,6 +295,9 @@ test_accessibility_projection_keeps_virtual_collection_bounded_and_positions_abs
 	item_node, item_found := accessibility_projection_node_by_semantic_id(projection, item_id)
 	testing.expect(t, collection_found && collection_node.is_collection && collection_node.logical_count == 1_000_000,
 		"collection should retain its full logical size")
+	testing.expect(t, accessibility_projection_action_has(collection_node.actions, .Scroll_Forward) &&
+		accessibility_projection_action_has(collection_node.actions, .Scroll_Backward),
+		"advertised collection scroll actions should survive the AccessKit projection")
 	testing.expect(t, item_found && item_node.position_in_set == 582_341 && item_node.size_of_set == 1_000_000,
 		"zero-based Alicorn index should map to one-based absolute platform position")
 	testing.expect(t, item_node.role == .List_Item && item_node.label == "Result 582341" &&

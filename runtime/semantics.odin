@@ -458,6 +458,7 @@ semantic_collection_begin :: proc(
 	current_id := Semantic_ID{},
 	realized_first: u64 = 0,
 	realized_last: u64 = 0,
+	actions := Semantic_Actions{},
 ) -> Semantic_Collection_Handle {
 	if ui == nil || ui.runtime == nil || !semantic_id_is_valid(id) ||
 	   (role != .List && role != .Tree && role != .Tab_List) ||
@@ -480,7 +481,7 @@ semantic_collection_begin :: proc(
 		pending.semantic.realized_last = realized_last
 		pending.semantic.selected_id = selected_id
 		pending.semantic.current_id = current_id
-		pending.semantic.actions = semantic_actions_add(pending.semantic.actions, .Focus)
+		pending.semantic.actions = semantic_actions_add(actions, .Focus)
 		return Semantic_Collection_Handle{id, generation, logical_count, selected_id, current_id}
 	}
 	delete_key(&rt.semantic_collection_touched, id)

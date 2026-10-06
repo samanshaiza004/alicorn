@@ -7,6 +7,7 @@ param(
     [switch]$DebugBounds,
     [switch]$Inspector,
     [switch]$InspectorOpen,
+    [switch]$MillionRowAccessibility,
     [switch]$Smoke,
     [int]$CaptureAfter = 2,
     [string]$CaptureDir = 'out\diagnostics'
@@ -18,7 +19,13 @@ $Odin = Resolve-AlicornOdin -Requested $Odin
 
 New-Item -ItemType Directory -Force -Path 'out' | Out-Null
 $AccessKit = Get-AlicornAccessKit
-& $Odin build native\sdl_gpu_entry "-extra-linker-flags:$($AccessKit.LinkerFlags)" -out:out\alicorn_sdl_gpu.exe
+$Entry = 'native\sdl_gpu_entry'
+$Executable = '.\out\alicorn_sdl_gpu.exe'
+if ($MillionRowAccessibility) {
+    $Entry = 'native\semantic_virtualization_entry'
+    $Executable = '.\out\alicorn_semantic_virtualization.exe'
+}
+& $Odin build $Entry "-extra-linker-flags:$($AccessKit.LinkerFlags)" -out:$Executable
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # The Odin SDK vendor directory carries the SDL3 DLL used by this fixture.
@@ -63,5 +70,5 @@ if ($DebugBounds) { $arguments += '--debug-bounds' }
 if ($Inspector) { $arguments += '--inspector' }
 if ($InspectorOpen) { $arguments += '--inspector-open' }
 if ($Smoke) { $arguments += '--smoke' }
-& .\out\alicorn_sdl_gpu.exe @arguments
+& $Executable @arguments
 exit $LASTEXITCODE

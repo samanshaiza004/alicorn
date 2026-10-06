@@ -433,7 +433,9 @@ For a large collection, `semantic_collection_begin` describes the collection
 and its logical count, realized range, selected ID, and current ID.
 `semantic_collection_item` attaches semantics to a presented row, while
 `semantic_collection_virtual_item` records a logical item without creating a
-visual node. `semantic_collection_selection_set` updates the collection's
+visual node. `semantic_collection_begin` can also advertise collection actions
+such as forward/backward scrolling; applications handle those through the same
+semantic request queue. `semantic_collection_selection_set` updates the collection's
 selected/current identities during description. Virtual items include their
 logical position and total set size. Describe only a bounded working set—such
 as visible rows plus a small navigation horizon—and let Alicorn prune items
