@@ -95,7 +95,7 @@ error and its correction hint.
 | `slider_f32` | Emit a controlled horizontal `f32` slider; returns `{value, changed}`. |
 | `text_field` | Emit an editable text field. It supports caret placement, Shift-click, grapheme drag selection, double-click word selection, triple-click logical-line selection, and word/line-granularity dragging. The host reports committed edits through `on_text_change`. |
 | `text_field_value` | Read the borrowed current value of an active retained text field. |
-| `Text_Selection_Range` / `text_selection_*` | Share Unicode word/line selection ranges and drag-extension rules with application-owned editors that map display positions to their own source coordinates. |
+| `alicorn:text_interaction` | Import `Text_Selection_Range` and `text_selection_*` for Unicode word/line selection ranges and drag-extension rules in application-owned editors. |
 | `node_info` / `node_identity_key` / `node_by_key` | Read a node's geometry, interaction state, scroll metrics, and explicit identity. |
 | `text_node_line_geometry` / `text_node_hit_test_line` | Query retained visual-line geometry and hit-test without exposing its shaped run. |
 | `runtime_text_run_build` | Shape temporary application text through Alicorn's retained text engine without exposing the engine. |
@@ -113,9 +113,10 @@ error and its correction hint.
 | `Checkbox_Recipe` / `Slider_Recipe` | Theme independent control-part roles and their selected/hovered/pressed/disabled transforms. |
 
 `text_field` owns its pointer-selection gesture from primary down through
-release or cancellation. Application-owned editors can use
-`text_selection_drag_begin` / `text_selection_drag_extend` for character,
-word, and line selection, or `text_selection_word_range_at`,
+release or cancellation. Application-owned editors can import
+`alicorn:text_interaction` and use `text_selection_drag_begin` /
+`text_selection_drag_extend` for character, word, and line selection, or
+`text_selection_word_range_at`,
 `text_selection_line_range_at`, and `text_selection_range_extend` when display
 positions must first pass through an application-owned source map. The helpers
 use UTF-8 byte offsets with grapheme-safe boundaries; the application still

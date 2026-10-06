@@ -1,4 +1,6 @@
-package alicorn
+package text_interaction
+
+import runa "../third_party/Runa"
 
 Text_Selection_Granularity :: enum { Character, Word, Line }
 
@@ -11,8 +13,8 @@ Text_Selection_Endpoints :: struct {
 }
 
 // A pointer selection keeps its original granularity and range until capture
-// ends. This value is independent of Runtime and can also be used by editors
-// that map display positions to their own source coordinates.
+// ends. It is independent of GUI state and can be used by editors that map
+// display positions to their own source coordinates.
 Text_Selection_Drag_State :: struct {
 	active: bool,
 	granularity: Text_Selection_Granularity,
@@ -22,7 +24,16 @@ Text_Selection_Drag_State :: struct {
 
 text_selection_position_normalize :: proc(value: string, position: int) -> int {
 	byte := clamp(position, 0, len(value))
-	return grapheme_floor_boundary(value, byte)
+	if byte == 0 || byte == len(value) { return byte }
+	last := 0
+	iterator := runa.grapheme_iter_make(value)
+	for {
+		start, end, ok := runa.grapheme_iter_next(&iterator)
+		if !ok { break }
+		if byte < end { return start }
+		last = end
+	}
+	return last
 }
 
 text_selection_granularity_for_click_count :: proc(click_count: u8) -> Text_Selection_Granularity {
@@ -34,18 +45,22 @@ text_selection_granularity_for_click_count :: proc(click_count: u8) -> Text_Sele
 // Word selection uses the same Runa UAX #29 segments as keyboard word
 // movement. Separator segments are intentionally selectable too, matching
 // double-click behavior over punctuation and whitespace.
-text_selection_word_range_at :: proc(value: string, position: int, scratch_allocator := context.temp_allocator) -> (range: Text_Selection_Range, found: bool) {
+text_selection_word_range_at :: proc(value: string, position: int) -> (range: Text_Selection_Range, found: bool) {
 	byte := text_selection_position_normalize(value, position)
-	ranges := text_word_ranges(value, scratch_allocator)
-	defer delete(ranges)
-	for word in ranges {
-		if byte >= word.start && byte < word.end {
-			return Text_Selection_Range{word.start, word.end}, true
+	iterator := runa.word_iter_make(value)
+	last := Text_Selection_Range{}
+	has_last := false
+	for {
+		start, end, ok := runa.word_iter_next(&iterator)
+		if !ok { break }
+		current := Text_Selection_Range{start, end}
+		if byte >= start && byte < end {
+			return current, true
 		}
+		last, has_last = current, true
 	}
-	if byte == len(value) && len(ranges) > 0 {
-		last := ranges[len(ranges)-1]
-		return Text_Selection_Range{last.start, last.end}, true
+	if byte == len(value) && has_last {
+		return last, true
 	}
 	return
 }
@@ -76,14 +91,13 @@ text_selection_range_at :: proc(
 	value: string,
 	position: int,
 	granularity: Text_Selection_Granularity,
-	scratch_allocator := context.temp_allocator,
 ) -> (range: Text_Selection_Range, found: bool) {
 	switch granularity {
 	case .Character:
 		byte := text_selection_position_normalize(value, position)
 		return Text_Selection_Range{byte, byte}, true
 	case .Word:
-		return text_selection_word_range_at(value, position, scratch_allocator)
+		return text_selection_word_range_at(value, position)
 	case .Line:
 		range = text_selection_line_range_at(value, position)
 		return range, true
@@ -97,12 +111,11 @@ text_selection_drag_begin :: proc(
 	click_count: u8,
 	shift: bool,
 	existing_anchor: int,
-	scratch_allocator := context.temp_allocator,
 ) -> (state: Text_Selection_Drag_State, endpoints: Text_Selection_Endpoints) {
 	byte := text_selection_position_normalize(value, position)
 	granularity := text_selection_granularity_for_click_count(click_count)
 	if granularity != .Character {
-		if range, found := text_selection_range_at(value, byte, granularity, scratch_allocator); found {
+		if range, found := text_selection_range_at(value, byte, granularity); found {
 			state = Text_Selection_Drag_State{
 				active=true,
 				granularity=granularity,
@@ -147,14 +160,13 @@ text_selection_drag_extend :: proc(
 	value: string,
 	state: Text_Selection_Drag_State,
 	position: int,
-	scratch_allocator := context.temp_allocator,
 ) -> (endpoints: Text_Selection_Endpoints, changed: bool) {
 	if !state.active { return }
 	byte := text_selection_position_normalize(value, position)
 	if state.granularity == .Character {
 		return Text_Selection_Endpoints{state.anchor, byte}, true
 	}
-	current, found := text_selection_range_at(value, byte, state.granularity, scratch_allocator)
+	current, found := text_selection_range_at(value, byte, state.granularity)
 	if !found { return }
 	return text_selection_range_extend(state.initial_range, current), true
 }

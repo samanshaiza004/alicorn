@@ -1,5 +1,7 @@
 package alicorn
 
+import text_selection "../text_interaction"
+
 import "core:mem"
 import "core:strings"
 
@@ -97,12 +99,12 @@ scrollbar_handle_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> bool {
 text_field_pointer_selection_cancel :: proc(rt: ^Runtime) {
 	if rt == nil { return }
 	rt.text_field_selection_owner = 0
-	rt.text_field_selection_drag = Text_Selection_Drag_State{}
+	rt.text_field_selection_drag = text_selection.Text_Selection_Drag_State{}
 }
 
 text_field_pointer_selection_affinities :: proc(
-	state: Text_Selection_Drag_State,
-	endpoints: Text_Selection_Endpoints,
+	state: text_selection.Text_Selection_Drag_State,
+	endpoints: text_selection.Text_Selection_Endpoints,
 	position_affinity: Text_Affinity,
 	anchor_affinity: Text_Affinity,
 ) -> (anchor, focus: Text_Affinity) {
@@ -117,11 +119,10 @@ text_field_pointer_selection_update :: proc(rt: ^Runtime, owner: Node_ID, x, y: 
 	node, ok := rt.nodes[owner]
 	if !ok || !node.active || node.kind != .Text_Field || !node.text_run_valid { return false }
 	position := text_run_hit_test(&node.text_run, x-node.bounds.x, y-node.bounds.y, rt.scratch_allocator)
-	endpoints, changed := text_selection_drag_extend(
+	endpoints, changed := text_selection.text_selection_drag_extend(
 		node.text,
 		rt.text_field_selection_drag,
 		position.byte,
-		rt.scratch_allocator,
 	)
 	if !changed { return false }
 	anchor_affinity, focus_affinity := text_field_pointer_selection_affinities(
@@ -612,13 +613,12 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 				if node.kind == .Text_Field && node.text_run_valid &&
 					(event.button == 0 || event.button == POINTER_BUTTON_PRIMARY) {
 					position := text_run_hit_test(&node.text_run, event.x-node.bounds.x, event.y-node.bounds.y, rt.scratch_allocator)
-					drag_state, endpoints := text_selection_drag_begin(
+					drag_state, endpoints := text_selection.text_selection_drag_begin(
 						node.text,
 						position.byte,
 						event.click_count,
 						event.modifiers.shift,
 						node.selection_anchor.byte,
-						rt.scratch_allocator,
 					)
 					rt.text_field_selection_owner = node.id
 					rt.text_field_selection_drag = drag_state
