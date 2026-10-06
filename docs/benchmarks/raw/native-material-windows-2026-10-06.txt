@@ -1,0 +1,24 @@
+Windows native material flat-path benchmark capture
+Captured: 2026-10-06
+OS: Microsoft Windows 10.0.19045
+CPU identifier: AMD64 Family 25 Model 97, 12 logical processors
+Odin: dev-2026-09-nightly:a2fb372
+Build profile: -o:speed
+Command: .\tools\bench_material.ps1 (build once), then three fresh benchmark process runs
+Scope: CPU vertex expansion only; no SDL window, GPU submission, or display-list traversal
+
+Alicorn native material flat-path benchmark; CPU vertex expansion only
+surfaces_per_sample 4096 iterations 80 vertices_per_batch 24576
+sample 1 direct_quad_ns 3118700 flat_material_ns 2786200 direct_ns_per_surface 9.51751708984375 flat_ns_per_surface 8.5028076171875 vertices 24576 capacity 24576 same_output true
+sample 2 direct_quad_ns 2764300 flat_material_ns 2767600 direct_ns_per_surface 8.43597412109375 flat_ns_per_surface 8.446044921875 vertices 24576 capacity 24576 same_output true
+sample 3 direct_quad_ns 2764000 flat_material_ns 3049300 direct_ns_per_surface 8.43505859375 flat_ns_per_surface 9.30572509765625 vertices 24576 capacity 24576 same_output true
+Alicorn native material flat-path benchmark; CPU vertex expansion only
+surfaces_per_sample 4096 iterations 80 vertices_per_batch 24576
+sample 1 direct_quad_ns 2778200 flat_material_ns 2765400 direct_ns_per_surface 8.4783935546875 flat_ns_per_surface 8.4393310546875 vertices 24576 capacity 24576 same_output true
+sample 2 direct_quad_ns 2818200 flat_material_ns 2872800 direct_ns_per_surface 8.6004638671875 flat_ns_per_surface 8.76708984375 vertices 24576 capacity 24576 same_output true
+sample 3 direct_quad_ns 2752900 flat_material_ns 2786400 direct_ns_per_surface 8.40118408203125 flat_ns_per_surface 8.50341796875 vertices 24576 capacity 24576 same_output true
+Alicorn native material flat-path benchmark; CPU vertex expansion only
+surfaces_per_sample 4096 iterations 80 vertices_per_batch 24576
+sample 1 direct_quad_ns 2922100 flat_material_ns 2742200 direct_ns_per_surface 8.91754150390625 flat_ns_per_surface 8.3685302734375 vertices 24576 capacity 24576 same_output true
+sample 2 direct_quad_ns 2757800 flat_material_ns 2905100 direct_ns_per_surface 8.4161376953125 flat_ns_per_surface 8.86566162109375 vertices 24576 capacity 24576 same_output true
+sample 3 direct_quad_ns 2718700 flat_material_ns 2695100 direct_ns_per_surface 8.29681396484375 flat_ns_per_surface 8.22479248046875 vertices 24576 capacity 24576 same_output true

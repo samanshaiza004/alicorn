@@ -154,10 +154,14 @@ not sort by primitive family or inspect `Node_Kind` to decide how to draw.
 Semantic surfaces carry a registered material ID, optical height, and group in
 their generic paint command. The native renderer expands flat or analytic
 rectangular relief into bounded ordinary vertices; optical height never affects
-layout or stacking order. Image paint is deferred until Alicorn defines its
-image resource lifetime and upload contract. Applications author semantic
-widgets and host integrations; the generic paint payload union is an internal
-renderer boundary, not a replacement UI authoring API.
+layout or stacking order. Analytic relief uses a fixed upper-left light and
+scales/reverses edge shading with signed physical height. Flat materials and
+zero-height surfaces emit the same single quad as ordinary solid paint; they
+need no auxiliary buffer, blur, compute pass, or continuing redraw. Image paint
+is deferred until Alicorn defines its image resource lifetime and upload
+contract. Applications author semantic widgets and host integrations; the
+generic paint payload union is an internal renderer boundary, not a replacement
+UI authoring API.
 
 The host waits for events when idle. Worker completions can wake it through an
 opaque `Application_Waker`; the UI remains on the window thread. The runtime

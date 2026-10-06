@@ -181,6 +181,9 @@ native_solid_pixel_bounds :: proc(
 native_solid_material_for_command :: proc(rt: ^alicorn.Runtime, command: alicorn.Paint_Command) -> (material: alicorn.Style_Material, surface: alicorn.Surface_Paint, valid: bool) {
 	surface, valid = command.payload.(alicorn.Surface_Paint)
 	if !valid { return }
+	if surface.material == alicorn.MATERIAL_FLAT {
+		return alicorn.STYLE_MATERIAL_FLAT, surface, true
+	}
 	material, valid = alicorn.style_material_resolve(rt, surface.material)
 	if !valid {
 		// An invalid handle falls back to the canonical flat treatment. The
@@ -202,11 +205,10 @@ native_solid_build :: proc(
 	required_vertices := 0
 	for draw in display {
 		if !alicorn.paint_command_is_surface(draw) { continue }
-		_, surface, valid := native_solid_material_for_command(renderer.runtime, draw)
+		material, surface, valid := native_solid_material_for_command(renderer.runtime, draw)
 		if !valid { continue }
 		_, _, _, _, visible := native_solid_pixel_bounds(draw, scale_x, scale_y, target_w, target_h)
 		if visible {
-			material, _, _ := native_solid_material_for_command(renderer.runtime, draw)
 			required_vertices += native_solid_material_vertex_count(material, surface.physical_height)
 		}
 	}

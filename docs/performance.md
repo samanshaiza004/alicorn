@@ -10,6 +10,8 @@ limitations before using a number.
 - [Wrapped text/layout](benchmarks/text-layout.md): the same 20,000-logical-row
   headless scroll/reflow workload, measured separately on Windows and macOS,
   with raw per-run output for both platforms.
+- [Native material flat-path benchmark](benchmarks/native-material-windows.md):
+  compares CPU expansion for direct solid quads and canonical flat materials.
 - [Retained-work suite on macOS](benchmarks/retained-work-macos.md): tree
   sizes, retained-region reuse, keyed churn, true-idle counters, custom-surface
   locality, and million-item virtualization. One Mac run; raw output included.
@@ -29,10 +31,12 @@ From a fresh checkout with the documented Odin toolchain:
 ```sh
 ./tools/bench.sh
 ./tools/bench_text_layout.sh
+./tools/bench_material.sh
 ```
 
 The equivalent PowerShell entry points are `tools/bench.ps1` and
-`tools/bench_text_layout.ps1`. Both scripts accept an explicit Odin path.
+`tools/bench_text_layout.ps1`; the material benchmark uses
+`tools/bench_material.ps1`. The scripts accept an explicit Odin path.
 Native-host measurements require a supported desktop session; commands,
 environment, raw captures, and workload limitations are in the platform
 reports above.
