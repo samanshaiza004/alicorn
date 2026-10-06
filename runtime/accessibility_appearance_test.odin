@@ -222,3 +222,54 @@ test_scoped_appearance_preferences_do_not_change_semantic_projection :: proc(t: 
 		strings.contains(inspection, "semantics: revision="),
 		"the inspector should report appearance inputs on the style side without mixing them into semantic records")
 }
+
+root_appearance_layer_fixture :: proc(rt: ^Runtime) -> (inherited, overridden: Node_ID) {
+	ui, should_build := begin_frame(rt)
+	if !should_build { return }
+	container_begin(&ui, .Root, key=key_string("root-appearance-layer"), style=layout_style())
+	_ = button(&ui, "Inherits system", key=key_string("root-appearance-inherited"))
+	scope := style_environment_push(&ui, Style_Environment{
+		accessibility=Accessibility_Appearance_Preferences{increased_contrast=true},
+		accessibility_set=true,
+	})
+	_ = button(&ui, "App override", key=key_string("root-appearance-overridden"))
+	style_environment_pop(&ui, scope)
+	container_end(&ui)
+	end_frame(&ui)
+	inherited, _ = node_by_key(rt, key_string("root-appearance-inherited"), .Button)
+	overridden, _ = node_by_key(rt, key_string("root-appearance-overridden"), .Button)
+	return
+}
+
+@(test)
+test_root_host_appearance_inherits_and_respects_explicit_override :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 180})
+	defer destroy_runtime(&rt)
+	inherited, overridden := root_appearance_layer_fixture(&rt)
+	if inherited == 0 || overridden == 0 {
+		testing.expect(t, false, "root appearance fixture should retain both inherited and overridden controls")
+		return
+	}
+	semantic_revision := rt.semantic_revision
+	inherited_before := rt.nodes[inherited].style_generations
+	overridden_before := rt.nodes[overridden].style_generations
+	preferences := Accessibility_Appearance_Preferences{increased_contrast=true}
+	testing.expect(t, style_root_accessibility_set(&rt, preferences) && rt.invalidated,
+		"a changed host appearance base should request one application description")
+	updated_inherited, updated_overridden := root_appearance_layer_fixture(&rt)
+	inherited_node := rt.nodes[updated_inherited]
+	overridden_node := rt.nodes[updated_overridden]
+	testing.expect(t, updated_inherited == inherited && updated_overridden == overridden &&
+		inherited_node.style_generations.paint > inherited_before.paint &&
+		inherited_node.style_generations.material > inherited_before.material &&
+		inherited_node.style_generations.metrics == inherited_before.metrics &&
+		inherited_node.style_generations.typography == inherited_before.typography,
+		"the inherited scope should receive the native base and invalidate Paint/Material only")
+	testing.expect(t, overridden_node.style_environment.accessibility.increased_contrast &&
+		overridden_node.style_generations == overridden_before,
+		"an explicit application override already equal to the new base should not be invalidated")
+	testing.expect(t, rt.semantic_revision == semantic_revision,
+		"a root visual appearance change must not advance semantic revision")
+	testing.expect(t, !style_root_accessibility_set(&rt, preferences) && !rt.invalidated,
+		"an identical host preference notification should not invalidate the runtime")
+}

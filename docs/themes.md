@@ -68,9 +68,31 @@ re-describing a surface does not append an unbounded series of duplicates.
 The runtime currently has no animated style transitions or animated material
 responses. `reduce_motion` is retained and inspectable, and changing it advances
 the Material dependency so future motion-sensitive material behavior must
-consume it. It does not flatten static relief. Native OS preference detection
-and platform accessibility-tree integration remain host/application work; an
-application passes normalized values through `Style_Environment`.
+consume it. It does not flatten static relief. Applications can also pass
+normalized values through `Style_Environment` for a manual scoped override.
+The native SDL host imports the normalized appearance
+preferences exposed by Windows and macOS and listens for platform change
+notifications. Windows currently provides increased contrast, reduced motion,
+and reduced transparency; macOS provides all four inputs. Notifications are
+coalesced into a host-only wake; the host rereads the snapshot on its event loop
+and updates a persistent accessibility appearance base only when a supported
+value changes. Failed or unsupported native queries preserve the last known
+value rather than turning it into
+`false`. Linux currently uses the default all-false base and has no native
+preference monitor. Native text scaling is not mapped yet; applications can
+still supply Alicorn's normalized `text_scale` explicitly.
+
+The host base is narrower than a persistent root `Style_Environment`: it only
+contains `Accessibility_Appearance_Preferences`. The public
+`style_root_accessibility_set` setter updates it between frames and returns
+`true` only when the normalized base changes. Normal scopes inherit the host
+preferences; applications can explicitly override the complete bundle with
+`accessibility_set=true` in `style_environment_push`. This changes visual style
+dependencies only and does not mutate semantic roles, labels, values, actions,
+or states. Windows integrated menu/title-bar chrome consumes the same
+normalized increased-contrast value. Native high-contrast system-palette
+integration remains separate; Alicorn does not yet resolve an application-wide
+system color theme.
 
 ```odin
 appearance := alicorn.Accessibility_Appearance_Preferences{

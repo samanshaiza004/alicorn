@@ -426,6 +426,8 @@ begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
 	clear(&rt.identity_key_kind)
 	clear(&rt.identity_key_pair)
 	rt.style_environment = DEFAULT_STYLE_ENVIRONMENT
+	rt.style_environment.accessibility = rt.root_accessibility_appearance
+	rt.style_environment.accessibility_set = true
 	clear(&rt.style_scope_stack)
 	// Interaction invalidation may have queued a retained node before the
 	// next frame begins. update_paint clears the queue after consuming it;

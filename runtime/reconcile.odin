@@ -1031,6 +1031,8 @@ end_frame :: proc(ui: ^UI) {
 		clear(&ui.runtime.style_scope_stack)
 	}
 	ui.runtime.style_environment = DEFAULT_STYLE_ENVIRONMENT
+	ui.runtime.style_environment.accessibility = ui.runtime.root_accessibility_appearance
+	ui.runtime.style_environment.accessibility_set = true
 	if len(ui.runtime.stack) != 0 || len(ui.runtime.identity_stack) != 0 {
 		append_diagnostic(ui.runtime, "unbalanced container or identity scope at end_frame")
 		clear(&ui.runtime.stack)

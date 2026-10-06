@@ -165,10 +165,10 @@ native_application_wake :: proc(data: rawptr) {
 	_ = sdl3.PushEvent(&event)
 }
 
-native_host_event_wake :: proc(state: ^Native_Host_Event_Waker) {
-	if state == nil || !state.active { return }
+native_host_event_wake :: proc(state: ^Native_Host_Event_Waker) -> bool {
+	if state == nil || !state.active { return false }
 	event := sdl3.Event{type=state.event_type}
-	_ = sdl3.PushEvent(&event)
+	return sdl3.PushEvent(&event)
 }
 
 native_application_request_quit :: proc(data: rawptr) {

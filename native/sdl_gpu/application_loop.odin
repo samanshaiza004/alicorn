@@ -64,6 +64,19 @@ run_application_loop :: proc(
 	host_wake_event_id := sdl3.RegisterEvents(1)
 	if host_wake_event_id == 0 { fail("SDL_RegisterEvents failed for host redraw wakeups") }
 	host_wake_state := Native_Host_Event_Waker{event_type=sdl3.EventType(host_wake_event_id), active=true}
+	appearance_monitor: Native_Appearance_Monitor
+	when ODIN_OS == .Windows || ODIN_OS == .Darwin {
+		if !native_appearance_monitor_init(&appearance_monitor, window, &host_wake_state, rt) {
+			fmt.println("appearance", "native preference notifications unavailable; using default appearance inputs")
+		}
+	}
+	if native_menu != nil {
+		native_menu_accessibility_appearance_changed(
+			native_menu,
+			appearance_monitor.snapshot.preferences.increased_contrast,
+			request_redraw=false,
+		)
+	}
 	accessibility_host: Native_Accessibility_Host
 	accessibility_host_ready := false
 	when ODIN_OS == .Windows || ODIN_OS == .Darwin {
@@ -261,6 +274,7 @@ run_application_loop :: proc(
 			devtools_last_cause=&devtools_last_cause,
 			inspector=&inspector,
 			accessibility=&accessibility_host,
+			appearance_monitor=&appearance_monitor,
 		)
 		_ = alicorn.tooltip_advance(rt, u64(sdl3.GetTicksNS()))
 		native_drag_autoscroll_update(rt, &drag_autoscroll_deadline_ns, u64(sdl3.GetTicksNS()))
@@ -571,6 +585,7 @@ run_application_loop :: proc(
 		// address after run_application_loop returns.
 		application_instance.on_stop(application_instance.state)
 	}
+	native_appearance_monitor_destroy(&appearance_monitor)
 	scheduler_state.active = false
 	for &pending in scheduler_state.pending { pending = false }
 	wake_state.active = false

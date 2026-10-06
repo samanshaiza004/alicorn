@@ -56,6 +56,7 @@ pump_events :: proc(
 	devtools_last_cause: ^alicorn.Cause_Context = nil,
 	inspector: ^Native_Inspector_Overlay = nil,
 	accessibility: ^Native_Accessibility_Host = nil,
+	appearance_monitor: ^Native_Appearance_Monitor = nil,
 ) {
 	if telemetry != nil { telemetry.events_this_pump = 0 }
 	mod_state := sdl3.GetModState()
@@ -82,6 +83,15 @@ pump_events :: proc(
 		// telemetry. Application producers use the distinct wake_event below.
 		if host_wake_event_enabled && event.type == host_wake_event {
 			if native_host_wake_events != nil { native_host_wake_events^ += 1 }
+			if appearance_monitor != nil {
+				_ = native_appearance_monitor_refresh(appearance_monitor, rt)
+				if native_menu != nil {
+					native_menu_accessibility_appearance_changed(
+						native_menu,
+						appearance_monitor.snapshot.preferences.increased_contrast,
+					)
+				}
+			}
 			// AccessKit action callbacks can arrive off the window thread. They
 			// enqueue immutable requests and use this host-only wake to route them
 			// through Alicorn's semantic action path on the UI thread.
@@ -626,6 +636,18 @@ pump_events :: proc(
 			sync_text_input_focus(window, rt, text_input_state, application)
 		}
 		has_event = poll_sdl_event(&event)
+	}
+	// A full/filtered SDL queue can reject the coalesced native wake. Any event
+	// that did wake the loop still provides a safe point to consume that pending
+	// preference snapshot before application work resumes.
+	if native_appearance_monitor_pending(appearance_monitor) {
+		_ = native_appearance_monitor_refresh(appearance_monitor, rt)
+		if native_menu != nil {
+			native_menu_accessibility_appearance_changed(
+				native_menu,
+				appearance_monitor.snapshot.preferences.increased_contrast,
+			)
+		}
 	}
 	native_inspector_finish_input_pump(inspector, text_input_state)
 	if telemetry != nil { native_finish_input_pump(telemetry) }

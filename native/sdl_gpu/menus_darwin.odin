@@ -348,3 +348,13 @@ native_menu_take_pending :: proc(menu: ^Native_Menu_Runtime) -> (Application_Com
 native_menu_try_shortcut :: proc(menu: ^Native_Menu_Runtime, keycode: int, modifiers: sdl3.Keymod) -> bool {
 	return false
 }
+
+native_menu_accessibility_appearance_changed :: proc(
+	menu: ^Native_Menu_Runtime,
+	increased_contrast: bool,
+	request_redraw := true,
+) {
+	_ = menu
+	_ = increased_contrast
+	_ = request_redraw
+}

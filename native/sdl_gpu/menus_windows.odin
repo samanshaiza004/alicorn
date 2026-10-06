@@ -41,16 +41,9 @@ WIN32_VK_ESCAPE           :: 0x1B
 WIN32_VK_LEFT             :: 0x25
 WIN32_VK_RIGHT            :: 0x27
 WIN32_DWMWA_CAPTION_BUTTON_BOUNDS :: u32(5)
-WIN32_HCF_HIGHCONTRASTON          :: win.DWORD(0x00000001)
 WIN32_MENU_HOVER_MIX              :: 0.10
 WIN32_MENU_OPEN_MIX               :: 0.14
 WIN32_MENU_PRESSED_MIX            :: 0.20
-
-Win32_High_Contrast :: struct {
-	cb_size: win.UINT,
-	dw_flags: win.DWORD,
-	default_scheme: win.LPWSTR,
-}
 
 NATIVE_MENU_HOST_NODE_BASE :: alicorn.Node_ID(0xFFFF_FFFF_FFFF_F000)
 NATIVE_MENU_HOST_SOLID_NODE :: alicorn.Node_ID(0xFFFF_FFFF_FFFF_E000)
@@ -581,14 +574,6 @@ win32_menu_feedback_colors :: proc(background, foreground: alicorn.Color) -> (ho
 	return
 }
 
-win32_menu_high_contrast_enabled :: proc() -> bool {
-	value := Win32_High_Contrast{cb_size=win.UINT(size_of(Win32_High_Contrast))}
-	if win.SystemParametersInfoW(win.UINT(win.SPI_GETHIGHCONTRAST), value.cb_size, rawptr(&value), 0) == false {
-		return false
-	}
-	return (value.dw_flags & WIN32_HCF_HIGHCONTRASTON) != 0
-}
-
 win32_menu_chrome_colors :: proc(state: ^Win32_Menu_State) -> (background, foreground: alicorn.Color) {
 	background = win32_color_ref(win.GetSysColor(win.COLOR_MENU))
 	foreground_index := i32(win.COLOR_MENUTEXT)
@@ -1065,7 +1050,6 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 		if message == win.WM_SIZE || (position != nil && (position.flags & win.SWP_NOSIZE) == 0) { win32_menu_layout_labels(state) }
 		native_menu_request_chrome_redraw(state.menu)
 	} else if (message == win.WM_THEMECHANGED || message == win.WM_SETTINGCHANGE || message == win.WM_SYSCOLORCHANGE) && integrated {
-		state.high_contrast = win32_menu_high_contrast_enabled()
 		win32_menu_layout_labels(state)
 		native_menu_request_chrome_redraw(state.menu)
 	} else if message == win.WM_KILLFOCUS && integrated {
@@ -1094,7 +1078,7 @@ native_menu_prepare :: proc(menu: ^Native_Menu_Runtime) -> bool {
 	state.active_menu = -1
 	state.caption_hovered = -1
 	state.caption_pressed = -1
-	state.high_contrast = win32_menu_high_contrast_enabled()
+	state.high_contrast = false
 	state.frame_enabled = menu.application.window_decorations == .Integrated_Title_Bar
 	menu.platform_data = rawptr(state)
 	state.commands = make([dynamic]Application_Command_ID, 1, allocator=state.allocator)
@@ -1142,6 +1126,19 @@ native_menu_prepare :: proc(menu: ^Native_Menu_Runtime) -> bool {
 		if !win32_menu_reapply_frame(state) { return false }
 	}
 	return true
+}
+
+native_menu_accessibility_appearance_changed :: proc(
+	menu: ^Native_Menu_Runtime,
+	increased_contrast: bool,
+	request_redraw := true,
+) {
+	if menu == nil || menu.platform_data == nil { return }
+	state := cast(^Win32_Menu_State)menu.platform_data
+	if state.high_contrast == increased_contrast { return }
+	state.high_contrast = increased_contrast
+	win32_menu_layout_labels(state)
+	if request_redraw { native_menu_request_chrome_redraw(menu) }
 }
 
 native_menu_destroy :: proc(menu: ^Native_Menu_Runtime) {

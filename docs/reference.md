@@ -145,6 +145,13 @@ otherwise it inherits. Density must be in `[0.5, 3]`; text scale must be
 positive and below 100; theme colors use normalized RGBA channels with nonzero
 alpha. Accent overrides are opaque and quantized to 8-bit RGB.
 
+The native SDL host imports supported Windows/macOS accessibility-appearance
+preferences into a persistent runtime base. Applications that host their own
+preference source can update it between frames with
+`style_root_accessibility_set(&runtime, preferences)`. The setter returns
+`false` when the value is unchanged or a frame is open. A pushed scope with
+`accessibility_set=true` explicitly overrides that base for the scoped subtree.
+
 Text scale invalidates typography and metrics. Density invalidates metrics.
 Theme and accent invalidate Paint. Increased contrast invalidates Paint and
 Material; reduced transparency invalidates Paint and Material; non-color

@@ -25,6 +25,21 @@ style_environment_changed_domains :: proc(previous, next: Style_Environment) -> 
 	return changed
 }
 
+// style_root_accessibility_set updates the persistent host appearance base.
+// Application style_environment_push scopes inherit it and may explicitly
+// override the full preference bundle. Call only between description frames.
+// The return value is true only when the normalized base changed.
+style_root_accessibility_set :: proc(
+	rt: ^Runtime,
+	preferences: Accessibility_Appearance_Preferences,
+) -> bool {
+	if rt == nil || rt.frame_open { return false }
+	if rt.root_accessibility_appearance == preferences { return false }
+	rt.root_accessibility_appearance = preferences
+	invalidate_root(rt, "root accessibility appearance changed")
+	return true
+}
+
 style_generation_value :: proc(generations: Style_Generations, domain: Style_Domain) -> u32 {
 	switch domain {
 	case .Metrics: return generations.metrics

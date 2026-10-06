@@ -1353,6 +1353,7 @@ Runtime :: struct {
 	identity_key_pair: [dynamic]UI_Key_Pair,
 	viewport:    Rect,
 	style_environment: Style_Environment,
+	root_accessibility_appearance: Accessibility_Appearance_Preferences,
 	style_themes: [dynamic]Style_Theme,
 	style_materials: [dynamic]Style_Material,
 	style_scope_stack: [dynamic]Style_Environment_Scope,
