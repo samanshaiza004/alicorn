@@ -32,9 +32,12 @@ describing a frame.
   computed-style signature, and semantic-surface description changes are
   hashed into its signature and advance their respective domains.
 - Theme and accent changes are Paint-only today because built-in recipes consume
-  color roles only. No theme length token currently drives layout metrics,
-  typography, or material selection. Text scale still advances Metrics and
-  Typography for its scoped subtree, while color-only recipe caches remain
+  color roles only. Built-in widgets do not implicitly consume theme lengths
+  as geometry, but applications can pass an explicitly resolved logical length
+  through `style_metric`; the #28 fixture and Scratchpad's editor-padding
+  dimension exercise that Metrics → Layout seam. Theme lengths do not implicitly
+  change typography or material selection. Text scale still advances Metrics
+  and Typography for its scoped subtree, while color-only recipe caches remain
   valid. Optional authored token names, immediate alias edges, and qualified
   extension-role names are copied into registered themes for inspector output;
   source spans and parser structures remain compiler-only. These names are
