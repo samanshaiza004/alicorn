@@ -82,6 +82,7 @@ build_app :: proc(
 	alicorn.text(&ui, "Checkboxes", style=alicorn.layout_style(height=28), text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_SEMIBOLD})
 	alicorn.text(&ui, "Name", style=alicorn.layout_style(height=22))
 	alicorn.text_field(&ui, app.name, key=alicorn.key_string("name"), style=alicorn.layout_style(height=36))
+	_ = alicorn.semantic_description(&ui, .Text_Field, "Name")
 	alicorn.text(&ui, fmt.tprintf("Hello, %s", app.name), style=alicorn.layout_style(height=24))
 	alicorn.text(&ui, "Click or focus a checkbox and press Space to toggle it. Enter is reserved for buttons.")
 	alicorn.container_begin(&ui, .Container, label="gallery-actions", style=alicorn.layout_style(.Row, gap=8))
