@@ -3,6 +3,8 @@ package alicorn
 // Theme-local token IDs are valid only while both their theme and the
 // dependency generations that produced the resolved value still match.
 BUTTON_STYLE_DEPENDENCIES :: Style_Domains{.Paint}
+CHECKBOX_STYLE_DEPENDENCIES :: Style_Domains{.Paint}
+SLIDER_STYLE_DEPENDENCIES :: Style_Domains{.Paint}
 TEXT_FIELD_STYLE_DEPENDENCIES :: Style_Domains{.Paint}
 SCROLLBAR_STYLE_DEPENDENCIES :: Style_Domains{.Paint}
 SEMANTIC_SURFACE_STYLE_DEPENDENCIES :: Style_Domains{.Paint, .Material}
@@ -29,6 +31,25 @@ style_text_field_state_bits :: proc(state: Text_Field_Visual_State) -> u8 {
 	bits := u8(0)
 	if state.hovered { bits |= 1 << 0 }
 	if state.focused { bits |= 1 << 1 }
+	return bits
+}
+
+style_checkbox_state_bits :: proc(state: Checkbox_Visual_State) -> u8 {
+	bits := u8(0)
+	if state.checked { bits |= 1 << 0 }
+	if state.hovered { bits |= 1 << 1 }
+	if state.pressed { bits |= 1 << 2 }
+	if state.disabled { bits |= 1 << 3 }
+	if state.focused { bits |= 1 << 4 }
+	return bits
+}
+
+style_slider_state_bits :: proc(state: Slider_Visual_State) -> u8 {
+	bits := u8(0)
+	if state.hovered { bits |= 1 << 0 }
+	if state.pressed { bits |= 1 << 1 }
+	if state.disabled { bits |= 1 << 2 }
+	if state.focused { bits |= 1 << 3 }
 	return bits
 }
 
@@ -59,6 +80,22 @@ style_text_field_provenance :: proc(environment: Style_Environment, state: Text_
 		theme=environment.theme,
 		accent=environment.accent,
 		state_bits=style_text_field_state_bits(state),
+	}
+}
+
+style_checkbox_provenance :: proc(environment: Style_Environment, state: Checkbox_Visual_State) -> Style_Provenance {
+	return Style_Provenance{
+		theme=environment.theme,
+		accent=environment.accent,
+		state_bits=style_checkbox_state_bits(state),
+	}
+}
+
+style_slider_provenance :: proc(environment: Style_Environment, state: Slider_Visual_State) -> Style_Provenance {
+	return Style_Provenance{
+		theme=environment.theme,
+		accent=environment.accent,
+		state_bits=style_slider_state_bits(state),
 	}
 }
 
@@ -120,8 +157,8 @@ style_computed_cache_record_resolution :: proc(rt: ^Runtime) {
 }
 
 // Each retained node owns at most one current recipe-family result in
-// Runtime side storage. Button, Text Field, Scrollbar, and Semantic Surface
-// cache values share the same domain/provenance checks without growing Node.
+// Runtime side storage. Stateful controls and semantic surfaces share the
+// same domain/provenance checks without growing Node.
 style_button_resolve_retained :: proc(
 	rt: ^Runtime,
 	node: ^Node,
@@ -143,6 +180,58 @@ style_button_resolve_retained :: proc(
 		family=.Button,
 		payload=resolved,
 		dependencies=BUTTON_STYLE_DEPENDENCIES,
+		provenance=provenance,
+	})
+	return resolved
+}
+
+style_checkbox_resolve_retained :: proc(
+	rt: ^Runtime,
+	node: ^Node,
+	state: Checkbox_Visual_State,
+) -> Checkbox_Resolved_Style {
+	if rt == nil || node == nil {
+		return style_checkbox_resolve(rt, DEFAULT_STYLE_ENVIRONMENT, DEFAULT_CHECKBOX_RECIPE, state)
+	}
+	provenance := style_checkbox_provenance(node.style_environment, state)
+	if style_computed_cache_matches(rt, node, .Checkbox, provenance, CHECKBOX_STYLE_DEPENDENCIES) {
+		style_computed_cache_record_hit(rt)
+		computed := rt.computed_styles[node.id]
+		return computed.payload.(Checkbox_Resolved_Style)
+	}
+	style_computed_cache_record_resolution(rt)
+	recipe := style_checkbox_recipe(rt, node.style_environment)
+	resolved := style_checkbox_resolve(rt, node.style_environment, recipe, state)
+	style_computed_cache_store(rt, node, Computed_Style{
+		family=.Checkbox,
+		payload=resolved,
+		dependencies=CHECKBOX_STYLE_DEPENDENCIES,
+		provenance=provenance,
+	})
+	return resolved
+}
+
+style_slider_resolve_retained :: proc(
+	rt: ^Runtime,
+	node: ^Node,
+	state: Slider_Visual_State,
+) -> Slider_Resolved_Style {
+	if rt == nil || node == nil {
+		return style_slider_resolve(rt, DEFAULT_STYLE_ENVIRONMENT, DEFAULT_SLIDER_RECIPE, state)
+	}
+	provenance := style_slider_provenance(node.style_environment, state)
+	if style_computed_cache_matches(rt, node, .Slider, provenance, SLIDER_STYLE_DEPENDENCIES) {
+		style_computed_cache_record_hit(rt)
+		computed := rt.computed_styles[node.id]
+		return computed.payload.(Slider_Resolved_Style)
+	}
+	style_computed_cache_record_resolution(rt)
+	recipe := style_slider_recipe(rt, node.style_environment)
+	resolved := style_slider_resolve(rt, node.style_environment, recipe, state)
+	style_computed_cache_store(rt, node, Computed_Style{
+		family=.Slider,
+		payload=resolved,
+		dependencies=SLIDER_STYLE_DEPENDENCIES,
 		provenance=provenance,
 	})
 	return resolved

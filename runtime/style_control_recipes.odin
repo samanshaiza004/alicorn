@@ -12,6 +12,94 @@ Control_Part_Transform :: struct {
 	border_mix: f32,
 }
 
+// Control_Part_Recipe resolves one semantic part independently. Each part
+// receives the same selected → hovered → pressed → disabled state order, so
+// controls compose transforms without a per-state color matrix.
+Control_Part_Recipe :: struct {
+	surface_role: Style_Color_Role,
+	text_role: Style_Color_Role,
+	border_role: Style_Color_Role,
+	selected: Control_Part_Transform,
+	hovered: Control_Part_Transform,
+	pressed: Control_Part_Transform,
+	disabled: Control_Part_Transform,
+}
+
+Control_Visual_State :: struct {
+	selected: bool,
+	hovered: bool,
+	pressed: bool,
+	disabled: bool,
+}
+
+Control_Part_Resolved_Style :: struct {
+	surface: Color,
+	text: Color,
+	border: Color,
+}
+
+Checkbox_Recipe :: struct {
+	defined: bool,
+	box: Control_Part_Recipe,
+	checkmark: Control_Part_Recipe,
+	label: Control_Part_Recipe,
+	focus_role: Style_Color_Role,
+	focus_indicator_mode: Focus_Indicator_Mode,
+}
+
+Checkbox_Visual_State :: struct {
+	checked: bool,
+	hovered: bool,
+	pressed: bool,
+	disabled: bool,
+	focused: bool,
+}
+
+Checkbox_Resolved_Style :: struct {
+	box: Control_Part_Resolved_Style,
+	checkmark: Control_Part_Resolved_Style,
+	label: Control_Part_Resolved_Style,
+	focus: Color,
+	checked: bool,
+	hovered: bool,
+	pressed: bool,
+	disabled: bool,
+	focused: bool,
+	focus_indicator_mode: Focus_Indicator_Mode,
+	applied_transforms: Style_Control_States,
+}
+
+Slider_Recipe :: struct {
+	defined: bool,
+	track: Control_Part_Recipe,
+	fill: Control_Part_Recipe,
+	thumb: Control_Part_Recipe,
+	label: Control_Part_Recipe,
+	focus_role: Style_Color_Role,
+	focus_indicator_mode: Focus_Indicator_Mode,
+}
+
+Slider_Visual_State :: struct {
+	hovered: bool,
+	pressed: bool,
+	disabled: bool,
+	focused: bool,
+}
+
+Slider_Resolved_Style :: struct {
+	track: Control_Part_Resolved_Style,
+	fill: Control_Part_Resolved_Style,
+	thumb: Control_Part_Resolved_Style,
+	label: Control_Part_Resolved_Style,
+	focus: Color,
+	hovered: bool,
+	pressed: bool,
+	disabled: bool,
+	focused: bool,
+	focus_indicator_mode: Focus_Indicator_Mode,
+	applied_transforms: Style_Control_States,
+}
+
 Text_Field_Recipe :: struct {
 	defined: bool,
 	surface_role: Style_Color_Role,
@@ -94,6 +182,108 @@ DEFAULT_SCROLLBAR_RECIPE :: Scrollbar_Recipe{
 	pressed_thumb=Style_Color_Transform{role=.Accent, mix=0.22},
 }
 
+DEFAULT_CHECKBOX_RECIPE :: Checkbox_Recipe{
+	defined=true,
+	box=Control_Part_Recipe{
+		surface_role=.Surface,
+		text_role=.Text,
+		border_role=.Accent,
+		selected=Control_Part_Transform{
+			surface_role=.Accent, surface_mix=0.82,
+			border_role=.Accent_Hover, border_mix=0.42,
+		},
+		hovered=Control_Part_Transform{
+			surface_role=.Subtle_Surface, surface_mix=0.16,
+			border_role=.Accent_Hover, border_mix=0.28,
+		},
+		pressed=Control_Part_Transform{
+			surface_role=.Accent_Pressed, surface_mix=0.24,
+			border_role=.Accent_Pressed, border_mix=0.45,
+		},
+		disabled=Control_Part_Transform{
+			surface_role=.Window_Background, surface_mix=0.58,
+			border_role=.Muted_Text, border_mix=0.52,
+		},
+	},
+	checkmark=Control_Part_Recipe{
+		surface_role=.Accent_Text,
+		text_role=.Text,
+		border_role=.Accent_Text,
+		selected=Control_Part_Transform{text_role=.Accent_Text, text_mix=1},
+		disabled=Control_Part_Transform{text_role=.Muted_Text, text_mix=0.40},
+	},
+	label=Control_Part_Recipe{
+		surface_role=.Surface,
+		text_role=.Text,
+		border_role=.Border,
+		disabled=Control_Part_Transform{text_role=.Muted_Text, text_mix=1},
+	},
+	focus_role=.Focus,
+	focus_indicator_mode=.Always,
+}
+
+DEFAULT_SLIDER_RECIPE :: Slider_Recipe{
+	defined=true,
+	track=Control_Part_Recipe{
+		surface_role=.Border,
+		text_role=.Muted_Text,
+		border_role=.Border,
+		disabled=Control_Part_Transform{surface_role=.Window_Background, surface_mix=0.45},
+	},
+	fill=Control_Part_Recipe{
+		surface_role=.Accent,
+		text_role=.Accent_Text,
+		border_role=.Accent,
+		hovered=Control_Part_Transform{surface_role=.Accent_Hover, surface_mix=0.18},
+		pressed=Control_Part_Transform{surface_role=.Accent_Pressed, surface_mix=0.38},
+		disabled=Control_Part_Transform{surface_role=.Muted_Text, surface_mix=0.54},
+	},
+	thumb=Control_Part_Recipe{
+		surface_role=.Text,
+		text_role=.Text,
+		border_role=.Border,
+		hovered=Control_Part_Transform{surface_role=.Accent_Hover, surface_mix=0.20},
+		pressed=Control_Part_Transform{
+			surface_role=.Accent_Pressed, surface_mix=0.40,
+			border_role=.Accent_Pressed, border_mix=0.50,
+		},
+		disabled=Control_Part_Transform{
+			surface_role=.Muted_Text, surface_mix=0.48,
+			border_role=.Muted_Text, border_mix=0.68,
+		},
+	},
+	label=Control_Part_Recipe{
+		surface_role=.Surface,
+		text_role=.Text,
+		border_role=.Border,
+		disabled=Control_Part_Transform{text_role=.Muted_Text, text_mix=1},
+	},
+	focus_role=.Focus,
+	focus_indicator_mode=.Always,
+}
+
+style_checkbox_recipe :: proc(rt: ^Runtime, environment: Style_Environment) -> Checkbox_Recipe {
+	if rt != nil {
+		index := u64(u32(environment.theme))
+		if index > 0 && index <= u64(len(rt.style_themes)) {
+			recipe := rt.style_themes[index-1].checkbox_recipe
+			if recipe.defined && style_checkbox_recipe_is_valid(recipe) { return recipe }
+		}
+	}
+	return DEFAULT_CHECKBOX_RECIPE
+}
+
+style_slider_recipe :: proc(rt: ^Runtime, environment: Style_Environment) -> Slider_Recipe {
+	if rt != nil {
+		index := u64(u32(environment.theme))
+		if index > 0 && index <= u64(len(rt.style_themes)) {
+			recipe := rt.style_themes[index-1].slider_recipe
+			if recipe.defined && style_slider_recipe_is_valid(recipe) { return recipe }
+		}
+	}
+	return DEFAULT_SLIDER_RECIPE
+}
+
 style_text_field_recipe :: proc(rt: ^Runtime, environment: Style_Environment) -> Text_Field_Recipe {
 	if rt != nil {
 		index := u64(u32(environment.theme))
@@ -114,6 +304,35 @@ style_scrollbar_recipe :: proc(rt: ^Runtime, environment: Style_Environment) -> 
 		}
 	}
 	return DEFAULT_SCROLLBAR_RECIPE
+}
+
+style_control_part_recipe_is_valid :: proc(recipe: Control_Part_Recipe) -> bool {
+	return style_color_role_is_valid(recipe.surface_role) &&
+	       style_color_role_is_valid(recipe.text_role) &&
+	       style_color_role_is_valid(recipe.border_role) &&
+	       control_part_transform_is_valid(recipe.selected) &&
+	       control_part_transform_is_valid(recipe.hovered) &&
+	       control_part_transform_is_valid(recipe.pressed) &&
+	       control_part_transform_is_valid(recipe.disabled)
+}
+
+style_checkbox_recipe_is_valid :: proc(recipe: Checkbox_Recipe) -> bool {
+	if !recipe.defined { return true }
+	return style_control_part_recipe_is_valid(recipe.box) &&
+	       style_control_part_recipe_is_valid(recipe.checkmark) &&
+	       style_control_part_recipe_is_valid(recipe.label) &&
+	       style_color_role_is_valid(recipe.focus_role) &&
+	       (recipe.focus_indicator_mode == .Always || recipe.focus_indicator_mode == .Keyboard_Only)
+}
+
+style_slider_recipe_is_valid :: proc(recipe: Slider_Recipe) -> bool {
+	if !recipe.defined { return true }
+	return style_control_part_recipe_is_valid(recipe.track) &&
+	       style_control_part_recipe_is_valid(recipe.fill) &&
+	       style_control_part_recipe_is_valid(recipe.thumb) &&
+	       style_control_part_recipe_is_valid(recipe.label) &&
+	       style_color_role_is_valid(recipe.focus_role) &&
+	       (recipe.focus_indicator_mode == .Always || recipe.focus_indicator_mode == .Keyboard_Only)
 }
 
 control_part_transform_is_valid :: proc(transform: Control_Part_Transform) -> bool {
@@ -153,22 +372,101 @@ style_color_transform_is_valid :: proc(transform: Style_Color_Transform) -> bool
 
 control_part_transform_apply :: proc(
 	transform: Control_Part_Transform,
-	style: ^Text_Field_Resolved_Style,
+	surface, text, border: ^Color,
 	rt: ^Runtime,
 	environment: Style_Environment,
 ) {
+	if surface == nil || text == nil || border == nil { return }
 	if transform.surface_mix > 0 {
 		target := style_environment_color(rt, environment, transform.surface_role)
-		style.surface = style_color_mix(style.surface, target, transform.surface_mix)
+		surface^ = style_color_mix(surface^, target, transform.surface_mix)
 	}
 	if transform.text_mix > 0 {
 		target := style_environment_color(rt, environment, transform.text_role)
-		style.text = style_color_mix(style.text, target, transform.text_mix)
+		text^ = style_color_mix(text^, target, transform.text_mix)
 	}
 	if transform.border_mix > 0 {
 		target := style_environment_color(rt, environment, transform.border_role)
-		style.border = style_color_mix(style.border, target, transform.border_mix)
+		border^ = style_color_mix(border^, target, transform.border_mix)
 	}
+}
+
+style_control_part_resolve :: proc(
+	rt: ^Runtime,
+	environment: Style_Environment,
+	recipe: Control_Part_Recipe,
+	state: Control_Visual_State,
+) -> Control_Part_Resolved_Style {
+	style := Control_Part_Resolved_Style{
+		surface=style_environment_color(rt, environment, recipe.surface_role),
+		text=style_environment_color(rt, environment, recipe.text_role),
+		border=style_environment_color(rt, environment, recipe.border_role),
+	}
+	if state.selected { control_part_transform_apply(recipe.selected, &style.surface, &style.text, &style.border, rt, environment) }
+	if state.hovered { control_part_transform_apply(recipe.hovered, &style.surface, &style.text, &style.border, rt, environment) }
+	if state.pressed { control_part_transform_apply(recipe.pressed, &style.surface, &style.text, &style.border, rt, environment) }
+	if state.disabled { control_part_transform_apply(recipe.disabled, &style.surface, &style.text, &style.border, rt, environment) }
+	return style
+}
+
+style_checkbox_resolve :: proc(
+	rt: ^Runtime,
+	environment: Style_Environment,
+	recipe: Checkbox_Recipe,
+	state: Checkbox_Visual_State,
+) -> Checkbox_Resolved_Style {
+	resolved_recipe := recipe
+	if !resolved_recipe.defined || !style_checkbox_recipe_is_valid(resolved_recipe) { resolved_recipe = DEFAULT_CHECKBOX_RECIPE }
+	part_state := Control_Visual_State{
+		selected=state.checked,
+		hovered=state.hovered,
+		pressed=state.pressed,
+		disabled=state.disabled,
+	}
+	style := Checkbox_Resolved_Style{
+		box=style_control_part_resolve(rt, environment, resolved_recipe.box, part_state),
+		checkmark=style_control_part_resolve(rt, environment, resolved_recipe.checkmark, part_state),
+		label=style_control_part_resolve(rt, environment, resolved_recipe.label, part_state),
+		focus=style_environment_color(rt, environment, resolved_recipe.focus_role),
+		checked=state.checked,
+		hovered=state.hovered,
+		pressed=state.pressed,
+		disabled=state.disabled,
+		focused=state.focused,
+		focus_indicator_mode=resolved_recipe.focus_indicator_mode,
+	}
+	if state.checked { style.applied_transforms += {.Selected} }
+	if state.hovered { style.applied_transforms += {.Hovered} }
+	if state.pressed { style.applied_transforms += {.Pressed} }
+	if state.disabled { style.applied_transforms += {.Disabled} }
+	return style
+}
+
+style_slider_resolve :: proc(
+	rt: ^Runtime,
+	environment: Style_Environment,
+	recipe: Slider_Recipe,
+	state: Slider_Visual_State,
+) -> Slider_Resolved_Style {
+	resolved_recipe := recipe
+	if !resolved_recipe.defined || !style_slider_recipe_is_valid(resolved_recipe) { resolved_recipe = DEFAULT_SLIDER_RECIPE }
+	part_state := Control_Visual_State{hovered=state.hovered, pressed=state.pressed, disabled=state.disabled}
+	style := Slider_Resolved_Style{
+		track=style_control_part_resolve(rt, environment, resolved_recipe.track, part_state),
+		fill=style_control_part_resolve(rt, environment, resolved_recipe.fill, part_state),
+		thumb=style_control_part_resolve(rt, environment, resolved_recipe.thumb, part_state),
+		label=style_control_part_resolve(rt, environment, resolved_recipe.label, part_state),
+		focus=style_environment_color(rt, environment, resolved_recipe.focus_role),
+		hovered=state.hovered,
+		pressed=state.pressed,
+		disabled=state.disabled,
+		focused=state.focused,
+		focus_indicator_mode=resolved_recipe.focus_indicator_mode,
+	}
+	if state.hovered { style.applied_transforms += {.Hovered} }
+	if state.pressed { style.applied_transforms += {.Pressed} }
+	if state.disabled { style.applied_transforms += {.Disabled} }
+	return style
 }
 
 style_text_field_resolve :: proc(
@@ -191,7 +489,7 @@ style_text_field_resolve :: proc(
 		hovered=state.hovered,
 		focused=state.focused,
 	}
-	if state.hovered { control_part_transform_apply(resolved_recipe.hovered, &style, rt, environment) }
+	if state.hovered { control_part_transform_apply(resolved_recipe.hovered, &style.surface, &style.text, &style.border, rt, environment) }
 	if state.focused {
 		style.border = style_environment_color(rt, environment, resolved_recipe.focused_border_role)
 	}
