@@ -81,6 +81,7 @@ Visual_Part_Visibility :: enum {
 	Always,
 	Owner_Hovered,
 	Owner_Selected_Or_Hovered,
+	Owner_Not_Hovered,
 }
 
 // Visual_Part_Style lives in Runtime side storage rather than Node or
@@ -91,6 +92,7 @@ Visual_Part_Style :: struct {
 	owner: Node_ID,
 	identity: Visual_Part_ID,
 	visibility: Visual_Part_Visibility,
+	reveal_on_direct_hover: bool,
 }
 
 visual_part_core :: proc(role: Visual_Part_Core_ID) -> Visual_Part_ID { return role }
@@ -124,6 +126,7 @@ visual_part_style_hash :: proc(style: Visual_Part_Style) -> u64 {
 	h := hash_mix(1469598103934665603, u64(style.owner))
 	h = hash_mix(h, visual_part_identity_hash(style.identity))
 	h = hash_mix(h, u64(style.visibility))
+	h = hash_mix(h, 1 if style.reveal_on_direct_hover else 0)
 	return h
 }
 

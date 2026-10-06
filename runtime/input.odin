@@ -128,7 +128,7 @@ cancel_pointer_capture :: proc(rt: ^Runtime) -> bool {
 	return true
 }
 
-hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
+hit_test :: proc(rt: ^Runtime, x, y: f32, include_reveal_targets := false) -> Node_ID {
 	modal_root := modal_overlay_root(rt)
 	// A solid scrollbar owns its reserved strip, including the portion that
 	// overlaps a split divider's deliberately enlarged grab target.
@@ -145,7 +145,8 @@ hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 	}
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
 		id := rt.order[i]
-		if node, ok := rt.nodes[id]; ok && node.active && !node.disabled && visual_part_is_visible(rt, id) &&
+		if node, ok := rt.nodes[id]; ok && node.active && !node.disabled &&
+			visual_part_hit_test_visible(rt, id, include_reveal_target=include_reveal_targets) &&
 			node_is_in_modal_overlay(rt, id, modal_root) && rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
 			if node.kind == .Button || node.kind == .Checkbox || node.kind == .Slider || node.kind == .Text_Field ||
 			   (node.kind == .Custom_Surface && node.surface_interaction == .Pointer) ||
@@ -431,7 +432,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 		tooltip_dismiss(rt)
 		return rt.scrollbar_drag_node if rt.scrollbar_drag_node != 0 else rt.captured_node
 	}
-	target := hit_test(rt, event.x, event.y)
+	target := hit_test(rt, event.x, event.y, include_reveal_targets=event.kind == .Move)
 	if event.kind == .Move { tooltip_pointer_update(rt, target, event.timestamp_ns) }
 	if menu_active && rt.context_menu.open && event.kind == .Down && target == rt.context_menu.overlay {
 		inside_panel := false

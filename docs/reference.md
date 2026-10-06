@@ -249,7 +249,12 @@ close affordance is internal to the tab surface, retains a 24×24 logical hit
 target, and its hover visibility does not change tab layout or width. Inactive
 tabs show a distinct rounded close-action surface on hover; dirty state uses
 the same reserved trailing slot, so switching between its marker and close
-action does not shift the title. Selection remains visible independently of
+action does not shift the title. For dirty tabs, the marker remains visible
+while hovering the tab body; it is replaced by the close glyph only when the
+pointer enters the close action itself (or while that action is pressed).
+Moving into a hidden close slot reveals it, but clicking the invisible slot
+without first hovering does not activate Close. `Always` explicitly shows the
+close glyph even for dirty tabs. Selection remains visible independently of
 the keyboard-focus ring; pointer focus does not add a second focus outline.
 
 The close policies are `Always`, `Hover`, `Selected_Or_Hover`, and `Auto`.

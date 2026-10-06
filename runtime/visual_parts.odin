@@ -10,6 +10,7 @@ visual_part_attach :: proc(
 	node, owner: Node_ID,
 	identity: Visual_Part_ID,
 	visibility := Visual_Part_Visibility.Always,
+	reveal_on_direct_hover := false,
 ) -> bool {
 	if ui == nil || ui.runtime == nil || !ui.runtime.frame_open || node == 0 || owner == 0 ||
 		!visual_part_identity_is_valid(identity) {
@@ -35,7 +36,7 @@ visual_part_attach :: proc(
 			owner_found = true
 		}
 	}
-	if int(visibility) < 0 || visibility > .Owner_Selected_Or_Hovered {
+	if int(visibility) < 0 || visibility > .Owner_Not_Hovered {
 		append_diagnostic(rt, "visual-part visibility must be a declared owner-state policy")
 		return false
 	}
@@ -56,6 +57,7 @@ visual_part_attach :: proc(
 		owner=owner,
 		identity=identity,
 		visibility=visibility,
+		reveal_on_direct_hover=reveal_on_direct_hover,
 	}
 	return true
 }
@@ -128,8 +130,29 @@ visual_part_is_visible :: proc(rt: ^Runtime, node_id: Node_ID) -> bool {
 		return hovered
 	case .Owner_Selected_Or_Hovered:
 		return owner.selected || hovered
+	case .Owner_Not_Hovered:
+		return !hovered
 	}
 	return false
+}
+
+visual_part_self_hovered :: proc(rt: ^Runtime, node_id: Node_ID) -> bool {
+	if rt == nil || node_id == 0 { return false }
+	if node, found := rt.nodes[node_id]; found && (node.hovered || node.pressed) { return true }
+	return rt.last_hovered == node_id
+}
+
+// visual_part_hit_test_visible lets an action reserve a visual slot while
+// requiring pointer motion to reveal its hit target. Paint remains governed
+// by visual_part_is_visible; only hit testing uses this additional policy.
+visual_part_hit_test_visible :: proc(rt: ^Runtime, node_id: Node_ID, include_reveal_target := false) -> bool {
+	if !visual_part_is_visible(rt, node_id) { return false }
+	if rt == nil { return true }
+	part, tagged := rt.visual_parts[node_id]
+	if !tagged || !part.defined || !part.reveal_on_direct_hover || visual_part_self_hovered(rt, node_id) {
+		return true
+	}
+	return include_reveal_target
 }
 
 visual_part_owner_has_role :: proc(rt: ^Runtime, owner_id: Node_ID, role: Visual_Part_Core_ID) -> bool {
@@ -251,6 +274,7 @@ visual_part_visibility_name :: proc(visibility: Visual_Part_Visibility) -> strin
 	case .Always: return "always"
 	case .Owner_Hovered: return "owner-hovered"
 	case .Owner_Selected_Or_Hovered: return "owner-selected-or-hovered"
+	case .Owner_Not_Hovered: return "owner-not-hovered"
 	}
 	return "invalid"
 }

@@ -264,7 +264,12 @@ tab_bar :: proc(
 		_ = visual_part_attach(ui, label_id, tab_id, visual_part_core(.Label))
 
 		trailing_width := f32(0)
-		if item.closable { trailing_width = TAB_CLOSE_SLOT_WIDTH }
+		close_width := TAB_CLOSE_CONTROL_SIZE
+		dirty_close_reveal := item.dirty && item.closable && opts.close_policy != .Always
+		if item.closable {
+			if dirty_close_reveal { close_width = TAB_CLOSE_SLOT_WIDTH }
+			trailing_width = close_width
+		}
 		else if item.dirty { trailing_width = 16 }
 		if trailing_width > 0 {
 			trailing := container_begin_simple(
@@ -275,7 +280,7 @@ tab_bar :: proc(
 				style=layout_style(.Row, width=trailing_width, height=maxf(opts.height-2, 0), gap=0, align=.Center),
 			)
 			_ = visual_part_attach(ui, trailing, tab_id, visual_part_core(.Content))
-			if item.dirty {
+			if item.dirty && !item.closable {
 				marker_id := surface_begin(
 					ui,
 					surface_core_color_role(.Accent),
@@ -288,24 +293,51 @@ tab_bar :: proc(
 			}
 			if item.closable {
 				close_visibility := Visual_Part_Visibility.Always
-				switch opts.close_policy {
-				case .Always: close_visibility = .Always
-				case .Hover: close_visibility = .Owner_Hovered
-				case .Selected_Or_Hover: close_visibility = .Owner_Selected_Or_Hovered
-				case .Auto:
-					if tab_width < TAB_AUTO_CLOSE_ALWAYS_WIDTH { close_visibility = .Owner_Hovered }
+				if !dirty_close_reveal {
+					switch opts.close_policy {
+					case .Always: close_visibility = .Always
+					case .Hover: close_visibility = .Owner_Hovered
+					case .Selected_Or_Hover: close_visibility = .Owner_Selected_Or_Hovered
+					case .Auto:
+						if tab_width < TAB_AUTO_CLOSE_ALWAYS_WIDTH { close_visibility = .Owner_Hovered }
+				}
 				}
 				close_id, close_activated := button_begin(
 					ui,
-					"×",
+					"×" if !dirty_close_reveal else "",
 					key=key_u64(5),
-					style=layout_style(.Row, width=TAB_CLOSE_CONTROL_SIZE, height=TAB_CLOSE_CONTROL_SIZE, align=.Center),
+					style=layout_style(.Row, width=close_width, height=TAB_CLOSE_CONTROL_SIZE, align=.Center),
 					text_style=DEFAULT_BUTTON_TEXT_STYLE,
 					variant=.Quiet,
 					focusable=false,
 				)
-				_ = visual_part_attach(ui, close_id, tab_id, visual_part_core(.Overlay), close_visibility)
+				_ = visual_part_attach(ui, close_id, tab_id, visual_part_core(.Overlay), close_visibility,
+					reveal_on_direct_hover=dirty_close_reveal)
 				if close_activated && result.action == .None { result = Tab_Bar_Result{.Close, index} }
+				if dirty_close_reveal {
+					close_content := container_begin_simple(
+						ui,
+						.Container,
+						label="tab-close-content",
+						key=key_u64(1),
+						style=layout_style(.Row, width=close_width, height=TAB_CLOSE_CONTROL_SIZE, gap=0, align=.Center),
+					)
+					_ = visual_part_attach(ui, close_content, close_id, visual_part_core(.Content))
+					marker_id := surface_begin(
+						ui,
+						surface_core_color_role(.Accent),
+						key=key_u64(2),
+						style=layout_style(.Row, width=4, height=4),
+						label="tab-dirty-indicator",
+					)
+					_ = visual_part_attach(ui, marker_id, close_id, visual_part_core(.Indicator), .Owner_Not_Hovered)
+					surface_end(ui)
+					glyph_id := text(ui, "×", key=key_u64(3),
+						style=layout_style(.Row, width=TAB_CLOSE_CONTROL_SIZE, height=TAB_CLOSE_CONTROL_SIZE, align=.Center),
+						text_style=DEFAULT_BUTTON_TEXT_STYLE)
+					_ = visual_part_attach(ui, glyph_id, close_id, visual_part_core(.Label), .Owner_Hovered)
+					container_end(ui)
+				}
 				button_end(ui)
 			}
 			container_end(ui)
