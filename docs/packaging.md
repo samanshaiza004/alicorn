@@ -47,9 +47,10 @@ bash tools/build_native_release.sh --odin "$(command -v odin)" --sdl-linkage sta
 ```
 
 The default output is under `out/native-package/`. It includes the app,
-`SDL-LICENSE.txt`, and `alicorn-package.json` with the app/build identity,
-target architecture, SDL source/version/linkage, system dependencies, and hashes
-for the executable and bundled native libraries. The result is unsigned.
+`SDL-LICENSE.txt`, the AccessKit Apache-2.0 and MIT license texts, and
+`alicorn-package.json` with the app/build identity, target architecture,
+SDL/AccessKit versions and licenses, system dependencies, and hashes for the
+executable and bundled native libraries. The result is unsigned.
 
 For shared SDL packaging, use `-SDLLinkage Shared` on Windows or
 `--sdl-linkage shared` on macOS. Shared mode copies SDL beside the Windows EXE
@@ -77,6 +78,8 @@ Rust, or another toolchain. Windows:
   -Metadata path\to\scratchpad-package.json `
   -SDLLinkage Static `
   -SDLLicense path\to\SDL-LICENSE.txt `
+  -AccessKitLicenseApache path\to\LICENSE-APACHE `
+  -AccessKitLicenseMIT path\to\LICENSE-MIT `
   -OutputDirectory out\package\windows-x86_64
 ```
 
@@ -90,6 +93,8 @@ python3 tools/package_macos.py \
   --metadata path/to/scratchpad-package.json \
   --linkage static \
   --sdl-license path/to/SDL-LICENSE.txt \
+  --accesskit-license-apache path/to/LICENSE-APACHE \
+  --accesskit-license-mit path/to/LICENSE-MIT \
   --output out/package/macos
 ```
 

@@ -139,6 +139,8 @@ native_devtools_make_sample :: proc(
 		accessibility_action_wakes=current.accessibility_action_wakes-previous.accessibility_action_wakes,
 		accessibility_reveal_wakes=current.accessibility_reveal_wakes-previous.accessibility_reveal_wakes,
 		accessibility_updates_submitted=current.accessibility_updates_submitted-previous.accessibility_updates_submitted,
+		accessibility_requests_received=current.accessibility_requests_received-previous.accessibility_requests_received,
+		accessibility_requests_dropped=current.accessibility_requests_dropped-previous.accessibility_requests_dropped,
 		semantic_focus_search_visits=current.semantic_focus_search_visits-previous.semantic_focus_search_visits,
 		semantic_active_update_visits=current.semantic_active_update_visits-previous.semantic_active_update_visits,
 	}

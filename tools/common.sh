@@ -46,3 +46,5 @@ EOF
 
 	printf '%s\n' "$resolved"
 }
+
+. "$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE:-$0}")" && pwd -P)/accesskit.sh"

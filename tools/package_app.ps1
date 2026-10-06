@@ -6,6 +6,8 @@ param(
     [string]$SDLRuntime,
     [string]$SDLVersion,
     [Parameter(Mandatory)][string]$SDLLicense,
+    [string]$AccessKitLicenseApache,
+    [string]$AccessKitLicenseMIT,
     [switch]$SmokeTest
 )
 
@@ -14,6 +16,13 @@ $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $Executable = (Resolve-Path -LiteralPath $Executable).Path
 $Metadata = (Resolve-Path -LiteralPath $Metadata).Path
 $SDLLicense = (Resolve-Path -LiteralPath $SDLLicense).Path
+if ([string]::IsNullOrWhiteSpace($AccessKitLicenseApache) -ne [string]::IsNullOrWhiteSpace($AccessKitLicenseMIT)) {
+    throw 'AccessKit distribution requires both -AccessKitLicenseApache and -AccessKitLicenseMIT.'
+}
+if (-not [string]::IsNullOrWhiteSpace($AccessKitLicenseApache)) {
+    $AccessKitLicenseApache = (Resolve-Path -LiteralPath $AccessKitLicenseApache).Path
+    $AccessKitLicenseMIT = (Resolve-Path -LiteralPath $AccessKitLicenseMIT).Path
+}
 if ($SDLLinkage -eq 'Shared') {
     if ([string]::IsNullOrWhiteSpace($SDLRuntime)) { throw 'Shared SDL packaging requires -SDLRuntime.' }
     $SDLRuntime = (Resolve-Path -LiteralPath $SDLRuntime).Path
@@ -57,6 +66,10 @@ function Copy-PackageFile([string]$Source, [string]$Destination) {
 
 Copy-PackageFile $Executable (Join-Path $PackageRoot ($App.executableName + '.exe'))
 Copy-PackageFile $SDLLicense (Join-Path $PackageRoot 'SDL-LICENSE.txt')
+if (-not [string]::IsNullOrWhiteSpace($AccessKitLicenseApache)) {
+    Copy-PackageFile $AccessKitLicenseApache (Join-Path $PackageRoot 'AccessKit-LICENSE-APACHE.txt')
+    Copy-PackageFile $AccessKitLicenseMIT (Join-Path $PackageRoot 'AccessKit-LICENSE-MIT.txt')
+}
 if ($SDLLinkage -eq 'Shared') {
     if ((Split-Path -Leaf $SDLRuntime) -ine 'SDL3.dll') { throw 'The shared SDL runtime must be named SDL3.dll.' }
     Copy-PackageFile $SDLRuntime (Join-Path $PackageRoot 'SDL3.dll')
@@ -263,6 +276,15 @@ $Manifest = [ordered]@{
         sdlSource = $(if ($SDLLinkage -eq 'Static') { 'https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-3.4.16.tar.gz' } else { $null })
         sdlSourceSha256 = $(if ($SDLLinkage -eq 'Static') { '7322236cd12090c3eb40b9728be4d49c76f66ad17d04369584d4ecad5cf77c68' } else { $null })
         license = [ordered]@{ path='SDL-LICENSE.txt'; sha256=(Get-FileHash -LiteralPath (Join-Path $PackageRoot 'SDL-LICENSE.txt') -Algorithm SHA256).Hash.ToLowerInvariant() }
+        accesskit = $(if (-not [string]::IsNullOrWhiteSpace($AccessKitLicenseApache)) {
+            [ordered]@{
+                version='0.23.1'
+                licenses=@(
+                    [ordered]@{ path='AccessKit-LICENSE-APACHE.txt'; sha256=(Get-FileHash -LiteralPath (Join-Path $PackageRoot 'AccessKit-LICENSE-APACHE.txt') -Algorithm SHA256).Hash.ToLowerInvariant() },
+                    [ordered]@{ path='AccessKit-LICENSE-MIT.txt'; sha256=(Get-FileHash -LiteralPath (Join-Path $PackageRoot 'AccessKit-LICENSE-MIT.txt') -Algorithm SHA256).Hash.ToLowerInvariant() }
+                )
+            }
+        } else { $null })
     }
     dependencies = [ordered]@{
         system = @($SystemImports | Sort-Object)

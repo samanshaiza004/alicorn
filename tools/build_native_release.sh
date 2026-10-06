@@ -42,6 +42,8 @@ PREFIX="$SDL_ROOT/prefix"
 SDL_URL='https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-3.4.16.tar.gz'
 SDL_SHA='7322236cd12090c3eb40b9728be4d49c76f66ad17d04369584d4ecad5cf77c68'
 mkdir -p "$SDL_ROOT"
+ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
+ACCESSKIT_ROOT="$REPO_ROOT/.deps/accesskit/accesskit-c-0.23.1"
 
 for tool in cmake tar shasum python3; do
 	command -v "$tool" >/dev/null 2>&1 || { echo "Required packaging tool not found: $tool" >&2; exit 127; }
@@ -86,9 +88,9 @@ fi
 BUILT="$OUT_ROOT/$APP_NAME"
 cd "$REPO_ROOT"
 if [ -n "$SDL_LINK_FLAGS" ]; then
-	"$ODIN" build "$APP_PACKAGE" "-out:$BUILT" -o:speed "-extra-linker-flags:$SDL_LINK_FLAGS"
+	"$ODIN" build "$APP_PACKAGE" "-out:$BUILT" -o:speed "-extra-linker-flags:$ACCESSKIT_LINK_FLAGS $SDL_LINK_FLAGS"
 else
-	"$ODIN" build "$APP_PACKAGE" "-out:$BUILT" -o:speed
+	"$ODIN" build "$APP_PACKAGE" "-out:$BUILT" -o:speed "-extra-linker-flags:$ACCESSKIT_LINK_FLAGS"
 fi
 
 PACKAGE_ARGS=(
@@ -98,6 +100,8 @@ PACKAGE_ARGS=(
 	--linkage "$SDL_LINKAGE"
 	--sdl-version "$SDL_VERSION"
 	--sdl-license "$SDL_LICENSE"
+	--accesskit-license-apache "$ACCESSKIT_ROOT/LICENSE-APACHE"
+	--accesskit-license-mit "$ACCESSKIT_ROOT/LICENSE-MIT"
 )
 case "$OUTPUT" in
 	/*) PACKAGE_ARGS+=(--output "$OUTPUT") ;;

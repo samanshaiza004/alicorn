@@ -208,8 +208,8 @@ nodes, publish a full `semantic_snapshot`, or expose the newest
 asks from a different base revision, it must obtain a new snapshot rather than
 apply a discontinuous delta. A caller already at the current revision gets an
 empty update; any other base must match the single retained transition or
-requires a snapshot. This API is currently an internal, backend-neutral
-runtime API and is not connected to a native adapter.
+requires a snapshot. The native Windows/macOS host projects these snapshots
+and deltas through AccessKit; the semantic runtime remains the source of truth.
 
 Virtual collections use `semantic_collection_begin` with
 `semantic_collection_item` for realized rows and `semantic_collection_virtual_item`
@@ -233,15 +233,13 @@ This is an implementation and bounded-memory proof, not evidence that an
 assistive-technology client can navigate gaps in a platform accessibility
 tree.
 
-These features are **not** a platform accessibility bridge. Alicorn does not
-currently expose its retained controls as UI Automation elements on Windows
-or an Accessibility/NSAccessibility tree on macOS. Consequently, VoiceOver,
-Narrator, and other screen readers cannot inspect or operate the ordinary
-GPU-rendered Alicorn control tree through native accessibility APIs. A
-`Semantic_ID` identifies an app entity for Alicorn; it is not an accessible
-role, label, value, or platform element. Native application menus and dialogs
-use OS facilities; that does not make Alicorn-rendered context menus or
-controls accessible to assistive technology.
+The native host currently links AccessKit 0.23.1 on Windows and macOS and
+exposes a first bridge slice for common controls, text fields, tabs, and the
+bounded semantic collection working set. AccessKit activation requests a full
+bounded snapshot; later updates are applied only from the adapter's exact
+revision, otherwise a full snapshot is sent. Native actions route through
+Alicorn's semantic action/reveal APIs on the UI thread, not synthetic pointer
+events. The bridge has no Linux platform adapter.
 
 `Style_Environment` can separately carry normalized accessibility appearance
 preferences such as increased contrast, reduced transparency, reduced motion,
@@ -250,12 +248,23 @@ they do not create, rename, or modify semantic entities. The application or
 host supplies these values; Alicorn does not yet query OS accessibility
 preferences automatically.
 
-Semantic updates are dirty-driven; they do not poll while idle. A future
-activation path may request a bounded initial projection, but activation and
-platform adapter work belong to #51 and are not implemented. For now, treat
-keyboard reachability and screen-reader accessibility as separate
-capabilities. See the [reference](reference.md#semantic-model-and-collections)
-for the API boundary and limitations.
+This is an **experimental integration, not yet a validated screen-reader
+experience**. Windows and macOS builds compile and link, but real Narrator,
+NVDA, and VoiceOver traversal/action behavior has not yet been certified. In
+particular, the million-item test proves bounded semantic storage, not that a
+screen reader can cross gaps in the bounded exported tree. Text-field actions
+are limited to the currently advertised semantic operations; text selection
+and replace-selected-text are not advertised. Alicorn-rendered context menus
+and other custom controls may also have incomplete platform semantics. Native
+menus and dialogs continue to use OS facilities.
+
+Semantic updates are dirty-driven and do not start an idle polling loop.
+Accessibility activation may cause a one-shot host wake to build a bounded
+initial projection; it does not start a timer. For now, treat keyboard
+reachability and screen-reader support as separate capabilities, and verify
+assistive-technology behavior on each target platform before relying on it.
+See the [reference](reference.md#semantic-model-and-collections) for the API
+boundary and virtualization limitations.
 
 ## When something looks wrong
 

@@ -17,7 +17,8 @@ $ErrorActionPreference = 'Stop'
 $Odin = Resolve-AlicornOdin -Requested $Odin
 
 New-Item -ItemType Directory -Force -Path 'out' | Out-Null
-& $Odin build native\sdl_gpu_entry -out:out\alicorn_sdl_gpu.exe
+$AccessKit = Get-AlicornAccessKit
+& $Odin build native\sdl_gpu_entry "-extra-linker-flags:$($AccessKit.LinkerFlags)" -out:out\alicorn_sdl_gpu.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # The Odin SDK vendor directory carries the SDL3 DLL used by this fixture.

@@ -12,7 +12,8 @@ $Executable = Join-Path $OutDir 'alicorn_native_hello.exe'
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 Push-Location $RepoRoot
 try {
-    & $Odin build examples\01_hello "-out:$Executable"
+	$AccessKit = Get-AlicornAccessKit
+	& $Odin build examples\01_hello "-extra-linker-flags:$($AccessKit.LinkerFlags)" "-out:$Executable"
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     $OdinRoot = Split-Path -Parent $Odin

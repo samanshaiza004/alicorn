@@ -12,7 +12,8 @@ $Executable = Join-Path $OutDir 'alicorn_widget_gallery.exe'
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 Push-Location $RepoRoot
 try {
-	& $Odin build examples\02_form "-out:$Executable"
+	$AccessKit = Get-AlicornAccessKit
+	& $Odin build examples\02_form "-extra-linker-flags:$($AccessKit.LinkerFlags)" "-out:$Executable"
 	if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 	$OdinRoot = Split-Path -Parent $Odin

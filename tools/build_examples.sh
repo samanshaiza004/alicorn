@@ -24,9 +24,10 @@ ODIN=$(alicorn_resolve_odin "$ODIN_ARG")
 
 cd "$REPO_ROOT"
 mkdir -p "$OUT_DIR"
+ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
 for example in examples/*; do
 	[ -f "$example/main.odin" ] || continue
 	name=${example##*/}
 	echo "Building example $name"
-	"$ODIN" build "$example" "-out:$OUT_DIR/$name"
+	"$ODIN" build "$example" "-extra-linker-flags:$ACCESSKIT_LINK_FLAGS" "-out:$OUT_DIR/$name"
 done

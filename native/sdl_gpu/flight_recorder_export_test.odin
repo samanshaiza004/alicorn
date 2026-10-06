@@ -28,6 +28,8 @@ test_native_flight_timeline_is_versioned_and_oldest_first :: proc(t: ^testing.T)
 		semantic_projection_nodes_removed = 1,
 		accessibility_action_wakes = 1,
 		accessibility_reveal_wakes = 2,
+		accessibility_requests_received = 3,
+		accessibility_requests_dropped = 1,
 		semantic_focus_search_visits = 4,
 		semantic_active_update_visits = 9,
 		build_ns = 900,
@@ -82,7 +84,9 @@ test_native_flight_timeline_is_versioned_and_oldest_first :: proc(t: ^testing.T)
 		strings.contains(json, `"semantic_projection_nodes_updated": 2`) &&
 		strings.contains(json, `"semantic_projection_nodes_removed": 1`) &&
 		strings.contains(json, `"accessibility_action_wakes": 1`) &&
-		strings.contains(json, `"accessibility_reveal_wakes": 2`),
+		strings.contains(json, `"accessibility_reveal_wakes": 2`) &&
+		strings.contains(json, `"accessibility_requests_received": 3`) &&
+		strings.contains(json, `"accessibility_requests_dropped": 1`),
 		"timeline exports semantic working-set projection and assistive-action telemetry")
 	testing.expect(t, strings.contains(json, `"semantic_focus_search_visits": 4`) &&
 		strings.contains(json, `"semantic_active_update_visits": 9`),

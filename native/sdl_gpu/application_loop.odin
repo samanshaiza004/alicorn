@@ -64,6 +64,13 @@ run_application_loop :: proc(
 	host_wake_event_id := sdl3.RegisterEvents(1)
 	if host_wake_event_id == 0 { fail("SDL_RegisterEvents failed for host redraw wakeups") }
 	host_wake_state := Native_Host_Event_Waker{event_type=sdl3.EventType(host_wake_event_id), active=true}
+	accessibility_host: Native_Accessibility_Host
+	accessibility_host_ready := false
+	when ODIN_OS == .Windows || ODIN_OS == .Darwin {
+		accessibility_host_ready = native_accessibility_host_init(&accessibility_host, &host_wake_state)
+		if !accessibility_host_ready { fmt.println("accessibility", "host queue initialization failed; native accessibility is unavailable") }
+	}
+	defer native_accessibility_host_destroy(&accessibility_host)
 	if native_menu != nil { native_menu.host_waker = &host_wake_state }
 	scheduler_state := Native_Scheduled_Wake_State{active=true}
 	application_scheduler := Application_Scheduler{
@@ -100,6 +107,18 @@ run_application_loop :: proc(
 	native_inspector_update(&inspector, rt, rt.viewport, &initial_summary)
 	devtools_cursor := native_devtools_cursor_init(rt, &timing, &text_events)
 	sync_text_input_focus(window, rt, &text_input_state, &application_instance)
+	when ODIN_OS == .Windows || ODIN_OS == .Darwin {
+		if accessibility_host_ready {
+			if native_accessibility_adapter_init(&accessibility_host, window) {
+				content_inset := f32(0)
+				if native_menu != nil { content_inset = native_menu.content_inset_top }
+				_ = native_accessibility_sync(&accessibility_host, rt, content_inset)
+			} else {
+				fmt.println("accessibility", "AccessKit native adapter initialization failed; continuing without platform semantics")
+			}
+		}
+	}
+	if !sdl3.ShowWindow(window) || !sdl3.RaiseWindow(window) { fail("SDL application window could not be shown after native host initialization") }
 	live_resize_state := Native_Live_Resize_State{
 		active=true,
 		window=window,
@@ -241,6 +260,7 @@ run_application_loop :: proc(
 			devtools_hud_redraw_pending=&devtools_hud_redraw_pending,
 			devtools_last_cause=&devtools_last_cause,
 			inspector=&inspector,
+			accessibility=&accessibility_host,
 		)
 		_ = alicorn.tooltip_advance(rt, u64(sdl3.GetTicksNS()))
 		native_drag_autoscroll_update(rt, &drag_autoscroll_deadline_ns, u64(sdl3.GetTicksNS()))
@@ -311,6 +331,18 @@ run_application_loop :: proc(
 			if ready {
 				alicorn.end_presentation_frame(&presentation_ui)
 			}
+		}
+		when ODIN_OS == .Windows || ODIN_OS == .Darwin {
+		if accessibility_host_ready {
+			content_inset := f32(0)
+			if native_menu != nil { content_inset = native_menu.content_inset_top }
+			_ = native_accessibility_sync(&accessibility_host, rt, content_inset)
+			accessibility_counters := native_accessibility_take_counters(&accessibility_host)
+			rt.stats.accessibility_activation_wakes += accessibility_counters.activation_wakes
+			rt.stats.accessibility_updates_submitted += accessibility_counters.updates_submitted
+			rt.stats.accessibility_requests_received += accessibility_counters.actions_received
+			rt.stats.accessibility_requests_dropped += accessibility_counters.actions_dropped
+		}
 		}
 
 		inspector_summary := native_inspector_host_summary(&timing, rt, event_waits+wake_events)
@@ -522,6 +554,7 @@ run_application_loop :: proc(
 
 	live_resize_state.active = false
 	sdl3.RemoveEventWatch(native_live_resize_event_watch, rawptr(&live_resize_state))
+	native_accessibility_host_shutdown(&accessibility_host)
 	if native_menu != nil { native_menu.inspector = nil }
 	if !sdl3.WaitForGPUIdle(device) { fail("SDL application GPU idle wait failed") }
 	native_dialog_bridge_shutdown(dialog_bridge)

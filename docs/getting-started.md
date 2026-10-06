@@ -20,6 +20,12 @@ Also install the native platform tools:
   `3.4.16` (`brew install sdl3`). Keep the SDL3 version at `3.4.16`; the host
   checks it when it starts.
 
+The Windows/macOS build helpers also fetch the pinned AccessKit C `0.23.1`
+static library on first use into the ignored `.deps/accesskit/` cache. They
+verify the release archive checksum and do not modify the Odin installation.
+Network access is needed only for this initial download (or when the cache is
+removed). The native AccessKit adapter is currently Windows/macOS only.
+
 Put the directory containing `odin` on `PATH`. In a new terminal, verify it:
 
 ```text

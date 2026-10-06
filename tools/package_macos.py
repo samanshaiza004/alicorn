@@ -118,6 +118,14 @@ def package(args: argparse.Namespace) -> None:
     executable = args.executable.resolve(strict=True)
     metadata_path = args.metadata.resolve(strict=True)
     license_path = args.sdl_license.resolve(strict=True)
+    if (args.accesskit_license_apache is None) != (args.accesskit_license_mit is None):
+        raise ValueError("AccessKit distribution requires both --accesskit-license-apache and --accesskit-license-mit")
+    accesskit_licenses = None
+    if args.accesskit_license_apache is not None:
+        accesskit_licenses = (
+            args.accesskit_license_apache.resolve(strict=True),
+            args.accesskit_license_mit.resolve(strict=True),
+        )
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     for field in ("name", "version", "bundleIdentifier", "executableName"):
         if not metadata.get(field):
@@ -149,9 +157,14 @@ def package(args: argparse.Namespace) -> None:
     app_executable = macos / executable_name
     shutil.copy2(executable, app_executable)
     shutil.copy2(license_path, resources / "SDL-LICENSE.txt")
+    if accesskit_licenses is not None:
+        shutil.copy2(accesskit_licenses[0], resources / "AccessKit-LICENSE-APACHE.txt")
+        shutil.copy2(accesskit_licenses[1], resources / "AccessKit-LICENSE-MIT.txt")
 
     source_dir = metadata_path.parent
     resource_names: set[str] = {"sdl-license.txt"}
+    if accesskit_licenses is not None:
+        resource_names.update({"accesskit-license-apache.txt", "accesskit-license-mit.txt"})
 
     def copy_resource(relative: str) -> None:
         source = (source_dir / relative).resolve(strict=True)
@@ -288,6 +301,23 @@ def package(args: argparse.Namespace) -> None:
                 "path": "Contents/Resources/SDL-LICENSE.txt",
                 "sha256": sha256(resources / "SDL-LICENSE.txt"),
             },
+            "accesskit": (
+                {
+                    "version": "0.23.1",
+                    "licenses": [
+                        {
+                            "path": "Contents/Resources/AccessKit-LICENSE-APACHE.txt",
+                            "sha256": sha256(resources / "AccessKit-LICENSE-APACHE.txt"),
+                        },
+                        {
+                            "path": "Contents/Resources/AccessKit-LICENSE-MIT.txt",
+                            "sha256": sha256(resources / "AccessKit-LICENSE-MIT.txt"),
+                        },
+                    ],
+                }
+                if accesskit_licenses is not None
+                else None
+            ),
         },
         "dependencies": {
             "system": sorted(system_dependencies),
@@ -321,6 +351,8 @@ def main() -> None:
     parser.add_argument("--linkage", choices=("static", "shared"), required=True)
     parser.add_argument("--sdl-version", help="SDL major.minor.patch version (required for shared linkage)")
     parser.add_argument("--sdl-license", type=pathlib.Path, required=True)
+    parser.add_argument("--accesskit-license-apache", type=pathlib.Path)
+    parser.add_argument("--accesskit-license-mit", type=pathlib.Path)
     parser.add_argument("--sdl-runtime", type=pathlib.Path)
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--smoke-test", action="store_true")

@@ -51,7 +51,11 @@ Run :: proc(application: Application, smoke := false) {
 	if height <= 0 { height = 640 }
 	title_cstring, title_err := strings.clone_to_cstring(title, context.temp_allocator)
 	if title_err != nil { fail("application title allocation failed") }
-	window := sdl3.CreateWindow(title_cstring, c.int(width), c.int(height), sdl3.WindowFlags{.RESIZABLE, .HIGH_PIXEL_DENSITY})
+	if !native_accessibility_prepare_platform() { fail("native accessibility platform preparation failed") }
+	// Windows requires AccessKit's subclassing adapter to be installed before
+	// the HWND is first shown or focused. run_application_loop builds the initial
+	// semantic snapshot and installs the adapter before showing this window.
+	window := sdl3.CreateWindow(title_cstring, c.int(width), c.int(height), sdl3.WindowFlags{.HIDDEN, .RESIZABLE, .HIGH_PIXEL_DENSITY})
 	if window == nil { fail("SDL_CreateWindow failed") }
 	defer sdl3.DestroyWindow(window)
 	menu_application := application
@@ -60,7 +64,6 @@ Run :: proc(application: Application, smoke := false) {
 	if !native_menu_prepare(&native_menu) {
 		fail("native application menu or integrated title bar setup failed")
 	}
-	if !sdl3.RaiseWindow(window) { fail("SDL_RaiseWindow failed") }
 	if input_debug {
 		fmt.println("sdl_input_debug", "window_flags", sdl3.GetWindowFlags(window))
 	}
@@ -102,9 +105,5 @@ Run :: proc(application: Application, smoke := false) {
 	solid_renderer, solid_ok := native_solid_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
 	if !solid_ok { fail("application solid rectangle pipeline initialization failed") }
 	defer native_solid_destroy(&solid_renderer)
-	// Metal/text/surface setup can briefly return focus to the launching
-	// terminal on macOS. Raise again only after the application is ready so a
-	// visible-but-inert window is not handed to the user.
-	if !sdl3.RaiseWindow(window) { fail("SDL_RaiseWindow failed after host initialization") }
 	run_application_loop(window, device, &rt, &text_renderer, &surface_renderer, &solid_renderer, &metrics, application, smoke, input_debug, string(selected_driver), validation_timeout_seconds=validation_timeout_seconds, native_menu=&native_menu)
 }

@@ -55,6 +55,7 @@ pump_events :: proc(
 	devtools_hud_redraw_pending: ^bool = nil,
 	devtools_last_cause: ^alicorn.Cause_Context = nil,
 	inspector: ^Native_Inspector_Overlay = nil,
+	accessibility: ^Native_Accessibility_Host = nil,
 ) {
 	if telemetry != nil { telemetry.events_this_pump = 0 }
 	mod_state := sdl3.GetModState()
@@ -81,6 +82,10 @@ pump_events :: proc(
 		// telemetry. Application producers use the distinct wake_event below.
 		if host_wake_event_enabled && event.type == host_wake_event {
 			if native_host_wake_events != nil { native_host_wake_events^ += 1 }
+			// AccessKit action callbacks can arrive off the window thread. They
+			// enqueue immutable requests and use this host-only wake to route them
+			// through Alicorn's semantic action path on the UI thread.
+			if accessibility != nil { native_accessibility_drain_actions(accessibility, rt) }
 			has_event = poll_sdl_event(&event)
 			continue
 		}
@@ -193,6 +198,7 @@ pump_events :: proc(
 			if close_result == .Allow { quit_requested^ = true }
 		}
 		if event.type == .WINDOW_FOCUS_LOST {
+			native_accessibility_focus_changed(accessibility, false)
 			alicorn.context_menu_close(rt)
 			alicorn.tooltip_dismiss(rt)
 			if text_input_state != nil {
@@ -221,6 +227,9 @@ pump_events :: proc(
 		}
 		if event.type == .WINDOW_FOCUS_GAINED && text_input_state != nil {
 			text_input_state.window_focused = true
+		}
+		if event.type == .WINDOW_FOCUS_GAINED {
+			native_accessibility_focus_changed(accessibility, true)
 		}
 		if application != nil && application.on_wake != nil && wake_event_enabled && event.type == wake_event {
 			if wake_events != nil { wake_events^ += 1 }

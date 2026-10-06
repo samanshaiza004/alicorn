@@ -326,10 +326,10 @@ apply a found index to their own state. This helper does not install global
 key bindings: Ctrl/Cmd shortcuts and their platform policy remain application
 commands.
 
-The retained node kinds distinguish tabs and their close actions internally,
-but Alicorn does not yet expose a native platform accessibility tree. This
-component therefore does not make tabs available to VoiceOver, Narrator, or
-other screen readers.
+The retained node kinds distinguish tabs and their close actions internally.
+The experimental AccessKit bridge projects a TabList, tabs, and close actions
+to Windows/macOS platform accessibility APIs; actual assistive-technology
+behavior remains unvalidated.
 
 ## Identity and repeated UI
 
@@ -393,9 +393,10 @@ transition (`from_revision` → `to_revision`). A consumer can apply a delta
 only when its base equals `from_revision`. A caller already at the current
 revision gets an empty update; any other base must match the single retained
 transition or requires a full snapshot. Delta ID slices are runtime-owned and
-valid only until the next semantic
-commit or runtime destruction. These APIs currently belong to the internal
-runtime package; no native accessibility adapter consumes them.
+valid only until the next semantic commit or runtime destruction. These APIs
+belong to the internal runtime package; the Windows/macOS AccessKit adapter
+consumes their snapshots and deltas without becoming the semantic source of
+truth.
 The snapshot's keyboard-focus ID is distinct from application selection and
 logical semantic focus; Alicorn does not currently define a separate
 screen-reader review-focus state.
@@ -424,21 +425,29 @@ during the application wake and release an event's transferred text value with
 operation or reveal/scroll the item and then describes the resulting state.
 
 The million-item tests exercise bounded retained semantics with visible-only,
-visible-plus-horizon, and current/selected/focused-pinned policies. This proves
-the implementation's working-set behavior, not real screen-reader navigation
-across gaps in a native accessibility tree.
+visible-plus-horizon, and current/selected/focused-pinned policies. The
+AccessKit adapter exports that bounded working set, but this proves neither
+real screen-reader navigation across gaps nor that platform clients will
+request reveal at the expected time.
 
 ### Accessibility boundary
 
-The semantic store and snapshot/delta API are backend-neutral runtime data,
-not a platform accessibility tree. They are not currently wired to UI
-Automation, NSAccessibility, AccessKit, or another native adapter. Therefore
-they do not make Alicorn's GPU-rendered controls available to VoiceOver,
-Narrator, or other screen readers. Native host menus and dialogs are OS-owned
-services, but custom Alicorn controls and context menus remain outside native
-accessibility APIs. Semantic updates are dirty-driven and do not poll while
-idle; activation and the platform adapter remain future #51 work. See the
-[guide's accessibility status](guide.md#accessibility-status).
+The semantic store and snapshot/delta API are backend-neutral runtime data;
+the native Windows/macOS adapter projects them through AccessKit 0.23.1.
+Activation produces a bounded full snapshot, while later updates require an
+exact base revision and fall back to a snapshot on mismatch. Actions route by
+stable `Semantic_ID` through semantic action/reveal requests, never fake
+pointer input. The adapter currently covers the initial common-control,
+text-field, Tab/TabList, and bounded-collection slice. Text selection actions
+and Linux platform integration are not included.
+
+The bridge has compile/link coverage, but real Narrator/NVDA/VoiceOver behavior
+and screen-reader traversal across gaps in virtualized collections are not yet
+validated. It must not be described as certified accessibility support.
+Semantic updates remain dirty-driven; activation can cause one bounded
+one-shot wake but never starts idle polling. Native host menus and dialogs are
+OS-owned services, while custom context-menu accessibility remains incomplete.
+See the [guide's accessibility status](guide.md#accessibility-status).
 
 ## Transient modal surfaces
 

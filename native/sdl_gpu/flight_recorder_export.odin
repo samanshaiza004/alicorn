@@ -95,6 +95,8 @@ native_flight_timeline_json :: proc(recorder: ^Native_Flight_Recorder) -> string
         "accessibility_action_wakes": %d,
         "accessibility_reveal_wakes": %d,
         "accessibility_updates_submitted": %d,
+        "accessibility_requests_received": %d,
+        "accessibility_requests_dropped": %d,
         "semantic_focus_search_visits": %d,
         "semantic_active_update_visits": %d,
         "persistent_allocations": %d,
@@ -122,6 +124,7 @@ native_flight_timeline_json :: proc(recorder: ^Native_Flight_Recorder) -> string
 			sample.semantic_projection_nodes_added, sample.semantic_projection_nodes_updated,
 			sample.semantic_projection_nodes_removed, sample.accessibility_activation_wakes,
 			sample.accessibility_action_wakes, sample.accessibility_reveal_wakes, sample.accessibility_updates_submitted,
+			sample.accessibility_requests_received, sample.accessibility_requests_dropped,
 			sample.semantic_focus_search_visits, sample.semantic_active_update_visits,
 			sample.persistent_allocations, sample.persistent_bytes_live, sample.scratch_requested_bytes,
 			sample.build_ns, sample.encode_ns, sample.submit_ns, sample.input_to_submit_ns, comma)

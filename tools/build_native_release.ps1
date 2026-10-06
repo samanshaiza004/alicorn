@@ -29,6 +29,7 @@ $SDLRuntime = $null
 $SDLVersion = '3.4.16'
 $SDLLicense = Join-Path (Split-Path -Parent $Odin) 'vendor\sdl3\LICENSE.txt'
 $SDLLinkFlags = ''
+$AccessKit = Get-AlicornAccessKit
 $PreviousOdinRoot = $env:ODIN_ROOT
 try {
     if ($SDLLinkage -eq 'Static') {
@@ -119,7 +120,8 @@ try {
     try {
         $BuiltExecutable = Join-Path $OutRoot ($App.executableName + '.exe')
         $BuildArgs = @('build', $AppPackage, "-out:$BuiltExecutable", '-o:speed')
-        if ($SDLLinkage -eq 'Static' -and $SDLLinkFlags) { $BuildArgs += "-extra-linker-flags:$SDLLinkFlags" }
+        $LinkerFlags = @($AccessKit.LinkerFlags, $SDLLinkFlags | Where-Object { $_ }) -join ' '
+        if ($LinkerFlags) { $BuildArgs += "-extra-linker-flags:$LinkerFlags" }
         & $Odin @BuildArgs
         if ($LASTEXITCODE -ne 0) { throw "Odin release build failed (exit $LASTEXITCODE)." }
 
@@ -130,6 +132,8 @@ try {
             SDLVersion = $SDLVersion
             OutputDirectory = (Join-Path $RepoRoot $OutputDirectory)
             SDLLicense = $SDLLicense
+            AccessKitLicenseApache = (Join-Path $AccessKit.Root 'LICENSE-APACHE')
+            AccessKitLicenseMIT = (Join-Path $AccessKit.Root 'LICENSE-MIT')
         }
         if ($SDLRuntime) { $PackageArgs['SDLRuntime'] = $SDLRuntime }
         if (-not $SkipSmokeTest) { $PackageArgs['SmokeTest'] = $true }

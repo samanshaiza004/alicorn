@@ -1282,6 +1282,8 @@ Frame_Stats :: struct {
 	accessibility_action_wakes: u64,
 	accessibility_reveal_wakes: u64,
 	accessibility_updates_submitted: u64,
+	accessibility_requests_received: u64,
+	accessibility_requests_dropped: u64,
 	semantic_focus_search_visits: u64,
 	semantic_active_update_visits: u64,
 	gpu_submits:       u64,

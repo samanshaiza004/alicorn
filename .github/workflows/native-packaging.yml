@@ -17,6 +17,11 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           release: nightly
+      - name: Cache AccessKit C release
+        uses: actions/cache@v4
+        with:
+          path: .deps/accesskit
+          key: accesskit-c-0.23.1-${{ runner.os }}-${{ runner.arch }}
       - name: Build, package, audit, and smoke-test 01_hello
         shell: pwsh
         run: .\tools\build_native_release.ps1 -Odin odin -SDLLinkage Static -OutputDirectory out\native-package\windows-x86_64
@@ -38,6 +43,11 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           release: nightly
+      - name: Cache AccessKit C release
+        uses: actions/cache@v4
+        with:
+          path: .deps/accesskit
+          key: accesskit-c-0.23.1-${{ runner.os }}-${{ runner.arch }}
       - name: Install packaging tools
         run: brew install cmake pkgconf
       - name: Build, package, audit, and smoke-test 01_hello

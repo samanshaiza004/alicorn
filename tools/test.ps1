@@ -6,9 +6,10 @@ $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\common.ps1"
 $Odin = Resolve-AlicornOdin -Requested $Odin
 New-Item -ItemType Directory -Force -Path 'out' | Out-Null
+$AccessKit = Get-AlicornAccessKit
 & $Odin build tests -out:out\alicorn_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $Odin build native\sdl_gpu_entry -out:out\alicorn_sdl_gpu.exe
+& $Odin build native\sdl_gpu_entry "-extra-linker-flags:$($AccessKit.LinkerFlags)" -out:out\alicorn_sdl_gpu.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # The text-input contract executable links SDL3 even though this mode does not
@@ -42,7 +43,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & .\out\alicorn_theme.exe check theme\testdata\invalid.json
 if ($LASTEXITCODE -eq 0) { throw "Theme CLI accepted an unsupported length unit." }
-& $Odin test native\sdl_gpu -out:out\alicorn_native_tests.exe
+& $Odin test native\sdl_gpu "-extra-linker-flags:$($AccessKit.LinkerFlags)" -out:out\alicorn_native_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & .\out\alicorn_tests.exe
