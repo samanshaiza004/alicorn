@@ -199,22 +199,25 @@ input while disabled. They do not own application state: store the returned
 
 ### Visual parts
 
-Visual parts compose appearance under an existing semantic control. They do
-not create a second interaction model: the owner remains an ordinary Button,
-and actionable pieces such as a close affordance are ordinary nested controls.
-Use `button_begin` / `button_end` when the button needs retained layout children,
-then tag described descendants with `visual_part_attach`. Layout, clipping,
-hit-testing, activation, and focus continue to come from the normal retained
-tree and control APIs.
+Visual parts compose appearance under an existing retained owner. They do not
+create a second interaction model: a static container or semantic surface can
+own always-visible parts, while actionable pieces such as a close affordance
+remain ordinary nested controls. Use `button_begin` / `button_end` when the
+owner needs Button interaction, then tag described descendants with
+`visual_part_attach`. Layout, clipping, hit-testing, activation, and focus
+continue to come from the normal retained tree and control APIs.
 
 Core part roles include `.Surface`, `.Content`, `.Label`, `.Icon`,
 `.Indicator`, `.Selected_Indicator`, `.Overlay`, and `.Focus_Indicator`.
 Applications can use `visual_part_extension_id(namespace, name)` for stable,
 namespaced parts such as `app.history/ref-badge`; app-specific IDs do not add
-new renderer primitives. Parts may be always visible or follow the owning
-control's hover/selection state. Inspector output reports the role, owner, and
-visibility policy. Keep positioning in ordinary layout rather than encoding
-coordinates in a visual-part identity.
+new renderer primitives. All retained owners support always-visible parts.
+Hover policies require a Button, Checkbox, Slider, Text_Field, or pointer-
+interactive custom surface; selected-or-hovered visibility currently requires
+a Button. Button label parts may inherit its resolved recipe color, while
+non-Button owners keep the text style declared by their label node. Inspector
+output reports the role, owner, and visibility policy. Keep positioning in
+ordinary layout rather than encoding coordinates in a visual-part identity.
 
 ### Tab bars
 
