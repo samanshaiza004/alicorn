@@ -522,7 +522,7 @@ Button_Recipe :: struct {
 	disabled:               Style_Transform,
 	selected_indicator:     Button_Indicator,
 	selected_indicator_role: Style_Color_Role,
-	focus_indicator_mode:   Button_Focus_Indicator_Mode,
+	focus_indicator_mode:   Focus_Indicator_Mode,
 	focus_role:             Style_Color_Role,
 	semantic_active_role:   Style_Color_Role,
 }
@@ -532,10 +532,16 @@ Button_Recipe_Set :: struct {
 }
 
 Button_Indicator :: enum { None, Underline }
-Button_Focus_Indicator_Mode :: enum { Always, Keyboard_Only }
+Focus_Indicator_Mode :: enum { Always, Keyboard_Only }
+Button_Focus_Indicator_Mode :: Focus_Indicator_Mode
 
-Style_Button_State :: enum { Selected, Hovered, Pressed, Disabled }
-Style_Button_States :: distinct bit_set[Style_Button_State; u8]
+Style_Control_State :: enum { Selected, Hovered, Pressed, Disabled }
+Style_Control_States :: distinct bit_set[Style_Control_State; u8]
+
+// Button aliases preserve the original public names while keeping the shared
+// transform vocabulary independent of any one built-in control.
+Style_Button_State :: Style_Control_State
+Style_Button_States :: Style_Control_States
 
 Button_Visual_State :: struct {
 	selected: bool,
@@ -552,8 +558,8 @@ Button_Resolved_Style :: struct {
 	semantic_active:         Color,
 	selected_indicator:      Button_Indicator,
 	selected_indicator_color: Color,
-	focus_indicator_mode:    Button_Focus_Indicator_Mode,
-	applied_transforms:      Style_Button_States,
+	focus_indicator_mode:    Focus_Indicator_Mode,
+	applied_transforms:      Style_Control_States,
 }
 
 // Style_Provenance retains semantic inputs, not duplicated theme data. Token
@@ -569,10 +575,12 @@ Style_Provenance :: struct {
 	surface_signature: u64,
 }
 
-Computed_Style_Family :: enum { Button, Text_Field, Scrollbar, Semantic_Surface }
+Computed_Style_Family :: enum { Button, Checkbox, Slider, Text_Field, Scrollbar, Semantic_Surface }
 
 Computed_Style_Payload :: union #no_nil {
 	Button_Resolved_Style,
+	Checkbox_Resolved_Style,
+	Slider_Resolved_Style,
 	Text_Field_Resolved_Style,
 	Scrollbar_Resolved_Style,
 	Semantic_Surface_Resolved_Style,
@@ -644,6 +652,8 @@ DEFAULT_BUTTON_RECIPES :: Button_Recipe_Set{recipes={
 Style_Theme :: struct {
 	colors:                 [STYLE_COLOR_ROLE_COUNT]Color,
 	button_recipes:         Button_Recipe_Set,
+	checkbox_recipe:        Checkbox_Recipe,
+	slider_recipe:          Slider_Recipe,
 	text_field_recipe:      Text_Field_Recipe,
 	scrollbar_recipe:       Scrollbar_Recipe,
 	color_tokens:           []Color,
@@ -676,7 +686,7 @@ DEFAULT_STYLE_THEME :: Style_Theme{colors={
 	Color{0.17, 0.39, 0.34, 1},
 	Color{0.08, 0.10, 0.14, 1},
 	Color{0.38, 0.48, 0.62, 1},
-}, button_recipes=DEFAULT_BUTTON_RECIPES, text_field_recipe=DEFAULT_TEXT_FIELD_RECIPE, scrollbar_recipe=DEFAULT_SCROLLBAR_RECIPE}
+}, button_recipes=DEFAULT_BUTTON_RECIPES, checkbox_recipe=DEFAULT_CHECKBOX_RECIPE, slider_recipe=DEFAULT_SLIDER_RECIPE, text_field_recipe=DEFAULT_TEXT_FIELD_RECIPE, scrollbar_recipe=DEFAULT_SCROLLBAR_RECIPE}
 
 DEFAULT_STYLE_THEME_ID :: Style_Theme_ID(1)
 

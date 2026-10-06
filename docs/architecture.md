@@ -66,16 +66,18 @@ parent-assigned bounds while contents reflow. `style_metric` leaves the meaning
 and use of each dimension with the application. This is explicit dependency
 tracking, not a general cascade or implicit observation of app state. The
 button component has an explicit recipe family for default, primary, toolbar,
-quiet, and tab intent. Its selected, hover, press, and disabled transforms
-compose in a fixed order; focus and semantic-active remain separate overlays.
+quiet, and tab intent. Checkbox and Slider resolve semantic recipes over their
+distinct visual parts. Selected/checked, hover, press, and disabled transforms
+compose in a fixed order; focus remains a separate overlay.
 Typed color and logical-length tokens now have a small compiler/runtime path,
 including namespaced application/vendor roles. Retained nodes keep compact
 per-domain style generations; scope updates advance only affected nodes.
-Button, Text Field, Scrollbar, and Semantic Surface `Computed_Style` entries
-live in Runtime side storage keyed by `Node_ID`, keeping the retained `Node`
-under its byte budget. Each entry records its recipe family, semantic inputs,
-dependency domains, and only the matching generation snapshots. Buttons,
-Text Fields, and Scrollbars depend on Paint; Semantic Surfaces depend on Paint
+Button, Checkbox, Slider, Text Field, Scrollbar, and Semantic Surface
+`Computed_Style` entries live in Runtime side storage keyed by `Node_ID`,
+keeping the retained `Node` under its byte budget. Each entry records its
+recipe family, semantic inputs, dependency domains, and only the matching
+generation snapshots. Buttons, Checkboxes, Sliders, Text Fields, and
+Scrollbars depend on Paint; Semantic Surfaces depend on Paint
 for role color and Material for shape/material/height/group. Inspector
 provenance reports these retained results, including optional compiled token
 names and alias chains. Node retirement and runtime destruction release

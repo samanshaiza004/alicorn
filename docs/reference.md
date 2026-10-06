@@ -103,11 +103,13 @@ error and its correction hint.
 | `button_content_style` | Set label alignment and padding inside a button. |
 | `Text_Style` | Select weight, overflow behavior, and other text presentation options. |
 | `Style_Theme` / `style_theme_register` | Register an immutable typed color palette for one runtime. |
+| `Style_Control_State` / `Style_Control_States` | Shared selected, hovered, pressed, and disabled recipe-transform vocabulary. |
 | `style_color` / `style_metric` | Resolve a semantic color or scale an app-owned metric in the active environment. |
 | `Style_Color_Token_ID` / `Style_Length_Token_ID` | Address theme-local typed token arrays without string lookup. |
 | `style_token_color` / `style_token_length` | Resolve a typed token against its registered theme ID. |
 | `Style_Extension_*_Role_ID` / `style_extension_*` | Resolve namespaced app/vendor roles during setup, then retain the typed token ID. |
 | `Button_Variant` / `Button_Recipe` | Select an explicit button recipe such as `.Toolbar`, `.Primary`, `.Quiet`, or `.Tab`. |
+| `Checkbox_Recipe` / `Slider_Recipe` | Theme independent control-part roles and their selected/hovered/pressed/disabled transforms. |
 
 The default layout direction is column. Use `.Row` for horizontal children;
 `grow` shares available space. Layout is in logical window coordinates.
@@ -138,9 +140,9 @@ runtime; do not reuse IDs across runtimes.
 
 The separate [`theme` compiler contract](themes.md) compiles typed color and
 logical-length tokens, aliases, core roles, and namespaced extension roles.
-This is not a general selector/cascade system. Button, Text Field, and
-Scrollbar recipes currently describe semantic color treatment; only Button
-has a retained `Computed_Style` cache. Rectangular semantic surfaces can use
+This is not a general selector/cascade system. Button, Checkbox, Slider, Text
+Field, and Scrollbar recipes describe semantic color treatment and use retained
+`Computed_Style` caches. Rectangular semantic surfaces can use
 registered flat or analytic-relief materials. General property resolution,
 metric-token dependencies, and richer native surface shapes remain outside the
 current contract.
@@ -186,6 +188,32 @@ toolbar.hovered = alicorn.Style_Transform{surface_role=.Accent, surface_mix=0.08
 theme.button_recipes.recipes[int(alicorn.Button_Variant.Toolbar)] = toolbar
 theme_id := alicorn.style_theme_register(&rt, theme)
 ```
+
+### Checkbox and Slider recipes
+
+Checkbox and Slider each have one semantic recipe family rather than
+widget-state color tables. Checkbox parts are `box`, `checkmark`, and `label`;
+Slider parts are `track`, `fill`, `thumb`, and `label`. Each part has base
+surface, text, and border roles, plus independent state transforms. Transforms
+apply in the order selected (checked for Checkbox), hovered, pressed, then
+disabled. Focus color and focus-indicator policy are separate overlays, so a
+focused checked or hovered control retains its state styling.
+
+Themes can override parts independently without changing control behavior:
+
+```odin
+theme := alicorn.DEFAULT_STYLE_THEME
+theme.checkbox_recipe.box.border_role = .Focus
+theme.checkbox_recipe.checkmark.selected.text_role = .Accent_Text
+theme.checkbox_recipe.checkmark.selected.text_mix = 1
+theme.slider_recipe.fill.pressed.surface_role = .Accent_Pressed
+theme.slider_recipe.fill.pressed.surface_mix = 0.6
+theme_id := alicorn.style_theme_register(&rt, theme)
+```
+
+The runtime inspector reports each control's state, active transforms, focus
+overlay, part roles, and theme-token provenance. Geometry and input remain
+owned by the existing controls.
 
 Checkboxes toggle by pointer or Space; Enter is reserved for button activation.
 Sliders drag with the pointer, adjust down with Left/Down and up with Right/Up,

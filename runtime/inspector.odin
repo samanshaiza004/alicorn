@@ -8,7 +8,7 @@ stage_word :: proc(value: bool) -> string {
 	return "reused"
 }
 
-style_button_state_name :: proc(state: Style_Button_State) -> string {
+style_control_state_name :: proc(state: Style_Control_State) -> string {
 	switch state {
 	case .Selected: return "selected"
 	case .Hovered: return "hovered"
@@ -166,6 +166,93 @@ style_inspector_scrollbar_provenance :: proc(sb: ^strings.Builder, rt: ^Runtime,
 	fmt.sbprintln(sb)
 }
 
+style_inspector_control_part_recipe :: proc(
+	sb: ^strings.Builder,
+	rt: ^Runtime,
+	theme: Style_Theme_ID,
+	name: string,
+	recipe: Control_Part_Recipe,
+	state: Control_Visual_State,
+	accent: Style_Accent,
+) {
+	fmt.sbprintf(sb, "\n  %s", name)
+	style_inspector_token_role(sb, rt, theme, "surface", "base", recipe.surface_role, accent)
+	style_inspector_token_role(sb, rt, theme, "text", "base", recipe.text_role, accent)
+	style_inspector_token_role(sb, rt, theme, "border", "base", recipe.border_role, accent)
+	if state.selected { style_inspector_control_transform_provenance(sb, rt, theme, "selected", recipe.selected, accent) }
+	if state.hovered { style_inspector_control_transform_provenance(sb, rt, theme, "hovered", recipe.hovered, accent) }
+	if state.pressed { style_inspector_control_transform_provenance(sb, rt, theme, "pressed", recipe.pressed, accent) }
+	if state.disabled { style_inspector_control_transform_provenance(sb, rt, theme, "disabled", recipe.disabled, accent) }
+}
+
+style_inspector_checkbox_provenance :: proc(sb: ^strings.Builder, rt: ^Runtime, node: ^Node) {
+	if rt == nil || node == nil { return }
+	environment := node.style_environment
+	state := Checkbox_Visual_State{
+		checked=node.paint_value&1 != 0,
+		hovered=node.hovered,
+		pressed=node.pressed,
+		disabled=node.disabled,
+		focused=rt.focused == node.id,
+	}
+	recipe := style_checkbox_recipe(rt, environment)
+	resolved := style_checkbox_resolve_retained(rt, node, state)
+	computed, cached := rt.computed_styles[node.id]
+	if !cached { return }
+	fmt.sbprintf(sb, "  checkbox style: recipe=checkbox.default resolution=retained-cache state=(checked=%t hovered=%t pressed=%t disabled=%t focused=%t) applied=",
+		state.checked, state.hovered, state.pressed, state.disabled, state.focused)
+	first := true
+	for transform in Style_Control_State {
+		if transform not_in resolved.applied_transforms { continue }
+		if !first { fmt.sbprintf(sb, ",") }
+		fmt.sbprintf(sb, "%s", style_control_state_name(transform))
+		first = false
+	}
+	fmt.sbprintf(sb, " focus-mode=%s dependencies=paint generations=(paint=%d)\n  token provenance: checkbox.default",
+		focus_indicator_mode_name(resolved.focus_indicator_mode), computed.generations.paint)
+	style_inspector_control_part_recipe(sb, rt, environment.theme, "box", recipe.box,
+		Control_Visual_State{selected=state.checked, hovered=state.hovered, pressed=state.pressed, disabled=state.disabled}, environment.accent)
+	style_inspector_control_part_recipe(sb, rt, environment.theme, "checkmark", recipe.checkmark,
+		Control_Visual_State{selected=state.checked, hovered=state.hovered, pressed=state.pressed, disabled=state.disabled}, environment.accent)
+	style_inspector_control_part_recipe(sb, rt, environment.theme, "label", recipe.label,
+		Control_Visual_State{selected=state.checked, hovered=state.hovered, pressed=state.pressed, disabled=state.disabled}, environment.accent)
+	style_inspector_token_role(sb, rt, environment.theme, "focus", "overlay", recipe.focus_role, environment.accent)
+	fmt.sbprintln(sb)
+}
+
+style_inspector_slider_provenance :: proc(sb: ^strings.Builder, rt: ^Runtime, node: ^Node) {
+	if rt == nil || node == nil { return }
+	environment := node.style_environment
+	state := Slider_Visual_State{
+		hovered=node.hovered,
+		pressed=node.pressed,
+		disabled=node.disabled,
+		focused=rt.focused == node.id,
+	}
+	resolved := style_slider_resolve_retained(rt, node, state)
+	computed, cached := rt.computed_styles[node.id]
+	if !cached { return }
+	fmt.sbprintf(sb, "  slider style: recipe=slider.default resolution=retained-cache state=(hovered=%t pressed=%t disabled=%t focused=%t) applied=",
+		state.hovered, state.pressed, state.disabled, state.focused)
+	first := true
+	for transform in Style_Control_State {
+		if transform not_in resolved.applied_transforms { continue }
+		if !first { fmt.sbprintf(sb, ",") }
+		fmt.sbprintf(sb, "%s", style_control_state_name(transform))
+		first = false
+	}
+	fmt.sbprintf(sb, " focus-mode=%s dependencies=paint generations=(paint=%d)\n  token provenance: slider.default",
+		focus_indicator_mode_name(resolved.focus_indicator_mode), computed.generations.paint)
+	recipe := style_slider_recipe(rt, environment)
+	part_state := Control_Visual_State{hovered=state.hovered, pressed=state.pressed, disabled=state.disabled}
+	style_inspector_control_part_recipe(sb, rt, environment.theme, "track", recipe.track, part_state, environment.accent)
+	style_inspector_control_part_recipe(sb, rt, environment.theme, "fill", recipe.fill, part_state, environment.accent)
+	style_inspector_control_part_recipe(sb, rt, environment.theme, "thumb", recipe.thumb, part_state, environment.accent)
+	style_inspector_control_part_recipe(sb, rt, environment.theme, "label", recipe.label, part_state, environment.accent)
+	style_inspector_token_role(sb, rt, environment.theme, "focus", "overlay", recipe.focus_role, environment.accent)
+	fmt.sbprintln(sb)
+}
+
 style_inspector_semantic_surface :: proc(sb: ^strings.Builder, rt: ^Runtime, node: ^Node, style: Semantic_Surface_Style) {
 	if rt == nil || node == nil || !style.defined { return }
 	resolved := style_semantic_surface_resolve_retained(rt, node, style)
@@ -274,10 +361,10 @@ inspect :: proc(rt: ^Runtime) -> string {
 				resolved.text.r, resolved.text.g, resolved.text.b, resolved.text.a,
 				resolved.selected_indicator, recipe.selected_indicator_role)
 			fmt.sbprintf(&sb, "  applied transforms:")
-			for style_state in Style_Button_State {
-				if style_state in resolved.applied_transforms { fmt.sbprintf(&sb, " %s", style_button_state_name(style_state)) }
+			for style_state in Style_Control_State {
+				if style_state in resolved.applied_transforms { fmt.sbprintf(&sb, " %s", style_control_state_name(style_state)) }
 			}
-			fmt.sbprintf(&sb, " | focus-mode=%s\n", button_focus_indicator_mode_name(recipe.focus_indicator_mode))
+			fmt.sbprintf(&sb, " | focus-mode=%s\n", focus_indicator_mode_name(recipe.focus_indicator_mode))
 			fmt.sbprintf(&sb, " | focus overlay=%v semantic-active overlay=%v\n", recipe.focus_role, recipe.semantic_active_role)
 			fmt.sbprintf(&sb, "  computed style: dependencies=")
 			first_domain := true
@@ -313,6 +400,8 @@ inspect :: proc(rt: ^Runtime) -> string {
 			}
 			fmt.sbprintf(&sb, "\n")
 		}
+		if node.kind == .Checkbox { style_inspector_checkbox_provenance(&sb, rt, node) }
+		if node.kind == .Slider { style_inspector_slider_provenance(&sb, rt, node) }
 		if node.kind == .Text_Field {
 			style_inspector_text_field_provenance(&sb, rt, node)
 		}

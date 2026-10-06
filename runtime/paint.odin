@@ -163,14 +163,18 @@ append_text_paint_geometry :: proc(node: ^Node, geometry: ^Text_Paint_Geometry, 
 }
 
 append_rect_outline :: proc(node: ^Node, color: Color, thickness: f32) {
-	width := min(max(thickness, 0), node.bounds.w/2)
-	height := min(max(thickness, 0), node.bounds.h/2)
+	append_rect_outline_bounds(node, node.bounds, color, thickness)
+}
+
+append_rect_outline_bounds :: proc(node: ^Node, bounds: Rect, color: Color, thickness: f32) {
+	width := min(max(thickness, 0), bounds.w/2)
+	height := min(max(thickness, 0), bounds.h/2)
 	if width <= 0 || height <= 0 { return }
-	append(&node.paint, paint_surface_command(node.id, Rect{node.bounds.x, node.bounds.y, node.bounds.w, height}, node.clip, color))
-	append(&node.paint, paint_surface_command(node.id, Rect{node.bounds.x, node.bounds.y+node.bounds.h-height, node.bounds.w, height}, node.clip, color))
-	interior_height := max(0, node.bounds.h-height*2)
-	append(&node.paint, paint_surface_command(node.id, Rect{node.bounds.x, node.bounds.y+height, width, interior_height}, node.clip, color))
-	append(&node.paint, paint_surface_command(node.id, Rect{node.bounds.x+node.bounds.w-width, node.bounds.y+height, width, interior_height}, node.clip, color))
+	append(&node.paint, paint_surface_command(node.id, Rect{bounds.x, bounds.y, bounds.w, height}, node.clip, color))
+	append(&node.paint, paint_surface_command(node.id, Rect{bounds.x, bounds.y+bounds.h-height, bounds.w, height}, node.clip, color))
+	interior_height := max(0, bounds.h-height*2)
+	append(&node.paint, paint_surface_command(node.id, Rect{bounds.x, bounds.y+height, width, interior_height}, node.clip, color))
+	append(&node.paint, paint_surface_command(node.id, Rect{bounds.x+bounds.w-width, bounds.y+height, width, interior_height}, node.clip, color))
 }
 
 append_focus_outline :: proc(node: ^Node, color: Color, thickness: f32) {
@@ -258,9 +262,28 @@ update_paint :: proc(rt: ^Runtime) {
 		rt.stats.stage_visits[.Paint] += 1
 		if dirty_has(node.dirty, .Paint) || len(node.paint) == 0 {
 			field_style := Text_Field_Resolved_Style{}
+			checkbox_style := Checkbox_Resolved_Style{}
+			slider_style := Slider_Resolved_Style{}
 			if node.kind == .Text_Field {
 				field_style = style_text_field_resolve_retained(rt, node, Text_Field_Visual_State{
 					hovered=node.hovered,
+					focused=rt.focused == node.id,
+				})
+			}
+			if node.kind == .Checkbox {
+				checkbox_style = style_checkbox_resolve_retained(rt, node, Checkbox_Visual_State{
+					checked=node.paint_value&1 != 0,
+					hovered=node.hovered,
+					pressed=node.pressed,
+					disabled=node.disabled,
+					focused=rt.focused == node.id,
+				})
+			}
+			if node.kind == .Slider {
+				slider_style = style_slider_resolve_retained(rt, node, Slider_Visual_State{
+					hovered=node.hovered,
+					pressed=node.pressed,
+					disabled=node.disabled,
 					focused=rt.focused == node.id,
 				})
 			}
@@ -414,40 +437,27 @@ update_paint :: proc(rt: ^Runtime) {
 			} else if node.kind == .Checkbox {
 				box_size := minf(18, maxf(node.bounds.h-6, 12))
 				box := Rect{node.bounds.x+4, node.bounds.y+(node.bounds.h-box_size)*0.5, box_size, box_size}
-				box_color := Color{0.32, 0.38, 0.48, 1}
-				if node.disabled { box_color = Color{0.20, 0.23, 0.29, 1} }
-				if node.hovered && !node.disabled { box_color = Color{0.48, 0.60, 0.76, 1} }
-				if node.pressed && !node.disabled { box_color = Color{0.58, 0.70, 0.86, 1} }
-				append(&node.paint, paint_surface_command(node.id, box, node.clip, box_color))
+				append(&node.paint, paint_surface_command(node.id, box, node.clip, checkbox_style.box.border))
 				inner := Rect{box.x+2, box.y+2, maxf(box.w-4, 0), maxf(box.h-4, 0)}
-				inner_color := Color{0.035, 0.045, 0.065, 1}
-				if node.paint_value&1 != 0 { inner_color = Color{0.20, 0.48, 0.76, 1} }
-				if node.disabled {
-					inner_color = Color{0.08, 0.09, 0.12, 1}
-					if node.paint_value&1 != 0 { inner_color = Color{0.18, 0.24, 0.31, 1} }
-				}
-				append(&node.paint, paint_surface_command(node.id, inner, node.clip, inner_color))
+				append(&node.paint, paint_surface_command(node.id, inner, node.clip, checkbox_style.box.surface))
 				if node.paint_value&1 != 0 {
-					check_color := Color{0.94, 0.97, 1, 1}
+					check_color := checkbox_style.checkmark.text
 					append(&node.paint,
 						paint_surface_command(node.id, Rect{box.x+4, box.y+box.h*0.55, box.w*0.24, 2}, node.clip, check_color),
 						paint_surface_command(node.id, Rect{box.x+7, box.y+box.h*0.48, box.w*0.27, 2}, node.clip, check_color),
 						paint_surface_command(node.id, Rect{box.x+10, box.y+box.h*0.36, box.w*0.26, 2}, node.clip, check_color),
 					)
 				}
-				if rt.focused == node.id && !node.disabled {
-					append_focus_outline(node, Color{0.76, 0.86, 1.0, 1}, 1.5)
+				show_focus := checkbox_style.focus_indicator_mode == .Always || rt.focus_visible
+				if checkbox_style.focused && show_focus && !checkbox_style.disabled {
+					append_focus_outline(node, checkbox_style.focus, 1.5)
 				}
-				text_color := Color{0.88, 0.91, 0.96, 1}
-				if node.disabled { text_color = Color{0.48, 0.53, 0.62, 1} }
 				text_bounds := Rect{node.bounds.x+30, node.bounds.y, maxf(node.bounds.w-34, 0), node.bounds.h}
 				if node.text_run_valid { text_bounds.y += (text_bounds.h-node.text_run.height)*0.5 }
-				append(&node.paint, paint_text_command(node.id, text_bounds, rect_intersection(node.clip, text_bounds), paint_text_handle_for_node(node), text_color))
+				append(&node.paint, paint_text_command(node.id, text_bounds, rect_intersection(node.clip, text_bounds), paint_text_handle_for_node(node), checkbox_style.label.text))
 			} else if node.kind == .Slider {
-				text_color := Color{0.88, 0.91, 0.96, 1}
-				if node.disabled { text_color = Color{0.48, 0.53, 0.62, 1} }
 				label_bounds := Rect{node.bounds.x+8, node.bounds.y+1, maxf(node.bounds.w-16, 0), minf(maxf(node.bounds.h-14, 0), node.text_run.height)}
-				append(&node.paint, paint_text_command(node.id, label_bounds, rect_intersection(node.clip, label_bounds), paint_text_handle_for_node(node), text_color))
+				append(&node.paint, paint_text_command(node.id, label_bounds, rect_intersection(node.clip, label_bounds), paint_text_handle_for_node(node), slider_style.label.text))
 				track_x := node.bounds.x + minf(8, node.bounds.w*0.25)
 				track_width := maxf(node.bounds.w-minf(16, node.bounds.w*0.5), 1)
 				track_y := node.bounds.y + node.bounds.h - 8
@@ -457,23 +467,16 @@ update_paint :: proc(rt: ^Runtime) {
 					fraction = clampf((node.control_value-node.control_minimum)/(node.control_maximum-node.control_minimum), 0, 1)
 				}
 				thumb_x := track_x + fraction*track_width
-				track_color := Color{0.16, 0.20, 0.27, 1}
-				fill_color := Color{0.25, 0.54, 0.82, 1}
-				thumb_color := Color{0.78, 0.86, 0.96, 1}
-				if node.disabled {
-					fill_color = Color{0.23, 0.29, 0.36, 1}
-					thumb_color = Color{0.46, 0.50, 0.57, 1}
-				} else if node.hovered || node.pressed {
-					fill_color = Color{0.32, 0.66, 0.94, 1}
-					thumb_color = Color{0.94, 0.97, 1, 1}
-				}
+				thumb := Rect{thumb_x-5, track_y-6, 10, 12}
 				append(&node.paint,
-					paint_surface_command(node.id, track, node.clip, track_color),
-					paint_surface_command(node.id, Rect{track_x, track_y-2, maxf(thumb_x-track_x, 0), 4}, node.clip, fill_color),
-					paint_surface_command(node.id, Rect{thumb_x-5, track_y-6, 10, 12}, node.clip, thumb_color),
+					paint_surface_command(node.id, track, node.clip, slider_style.track.surface),
+					paint_surface_command(node.id, Rect{track_x, track_y-2, maxf(thumb_x-track_x, 0), 4}, node.clip, slider_style.fill.surface),
+					paint_surface_command(node.id, thumb, node.clip, slider_style.thumb.surface),
 				)
-				if rt.focused == node.id && !node.disabled {
-					append_focus_outline(node, Color{0.76, 0.86, 1.0, 1}, 1.5)
+				append_rect_outline_bounds(node, thumb, slider_style.thumb.border, 1)
+				show_focus := slider_style.focus_indicator_mode == .Always || rt.focus_visible
+				if slider_style.focused && show_focus && !slider_style.disabled {
+					append_focus_outline(node, slider_style.focus, 1.5)
 				}
 			} else if node.kind == .Split_Handle {
 				handle_color := Color{0.20, 0.24, 0.31, 1}

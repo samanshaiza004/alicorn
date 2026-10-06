@@ -157,6 +157,8 @@ style_theme_is_valid :: proc(theme: Style_Theme) -> bool {
 	for recipe in theme.button_recipes.recipes {
 		if !style_button_recipe_is_valid(recipe) { return false }
 	}
+	if !style_checkbox_recipe_is_valid(theme.checkbox_recipe) { return false }
+	if !style_slider_recipe_is_valid(theme.slider_recipe) { return false }
 	if !style_text_field_recipe_is_valid(theme.text_field_recipe) { return false }
 	if !style_scrollbar_recipe_is_valid(theme.scrollbar_recipe) { return false }
 	return true
@@ -186,7 +188,7 @@ style_accent_color :: proc(accent: Style_Accent) -> Color {
 // IDs remain stable for the lifetime of this Runtime.
 style_theme_register :: proc(rt: ^Runtime, theme: Style_Theme) -> Style_Theme_ID {
 	if rt == nil || !style_theme_is_valid(theme) {
-		if rt != nil { append_diagnostic(rt, "style theme contains invalid colors, token bindings, logical lengths, or button recipes") }
+		if rt != nil { append_diagnostic(rt, "style theme contains invalid colors, token bindings, logical lengths, or control recipes") }
 		return 0
 	}
 	// Registered themes are immutable snapshots. Copy variable-sized token and
@@ -306,7 +308,7 @@ style_button_variant_is_valid :: proc(variant: Button_Variant) -> bool {
 	return int(variant) >= 0 && int(variant) < BUTTON_VARIANT_COUNT
 }
 
-button_focus_indicator_mode_name :: proc(mode: Button_Focus_Indicator_Mode) -> string {
+focus_indicator_mode_name :: proc(mode: Focus_Indicator_Mode) -> string {
 	switch mode {
 	case .Always: return "always"
 	case .Keyboard_Only: return "keyboard-only"

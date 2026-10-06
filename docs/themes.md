@@ -19,13 +19,14 @@ describing a frame.
   collision among roles of the same type instead of letting one binding win.
 - The runtime retains one `Computed_Style` entry per resolved node in a
   Runtime-owned sidecar map, keyed by `Node_ID`; the retained `Node` stays under
-  its byte budget. Button, Text Field, Scrollbar, and Semantic Surface results
-  share exact dependency-domain snapshots and semantic input signatures.
+  its byte budget. Button, Checkbox, Slider, Text Field, Scrollbar, and
+  Semantic Surface results share exact dependency-domain snapshots and
+  semantic input signatures.
   Scope changes advance only affected nodes; cache hits reuse the resolved
   payload and its provenance. Retirement and runtime destruction release the
   corresponding sidecar storage.
-- Button, Text Field, and Scrollbar recipes depend on Paint. Semantic Surface
-  resolution depends on Paint for its role color and Material for its shape,
+- Button, Checkbox, Slider, Text Field, and Scrollbar recipes depend on Paint.
+  Semantic Surface resolution depends on Paint for its role color and Material for its shape,
   material, optical height, and group. Theme registrations and material
   registrations are immutable; recipe/state/theme identity is part of the
   computed-style signature, and semantic-surface description changes are
@@ -43,24 +44,30 @@ describing a frame.
 
 The built-in recipe families describe semantic visual parts; layout and input
 geometry remain with their existing control APIs. `Button_Recipe_Set` supplies
-explicit button variants, `Text_Field_Recipe` supplies the field surface,
-text, border, selection, caret, and independent focus treatment, and
-`Scrollbar_Recipe` supplies the track, thumb, and corner. Hover/press color
-transforms compose in a fixed order and do not replace the separate focus
-overlay.
+explicit button variants; `Checkbox_Recipe` supplies box, checkmark, label, and
+focus parts; `Slider_Recipe` supplies track, fill, thumb, label, and focus
+parts; `Text_Field_Recipe` supplies the field surface, text, border, selection,
+caret, and independent focus treatment; and `Scrollbar_Recipe` supplies the
+track, thumb, and corner. Checkbox and Slider parts apply selected (checked
+for Checkbox), hovered, pressed, and disabled transforms in that order. Focus
+remains a separate overlay, so it does not erase the resolved state colors.
 
 Themes can override these recipes before registration:
 
 ```odin
 theme := alicorn.DEFAULT_STYLE_THEME
+theme.checkbox_recipe.checkmark.selected.text_role = .Accent_Text
+theme.slider_recipe.thumb.pressed.surface_role = .Accent_Pressed
 theme.text_field_recipe.focused_border_role = .Accent
 theme.scrollbar_recipe.thumb_role = .Muted_Text
 theme_id := alicorn.style_theme_register(&runtime, theme)
 ```
 
 Recipes contain semantic color roles and state transforms, not padding,
-thickness, or scroll geometry. The current JSON token frontend compiles colors
-and lengths; it does not yet encode control recipes, so its runtime adapter
+thickness, or scroll geometry. Checkbox and Slider parts resolve independently
+through the same recipe vocabulary, so themes can change their appearance
+without changing widget semantics. The current JSON token frontend compiles
+colors and lengths; it does not yet encode control recipes, so its runtime adapter
 inherits the built-in recipes unless the application overrides them in Odin.
 
 ## Semantic surface composition
