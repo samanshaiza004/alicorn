@@ -520,6 +520,10 @@ update_paint :: proc(rt: ^Runtime) {
 				text_color := node.color
 				if node.kind == .Text_Field {
 					text_color = field_style.text
+				} else if node.kind == .Text {
+					if part_color, found := visual_part_label_color(rt, node.id); found {
+						text_color = part_color
+					}
 				}
 				append(&node.paint, paint_text_command(node.id, node.bounds, text_clip, text_run_handle, text_color, node.text_paint_spans[:]))
 				append_text_paint_geometry(node, &paint_geometry, text_clip, false)

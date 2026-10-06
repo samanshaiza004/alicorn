@@ -178,6 +178,24 @@ tab_bar_test_text_bounds :: proc(rt: ^Runtime, owner_id: Node_ID) -> (bounds: Re
 	return
 }
 
+tab_bar_test_label_color :: proc(rt: ^Runtime, owner_id: Node_ID) -> (color: Color, found: bool) {
+	if rt == nil { return }
+	stack := make([dynamic]Node_ID, 0, allocator=context.temp_allocator)
+	append(&stack, owner_id)
+	for len(stack) > 0 {
+		id := pop(&stack)
+		node, exists := rt.nodes[id]
+		if !exists { continue }
+		if visual_part_has_core_role(rt, id, owner_id, .Label) {
+			for command in node.paint {
+				if text, ok := command.payload.(Text_Paint); ok { return text.color, true }
+			}
+		}
+		for child_id in node.children { append(&stack, child_id) }
+	}
+	return
+}
+
 tab_bar_test_display_has_text :: proc(rt: ^Runtime, owner: Node_ID) -> bool {
 	if rt == nil { return false }
 	for command in rt.display {
@@ -431,6 +449,50 @@ test_tab_bar_selection_is_distinct_from_keyboard_focus_indicator :: proc(t: ^tes
 		"keyboard traversal should paint the distinct four-edge focus outline on the focused tab")
 	testing.expect(t, rt.nodes[selected_id].selected && !rt.nodes[other_id].selected,
 		"keyboard focus movement must not mutate the application-owned selected tab")
+}
+
+@(test)
+test_tab_bar_label_uses_owner_recipe_for_idle_hover_and_selected_states :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 480, 120})
+	defer destroy_runtime(&rt)
+	items := tab_bar_test_items()
+	options := tab_bar_test_options_always_close()
+	_ = tab_bar_test_build(&rt, items[:], 440, options)
+	// The virtual list may request one follow-up layout pass after its initial
+	// viewport is measured. Settle that before testing retained-only hover paint.
+	_ = tab_bar_test_build(&rt, items[:], 440, options)
+	selected_id, selected_count := tab_bar_test_item_node(&rt, items[0].semantic_id)
+	idle_id, idle_count := tab_bar_test_item_node(&rt, items[1].semantic_id)
+	testing.expect(t, selected_count == 1 && idle_count == 1,
+		"the selected and idle tabs should both retain their semantic Button owners")
+	if selected_count != 1 || idle_count != 1 { return }
+
+	selected_color, selected_found := tab_bar_test_label_color(&rt, selected_id)
+	idle_color, idle_found := tab_bar_test_label_color(&rt, idle_id)
+	expected_selected := style_button_resolve_retained(&rt, rt.nodes[selected_id], Button_Visual_State{selected=true}).text
+	expected_idle := style_button_resolve_retained(&rt, rt.nodes[idle_id], Button_Visual_State{}).text
+	testing.expect(t, selected_found && selected_color == expected_selected,
+		"a selected composed label should use the text color from its owner's selected recipe")
+	testing.expect(t, idle_found && idle_color == expected_idle && idle_color != selected_color,
+		"an idle composed label should use its owner's muted recipe color rather than ordinary Text color")
+
+	idle_bounds := rt.nodes[idle_id].bounds
+	_ = process_pointer(&rt, Pointer_Event{
+		kind=.Move,
+		x=idle_bounds.x+idle_bounds.w*0.35,
+		y=idle_bounds.y+idle_bounds.h*0.5,
+	})
+	ui, ready := begin_presentation_frame(&rt)
+	testing.expect(t, ready, "hovering a tab should queue a retained presentation frame")
+	if ready { end_presentation_frame(&ui) }
+	hovered_color, hovered_found := tab_bar_test_label_color(&rt, idle_id)
+	expected_hovered := style_button_resolve_retained(&rt, rt.nodes[idle_id], Button_Visual_State{hovered=true}).text
+	testing.expect(t, rt.nodes[idle_id].hovered,
+		"pointer movement over the tab body should mark the tab owner hovered")
+	testing.expect(t, hovered_found && hovered_color == expected_hovered,
+		"a hovered composed label should use its owner's hovered recipe color")
+	testing.expect(t, hovered_color != idle_color,
+		"hovering should visibly transform the Tab label color from its muted idle color")
 }
 
 @(test)

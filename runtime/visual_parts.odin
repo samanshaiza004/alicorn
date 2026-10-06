@@ -185,6 +185,26 @@ visual_part_has_core_role :: proc(rt: ^Runtime, node_id, owner_id: Node_ID, role
 	return false
 }
 
+// visual_part_label_color resolves a composed label from the recipe and state
+// of its semantic Button owner. This keeps reusable label parts consistent
+// with the control they describe without teaching paint about specific
+// components such as Tabs.
+visual_part_label_color :: proc(rt: ^Runtime, node_id: Node_ID) -> (color: Color, found: bool) {
+	if rt == nil { return }
+	part, tagged := rt.visual_parts[node_id]
+	if !tagged || !part.defined || !visual_part_has_core_role(rt, node_id, part.owner, .Label) { return }
+	owner, exists := rt.nodes[part.owner]
+	if !exists || !owner.active || owner.kind != .Button { return }
+	hovered := visual_part_owner_hovered(rt, owner.id)
+	resolved := style_button_resolve_retained(rt, owner, Button_Visual_State{
+		selected=owner.selected,
+		hovered=hovered,
+		pressed=owner.pressed,
+		disabled=owner.disabled,
+	}, owner.drop_position == .On)
+	return resolved.text, true
+}
+
 visual_part_invalidate_dependents :: proc(rt: ^Runtime, node_id: Node_ID, reason: string) {
 	if rt == nil || node_id == 0 { return }
 	owner_id := visual_part_interaction_owner(rt, node_id)
