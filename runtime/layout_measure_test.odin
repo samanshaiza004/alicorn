@@ -396,6 +396,43 @@ test_content_height_tracks_changed_child_axis_and_equal_measurement_stays_local 
 }
 
 @(test)
+test_content_height_column_in_row_uses_measured_cross_axis_extent :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 300, 160})
+	defer destroy_runtime(&rt)
+	ui, build := begin_frame(&rt)
+	if !build { testing.expect(t, false, "new runtime should request its first description"); return }
+	container_begin(&ui, .Root, key=key_string("content-row-root"), style=layout_style(.Row, width=300, height=160, gap=10, align=.Center))
+	column_id := container_begin(
+		&ui,
+		.Container,
+		key=key_string("content-row-fit-column"),
+		style=layout_style(.Column, height=LAYOUT_SIZE_FIT_CONTENT, grow=1, padding=8, gap=6),
+	)
+	container_begin(&ui, .Container, key=key_string("content-row-first"), style=layout_style(.Column, height=20))
+	container_end(&ui)
+	container_begin(&ui, .Container, key=key_string("content-row-second"), style=layout_style(.Column, height=30))
+	container_end(&ui)
+	container_end(&ui)
+	sidebar_id := container_begin(&ui, .Container, key=key_string("content-row-sidebar"), style=layout_style(.Column, width=100, height=100))
+	container_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+
+	column, column_ok := rt.nodes[column_id]
+	sidebar, sidebar_ok := rt.nodes[sidebar_id]
+	state, measure_ok := rt.measure_states[column_id]
+	testing.expect(t, column_ok && sidebar_ok && measure_ok, "fit-height column and sibling should be retained and measured")
+	if column_ok && sidebar_ok && measure_ok {
+		testing.expect(t, column.bounds.w == 190 && column.bounds.h == 72,
+			"a content-height Column in a Row should keep its allocated width and measure children, gap, and padding instead of stretching to the Row height")
+		testing.expect(t, column.bounds.y == 44 && sidebar.bounds.y == 30,
+			"center alignment should position each child from its own cross-axis extent")
+		testing.expect(t, layout_unit_to_f32(state.result.size.height) == column.bounds.h,
+			"the Row should place the content-sized Column using its retained measured height")
+	}
+}
+
+@(test)
 test_content_sized_scroll_region_caps_virtual_list_and_keeps_virtualization_bounded :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 400, 260})
 	defer destroy_runtime(&rt)

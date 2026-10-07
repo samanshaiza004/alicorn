@@ -481,9 +481,12 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		child := rt.nodes[id]
 		layout_note_node_visit(rt, child)
 		if child.style.grow > 0 || math.is_nan(child.style.grow) || math.is_inf(child.style.grow) { has_grow = true }
-		if layout_node_has_content_height(child) {
+		if parent.style.direction == .Column && layout_node_has_content_height(child) {
 			parent_constraints := Layout_Constraints{
-				width=layout_axis_constraint_normalize(inner.w, inner.w),
+				// layout_content_child_constraints subtracts the parent's padding,
+				// so pass its outer width here and let that helper derive the
+				// actual content width once.
+				width=layout_axis_constraint_normalize(parent.bounds.w, parent.bounds.w),
 				height=layout_axis_constraint_normalize(0, available),
 			}
 			constraints := layout_content_child_constraints(parent, child, parent_constraints)
@@ -521,11 +524,28 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		old_bounds := child.bounds
 		main := resolved_main_size(child, parent.style.direction, intrinsic_main(rt, child, parent.style.direction))
 		if has_grow { main = main_sizes[index] }
+		if parent.style.direction == .Row && layout_node_has_content_height(child) {
+			// A fit-height child in a Row must be measured at the width the Row
+			// actually assigned. Measuring it in the earlier prepass would either
+			// invent a width or use the whole Row width and can produce the wrong
+			// wrapped/content height.
+			parent_constraints := Layout_Constraints{
+				width=layout_axis_constraint_normalize(main, main),
+				height=layout_axis_constraint_normalize(0, cross_size),
+			}
+			constraints := layout_content_child_constraints(parent, child, parent_constraints, assigned_width=main)
+			_ = layout_measure_node(rt, child, constraints)
+		}
 		if layout_grow_weight_is_finite_positive(child.style.grow) && node_has_text_product(child.kind) {
 			_ = layout_measure_node(rt, child, layout_grow_measure_constraints(parent, child, main, cross_size))
 		}
 		if parent.style.direction == .Row {
 			cross := child.style.height >= 0 ? child.style.height : cross_size
+			if layout_node_has_content_height(child) {
+				if state, ok := rt.measure_states[child.id]; ok && state.cache_key.valid {
+					cross = layout_unit_to_f32(state.result.size.height)
+				}
+			}
 			cross = clampf(cross, child.style.min_height, child.style.max_height)
 			cross_pos := inner.y + cross_offset
 			if parent.style.align == .Center { cross_pos += (cross_size-cross)/2 }

@@ -161,13 +161,15 @@ layout_content_child_constraints :: proc(
 	parent: ^Node,
 	child: ^Node,
 	parent_constraints: Layout_Constraints,
+	assigned_width: f32 = -1,
 ) -> Layout_Constraints {
 	if parent == nil || child == nil { return {} }
 	content_width: f32 = parent.bounds.w-2*maxf(parent.style.padding, 0)
 	if !parent_constraints.width.unbounded_max {
 		content_width = layout_unit_to_f32(parent_constraints.width.max)-2*maxf(parent.style.padding, 0)
 	}
-	if child.style.width >= 0 { content_width = child.style.width }
+	if assigned_width >= 0 { content_width = assigned_width
+	} else if child.style.width >= 0 { content_width = child.style.width }
 	content_width = clampf(content_width, child.style.min_width, child.style.max_width)
 	width := layout_axis_constraint_normalize(content_width, content_width)
 
