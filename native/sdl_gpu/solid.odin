@@ -166,10 +166,13 @@ native_solid_pixel_bounds :: proc(
 	if draw.clip.y > top { top = draw.clip.y }
 	if draw.clip.x + draw.clip.w < right { right = draw.clip.x + draw.clip.w }
 	if draw.clip.y + draw.clip.h < bottom { bottom = draw.clip.y + draw.clip.h }
-	x0 = int(left * scale_x)
-	y0 = int(top * scale_y)
-	x1 = int(right * scale_x)
-	y1 = int(bottom * scale_y)
+	if right < left { right = left }
+	if bottom < top { bottom = top }
+	x0, y0, x1, y1 = logical_to_pixel_bounds(
+		alicorn.Rect{left, top, right-left, bottom-top},
+		scale_x,
+		scale_y,
+	)
 	if x0 < 0 { x0 = 0 }
 	if y0 < 0 { y0 = 0 }
 	if x1 > int(target_w) { x1 = int(target_w) }

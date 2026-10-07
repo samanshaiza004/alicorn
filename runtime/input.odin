@@ -56,12 +56,12 @@ scrollbar_hit_test :: proc(rt: ^Runtime, x, y: f32) -> Scrollbar_Hit {
 		id := rt.order[i]
 		node, ok := rt.nodes[id]
 		if !ok || !node.active || node.kind != .Scroll_Region ||
-			!node_is_in_modal_overlay(rt, id, modal_root) || !rect_contains(node.clip, x, y) { continue }
-		if node.scrollbar_vertical_visible && rect_contains(node.scrollbar_vertical_track, x, y) {
-			return Scrollbar_Hit{id, .Vertical, rect_contains(node.scrollbar_vertical_thumb, x, y)}
+			!node_is_in_modal_overlay(rt, id, modal_root) || !rect_contains(layout_node_finalized_geometry(rt, id).clip, x, y) { continue }
+		if node.scrollbar_vertical_visible && rect_contains(layout_finalize_rect(node.scrollbar_vertical_track, rt.presentation_scale_x, rt.presentation_scale_y), x, y) {
+			return Scrollbar_Hit{id, .Vertical, rect_contains(layout_finalize_rect(node.scrollbar_vertical_thumb, rt.presentation_scale_x, rt.presentation_scale_y), x, y)}
 		}
-		if node.scrollbar_horizontal_visible && rect_contains(node.scrollbar_horizontal_track, x, y) {
-			return Scrollbar_Hit{id, .Horizontal, rect_contains(node.scrollbar_horizontal_thumb, x, y)}
+		if node.scrollbar_horizontal_visible && rect_contains(layout_finalize_rect(node.scrollbar_horizontal_track, rt.presentation_scale_x, rt.presentation_scale_y), x, y) {
+			return Scrollbar_Hit{id, .Horizontal, rect_contains(layout_finalize_rect(node.scrollbar_horizontal_thumb, rt.presentation_scale_x, rt.presentation_scale_y), x, y)}
 		}
 	}
 	return {}
@@ -118,7 +118,8 @@ text_field_pointer_selection_update :: proc(rt: ^Runtime, owner: Node_ID, x, y: 
 		rt.captured_node != owner || !rt.text_field_selection_drag.active { return false }
 	node, ok := rt.nodes[owner]
 	if !ok || !node.active || node.kind != .Text_Field || !node.text_run_valid { return false }
-	position := text_run_hit_test(&node.text_run, x-node.bounds.x, y-node.bounds.y, rt.scratch_allocator)
+	bounds := layout_node_finalized_geometry(rt, owner).bounds
+	position := text_run_hit_test(&node.text_run, x-bounds.x, y-bounds.y, rt.scratch_allocator)
 	endpoints, changed := text_selection.text_selection_drag_extend(
 		node.text,
 		rt.text_field_selection_drag,
@@ -188,7 +189,8 @@ hit_test :: proc(rt: ^Runtime, x, y: f32, include_reveal_targets := false) -> No
 		id := rt.order[i]
 		if node, ok := rt.nodes[id]; ok && node.active && node.kind == .Split_Handle &&
 			node_is_in_modal_overlay(rt, id, modal_root) &&
-			rect_contains(node.hit_bounds, x, y) && rect_contains(node.clip, x, y) {
+			rect_contains(layout_node_finalized_geometry(rt, id).hit_bounds, x, y) &&
+			rect_contains(layout_node_finalized_geometry(rt, id).clip, x, y) {
 			return id
 		}
 	}
@@ -196,7 +198,9 @@ hit_test :: proc(rt: ^Runtime, x, y: f32, include_reveal_targets := false) -> No
 		id := rt.order[i]
 		if node, ok := rt.nodes[id]; ok && node.active && !node.disabled &&
 			visual_part_hit_test_visible(rt, id, include_reveal_target=include_reveal_targets) &&
-			node_is_in_modal_overlay(rt, id, modal_root) && rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
+			node_is_in_modal_overlay(rt, id, modal_root) &&
+			rect_contains(layout_node_finalized_geometry(rt, id).bounds, x, y) &&
+			rect_contains(layout_node_finalized_geometry(rt, id).clip, x, y) {
 			if node.kind == .Button || node.kind == .Checkbox || node.kind == .Slider || node.kind == .Text_Field ||
 			   (node.kind == .Custom_Surface && node.surface_interaction == .Pointer) ||
 			   (node.text_input_target && node.focusable) {
@@ -212,13 +216,16 @@ hit_test :: proc(rt: ^Runtime, x, y: f32, include_reveal_targets := false) -> No
 			id := rt.order[i]
 			if node, ok := rt.nodes[id]; ok && node.active && !node.disabled && visual_part_is_visible(rt, id) &&
 				node.drop_target_type == rt.drag.drag_type && semantic_id_is_valid(node.drop_target_id) &&
-				node_is_in_modal_overlay(rt, id, modal_root) && rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
+				node_is_in_modal_overlay(rt, id, modal_root) &&
+				rect_contains(layout_node_finalized_geometry(rt, id).bounds, x, y) &&
+				rect_contains(layout_node_finalized_geometry(rt, id).clip, x, y) {
 				return id
 			}
 		}
 	}
 	if overlay, ok := rt.nodes[modal_root]; ok && overlay.active &&
-		rect_contains(overlay.bounds, x, y) && rect_contains(overlay.clip, x, y) {
+		rect_contains(layout_node_finalized_geometry(rt, modal_root).bounds, x, y) &&
+		rect_contains(layout_node_finalized_geometry(rt, modal_root).clip, x, y) {
 		if overlay.kind == .Modal_Overlay || overlay.kind == .Context_Menu_Overlay { return modal_root }
 	}
 	return 0
@@ -231,6 +238,8 @@ split_drag_coordinate :: proc(node: ^Node, x, y: f32) -> f32 {
 update_split_drag :: proc(rt: ^Runtime, handle: ^Node, x, y: f32) {
 	owner, ok := rt.nodes[handle.split_owner]
 	if !ok || !owner.active { return }
+	// Drag math remains in target logical geometry, matching split placement.
+	// Finalized bounds are only for pointer hit testing and presentation.
 	total := owner.bounds.w if owner.split_axis == .Horizontal else owner.bounds.h
 	total -= 2 * owner.style.padding
 	if total < 0 { total = 0 }
@@ -250,7 +259,8 @@ scroll_region_hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 		id := rt.order[i]
 		if node, ok := rt.nodes[id]; ok && node.active && node.kind == .Scroll_Region &&
 			node_is_in_modal_overlay(rt, id, modal_root) &&
-			rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
+			rect_contains(layout_node_finalized_geometry(rt, id).bounds, x, y) &&
+			rect_contains(layout_node_finalized_geometry(rt, id).clip, x, y) {
 			return id
 		}
 	}
@@ -398,8 +408,9 @@ slider_stage_value :: proc(rt: ^Runtime, node: ^Node, requested: f32, reason: st
 
 slider_set_from_pointer :: proc(rt: ^Runtime, node: ^Node, x: f32) -> bool {
 	if node.kind != .Slider || node.disabled || node.control_maximum <= node.control_minimum { return false }
-	track_start := node.bounds.x + minf(8, node.bounds.w*0.25)
-	track_width := maxf(node.bounds.w - minf(16, node.bounds.w*0.5), 1)
+	bounds := layout_node_finalized_geometry(rt, node.id).bounds
+	track_start := bounds.x + minf(8, bounds.w*0.25)
+	track_width := maxf(bounds.w - minf(16, bounds.w*0.5), 1)
 	position := clampf((x-track_start)/track_width, 0, 1)
 	requested := node.control_minimum+position*(node.control_maximum-node.control_minimum)
 	return slider_stage_value(rt, node, requested, "slider value changed by pointer")
@@ -612,7 +623,8 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 				}
 				if node.kind == .Text_Field && node.text_run_valid &&
 					(event.button == 0 || event.button == POINTER_BUTTON_PRIMARY) {
-					position := text_run_hit_test(&node.text_run, event.x-node.bounds.x, event.y-node.bounds.y, rt.scratch_allocator)
+					bounds := layout_node_finalized_geometry(rt, node.id).bounds
+					position := text_run_hit_test(&node.text_run, event.x-bounds.x, event.y-bounds.y, rt.scratch_allocator)
 					drag_state, endpoints := text_selection.text_selection_drag_begin(
 						node.text,
 						position.byte,
@@ -714,10 +726,9 @@ invalidate_text_product :: proc(rt: ^Runtime, node: ^Node, reason := "retained t
 		node.text_run_handle_generation = 0
 	}
 	text_composition_run_destroy(node)
-	dirty_set(&node.dirty, .Layout, true)
+	dirty_set(&node.dirty, .Measure, true)
 	dirty_set(&node.dirty, .Paint, true)
 	dirty_set(&node.dirty, .Composite, true)
-	mark_layout_ancestors(rt, node.id)
 	if len(node.last_reason) > 0 { delete(node.last_reason, rt.persistent_allocator) }
 	node.last_reason = owned(reason, rt.persistent_allocator)
 	queue_paint(rt, node.id)
@@ -894,7 +905,8 @@ text_node_hit_test :: proc(rt: ^Runtime, id: Node_ID, x, y: f32) -> (position: T
 	if !found || !node.active || (node.kind != .Text && node.kind != .Text_Field) || !node.text_run_valid || len(node.text_run.lines) == 0 {
 		return Text_Position{}, false
 	}
-	position = text_run_hit_test(&node.text_run, x-node.bounds.x, y-node.bounds.y, rt.scratch_allocator)
+	bounds := layout_node_finalized_geometry(rt, id).bounds
+	position = text_run_hit_test(&node.text_run, x-bounds.x, y-bounds.y, rt.scratch_allocator)
 	return position, true
 }
 
@@ -910,8 +922,10 @@ text_node_caret_geometry :: proc(rt: ^Runtime, id: Node_ID, position: Text_Posit
 	}
 	geometry := text_run_caret_geometry(&node.text_run, position, rt.scratch_allocator)
 	if geometry.valid {
-		geometry.rect.x += node.bounds.x
-		geometry.rect.y += node.bounds.y
+		bounds := layout_node_finalized_geometry(rt, id).bounds
+		geometry.rect.x += bounds.x
+		geometry.rect.y += bounds.y
+		geometry.rect = layout_finalize_rect(geometry.rect, rt.presentation_scale_x, rt.presentation_scale_y)
 	}
 	return geometry
 }
@@ -925,8 +939,10 @@ text_field_caret_geometry :: proc(rt: ^Runtime, id: Node_ID) -> Text_Caret_Geome
 	if node.composition.active && node.composition_run_valid {
 		geometry = text_run_caret_geometry(&node.composition_run, text_composition_visual_position(node), rt.scratch_allocator)
 	}
-	geometry.rect.x += node.bounds.x
-	geometry.rect.y += node.bounds.y
+	bounds := layout_node_finalized_geometry(rt, id).bounds
+	geometry.rect.x += bounds.x
+	geometry.rect.y += bounds.y
+	geometry.rect = layout_finalize_rect(geometry.rect, rt.presentation_scale_x, rt.presentation_scale_y)
 	return geometry
 }
 
@@ -935,7 +951,8 @@ text_field_hit_test :: proc(rt: ^Runtime, id: Node_ID, x, y: f32) -> Text_Positi
 	if !ok || !node.active || node.kind != .Text_Field || !node.text_run_valid {
 		return Text_Position{}
 	}
-	return text_run_hit_test(&node.text_run, x-node.bounds.x, y-node.bounds.y, rt.scratch_allocator)
+	bounds := layout_node_finalized_geometry(rt, id).bounds
+	return text_run_hit_test(&node.text_run, x-bounds.x, y-bounds.y, rt.scratch_allocator)
 }
 
 text_field_selection_rects :: proc(rt: ^Runtime, id: Node_ID, allocator := context.allocator) -> [dynamic]Text_Selection_Rect {
@@ -950,9 +967,11 @@ text_field_selection_rects :: proc(rt: ^Runtime, id: Node_ID, allocator := conte
 		allocator,
 		rt.scratch_allocator,
 	)
+	bounds := layout_node_finalized_geometry(rt, id).bounds
 	for &selection in result {
-		selection.rect.x += node.bounds.x
-		selection.rect.y += node.bounds.y
+		selection.rect.x += bounds.x
+		selection.rect.y += bounds.y
+		selection.rect = layout_finalize_rect(selection.rect, rt.presentation_scale_x, rt.presentation_scale_y)
 	}
 	return result
 }

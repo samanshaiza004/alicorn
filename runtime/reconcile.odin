@@ -161,8 +161,74 @@ description_hash :: proc(
 	return h
 }
 
+measure_input_hash :: proc(d: Description) -> u64 {
+	h: u64 = 1469598103934665603
+	h = hash_mix(h, u64(d.kind))
+	#partial switch d.kind {
+	case .Button, .Checkbox, .Slider:
+		h = hash_mix(h, hash_string(d.label))
+	case .Text, .Text_Field:
+		h = hash_mix(h, hash_string(d.text))
+	case:
+		return h
+	}
+	h = hash_mix(h, hash_text_style_spans(d.text_style_spans))
+	h = hash_mix(h, u64(d.font))
+	h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
+	h = hash_mix(h, u64(d.text_style.overflow))
+	// Local layout inputs are fingerprinted together with text because they
+	// affect the measured product. Inherited metric/typography changes are
+	// represented by typed dependency generations, not duplicated here.
+	// Paint-only state is intentionally omitted.
+	h = hash_mix(h, u64(transmute(u32)d.style.width))
+	h = hash_mix(h, u64(transmute(u32)d.style.height))
+	h = hash_mix(h, u64(transmute(u32)d.style.min_width))
+	h = hash_mix(h, u64(transmute(u32)d.style.max_width))
+	h = hash_mix(h, u64(transmute(u32)d.style.min_height))
+	h = hash_mix(h, u64(transmute(u32)d.style.max_height))
+	if d.kind == .Button {
+		h = hash_mix(h, hash_button_content_style(d.button_content_style))
+	}
+	return h
+}
+
+measure_input_observe :: proc(rt: ^Runtime, id: Node_ID, next_hash: u64) -> bool {
+	if rt == nil || id == 0 { return false }
+	state := rt.measure_states[id]
+	if state.input_revision == 0 {
+		state.input_hash = next_hash
+		state.input_revision = 1
+		rt.measure_states[id] = state
+		return true
+	}
+	if state.input_hash == next_hash { return false }
+	state.input_hash = next_hash
+	state.input_revision += 1
+	if state.input_revision == 0 {
+		// Zero denotes an uninitialized revision and is never reused as valid.
+		state.input_revision = 1
+		state.cache_key.valid = false
+	}
+	rt.measure_states[id] = state
+	return true
+}
+
 layout_hash :: proc(d: Description) -> u64 {
-	h := hash_mix(hash_style(d.style), u64(d.parent))
+	style_input := d.style
+	if node_has_text_product(d.kind) {
+		// Leaf size constraints belong to retained measurement. A changed
+		// constraint is not itself parent layout invalidation; the measured
+		// output comparison decides whether placement needs another pass. The
+		// remaining style fields (especially grow) still affect parent policy.
+		style_input.width = -1
+		style_input.height = -1
+		style_input.min_width = 0
+		style_input.max_width = -1
+		style_input.min_height = 0
+		style_input.max_height = -1
+	}
+	h := hash_mix(hash_style(style_input), u64(d.parent))
+	h = hash_mix(h, u64(d.layout_boundary ? 1 : 0))
 	if d.kind == .Context_Menu_Panel {
 		h = hash_mix(h, u64(transmute(u32)d.context_menu_bounds.x))
 		h = hash_mix(h, u64(transmute(u32)d.context_menu_bounds.y))
@@ -190,27 +256,6 @@ layout_hash :: proc(d: Description) -> u64 {
 	h = hash_mix(h, u64(transmute(u32)d.split_min_second))
 	h = hash_mix(h, u64(transmute(u32)d.split_handle_size))
 	h = hash_mix(h, u64(transmute(u32)d.split_hit_size))
-	// Text participates in intrinsic measurement. A description can otherwise
-	// look layout-identical while a changing label/value moves its siblings.
-	#partial switch d.kind {
-	case .Button, .Checkbox, .Slider:
-		h = hash_mix(h, hash_string(d.label))
-		if d.kind == .Button {
-			h = hash_mix(h, u64(transmute(u32)d.button_content_style.padding_x))
-			h = hash_mix(h, u64(transmute(u32)d.button_content_style.padding_y))
-		}
-		h = hash_mix(h, u64(d.font))
-		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
-		h = hash_mix(h, u64(d.text_style.overflow))
-		h = hash_mix(h, u64(transmute(u32)d.style_environment.text_scale))
-	case .Text, .Text_Field:
-		h = hash_mix(h, hash_string(d.text))
-		h = hash_mix(h, hash_text_style_spans(d.text_style_spans))
-		h = hash_mix(h, u64(d.font))
-		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
-		h = hash_mix(h, u64(d.text_style.overflow))
-		h = hash_mix(h, u64(transmute(u32)d.style_environment.text_scale))
-	}
 	return h
 }
 
@@ -232,10 +277,12 @@ same_rect :: proc(a, b: Rect) -> bool {
 }
 
 mark_dirty :: proc(node: ^Node, reason: string, description, layout, paint, composite: bool, allocator := context.allocator) {
+	previous_measure := dirty_has(node.dirty, .Measure)
 	previous_paint := dirty_has(node.dirty, .Paint)
 	previous_composite := dirty_has(node.dirty, .Composite)
 	node.dirty = {}
 	dirty_set(&node.dirty, .Description, description)
+	dirty_set(&node.dirty, .Measure, previous_measure)
 	dirty_set(&node.dirty, .Layout, layout)
 	dirty_set(&node.dirty, .Paint, paint || previous_paint)
 	dirty_set(&node.dirty, .Composite, composite || previous_composite)
@@ -393,6 +440,7 @@ copy_node_description :: proc(
 	node.text_style = d.text_style
 	node.style_environment = next_style_environment
 	node.style_scope_boundary = d.style_scope_boundary
+	node.layout_boundary = d.layout_boundary
 	node.button_content_style = d.button_content_style
 	node.button_variant = d.button_variant
 	node.color = d.color
@@ -550,7 +598,7 @@ mark_layout_ancestors :: proc(rt: ^Runtime, id: Node_ID) {
 		if !ok { break }
 		dirty_set(&node.dirty, .Layout, true)
 		dirty_set(&node.dirty, .Composite, true)
-		if node.style_scope_boundary {
+		if node.layout_boundary {
 			scope_root = current
 			break
 		}
@@ -592,6 +640,8 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	delete_key(&rt.computed_styles, id)
 	delete_key(&rt.semantic_surfaces, id)
 	delete_key(&rt.visual_parts, id)
+	delete_key(&rt.measure_states, id)
+	delete_key(&rt.finalized_geometry, id)
 	children := node.children[:]
 	for child in children {
 		retire_subtree(rt, child, desired)
@@ -708,26 +758,31 @@ reconcile :: proc(rt: ^Runtime) {
 			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part, item.accessibility)
 			node.description_hash = description_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
 			node.layout_hash = layout_hash(d)
+			rt.measure_states[d.id] = Measure_State{
+				input_hash=measure_input_hash(d),
+				input_revision=1,
+				parent_layout_dependencies={.Width, .Height},
+			}
 			node.paint_hash = paint_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
 			mark_dirty(node, "new retained node", true, true, true, true, rt.persistent_allocator)
+			dirty_set(&node.dirty, .Measure, true)
 			queue_paint(rt, d.id)
 			mark_layout_ancestors(rt, d.id)
 			record_trace(rt, .Reconcile, d.id, "new retained node")
 		} else {
 			new_desc_hash := description_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
 			new_layout_hash := layout_hash(d)
+			new_measure_input_hash := measure_input_hash(d)
 			new_paint_hash := paint_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
 			was_selected := node.selected
 			description_changed := node.description_hash != new_desc_hash
-			text_changed := node.text != d.text || ((d.kind == .Button || d.kind == .Checkbox || d.kind == .Slider) && node.label != d.label)
+			measure_state := rt.measure_states[d.id]
+			measurement_changed := measure_state.input_revision == 0 || measure_state.input_hash != new_measure_input_hash
 			next_style_environment := style_environment_with_accessibility(d.style_environment, item.accessibility)
 			style_changes := style_environment_changed_domains(node.style_environment, next_style_environment)
 			style_stages := style_domains_dirty_stages(style_changes)
-			// Text/labels are included in layout_hash because they contribute
-			// intrinsic size. Keep this explicit at the reconciliation boundary so
-			// the invariant remains true even if layout hashing is later split by
-			// product type.
-			layout_changed := node.layout_hash != new_layout_hash || text_changed || Dirty_Stage.Layout in style_stages
+			layout_changed := node.layout_hash != new_layout_hash || Dirty_Stage.Layout in style_stages
+			measurement_changed = measurement_changed || Dirty_Stage.Measure in style_stages
 			paint_changed := node.paint_hash != new_paint_hash || Dirty_Stage.Paint in style_stages
 			composite_changed := Dirty_Stage.Composite in style_stages
 			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part, item.accessibility)
@@ -736,10 +791,12 @@ reconcile :: proc(rt: ^Runtime) {
 			}
 			node.description_hash = new_desc_hash
 			node.layout_hash = new_layout_hash
+			_ = measure_input_observe(rt, d.id, new_measure_input_hash)
 			node.paint_hash = new_paint_hash
 			reason := "description reused"
 			if description_changed { reason = "description changed" }
 			mark_dirty(node, reason, description_changed, layout_changed, paint_changed || layout_changed, composite_changed, rt.persistent_allocator)
+			if measurement_changed { dirty_set(&node.dirty, .Measure, true) }
 			if layout_changed { mark_layout_ancestors(rt, d.id) }
 			if description_changed || layout_changed || paint_changed {
 				queue_paint(rt, d.id)
@@ -852,7 +909,7 @@ reconcile :: proc(rt: ^Runtime) {
 	semantic_keyboard_focus_refresh(rt)
 	semantic_prune_touched_collections(rt)
 
-	prepare_text_runs(rt)
+	layout_measure_retained_dirty_nodes(rt)
 	layout_tree(rt)
 	semantic_commit(rt)
 	update_paint(rt)
@@ -913,6 +970,8 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		free(node, allocator=rt.persistent_allocator)
 	}
 	delete(rt.nodes)
+	delete(rt.measure_states)
+	delete(rt.finalized_geometry)
 	delete(rt.computed_styles)
 	delete(rt.semantic_surfaces)
 	delete(rt.visual_parts)
@@ -975,6 +1034,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	}
 	delete(rt.actions)
 	delete(rt.display)
+	delete(rt.display_target)
 	text_engine_destroy(&rt.text_engine)
 	if rt.scratch_arena != nil {
 		mem.dynamic_arena_destroy(rt.scratch_arena)

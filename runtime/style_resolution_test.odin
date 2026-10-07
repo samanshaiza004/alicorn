@@ -3,6 +3,8 @@ package alicorn
 import "core:testing"
 import "core:strings"
 
+STYLE_RESOLUTION_TEST_FONT :: #load("../assets/fonts/AtkinsonHyperlegibleNext-Variable.ttf")
+
 @(test)
 test_retained_computed_style_is_scoped_to_theme_identity :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 120, 80})
@@ -336,9 +338,9 @@ style_text_field_cache_scope_describe :: proc(rt: ^Runtime, scale: f32) -> Style
 	container_begin(&ui, .Root, key=key_string("cache-scope-root"), style=layout_style())
 	scope := style_environment_push(&ui, Style_Environment{text_scale=scale})
 	result := Style_Cache_Scope_Nodes{}
-	result.scaled = text_field(&ui, "scaled", key=key_string("scaled-field"), style=layout_style(width=120, height=32))
+	result.scaled = text_field(&ui, "scaled", key=key_string("scaled-field"), style=layout_style(width=120))
 	style_environment_pop(&ui, scope)
-	result.sibling = text_field(&ui, "sibling", key=key_string("sibling-field"), style=layout_style(width=120, height=32))
+	result.sibling = text_field(&ui, "sibling", key=key_string("sibling-field"), style=layout_style(width=120))
 	container_end(&ui)
 	end_frame(&ui)
 	return result
@@ -348,9 +350,11 @@ style_text_field_cache_scope_describe :: proc(rt: ^Runtime, scale: f32) -> Style
 test_text_scale_scope_reflows_while_color_style_cache_remains_paint_only :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 240, 120})
 	defer destroy_runtime(&rt)
+	testing.expect(t, text_engine_load_font(&rt.text_engine, STYLE_RESOLUTION_TEST_FONT), "text-scale fixture font should load")
 	nodes := style_text_field_cache_scope_describe(&rt, 1.25)
 	if nodes.scaled == 0 || nodes.sibling == 0 { testing.expect(t, false, "scoped text fields should be retained"); return }
 	first_scaled_generations := rt.nodes[nodes.scaled].style_generations
+	first_scaled_bounds := rt.nodes[nodes.scaled].bounds
 	first_sibling_generations := rt.nodes[nodes.sibling].style_generations
 	first_scaled_cache := rt.computed_styles[nodes.scaled]
 	first_sibling_cache := rt.computed_styles[nodes.sibling]
@@ -370,7 +374,9 @@ test_text_scale_scope_reflows_while_color_style_cache_remains_paint_only :: proc
 	testing.expect(t, sibling.style_generations == first_sibling_generations,
 		"a sibling outside the text-scale scope should keep all style generations")
 	testing.expect(t, rt.stats.layout_nodes_visited > layout_visits,
-		"the scoped text-scale change should still run layout for its dependent subtree")
+		"the auto-height scoped field should relayout when larger text changes its measured height")
+	testing.expect(t, rt.nodes[next_nodes.scaled].bounds.h >= first_scaled_bounds.h,
+		"text scale should preserve or increase the field's measured height")
 	testing.expect(t, scaled_cache.family == .Text_Field &&
 		scaled_cache.generations == first_scaled_cache.generations &&
 		style_computed_cache_matches(&rt, scaled, .Text_Field,

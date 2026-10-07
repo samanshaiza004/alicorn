@@ -65,11 +65,15 @@ semantic roles, names, values, actions, or states. Immutable typed palettes
 resolve semantic color roles without copying them into every retained node.
 Environment changes map to retained domains: density to metrics, text scale to
 metrics and typography, theme/accent and contrast/non-color preferences to
-paint, and preference-aware analytic materials to material. The scope boundary
-confines resulting work to that subtree; scope containers keep stable
-parent-assigned bounds while contents reflow. `style_metric` leaves the meaning
-and use of each dimension with the application. This is explicit dependency
-tracking, not a general cascade or implicit observation of app state. The
+paint, and preference-aware analytic materials to material. A style scope and a
+layout boundary are separate: style scopes supply inherited inputs, while a
+container opts into local layout invalidation with `layout_boundary=true` when
+its parent-assigned bounds can remain stable. Measurement invalidation alone
+does not propagate layout; the runtime compares retained measure results and
+propagates changed output axes through the parent's placement dependencies.
+`style_metric` leaves the meaning and use of each dimension with the
+application. This is explicit dependency tracking, not a general cascade or
+implicit observation of app state. The
 button component has an explicit recipe family for default, primary, toolbar,
 quiet, and tab intent. Checkbox and Slider resolve semantic recipes over their
 distinct visual parts. Selected/checked, hover, press, and disabled transforms

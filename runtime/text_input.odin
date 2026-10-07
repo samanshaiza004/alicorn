@@ -196,7 +196,7 @@ text_field_input_area :: proc(rt: ^Runtime, id: Node_ID) -> (area: Rect, cursor:
 	if !found || !node.active || node.kind != .Text_Field || !node.text_run_valid { return }
 	caret := text_field_caret_geometry(rt, id)
 	if !caret.valid { return }
-	area = node.bounds
+	area = layout_node_finalized_geometry(rt, id).bounds
 	cursor = caret.rect.x - area.x
 	if cursor < 0 { cursor = 0 }
 	ok = true
@@ -271,11 +271,13 @@ text_input_area :: proc(rt: ^Runtime, id: Node_ID) -> (area: Text_Input_Area, ok
 	if node.kind == .Text_Field {
 		rect, cursor, valid := text_field_input_area(rt, id)
 		if valid { return Text_Input_Area{rect=rect, cursor_x=cursor}, true }
-		if node.bounds.w <= 0 || node.bounds.h <= 0 { return }
-		return Text_Input_Area{rect=node.bounds}, true
+		bounds := layout_node_finalized_geometry(rt, id).bounds
+		if bounds.w <= 0 || bounds.h <= 0 { return }
+		return Text_Input_Area{rect=bounds}, true
 	}
 	if !node.text_input_target || !node.focusable { return }
 	if node.text_input_area_set { return node.text_input_area, true }
-	if node.bounds.w <= 0 || node.bounds.h <= 0 { return }
-	return Text_Input_Area{rect=node.bounds}, true
+	bounds := layout_node_finalized_geometry(rt, id).bounds
+	if bounds.w <= 0 || bounds.h <= 0 { return }
+	return Text_Input_Area{rect=bounds}, true
 }

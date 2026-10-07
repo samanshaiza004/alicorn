@@ -106,15 +106,19 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	old_metrics := state.metrics^
 	logical_changed := current_metrics.logical_width != old_metrics.logical_width ||
 	                   current_metrics.logical_height != old_metrics.logical_height
+	old_scale_x := f32(old_metrics.pixel_width)/f32(max(old_metrics.logical_width, 1))
+	old_scale_y := f32(old_metrics.pixel_height)/f32(max(old_metrics.window_logical_height, 1))
+	new_scale_x := f32(current_metrics.pixel_width)/f32(max(current_metrics.logical_width, 1))
+	new_scale_y := f32(current_metrics.pixel_height)/f32(max(current_metrics.window_logical_height, 1))
 	scale_changed := current_metrics.pixel_density != old_metrics.pixel_density ||
-	                 current_metrics.display_scale != old_metrics.display_scale
+	                 current_metrics.display_scale != old_metrics.display_scale ||
+	                 new_scale_x != old_scale_x || new_scale_y != old_scale_y
 	state.metrics^ = current_metrics
+	if scale_changed { _ = alicorn.set_presentation_scale(state.rt, new_scale_x, new_scale_y) }
 	if logical_changed {
 		state.rt.viewport.w = f32(current_metrics.logical_width)
 		state.rt.viewport.h = f32(current_metrics.logical_height)
 		alicorn.invalidate_root(state.rt, "SDL live-resize logical size changed")
-	} else if scale_changed {
-		alicorn.invalidate_root(state.rt, "SDL live-resize display scale changed")
 	}
 	inspector_enabled := state.inspector != nil && state.inspector.enabled
 	if state.rt.invalidated && (!inspector_enabled || !state.rt.hard_error) {
@@ -163,6 +167,7 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	state.metrics.pixel_height = int(swap_h)
 	scale_x := f32(swap_w)/f32(state.metrics.logical_width)
 	scale_y := f32(swap_h)/f32(state.metrics.window_logical_height)
+	_ = alicorn.set_presentation_scale(state.rt, scale_x, scale_y)
 	preview_time := u64(sdl3.GetTicksNS())
 	preview := native_devtools_make_sample(
 		state.devtools_cursor, state.rt, state.timing, state.text_events,

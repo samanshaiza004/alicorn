@@ -38,13 +38,13 @@ tooltip_source_at :: proc(rt: ^Runtime, hit: Node_ID) -> Node_ID {
 tooltip_remove_display_commands :: proc(rt: ^Runtime) {
 	if rt == nil || rt.transient_overlay_kind != .Tooltip { return }
 	write_index := 0
-	for read_index := 0; read_index < len(rt.display); read_index += 1 {
-		command := rt.display[read_index]
+	for read_index := 0; read_index < len(rt.display_target); read_index += 1 {
+		command := rt.display_target[read_index]
 		if command.owner == Node_ID(0) { continue }
-		rt.display[write_index] = command
+		rt.display_target[write_index] = command
 		write_index += 1
 	}
-	for len(rt.display) > write_index { _ = pop(&rt.display) }
+	for len(rt.display_target) > write_index { _ = pop(&rt.display_target) }
 	rt.transient_overlay_kind = .None
 	rt.composition_rebuild = true
 }
@@ -137,10 +137,11 @@ append_tooltip_overlay :: proc(rt: ^Runtime) {
 	run := &rt.tooltip.run
 	width := minf(maxf(run.width+2*TOOLTIP_HORIZONTAL_PADDING, 72), TOOLTIP_MAX_WIDTH)
 	height := maxf(run.height+2*TOOLTIP_VERTICAL_PADDING, 26)
-	bounds := tooltip_placement(rt.viewport, node.bounds, width, height)
+	anchor := layout_node_finalized_geometry(rt, node.id).bounds
+	bounds := tooltip_placement(rt.viewport, anchor, width, height)
 	background := Color{0.075, 0.09, 0.125, 0.99}
 	border := Color{0.24, 0.29, 0.37, 1}
-	append(&rt.display,
+	append(&rt.display_target,
 		paint_surface_command(Node_ID(0), bounds, rt.viewport, background),
 		paint_surface_command(Node_ID(0), Rect{bounds.x, bounds.y, bounds.w, 1}, rt.viewport, border),
 		paint_surface_command(Node_ID(0), Rect{bounds.x, bounds.y+bounds.h-1, bounds.w, 1}, rt.viewport, border),

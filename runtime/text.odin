@@ -1122,11 +1122,10 @@ text_run_build_with_overflow :: proc(
 	return run, true
 }
 
-// prepare_text_runs materializes the platform-neutral text product before
-// layout. A node owns the product for as long as its retained identity lives;
-// the application never needs to retain a Runa object or a renderer handle.
-// Font replacement is represented by font_generation, so old runs are
-// discarded before stale logical geometry can reach layout or paint.
+// prepare_text_run_node materializes the platform-neutral text product when
+// measure_node supplies the real retained constraints. A node owns this
+// product for its retained lifetime; the native renderer only resolves it to
+// physical glyph residency after logical layout.
 prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) -> bool {
 	if !node_has_text_product(node.kind) || !node.active { return false }
 	text_value := node.text
@@ -1200,27 +1199,6 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 		return true
 	}
 	return false
-}
-
-prepare_text_runs :: proc(rt: ^Runtime) {
-	// Normal frames only prepare nodes already made dirty by reconciliation.
-	// A font replacement is the exceptional explicit event that changes every
-	// text product's generation and therefore permits one full text-node pass.
-	font_changed := rt.text_font_generation_seen != rt.text_engine.font_generation
-	if font_changed {
-		for id in rt.order {
-			node, ok := rt.nodes[id]
-			if ok { prepare_text_run_node(rt, node) }
-		}
-		rt.text_font_generation_seen = rt.text_engine.font_generation
-		return
-	}
-	for id in rt.paint_queue {
-		node, ok := rt.nodes[id]
-		if ok && (!node.text_run_valid || dirty_has(node.dirty, .Layout)) {
-			prepare_text_run_node(rt, node)
-		}
-	}
 }
 
 runa_cache_size :: proc(engine: ^Text_Engine) -> int {

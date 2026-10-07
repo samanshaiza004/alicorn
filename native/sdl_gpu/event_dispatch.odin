@@ -539,7 +539,13 @@ pump_events :: proc(
 			metrics.pixel_width = int(event.window.data1)
 			metrics.pixel_height = int(event.window.data2)
 			pixel_resize_events^ += 1
-			alicorn.invalidate_root(rt, "SDL drawable size changed")
+			if metrics.logical_width > 0 && metrics.window_logical_height > 0 {
+				_ = alicorn.set_presentation_scale(
+					rt,
+					f32(metrics.pixel_width)/f32(metrics.logical_width),
+					f32(metrics.pixel_height)/f32(metrics.window_logical_height),
+				)
+			}
 			alicorn.cause_end(rt, host_cause)
 		case .WINDOW_DISPLAY_SCALE_CHANGED:
 			host_cause := alicorn.cause_begin(rt, .Host_Event, "display scale changed")
@@ -547,7 +553,16 @@ pump_events :: proc(
 			scale_events^ += 1
 			metrics.pixel_density = sdl3.GetWindowPixelDensity(window)
 			metrics.display_scale = sdl3.GetWindowDisplayScale(window)
-			alicorn.invalidate_root(rt, "SDL display scale changed")
+			inset_top := f32(0)
+			if native_menu != nil { inset_top = native_menu.content_inset_top }
+			_ = read_window_metrics(window, metrics, inset_top)
+			if metrics.logical_width > 0 && metrics.window_logical_height > 0 {
+				_ = alicorn.set_presentation_scale(
+					rt,
+					f32(metrics.pixel_width)/f32(metrics.logical_width),
+					f32(metrics.pixel_height)/f32(metrics.window_logical_height),
+				)
+			}
 			alicorn.cause_end(rt, host_cause)
 		case .TEXT_INPUT:
 			text_cause := alicorn.cause_begin(rt, .Text_Input, "SDL text input")

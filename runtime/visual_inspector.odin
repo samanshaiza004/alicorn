@@ -169,8 +169,9 @@ inspector_overlay_pick :: proc(state: ^Inspector_Overlay, inspected: ^Runtime, x
 	for index := len(inspected.order)-1; index >= 0; index -= 1 {
 		id := inspected.order[index]
 		node, ok := inspected.nodes[id]
+		geometry := layout_node_finalized_geometry(inspected, id)
 		if ok && node.active && node_is_in_modal_overlay(inspected, id, modal_root) &&
-			rect_contains(node.bounds, x, y) && rect_contains(node.clip, x, y) {
+			rect_contains(geometry.bounds, x, y) && rect_contains(geometry.clip, x, y) {
 			state.selected = id
 			state.picking = false
 			return id
@@ -244,8 +245,10 @@ inspector_overlay_node_lines :: proc(inspected: ^Runtime, id: Node_ID, allocator
 	} else if node.identity_key_numeric {
 		append(&lines, fmt.tprintf("scope: u64(%d)", node.identity_key_u64))
 	} else { append(&lines, fmt.tprintf("scope: %q", node.identity_key)) }
-	append(&lines, fmt.tprintf("bounds: x=%.1f y=%.1f w=%.1f h=%.1f", node.bounds.x, node.bounds.y, node.bounds.w, node.bounds.h))
-	append(&lines, fmt.tprintf("clip: x=%.1f y=%.1f w=%.1f h=%.1f", node.clip.x, node.clip.y, node.clip.w, node.clip.h))
+	geometry := layout_node_finalized_geometry(inspected, node.id)
+	append(&lines, fmt.tprintf("target bounds: x=%.1f y=%.1f w=%.1f h=%.1f", node.bounds.x, node.bounds.y, node.bounds.w, node.bounds.h))
+	append(&lines, fmt.tprintf("final bounds: x=%.1f y=%.1f w=%.1f h=%.1f", geometry.bounds.x, geometry.bounds.y, geometry.bounds.w, geometry.bounds.h))
+	append(&lines, fmt.tprintf("final clip: x=%.1f y=%.1f w=%.1f h=%.1f", geometry.clip.x, geometry.clip.y, geometry.clip.w, geometry.clip.h))
 	append(&lines, fmt.tprintf("active=%t present=%t focusable=%t disabled=%t", node.active, node.present, node.focusable, node.disabled))
 	append(&lines, fmt.tprintf("hovered=%t pressed=%t selected=%t semantic_active=%t", node.hovered, node.pressed, node.selected, node.semantic_active))
 	append(&lines, fmt.tprintf("keyboard_focus=%t captured=%t", inspected.focused == node.id, inspected.captured_node == node.id))
@@ -393,7 +396,8 @@ inspector_overlay_highlight :: proc(ui: ^UI, state: ^Inspector_Overlay, inspecte
 	if !ok || !node.active { return }
 	viewport := ui.runtime.viewport
 	clip := Rect{viewport.x,viewport.y,maxf(state.panel_bounds.x-viewport.x,0),viewport.h}
-	bounds := rect_intersection(rect_intersection(node.bounds,node.clip),clip)
+	geometry := layout_node_finalized_geometry(inspected, node.id)
+	bounds := rect_intersection(rect_intersection(geometry.bounds,geometry.clip),clip)
 	if bounds.w <= 0 || bounds.h <= 0 { return }
 	border := minf(2,minf(bounds.w,bounds.h)/2)
 	color := Color{0.20,0.80,1,1}

@@ -99,7 +99,7 @@ error and its correction hint.
 | `node_info` / `node_identity_key` / `node_by_key` | Read a node's geometry, interaction state, scroll metrics, and explicit identity. |
 | `text_node_line_geometry` / `text_node_hit_test_line` | Query retained visual-line geometry and hit-test without exposing its shaped run. |
 | `runtime_text_run_build` | Shape temporary application text through Alicorn's retained text engine without exposing the engine. |
-| `container_begin` / `container_end` | Group children and define their layout. |
+| `container_begin` / `container_begin_ex` / `container_end` | Group children and define their layout; `layout_boundary=true` makes the container an explicit retained-layout invalidation boundary. |
 | `layout_style` | Set direction, size constraints, growth, padding, gap, alignment, and clipping. |
 | `button_content_style` | Set label alignment and padding inside a button. |
 | `Text_Style` | Select weight, overflow behavior, and other text presentation options. |
@@ -124,6 +124,9 @@ owns hit-testing, source mapping, viewport scrolling, and edits.
 
 The default layout direction is column. Use `.Row` for horizontal children;
 `grow` shares available space. Layout is in logical window coordinates.
+Style scopes do not implicitly create layout boundaries. A layout boundary keeps
+its parent-assigned bounds stable and lets changed descendants relayout locally;
+use it when the application can preserve that geometry contract.
 
 ### Scoped style environment
 

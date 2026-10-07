@@ -1030,7 +1030,10 @@ semantic_sync_node :: proc(rt: ^Runtime, node: ^Node, semantic: Semantic_Descrip
 		actions=semantic.actions,
 		parent=parent,
 		visual_node=node.id,
-		bounds=node.bounds,
+		// Accessibility geometry shares the exact finalized edge grid used by
+		// paint and hit testing. Re-describing an unchanged node must not briefly
+		// publish its unsnapped solver target as a semantic bounds change.
+		bounds=layout_node_finalized_geometry(rt, node.id).bounds,
 		has_bounds=node.active,
 		tree_order=tree_order,
 		is_collection=semantic.is_collection,
@@ -1307,9 +1310,11 @@ semantic_sync_bounds :: proc(rt: ^Runtime, node: ^Node) {
 	if rt == nil || node == nil || !semantic_id_is_valid(node.semantic_id) { return }
 	entity, found := rt.semantic_entities[node.semantic_id]
 	if !found || entity.node.visual_node != node.id { return }
-	if entity.node.visual_node != node.id || (entity.node.has_bounds && entity.node.bounds == node.bounds) { return }
+	bounds := node.bounds
+	if geometry, ok := rt.finalized_geometry[node.id]; ok && geometry.valid { bounds = geometry.bounds }
+	if entity.node.visual_node != node.id || (entity.node.has_bounds && entity.node.bounds == bounds) { return }
 	entity.node.visual_node = node.id
-	entity.node.bounds = node.bounds
+	entity.node.bounds = bounds
 	entity.node.has_bounds = true
 	rt.semantic_entities[node.semantic_id] = entity
 	rt.semantic_pending_changed[node.semantic_id] = true

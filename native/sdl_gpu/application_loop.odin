@@ -25,6 +25,13 @@ run_application_loop :: proc(
 	native_menu: ^Native_Menu_Runtime = nil,
 ) {
 	application_instance := application
+	if rt != nil && metrics != nil && metrics.logical_width > 0 && metrics.window_logical_height > 0 {
+		_ = alicorn.set_presentation_scale(
+			rt,
+			f32(metrics.pixel_width)/f32(metrics.logical_width),
+			f32(metrics.pixel_height)/f32(metrics.window_logical_height),
+		)
+	}
 	if native_menu != nil {
 		native_menu.runtime = rt
 	}
@@ -430,6 +437,7 @@ run_application_loop :: proc(
 			metrics.pixel_height = int(swap_h)
 			logical_to_pixel_x := f32(swap_w) / f32(metrics.logical_width)
 			logical_to_pixel_y := f32(swap_h) / f32(metrics.window_logical_height)
+			_ = alicorn.set_presentation_scale(rt, logical_to_pixel_x, logical_to_pixel_y)
 			renderer_metrics_before := native_devtools_renderer_metrics_capture(text_renderer, surface_renderer, solid_renderer)
 			hud_vertex_reserve := 0
 			if devtools_hud.visible { hud_vertex_reserve = NATIVE_DEVTOOLS_HUD_RESERVE_VERTICES }

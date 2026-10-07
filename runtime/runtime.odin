@@ -242,6 +242,88 @@ Rect :: struct {
 	x, y, w, h: f32,
 }
 
+// Layout_Unit is an experimental fixed-point scalar for retained measurement
+// products. Public layout styles and Rect remain f32 during this contract
+// slice; conversion is centralized at the measurement/geometry boundary.
+Layout_Unit :: distinct i64
+
+Layout_Size :: struct {
+	width:  Layout_Unit,
+	height: Layout_Unit,
+}
+
+Layout_Axis_Constraint :: struct {
+	min: Layout_Unit,
+	max: Layout_Unit,
+	unbounded_max: bool,
+}
+
+Layout_Constraints :: struct {
+	width:  Layout_Axis_Constraint,
+	height: Layout_Axis_Constraint,
+}
+
+Layout_Axis :: enum { Width, Height }
+Layout_Axes :: distinct bit_set[Layout_Axis; u8]
+
+Axis_Dependency :: enum {
+	Width_To_Width,
+	Width_To_Height,
+	Height_To_Width,
+	Height_To_Height,
+}
+Measure_Constraint_Dependencies :: distinct bit_set[Axis_Dependency; u8]
+
+// These are separate types on purpose. The first describes how a measurer's
+// input constraints affect its own output; the second maps child size changes
+// to a container's externally measured size.
+Parent_Size_Dependencies :: distinct bit_set[Axis_Dependency; u8]
+
+Measure_Dependencies :: struct {
+	metrics_generation:    u32,
+	typography_generation: u32,
+	font_generation:       u64,
+	locale_generation:     u64,
+	direction_generation:  u64,
+}
+
+Measure_Result :: struct {
+	size:                    Layout_Size,
+	baseline:                Layout_Unit,
+	baseline_valid:          bool,
+	input_axis_dependencies: Measure_Constraint_Dependencies,
+}
+
+Measure_Cache_Key :: struct {
+	constraints:    Layout_Constraints,
+	input_revision: u64,
+	dependencies:   Measure_Dependencies,
+	valid:          bool,
+}
+
+Measure_State :: struct {
+	input_hash: u64,
+	input_revision: u64,
+	cache_key: Measure_Cache_Key,
+	result: Measure_Result,
+	parent_size_dependencies: Parent_Size_Dependencies,
+	parent_layout_dependencies: Layout_Axes,
+}
+
+// Target_Layout_Rect is the canonical unsnapped solver result. Finalization
+// derives a presentation Rect from these absolute edges and never feeds the
+// snapped result back into the next layout solve.
+Target_Layout_Rect :: struct {
+	left, top, right, bottom: Layout_Unit,
+}
+
+Finalized_Geometry :: struct {
+	bounds:     Rect,
+	hit_bounds: Rect,
+	clip:       Rect,
+	valid:      bool,
+}
+
 Color :: struct {
 	r, g, b, a: f32,
 }
@@ -851,6 +933,7 @@ Text_Input_Area :: struct {
 
 Dirty_Stage :: enum {
 	Description,
+	Measure,
 	Layout,
 	Paint,
 	Composite,
@@ -869,6 +952,7 @@ dirty_set :: proc(dirty: ^Dirty_Stages, stage: Dirty_Stage, value: bool) {
 Runtime_Stage :: enum {
 	Description,
 	Reconcile,
+	Measure,
 	Layout,
 	Paint,
 	Composite,
@@ -911,6 +995,7 @@ Description :: struct {
 	text_style:  Text_Style,
 	style_environment: Style_Environment_Core,
 	style_scope_boundary: bool,
+	layout_boundary: bool,
 	button_content_style: Button_Content_Style,
 	button_variant: Button_Variant,
 	style:       Layout_Style,
@@ -1008,6 +1093,7 @@ Node :: struct {
 	text_style:  Text_Style,
 	style_environment: Style_Environment,
 	style_scope_boundary: bool,
+	layout_boundary: bool,
 	style_generations: Style_Generations,
 	button_content_style: Button_Content_Style,
 	button_variant: Button_Variant,
@@ -1245,6 +1331,7 @@ Trace_Kind :: enum {
 	Focus,
 	Invalidation,
 	Reconcile,
+	Measure,
 	Layout,
 	Paint,
 	Composite,
@@ -1290,6 +1377,10 @@ Frame_Stats :: struct {
 	style_cache_hits: u64,
 	stage_visits:      [Runtime_Stage]u64,
 	layout_updates:    u64,
+	measure_requests:  u64,
+	measure_cache_hits: u64,
+	measure_cache_misses: u64,
+	text_shape_requests: u64,
 	paint_updates:     u64,
 	composite_updates:  u64,
 	adjacency_rebuilds: u64,
@@ -1336,6 +1427,8 @@ Runtime :: struct {
 	persistent_allocator_state: ^Runtime_Allocator_State,
 	scratch_allocator_state:    ^Runtime_Allocator_State,
 	nodes:       map[Node_ID]^Node,
+	measure_states: map[Node_ID]Measure_State,
+	finalized_geometry: map[Node_ID]Finalized_Geometry,
 	computed_styles: map[Node_ID]Computed_Style,
 	style_stats_suppressed: bool,
 	semantic_surfaces: map[Node_ID]Semantic_Surface_Style,
@@ -1369,6 +1462,8 @@ Runtime :: struct {
 	identity_key_kind: [dynamic]u8,
 	identity_key_pair: [dynamic]UI_Key_Pair,
 	viewport:    Rect,
+	presentation_scale_x: f32,
+	presentation_scale_y: f32,
 	style_environment: Style_Environment,
 	root_accessibility_appearance: Accessibility_Appearance_Preferences,
 	root_accessibility_appearance_known: Accessibility_Appearance_Known_Fields,
@@ -1433,6 +1528,7 @@ Runtime :: struct {
 	submission_cause_seen: bool,
 	submission_cause_mixed: bool,
 	display:     [dynamic]Paint_Command,
+	display_target: [dynamic]Paint_Command,
 	paint_resource_generation: u64,
 	text_engine: Text_Engine,
 	text_font_generation_seen: u64,

@@ -13,7 +13,7 @@ render_style_environment_fixture :: proc(rt: ^alicorn.Runtime, environment: alic
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return }
 	alicorn.container_begin(&ui, .Root, key="style-root", style=alicorn.layout_style(.Row, grow=1, gap=12, clip=true))
-	editor = alicorn.container_begin(&ui, .Container, key="editor-pane", style=alicorn.layout_style(width=180, height=180, clip=true))
+	editor = alicorn.container_begin(&ui, .Container, key="editor-pane", style=alicorn.layout_style(width=180, height=180, clip=true), layout_boundary=true)
 	scope := alicorn.style_environment_push(&ui, environment)
 	editor_text = alicorn.text_ex(
 		&ui,
@@ -282,7 +282,7 @@ render_style_contract_fixture :: proc(
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return nodes }
 	alicorn.container_begin(&ui, .Root, key="style-contract-root", style=alicorn.layout_style(.Row, width=460, height=260, gap=12, clip=true))
-	nodes.editor = alicorn.container_begin(&ui, .Container, key="style-contract-editor", style=alicorn.layout_style(width=220, height=220, clip=true))
+	nodes.editor = alicorn.container_begin(&ui, .Container, key="style-contract-editor", style=alicorn.layout_style(width=220, height=220, clip=true), layout_boundary=true)
 	scope := alicorn.style_environment_push(&ui, alicorn.Style_Environment{
 		theme=theme_id,
 		density=density,

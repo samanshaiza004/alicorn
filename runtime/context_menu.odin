@@ -78,7 +78,7 @@ context_menu_open_for_focused :: proc(rt: ^Runtime, width: f32 = CONTEXT_MENU_DE
 	if rt == nil { return false }
 	node, ok := rt.nodes[rt.focused]
 	if !ok || !node.active { return false }
-	return context_menu_open(rt, node.bounds, node.id, width)
+	return context_menu_open(rt, layout_node_finalized_geometry(rt, node.id).bounds, node.id, width)
 }
 
 context_menu_is_open :: proc(rt: ^Runtime) -> bool {
@@ -363,9 +363,10 @@ context_menu_layout_children :: proc(rt: ^Runtime, parent: ^Node, children: []No
 	old_bounds := child.bounds
 	old_clip := child.clip
 	child.bounds = child.context_menu_bounds
-	semantic_sync_bounds(rt, child)
 	child.hit_bounds = child.bounds
 	child.clip = parent.clip
+	layout_finalize_node_geometry_for_node(rt, child)
+	semantic_sync_bounds(rt, child)
 	if !same_rect(old_bounds, child.bounds) || !same_rect(old_clip, child.clip) || dirty_has(child.dirty, .Layout) {
 		dirty_set(&child.dirty, .Layout, true)
 		dirty_set(&child.dirty, .Paint, true)

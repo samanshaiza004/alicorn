@@ -29,11 +29,20 @@ validate_pointer_coordinates :: proc() {
 	}
 }
 
+native_pixel_edge :: proc(logical_edge, scale: f32) -> int {
+	pixel := logical_edge*scale
+	// Alicorn finalizes shared absolute edges to the nearest device pixel.
+	// Repeat that rounding here instead of truncating a float round-trip that
+	// can land just below its intended integer edge.
+	if pixel < 0 { return -int(math.floor(-pixel+0.5)) }
+	return int(math.floor(pixel+0.5))
+}
+
 logical_to_pixel_bounds :: proc(bounds: alicorn.Rect, scale_x, scale_y: f32) -> (x0, y0, x1, y1: int) {
-	x0 = int(bounds.x * scale_x)
-	y0 = int(bounds.y * scale_y)
-	x1 = int((bounds.x + bounds.w) * scale_x)
-	y1 = int((bounds.y + bounds.h) * scale_y)
+	x0 = native_pixel_edge(bounds.x, scale_x)
+	y0 = native_pixel_edge(bounds.y, scale_y)
+	x1 = native_pixel_edge(bounds.x+bounds.w, scale_x)
+	y1 = native_pixel_edge(bounds.y+bounds.h, scale_y)
 	return
 }
 
@@ -42,6 +51,18 @@ validate_pixel_transform :: proc() {
 	x0, y0, x1, y1 := logical_to_pixel_bounds(alicorn.Rect{10, 20, 100, 50}, 2, 2)
 	if x0 != 20 || y0 != 40 || x1 != 220 || y1 != 140 {
 		fail("logical compositor bounds did not scale exactly once")
+	}
+	// Finalized logical edges may round-trip a few ULPs below an integer at
+	// fractional monitor scales. The renderer must still recover that exact
+	// absolute device edge so paint and hit/semantic geometry agree.
+	scales := [4]f32{1.1, 1.2, 1.3, 1.75}
+	for scale in scales {
+		for pixel_edge in -17..<128 {
+			logical_edge := f32(pixel_edge)/scale
+			if native_pixel_edge(logical_edge, scale) != pixel_edge {
+				fail("fractional-scale pixel edge changed during logical round-trip")
+			}
+		}
 	}
 }
 

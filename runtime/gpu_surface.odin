@@ -209,12 +209,13 @@ gpu_surface_context :: proc(rt: ^Runtime, id: Node_ID) -> (ctx: GPU_Surface_Cont
 	if !found || node == nil || !node.active || node.kind != .Custom_Surface {
 		return ctx, false
 	}
+	geometry := layout_node_finalized_geometry(rt, id)
 	ctx = GPU_Surface_Context{
 		logical_bounds=node.bounds,
 		pixel_width=node.surface_pixel_width,
 		pixel_height=node.surface_pixel_height,
 		dpi_scale=node.surface_dpi_scale,
-		clip=rect_intersection(node.clip, node.bounds),
+		clip=rect_intersection(geometry.clip, geometry.bounds),
 		payload_revision=node.surface_payload_revision,
 	}
 	if node.surface_geometry_active || node.surface_kind == .Geometry {

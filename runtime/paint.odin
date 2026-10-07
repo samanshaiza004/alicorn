@@ -188,16 +188,16 @@ append_scrollbar_display :: proc(rt: ^Runtime, node: ^Node) {
 		pressed=rt.scrollbar_drag_node == node.id,
 	})
 	if node.scrollbar_vertical_visible {
-		append(&rt.display, paint_surface_command(node.id, node.scrollbar_vertical_track, node.clip, resolved_style.track))
-		append(&rt.display, paint_surface_command(node.id, node.scrollbar_vertical_thumb, node.clip, resolved_style.thumb))
+		append(&rt.display_target, paint_surface_command(node.id, node.scrollbar_vertical_track, node.clip, resolved_style.track))
+		append(&rt.display_target, paint_surface_command(node.id, node.scrollbar_vertical_thumb, node.clip, resolved_style.thumb))
 	}
 	if node.scrollbar_horizontal_visible {
-		append(&rt.display, paint_surface_command(node.id, node.scrollbar_horizontal_track, node.clip, resolved_style.track))
-		append(&rt.display, paint_surface_command(node.id, node.scrollbar_horizontal_thumb, node.clip, resolved_style.thumb))
+		append(&rt.display_target, paint_surface_command(node.id, node.scrollbar_horizontal_track, node.clip, resolved_style.track))
+		append(&rt.display_target, paint_surface_command(node.id, node.scrollbar_horizontal_thumb, node.clip, resolved_style.thumb))
 	}
 	if node.scrollbar_vertical_visible && node.scrollbar_horizontal_visible {
 		corner := Rect{node.scrollbar_vertical_track.x, node.scrollbar_horizontal_track.y, node.scrollbar_vertical_track.w, node.scrollbar_horizontal_track.h}
-		append(&rt.display, paint_surface_command(node.id, corner, node.clip, resolved_style.corner))
+		append(&rt.display_target, paint_surface_command(node.id, corner, node.clip, resolved_style.corner))
 	}
 }
 
@@ -210,8 +210,8 @@ compose_subtree :: proc(rt: ^Runtime, id: Node_ID) {
 	for cached_command in node.paint {
 		command := cached_command
 		command.opacity = drag_source_opacity(rt, node.id)
-		if node.display_index < 0 { node.display_index = len(rt.display) }
-		append(&rt.display, command)
+		if node.display_index < 0 { node.display_index = len(rt.display_target) }
+		append(&rt.display_target, command)
 		rt.stats.composition_nodes_visited += 1
 		rt.stats.stage_visits[.Composite] += 1
 	}
@@ -225,7 +225,7 @@ compose_subtree :: proc(rt: ^Runtime, id: Node_ID) {
 }
 
 rebuild_display :: proc(rt: ^Runtime) {
-	clear(&rt.display)
+	clear(&rt.display_target)
 	for id in rt.top_level {
 		compose_subtree(rt, id)
 	}
@@ -234,6 +234,7 @@ rebuild_display :: proc(rt: ^Runtime) {
 	append_tooltip_overlay(rt)
 	rt.stats.composite_updates += 1
 	rt.composition_rebuild = false
+	layout_finalize_display(rt)
 	record_trace(rt, .Composite, 0, "retained display list rebuilt after structure change")
 }
 
@@ -251,6 +252,7 @@ append_visual_row_background :: proc(rt: ^Runtime, row: ^Node) {
 }
 
 update_paint :: proc(rt: ^Runtime) {
+	display_target_changed := false
 	// Only nodes queued by description or layout changes are visited. An
 	// unchanged retained display command is left in place.
 	for id in rt.paint_queue {
@@ -582,7 +584,8 @@ update_paint :: proc(rt: ^Runtime) {
 			record_trace(rt, .Paint, id, node.last_reason)
 		}
 		if !rt.composition_rebuild && node.kind != .Scroll_Region && node.display_index >= 0 && len(node.paint) == 1 {
-			rt.display[node.display_index] = node.paint[0]
+			rt.display_target[node.display_index] = node.paint[0]
+			display_target_changed = true
 			rt.stats.composition_nodes_visited += 1
 			rt.stats.stage_visits[.Composite] += 1
 			rt.stats.composite_updates += 1
@@ -597,5 +600,7 @@ update_paint :: proc(rt: ^Runtime) {
 	clear(&rt.paint_queue)
 	if rt.composition_rebuild {
 		rebuild_display(rt)
+	} else if display_target_changed {
+		layout_finalize_display(rt)
 	}
 }

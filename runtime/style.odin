@@ -607,7 +607,7 @@ style_domain_dirty_stages :: proc(domain: Style_Domain) -> Dirty_Stages {
 	dirty: Dirty_Stages = {}
 	switch domain {
 	case .Metrics, .Typography:
-		dirty += {.Layout, .Paint, .Composite}
+		dirty += {.Measure, .Paint, .Composite}
 	case .Paint, .Material:
 		dirty += {.Paint, .Composite}
 	}
@@ -622,9 +622,10 @@ style_domains_dirty_stages :: proc(domains: Style_Domains) -> Dirty_Stages {
 	return dirty
 }
 
-// style_environment_push scopes subtree-wide inputs to nodes described below
-// the current container. The containing node is also a layout-isolation
-// boundary: its parent-assigned bounds stay stable while its contents reflow.
+// style_environment_push scopes visual and typographic inputs to nodes
+// described below the current container. Style scope and layout boundaries
+// are independent; callers can opt a container into layout isolation through
+// its layout_boundary argument.
 style_environment_push :: proc(ui: ^UI, environment: Style_Environment) -> Style_Environment_Scope {
 	if ui == nil || ui.runtime == nil { return Style_Environment_Scope{} }
 	rt := ui.runtime

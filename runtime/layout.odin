@@ -122,7 +122,13 @@ scroll_bar_geometry :: proc(
 	return result
 }
 
-intrinsic_main :: proc(node: ^Node, direction: Layout_Direction) -> f32 {
+intrinsic_main :: proc(rt: ^Runtime, node: ^Node, direction: Layout_Direction) -> f32 {
+	state := rt.measure_states[node.id]
+	if state.cache_key.valid {
+		if direction == .Row && node.style.width >= 0 { return node.style.width }
+		if direction == .Column && node.style.height >= 0 { return node.style.height }
+		return layout_unit_to_f32(state.result.size.width if direction == .Row else state.result.size.height)
+	}
 	padding_x: f32 = 0
 	padding_y: f32 = 0
 	if node.kind == .Button {
@@ -190,7 +196,7 @@ resolve_main_sizes :: proc(
 				active_weight += child.style.grow
 			}
 		} else {
-			sizes[index] = resolved_main_size(child, direction, intrinsic_main(child, direction))
+			sizes[index] = resolved_main_size(child, direction, intrinsic_main(rt, child, direction))
 			fixed_total += sizes[index]
 		}
 	}
@@ -298,12 +304,13 @@ layout_split_children :: proc(rt: ^Runtime, parent: ^Node, inner: Rect, children
 				child.hit_bounds = Rect{inner.x, inner.y+hit_offset, inner.w, hit_size}
 			}
 		}
-		semantic_sync_bounds(rt, child)
 		old_clip := child.clip
 		if parent.style.clip { child.clip = rect_intersection(parent.clip, parent.bounds) } else { child.clip = parent.clip }
 		bounds_changed := !same_rect(old_bounds, child.bounds)
 		hit_changed := !same_rect(old_hit_bounds, child.hit_bounds)
 		clip_changed := !same_rect(old_clip, child.clip)
+		layout_finalize_node_geometry_for_node(rt, child)
+		semantic_sync_bounds(rt, child)
 		if bounds_changed || hit_changed || clip_changed {
 			dirty_set(&child.dirty, .Layout, true)
 			dirty_set(&child.dirty, .Paint, true)
@@ -389,23 +396,18 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	cross_size := parent.style.direction == .Row ? inner.h : inner.w
 	gap_total := parent.style.gap * f32(count-1)
 	available := maxf(main_size-gap_total, 0)
-	// Text line breaking depends on the width assigned by the parent. Prepare
-	// that logical product before measuring the main axis; this keeps layout
-	// authoritative for wrapping without re-executing the application
-	// description. The native renderer later resolves physical glyph residency
-	// for the current DPI.
+	// Leaf measurement is retained against the actual constraints this parent
+	// supplies. Containers keep their existing external sizing policies; this
+	// pass does not recursively derive preferred container sizes.
 	has_grow := false
 	for id in children {
 		child := rt.nodes[id]
 		layout_note_node_visit(rt, child)
 		if child.style.grow > 0 { has_grow = true }
-		if node_has_text_product(child.kind) {
-			constraint := layout_text_constraint(parent, child, cross_size)
-			if prepare_text_run_node(rt, child, constraint) {
-				dirty_set(&child.dirty, .Paint, true)
-				dirty_set(&child.dirty, .Composite, true)
-				queue_paint(rt, id)
-			}
+		// A Row grow child's width is not known until the existing allocator
+		// distributes space below. Avoid shaping it with an invented width.
+		if node_has_text_product(child.kind) && !(parent.style.direction == .Row && child.style.grow > 0) {
+			_ = layout_measure_node(rt, child, layout_text_measure_constraints(parent, child, cross_size))
 		}
 	}
 	main_sizes: []f32
@@ -432,8 +434,11 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		child := rt.nodes[id]
 		layout_note_node_visit(rt, child)
 		old_bounds := child.bounds
-		main := resolved_main_size(child, parent.style.direction, intrinsic_main(child, parent.style.direction))
+		main := resolved_main_size(child, parent.style.direction, intrinsic_main(rt, child, parent.style.direction))
 		if has_grow { main = main_sizes[index] }
+		if child.style.grow > 0 && node_has_text_product(child.kind) {
+			_ = layout_measure_node(rt, child, layout_grow_measure_constraints(parent, child, main, cross_size))
+		}
 		if parent.style.direction == .Row {
 			cross := child.style.height >= 0 ? child.style.height : cross_size
 			cross = clampf(cross, child.style.min_height, child.style.max_height)
@@ -449,11 +454,12 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 			if parent.style.align == .End { cross_pos += cross_size-cross }
 			child.bounds = Rect{cross_pos, inner.y+main_offset, cross, clampf(main, child.style.min_height, child.style.max_height)}
 		}
-		semantic_sync_bounds(rt, child)
 		old_clip := child.clip
 		if parent.kind == .Scroll_Region {
 			child.clip = rect_intersection(parent.clip, parent.scroll_viewport_bounds)
 		} else if parent.style.clip { child.clip = rect_intersection(parent.clip, parent.bounds) } else { child.clip = parent.clip }
+		layout_finalize_node_geometry_for_node(rt, child)
+		semantic_sync_bounds(rt, child)
 		bounds_changed := !same_rect(old_bounds, child.bounds)
 		clip_changed := !same_rect(old_clip, child.clip)
 		if bounds_changed && child.kind == .Custom_Surface && child.surface_kind == .Geometry &&
@@ -495,11 +501,18 @@ layout_tree :: proc(rt: ^Runtime) {
 		if !ok || !node.active { continue }
 		if node.parent == 0 {
 			old := node.bounds
+			old_clip := node.clip
 			node.bounds = rt.viewport
-			semantic_sync_bounds(rt, node)
 			node.clip = rt.viewport
+			layout_finalize_node_geometry_for_node(rt, node)
+			semantic_sync_bounds(rt, node)
 			if !same_rect(old, node.bounds) {
 				dirty_set(&node.dirty, .Layout, true)
+				dirty_set(&node.dirty, .Paint, true)
+				dirty_set(&node.dirty, .Composite, true)
+				queue_paint(rt, id)
+			}
+			if !same_rect(old_clip, node.clip) {
 				dirty_set(&node.dirty, .Paint, true)
 				dirty_set(&node.dirty, .Composite, true)
 				queue_paint(rt, id)

@@ -92,8 +92,8 @@ test_accessibility_appearance_domains_and_color_recipes :: proc(t: ^testing.T) {
 		Dirty_Stage.Paint in preferences_stages && Dirty_Stage.Composite in preferences_stages && Dirty_Stage.Layout not_in preferences_stages,
 		"appearance preferences should invalidate visual/material products without changing semantics or layout")
 	testing.expect(t, Style_Domain.Metrics in text_scale_only && Style_Domain.Typography in text_scale_only &&
-		Dirty_Stage.Layout in text_scale_stages,
-		"the existing normalized text_scale input should continue to invalidate metrics and typography")
+		Dirty_Stage.Measure in text_scale_stages && Dirty_Stage.Layout not_in text_scale_stages,
+		"text_scale should invalidate measurement; layout follows only when measured geometry changes")
 	testing.expect(t, Style_Domain.Paint in contrast_only && Style_Domain.Material in contrast_only &&
 		Style_Domain.Metrics not_in contrast_only && Style_Domain.Typography not_in contrast_only,
 		"increased contrast should invalidate Paint and Material only")

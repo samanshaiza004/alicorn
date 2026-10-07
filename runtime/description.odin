@@ -143,7 +143,7 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	description := Description{
 		id=id, parent=parent_node, site=source, key=key, explicit_key=explicit_key,
 		kind=kind, label=label, text=text, font=font, text_style=text_style,
-		style_environment=style_environment_core(rt.style_environment), style_scope_boundary=false,
+		style_environment=style_environment_core(rt.style_environment), style_scope_boundary=false, layout_boundary=kind == .Root,
 		button_content_style=button_content, button_variant=button_variant, style=style, color=resolved_color, paint_background=paint_background,
 		paint_value=paint_value, region_revision=region_revision, region=is_region,
 		focusable=focusable, identity_key=identity_key,
@@ -223,7 +223,7 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 		id=id, parent=parent_node, site=source, key=key_string_value, explicit_key=ui_key_is_explicit(key),
 		identity_key_kind=key_kind, identity_key_pair=identity_key_pair,
 		kind=kind, label=label, text=text, font=font, text_style=text_style,
-		style_environment=style_environment_core(rt.style_environment), style_scope_boundary=false,
+		style_environment=style_environment_core(rt.style_environment), style_scope_boundary=false, layout_boundary=kind == .Root,
 		button_content_style=button_content, button_variant=button_variant, style=style, color=resolved_color, paint_background=paint_background,
 		paint_value=state_bits, region_revision=region_revision, region=is_region,
 		focusable=focusable, selected=selected, disabled=disabled, identity_key=identity_key,
@@ -339,11 +339,14 @@ key_scope_end :: proc(ui: ^UI) {
 	pop_identity_scope(ui.runtime)
 }
 
-container_begin_ex :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, paint_value: u64 = 0, focusable := false, loc := #caller_location, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1, scroll_offset_x: f32 = 0, layout_scroll_offset_x: f32 = -1) -> Node_ID {
+container_begin_ex :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, paint_value: u64 = 0, focusable := false, loc := #caller_location, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1, scroll_offset_x: f32 = 0, layout_scroll_offset_x: f32 = -1, layout_boundary := false) -> Node_ID {
 	resolved_source := resolve_source(source, "container", loc)
 	resolved_color, paints := resolve_container_color(kind, color)
 	id := emit(ui, kind, resolved_source, label=label, key=key, explicit_key=explicit_key, style=style, color=resolved_color, paint_value=paint_value, focusable=focusable, paint_background=paints, scroll_offset_y=scroll_offset_y, layout_scroll_offset_y=layout_scroll_offset_y, scroll_offset_x=scroll_offset_x, layout_scroll_offset_x=layout_scroll_offset_x)
 	if id != 0 {
+		if last := len(ui.runtime.pending)-1; last >= 0 && ui.runtime.pending[last].kind == .Description {
+			ui.runtime.pending[last].description.layout_boundary = layout_boundary || kind == .Root
+		}
 		append(&ui.runtime.stack, id)
 		push_identity_scope(ui.runtime, id, "", 0)
 	}
@@ -395,9 +398,9 @@ transparent_container_end :: proc(ui: ^UI) {
 	if len(ui.runtime.stack) > 0 { pop(&ui.runtime.stack) }
 }
 
-container_ex :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, body: proc(), label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, paint_value: u64 = 0, focusable := false, loc := #caller_location, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1, scroll_offset_x: f32 = 0, layout_scroll_offset_x: f32 = -1) -> Node_ID {
+container_ex :: proc(ui: ^UI, kind: Node_Kind, source := Source_Site{}, body: proc(), label := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, paint_value: u64 = 0, focusable := false, loc := #caller_location, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1, scroll_offset_x: f32 = 0, layout_scroll_offset_x: f32 = -1, layout_boundary := false) -> Node_ID {
 	resolved_source := resolve_source(source, "container", loc)
-	id := container_begin_ex(ui, kind, resolved_source, label, key, explicit_key, style, color, paint_value, focusable, loc, scroll_offset_y, layout_scroll_offset_y, scroll_offset_x, layout_scroll_offset_x)
+	id := container_begin_ex(ui, kind, resolved_source, label, key, explicit_key, style, color, paint_value, focusable, loc, scroll_offset_y, layout_scroll_offset_y, scroll_offset_x, layout_scroll_offset_x, layout_boundary)
 	if id == 0 { return 0 }
 	body()
 	container_end(ui)
@@ -409,19 +412,22 @@ root_ex :: proc(ui: ^UI, source := Source_Site{}, body: proc(), style := DEFAULT
 	return container_ex(ui, .Root, resolved_source, body, label="root", style=style)
 }
 
-container_begin_simple :: proc(ui: ^UI, kind: Node_Kind, label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, state_bits: u64 = 0, selected := false, disabled := false, focusable := false, loc := #caller_location, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1, scroll_offset_x: f32 = 0, layout_scroll_offset_x: f32 = -1) -> Node_ID {
+container_begin_simple :: proc(ui: ^UI, kind: Node_Kind, label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, state_bits: u64 = 0, selected := false, disabled := false, focusable := false, loc := #caller_location, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1, scroll_offset_x: f32 = 0, layout_scroll_offset_x: f32 = -1, layout_boundary := false) -> Node_ID {
 	resolved_source := resolve_source(Source_Site{}, "container", loc)
 	resolved_color, paints := resolve_container_color(kind, color)
 	id := emit_key(ui, kind, resolved_source, label=label, key=key, style=style, color=resolved_color, state_bits=state_bits, selected=selected, disabled=disabled, focusable=focusable && !disabled, paint_background=paints, scroll_offset_y=scroll_offset_y, layout_scroll_offset_y=layout_scroll_offset_y, scroll_offset_x=scroll_offset_x, layout_scroll_offset_x=layout_scroll_offset_x)
 	if id != 0 {
+		if last := len(ui.runtime.pending)-1; last >= 0 && ui.runtime.pending[last].kind == .Description {
+			ui.runtime.pending[last].description.layout_boundary = layout_boundary || kind == .Root
+		}
 		append(&ui.runtime.stack, id)
 		push_identity_scope(ui.runtime, id, "", 0)
 	}
 	return id
 }
 
-container_simple :: proc(ui: ^UI, kind: Node_Kind, body: proc(), label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, loc := #caller_location, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1, scroll_offset_x: f32 = 0, layout_scroll_offset_x: f32 = -1) -> Node_ID {
-	id := container_begin_simple(ui, kind, label, key, style, color, 0, false, false, false, loc, scroll_offset_y, layout_scroll_offset_y, scroll_offset_x, layout_scroll_offset_x)
+container_simple :: proc(ui: ^UI, kind: Node_Kind, body: proc(), label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, loc := #caller_location, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1, scroll_offset_x: f32 = 0, layout_scroll_offset_x: f32 = -1, layout_boundary := false) -> Node_ID {
+	id := container_begin_simple(ui, kind, label, key, style, color, 0, false, false, false, loc, scroll_offset_y, layout_scroll_offset_y, scroll_offset_x, layout_scroll_offset_x, layout_boundary)
 	if id == 0 { return 0 }
 	body()
 	container_end(ui)
@@ -432,12 +438,12 @@ root_simple :: proc(ui: ^UI, body: proc(), style := DEFAULT_STYLE, loc := #calle
 	return container_simple(ui, .Root, body, label="root", style=style, loc=loc)
 }
 
-container_begin :: proc(ui: ^UI, kind: Node_Kind, label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, state_bits: u64 = 0, selected := false, disabled := false, focusable := false, loc := #caller_location, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1, scroll_offset_x: f32 = 0, layout_scroll_offset_x: f32 = -1) -> Node_ID {
-	return container_begin_simple(ui, kind, label, key, style, color, state_bits, selected, disabled, focusable, loc, scroll_offset_y, layout_scroll_offset_y, scroll_offset_x, layout_scroll_offset_x)
+container_begin :: proc(ui: ^UI, kind: Node_Kind, label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, state_bits: u64 = 0, selected := false, disabled := false, focusable := false, loc := #caller_location, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1, scroll_offset_x: f32 = 0, layout_scroll_offset_x: f32 = -1, layout_boundary := false) -> Node_ID {
+	return container_begin_simple(ui, kind, label, key, style, color, state_bits, selected, disabled, focusable, loc, scroll_offset_y, layout_scroll_offset_y, scroll_offset_x, layout_scroll_offset_x, layout_boundary)
 }
 
-container :: proc(ui: ^UI, kind: Node_Kind, body: proc(), label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, loc := #caller_location) -> Node_ID {
-	return container_simple(ui, kind, body, label, key, style, color, loc)
+container :: proc(ui: ^UI, kind: Node_Kind, body: proc(), label := "", key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, color := NO_BACKGROUND_COLOR, loc := #caller_location, layout_boundary := false) -> Node_ID {
+	return container_simple(ui, kind, body, label, key, style, color, loc, layout_boundary=layout_boundary)
 }
 
 // modal_overlay_begin starts a viewport-sized top-level layer. Describe the

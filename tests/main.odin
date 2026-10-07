@@ -1482,7 +1482,8 @@ test_button_states_and_content_layout :: proc(state: ^Test_State) {
 	expect(state, alicorn.text_engine_load_font(&rt.text_engine, TEST_UI_FONT_DATA), "button content layout test font must load")
 	id := render_button_content(&rt)
 	node := rt.nodes[id]
-	default_layout_hash := node.layout_hash
+	default_measure := rt.measure_states[id]
+	default_measure_misses := rt.stats.measure_cache_misses
 	expect(state, node.text_run_valid && len(node.paint) == 2, "default button should retain a measured label and background/text commands")
 	if node.text_run_valid && len(node.paint) >= 2 {
 		label := node.paint[len(node.paint)-1]
@@ -1500,7 +1501,10 @@ test_button_states_and_content_layout :: proc(state: ^Test_State) {
 		label := custom_node.paint[len(custom_node.paint)-1]
 		expected_y := custom_node.bounds.y + 2 + (custom_node.bounds.h-4-custom_node.text_run.height)/2
 		expect(state, label.bounds.x == custom_node.bounds.x+3 && label.bounds.y == expected_y, "button content style supports leading alignment and custom insets")
-		expect(state, custom_node.layout_hash != default_layout_hash, "button content inset participates in layout dependencies")
+		custom_measure := rt.measure_states[custom_id]
+		expect(state, custom_measure.input_revision > default_measure.input_revision &&
+			rt.stats.measure_cache_misses > default_measure_misses,
+			"button content insets participate in local measurement inputs without changing the layout description hash")
 	}
 	alicorn.destroy_runtime(&rt)
 
@@ -2035,12 +2039,18 @@ test_layout_constraints_position_siblings :: proc(state: ^Test_State) {
 
 test_text_intrinsic_layout_invalidation :: proc(state: ^Test_State) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 80})
+	expect(state, alicorn.text_engine_load_font(&rt.text_engine, TEST_UI_FONT_DATA), "text measurement invalidation test font must load")
 	first, second := render_text_growth_pair(&rt, "CPU 0.0%", "System memory 0 MB")
+	first_measure := rt.measure_states[first]
 	first_layout_hash := rt.nodes[first].layout_hash
 	before_updates := rt.stats.layout_updates
 	first, second = render_text_growth_pair(&rt, "CPU 100.0%", "System memory 12.7 GB / 32.0 GB")
-	expect(state, rt.nodes[first].layout_hash != first_layout_hash, "text growth must change the retained layout product")
-	expect(state, rt.stats.layout_updates > before_updates, "text growth must revisit layout rather than only repainting")
+	second_measure := rt.measure_states[first]
+	expect(state, second_measure.input_revision > first_measure.input_revision &&
+		second_measure.result.size.width > first_measure.result.size.width,
+		"text growth must advance its input revision and change the retained measure result")
+	expect(state, rt.nodes[first].layout_hash == first_layout_hash && rt.stats.layout_updates > before_updates,
+		"text measurement changes must revisit layout without changing the node's local layout description hash")
 	expect(state, rt.nodes[second].bounds.x >= rt.nodes[first].bounds.x+rt.nodes[first].bounds.w, "text siblings must remain laid out after a dynamic value grows")
 	alicorn.destroy_runtime(&rt)
 }
@@ -2203,9 +2213,14 @@ test_retained_text_interaction :: proc(state: ^Test_State) {
 	caret := alicorn.text_node_caret_geometry(&rt, id, focus)
 	local_caret := alicorn.text_run_caret_geometry(&node.text_run, focus)
 	expect(state, caret.valid && caret.position.byte == focus.byte, "retained text caret geometry must resolve the focused local byte position")
+	expected_caret := alicorn.layout_finalize_rect(
+		alicorn.Rect{node.bounds.x+local_caret.rect.x, node.bounds.y+local_caret.rect.y, local_caret.rect.w, local_caret.rect.h},
+		rt.presentation_scale_x,
+		rt.presentation_scale_y,
+	)
 	expect(state,
-		caret.rect.x == node.bounds.x+local_caret.rect.x && caret.rect.y == node.bounds.y+local_caret.rect.y,
-		"retained text caret geometry must be translated to absolute logical window coordinates",
+		caret.rect == expected_caret,
+		"retained text caret geometry must use finalized absolute coordinates shared with paint",
 	)
 
 	selection_commands, text_commands, caret_commands := 0, 0, 0
@@ -2749,7 +2764,8 @@ test_retained_text_weight :: proc(state: ^Test_State) {
 	regular_id := render_weighted_text(&rt, alicorn.FONT_WEIGHT_REGULAR)
 	regular_node, regular_found := rt.nodes[regular_id]
 	expect(state, regular_found && regular_node != nil && regular_node.text_run_valid, "regular text style must create a retained text product")
-	regular_layout_hash := regular_node.layout_hash if regular_found && regular_node != nil else 0
+	regular_measure := rt.measure_states[regular_id]
+	regular_measure_misses := rt.stats.measure_cache_misses
 	regular_run_generation := regular_node.text_run_generation if regular_found && regular_node != nil else 0
 	semibold_id := render_weighted_text(&rt, alicorn.FONT_WEIGHT_SEMIBOLD)
 	semibold_node, semibold_found := rt.nodes[semibold_id]
@@ -2757,7 +2773,10 @@ test_retained_text_weight :: proc(state: ^Test_State) {
 	expect(state, semibold_found && semibold_node != nil && semibold_node.text_style.font_weight == alicorn.FONT_WEIGHT_SEMIBOLD, "retained node must adopt its new typography style")
 	if semibold_found && semibold_node != nil {
 		expect(state, semibold_node.text_run_valid && semibold_node.text_run.font_weight == alicorn.FONT_WEIGHT_SEMIBOLD, "weight changes must rebuild the text product with the selected instance")
-		expect(state, semibold_node.layout_hash != regular_layout_hash, "weight changes must invalidate intrinsic layout")
+		semibold_measure := rt.measure_states[semibold_id]
+		expect(state, semibold_measure.input_revision > regular_measure.input_revision &&
+			rt.stats.measure_cache_misses > regular_measure_misses,
+			"weight changes must invalidate the local measurement cache without changing layout-description inputs")
 		expect(state, semibold_node.text_run_generation > regular_run_generation, "weight changes must advance retained text generation")
 	}
 }

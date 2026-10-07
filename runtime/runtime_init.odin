@@ -28,6 +28,8 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 		allocation_stats_owned = stats_owned,
 		persistent_allocator_state = persistent_state,
 		viewport = viewport,
+		presentation_scale_x = 1,
+		presentation_scale_y = 1,
 		style_environment = DEFAULT_STYLE_ENVIRONMENT,
 		invalidated = true,
 	}
@@ -41,6 +43,8 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 	}
 	rt.scratch_allocator = runtime_allocator(rt.scratch_allocator_state)
 	rt.nodes = make(map[Node_ID]^Node, allocator=rt.persistent_allocator)
+	rt.measure_states = make(map[Node_ID]Measure_State, allocator=rt.persistent_allocator)
+	rt.finalized_geometry = make(map[Node_ID]Finalized_Geometry, allocator=rt.persistent_allocator)
 	rt.computed_styles = make(map[Node_ID]Computed_Style, allocator=rt.persistent_allocator)
 	rt.semantic_surfaces = make(map[Node_ID]Semantic_Surface_Style, allocator=rt.persistent_allocator)
 	rt.visual_parts = make(map[Node_ID]Visual_Part_Style, allocator=rt.persistent_allocator)
@@ -72,6 +76,7 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 	rt.layout_roots = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.paint_queue = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.display = make([dynamic]Paint_Command, 0, allocator=rt.persistent_allocator)
+	rt.display_target = make([dynamic]Paint_Command, 0, allocator=rt.persistent_allocator)
 	rt.trace = Trace_Ring{events = make([dynamic]Trace_Event, capacity, allocator=rt.persistent_allocator)}
 	rt.actions = make([dynamic]Action_Entry, 0, allocator=rt.persistent_allocator)
 	rt.text_engine = new_text_engine("runtime text", false, rt.persistent_allocator)

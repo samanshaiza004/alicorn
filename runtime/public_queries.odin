@@ -77,7 +77,7 @@ node_info :: proc(rt: ^Runtime, id: Node_ID) -> (info: Node_Info, ok: bool) {
 		id=node.id,
 		kind=node.kind,
 		key=key,
-		bounds=node.bounds,
+		bounds=layout_node_finalized_geometry(rt, id).bounds,
 		active=node.active,
 		disabled=node.disabled,
 		focusable=node.focusable,
@@ -96,7 +96,7 @@ node_info :: proc(rt: ^Runtime, id: Node_ID) -> (info: Node_Info, ok: bool) {
 		scroll_content_height=node.scroll_content_height,
 		scroll_viewport_width=node.scroll_viewport_width,
 		scroll_viewport_height=node.scroll_viewport_height,
-		scroll_viewport_bounds=node.scroll_viewport_bounds,
+		scroll_viewport_bounds=layout_finalize_rect(node.scroll_viewport_bounds, rt.presentation_scale_x, rt.presentation_scale_y),
 		scroll_geometry_resolved=node.scroll_geometry_resolved,
 	}
 	return info, true
@@ -177,11 +177,12 @@ text_node_line_geometry :: proc(rt: ^Runtime, id: Node_ID, index: int) -> (line:
 		return
 	}
 	shaped := node.text_run.lines[index]
+	bounds := layout_node_finalized_geometry(rt, id).bounds
 	line = Text_Line_Geometry{
 		index=index,
 		byte_start=shaped.byte_start,
 		byte_end=shaped.byte_end,
-		bounds=Rect{node.bounds.x+shaped.x, node.bounds.y+shaped.y, shaped.width, shaped.height},
+		bounds=Rect{bounds.x+shaped.x, bounds.y+shaped.y, shaped.width, shaped.height},
 	}
 	return line, true
 }
@@ -192,7 +193,8 @@ text_node_hit_test_line :: proc(rt: ^Runtime, id: Node_ID, x: f32, line_index: i
 	line, found := text_node_line_geometry(rt, id, line_index)
 	if !found { return }
 	node := rt.nodes[id]
-	position = text_run_hit_test(&node.text_run, x-node.bounds.x, line.bounds.y-node.bounds.y+line.bounds.h*0.5, rt.scratch_allocator)
+	bounds := layout_node_finalized_geometry(rt, id).bounds
+	position = text_run_hit_test(&node.text_run, x-bounds.x, line.bounds.y-bounds.y+line.bounds.h*0.5, rt.scratch_allocator)
 	return position, true
 }
 

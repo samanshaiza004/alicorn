@@ -135,13 +135,13 @@ drag_preview_clear :: proc(rt: ^Runtime) {
 	if rt == nil { return }
 	if rt.transient_overlay_kind == .Drag_Preview {
 		write_index := 0
-		for read_index := 0; read_index < len(rt.display); read_index += 1 {
-			command := rt.display[read_index]
+		for read_index := 0; read_index < len(rt.display_target); read_index += 1 {
+			command := rt.display_target[read_index]
 			if command.owner == 0 { continue }
-			rt.display[write_index] = command
+			rt.display_target[write_index] = command
 			write_index += 1
 		}
-		for len(rt.display) > write_index { _ = pop(&rt.display) }
+		for len(rt.display_target) > write_index { _ = pop(&rt.display_target) }
 	}
 	if rt.transient_overlay_kind == .Drag_Preview { rt.transient_overlay_kind = .None }
 	if rt.drag_preview.ready { text_run_destroy(&rt.drag_preview.run) }
@@ -159,13 +159,13 @@ append_drag_preview :: proc(rt: ^Runtime) {
 	preview := rt.drag_preview
 	shadow := Rect{2, 3, preview.width, preview.height}
 	card := Rect{0, 0, preview.width, preview.height}
-	append(&rt.display,
+	append(&rt.display_target,
 		paint_surface_command(Node_ID(0), shadow, rt.viewport, Color{0, 0, 0, 0.38}, translation=drag_preview_translation(rt)),
 		paint_surface_command(Node_ID(0), card, rt.viewport, Color{0.12, 0.16, 0.23, 0.96}, translation=drag_preview_translation(rt)),
 	)
 	if preview.ready {
 		text_bounds := Rect{11, (preview.height-preview.run.height)/2, maxf(preview.width-22, 0), preview.run.height}
-		append(&rt.display, paint_text_command(
+		append(&rt.display_target, paint_text_command(
 			Node_ID(0), text_bounds, rt.viewport, paint_text_handle_for_drag_preview(rt),
 			Color{0.91, 0.94, 0.98, 0.96}, translation=drag_preview_translation(rt),
 		))
@@ -183,9 +183,10 @@ drag_preview_pointer_moved :: proc(rt: ^Runtime) {
 	// commands; retain its shaped mesh and do not recompose the app tree.
 	translation := drag_preview_translation(rt)
 	if rt.transient_overlay_kind == .Drag_Preview {
-		for &command in rt.display {
+		for &command in rt.display_target {
 			if command.owner == 0 { command.translation = translation }
 		}
+		layout_finalize_display(rt)
 	}
 	request_presentation(rt, "drag preview followed pointer")
 }
@@ -236,13 +237,14 @@ drag_target_at :: proc(rt: ^Runtime, hit: Node_ID, drag_type: Drag_Type, x, y: f
 		candidate, ok := rt.nodes[current]
 		if !ok { break }
 		if candidate.active && candidate.drop_target_type == drag_type && semantic_id_is_valid(candidate.drop_target_id) {
+			candidate_bounds := layout_node_finalized_geometry(rt, current).bounds
 			position := Drop_Position.On
 			#partial switch candidate.drop_target_mode {
 			case .On:
 			case .Between_Horizontal:
-				position = .Before if x < candidate.bounds.x+candidate.bounds.w*0.5 else .After
+				position = .Before if x < candidate_bounds.x+candidate_bounds.w*0.5 else .After
 			case .Between_Vertical:
-				position = .Before if y < candidate.bounds.y+candidate.bounds.h*0.5 else .After
+				position = .Before if y < candidate_bounds.y+candidate_bounds.h*0.5 else .After
 			}
 			return current, candidate.drop_target_id, position, candidate.drop_target_mode
 		}
@@ -349,8 +351,8 @@ drag_autoscroll_edge :: proc(rt: ^Runtime) -> (region_id: Node_ID, direction, st
 		id := rt.order[index]
 		node, ok := rt.nodes[id]
 		if !ok || !node.active || node.kind != .Scroll_Region { continue }
-		viewport := node.scroll_viewport_bounds
-		if viewport.w <= 0 || viewport.h <= 0 { viewport = node.bounds }
+		viewport := layout_finalize_rect(node.scroll_viewport_bounds, rt.presentation_scale_x, rt.presentation_scale_y)
+		if viewport.w <= 0 || viewport.h <= 0 { viewport = layout_node_finalized_geometry(rt, id).bounds }
 		if node.scroll_axes == .Horizontal || node.scroll_axes == .Both {
 			if rt.drag.y >= viewport.y && rt.drag.y <= viewport.y+viewport.h {
 				left_distance := rt.drag.x-viewport.x
