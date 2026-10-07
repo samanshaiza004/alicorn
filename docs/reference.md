@@ -122,8 +122,14 @@ positions must first pass through an application-owned source map. The helpers
 use UTF-8 byte offsets with grapheme-safe boundaries; the application still
 owns hit-testing, source mapping, viewport scrolling, and edits.
 
-The default layout direction is column. Use `.Row` for horizontal children;
-`grow` shares available space. Layout is in logical window coordinates.
+The default layout direction is column. Use `.Row` for horizontal children.
+Fixed and natural children keep their measured main-axis size; positive `grow`
+starts a child at its minimum and shares surplus by weight, respecting its
+maximum. If fixed sizes and hard minima exceed the available extent, Alicorn
+preserves them and reports overflow internally; if all growers reach their
+maximum, leftover space remains after the last child. Current Row/Column layout
+does not compress children below their ideal/minimum. Cross-axis alignment is
+independent. Layout is in logical window coordinates.
 Style scopes do not implicitly create layout boundaries. A layout boundary keeps
 its parent-assigned bounds stable and lets changed descendants relayout locally;
 use it when the application can preserve that geometry contract. This is a

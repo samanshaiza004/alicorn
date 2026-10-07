@@ -1,5 +1,8 @@
 package alicorn
 
+import "core:fmt"
+import "core:math"
+
 maxf :: proc(a, b: f32) -> f32 {
 	if a > b { return a }
 	return b
@@ -172,66 +175,140 @@ resolved_main_size :: proc(node: ^Node, direction: Layout_Direction, basis: f32)
 	return clampf(basis, main_axis_min(node.style, direction), main_axis_max(node.style, direction))
 }
 
-// Resolve constrained grow children by distributing the space left after
-// fixed children and grow minima. Grow children that hit max constraints are
-// removed from the active set and their unused share is redistributed.
+// Float grow weights are normalized against the largest participant before
+// conversion so equivalent ratios have the same integer representation even
+// when callers use small or very large positive values.
+LAYOUT_GROW_WEIGHT_QUANTIZATION :: f32(1 << 24)
+
+layout_grow_weight_is_finite_positive :: proc(value: f32) -> bool {
+	return value > 0 && !math.is_nan(value) && !math.is_inf(value)
+}
+
+layout_grow_weight_units :: proc(value, maximum: f32) -> u32 {
+	if !layout_grow_weight_is_finite_positive(value) || !layout_grow_weight_is_finite_positive(maximum) { return 0 }
+	ratio := clampf(value/maximum, 0, 1)
+	units := math.floor(ratio*LAYOUT_GROW_WEIGHT_QUANTIZATION+0.5)
+	if units < 1 { units = 1 }
+	if units > LAYOUT_GROW_WEIGHT_QUANTIZATION { units = LAYOUT_GROW_WEIGHT_QUANTIZATION }
+	return u32(units)
+}
+
+layout_main_measured_units :: proc(rt: ^Runtime, node: ^Node, direction: Layout_Direction) -> Layout_Unit {
+	if node_has_text_product(node.kind) {
+		if state, ok := rt.measure_states[node.id]; ok && state.cache_key.valid {
+			measured := layout_unit_to_f32(state.result.size.width if direction == .Row else state.result.size.height)
+			return layout_unit_extent(resolved_main_size(node, direction, measured))
+		}
+	}
+	// Containers and other non-text nodes retain their existing fixed/natural
+	// size policy. This fallback reads retained inputs only; allocation never
+	// shapes text or mutates measurement state.
+	size := resolved_main_size(node, direction, intrinsic_main(rt, node, direction))
+	return layout_unit_extent(size)
+}
+
+layout_trace_allocator_input_error :: proc(rt: ^Runtime, node: ^Node, message: string) {
+	if rt == nil || node == nil { return }
+	record_trace(rt, .Layout, node.id, fmt.tprintf(
+		"invalid 1D layout input (%s) at %s:%d:%d",
+		message,
+		node.site.file,
+		node.site.line,
+		node.site.column,
+	))
+}
+
+// Resolve Row/Column main-axis sizes through the shared fixed-point allocator.
+// Non-growing children are fixed at their measured/natural size; grow maps to
+// expansion weight and starts at the child's hard minimum, matching the
+// previous Row/Column policy. Cross-axis placement and Split remain separate.
 resolve_main_sizes :: proc(
 	rt: ^Runtime,
 	children: []Node_ID,
 	direction: Layout_Direction,
 	available: f32,
 	sizes: []f32,
-) {
-	fixed_total: f32 = 0
-	grow_minimum_total: f32 = 0
-	active_weight: f32 = 0
+	) -> Axis_Allocation_Result {
+	items := make([]Elastic_Item, len(children), allocator=rt.scratch_allocator)
+	defer delete(items, rt.scratch_allocator)
+	allocated := make([]Layout_Unit, len(children), allocator=rt.scratch_allocator)
+	defer delete(allocated, rt.scratch_allocator)
+	maximum_grow: f32 = 0
 	for id, index in children {
 		child := rt.nodes[id]
-		if child.style.grow > 0 {
-			minimum := resolved_main_size(child, direction, 0)
-			sizes[index] = minimum
-			grow_minimum_total += minimum
-			maximum := main_axis_max(child.style, direction)
-			if maximum < 0 || maximum > minimum {
-				active_weight += child.style.grow
-			}
-		} else {
-			sizes[index] = resolved_main_size(child, direction, intrinsic_main(rt, child, direction))
-			fixed_total += sizes[index]
+		grow := child.style.grow
+		if layout_grow_weight_is_finite_positive(grow) {
+			if grow > maximum_grow { maximum_grow = grow }
+		} else if math.is_nan(grow) || math.is_inf(grow) {
+			layout_trace_allocator_input_error(rt, child, "grow weight must be finite")
 		}
 	}
 
-	remaining := maxf(available-fixed_total-grow_minimum_total, 0)
-	for active_weight > 0 && remaining > 0 {
-		limited_weight: f32 = 0
-		limited_space: f32 = 0
-		for id, index in children {
-			child := rt.nodes[id]
-			if child.style.grow <= 0 { continue }
-			maximum := main_axis_max(child.style, direction)
-			if maximum < 0 || maximum <= sizes[index] { continue }
-			share := remaining * child.style.grow / active_weight
-			room := maximum-sizes[index]
-			if share >= room {
-				sizes[index] = maximum
-				limited_weight += child.style.grow
-				limited_space += room
+	for id, index in children {
+		child := rt.nodes[id]
+		grow := child.style.grow
+		if layout_grow_weight_is_finite_positive(grow) {
+			minimum_value := main_axis_min(child.style, direction)
+			maximum_value := main_axis_max(child.style, direction)
+			minimum := layout_unit_extent(maxf(minimum_value, 0))
+			max_unbounded := maximum_value < 0
+			maximum := minimum
+			if math.is_nan(maximum_value) || math.is_inf(maximum_value) {
+				layout_trace_allocator_input_error(rt, child, "maximum must be finite or negative for unbounded")
+				max_unbounded = true
+			} else if !max_unbounded {
+				maximum = layout_unit_maximum(maxf(maximum_value, 0))
 			}
-		}
-		if limited_weight == 0 {
-			for id, index in children {
-				child := rt.nodes[id]
-				if child.style.grow <= 0 { continue }
-				maximum := main_axis_max(child.style, direction)
-				if maximum < 0 || maximum > sizes[index] {
-					sizes[index] += remaining * child.style.grow / active_weight
-				}
+			if math.is_nan(minimum_value) || math.is_inf(minimum_value) || minimum_value < 0 {
+				layout_trace_allocator_input_error(rt, child, "minimum must be finite and nonnegative")
 			}
-			break
+			items[index] = Elastic_Item{
+				minimum=minimum,
+				ideal=minimum,
+				maximum=maximum,
+				max_unbounded=max_unbounded,
+				expand_weight=layout_grow_weight_units(grow, maximum_grow),
+			}
+		} else {
+			fixed := layout_main_measured_units(rt, child, direction)
+			items[index] = Elastic_Item{minimum=fixed, ideal=fixed, maximum=fixed}
 		}
-		remaining = maxf(remaining-limited_space, 0)
-		active_weight = maxf(active_weight-limited_weight, 0)
 	}
+
+	axis := "row"
+	if direction == .Column { axis = "column" }
+	result := layout_allocate_axis(layout_unit_maximum(maxf(available, 0)), items, allocated)
+	for id, index in children {
+		child := rt.nodes[id]
+		sizes[index] = layout_unit_to_f32(allocated[index])
+		canonical, invalid := layout_allocator_canonical_item(items[index])
+		if invalid {
+			layout_trace_allocator_input_error(rt, child, "minimum exceeds maximum or a bound is outside the supported range; canonicalized safely")
+		}
+		if items[index].expand_weight > 0 && allocated[index] != canonical.ideal {
+			record_trace(rt, .Layout, child.id, fmt.tprintf(
+				"%s allocation: ideal %.3f, allocated %.3f, expand weight %d",
+				axis,
+				layout_unit_to_f32(canonical.ideal),
+				sizes[index],
+				items[index].expand_weight,
+			))
+		}
+	}
+	if result.overflow > 0 {
+		record_trace(rt, .Layout, children[0] if len(children) > 0 else 0, fmt.tprintf(
+			"%s allocation overflow: hard minima exceed available by %.3f",
+			axis,
+			layout_unit_to_f32(result.overflow),
+		))
+	} else if result.unused > 0 {
+		record_trace(rt, .Layout, children[0] if len(children) > 0 else 0, fmt.tprintf(
+			"%s allocation leaves %.3f unused after reaching expansion limits",
+			axis,
+			layout_unit_to_f32(result.unused),
+		))
+	}
+	return result
 }
 
 layout_text_constraint :: proc(parent: ^Node, child: ^Node, cross_size: f32) -> f32 {
@@ -403,10 +480,10 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	for id in children {
 		child := rt.nodes[id]
 		layout_note_node_visit(rt, child)
-		if child.style.grow > 0 { has_grow = true }
+		if child.style.grow > 0 || math.is_nan(child.style.grow) || math.is_inf(child.style.grow) { has_grow = true }
 		// A Row grow child's width is not known until the existing allocator
 		// distributes space below. Avoid shaping it with an invented width.
-		if node_has_text_product(child.kind) && !(parent.style.direction == .Row && child.style.grow > 0) {
+		if node_has_text_product(child.kind) && !(parent.style.direction == .Row && layout_grow_weight_is_finite_positive(child.style.grow)) {
 			_ = layout_measure_node(rt, child, layout_text_measure_constraints(parent, child, cross_size))
 		}
 	}
@@ -436,7 +513,7 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		old_bounds := child.bounds
 		main := resolved_main_size(child, parent.style.direction, intrinsic_main(rt, child, parent.style.direction))
 		if has_grow { main = main_sizes[index] }
-		if child.style.grow > 0 && node_has_text_product(child.kind) {
+		if layout_grow_weight_is_finite_positive(child.style.grow) && node_has_text_product(child.kind) {
 			_ = layout_measure_node(rt, child, layout_grow_measure_constraints(parent, child, main, cross_size))
 		}
 		if parent.style.direction == .Row {

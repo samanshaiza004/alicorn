@@ -56,11 +56,16 @@ dirty state. An input-only change can update retained presentation without
 asking the application to describe the whole UI again. Changed constraints
 can require layout even when the description itself is reused.
 
-The #25 axis allocator begins as a standalone deterministic primitive over
-`Layout_Unit` participants. It resolves weighted expansion/compression,
-saturation, stable integer remainders, unused space, and minimum overflow
-without depending on retained nodes or layout traversal. Row/Column do not yet
-consume it; that integration follows independent allocator conformance.
+The #25 axis allocator is a deterministic primitive over `Layout_Unit`
+participants and now owns Row/Column main-axis distribution. Fixed and natural
+children enter as measured extents; a grow child starts at its hard minimum and
+maps `grow` to a normalized expansion weight. Maxima saturate and release their
+share for redistribution; hard minima remain intact, and any unresolved
+overflow or unused surplus stays explicit. Text shaping remains in the measure
+stage and is never initiated by allocation. Cross-axis alignment and the
+specialized Split sizing path are unchanged. This is not content-sized
+container measurement (#5), Grid (#26), or a new compression policy: current
+Row/Column children do not compress below their ideal/minimum.
 
 `Style_Environment` is the inherited dependency surface for a compact theme ID,
 density, normalized text scale, accent override, and backend-neutral
