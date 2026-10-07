@@ -379,9 +379,10 @@ test_accessibility_projection_unknown_base_requests_snapshot_without_mutation ::
 }
 
 @(test)
-test_accessibility_projection_keeps_virtual_collection_bounded_and_positions_absolute :: proc(t: ^testing.T) {
+test_accessibility_projection_keeps_virtual_collection_bounded_and_zero_based_positions :: proc(t: ^testing.T) {
 	collection_id := alicorn.Semantic_ID{namespace=23, value=1}
 	item_id := alicorn.Semantic_ID{namespace=23, value=582_341}
+	first_item_id := alicorn.Semantic_ID{namespace=23, value=2}
 	collection := alicorn.Semantic_Node{
 		id=collection_id,
 		role=.List,
@@ -410,22 +411,38 @@ test_accessibility_projection_keeps_virtual_collection_bounded_and_positions_abs
 		bounds=alicorn.Rect{20, 30, 200, 24},
 		tree_order=2,
 	}
-	nodes := [2]alicorn.Semantic_Node{collection, item}
+	first_item := alicorn.Semantic_Node{
+		id=first_item_id,
+		role=.List_Item,
+		label="Result 1",
+		parent=collection_id,
+		collection_id=collection_id,
+		position_in_set=0,
+		size_of_set=1_000_000,
+		is_virtual_item=true,
+		tree_order=3,
+	}
+	nodes := [3]alicorn.Semantic_Node{collection, item, first_item}
 	snapshot := accessibility_projection_test_snapshot(12, nodes[:], item_id)
 	projection, status := accessibility_projection_from_snapshot(snapshot, context.temp_allocator)
 	testing.expect(t, status == .Success, "bounded virtual snapshot should project")
 	defer accessibility_projection_destroy(&projection)
-	testing.expect(t, len(projection.nodes) == 3,
+	testing.expect(t, len(projection.nodes) == 4,
 		"logical collection size must not expand the already bounded semantic snapshot")
 	collection_node, collection_found := accessibility_projection_node_by_semantic_id(projection, collection_id)
 	item_node, item_found := accessibility_projection_node_by_semantic_id(projection, item_id)
+	first_item_node, first_item_found := accessibility_projection_node_by_semantic_id(projection, first_item_id)
 	testing.expect(t, collection_found && collection_node.is_collection && collection_node.logical_count == 1_000_000,
 		"collection should retain its full logical size")
 	testing.expect(t, accessibility_projection_action_has(collection_node.actions, .Scroll_Forward) &&
 		accessibility_projection_action_has(collection_node.actions, .Scroll_Backward),
 		"advertised collection scroll actions should survive the AccessKit projection")
-	testing.expect(t, item_found && item_node.position_in_set == 582_341 && item_node.size_of_set == 1_000_000,
-		"zero-based Alicorn index should map to one-based absolute platform position")
+	testing.expect(t, collection_node.size_of_set == 1_000_000 && item_found && item_node.has_position_in_set &&
+		item_node.position_in_set == 582_340 && item_node.size_of_set == 0,
+		"the collection should own total size and item positions should remain zero-based")
+	testing.expect(t, first_item_found && first_item_node.has_position_in_set && first_item_node.position_in_set == 0 &&
+		first_item_node.size_of_set == 0,
+		"the first collection item must export its present zero-based position")
 	testing.expect(t, item_node.role == .List_Item && item_node.label == "Result 582341" &&
 		item_node.value == "current result" && item_node.description == "Virtual result in the filtered collection",
 		"semantic role, label, description, and value should be preserved")

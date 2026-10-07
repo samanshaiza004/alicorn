@@ -393,7 +393,9 @@ tab_bar :: proc(
 	}
 	container_end(ui)
 	scroll_region_end(ui)
-	_ = semantic_collection_selection_set(ui, outer_id, selected_semantic_id, selected_semantic_id)
+	// Tabs expose selection as their active state. A separate Current state is
+	// redundant for TabList semantics and can cause duplicate AT announcements.
+	_ = semantic_collection_selection_set(ui, outer_id, selected_semantic_id, {})
 	if show_scroll_controls {
 		right_scroll_id: Node_ID
 		right_scroll_clicked: bool

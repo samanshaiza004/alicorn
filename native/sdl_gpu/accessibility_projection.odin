@@ -95,6 +95,7 @@ Accessibility_Projection_Node :: struct {
 	is_collection: bool,
 	logical_count: u64,
 	position_in_set: u64,
+	has_position_in_set: bool,
 	size_of_set: u64,
 	selected_item_id: u64,
 	current_item_id: u64,
@@ -290,7 +291,8 @@ accessibility_projection_node_from_semantic :: proc(
 		is_collection=source.is_collection,
 		logical_count=source.logical_count,
 		position_in_set=source.position_in_set,
-		size_of_set=source.size_of_set,
+		has_position_in_set=!source.is_collection && source.size_of_set > 0,
+		size_of_set=0,
 		numeric_value=source.numeric_value,
 		numeric_minimum=source.numeric_minimum,
 		numeric_maximum=source.numeric_maximum,
@@ -299,8 +301,10 @@ accessibility_projection_node_from_semantic :: proc(
 		tree_order=source.tree_order,
 		children=make([dynamic]u64, 0, allocator=allocator),
 	}
+	// AccessKit uses zero-based positions, like Alicorn. Keep presence separate
+	// from the value so the first item (position 0) is exported too. The total
+	// belongs to the collection node, not each item.
 	if source.is_collection { node.size_of_set = source.logical_count }
-	if !source.is_collection && source.size_of_set > 0 { node.position_in_set += 1 }
 	node.states = accessibility_projection_states(source.states)
 	node.actions = accessibility_projection_actions(source.actions)
 	if len(source.label) > 0 {
@@ -885,7 +889,8 @@ accessibility_projection_nodes_equal :: proc(a, b: Accessibility_Projection_Node
 	   a.text_selection != b.text_selection || !accessibility_projection_byte_lengths_equal(a.text_run_character_lengths, b.text_run_character_lengths) ||
 	   a.states != b.states || a.actions != b.actions || a.bounds != b.bounds || a.has_bounds != b.has_bounds ||
 	   a.is_collection != b.is_collection || a.logical_count != b.logical_count ||
-	   a.position_in_set != b.position_in_set || a.size_of_set != b.size_of_set ||
+	   a.position_in_set != b.position_in_set || a.has_position_in_set != b.has_position_in_set ||
+	   a.size_of_set != b.size_of_set ||
 	   a.selected_item_id != b.selected_item_id || a.current_item_id != b.current_item_id ||
 	   a.numeric_value != b.numeric_value || a.numeric_minimum != b.numeric_minimum ||
 	   a.numeric_maximum != b.numeric_maximum || a.numeric_step != b.numeric_step ||

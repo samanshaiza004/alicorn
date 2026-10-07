@@ -832,8 +832,10 @@ native_accessibility_build_node :: proc(source: Accessibility_Projection_Node, c
 		accessibility_projection_action_has(source.actions, .Collapse) {
 		accesskit_node_set_expanded(node, accessibility_projection_state_has(source.states, .Expanded))
 	}
-	if source.position_in_set > 0 { accesskit_node_set_position_in_set(node, uint(source.position_in_set)) }
-	if source.size_of_set > 0 { accesskit_node_set_size_of_set(node, uint(source.size_of_set)) }
+	if source.has_position_in_set { accesskit_node_set_position_in_set(node, uint(source.position_in_set)) }
+	if source.is_collection && source.size_of_set > 0 {
+		accesskit_node_set_size_of_set(node, uint(source.size_of_set))
+	}
 	if source.has_numeric_value {
 		accesskit_node_set_numeric_value(node, source.numeric_value)
 		accesskit_node_set_min_numeric_value(node, source.numeric_minimum)

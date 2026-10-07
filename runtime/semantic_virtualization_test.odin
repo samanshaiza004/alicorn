@@ -405,7 +405,8 @@ test_semantic_controls_actions_and_tab_composition :: proc(t: ^testing.T) {
 	readme_entity, license_entity: Semantic_Node
 	for entity in snapshot.nodes {
 		if entity.role == .Tab_List {
-			tab_list_found = entity.label == "Open documents" && entity.logical_count == 2 && entity.selected_id == readme_id
+			tab_list_found = entity.label == "Open documents" && entity.logical_count == 2 &&
+				entity.selected_id == readme_id && entity.current_id == (Semantic_ID{})
 		}
 		if entity.id == readme_id {
 			readme_entity = entity
@@ -419,8 +420,10 @@ test_semantic_controls_actions_and_tab_composition :: proc(t: ^testing.T) {
 		}
 	}
 	testing.expect(t, tab_list_found && selected_found && dirty_found && close_found && license_found &&
-		readme_entity.position_in_set == 0 && license_entity.position_in_set == 1 && readme_entity.tree_order < license_entity.tree_order,
-		"TabList/Tab/Close semantics should be independent from decorative visual parts")
+		readme_entity.position_in_set == 0 && license_entity.position_in_set == 1 &&
+		!semantic_states_has(readme_entity.states, .Current) && !semantic_states_has(license_entity.states, .Current) &&
+		readme_entity.tree_order < license_entity.tree_order,
+		"TabList selection should not duplicate selected state as current; decorative parts stay non-semantic")
 	testing.expect(t, rt.stats.semantic_descriptions_emitted-descriptions_before_tabs == 5,
 		"description telemetry should count TabList, two Tabs, and two close actions once each")
 	base_revision := snapshot.revision
@@ -442,7 +445,8 @@ test_semantic_controls_actions_and_tab_composition :: proc(t: ^testing.T) {
 	delta := semantic_update_since(&rt, base_revision)
 	testing.expect(t, readme_after_found && license_after_found && readme_after_reorder.position_in_set == 1 &&
 		license_after_reorder.position_in_set == 0 && license_after_reorder.tree_order < readme_after_reorder.tree_order &&
-		semantic_states_has(license_after_reorder.states, .Selected) && !semantic_states_has(readme_after_reorder.states, .Selected),
+		semantic_states_has(license_after_reorder.states, .Selected) && !semantic_states_has(readme_after_reorder.states, .Selected) &&
+		!semantic_states_has(license_after_reorder.states, .Current) && !semantic_states_has(readme_after_reorder.states, .Current),
 		"reordering tabs should preserve IDs while updating semantic order and selection")
 	testing.expect(t, !delta.requires_snapshot && delta.from_revision == base_revision &&
 		semantic_virtual_test_has_id(delta.changed_ids, readme_id) && semantic_virtual_test_has_id(delta.changed_ids, license_id),
