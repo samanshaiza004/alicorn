@@ -238,6 +238,11 @@ Layout_Style :: struct {
 	clip:      bool,
 }
 
+// LAYOUT_SIZE_FIT_CONTENT is an opt-in Layout_Style width/height value.
+// The first retained-layout slice supports a Column's content-sized height;
+// ordinary -1 dimensions keep their existing externally allocated behavior.
+LAYOUT_SIZE_FIT_CONTENT :: f32(-2)
+
 Rect :: struct {
 	x, y, w, h: f32,
 }
@@ -297,6 +302,7 @@ Measure_Result :: struct {
 Measure_Cache_Key :: struct {
 	constraints:    Layout_Constraints,
 	input_revision: u64,
+	content_signature: u64,
 	dependencies:   Measure_Dependencies,
 	valid:          bool,
 }

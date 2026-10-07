@@ -85,10 +85,15 @@ propagates changed output axes through the parent's placement dependencies.
 The current `layout_boundary=true` contract is full containment: the boundary
 keeps its parent-assigned outer geometry stable while its contents relayout.
 `Parent_Size_Dependencies` records the child-output-to-parent-output mapping,
-but current Row/Column containers do not derive external preferred size from
-their children. #5 owns content-sized container policy and the future per-axis
-propagation this enables; a width-definite/height-content container is not yet
-an axis-specific layout boundary.
+and opt-in content sizing now consumes that contract for Column containers and
+Scroll_Region viewports. `LAYOUT_SIZE_FIT_CONTENT` requests a measured height
+from realized child results (or the declared virtual scroll extent), then
+applies min/max and parent constraints. It does not change ordinary `-1`
+allocation or recursively derive preferred sizes for arbitrary nested
+containers. A content-sized Scroll_Region caps its viewport and keeps its full
+logical extent for internal scrolling. Parent size propagation remains
+axis-mapped; layout boundaries are still full-containment promises rather than
+per-axis boundaries.
 `style_metric` leaves the meaning and use of each dimension with the
 application. This is explicit dependency tracking, not a general cascade or
 implicit observation of app state. The

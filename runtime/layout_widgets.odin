@@ -134,7 +134,11 @@ scroll_region_begin :: proc(
 	resolved_viewport := viewport_height
 	if resolved_viewport <= 0 {
 		if style.height >= 0 { resolved_viewport = style.height }
-		if resolved_viewport <= 0 { resolved_viewport = 180 }
+		if layout_size_is_fit_content(style.height) {
+			fit_height := content_height+2*maxf(style.padding, 0)
+			resolved_viewport = clampf(fit_height, maxf(style.min_height, 0), style.max_height)
+		}
+		if resolved_viewport <= 0 && !layout_size_is_fit_content(style.height) { resolved_viewport = 180 }
 	}
 	resolved_width := viewport_width
 	if resolved_width <= 0 {
@@ -172,7 +176,7 @@ scroll_region_begin :: proc(
 		// An explicit viewport is authoritative (useful for fixed layouts and
 		// resize tests). Grow-based regions pass zero and reuse the last
 		// resolved layout height until the new layout has run.
-		if viewport_height <= 0 && style.height < 0 && previous.bounds.h > 0 {
+		if viewport_height <= 0 && style.height < 0 && !layout_size_is_fit_content(style.height) && previous.bounds.h > 0 {
 			outer_height = previous.bounds.h
 		}
 		if viewport_width <= 0 && style.width < 0 && previous.bounds.w > 0 {

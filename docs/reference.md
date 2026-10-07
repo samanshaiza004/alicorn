@@ -101,6 +101,7 @@ error and its correction hint.
 | `runtime_text_run_build` | Shape temporary application text through Alicorn's retained text engine without exposing the engine. |
 | `container_begin` / `container_begin_ex` / `container_end` | Group children and define their layout; `layout_boundary=true` makes the container an explicit retained-layout invalidation boundary. |
 | `layout_style` | Set direction, size constraints, growth, padding, gap, alignment, and clipping. |
+| `LAYOUT_SIZE_FIT_CONTENT` | Opt a Column `Container` into measured height, or a `Scroll_Region` into a content-sized, max-capped viewport. |
 | `button_content_style` | Set label alignment and padding inside a button. |
 | `Text_Style` | Select weight, overflow behavior, and other text presentation options. |
 | `Style_Theme` / `style_theme_register` | Register an immutable typed color palette for one runtime. |
@@ -133,10 +134,30 @@ independent. Layout is in logical window coordinates.
 Style scopes do not implicitly create layout boundaries. A layout boundary keeps
 its parent-assigned bounds stable and lets changed descendants relayout locally;
 use it when the application can preserve that geometry contract. This is a
-full-containment boundary, not a per-axis promise: Row/Column do not yet derive
-their external size from children, and `Parent_Size_Dependencies` is not an
-active container-sizing mechanism. Issue #5 owns content-sized containers and
-the future axis-specific propagation they need.
+full-containment boundary, not a per-axis promise.
+
+### Content-sized height
+
+Set `height=LAYOUT_SIZE_FIT_CONTENT` on a Column `Container` to derive
+its height from its realized direct children, their measured heights, gaps, and
+padding. Width remains parent-provided or explicit. `min_height` and
+`max_height` clamp the measured result deterministically; explicit dimensions
+and ordinary `-1` externally allocated dimensions keep their existing policy.
+This first slice does not recursively compute preferred sizes for arbitrary
+nested containers, and it does not measure unrealized virtual items.
+
+For a `Scroll_Region`, the same sentinel derives the viewport from its declared
+`content_height`, then applies `min_height`/`max_height` and parent constraints.
+The viewport can stop growing at `max_height` while the full logical content
+remains scrollable. Virtual-list realization stays bounded to the resolved
+viewport. Applications still own scroll behavior and any internal scrolling
+policy.
+
+Child measured-size changes use `Parent_Size_Dependencies` to decide whether a
+content-sized parent's measured height changes. A changed measurement with an
+identical output does not by itself trigger ancestor layout. Diagnostics record
+the content contribution and final measured height. This is opt-in; ordinary
+Row/Column sizing and growth remain unchanged.
 
 ### Scoped style environment
 

@@ -481,6 +481,14 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		child := rt.nodes[id]
 		layout_note_node_visit(rt, child)
 		if child.style.grow > 0 || math.is_nan(child.style.grow) || math.is_inf(child.style.grow) { has_grow = true }
+		if layout_node_has_content_height(child) {
+			parent_constraints := Layout_Constraints{
+				width=layout_axis_constraint_normalize(inner.w, inner.w),
+				height=layout_axis_constraint_normalize(0, available),
+			}
+			constraints := layout_content_child_constraints(parent, child, parent_constraints)
+			_ = layout_measure_node(rt, child, constraints)
+		}
 		// A Row grow child's width is not known until the existing allocator
 		// distributes space below. Avoid shaping it with an invented width.
 		if node_has_text_product(child.kind) && !(parent.style.direction == .Row && layout_grow_weight_is_finite_positive(child.style.grow)) {

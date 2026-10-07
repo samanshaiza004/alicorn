@@ -309,3 +309,123 @@ test_parent_placement_and_external_size_dependencies_are_distinct :: proc(t: ^te
 		layout_map_child_size_change(state.parent_size_dependencies, {.Width}) == {},
 		"child-to-parent external-size propagation should use its separate axis map")
 }
+
+layout_content_test_describe_rows :: proc(rt: ^Runtime, heights: []f32, min_height: f32 = -1, max_height: f32 = -1) -> Node_ID {
+	invalidate_root(rt, "content-sized container fixture")
+	ui, build := begin_frame(rt)
+	if !build { return 0 }
+	container_begin(&ui, .Root, key=key_string("content-size-root"), style=layout_style(.Column, width=300, height=300))
+	panel_style := layout_style(.Column, width=200, height=LAYOUT_SIZE_FIT_CONTENT, min_height=min_height, max_height=max_height, padding=10, gap=5, clip=true)
+	panel := container_begin(&ui, .Container, key=key_string("content-size-panel"), style=panel_style)
+	for height, index in heights {
+		container_begin(&ui, .Container, key=key_pair(u64(index+1), 0xC017), style=layout_style(.Column, height=height))
+		container_end(&ui)
+	}
+	container_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+	return panel
+}
+
+@(test)
+test_content_height_measures_column_children_and_clamps_min_max :: proc(t: ^testing.T) {
+	heights := [2]f32{20, 30}
+	for clamp_case in 0..<3 {
+		rt := new_runtime(Rect{0, 0, 300, 300})
+		panel_id := Node_ID(0)
+		if clamp_case == 0 { panel_id = layout_content_test_describe_rows(&rt, heights[:], -1, -1) }
+		else if clamp_case == 1 { panel_id = layout_content_test_describe_rows(&rt, heights[:], -1, 60) }
+		else { panel_id = layout_content_test_describe_rows(&rt, heights[:], 90, -1) }
+		panel, ok := rt.nodes[panel_id]
+		testing.expect(t, ok, "content-sized panel should be retained")
+		if ok {
+			want_height := f32(75)
+			if clamp_case == 1 { want_height = 60 }
+			if clamp_case == 2 { want_height = 90 }
+			testing.expect(t, panel.bounds.w == 200 && panel.bounds.h == want_height,
+				"content height should include realized child heights, gap, padding, and deterministic min/max clamping")
+			state := rt.measure_states[panel_id]
+			testing.expect(t, layout_unit_to_f32(state.result.size.height) == want_height,
+				"retained Measure_Result should match the laid out content height")
+		}
+		destroy_runtime(&rt)
+	}
+}
+
+layout_content_test_describe_text :: proc(rt: ^Runtime, value: string) -> Node_ID {
+	invalidate_root(rt, "content-sized text fixture")
+	ui, build := begin_frame(rt)
+	if !build { return 0 }
+	container_begin(&ui, .Root, key=key_string("content-text-root"), style=layout_style(.Column, width=300, height=300))
+	panel := container_begin(&ui, .Container, key=key_string("content-text-panel"), style=layout_style(.Column, width=200, height=LAYOUT_SIZE_FIT_CONTENT, padding=8, gap=4))
+	text(&ui, value, key=key_string("content-text-leaf"), style=layout_style(width=120, height=24))
+	container_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+	return panel
+}
+
+@(test)
+test_content_height_tracks_changed_child_axis_and_equal_measurement_stays_local :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 300, 300})
+	defer destroy_runtime(&rt)
+	testing.expect(t, text_engine_load_font(&rt.text_engine, LAYOUT_MEASURE_TEST_FONT), "content text fixture font should load")
+	panel_id := layout_content_test_describe_text(&rt, "cat")
+	if panel_id == 0 { testing.expect(t, false, "initial content panel should be retained"); return }
+	panel := rt.nodes[panel_id]
+	first_result := rt.measure_states[panel_id].result
+	layout_visits := rt.stats.layout_nodes_visited
+	_ = layout_content_test_describe_text(&rt, "dog")
+	second_result := rt.measure_states[panel_id].result
+	testing.expect(t, layout_measure_result_equal(first_result, second_result) && rt.stats.layout_nodes_visited == layout_visits,
+		"a child measure miss with identical dimensions should not propagate layout through its content-sized parent")
+
+	changed_heights := [1]f32{64}
+	changed_panel_id := layout_content_test_describe_rows(&rt, changed_heights[:], -1, -1)
+	changed_panel := rt.nodes[changed_panel_id]
+	testing.expect(t, changed_panel.bounds.w == panel.bounds.w && changed_panel.bounds.h == 84,
+		"a child height change should update only the content panel's measured height while preserving its width")
+
+	fresh := new_runtime(Rect{0, 0, 300, 300})
+	defer destroy_runtime(&fresh)
+	fresh_panel_id := layout_content_test_describe_rows(&fresh, changed_heights[:], -1, -1)
+	fresh_panel := fresh.nodes[fresh_panel_id]
+	testing.expect(t, changed_panel.bounds == fresh_panel.bounds &&
+		layout_measure_result_equal(rt.measure_states[changed_panel_id].result, fresh.measure_states[fresh_panel_id].result),
+		"incremental content sizing should match a clean solve for the same final tree")
+}
+
+@(test)
+test_content_sized_scroll_region_caps_virtual_list_and_keeps_virtualization_bounded :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 400, 260})
+	defer destroy_runtime(&rt)
+	ui, build := begin_frame(&rt)
+	if !build { testing.expect(t, false, "new runtime should request its first description"); return }
+	container_begin(&ui, .Root, key=key_string("content-scroll-root"), style=layout_style(.Column, width=400, height=260))
+	panel_id := container_begin(&ui, .Container, key=key_string("content-scroll-panel"), style=layout_style(.Column, width=300, height=LAYOUT_SIZE_FIT_CONTENT, max_height=140, padding=10, gap=8, clip=true))
+	container_begin(&ui, .Container, key=key_string("content-scroll-query-row"), style=layout_style(.Row, height=30))
+	container_end(&ui)
+	list := virtual_list_begin(&ui, 100, 20, key=key_string("content-scroll-list"), style=layout_style(.Column, height=LAYOUT_SIZE_FIT_CONTENT, max_height=80, grow=1, clip=true))
+	for index in list.first..<list.last {
+		container_begin(&ui, .Virtual_Row, key=key_pair(u64(index+1), 0xA551), style=layout_style(.Column, height=20))
+		container_end(&ui)
+	}
+	virtual_list_end(&ui, list)
+	container_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+
+	panel, panel_ok := rt.nodes[panel_id]
+	region, region_ok := rt.nodes[list.scroll.id]
+	active_rows := 0
+	for _, node in rt.nodes { if node != nil && node.active && node.kind == .Virtual_Row { active_rows += 1 } }
+	testing.expect(t, panel_ok && region_ok, "content panel and capped scroll region should be retained")
+	if panel_ok && region_ok {
+		testing.expect(t, panel.bounds.h == 138 && region.bounds.h == 80 && list.scroll.viewport_height == 80,
+			"the panel should include the capped scroll viewport without a manually assigned outer height")
+		testing.expect(t, region.scroll_content_height == 2000 && region.scroll_offset_y <= region.scroll_content_height-region.bounds.h,
+			"the bounded viewport should preserve the full logical extent and clamp its scroll offset")
+	}
+	testing.expect(t, list.last-list.first <= 5 && active_rows == list.last-list.first,
+		"only visible virtual rows should be realized for a content-sized capped list")
+}

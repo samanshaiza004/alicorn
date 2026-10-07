@@ -169,6 +169,9 @@ measure_input_hash :: proc(d: Description) -> u64 {
 		h = hash_mix(h, hash_string(d.label))
 	case .Text, .Text_Field:
 		h = hash_mix(h, hash_string(d.text))
+	case .Scroll_Region:
+		if !layout_size_is_fit_content(d.style.height) { return h }
+		h = hash_mix(h, u64(transmute(u32)d.scroll_content_height))
 	case:
 		return h
 	}
