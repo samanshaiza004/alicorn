@@ -26,7 +26,9 @@ import "core:strings"
 //     "extensions": {"app.editor.gutter":{
 //       "$type":"dimension", "$value":"{space.small}"
 //     }}
-//   }
+//   },
+//   "materials": {"app.editor.paper":{"kind":"analytic_relief","bevel_width":1}},
+//   "recipes": {"button":{"tab":{"selected_indicator_role":"accent"}}}
 // }
 //
 // Schema must match the current schema exactly; the compiler accepts the
@@ -60,6 +62,8 @@ Theme_JSON_Diagnostic_Code :: enum u8 {
 	Invalid_Alias,
 	Invalid_Color,
 	Invalid_Length,
+	Invalid_Material,
+	Invalid_Recipe,
 }
 
 Theme_JSON_Diagnostic :: struct {
@@ -180,9 +184,12 @@ theme_json_output_destroy :: proc(output: ^Theme_JSON_Output, allocator := conte
 		delete(declaration.name, allocator)
 		delete(declaration.token, allocator)
 	}
+	for material in output.source.materials { delete(material.name, allocator) }
 	delete(output.source.tokens, allocator)
 	delete(output.source.core_roles, allocator)
 	delete(output.source.extension_roles, allocator)
+	delete(output.source.materials, allocator)
+	delete(output.source.button_recipes, allocator)
 	delete(output.extends, allocator)
 	delete(output.source_path, allocator)
 	delete(output.diagnostics, allocator)
@@ -401,6 +408,8 @@ theme_json_map_root :: proc(parser: ^JSON_Parser, root: JSON_Node, output: ^Them
 	contract, has_contract := theme_json_member(root, "contract")
 	tokens, has_tokens := theme_json_member(root, "tokens")
 	roles, has_roles := theme_json_member(root, "roles")
+	materials, has_materials := theme_json_member(root, "materials")
+	recipes, has_recipes := theme_json_member(root, "recipes")
 	extends, has_extends := theme_json_member(root, "extends")
 
 	version_valid := true
@@ -435,7 +444,8 @@ theme_json_map_root :: proc(parser: ^JSON_Parser, root: JSON_Node, output: ^Them
 
 	for member in root.members {
 		if member.key != "schema" && member.key != "contract" && member.key != "extends" &&
-		   member.key != "tokens" && member.key != "roles" {
+		   member.key != "tokens" && member.key != "roles" && member.key != "materials" &&
+		   member.key != "recipes" {
 			theme_json_diagnostic(parser, .Unsupported_Field, member.key_span, "unsupported top-level field")
 		}
 	}
@@ -450,6 +460,227 @@ theme_json_map_root :: proc(parser: ^JSON_Parser, root: JSON_Node, output: ^Them
 			theme_json_diagnostic(parser, .Unsupported_Value, roles.span, "roles must be an object")
 		} else { theme_json_map_roles(parser, roles^, output) }
 	}
+	if has_materials {
+		if materials.kind != .Object {
+			theme_json_diagnostic(parser, .Unsupported_Value, materials.span, "materials must be an object keyed by app/vendor material name")
+		} else { theme_json_map_materials(parser, materials^, output) }
+	}
+	if has_recipes {
+		if recipes.kind != .Object {
+			theme_json_diagnostic(parser, .Unsupported_Value, recipes.span, "recipes must be an object")
+		} else { theme_json_map_recipes(parser, recipes^, output) }
+	}
+}
+
+theme_json_map_materials :: proc(parser: ^JSON_Parser, node: JSON_Node, output: ^Theme_JSON_Output) {
+	definitions := make([dynamic]Theme_Material_Definition, 0, allocator=parser.allocator)
+	for member in node.members {
+		if !theme_extension_role_name_is_valid(member.key) {
+			theme_json_diagnostic(parser, .Invalid_Material, member.key_span, "material names must use app.* or vendor.* namespaces")
+			continue
+		}
+		if member.value.kind != .Object {
+			theme_json_diagnostic(parser, .Invalid_Material, member.value.span, "material definition must be an object")
+			continue
+		}
+		kind_node, has_kind := theme_json_member(member.value, "kind")
+		if !has_kind { theme_json_missing(parser, member.value.span, "kind") }
+		value := Theme_Material{}
+		if has_kind {
+			if kind_node.kind != .String {
+				theme_json_diagnostic(parser, .Invalid_Material, kind_node.span, "material kind must be 'flat' or 'analytic_relief'")
+			} else {
+				switch kind_node.text {
+				case "flat": value.kind = .Flat
+				case "analytic_relief": value.kind = .Analytic_Relief
+				case: theme_json_diagnostic(parser, .Invalid_Material, kind_node.span, "supported material kinds are 'flat' and 'analytic_relief'")
+				}
+			}
+		}
+		for property in member.value.members {
+			if property.key != "kind" && property.key != "bevel_width" && property.key != "bevel_strength" &&
+			   property.key != "inner_shadow_strength" && property.key != "outer_shadow_strength" &&
+			   property.key != "outer_shadow_radius" {
+				theme_json_diagnostic(parser, .Unsupported_Field, property.key_span, "unsupported material property")
+			}
+		}
+		bevel_width, bw_ok := theme_json_optional_f32(parser, member.value, "bevel_width")
+		bevel_strength, bs_ok := theme_json_optional_f32(parser, member.value, "bevel_strength")
+		inner_shadow_strength, is_ok := theme_json_optional_f32(parser, member.value, "inner_shadow_strength")
+		outer_shadow_strength, os_ok := theme_json_optional_f32(parser, member.value, "outer_shadow_strength")
+		outer_shadow_radius, or_ok := theme_json_optional_f32(parser, member.value, "outer_shadow_radius")
+		value.bevel_width = bevel_width
+		value.bevel_strength = bevel_strength
+		value.inner_shadow_strength = inner_shadow_strength
+		value.outer_shadow_strength = outer_shadow_strength
+		value.outer_shadow_radius = outer_shadow_radius
+		if has_kind && bw_ok && bs_ok && is_ok && os_ok && or_ok {
+			append(&definitions, Theme_Material_Definition{
+				name=theme_json_clone(member.key, parser.allocator),
+				value=value,
+				span=theme_json_source_span(parser, member.key_span),
+			})
+		}
+	}
+	output.source.materials = definitions[:]
+}
+
+theme_json_map_recipes :: proc(parser: ^JSON_Parser, node: JSON_Node, output: ^Theme_JSON_Output) {
+	definitions := make([dynamic]Theme_Button_Recipe_Override, 0, allocator=parser.allocator)
+	for component in node.members {
+		if component.key != "button" {
+			theme_json_diagnostic(parser, .Invalid_Recipe, component.key_span, "only the built-in 'button' recipe family is supported")
+			continue
+		}
+		if component.value.kind != .Object {
+			theme_json_diagnostic(parser, .Invalid_Recipe, component.value.span, "button recipes must be an object keyed by variant")
+			continue
+		}
+		for variant_member in component.value.members {
+			variant, variant_ok := theme_json_button_variant(variant_member.key)
+			if !variant_ok {
+				theme_json_diagnostic(parser, .Invalid_Recipe, variant_member.key_span, "unknown button variant")
+				continue
+			}
+			if variant_member.value.kind != .Object {
+				theme_json_diagnostic(parser, .Invalid_Recipe, variant_member.value.span, "button recipe override must be an object")
+				continue
+			}
+			override := Theme_Button_Recipe_Override{
+				variant=variant,
+				span=theme_json_source_span(parser, variant_member.key_span),
+			}
+			for property in variant_member.value.members {
+				switch property.key {
+				case "surface_role":
+					role, ok := theme_json_recipe_role(parser, property.value)
+					if ok { override.surface_role, override.has_surface_role = role, true }
+				case "text_role":
+					role, ok := theme_json_recipe_role(parser, property.value)
+					if ok { override.text_role, override.has_text_role = role, true }
+				case "surface_visible":
+					if property.value.kind == .Boolean { override.surface_visible, override.has_surface_visible = property.value.boolean, true }
+					else { theme_json_diagnostic(parser, .Invalid_Recipe, property.value.span, "surface_visible must be a boolean") }
+				case "selected_indicator":
+					if property.value.kind != .String { theme_json_diagnostic(parser, .Invalid_Recipe, property.value.span, "selected_indicator must be 'none' or 'underline'") }
+					else {
+						switch property.value.text {
+						case "none": override.selected_indicator, override.has_selected_indicator = false, true
+						case "underline": override.selected_indicator, override.has_selected_indicator = true, true
+						case: theme_json_diagnostic(parser, .Invalid_Recipe, property.value.span, "selected_indicator must be 'none' or 'underline'")
+						}
+					}
+				case "selected_indicator_role":
+					role, ok := theme_json_recipe_role(parser, property.value)
+					if ok { override.selected_indicator_role, override.has_selected_indicator_role = role, true }
+				case "focus_indicator_mode":
+					if property.value.kind != .String { theme_json_diagnostic(parser, .Invalid_Recipe, property.value.span, "focus_indicator_mode must be 'always' or 'keyboard_only'") }
+					else {
+						switch property.value.text {
+						case "always": override.focus_indicator_keyboard_only, override.has_focus_indicator_keyboard = false, true
+						case "keyboard_only": override.focus_indicator_keyboard_only, override.has_focus_indicator_keyboard = true, true
+						case: theme_json_diagnostic(parser, .Invalid_Recipe, property.value.span, "focus_indicator_mode must be 'always' or 'keyboard_only'")
+						}
+					}
+				case "focus_role":
+					role, ok := theme_json_recipe_role(parser, property.value)
+					if ok { override.focus_role, override.has_focus_role = role, true }
+				case "semantic_active_role":
+					role, ok := theme_json_recipe_role(parser, property.value)
+					if ok { override.semantic_active_role, override.has_semantic_active_role = role, true }
+				case "states":
+					theme_json_map_button_states(parser, property.value, &override)
+				case:
+					theme_json_diagnostic(parser, .Unsupported_Field, property.key_span, "unsupported button recipe property")
+				}
+			}
+			append(&definitions, override)
+		}
+	}
+	output.source.button_recipes = definitions[:]
+}
+
+theme_json_map_button_states :: proc(parser: ^JSON_Parser, node: JSON_Node, override: ^Theme_Button_Recipe_Override) {
+	if node.kind != .Object {
+		theme_json_diagnostic(parser, .Invalid_Recipe, node.span, "states must be an object keyed by selected, hovered, pressed, or disabled")
+		return
+	}
+	for state_member in node.members {
+		state, state_ok := theme_json_button_state(state_member.key)
+		if !state_ok {
+			theme_json_diagnostic(parser, .Invalid_Recipe, state_member.key_span, "unknown button state")
+			continue
+		}
+		if state_member.value.kind != .Object {
+			theme_json_diagnostic(parser, .Invalid_Recipe, state_member.value.span, "button state transform must be an object")
+			continue
+		}
+		transform := &override.states[int(state)]
+		for property in state_member.value.members {
+			switch property.key {
+			case "surface_role":
+				role, ok := theme_json_recipe_role(parser, property.value)
+				if ok { transform.surface_role, transform.has_surface_role = role, true }
+			case "surface_mix":
+				value, ok := theme_json_required_f32(parser, property.value, "surface_mix")
+				if ok { transform.surface_mix, transform.has_surface_mix = value, true }
+			case "text_role":
+				role, ok := theme_json_recipe_role(parser, property.value)
+				if ok { transform.text_role, transform.has_text_role = role, true }
+			case "text_mix":
+				value, ok := theme_json_required_f32(parser, property.value, "text_mix")
+				if ok { transform.text_mix, transform.has_text_mix = value, true }
+			case:
+				theme_json_diagnostic(parser, .Unsupported_Field, property.key_span, "unsupported button transform property")
+			}
+		}
+	}
+}
+
+theme_json_recipe_role :: proc(parser: ^JSON_Parser, node: JSON_Node) -> (Core_Color_Role, bool) {
+	if node.kind != .String {
+		theme_json_diagnostic(parser, .Invalid_Recipe, node.span, "recipe role must be a core color role name")
+		return .Count, false
+	}
+	role, ok := theme_json_core_role(node.text)
+	if !ok { theme_json_diagnostic(parser, .Invalid_Recipe, node.span, "unknown core color role in recipe") }
+	return role, ok
+}
+
+theme_json_button_variant :: proc(value: string) -> (Theme_Button_Variant, bool) {
+	switch value {
+	case "default": return .Default, true
+	case "primary": return .Primary, true
+	case "toolbar": return .Toolbar, true
+	case "quiet": return .Quiet, true
+	case "tab": return .Tab, true
+	case "danger": return .Danger, true
+	}
+	return .Default, false
+}
+
+theme_json_button_state :: proc(value: string) -> (Theme_Button_State, bool) {
+	switch value {
+	case "selected": return .Selected, true
+	case "hovered": return .Hovered, true
+	case "pressed": return .Pressed, true
+	case "disabled": return .Disabled, true
+	}
+	return .Selected, false
+}
+
+theme_json_optional_f32 :: proc(parser: ^JSON_Parser, object: JSON_Node, name: string) -> (f32, bool) {
+	node, found := theme_json_member(object, name)
+	if !found { return 0, true }
+	return theme_json_required_f32(parser, node^, name)
+}
+
+theme_json_required_f32 :: proc(parser: ^JSON_Parser, node: JSON_Node, name: string) -> (f32, bool) {
+	if node.kind != .Number {
+		theme_json_diagnostic(parser, .Unsupported_Value, node.span, "numeric value required for theme property")
+		return 0, false
+	}
+	return f32(node.number), true
 }
 
 theme_json_map_tokens :: proc(parser: ^JSON_Parser, node: JSON_Node, output: ^Theme_JSON_Output) {

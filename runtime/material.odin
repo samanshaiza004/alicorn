@@ -19,6 +19,14 @@ Style_Material :: struct {
 	outer_shadow_radius:    f32,
 }
 
+// Style_Material_Definition is an immutable setup-time value emitted by the
+// theme compiler. Names are static in generated themes and applications map
+// them to Material_ID once during setup; frame descriptions carry only IDs.
+Style_Material_Definition :: struct {
+	name:     string,
+	material: Style_Material,
+}
+
 STYLE_MATERIAL_FLAT :: Style_Material{
 	kind=.Flat,
 	bevel_width=0,

@@ -62,6 +62,27 @@ test_theme_json_frontend_maps_strict_dtcg_subset :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_theme_json_frontend_maps_material_and_button_recipe_authoring :: proc(t: ^testing.T) {
+	input := "{\"schema\":1,\"contract\":\"0.2\",\"tokens\":{\"scratchpad.ink\":{\"$type\":\"color\",\"$value\":{\"colorSpace\":\"srgb\",\"components\":[0.2,0.2,0.2]}}},\"materials\":{\"app.scratchpad.editor.paper\":{\"kind\":\"analytic_relief\",\"bevel_width\":1,\"bevel_strength\":0.36,\"inner_shadow_strength\":0.18}},\"recipes\":{\"button\":{\"tab\":{\"selected_indicator_role\":\"accent\",\"states\":{\"hovered\":{\"surface_mix\":0.42}}}}}}"
+	parsed := theme_json_parse(input, "scratchpad-paper.json")
+	defer theme_json_output_destroy(&parsed)
+	testing.expect(t, parsed.ok && len(parsed.source.materials) == 1 && len(parsed.source.button_recipes) == 1,
+		"strict JSON should map a namespaced material and sparse button recipe")
+	if !parsed.ok || len(parsed.source.materials) != 1 || len(parsed.source.button_recipes) != 1 { return }
+
+	material := parsed.source.materials[0]
+	testing.expect(t, material.name == "app.scratchpad.editor.paper" && material.value.kind == .Analytic_Relief &&
+		material.value.bevel_width == 1 && material.value.bevel_strength == 0.36 &&
+		material.value.inner_shadow_strength == 0.18,
+		"material names and bounded analytic parameters should survive strict JSON parsing")
+	recipe := parsed.source.button_recipes[0]
+	testing.expect(t, recipe.variant == .Tab && recipe.has_selected_indicator_role &&
+		recipe.selected_indicator_role == .Accent && recipe.states[int(Theme_Button_State.Hovered)].has_surface_mix &&
+		recipe.states[int(Theme_Button_State.Hovered)].surface_mix == 0.42,
+		"recipe parsing should preserve the selected indicator and only the authored hover transform")
+}
+
+@(test)
 test_theme_json_srgb_midpoint_decodes_to_linear_srgb :: proc(t: ^testing.T) {
 	input := "{\"schema\":1,\"contract\":\"0.2\",\"tokens\":{\"color.midpoint\":{\"$type\":\"color\",\"$value\":{\"colorSpace\":\"srgb\",\"components\":[0.5,0.5,0.5]}}}}"
 	parsed := theme_json_parse(input, "linear-color.json")

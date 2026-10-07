@@ -101,11 +101,11 @@ theme_cli_usage :: proc(output: ^os.File) {
 	fmt.fprintln(output, "")
 	fmt.fprintln(output, "Usage:")
 	fmt.fprintln(output, "  theme check <file>                 Validate strict theme JSON")
-	fmt.fprintln(output, "  theme explain <file> <token-name>  Show a token value and provenance")
+	fmt.fprintln(output, "  theme explain <file> <query>       Explain a token, material.<name>, or recipe.button.<variant>")
 	fmt.fprintln(output, "  theme compile <file> --output <file> --symbol <name> [--package <name>] [--runtime-import <path>]")
 	fmt.fprintln(output, "  theme help                         Show this help")
 	fmt.fprintln(output, "")
-	fmt.fprintln(output, "Only schema/contract versions supported by this build are accepted.")
+	fmt.fprintln(output, "Only schema/contract versions supported by this build are accepted. JSON is Alicorn's sole native v0.2 authoring format.")
 	fmt.fprintln(output, "JSON color components are sRGB; explain reports converted linear-sRGB channels (alpha unchanged).")
 	fmt.fprintln(output, "Only extends = alicorn.base is supported; it uses typed built-in defaults and never loads a path.")
 	fmt.fprintln(output, "compile emits an Odin factory and matching destroy procedure; generated sources default to package main and import alicorn:runtime.")
@@ -126,12 +126,19 @@ theme_cli_run :: proc(path, token_name: string) -> int {
 		return 1
 	}
 	defer theme.theme_runtime_style_theme_destroy(&runtime_theme)
+	material_definitions, materials_adapted := theme.theme_runtime_style_materials(compiled)
+	if !materials_adapted {
+		fmt.eprintfln("{:s}: error: compiled materials cannot be represented by the current Alicorn runtime style contract", path)
+		return 1
+	}
+	defer theme.theme_runtime_style_materials_destroy(&material_definitions)
 
 	if token_name == "" {
 		fmt.printfln("valid theme: {}", path)
-		fmt.printfln("schema {}, contract {}.{}; {} color tokens, {} length tokens",
+		fmt.printfln("schema {}, contract {}.{}; {} color tokens, {} length tokens, {} materials, {} button recipes",
 			schema_version, compiled.theme.contract.major, compiled.theme.contract.minor,
-			len(compiled.theme.colors), len(compiled.theme.lengths))
+			len(compiled.theme.colors), len(compiled.theme.lengths),
+			len(compiled.theme.materials), len(compiled.theme.button_recipes))
 		if includes_base {
 			fmt.println("base: alicorn.base (typed built-in layer; no filesystem lookup)")
 		}
@@ -254,8 +261,14 @@ theme_cli_compile :: proc(input_path, output_path, symbol, package_name, runtime
 		return 1
 	}
 	defer theme.theme_runtime_style_theme_destroy(&runtime_theme)
+	material_definitions, materials_adapted := theme.theme_runtime_style_materials(compiled)
+	if !materials_adapted {
+		fmt.eprintln("compiled material definitions could not be adapted to the Alicorn runtime")
+		return 1
+	}
+	defer theme.theme_runtime_style_materials_destroy(&material_definitions)
 
-	generated, generated_ok := theme_cli_codegen_odin(runtime_theme, symbol, package_name, runtime_import)
+	generated, generated_ok := theme_cli_codegen_odin(runtime_theme, material_definitions, symbol, package_name, runtime_import)
 	if !generated_ok {
 		fmt.eprintln("could not generate valid Odin theme source")
 		return 1
@@ -282,6 +295,12 @@ theme_cli_compile_source :: proc(source: theme.Theme_Source_Model, include_base:
 }
 
 theme_cli_explain :: proc(output: theme.Theme_Compile_Output, input_path, token_name: string) -> int {
+	if len(token_name) > len("material.") && token_name[:len("material.")] == "material." {
+		return theme_cli_explain_material(output, input_path, token_name[len("material."):])
+	}
+	if len(token_name) > len("recipe.button.") && token_name[:len("recipe.button.")] == "recipe.button." {
+		return theme_cli_explain_button_recipe(output, input_path, token_name[len("recipe.button."):])
+	}
 	provenance_index := -1
 	for token, index in output.debug.tokens {
 		if token.name == token_name {
@@ -348,6 +367,101 @@ theme_cli_explain :: proc(output: theme.Theme_Compile_Output, input_path, token_
 	return 0
 }
 
+theme_cli_explain_material :: proc(output: theme.Theme_Compile_Output, input_path, name: string) -> int {
+	index := -1
+	for material, candidate_index in output.debug.materials {
+		if material.name == name { index = candidate_index; break }
+	}
+	if index < 0 || index >= len(output.theme.materials) {
+		fmt.eprintfln("{:s}: error: material not found: {:s}", input_path, name)
+		return 1
+	}
+	value := output.theme.materials[index]
+	kind := "flat"
+	if value.kind == .Analytic_Relief { kind = "analytic_relief" }
+	span := output.debug.materials[index].span
+	fmt.printfln("material: {:s}", name)
+	fmt.printfln("kind: {:s}", kind)
+	fmt.printfln("bevel_width: {:.7g}", value.bevel_width)
+	fmt.printfln("bevel_strength: {:.7g}", value.bevel_strength)
+	fmt.printfln("inner_shadow_strength: {:.7g}", value.inner_shadow_strength)
+	fmt.printfln("outer_shadow_strength: {:.7g}", value.outer_shadow_strength)
+	fmt.printfln("outer_shadow_radius: {:.7g}", value.outer_shadow_radius)
+	fmt.printfln("defined at: {:s}:{:d}:{:d}", span.path, span.line, span.column)
+	return 0
+}
+
+theme_cli_explain_button_recipe :: proc(output: theme.Theme_Compile_Output, input_path, variant_name: string) -> int {
+	variant, variant_valid := theme_cli_button_variant(variant_name)
+	if !variant_valid {
+		fmt.eprintfln("{:s}: error: unknown button recipe variant: {:s}", input_path, variant_name)
+		return 1
+	}
+	index := -1
+	for recipe, candidate_index in output.debug.button_recipes {
+		if recipe.variant == variant { index = candidate_index; break }
+	}
+	if index < 0 || index >= len(output.theme.button_recipes) {
+		fmt.eprintfln("{:s}: error: button recipe has no authored override: {:s}", input_path, variant_name)
+		return 1
+	}
+	override := output.theme.button_recipes[index]
+	span := output.debug.button_recipes[index].span
+	fmt.printfln("recipe: button.{:s}", variant_name)
+	fmt.printfln("defined at: {:s}:{:d}:{:d}", span.path, span.line, span.column)
+	fmt.println("authored overrides:")
+	if override.has_surface_role { fmt.printfln("  surface_role: {}", override.surface_role) }
+	if override.has_text_role { fmt.printfln("  text_role: {}", override.text_role) }
+	if override.has_surface_visible { fmt.printfln("  surface_visible: {}", override.surface_visible) }
+	if override.has_selected_indicator {
+		indicator := "none"
+		if override.selected_indicator { indicator = "underline" }
+		fmt.printfln("  selected_indicator: {:s}", indicator)
+	}
+	if override.has_selected_indicator_role { fmt.printfln("  selected_indicator_role: {}", override.selected_indicator_role) }
+	if override.has_focus_indicator_keyboard {
+		mode := "always"
+		if override.focus_indicator_keyboard_only { mode = "keyboard_only" }
+		fmt.printfln("  focus_indicator_mode: {:s}", mode)
+	}
+	if override.has_focus_role { fmt.printfln("  focus_role: {}", override.focus_role) }
+	if override.has_semantic_active_role { fmt.printfln("  semantic_active_role: {}", override.semantic_active_role) }
+	for state in theme.Theme_Button_State {
+		if state == .Count { continue }
+		transform := override.states[int(state)]
+		state_name := theme_cli_button_state_name(state)
+		if transform.has_surface_role { fmt.printfln("  {:s}.surface_role: {}", state_name, transform.surface_role) }
+		if transform.has_surface_mix { fmt.printfln("  {:s}.surface_mix: {:.7g}", state_name, transform.surface_mix) }
+		if transform.has_text_role { fmt.printfln("  {:s}.text_role: {}", state_name, transform.text_role) }
+		if transform.has_text_mix { fmt.printfln("  {:s}.text_mix: {:.7g}", state_name, transform.text_mix) }
+	}
+	fmt.println("unspecified values inherit the built-in or preceding theme layer")
+	return 0
+}
+
+theme_cli_button_variant :: proc(name: string) -> (theme.Theme_Button_Variant, bool) {
+	switch name {
+	case "default": return .Default, true
+	case "primary": return .Primary, true
+	case "toolbar": return .Toolbar, true
+	case "quiet": return .Quiet, true
+	case "tab": return .Tab, true
+	case "danger": return .Danger, true
+	}
+	return .Default, false
+}
+
+theme_cli_button_state_name :: proc(state: theme.Theme_Button_State) -> string {
+	switch state {
+	case .Selected: return "selected"
+	case .Hovered: return "hovered"
+	case .Pressed: return "pressed"
+	case .Disabled: return "disabled"
+	case .Count:
+	}
+	return "unknown"
+}
+
 theme_cli_compile_diagnostic_message :: proc(diagnostic: theme.Theme_Diagnostic) -> string {
 	switch diagnostic.code {
 	case .Duplicate_Token: return "duplicate token definition"
@@ -372,6 +486,12 @@ theme_cli_compile_diagnostic_message :: proc(diagnostic: theme.Theme_Diagnostic)
 	case .Extension_Role_Hash_Collision: return "extension role ID collides with another role"
 	case .Extension_Role_Token_Not_Found: return "extension role refers to an unknown token"
 	case .Extension_Role_Token_Type_Mismatch: return "extension role and token kinds differ"
+	case .Invalid_Material_Name: return "material name must use app.* or vendor.* namespace"
+	case .Duplicate_Material: return "material is defined more than once in one layer"
+	case .Material_Kind_Changed: return "an overlay cannot change a material's kind"
+	case .Invalid_Material: return "material parameters are outside supported ranges"
+	case .Invalid_Button_Recipe: return "button recipe contains an unsupported or invalid value"
+	case .Duplicate_Button_Recipe: return "button recipe variant is defined more than once in one layer"
 	}
 	return "theme compilation failed"
 }

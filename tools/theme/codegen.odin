@@ -10,6 +10,7 @@ import alicorn "../../runtime"
 // destroy procedure (or after style_theme_register copies it).
 theme_cli_codegen_odin :: proc(
 	value: alicorn.Style_Theme,
+	materials: []alicorn.Style_Material_Definition,
 	symbol, package_name, runtime_import: string,
 ) -> (generated: string, ok: bool) {
 	if !theme_cli_codegen_identifier_is_valid(symbol) ||
@@ -86,7 +87,24 @@ theme_cli_codegen_odin :: proc(
 	for provenance, index in value.extension_length_role_provenance {
 		fmt.sbprintf(&builder, "    result.extension_length_role_provenance[%d] = alicorn.Style_Extension_Length_Role_Provenance{{role=alicorn.Style_Extension_Length_Role_ID(u64(%d)), name=%q}}\n", index, u64(provenance.role), provenance.name)
 	}
+	theme_cli_codegen_emit_button_recipe_diffs(&builder, value.button_recipes)
 	fmt.sbprintln(&builder, "    return result")
+	fmt.sbprintln(&builder, "}")
+	fmt.sbprintln(&builder, "")
+	fmt.sbprintfln(&builder, "{:s}_materials :: [{:d}]alicorn.Style_Material_Definition{{", symbol, len(materials))
+	for definition in materials {
+		material := definition.material
+		kind := ".Analytic_Relief"
+		if material.kind == .Flat { kind = ".Flat" }
+		fmt.sbprintln(&builder, "    alicorn.Style_Material_Definition{")
+		fmt.sbprintfln(&builder, "        name={:q},", definition.name)
+		fmt.sbprintfln(&builder, "        material=alicorn.Style_Material{{kind={:s},", kind)
+		fmt.sbprintfln(&builder, "            bevel_width={:.9g}, bevel_strength={:.9g},", material.bevel_width, material.bevel_strength)
+		fmt.sbprintfln(&builder, "            inner_shadow_strength={:.9g}, outer_shadow_strength={:.9g},", material.inner_shadow_strength, material.outer_shadow_strength)
+		fmt.sbprintfln(&builder, "            outer_shadow_radius={:.9g},", material.outer_shadow_radius)
+		fmt.sbprintln(&builder, "        },")
+		fmt.sbprintln(&builder, "    },")
+	}
 	fmt.sbprintln(&builder, "}")
 	fmt.sbprintln(&builder, "")
 	fmt.sbprintfln(&builder, "{:s}_destroy :: proc(value: ^alicorn.Style_Theme, allocator := context.allocator) {{", symbol)
@@ -114,6 +132,76 @@ theme_cli_codegen_odin :: proc(
 	if builder_clone_error != nil { return "", false }
 	generated = cloned
 	return generated, true
+}
+
+theme_cli_codegen_emit_button_recipe_diffs :: proc(builder: ^strings.Builder, recipes: alicorn.Button_Recipe_Set) {
+	defaults := alicorn.DEFAULT_STYLE_THEME.button_recipes
+	for index in 0..<alicorn.BUTTON_VARIANT_COUNT {
+		current := recipes.recipes[index]
+		base := defaults.recipes[index]
+		prefix := fmt.tprintf("    result.button_recipes.recipes[{:d}]", index)
+		if current.surface_role != base.surface_role { fmt.sbprintfln(builder, "{:s}.surface_role = {:s}", prefix, theme_cli_codegen_role(current.surface_role)) }
+		if current.text_role != base.text_role { fmt.sbprintfln(builder, "{:s}.text_role = {:s}", prefix, theme_cli_codegen_role(current.text_role)) }
+		if current.surface_visible != base.surface_visible { fmt.sbprintfln(builder, "{:s}.surface_visible = {:s}", prefix, theme_cli_codegen_bool(current.surface_visible)) }
+		if current.selected_indicator != base.selected_indicator {
+			indicator := ".None"
+			if current.selected_indicator == .Underline { indicator = ".Underline" }
+			fmt.sbprintfln(builder, "{:s}.selected_indicator = {:s}", prefix, indicator)
+		}
+		if current.selected_indicator_role != base.selected_indicator_role { fmt.sbprintfln(builder, "{:s}.selected_indicator_role = {:s}", prefix, theme_cli_codegen_role(current.selected_indicator_role)) }
+		if current.focus_indicator_mode != base.focus_indicator_mode {
+			mode := ".Always"
+			if current.focus_indicator_mode == .Keyboard_Only { mode = ".Keyboard_Only" }
+			fmt.sbprintfln(builder, "{:s}.focus_indicator_mode = {:s}", prefix, mode)
+		}
+		if current.focus_role != base.focus_role { fmt.sbprintfln(builder, "{:s}.focus_role = {:s}", prefix, theme_cli_codegen_role(current.focus_role)) }
+		if current.semantic_active_role != base.semantic_active_role { fmt.sbprintfln(builder, "{:s}.semantic_active_role = {:s}", prefix, theme_cli_codegen_role(current.semantic_active_role)) }
+		theme_cli_codegen_emit_transform_diff(builder, fmt.tprintf("{:s}.selected", prefix), current.selected, base.selected)
+		theme_cli_codegen_emit_transform_diff(builder, fmt.tprintf("{:s}.hovered", prefix), current.hovered, base.hovered)
+		theme_cli_codegen_emit_transform_diff(builder, fmt.tprintf("{:s}.pressed", prefix), current.pressed, base.pressed)
+		theme_cli_codegen_emit_transform_diff(builder, fmt.tprintf("{:s}.disabled", prefix), current.disabled, base.disabled)
+	}
+}
+
+theme_cli_codegen_emit_transform_diff :: proc(
+	builder: ^strings.Builder,
+	prefix: string,
+	current, base: alicorn.Style_Transform,
+) {
+	if current.surface_role != base.surface_role { fmt.sbprintfln(builder, "{:s}.surface_role = {:s}", prefix, theme_cli_codegen_role(current.surface_role)) }
+	if current.surface_mix != base.surface_mix { fmt.sbprintfln(builder, "{:s}.surface_mix = {:.9g}", prefix, current.surface_mix) }
+	if current.text_role != base.text_role { fmt.sbprintfln(builder, "{:s}.text_role = {:s}", prefix, theme_cli_codegen_role(current.text_role)) }
+	if current.text_mix != base.text_mix { fmt.sbprintfln(builder, "{:s}.text_mix = {:.9g}", prefix, current.text_mix) }
+}
+
+theme_cli_codegen_role :: proc(role: alicorn.Style_Color_Role) -> string {
+	switch role {
+	case .Window_Background: return "alicorn.Style_Color_Role.Window_Background"
+	case .Surface: return "alicorn.Style_Color_Role.Surface"
+	case .Subtle_Surface: return "alicorn.Style_Color_Role.Subtle_Surface"
+	case .Editor_Background: return "alicorn.Style_Color_Role.Editor_Background"
+	case .Text: return "alicorn.Style_Color_Role.Text"
+	case .Muted_Text: return "alicorn.Style_Color_Role.Muted_Text"
+	case .Accent: return "alicorn.Style_Color_Role.Accent"
+	case .Accent_Hover: return "alicorn.Style_Color_Role.Accent_Hover"
+	case .Accent_Pressed: return "alicorn.Style_Color_Role.Accent_Pressed"
+	case .Accent_Text: return "alicorn.Style_Color_Role.Accent_Text"
+	case .Selection: return "alicorn.Style_Color_Role.Selection"
+	case .Focus: return "alicorn.Style_Color_Role.Focus"
+	case .Semantic_Focus: return "alicorn.Style_Color_Role.Semantic_Focus"
+	case .Border: return "alicorn.Style_Color_Role.Border"
+	case .Danger: return "alicorn.Style_Color_Role.Danger"
+	case .Success: return "alicorn.Style_Color_Role.Success"
+	case .Scrollbar_Track: return "alicorn.Style_Color_Role.Scrollbar_Track"
+	case .Scrollbar_Thumb: return "alicorn.Style_Color_Role.Scrollbar_Thumb"
+	case .Count:
+	}
+	return "alicorn.Style_Color_Role.Text"
+}
+
+theme_cli_codegen_bool :: proc(value: bool) -> string {
+	if value { return "true" }
+	return "false"
 }
 
 theme_cli_codegen_identifier_is_valid :: proc(value: string) -> bool {

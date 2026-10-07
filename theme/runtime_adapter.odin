@@ -145,6 +145,61 @@ theme_runtime_style_theme :: proc(
 		// role table directly; Alicorn resolves the typed token first.
 		result.colors[int(runtime_role)] = result.color_tokens[color_index]
 	}
+	for override in compiled.button_recipes {
+		variant, variant_ok := theme_runtime_adapter_button_variant(override.variant)
+		if !variant_ok { return }
+		recipe := &result.button_recipes.recipes[int(variant)]
+		if override.has_surface_role {
+			role, ok := theme_runtime_adapter_core_role(override.surface_role)
+			if !ok { return }
+			recipe.surface_role = role
+		}
+		if override.has_text_role {
+			role, ok := theme_runtime_adapter_core_role(override.text_role)
+			if !ok { return }
+			recipe.text_role = role
+		}
+		if override.has_surface_visible { recipe.surface_visible = override.surface_visible }
+		if override.has_selected_indicator {
+			if override.selected_indicator { recipe.selected_indicator = .Underline } else { recipe.selected_indicator = .None }
+		}
+		if override.has_selected_indicator_role {
+			role, ok := theme_runtime_adapter_core_role(override.selected_indicator_role)
+			if !ok { return }
+			recipe.selected_indicator_role = role
+		}
+		if override.has_focus_indicator_keyboard {
+			if override.focus_indicator_keyboard_only { recipe.focus_indicator_mode = .Keyboard_Only } else { recipe.focus_indicator_mode = .Always }
+		}
+		if override.has_focus_role {
+			role, ok := theme_runtime_adapter_core_role(override.focus_role)
+			if !ok { return }
+			recipe.focus_role = role
+		}
+		if override.has_semantic_active_role {
+			role, ok := theme_runtime_adapter_core_role(override.semantic_active_role)
+			if !ok { return }
+			recipe.semantic_active_role = role
+		}
+		for state in Theme_Button_State {
+			if state == .Count { continue }
+			from := override.states[int(state)]
+			transform := theme_runtime_adapter_button_transform(recipe, state)
+			if from.has_surface_role {
+				role, ok := theme_runtime_adapter_core_role(from.surface_role)
+				if !ok { return }
+				transform.surface_role = role
+			}
+			if from.has_surface_mix { transform.surface_mix = from.surface_mix }
+			if from.has_text_role {
+				role, ok := theme_runtime_adapter_core_role(from.text_role)
+				if !ok { return }
+				transform.text_role = role
+			}
+			if from.has_text_mix { transform.text_mix = from.text_mix }
+			theme_runtime_adapter_button_transform_set(recipe, state, transform)
+		}
+	}
 
 	if len(color_roles) > 0 {
 		result.extension_color_roles = make([]alicorn.Style_Extension_Color_Role_Binding, len(color_roles), allocator)
@@ -228,6 +283,87 @@ theme_runtime_style_theme :: proc(
 		}
 	}
 	return result, true
+}
+
+theme_runtime_style_materials :: proc(
+	output: Theme_Compile_Output,
+	allocator := context.allocator,
+) -> (result: []alicorn.Style_Material_Definition, ok: bool) {
+	if !output.ok || len(output.theme.materials) != len(output.debug.materials) { return }
+	if len(output.theme.materials) == 0 { return nil, true }
+	result = make([]alicorn.Style_Material_Definition, len(output.theme.materials), allocator)
+	for material, index in output.theme.materials {
+		if index >= len(output.debug.materials) { theme_runtime_style_materials_destroy(&result, allocator); return nil, false }
+		kind: alicorn.Style_Material_Kind
+		switch material.kind {
+		case .Flat: kind = .Flat
+		case .Analytic_Relief: kind = .Analytic_Relief
+		case: theme_runtime_style_materials_destroy(&result, allocator); return nil, false
+		}
+		result[index] = alicorn.Style_Material_Definition{
+			name=theme_clone_string(output.debug.materials[index].name, allocator),
+			material=alicorn.Style_Material{
+				kind=kind,
+				bevel_width=material.bevel_width,
+				bevel_strength=material.bevel_strength,
+				inner_shadow_strength=material.inner_shadow_strength,
+				outer_shadow_strength=material.outer_shadow_strength,
+				outer_shadow_radius=material.outer_shadow_radius,
+			},
+		}
+	}
+	return result, true
+}
+
+theme_runtime_style_materials_destroy :: proc(
+	materials: ^[]alicorn.Style_Material_Definition,
+	allocator := context.allocator,
+) {
+	if materials == nil { return }
+	for material in materials^ { delete(material.name, allocator) }
+	delete(materials^, allocator)
+	materials^ = nil
+}
+
+theme_runtime_adapter_button_variant :: proc(value: Theme_Button_Variant) -> (alicorn.Button_Variant, bool) {
+	switch value {
+	case .Default: return .Default, true
+	case .Primary: return .Primary, true
+	case .Toolbar: return .Toolbar, true
+	case .Quiet: return .Quiet, true
+	case .Tab: return .Tab, true
+	case .Danger: return .Danger, true
+	case .Count:
+	}
+	return .Default, false
+}
+
+theme_runtime_adapter_button_transform :: proc(
+	recipe: ^alicorn.Button_Recipe,
+	state: Theme_Button_State,
+) -> alicorn.Style_Transform {
+	switch state {
+	case .Selected: return recipe.selected
+	case .Hovered: return recipe.hovered
+	case .Pressed: return recipe.pressed
+	case .Disabled: return recipe.disabled
+	case .Count:
+	}
+	return {}
+}
+
+theme_runtime_adapter_button_transform_set :: proc(
+	recipe: ^alicorn.Button_Recipe,
+	state: Theme_Button_State,
+	transform: alicorn.Style_Transform,
+) {
+	switch state {
+	case .Selected: recipe.selected = transform
+	case .Hovered: recipe.hovered = transform
+	case .Pressed: recipe.pressed = transform
+	case .Disabled: recipe.disabled = transform
+	case .Count:
+	}
 }
 
 // Releases the caller-owned slices returned by theme_runtime_style_theme.

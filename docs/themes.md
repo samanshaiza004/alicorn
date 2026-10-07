@@ -125,23 +125,27 @@ track, thumb, and corner. Checkbox and Slider parts apply selected (checked
 for Checkbox), hovered, pressed, and disabled transforms in that order. Focus
 remains a separate overlay, so it does not erase the resolved state colors.
 
-Themes can override these recipes before registration:
+Theme source can sparsely override built-in Button variants. For example, a
+selected tab underline can use the theme accent while other values inherit the
+typed runtime default:
 
-```odin
-theme := alicorn.DEFAULT_STYLE_THEME
-theme.checkbox_recipe.checkmark.selected.text_role = .Accent_Text
-theme.slider_recipe.thumb.pressed.surface_role = .Accent_Pressed
-theme.text_field_recipe.focused_border_role = .Accent
-theme.scrollbar_recipe.thumb_role = .Muted_Text
-theme_id := alicorn.style_theme_register(&runtime, theme)
+```json
+"recipes": {
+  "button": {
+    "tab": {
+      "selected_indicator_role": "accent"
+    }
+  }
+}
 ```
 
 Recipes contain semantic color roles and state transforms, not padding,
 thickness, or scroll geometry. Checkbox and Slider parts resolve independently
 through the same recipe vocabulary, so themes can change their appearance
-without changing widget semantics. The current JSON token frontend compiles
-colors and lengths; it does not yet encode control recipes, so its runtime adapter
-inherits the built-in recipes unless the application overrides them in Odin.
+without changing widget semantics. The strict JSON source currently authors
+sparse Button variants and selected/hovered/pressed/disabled role transforms;
+Checkbox, Slider, Text Field, and Scrollbar recipe authoring remains a typed
+Odin setup API.
 
 ## Semantic surface composition
 
@@ -237,6 +241,24 @@ major version and a minor version no newer than the compiler supports.
         "$value": "{space.gutter}"
       }
     }
+  },
+  "materials": {
+    "app.editor.paper": {
+      "kind": "analytic_relief",
+      "bevel_width": 1,
+      "bevel_strength": 0.36,
+      "inner_shadow_strength": 0.18
+    }
+  },
+  "recipes": {
+    "button": {
+      "tab": {
+        "selected_indicator_role": "accent",
+        "states": {
+          "hovered": {"surface_mix": 0.42}
+        }
+      }
+    }
   }
 }
 ```
@@ -264,8 +286,22 @@ version: a compiler accepts the same major and any minor no newer than its
 supported minor; it rejects a different major or a future minor. When compiling
 multiple layers, the compiled contract records the highest compatible minor.
 The initial source requires `schema`, `contract`, and a `tokens` object;
-`roles` and `extends` are optional. `extends: "alicorn.base"` supplies typed
+`roles`, `materials`, `recipes`, and `extends` are optional. `extends: "alicorn.base"` supplies typed
 symbolic defaults for aliases and role overrides. It never loads a file path.
+
+`materials` names must use the `app.*` or `vendor.*` namespace. The supported
+kinds are `flat` and `analytic_relief`; analytic bevel and shadow parameters
+have explicit runtime bounds. A later layer may replace a same-kind material,
+but cannot change its kind. `theme explain <file> material.<name>` reports the
+resolved parameters and defining source location.
+
+`recipes.button` currently accepts sparse overrides for `default`, `primary`,
+`toolbar`, `quiet`, `tab`, and `danger`. State transforms can set semantic
+surface/text roles and bounded mixes for selected, hovered, pressed, and
+disabled states. Unspecified values inherit the built-in or preceding layer.
+`theme explain <file> recipe.button.<variant>` prints the authored fields and
+source location. This is Alicorn's sole native v0.2 authoring format; the JSON
+subset stays limited to features exercised by real consumers.
 
 Core color-role bindings are optional overrides. Any omitted role retains its
 required Alicorn `DEFAULT_STYLE_THEME` value in the runtime adapter. An explicit

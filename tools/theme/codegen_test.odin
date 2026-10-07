@@ -39,11 +39,17 @@ test_theme_codegen_emits_owned_runtime_factory_and_cleanup :: proc(t: ^testing.T
 		name="app.shell.surface",
 	}
 	defer delete(value.extension_color_role_provenance)
+	value.button_recipes.recipes[int(alicorn.Button_Variant.Tab)].selected_indicator_role = .Accent
+	value.button_recipes.recipes[int(alicorn.Button_Variant.Tab)].hovered.surface_mix = 0.42
+	materials := []alicorn.Style_Material_Definition{{
+		name="app.scratchpad.editor.paper",
+		material=alicorn.Style_Material{kind=.Analytic_Relief, bevel_width=1, bevel_strength=0.36, inner_shadow_strength=0.18},
+	}}
 
-	generated, ok := theme_cli_codegen_odin(value,
+	generated, ok := theme_cli_codegen_odin(value, materials,
 		"TEST_THEME", "main", "../runtime")
 	defer delete(generated)
-	generated_again, generated_again_ok := theme_cli_codegen_odin(value,
+	generated_again, generated_again_ok := theme_cli_codegen_odin(value, materials,
 		"TEST_THEME", "main", "../runtime")
 	defer delete(generated_again)
 	testing.expect(t, ok, "a valid runtime theme should generate Odin source")
@@ -76,6 +82,14 @@ test_theme_codegen_emits_owned_runtime_factory_and_cleanup :: proc(t: ^testing.T
 		!strings.contains(generated, "delete(provenance.name, allocator)") &&
 		!strings.contains(generated, "delete(provenance.alias_target, allocator)"),
 		"generated cleanup should release owned slices without freeing static provenance literals")
+	testing.expect(t, strings.contains(generated, "selected_indicator_role = alicorn.Style_Color_Role.Accent") &&
+		strings.contains(generated, "hovered.surface_mix ="),
+		"authored button recipe differences should be emitted as static resolved runtime values")
+	testing.expect(t, strings.contains(generated, "TEST_THEME_materials :: [1]alicorn.Style_Material_Definition") &&
+		strings.contains(generated, "name=\"app.scratchpad.editor.paper\"") &&
+		strings.contains(generated, "bevel_strength=0.36") &&
+		!strings.contains(generated, "%!(MISSING"),
+		"named material definitions should be emitted as static runtime setup data")
 }
 
 @(test)

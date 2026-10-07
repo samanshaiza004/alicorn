@@ -123,6 +123,62 @@ Theme_Source_Model :: struct {
 	tokens:          []Token_Definition,
 	core_roles:      []Core_Role_Binding,
 	extension_roles: []Extension_Role_Declaration,
+	materials:       []Theme_Material_Definition,
+	button_recipes:  []Theme_Button_Recipe_Override,
+}
+
+Theme_Material_Kind :: enum u8 { Flat, Analytic_Relief }
+
+Theme_Material :: struct {
+	kind:                  Theme_Material_Kind,
+	bevel_width:           f32,
+	bevel_strength:        f32,
+	inner_shadow_strength: f32,
+	outer_shadow_strength: f32,
+	outer_shadow_radius:   f32,
+}
+
+Theme_Material_Definition :: struct {
+	name:  string,
+	value: Theme_Material,
+	span:  Source_Span,
+}
+
+Theme_Button_Variant :: enum u8 { Default, Primary, Toolbar, Quiet, Tab, Danger, Count }
+
+Theme_Button_State :: enum u8 { Selected, Hovered, Pressed, Disabled, Count }
+
+Theme_Button_Transform_Override :: struct {
+	has_surface_role: bool,
+	surface_role:     Core_Color_Role,
+	has_surface_mix:  bool,
+	surface_mix:      f32,
+	has_text_role:    bool,
+	text_role:        Core_Color_Role,
+	has_text_mix:     bool,
+	text_mix:         f32,
+}
+
+Theme_Button_Recipe_Override :: struct {
+	variant:                       Theme_Button_Variant,
+	has_surface_role:              bool,
+	surface_role:                  Core_Color_Role,
+	has_text_role:                 bool,
+	text_role:                     Core_Color_Role,
+	has_surface_visible:           bool,
+	surface_visible:               bool,
+	has_selected_indicator:        bool,
+	selected_indicator:            bool,
+	has_selected_indicator_role:   bool,
+	selected_indicator_role:       Core_Color_Role,
+	has_focus_indicator_keyboard:  bool,
+	focus_indicator_keyboard_only: bool,
+	has_focus_role:                bool,
+	focus_role:                    Core_Color_Role,
+	has_semantic_active_role:      bool,
+	semantic_active_role:          Core_Color_Role,
+	states:                        [4]Theme_Button_Transform_Override,
+	span:                          Source_Span,
 }
 
 Color_Token_ID :: distinct u32
@@ -136,6 +192,8 @@ Compiled_Theme :: struct {
 	contract:                Theme_Contract_Version,
 	colors:                  []Theme_Color,
 	lengths:                 []Theme_Length,
+	materials:               []Theme_Material,
+	button_recipes:          []Theme_Button_Recipe_Override,
 	core_color_roles:        [CORE_COLOR_ROLE_COUNT]Color_Token_ID,
 	extension_color_roles:   []Compiled_Extension_Color_Role,
 	extension_length_roles:  []Compiled_Extension_Length_Role,
@@ -173,6 +231,18 @@ Extension_Role_Provenance :: struct {
 Theme_Debug_Metadata :: struct {
 	tokens:          []Token_Provenance,
 	extension_roles: []Extension_Role_Provenance,
+	materials:       []Theme_Material_Provenance,
+	button_recipes:  []Theme_Button_Recipe_Provenance,
+}
+
+Theme_Material_Provenance :: struct {
+	name: string,
+	span: Source_Span,
+}
+
+Theme_Button_Recipe_Provenance :: struct {
+	variant: Theme_Button_Variant,
+	span:    Source_Span,
 }
 
 Diagnostic_Severity :: enum u8 {
@@ -203,6 +273,12 @@ Diagnostic_Code :: enum u16 {
 	Extension_Role_Hash_Collision,
 	Extension_Role_Token_Not_Found,
 	Extension_Role_Token_Type_Mismatch,
+	Invalid_Material_Name,
+	Duplicate_Material,
+	Material_Kind_Changed,
+	Invalid_Material,
+	Invalid_Button_Recipe,
+	Duplicate_Button_Recipe,
 }
 
 // symbol_path is populated for alias cycles (repeats the first symbol at the
@@ -260,6 +336,16 @@ Effective_Extension_Role :: struct {
 	length_id:   Extension_Length_Role_ID,
 }
 
+Effective_Material :: struct {
+	definition: Theme_Material_Definition,
+	layer:      int,
+}
+
+Effective_Button_Recipe :: struct {
+	override: Theme_Button_Recipe_Override,
+	layer:    int,
+}
+
 theme_compile :: proc(
 	sources: []Theme_Source_Model,
 	support := THEME_COMPILER_SUPPORT,
@@ -268,10 +354,14 @@ theme_compile :: proc(
 	tokens := make([dynamic]Effective_Token, 0, allocator=allocator)
 	core_roles := make([dynamic]Effective_Core_Role, 0, allocator=allocator)
 	extension_roles := make([dynamic]Effective_Extension_Role, 0, allocator=allocator)
+	materials := make([dynamic]Effective_Material, 0, allocator=allocator)
+	button_recipes := make([dynamic]Effective_Button_Recipe, 0, allocator=allocator)
 	diagnostics := make([dynamic]Theme_Diagnostic, 0, allocator=allocator)
 	defer delete(tokens)
 	defer delete(core_roles)
 	defer delete(extension_roles)
+	defer delete(materials)
+	defer delete(button_recipes)
 	defer delete(diagnostics)
 	defer theme_discard_diagnostic_payloads(&diagnostics, allocator)
 	effective_contract := Theme_Contract_Version{major=support.contract_major}
@@ -364,9 +454,54 @@ theme_compile :: proc(
 				append(&extension_roles, Effective_Extension_Role{declaration=declaration, layer=layer})
 			}
 		}
+
+		for definition in source.materials {
+			if !theme_extension_role_name_is_valid(definition.name) {
+				append(&diagnostics, theme_diagnostic(.Invalid_Material_Name, definition.span))
+				continue
+			}
+			if !theme_material_is_valid(definition.value) {
+				append(&diagnostics, theme_diagnostic(.Invalid_Material, definition.span))
+				continue
+			}
+			index := effective_material_index_linear(materials[:], definition.name)
+			if index >= 0 {
+				if materials[index].layer == layer {
+					append(&diagnostics, theme_diagnostic(.Duplicate_Material, definition.span))
+					continue
+				}
+				if materials[index].definition.value.kind != definition.value.kind {
+					append(&diagnostics, theme_diagnostic(.Material_Kind_Changed, definition.span))
+					continue
+				}
+				materials[index] = Effective_Material{definition=definition, layer=layer}
+			} else {
+				append(&materials, Effective_Material{definition=definition, layer=layer})
+			}
+		}
+
+		for override in source.button_recipes {
+			if !theme_button_recipe_override_is_valid(override) {
+				append(&diagnostics, theme_diagnostic(.Invalid_Button_Recipe, override.span))
+				continue
+			}
+			index := effective_button_recipe_index(button_recipes[:], override.variant)
+			if index >= 0 {
+				if button_recipes[index].layer == layer {
+					append(&diagnostics, theme_diagnostic(.Duplicate_Button_Recipe, override.span))
+					continue
+				}
+				merged := theme_button_recipe_override_merge(button_recipes[index].override, override)
+				button_recipes[index] = Effective_Button_Recipe{override=merged, layer=layer}
+			} else {
+				append(&button_recipes, Effective_Button_Recipe{override=override, layer=layer})
+			}
+		}
 	}
 
 	theme_sort_effective_tokens(&tokens)
+	theme_sort_effective_materials(&materials)
+	theme_sort_effective_button_recipes(&button_recipes)
 	stack := make([dynamic]int, 0, len(tokens), allocator=allocator)
 		defer delete(stack)
 	for index in 0..<len(tokens) {
@@ -423,6 +558,15 @@ theme_compile :: proc(
 		contract=effective_contract,
 		colors=make([]Theme_Color, color_count, allocator),
 		lengths=make([]Theme_Length, length_count, allocator),
+		materials=make([]Theme_Material, len(materials), allocator),
+		button_recipes=make([]Theme_Button_Recipe_Override, len(button_recipes), allocator),
+	}
+	for material, index in materials {
+		compiled.materials[index] = material.definition.value
+	}
+	for recipe, index in button_recipes {
+		compiled.button_recipes[index] = recipe.override
+		compiled.button_recipes[index].span = Source_Span{}
 	}
 	color_token_next, length_token_next := 0, 0
 	for index in 0..<len(tokens) {
@@ -467,7 +611,7 @@ theme_compile :: proc(
 		}
 	}
 
-	debug := theme_build_debug_metadata(tokens[:], extension_roles[:], allocator)
+	debug := theme_build_debug_metadata(tokens[:], extension_roles[:], materials[:], button_recipes[:], allocator)
 	compiled.content_signature = theme_content_signature(compiled, debug)
 	return Theme_Compile_Output{theme=compiled, debug=debug, ok=true}
 }
@@ -561,11 +705,15 @@ theme_resolve_token :: proc(
 theme_build_debug_metadata :: proc(
 	tokens: []Effective_Token,
 	extension_roles: []Effective_Extension_Role,
+	materials: []Effective_Material,
+	button_recipes: []Effective_Button_Recipe,
 	allocator: mem.Allocator,
 ) -> Theme_Debug_Metadata {
 	debug := Theme_Debug_Metadata{
 		tokens=make([]Token_Provenance, len(tokens), allocator),
 		extension_roles=make([]Extension_Role_Provenance, len(extension_roles), allocator),
+		materials=make([]Theme_Material_Provenance, len(materials), allocator),
+		button_recipes=make([]Theme_Button_Recipe_Provenance, len(button_recipes), allocator),
 	}
 	for token, index in tokens {
 		name := theme_clone_string(token.definition.name, allocator)
@@ -597,6 +745,22 @@ theme_build_debug_metadata :: proc(
 			span=span,
 		}
 	}
+	for material, index in materials {
+		span := material.definition.span
+		span.path = theme_clone_string(span.path, allocator)
+		debug.materials[index] = Theme_Material_Provenance{
+			name=theme_clone_string(material.definition.name, allocator),
+			span=span,
+		}
+	}
+	for recipe, index in button_recipes {
+		span := recipe.override.span
+		span.path = theme_clone_string(span.path, allocator)
+		debug.button_recipes[index] = Theme_Button_Recipe_Provenance{
+			variant=recipe.override.variant,
+			span=span,
+		}
+	}
 	return debug
 }
 
@@ -624,6 +788,21 @@ theme_content_signature :: proc(theme: Compiled_Theme, debug: Theme_Debug_Metada
 		h = theme_hash_u64(h, u64(role.color_id))
 		h = theme_hash_u64(h, u64(role.length_id))
 		h = theme_hash_u64(h, u64(role.kind))
+	}
+	for material, index in theme.materials {
+		h = theme_hash_u64(h, u64(index+1))
+		h = theme_hash_u64(h, u64(material.kind))
+		h = theme_hash_u64(h, u64(transmute(u32)material.bevel_width))
+		h = theme_hash_u64(h, u64(transmute(u32)material.bevel_strength))
+		h = theme_hash_u64(h, u64(transmute(u32)material.inner_shadow_strength))
+		h = theme_hash_u64(h, u64(transmute(u32)material.outer_shadow_strength))
+		h = theme_hash_u64(h, u64(transmute(u32)material.outer_shadow_radius))
+		if index < len(debug.materials) { h = theme_hash_string(h, debug.materials[index].name) }
+	}
+	for recipe, index in theme.button_recipes {
+		h = theme_hash_u64(h, u64(index+1))
+		h = theme_hash_u64(h, u64(recipe.variant))
+		h = theme_hash_button_recipe_override(h, recipe)
 	}
 	for token in debug.tokens {
 		h = theme_hash_string(h, token.name)
@@ -660,12 +839,45 @@ theme_hash_string :: proc(h: u64, value: string) -> u64 {
 	return (hash ~ u64(0xFF)) * 1099511628211
 }
 
+theme_hash_button_recipe_override :: proc(h: u64, value: Theme_Button_Recipe_Override) -> u64 {
+	hash := h
+	hash = theme_hash_u64(hash, u64(value.has_surface_role))
+	hash = theme_hash_u64(hash, u64(value.surface_role))
+	hash = theme_hash_u64(hash, u64(value.has_text_role))
+	hash = theme_hash_u64(hash, u64(value.text_role))
+	hash = theme_hash_u64(hash, u64(value.has_surface_visible))
+	hash = theme_hash_u64(hash, u64(value.surface_visible))
+	hash = theme_hash_u64(hash, u64(value.has_selected_indicator))
+	hash = theme_hash_u64(hash, u64(value.selected_indicator))
+	hash = theme_hash_u64(hash, u64(value.has_selected_indicator_role))
+	hash = theme_hash_u64(hash, u64(value.selected_indicator_role))
+	hash = theme_hash_u64(hash, u64(value.has_focus_indicator_keyboard))
+	hash = theme_hash_u64(hash, u64(value.focus_indicator_keyboard_only))
+	hash = theme_hash_u64(hash, u64(value.has_focus_role))
+	hash = theme_hash_u64(hash, u64(value.focus_role))
+	hash = theme_hash_u64(hash, u64(value.has_semantic_active_role))
+	hash = theme_hash_u64(hash, u64(value.semantic_active_role))
+	for transform in value.states {
+		hash = theme_hash_u64(hash, u64(transform.has_surface_role))
+		hash = theme_hash_u64(hash, u64(transform.surface_role))
+		hash = theme_hash_u64(hash, u64(transform.has_surface_mix))
+		hash = theme_hash_u64(hash, u64(transmute(u32)transform.surface_mix))
+		hash = theme_hash_u64(hash, u64(transform.has_text_role))
+		hash = theme_hash_u64(hash, u64(transform.text_role))
+		hash = theme_hash_u64(hash, u64(transform.has_text_mix))
+		hash = theme_hash_u64(hash, u64(transmute(u32)transform.text_mix))
+	}
+	return hash
+}
+
 theme_output_destroy :: proc(output: ^Theme_Compile_Output, allocator := context.allocator) {
 	if output == nil { return }
 	delete(output.theme.colors, allocator)
 	delete(output.theme.lengths, allocator)
 	delete(output.theme.extension_color_roles, allocator)
 	delete(output.theme.extension_length_roles, allocator)
+	delete(output.theme.materials, allocator)
+	delete(output.theme.button_recipes, allocator)
 	for token in output.debug.tokens {
 		delete(token.name, allocator)
 		delete(token.span.path, allocator)
@@ -675,8 +887,15 @@ theme_output_destroy :: proc(output: ^Theme_Compile_Output, allocator := context
 		delete(role.name, allocator)
 		delete(role.span.path, allocator)
 	}
+	for material in output.debug.materials {
+		delete(material.name, allocator)
+		delete(material.span.path, allocator)
+	}
+	for recipe in output.debug.button_recipes { delete(recipe.span.path, allocator) }
 	delete(output.debug.tokens, allocator)
 	delete(output.debug.extension_roles, allocator)
+	delete(output.debug.materials, allocator)
+	delete(output.debug.button_recipes, allocator)
 	for diagnostic in output.diagnostics {
 		delete(diagnostic.path, allocator)
 		delete(diagnostic.related_name, allocator)
@@ -832,6 +1051,16 @@ effective_extension_role_index :: proc(roles: []Effective_Extension_Role, name: 
 	return -1
 }
 
+effective_material_index_linear :: proc(materials: []Effective_Material, name: string) -> int {
+	for material, index in materials { if material.definition.name == name { return index } }
+	return -1
+}
+
+effective_button_recipe_index :: proc(recipes: []Effective_Button_Recipe, variant: Theme_Button_Variant) -> int {
+	for recipe, index in recipes { if recipe.override.variant == variant { return index } }
+	return -1
+}
+
 theme_sort_effective_tokens :: proc(tokens: ^[dynamic]Effective_Token) {
 	for index in 1..<len(tokens) {
 		cursor := index
@@ -850,6 +1079,84 @@ theme_sort_effective_extension_roles :: proc(roles: ^[dynamic]Effective_Extensio
 			cursor -= 1
 		}
 	}
+}
+
+theme_sort_effective_materials :: proc(materials: ^[dynamic]Effective_Material) {
+	for index in 1..<len(materials) {
+		cursor := index
+		for cursor > 0 && materials[cursor].definition.name < materials[cursor-1].definition.name {
+			materials[cursor], materials[cursor-1] = materials[cursor-1], materials[cursor]
+			cursor -= 1
+		}
+	}
+}
+
+theme_sort_effective_button_recipes :: proc(recipes: ^[dynamic]Effective_Button_Recipe) {
+	for index in 1..<len(recipes) {
+		cursor := index
+		for cursor > 0 && recipes[cursor].override.variant < recipes[cursor-1].override.variant {
+			recipes[cursor], recipes[cursor-1] = recipes[cursor-1], recipes[cursor]
+			cursor -= 1
+		}
+	}
+}
+
+theme_material_is_valid :: proc(value: Theme_Material) -> bool {
+	if value.kind != .Flat && value.kind != .Analytic_Relief { return false }
+	if !theme_material_range(value.bevel_width, 8) ||
+	   !theme_material_range(value.bevel_strength, 1) ||
+	   !theme_material_range(value.inner_shadow_strength, 1) ||
+	   !theme_material_range(value.outer_shadow_strength, 1) ||
+	   !theme_material_range(value.outer_shadow_radius, 16) {
+		return false
+	}
+	if value.kind == .Flat && (value.bevel_width != 0 || value.bevel_strength != 0 ||
+	   value.inner_shadow_strength != 0 || value.outer_shadow_strength != 0 ||
+	   value.outer_shadow_radius != 0) { return false }
+	return true
+}
+
+theme_material_range :: proc(value, maximum: f32) -> bool {
+	return value == value && value >= 0 && value <= maximum
+}
+
+theme_button_recipe_override_is_valid :: proc(value: Theme_Button_Recipe_Override) -> bool {
+	if value.variant >= .Count { return false }
+	if value.has_surface_role && value.surface_role >= .Count { return false }
+	if value.has_text_role && value.text_role >= .Count { return false }
+	if value.has_selected_indicator_role && value.selected_indicator_role >= .Count { return false }
+	if value.has_focus_role && value.focus_role >= .Count { return false }
+	if value.has_semantic_active_role && value.semantic_active_role >= .Count { return false }
+	for transform in value.states {
+		if transform.has_surface_role && transform.surface_role >= .Count { return false }
+		if transform.has_text_role && transform.text_role >= .Count { return false }
+		if transform.has_surface_mix && !theme_material_range(transform.surface_mix, 1) { return false }
+		if transform.has_text_mix && !theme_material_range(transform.text_mix, 1) { return false }
+	}
+	return true
+}
+
+theme_button_recipe_override_merge :: proc(base, patch: Theme_Button_Recipe_Override) -> Theme_Button_Recipe_Override {
+	result := base
+	if patch.has_surface_role { result.surface_role, result.has_surface_role = patch.surface_role, true }
+	if patch.has_text_role { result.text_role, result.has_text_role = patch.text_role, true }
+	if patch.has_surface_visible { result.surface_visible, result.has_surface_visible = patch.surface_visible, true }
+	if patch.has_selected_indicator { result.selected_indicator, result.has_selected_indicator = patch.selected_indicator, true }
+	if patch.has_selected_indicator_role { result.selected_indicator_role, result.has_selected_indicator_role = patch.selected_indicator_role, true }
+	if patch.has_focus_indicator_keyboard { result.focus_indicator_keyboard_only, result.has_focus_indicator_keyboard = patch.focus_indicator_keyboard_only, true }
+	if patch.has_focus_role { result.focus_role, result.has_focus_role = patch.focus_role, true }
+	if patch.has_semantic_active_role { result.semantic_active_role, result.has_semantic_active_role = patch.semantic_active_role, true }
+	for state in Theme_Button_State {
+		if state == .Count { continue }
+		from := patch.states[int(state)]
+		to := &result.states[int(state)]
+		if from.has_surface_role { to.surface_role, to.has_surface_role = from.surface_role, true }
+		if from.has_surface_mix { to.surface_mix, to.has_surface_mix = from.surface_mix, true }
+		if from.has_text_role { to.text_role, to.has_text_role = from.text_role, true }
+		if from.has_text_mix { to.text_mix, to.has_text_mix = from.text_mix, true }
+	}
+	result.span = patch.span
+	return result
 }
 
 theme_sort_diagnostics :: proc(diagnostics: ^[dynamic]Theme_Diagnostic) {
