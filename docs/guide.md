@@ -220,8 +220,14 @@ standalone informational copy, call `semantic_static_text` immediately after
 `text`; it exposes that text as a `Static_Text` entity (mapped to AccessKit's
 Label role, whose text content is carried as its value). Text that already
 names a control should remain part of that control's semantic name rather than
-being annotated a second time. Rich editor/document text needs a specialized
-text model and is not covered by this helper.
+being annotated a second time. Rich editor/document text uses a specialized
+semantic model: a `Text_Area` with logical `Text_Run` children. Alicorn's
+native AccessKit projection publishes selectable-unit byte lengths, text
+selection, `SetTextSelection`, and `ReplaceSelectedText`. Application code must
+still publish a complete, revision-consistent text projection and apply queued
+requests through its normal editor mutation path. AccessKit stores each
+selectable unit's UTF-8 length in an 8-bit field, so a single unit longer than
+255 bytes cannot be represented directly.
 
 Sliders retain their numeric value, range, and step for assistive technology.
 If the normalized number is not meaningful to users, call
@@ -253,12 +259,15 @@ assistive-technology client can navigate gaps in a platform accessibility
 tree.
 
 The native host currently links AccessKit 0.23.1 on Windows and macOS and
-exposes a first bridge slice for common controls, text fields, tabs, and the
-bounded semantic collection working set. AccessKit activation requests a full
-bounded snapshot; later updates are applied only from the adapter's exact
-revision, otherwise a full snapshot is sent. Native actions route through
-Alicorn's semantic action/reveal APIs on the UI thread, not synthetic pointer
-events. The bridge has no Linux platform adapter.
+projects common controls, text fields, text areas/runs, tabs, and the bounded
+semantic collection working set. AccessKit activation requests a full bounded
+snapshot; later updates are applied only from the adapter's exact revision,
+otherwise a full snapshot is sent. Native actions route through Alicorn's
+semantic action/reveal APIs on the UI thread, not synthetic pointer events.
+Text-run action payloads are validated against the current semantic projection
+before they enter the application queue. The bridge has no Linux platform
+adapter, and real Narrator/NVDA/VoiceOver behavior still requires manual
+validation.
 
 `Style_Environment` can separately carry normalized accessibility appearance
 preferences such as increased contrast, reduced transparency, reduced motion,
@@ -271,11 +280,12 @@ This is an **experimental integration, not yet a validated screen-reader
 experience**. Windows and macOS builds compile and link, but real Narrator,
 NVDA, and VoiceOver traversal/action behavior has not yet been certified. In
 particular, the million-item test proves bounded semantic storage, not that a
-screen reader can cross gaps in the bounded exported tree. Text-field actions
-are limited to the currently advertised semantic operations; text selection
-and replace-selected-text are not advertised. Alicorn-rendered context menus
-and other custom controls may also have incomplete platform semantics. Native
-menus and dialogs continue to use OS facilities.
+screen reader can cross gaps in the bounded exported tree. The Alicorn runtime
+and native bridge now support a Text_Area/Text_Run projection and queued text
+selection/replacement actions; applications still need to supply a complete
+text model and handle those requests. Alicorn-rendered context menus and other
+custom controls may also have incomplete platform semantics. Native menus and
+dialogs continue to use OS facilities.
 
 Semantic updates are dirty-driven and do not start an idle polling loop.
 Accessibility activation may cause a one-shot host wake to build a bounded

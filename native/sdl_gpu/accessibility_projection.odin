@@ -16,6 +16,7 @@ Accessibility_Projection_Role :: enum {
 	Slider,
 	Text_Input,
 	Text_Area,
+	Text_Run,
 	Tab_List,
 	Tab,
 	List,
@@ -49,6 +50,8 @@ Accessibility_Projection_Action :: enum {
 	Press,
 	Focus,
 	Set_Value,
+	Set_Text_Selection,
+	Replace_Selected_Text,
 	Increment,
 	Decrement,
 	Select,
@@ -62,6 +65,17 @@ Accessibility_Projection_Action :: enum {
 
 Accessibility_Projection_Actions :: distinct bit_set[Accessibility_Projection_Action; u32]
 
+Accessibility_Projection_Text_Position :: struct {
+	node_id: u64,
+	character_index: u64,
+}
+
+Accessibility_Projection_Text_Selection :: struct {
+	anchor: Accessibility_Projection_Text_Position,
+	focus: Accessibility_Projection_Text_Position,
+	valid: bool,
+}
+
 Accessibility_Projection_Node :: struct {
 	// id is the stable AccessKit-sized ID; semantic_id is its full reverse key.
 	id: u64,
@@ -71,6 +85,8 @@ Accessibility_Projection_Node :: struct {
 	label: string,
 	description: string,
 	value: string,
+	text_run_character_lengths: []u8,
+	text_selection: Accessibility_Projection_Text_Selection,
 	authored_states: alicorn.Semantic_States,
 	states: Accessibility_Projection_States,
 	actions: Accessibility_Projection_Actions,
@@ -108,6 +124,7 @@ Accessibility_Projection_Status :: enum {
 	Invalid_Semantic_ID,
 	Duplicate_Semantic_ID,
 	ID_Collision,
+	Invalid_Text_Model,
 	Allocation_Failed,
 }
 
@@ -237,6 +254,10 @@ accessibility_projection_from_snapshot_with_hash :: proc(
 		semantic_indices[projection.nodes[index].semantic_id] = index
 	}
 	accessibility_projection_apply_collection_selection(&projection, snapshot, semantic_indices)
+	if !accessibility_projection_apply_text_selections(&projection, snapshot, semantic_indices) {
+		accessibility_projection_destroy(&projection)
+		return {}, .Invalid_Text_Model
+	}
 	if !accessibility_projection_rebuild_structure(&projection) {
 		accessibility_projection_destroy(&projection)
 		return {}, .ID_Collision
@@ -297,6 +318,11 @@ accessibility_projection_node_from_semantic :: proc(
 		if err != nil { accessibility_projection_destroy_node(&node, allocator); return {}, false }
 		node.value = value
 	}
+	if len(source.text_run_character_lengths) > 0 {
+		node.text_run_character_lengths = make([]u8, len(source.text_run_character_lengths), allocator=allocator)
+		if node.text_run_character_lengths == nil { accessibility_projection_destroy_node(&node, allocator); return {}, false }
+		copy(node.text_run_character_lengths, source.text_run_character_lengths)
+	}
 	return node, true
 }
 
@@ -311,6 +337,7 @@ accessibility_projection_role :: proc(role: alicorn.Semantic_Role) -> Accessibil
 	case .Slider: return .Slider
 	case .Text_Field: return .Text_Input
 	case .Text_Area: return .Text_Area
+	case .Text_Run: return .Text_Run
 	case .Tab_List: return .Tab_List
 	case .Tab: return .Tab
 	case .List: return .List
@@ -351,6 +378,8 @@ accessibility_projection_actions :: proc(source: alicorn.Semantic_Actions) -> Ac
 	if alicorn.Semantic_Action.Press in bits { result += {.Press} }
 	if alicorn.Semantic_Action.Focus in bits { result += {.Focus} }
 	if alicorn.Semantic_Action.Set_Value in bits { result += {.Set_Value} }
+	if alicorn.Semantic_Action.Set_Text_Selection in bits { result += {.Set_Text_Selection} }
+	if alicorn.Semantic_Action.Replace_Selected_Text in bits { result += {.Replace_Selected_Text} }
 	if alicorn.Semantic_Action.Increment in bits { result += {.Increment} }
 	if alicorn.Semantic_Action.Decrement in bits { result += {.Decrement} }
 	if alicorn.Semantic_Action.Select in bits { result += {.Select} }
@@ -361,6 +390,36 @@ accessibility_projection_actions :: proc(source: alicorn.Semantic_Actions) -> Ac
 	if alicorn.Semantic_Action.Scroll_Backward in bits { result += {.Scroll_Backward} }
 	if alicorn.Semantic_Action.Dismiss in bits { result += {.Dismiss} }
 	return result
+}
+
+@(private)
+accessibility_projection_apply_text_selections :: proc(
+	projection: ^Accessibility_Projection,
+	snapshot: alicorn.Semantic_Snapshot,
+	semantic_indices: map[alicorn.Semantic_ID]int,
+) -> bool {
+	if projection == nil { return false }
+	for &node in projection.nodes { node.text_selection = {} }
+	for semantic in snapshot.nodes {
+		if semantic.role != .Text_Area || !semantic.text_selection.valid { continue }
+		area_index, area_found := semantic_indices[semantic.id]
+		anchor_index, anchor_found := semantic_indices[semantic.text_selection.anchor.run_id]
+		focus_index, focus_found := semantic_indices[semantic.text_selection.focus.run_id]
+		if !area_found || !anchor_found || !focus_found { return false }
+		area := projection.nodes[area_index]
+		anchor := projection.nodes[anchor_index]
+		focus := projection.nodes[focus_index]
+		if area.role != .Text_Area || anchor.role != .Text_Run || focus.role != .Text_Run ||
+		   anchor.semantic_parent != semantic.id || focus.semantic_parent != semantic.id ||
+		   semantic.text_selection.anchor.character_index > u64(len(anchor.text_run_character_lengths)) ||
+		   semantic.text_selection.focus.character_index > u64(len(focus.text_run_character_lengths)) { return false }
+		projection.nodes[area_index].text_selection = Accessibility_Projection_Text_Selection{
+			anchor={anchor.id, semantic.text_selection.anchor.character_index},
+			focus={focus.id, semantic.text_selection.focus.character_index},
+			valid=true,
+		}
+	}
+	return true
 }
 
 // These predicates let a platform adapter translate flags without depending
@@ -488,6 +547,7 @@ accessibility_projection_destroy_node :: proc(node: ^Accessibility_Projection_No
 	if len(node.label) > 0 { delete(node.label, allocator) }
 	if len(node.description) > 0 { delete(node.description, allocator) }
 	if len(node.value) > 0 { delete(node.value, allocator) }
+	if len(node.text_run_character_lengths) > 0 { delete(node.text_run_character_lengths, allocator) }
 	if len(node.children) > 0 { delete(node.children) }
 	node^ = {}
 }
@@ -615,7 +675,8 @@ accessibility_projection_apply_update :: proc(
 	semantic_indices := accessibility_projection_semantic_indices(working, allocator)
 	defer delete(semantic_indices)
 	accessibility_projection_apply_collection_selection(&working, snapshot, semantic_indices)
-	if !accessibility_projection_rebuild_structure(&working) || !accessibility_projection_matches_snapshot(working, snapshot) {
+	if !accessibility_projection_apply_text_selections(&working, snapshot, semantic_indices) ||
+	   !accessibility_projection_rebuild_structure(&working) || !accessibility_projection_matches_snapshot(working, snapshot) {
 		accessibility_projection_destroy(&working)
 		accessibility_projection_delta_destroy(&delta)
 		return accessibility_projection_requires_snapshot(update, allocator), .Requires_Snapshot
@@ -689,6 +750,7 @@ accessibility_projection_clone_node :: proc(source: Accessibility_Projection_Nod
 	defer context.allocator = previous_allocator
 	copy = source
 	copy.label, copy.description, copy.value = "", "", ""
+	copy.text_run_character_lengths = nil
 	copy.children = make([dynamic]u64, 0, len(source.children), allocator=allocator)
 	if len(source.label) > 0 {
 		value, err := strings.clone(source.label, allocator)
@@ -704,6 +766,13 @@ accessibility_projection_clone_node :: proc(source: Accessibility_Projection_Nod
 		value, err := strings.clone(source.value, allocator)
 		if err != nil { accessibility_projection_destroy_node(&copy, allocator); return {}, false }
 		copy.value = value
+	}
+	if len(source.text_run_character_lengths) > 0 {
+		copy.text_run_character_lengths = make([]u8, len(source.text_run_character_lengths), allocator=allocator)
+		if copy.text_run_character_lengths == nil { accessibility_projection_destroy_node(&copy, allocator); return {}, false }
+		for i in 0..<len(source.text_run_character_lengths) {
+			copy.text_run_character_lengths[i] = source.text_run_character_lengths[i]
+		}
 	}
 	for child in source.children { append(&copy.children, child) }
 	return copy, true
@@ -732,6 +801,29 @@ accessibility_projection_node_by_id :: proc(projection: Accessibility_Projection
 	index := accessibility_projection_find_platform_id(projection, id)
 	if index < 0 { return {}, false }
 	return projection.nodes[index], true
+}
+
+// Converts AccessKit text-run node positions to Alicorn semantic positions and
+// rejects stale, cross-editor, or out-of-range endpoints.
+accessibility_projection_text_selection_decode :: proc(
+	projection: Accessibility_Projection,
+	area_id: alicorn.Semantic_ID,
+	anchor_node_id, anchor_character_index: u64,
+	focus_node_id, focus_character_index: u64,
+) -> (selection: alicorn.Semantic_Text_Selection, ok: bool) {
+	area, area_found := accessibility_projection_node_by_semantic_id(projection, area_id)
+	anchor, anchor_found := accessibility_projection_node_by_id(projection, anchor_node_id)
+	focus, focus_found := accessibility_projection_node_by_id(projection, focus_node_id)
+	if !area_found || area.role != .Text_Area || !anchor_found || !focus_found ||
+	   anchor.role != .Text_Run || focus.role != .Text_Run ||
+	   anchor.semantic_parent != area_id || focus.semantic_parent != area_id ||
+	   anchor_character_index > u64(len(anchor.text_run_character_lengths)) ||
+	   focus_character_index > u64(len(focus.text_run_character_lengths)) { return {}, false }
+	return alicorn.Semantic_Text_Selection{
+		anchor={run_id=anchor.semantic_id, character_index=anchor_character_index},
+		focus={run_id=focus.semantic_id, character_index=focus_character_index},
+		valid=true,
+	}, true
 }
 
 // Lookup results are shallow borrowed records; their strings and children are
@@ -790,6 +882,7 @@ accessibility_projection_sort_semantic_nodes :: proc(projection: ^Accessibility_
 accessibility_projection_nodes_equal :: proc(a, b: Accessibility_Projection_Node) -> bool {
 	if a.id != b.id || a.semantic_id != b.semantic_id || a.semantic_parent != b.semantic_parent ||
 	   a.role != b.role || a.label != b.label || a.description != b.description || a.value != b.value ||
+	   a.text_selection != b.text_selection || !accessibility_projection_byte_lengths_equal(a.text_run_character_lengths, b.text_run_character_lengths) ||
 	   a.states != b.states || a.actions != b.actions || a.bounds != b.bounds || a.has_bounds != b.has_bounds ||
 	   a.is_collection != b.is_collection || a.logical_count != b.logical_count ||
 	   a.position_in_set != b.position_in_set || a.size_of_set != b.size_of_set ||
@@ -798,6 +891,13 @@ accessibility_projection_nodes_equal :: proc(a, b: Accessibility_Projection_Node
 	   a.numeric_maximum != b.numeric_maximum || a.numeric_step != b.numeric_step ||
 	   a.has_numeric_value != b.has_numeric_value || len(a.children) != len(b.children) { return false }
 	for child, index in a.children { if child != b.children[index] { return false } }
+	return true
+}
+
+@(private)
+accessibility_projection_byte_lengths_equal :: proc(a, b: []u8) -> bool {
+	if len(a) != len(b) { return false }
+	for i in 0..<len(a) { if a[i] != b[i] { return false } }
 	return true
 }
 

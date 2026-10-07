@@ -410,9 +410,32 @@ Ordinary `text()` descriptions do not create semantic entities by default.
 For standalone informational copy, call `semantic_static_text(ui)` immediately
 after `text(&ui, ...)`; the text becomes the value of a `Static_Text` entity,
 which the AccessKit adapter maps to Label. Do not annotate text that already
-names a control, or the accessible name may be announced twice. Editor and
-document contents need a richer text semantic model and are not covered by this
-helper.
+names a control, or the accessible name may be announced twice.
+
+Editable document text uses one `Text_Area` with logical `Text_Run` children,
+independent of the rows realized by the visual editor. Describe the area on its
+focusable viewport, then publish ordered text runs with
+`semantic_text_run_set(runtime, run_id, area_id, value, character_lengths,
+tree_order)`. Each `character_lengths` entry is the UTF-8 byte length of one
+selectable unit; entries must be positive and sum to the run's value length.
+Publish the current directional caret/selection with
+`semantic_text_area_selection_set`, using `Semantic_Text_Position` endpoints
+that refer to run IDs and selectable-unit indices. The position conversion
+helpers `semantic_text_run_byte_offset` and
+`semantic_text_run_character_index` translate only exact selectable
+boundaries; offsets inside a unit are rejected. `semantic_text_area_remove`
+retires a closed editor's area and its direct text-run children.
+
+Advertise `Set_Text_Selection` and `Replace_Selected_Text` on an editable area
+as needed. The native AccessKit adapter validates and queues these actions; the
+application drains them with `semantic_request_pop` and applies them through
+its normal editor selection/edit path. `Replace_Selected_Text` carries the
+replacement string in the ordinary owned `text_value` event payload. The
+AccessKit C ABI stores each selectable unit's byte length in `uint8`, so a
+single unit longer than 255 bytes cannot be represented directly. Word starts
+and per-character geometry are not yet projected. These APIs provide a
+runtime/bridge contract; application-level text projection and screen-reader
+behavior still need end-to-end validation.
 
 For a slider whose numeric value needs a human-readable representation, call
 `semantic_range_value_text(ui, value)` immediately after `slider_f32`. This sets
@@ -474,9 +497,9 @@ the native Windows/macOS adapter projects them through AccessKit 0.23.1.
 Activation produces a bounded full snapshot, while later updates require an
 exact base revision and fall back to a snapshot on mismatch. Actions route by
 stable `Semantic_ID` through semantic action/reveal requests, never fake
-pointer input. The adapter currently covers the initial common-control,
-text-field, Tab/TabList, and bounded-collection slice. Text selection actions
-and Linux platform integration are not included.
+pointer input. The adapter covers common controls, text fields/areas/runs,
+SetTextSelection and ReplaceSelectedText actions, Tab/TabList, and the
+bounded-collection slice. Linux platform integration is not included.
 
 The bridge has compile/link coverage, but real Narrator/NVDA/VoiceOver behavior
 and screen-reader traversal across gaps in virtualized collections are not yet

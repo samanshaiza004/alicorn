@@ -85,6 +85,97 @@ test_accessibility_projection_maps_static_text_to_label_value :: proc(t: ^testin
 }
 
 @(test)
+test_accessibility_projection_maps_text_runs_and_area_selection :: proc(t: ^testing.T) {
+	area_id := alicorn.Semantic_ID{namespace=25, value=20}
+	first_run_id := alicorn.Semantic_ID{namespace=25, value=21}
+	second_run_id := alicorn.Semantic_ID{namespace=25, value=22}
+	first_lengths := [2]u8{1, 4}
+	second_lengths := [2]u8{1, 2}
+	actions := alicorn.semantic_actions_add({}, .Set_Value)
+	actions = alicorn.semantic_actions_add(actions, .Set_Text_Selection)
+	actions = alicorn.semantic_actions_add(actions, .Replace_Selected_Text)
+	selection := alicorn.Semantic_Text_Selection{
+		anchor={run_id=first_run_id, character_index=1},
+		focus={run_id=second_run_id, character_index=2},
+		valid=true,
+	}
+	nodes := [3]alicorn.Semantic_Node{
+		{id=area_id, role=.Text_Area, actions=actions, text_selection=selection, tree_order=1},
+		{id=first_run_id, role=.Text_Run, parent=area_id, value="a🙂", text_run_character_lengths=first_lengths[:], tree_order=2},
+		{id=second_run_id, role=.Text_Run, parent=area_id, value="b\r\n", text_run_character_lengths=second_lengths[:], tree_order=3},
+	}
+	snapshot := accessibility_projection_test_snapshot(8, nodes[:])
+	projection, status := accessibility_projection_from_snapshot(snapshot, context.temp_allocator)
+	defer accessibility_projection_destroy(&projection)
+	area, area_found := accessibility_projection_node_by_semantic_id(projection, area_id)
+	first, first_found := accessibility_projection_node_by_semantic_id(projection, first_run_id)
+	second, second_found := accessibility_projection_node_by_semantic_id(projection, second_run_id)
+	decoded, decoded_ok := accessibility_projection_text_selection_decode(
+		projection, area_id, first.id, 1, second.id, 2,
+	)
+	_, invalid_run_ok := accessibility_projection_text_selection_decode(
+		projection, area_id, first.id, 3, second.id, 0,
+	)
+	testing.expect(t, status == .Success && area_found && area.role == .Text_Area && area.text_selection.valid &&
+		area.text_selection.anchor.node_id == first.id && area.text_selection.anchor.character_index == 1 &&
+		area.text_selection.focus.node_id == second.id && area.text_selection.focus.character_index == 2,
+		"Text_Area selection should be published using stable AccessKit Text_Run node IDs")
+	testing.expect(t, first_found && second_found && first.role == .Text_Run && first.value == "a🙂" &&
+		first.text_run_character_lengths[0] == 1 && first.text_run_character_lengths[1] == 4 &&
+		second.text_run_character_lengths[1] == 2,
+		"Text_Run projection should preserve text and UTF-8 selectable-unit lengths")
+	testing.expect(t, decoded_ok && decoded.anchor.run_id == first_run_id && decoded.anchor.character_index == 1 &&
+		decoded.focus.run_id == second_run_id && decoded.focus.character_index == 2 && !invalid_run_ok,
+		"AccessKit text positions should map back to semantic run positions and reject invalid indices")
+	testing.expect(t, native_accessibility_accesskit_role(first.role) == ACCESSKIT_ROLE_TEXT_RUN,
+		"Text_Run must map to AccessKit's TextRun role")
+	selection_action, _, selection_supported := native_accessibility_action_to_semantic(
+		ACCESSKIT_ACTION_SET_TEXT_SELECTION, area,
+	)
+	replacement_action, _, replacement_supported := native_accessibility_action_to_semantic(
+		ACCESSKIT_ACTION_REPLACE_SELECTED_TEXT, area,
+	)
+	selection_data := AccessKit_Action_Data{
+		tag=ACCESSKIT_ACTION_DATA_SET_TEXT_SELECTION,
+		value=[4]u64{first.id, 1, second.id, 2},
+	}
+	decoded_action, action_data_ok := native_accessibility_selection_from_action_data(
+		projection, area_id, selection_data,
+	)
+	testing.expect(t, selection_supported && selection_action == .Set_Text_Selection &&
+		replacement_supported && replacement_action == .Replace_Selected_Text,
+		"SetTextSelection and ReplaceSelectedText should only translate when advertised by the area")
+	testing.expect(t, action_data_ok && decoded_action.anchor.run_id == first_run_id &&
+		decoded_action.focus.run_id == second_run_id && decoded_action.anchor.character_index == 1 &&
+		decoded_action.focus.character_index == 2,
+		"the AccessKit 32-byte action-data union arm should decode in anchor/focus order")
+}
+
+@(test)
+test_accessibility_projection_rejects_invalid_text_selection_tree :: proc(t: ^testing.T) {
+	area_id := alicorn.Semantic_ID{namespace=25, value=30}
+	run_id := alicorn.Semantic_ID{namespace=25, value=31}
+	lengths := [1]u8{1}
+	nodes := [2]alicorn.Semantic_Node{
+		{
+			id=area_id,
+			role=.Text_Area,
+			text_selection=alicorn.Semantic_Text_Selection{
+				anchor={run_id=run_id, character_index=2},
+				focus={run_id=run_id, character_index=0},
+				valid=true,
+			},
+		},
+		{id=run_id, role=.Text_Run, parent=area_id, value="x", text_run_character_lengths=lengths[:]},
+	}
+	snapshot := accessibility_projection_test_snapshot(9, nodes[:])
+	projection, status := accessibility_projection_from_snapshot(snapshot, context.temp_allocator)
+	defer accessibility_projection_destroy(&projection)
+	testing.expect(t, status == .Invalid_Text_Model,
+		"the native projection must reject text selections outside the selectable-unit range")
+}
+
+@(test)
 test_accessibility_projection_preserves_formatted_slider_value_and_numeric_range :: proc(t: ^testing.T) {
 	id := alicorn.Semantic_ID{namespace=25, value=2}
 	nodes := [1]alicorn.Semantic_Node{{

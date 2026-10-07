@@ -13,6 +13,7 @@ Semantic_Role :: enum {
 	Slider,
 	Text_Field,
 	Text_Area,
+	Text_Run,
 	Tab_List,
 	Tab,
 	List,
@@ -62,6 +63,8 @@ Semantic_Action :: enum {
 	Press,
 	Focus,
 	Set_Value,
+	Set_Text_Selection,
+	Replace_Selected_Text,
 	Increment,
 	Decrement,
 	Select,
@@ -74,6 +77,19 @@ Semantic_Action :: enum {
 }
 
 Semantic_Actions :: distinct bit_set[Semantic_Action; u32]
+
+// Text positions address selectable units in a semantic Text_Run. character_index
+// is not a UTF-8 byte offset; adapters translate it using the run's byte lengths.
+Semantic_Text_Position :: struct {
+	run_id: Semantic_ID,
+	character_index: u64,
+}
+
+Semantic_Text_Selection :: struct {
+	anchor: Semantic_Text_Position,
+	focus: Semantic_Text_Position,
+	valid: bool,
+}
 
 // Semantic_Descriptor travels with a pending application description. Keeping
 // it out of Description and Node protects their fixed-size budgets; resolved
@@ -99,6 +115,11 @@ Semantic_Descriptor :: struct {
 	numeric_maximum: f64,
 	numeric_step: f64,
 	has_numeric_value: bool,
+	// For Text_Run, each entry is the UTF-8 byte length of one selectable unit.
+	// The entries must be positive and sum to len(value).
+	text_run_character_lengths: []u8,
+	// Text_Area owns the current selection; endpoints refer to Text_Run children.
+	text_selection: Semantic_Text_Selection,
 }
 
 semantic_actions_add :: proc(actions: Semantic_Actions, action: Semantic_Action) -> Semantic_Actions {
@@ -149,6 +170,8 @@ Semantic_Node :: struct {
 	numeric_maximum: f64,
 	numeric_step: f64,
 	has_numeric_value: bool,
+	text_run_character_lengths: []u8,
+	text_selection: Semantic_Text_Selection,
 }
 
 Semantic_Node_Description :: struct {
@@ -179,6 +202,8 @@ Semantic_Node_Description :: struct {
 	numeric_maximum: f64,
 	numeric_step: f64,
 	has_numeric_value: bool,
+	text_run_character_lengths: []u8,
+	text_selection: Semantic_Text_Selection,
 }
 
 Semantic_Entity :: struct {
@@ -211,6 +236,7 @@ Semantic_Request_Event :: struct {
 	text_value: string,
 	numeric_value: f64,
 	has_numeric_value: bool,
+	text_selection: Semantic_Text_Selection,
 }
 
 SEMANTIC_REQUEST_QUEUE_CAPACITY :: 256
@@ -259,6 +285,8 @@ semantic_node_from_description :: proc(d: Semantic_Node_Description) -> Semantic
 		numeric_maximum=d.numeric_maximum,
 		numeric_step=d.numeric_step,
 		has_numeric_value=d.has_numeric_value,
+		text_run_character_lengths=d.text_run_character_lengths,
+		text_selection=d.text_selection,
 	}
 }
 
@@ -273,11 +301,114 @@ semantic_node_equal :: proc(a, b: Semantic_Node) -> bool {
 		a.position_in_set == b.position_in_set && a.size_of_set == b.size_of_set &&
 		a.is_virtual_item == b.is_virtual_item && a.numeric_value == b.numeric_value &&
 		a.numeric_minimum == b.numeric_minimum && a.numeric_maximum == b.numeric_maximum &&
-		a.numeric_step == b.numeric_step && a.has_numeric_value == b.has_numeric_value
+		a.numeric_step == b.numeric_step && a.has_numeric_value == b.has_numeric_value &&
+		semantic_byte_lengths_equal(a.text_run_character_lengths, b.text_run_character_lengths) &&
+		a.text_selection == b.text_selection
+}
+
+semantic_byte_lengths_equal :: proc(a, b: []u8) -> bool {
+	if len(a) != len(b) { return false }
+	for i in 0..<len(a) { if a[i] != b[i] { return false } }
+	return true
+}
+
+semantic_text_run_payload_valid :: proc(value: string, character_lengths: []u8) -> bool {
+	// An empty Text_Run still supplies the position-zero caret for an empty
+	// document. Nonempty runs need one byte length per selectable unit.
+	if len(value) == 0 { return len(character_lengths) == 0 }
+	if len(character_lengths) == 0 { return false }
+	byte_count: u64 = 0
+	for length in character_lengths {
+		if length == 0 { return false }
+		byte_count += u64(length)
+	}
+	return byte_count == u64(len(value))
+}
+
+// semantic_text_run_byte_offset converts an AccessKit selectable-unit index
+// into a UTF-8 byte offset within one semantic run.
+semantic_text_run_byte_offset :: proc(run: Semantic_Node, character_index: u64) -> (byte_offset: u64, ok: bool) {
+	if run.role != .Text_Run || character_index > u64(len(run.text_run_character_lengths)) { return 0, false }
+	for index in 0..<int(character_index) { byte_offset += u64(run.text_run_character_lengths[index]) }
+	return byte_offset, true
+}
+
+// semantic_text_run_character_index converts a UTF-8 byte offset within a run
+// into its exact selectable-unit boundary. Offsets inside a unit are rejected.
+semantic_text_run_character_index :: proc(run: Semantic_Node, byte_offset: u64) -> (character_index: u64, ok: bool) {
+	if run.role != .Text_Run || byte_offset > u64(len(run.value)) { return 0, false }
+	if byte_offset == 0 { return 0, true }
+	current: u64 = 0
+	for length, index in run.text_run_character_lengths {
+		current += u64(length)
+		if current == byte_offset { return u64(index+1), true }
+		if current > byte_offset { return 0, false }
+	}
+	return 0, false
+}
+
+semantic_text_position_valid_for_area :: proc(
+	rt: ^Runtime,
+	area_id: Semantic_ID,
+	position: Semantic_Text_Position,
+) -> bool {
+	if rt == nil || !semantic_id_is_valid(position.run_id) { return false }
+	run, found := rt.semantic_entities[position.run_id]
+	if !found || run.node.role != .Text_Run || run.node.parent != area_id ||
+	   position.character_index > u64(len(run.node.text_run_character_lengths)) { return false }
+	return true
+}
+
+semantic_text_selection_valid_for_area :: proc(
+	rt: ^Runtime,
+	area_id: Semantic_ID,
+	selection: Semantic_Text_Selection,
+) -> bool {
+	return selection.valid &&
+		semantic_text_position_valid_for_area(rt, area_id, selection.anchor) &&
+		semantic_text_position_valid_for_area(rt, area_id, selection.focus)
+}
+
+@(private)
+semantic_text_selection_references_run :: proc(selection: Semantic_Text_Selection, run_id: Semantic_ID) -> bool {
+	return selection.valid && (selection.anchor.run_id == run_id || selection.focus.run_id == run_id)
+}
+
+semantic_text_run_lengths_clone :: proc(source: []u8, allocator: mem.Allocator) -> (result: []u8, ok: bool) {
+	if len(source) == 0 { return nil, true }
+	result = make([]u8, len(source), allocator=allocator)
+	if result == nil { return nil, false }
+	copy(result, source)
+	return result, true
+}
+
+@(private)
+semantic_pending_text_area :: proc(rt: ^Runtime, area_id: Semantic_ID) -> ^Semantic_Descriptor {
+	if rt == nil || !semantic_id_is_valid(area_id) { return nil }
+	for index := len(rt.pending)-1; index >= 0; index -= 1 {
+		pending := &rt.pending[index]
+		if pending.kind != .Description || pending.semantic.role != .Text_Area { continue }
+		pending_id := pending.description.semantic_id
+		if !semantic_id_is_valid(pending_id) { pending_id = semantic_visual_id(pending.description.id) }
+		if pending_id == area_id { return &pending.semantic }
+	}
+	return nil
 }
 
 semantic_node_set :: proc(rt: ^Runtime, description: Semantic_Node_Description) -> bool {
 	if rt == nil || !semantic_id_is_valid(description.id) || description.role == .None { return false }
+	if description.role == .Text_Run &&
+	   (!semantic_id_is_valid(description.parent) || !semantic_text_run_payload_valid(description.value, description.text_run_character_lengths)) { return false }
+	if description.role != .Text_Run && len(description.text_run_character_lengths) > 0 { return false }
+	if description.role != .Text_Area && description.text_selection.valid { return false }
+	if description.role == .Text_Run {
+		parent, parent_found := rt.semantic_entities[description.parent]
+		if (!parent_found || parent.node.role != .Text_Area) && semantic_pending_text_area(rt, description.parent) == nil { return false }
+	}
+	if description.role == .Text_Area && description.text_selection.valid &&
+	   !semantic_text_selection_valid_for_area(rt, description.id, description.text_selection) { return false }
+	if semantic_actions_has(description.actions, .Set_Text_Selection) && description.role != .Text_Area { return false }
+	if semantic_actions_has(description.actions, .Replace_Selected_Text) && description.role != .Text_Area { return false }
 	if description.collection_id.namespace != 0 && description.size_of_set != 0 && description.position_in_set >= description.size_of_set {
 		return false
 	}
@@ -299,12 +430,14 @@ semantic_node_set :: proc(rt: ^Runtime, description: Semantic_Node_Description) 
 	label_copy := owned_with_allocator(next.label, rt.persistent_allocator)
 	description_copy := owned_with_allocator(next.description, rt.persistent_allocator)
 	value_copy := owned_with_allocator(next.value, rt.persistent_allocator)
+	lengths_copy, lengths_ok := semantic_text_run_lengths_clone(next.text_run_character_lengths, rt.persistent_allocator)
 	if (len(next.label) > 0 && len(label_copy) == 0) ||
 	   (len(next.description) > 0 && len(description_copy) == 0) ||
-	   (len(next.value) > 0 && len(value_copy) == 0) {
+	   (len(next.value) > 0 && len(value_copy) == 0) || !lengths_ok {
 		if len(label_copy) > 0 { delete(label_copy, rt.persistent_allocator) }
 		if len(description_copy) > 0 { delete(description_copy, rt.persistent_allocator) }
 		if len(value_copy) > 0 { delete(value_copy, rt.persistent_allocator) }
+		if len(lengths_copy) > 0 { delete(lengths_copy, rt.persistent_allocator) }
 		return false
 	}
 	if found {
@@ -313,6 +446,7 @@ semantic_node_set :: proc(rt: ^Runtime, description: Semantic_Node_Description) 
 	next.label = label_copy
 	next.description = description_copy
 	next.value = value_copy
+	next.text_run_character_lengths = lengths_copy
 	rt.semantic_entities[description.id] = Semantic_Entity{node=next, collection_generation=collection_generation}
 	delete_key(&rt.semantic_pending_removed, description.id)
 	rt.semantic_pending_changed[description.id] = true
@@ -333,15 +467,31 @@ semantic_entity_strings_destroy :: proc(entity: ^Semantic_Entity, allocator: mem
 	if len(entity.node.label) > 0 { delete(entity.node.label, allocator) }
 	if len(entity.node.description) > 0 { delete(entity.node.description, allocator) }
 	if len(entity.node.value) > 0 { delete(entity.node.value, allocator) }
+	if len(entity.node.text_run_character_lengths) > 0 { delete(entity.node.text_run_character_lengths, allocator) }
 	entity.node.label = ""
 	entity.node.description = ""
 	entity.node.value = ""
+	entity.node.text_run_character_lengths = nil
 }
 
 semantic_node_remove :: proc(rt: ^Runtime, id: Semantic_ID) -> bool {
 	if rt == nil || !semantic_id_is_valid(id) { return false }
 	entity, found := rt.semantic_entities[id]
 	if !found { return false }
+	if entity.node.role == .Text_Run && semantic_id_is_valid(entity.node.parent) {
+		parent_id := entity.node.parent
+		if parent, parent_found := rt.semantic_entities[parent_id]; parent_found && parent.node.role == .Text_Area &&
+		   semantic_text_selection_references_run(parent.node.text_selection, id) {
+			parent.node.text_selection = {}
+			rt.semantic_entities[parent_id] = parent
+			rt.semantic_pending_changed[parent_id] = true
+			rt.stats.semantic_entities_resolved += 1
+		}
+		if pending := semantic_pending_text_area(rt, parent_id); pending != nil &&
+		   semantic_text_selection_references_run(pending.text_selection, id) {
+			pending.text_selection = {}
+		}
+	}
 	semantic_entity_strings_destroy(&entity, rt.persistent_allocator)
 	delete_key(&rt.semantic_entities, id)
 	delete_key(&rt.semantic_pending_changed, id)
@@ -349,6 +499,97 @@ semantic_node_remove :: proc(rt: ^Runtime, id: Semantic_ID) -> bool {
 	if !rt.semantic_pending_added[id] { rt.semantic_pending_removed[id] = true }
 	delete_key(&rt.semantic_pending_added, id)
 	return true
+}
+
+// semantic_text_run_set publishes an editable text fragment without binding it
+// to a visual row. The character lengths describe AccessKit-selectable units
+// as UTF-8 byte lengths; consumers map their own cursor model to these units.
+semantic_text_run_set :: proc(
+	rt: ^Runtime,
+	id, parent: Semantic_ID,
+	value: string,
+	character_lengths: []u8,
+	tree_order: u64 = 0,
+) -> bool {
+	if rt == nil { return false }
+	return semantic_node_set(rt, Semantic_Node_Description{
+		id=id,
+		role=.Text_Run,
+		value=value,
+		parent=parent,
+		tree_order=tree_order,
+		text_run_character_lengths=character_lengths,
+	})
+}
+
+// semantic_text_area_selection_set publishes the editor's current selection
+// after its text runs have been synchronized. A valid collapsed selection is
+// a caret; valid=false clears selection metadata.
+semantic_text_area_selection_set :: proc(
+	rt: ^Runtime,
+	area_id: Semantic_ID,
+	selection: Semantic_Text_Selection,
+) -> bool {
+	if rt == nil || !semantic_id_is_valid(area_id) { return false }
+	entity, found := rt.semantic_entities[area_id]
+	if !found {
+		pending := semantic_pending_text_area(rt, area_id)
+		if pending == nil { return false }
+		if selection.valid && (!semantic_actions_has(pending.actions, .Set_Text_Selection) ||
+		   !semantic_text_selection_valid_for_area(rt, area_id, selection)) { return false }
+		if pending.text_selection == selection { return false }
+		pending.text_selection = selection
+		return true
+	}
+	if entity.node.role != .Text_Area { return false }
+	if selection.valid && !semantic_text_selection_valid_for_area(rt, area_id, selection) { return false }
+	if entity.node.text_selection == selection { return false }
+	entity.node.text_selection = selection
+	rt.semantic_entities[area_id] = entity
+	rt.semantic_pending_changed[area_id] = true
+	rt.stats.semantic_entities_resolved += 1
+	return true
+}
+
+// semantic_text_selection_request queues a selection change requested by an
+// assistive technology. It never mutates application/editor state directly.
+semantic_text_selection_request :: proc(
+	rt: ^Runtime,
+	area_id: Semantic_ID,
+	selection: Semantic_Text_Selection,
+) -> bool {
+	if rt == nil || !semantic_id_is_valid(area_id) || !selection.valid { return false }
+	entity, found := rt.semantic_entities[area_id]
+	if !found || entity.node.role != .Text_Area ||
+	   !semantic_actions_has(entity.node.actions, .Set_Text_Selection) ||
+	   !semantic_text_selection_valid_for_area(rt, area_id, selection) ||
+	   len(rt.semantic_requests)-rt.semantic_request_read_index >= SEMANTIC_REQUEST_QUEUE_CAPACITY { return false }
+	append(&rt.semantic_requests, Semantic_Request_Event{
+		kind=.Perform,
+		id=area_id,
+		action=.Set_Text_Selection,
+		text_selection=selection,
+	})
+	rt.stats.accessibility_action_wakes += 1
+	invalidate_root(rt, "semantic text selection requested")
+	record_trace(rt, .Action, entity.node.visual_node, "text selection queued for application")
+	return true
+}
+
+// semantic_text_area_remove removes its direct Text_Run children and the area.
+// Applications should use this when retiring an editor document so stale
+// virtual text nodes cannot survive after their owner closes.
+semantic_text_area_remove :: proc(rt: ^Runtime, area_id: Semantic_ID) -> bool {
+	if rt == nil || !semantic_id_is_valid(area_id) { return false }
+	area, found := rt.semantic_entities[area_id]
+	if !found || area.node.role != .Text_Area { return false }
+	remove_ids := make([dynamic]Semantic_ID, 0, allocator=rt.scratch_allocator)
+	defer delete(remove_ids)
+	for id, entity in rt.semantic_entities {
+		if entity.node.role == .Text_Run && entity.node.parent == area_id { append(&remove_ids, id) }
+	}
+	for id in remove_ids { _ = semantic_node_remove(rt, id) }
+	return semantic_node_remove(rt, area_id)
 }
 
 // semantic_node_lookup returns a borrowed entity. Its string fields remain
@@ -424,6 +665,7 @@ semantic_snapshot :: proc(rt: ^Runtime, allocator := context.allocator) -> Seman
 		node.label = owned_with_allocator(node.label, allocator)
 		node.description = owned_with_allocator(node.description, allocator)
 		node.value = owned_with_allocator(node.value, allocator)
+		node.text_run_character_lengths, _ = semantic_text_run_lengths_clone(node.text_run_character_lengths, allocator)
 		append(&result.nodes, node)
 	}
 	// Map iteration is intentionally unordered. Sort by stable order and ID for
@@ -442,6 +684,7 @@ semantic_snapshot_destroy :: proc(snapshot: ^Semantic_Snapshot) {
 		if len(node.label) > 0 { delete(node.label, snapshot.allocator) }
 		if len(node.description) > 0 { delete(node.description, snapshot.allocator) }
 		if len(node.value) > 0 { delete(node.value, snapshot.allocator) }
+		if len(node.text_run_character_lengths) > 0 { delete(node.text_run_character_lengths, snapshot.allocator) }
 	}
 	delete(snapshot.nodes)
 	snapshot^ = Semantic_Snapshot{}
@@ -571,6 +814,8 @@ semantic_collection_virtual_item :: proc(
 		numeric_maximum=node.numeric_maximum,
 		numeric_step=node.numeric_step,
 		has_numeric_value=node.has_numeric_value,
+		text_run_character_lengths=node.text_run_character_lengths,
+		text_selection=node.text_selection,
 	}
 	changed := semantic_node_set(ui.runtime, description)
 	if changed {
@@ -773,6 +1018,8 @@ semantic_sync_node :: proc(rt: ^Runtime, node: ^Node, semantic: Semantic_Descrip
 		numeric_maximum=semantic.numeric_maximum,
 		numeric_step=semantic.numeric_step,
 		has_numeric_value=semantic.has_numeric_value,
+		text_run_character_lengths=semantic.text_run_character_lengths,
+		text_selection=semantic.text_selection,
 	}
 	if semantic_id_is_valid(semantic.collection_id) {
 		if collection, found := rt.semantic_entities[semantic.collection_id]; found {
@@ -847,6 +1094,8 @@ semantic_retire_node :: proc(rt: ^Runtime, node: ^Node) {
 			numeric_maximum=entity.node.numeric_maximum,
 			numeric_step=entity.node.numeric_step,
 			has_numeric_value=entity.node.has_numeric_value,
+			text_run_character_lengths=entity.node.text_run_character_lengths,
+			text_selection=entity.node.text_selection,
 		}
 		_ = semantic_node_set(rt, description)
 		entity, found = rt.semantic_entities[node.semantic_id]
@@ -938,6 +1187,8 @@ semantic_action_request :: proc(
 	entity, found := rt.semantic_entities[id]
 	if !found || !semantic_actions_has(entity.node.actions, action) { return false }
 	if action == .None { return false }
+	// Selection carries two text-run positions and must use the typed API above.
+	if action == .Set_Text_Selection { return false }
 	if entity.node.visual_node != 0 {
 		visual, visual_found := rt.nodes[entity.node.visual_node]
 		if !visual_found || !visual.active || visual.disabled { return false }
