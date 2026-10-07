@@ -254,8 +254,17 @@ test_root_host_appearance_inherits_and_respects_explicit_override :: proc(t: ^te
 	inherited_before := rt.nodes[inherited].style_generations
 	overridden_before := rt.nodes[overridden].style_generations
 	preferences := Accessibility_Appearance_Preferences{increased_contrast=true}
-	testing.expect(t, style_root_accessibility_set(&rt, preferences) && rt.invalidated,
+	observation := Accessibility_Appearance_Observation{
+		preferences=preferences,
+		known={.Increased_Contrast, .Reduce_Motion, .Reduce_Transparency},
+	}
+	testing.expect(t, style_root_accessibility_observation_set(&rt, observation) && rt.invalidated,
 		"a changed host appearance base should request one application description")
+	observed := style_root_accessibility_observation_get(&rt)
+	testing.expect(t, observed == observation &&
+		Accessibility_Appearance_Field.Increased_Contrast in observed.known &&
+		Accessibility_Appearance_Field.Differentiate_Without_Color not_in observed.known,
+		"host diagnostics should report inherited values separately from unsupported/unavailable fields")
 	updated_inherited, updated_overridden := root_appearance_layer_fixture(&rt)
 	inherited_node := rt.nodes[updated_inherited]
 	overridden_node := rt.nodes[updated_overridden]
@@ -270,6 +279,25 @@ test_root_host_appearance_inherits_and_respects_explicit_override :: proc(t: ^te
 		"an explicit application override already equal to the new base should not be invalidated")
 	testing.expect(t, rt.semantic_revision == semantic_revision,
 		"a root visual appearance change must not advance semantic revision")
-	testing.expect(t, !style_root_accessibility_set(&rt, preferences) && !rt.invalidated,
+	testing.expect(t, !style_root_accessibility_observation_set(&rt, observation) && !rt.invalidated,
 		"an identical host preference notification should not invalidate the runtime")
+}
+
+@(test)
+test_root_appearance_observation_tracks_support_without_value_change :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 180})
+	defer destroy_runtime(&rt)
+	observation := Accessibility_Appearance_Observation{
+		preferences=Accessibility_Appearance_Preferences{},
+		known={.Reduce_Transparency},
+	}
+	testing.expect(t, style_root_accessibility_observation_set(&rt, observation) && rt.invalidated,
+		"newly available host-field knowledge should refresh diagnostic consumers even when its value is false")
+	observed := style_root_accessibility_observation_get(&rt)
+	testing.expect(t, Accessibility_Appearance_Field.Reduce_Transparency in observed.known &&
+		observed.preferences.reduce_transparency == false,
+		"known false must remain distinguishable from unsupported or unavailable")
+	rt.invalidated = false
+	testing.expect(t, !style_root_accessibility_observation_set(&rt, observation) && !rt.invalidated,
+		"identical value and support metadata should not cause another wake")
 }

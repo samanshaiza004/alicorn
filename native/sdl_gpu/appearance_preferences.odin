@@ -4,14 +4,8 @@ import alicorn "../../runtime"
 import "core:sync"
 import "vendor:sdl3"
 
-Native_Appearance_Field :: enum {
-	Increased_Contrast,
-	Reduce_Motion,
-	Reduce_Transparency,
-	Differentiate_Without_Color,
-}
-
-Native_Appearance_Known_Fields :: distinct bit_set[Native_Appearance_Field; u8]
+Native_Appearance_Field :: alicorn.Accessibility_Appearance_Field
+Native_Appearance_Known_Fields :: alicorn.Accessibility_Appearance_Known_Fields
 
 // Native_Appearance_Snapshot distinguishes unsupported/failed native queries
 // from a known false preference. Unknown values never erase the last known
@@ -81,10 +75,13 @@ native_appearance_monitor_apply_snapshot :: proc(
 	observed: Native_Appearance_Snapshot,
 ) -> bool {
 	if monitor == nil { return false }
-	next, preferences_changed := native_appearance_snapshot_merge(monitor.snapshot, observed)
+	next, _ := native_appearance_snapshot_merge(monitor.snapshot, observed)
 	monitor.snapshot = next
-	if preferences_changed && rt != nil {
-		return alicorn.style_root_accessibility_set(rt, next.preferences)
+	if rt != nil {
+		return alicorn.style_root_accessibility_observation_set(rt, alicorn.Accessibility_Appearance_Observation{
+			preferences=next.preferences,
+			known=next.known,
+		})
 	}
 	return false
 }

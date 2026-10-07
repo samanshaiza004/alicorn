@@ -33,11 +33,36 @@ style_root_accessibility_set :: proc(
 	rt: ^Runtime,
 	preferences: Accessibility_Appearance_Preferences,
 ) -> bool {
+	return style_root_accessibility_observation_set(rt, Accessibility_Appearance_Observation{
+		preferences=preferences,
+		known={.Increased_Contrast, .Reduce_Motion, .Reduce_Transparency, .Differentiate_Without_Color},
+	})
+}
+
+// style_root_accessibility_observation_set updates the normalized host input
+// and its support/availability mask. It invalidates the root when either
+// values or availability change so diagnostic UI can report fresh state.
+style_root_accessibility_observation_set :: proc(
+	rt: ^Runtime,
+	observation: Accessibility_Appearance_Observation,
+) -> bool {
 	if rt == nil || rt.frame_open { return false }
-	if rt.root_accessibility_appearance == preferences { return false }
-	rt.root_accessibility_appearance = preferences
-	invalidate_root(rt, "root accessibility appearance changed")
+	if rt.root_accessibility_appearance == observation.preferences &&
+		rt.root_accessibility_appearance_known == observation.known { return false }
+	rt.root_accessibility_appearance = observation.preferences
+	rt.root_accessibility_appearance_known = observation.known
+	invalidate_root(rt, "root accessibility appearance observation changed")
 	return true
+}
+
+// style_root_accessibility_observation_get returns the last accepted native
+// base snapshot. Application style scopes do not mutate this observation.
+style_root_accessibility_observation_get :: proc(rt: ^Runtime) -> Accessibility_Appearance_Observation {
+	if rt == nil { return {} }
+	return Accessibility_Appearance_Observation{
+		preferences=rt.root_accessibility_appearance,
+		known=rt.root_accessibility_appearance_known,
+	}
 }
 
 style_generation_value :: proc(generations: Style_Generations, domain: Style_Domain) -> u32 {

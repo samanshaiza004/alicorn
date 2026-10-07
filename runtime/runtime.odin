@@ -473,6 +473,23 @@ Accessibility_Appearance_Preferences :: struct {
 	differentiate_without_color: bool,
 }
 
+Accessibility_Appearance_Field :: enum {
+	Increased_Contrast,
+	Reduce_Motion,
+	Reduce_Transparency,
+	Differentiate_Without_Color,
+}
+
+Accessibility_Appearance_Known_Fields :: distinct bit_set[Accessibility_Appearance_Field; u8]
+
+// Accessibility_Appearance_Observation is the normalized host preference
+// snapshot plus the fields the platform could actually report. An unset
+// known bit means unsupported or unavailable, not a known false preference.
+Accessibility_Appearance_Observation :: struct {
+	preferences: Accessibility_Appearance_Preferences,
+	known:       Accessibility_Appearance_Known_Fields,
+}
+
 Style_Color_Role :: enum {
 	Window_Background,
 	Surface,
@@ -1354,6 +1371,7 @@ Runtime :: struct {
 	viewport:    Rect,
 	style_environment: Style_Environment,
 	root_accessibility_appearance: Accessibility_Appearance_Preferences,
+	root_accessibility_appearance_known: Accessibility_Appearance_Known_Fields,
 	style_themes: [dynamic]Style_Theme,
 	style_materials: [dynamic]Style_Material,
 	style_scope_stack: [dynamic]Style_Environment_Scope,

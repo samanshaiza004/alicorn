@@ -156,8 +156,9 @@ winrt_appearance_monitor_init :: proc(state: ^Win32_Appearance_State) -> bool {
 	}
 
 	class_name := win.utf8_to_utf16("Windows.UI.ViewManagement.UISettings", context.temp_allocator)
+	if len(class_name) == 0 { return false }
 	class_id: rawptr
-	if !win.SUCCEEDED(WindowsCreateString(&class_name[0], u32(len(class_name)-1), &class_id)) { return false }
+	if !win.SUCCEEDED(WindowsCreateString(&class_name[0], u32(len(class_name)), &class_id)) { return false }
 	defer _ = WindowsDeleteString(class_id)
 
 	instance: rawptr
