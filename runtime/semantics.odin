@@ -2,6 +2,7 @@ package alicorn
 
 import "core:mem"
 import "core:slice"
+import runa "../third_party/Runa"
 
 Semantic_Role :: enum {
 	None,
@@ -310,6 +311,33 @@ semantic_byte_lengths_equal :: proc(a, b: []u8) -> bool {
 	if len(a) != len(b) { return false }
 	for i in 0..<len(a) { if a[i] != b[i] { return false } }
 	return true
+}
+
+// semantic_text_character_lengths returns the UTF-8 byte length of each
+// extended grapheme cluster in value. Empty text is valid and returns an
+// empty slice. A selectable unit larger than the AccessKit u8 byte-length
+// contract is rejected; any allocated output is released before returning.
+semantic_text_character_lengths :: proc(
+	value: string,
+	allocator: mem.Allocator,
+) -> (lengths: []u8, ok: bool) {
+	if len(value) == 0 { return nil, true }
+
+	// Accumulate byte lengths in one pass so multibyte text does not reserve
+	// one output byte for every source byte.
+	result := make([dynamic]u8, 0, min(len(value), 64), allocator=allocator)
+	iterator := runa.grapheme_iter_make(value)
+	for {
+		start, end, found := runa.grapheme_iter_next(&iterator)
+		if !found { break }
+		byte_length := end - start
+		if byte_length > 255 {
+			delete(result)
+			return nil, false
+		}
+		append(&result, u8(byte_length))
+	}
+	return result[:], true
 }
 
 semantic_text_run_payload_valid :: proc(value: string, character_lengths: []u8) -> bool {
