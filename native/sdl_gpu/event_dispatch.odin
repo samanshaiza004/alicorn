@@ -57,6 +57,7 @@ pump_events :: proc(
 	inspector: ^Native_Inspector_Overlay = nil,
 	accessibility: ^Native_Accessibility_Host = nil,
 	appearance_monitor: ^Native_Appearance_Monitor = nil,
+	flight_recorder: ^Native_Flight_Recorder = nil,
 ) {
 	if telemetry != nil { telemetry.events_this_pump = 0 }
 	mod_state := sdl3.GetModState()
@@ -107,6 +108,8 @@ pump_events :: proc(
 			if pointer_modifier_state != nil { mod_state = pointer_modifier_state^ }
 		}
 		pointer, pointer_ok := pointer_from_sdl_with_modifiers(event, mod_state, pointer_button_state)
+		is_pointer_event := event.type == .MOUSE_MOTION || event.type == .MOUSE_BUTTON_DOWN || event.type == .MOUSE_BUTTON_UP
+		pointer_window_x, pointer_window_y := pointer.x, pointer.y
 		pointer_in_application := true
 		wheel_in_application := true
 		if native_menu != nil {
@@ -248,17 +251,35 @@ pump_events :: proc(
 			application.on_wake(application.state, rt)
 			alicorn.cause_end(rt, wake_cause)
 		}
+		pointer_target := alicorn.Node_ID(0)
+		pointer_cause_id: u64 = 0
+		captured_before := rt.captured_node
+		captured_before_info, captured_before_valid := alicorn.node_info(rt, captured_before)
+		split_owner_before, split_position_before, split_dragging_before, split_before_valid :=
+			native_flight_pointer_split_state(rt, captured_before)
+		captured_split_move := pointer.kind == .Move && captured_before_valid && captured_before_info.kind == .Split_Handle
+		callback_available := application != nil && application.on_pointer != nil
+		callback_called := false
+		callback_blocked_by_context_menu := false
+		callback_blocked_by_drag := false
 		if pointer_ok {
 			pointer_cause := alicorn.pointer_cause_begin(rt, pointer.kind)
+			pointer_cause_id = pointer_cause.cause.id
 			if devtools_last_cause != nil { devtools_last_cause^ = pointer_cause.cause }
-			target := alicorn.process_pointer(rt, pointer)
-			if key, key_ok := alicorn.node_identity_key(rt, target); key_ok {
+			pointer_target = alicorn.process_pointer(rt, pointer)
+			if key, key_ok := alicorn.node_identity_key(rt, pointer_target); key_ok {
 				pointer.target_key = key
 			}
 			drag_event_dispatched := native_dispatch_drag_event(application, rt)
 			drag_consumed := drag_event_dispatched || alicorn.drag_is_active(rt)
-			if application != nil && application.on_pointer != nil && !alicorn.context_menu_pointer_consumed(rt) && !drag_consumed {
-				application.on_pointer(application.state, rt, pointer, target)
+			callback_blocked_by_context_menu = alicorn.context_menu_pointer_consumed(rt)
+			// A captured split must keep its app callback: virtualized/wrapped
+			// children may need their application-owned measurement refreshed as
+			// the runtime updates the retained split geometry.
+			callback_blocked_by_drag = drag_consumed && !captured_split_move
+			callback_called = callback_available && !callback_blocked_by_context_menu && !callback_blocked_by_drag
+			if callback_called {
+				application.on_pointer(application.state, rt, pointer, pointer_target)
 				// App-level pointer handlers can mutate their own state even when
 				// the hit test intentionally returns no retained target. Preserve
 				// the historical description refresh for those explicit handlers;
@@ -268,6 +289,60 @@ pump_events :: proc(
 				}
 			}
 			alicorn.cause_end(rt, pointer_cause)
+		}
+		if is_pointer_event && flight_recorder != nil {
+			captured_after := rt.captured_node
+			target_info, target_valid := alicorn.node_info(rt, pointer_target)
+			captured_after_info, captured_after_valid := alicorn.node_info(rt, captured_after)
+			split_candidate := captured_before
+			if split_candidate == 0 { split_candidate = captured_after }
+			if split_candidate == 0 { split_candidate = pointer_target }
+			split_owner_after, split_position_after, split_dragging_after, split_after_valid := native_flight_pointer_split_state(rt, split_candidate)
+			split_owner := split_owner_before
+			split_state_valid := split_before_valid && split_after_valid && split_owner_before == split_owner_after
+			if !split_before_valid && split_after_valid {
+				split_owner = split_owner_after
+				split_position_before = split_position_after
+				split_dragging_before = false if pointer.kind == .Down else split_dragging_after
+				split_state_valid = true
+			}
+			flight_recorder_sample := Native_Pointer_Event_Sample{
+				timestamp_ns=u64(sdl3.GetTicksNS()),
+				cause_id=pointer_cause_id,
+				kind=pointer.kind,
+				window_x=pointer_window_x,
+				window_y=pointer_window_y,
+				x=pointer.x,
+				y=pointer.y,
+				inside_application=pointer_in_application && pointer_ok,
+				button=pointer.button,
+				target=pointer_target,
+				target_kind=target_info.kind,
+				target_valid=target_valid,
+				captured_before=captured_before,
+				captured_after=captured_after,
+				captured_before_kind=captured_before_info.kind,
+				captured_after_kind=captured_after_info.kind,
+				captured_before_valid=captured_before_valid,
+				captured_after_valid=captured_after_valid,
+				split_owner=split_owner,
+				split_position_before=split_position_before,
+				split_position_after=split_position_after,
+				split_dragging_before=split_dragging_before,
+				split_dragging_after=split_dragging_after,
+				split_state_valid=split_state_valid,
+				callback_available=callback_available,
+				callback_called=callback_called,
+				pointer_dispatched=pointer_ok,
+				callback_blocked_by_context_menu=callback_blocked_by_context_menu,
+				callback_blocked_by_drag=callback_blocked_by_drag,
+				invalidated=rt.invalidated,
+				layout_pending=alicorn.layout_is_pending(rt),
+				presentation_pending=alicorn.presentation_needs_frame(rt),
+				presentation_revision=rt.presentation_revision,
+				submitted_revision=rt.submitted_revision,
+			}
+			native_flight_pointer_record(flight_recorder, flight_recorder_sample)
 		}
 		if application != nil && event.type == .MOUSE_WHEEL { alicorn.tooltip_dismiss(rt) }
 		if application != nil && event.type == .MOUSE_WHEEL && wheel_in_application {

@@ -22,7 +22,8 @@ native_devtools_sample_has_activity :: proc(sample: Native_DevTools_Sample) -> b
 		sample.semantic_descriptions_emitted > 0 || sample.semantic_entities_resolved > 0 ||
 		sample.semantic_structure_changes > 0 || sample.semantic_property_changes > 0 ||
 		sample.semantic_projection_nodes_added+sample.semantic_projection_nodes_updated+sample.semantic_projection_nodes_removed > 0 ||
-		sample.accessibility_activation_wakes > 0 || sample.accessibility_action_wakes > 0 || sample.accessibility_reveal_wakes > 0 || sample.accessibility_updates_submitted > 0
+		sample.accessibility_activation_wakes > 0 || sample.accessibility_action_wakes > 0 || sample.accessibility_reveal_wakes > 0 || sample.accessibility_updates_submitted > 0 ||
+		sample.measure_requests > 0 || sample.measure_cache_hits > 0 || sample.measure_cache_misses > 0 || sample.text_shape_requests > 0
 }
 
 native_devtools_activity_class :: proc(sample: Native_DevTools_Sample) -> Native_DevTools_Activity_Class {

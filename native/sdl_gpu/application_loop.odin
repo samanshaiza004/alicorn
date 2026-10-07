@@ -282,6 +282,7 @@ run_application_loop :: proc(
 			inspector=&inspector,
 			accessibility=&accessibility_host,
 			appearance_monitor=&appearance_monitor,
+			flight_recorder=&devtools_recorder,
 		)
 		_ = alicorn.tooltip_advance(rt, u64(sdl3.GetTicksNS()))
 		native_drag_autoscroll_update(rt, &drag_autoscroll_deadline_ns, u64(sdl3.GetTicksNS()))

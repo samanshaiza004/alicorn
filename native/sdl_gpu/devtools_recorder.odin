@@ -143,6 +143,10 @@ native_devtools_make_sample :: proc(
 		accessibility_requests_dropped=current.accessibility_requests_dropped-previous.accessibility_requests_dropped,
 		semantic_focus_search_visits=current.semantic_focus_search_visits-previous.semantic_focus_search_visits,
 		semantic_active_update_visits=current.semantic_active_update_visits-previous.semantic_active_update_visits,
+		measure_requests=current.measure_requests-previous.measure_requests,
+		measure_cache_hits=current.measure_cache_hits-previous.measure_cache_hits,
+		measure_cache_misses=current.measure_cache_misses-previous.measure_cache_misses,
+		text_shape_requests=current.text_shape_requests-previous.text_shape_requests,
 	}
 	if rt.allocation_stats != nil {
 		sample.persistent_allocations = rt.allocation_stats.persistent_alloc_calls-cursor.persistent_allocations
@@ -170,6 +174,7 @@ native_devtools_observed_wake :: proc(
 		sample.semantic_projection_nodes_added > 0 || sample.semantic_projection_nodes_updated > 0 ||
 		sample.semantic_projection_nodes_removed > 0 || sample.accessibility_activation_wakes > 0 ||
 		sample.accessibility_action_wakes > 0 || sample.accessibility_reveal_wakes > 0 || sample.accessibility_updates_submitted > 0 ||
+		sample.measure_requests > 0 || sample.measure_cache_hits > 0 || sample.measure_cache_misses > 0 || sample.text_shape_requests > 0 ||
 		sample.persistent_allocations > 0 || timing.application_tick_calls != cursor.application_tick_calls ||
 		timing.scheduled_wakes != cursor.scheduled_wakes ||
 		text_events.events_received_sequence != cursor.events_received_sequence
@@ -209,7 +214,8 @@ native_devtools_record_wake :: proc(
 		sample.semantic_structure_changes > 0 || sample.semantic_property_changes > 0 ||
 		sample.semantic_projection_nodes_added > 0 || sample.semantic_projection_nodes_updated > 0 ||
 		sample.semantic_projection_nodes_removed > 0 || sample.accessibility_activation_wakes > 0 ||
-		sample.accessibility_action_wakes > 0 || sample.accessibility_reveal_wakes > 0 || sample.accessibility_updates_submitted > 0
+		sample.accessibility_action_wakes > 0 || sample.accessibility_reveal_wakes > 0 || sample.accessibility_updates_submitted > 0 ||
+		sample.measure_requests > 0 || sample.measure_cache_hits > 0 || sample.measure_cache_misses > 0 || sample.text_shape_requests > 0
 	if write_sample { native_flight_record(recorder, sample) }
 	cursor^ = native_devtools_cursor_init(rt, timing, text_events)
 }
