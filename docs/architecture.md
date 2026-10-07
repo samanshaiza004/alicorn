@@ -56,6 +56,12 @@ dirty state. An input-only change can update retained presentation without
 asking the application to describe the whole UI again. Changed constraints
 can require layout even when the description itself is reused.
 
+The #25 axis allocator begins as a standalone deterministic primitive over
+`Layout_Unit` participants. It resolves weighted expansion/compression,
+saturation, stable integer remainders, unused space, and minimum overflow
+without depending on retained nodes or layout traversal. Row/Column do not yet
+consume it; that integration follows independent allocator conformance.
+
 `Style_Environment` is the inherited dependency surface for a compact theme ID,
 density, normalized text scale, accent override, and backend-neutral
 `Accessibility_Appearance_Preferences`. Applications can provide increased
@@ -71,6 +77,13 @@ container opts into local layout invalidation with `layout_boundary=true` when
 its parent-assigned bounds can remain stable. Measurement invalidation alone
 does not propagate layout; the runtime compares retained measure results and
 propagates changed output axes through the parent's placement dependencies.
+The current `layout_boundary=true` contract is full containment: the boundary
+keeps its parent-assigned outer geometry stable while its contents relayout.
+`Parent_Size_Dependencies` records the child-output-to-parent-output mapping,
+but current Row/Column containers do not derive external preferred size from
+their children. #5 owns content-sized container policy and the future per-axis
+propagation this enables; a width-definite/height-content container is not yet
+an axis-specific layout boundary.
 `style_metric` leaves the meaning and use of each dimension with the
 application. This is explicit dependency tracking, not a general cascade or
 implicit observation of app state. The

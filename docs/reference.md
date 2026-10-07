@@ -126,7 +126,11 @@ The default layout direction is column. Use `.Row` for horizontal children;
 `grow` shares available space. Layout is in logical window coordinates.
 Style scopes do not implicitly create layout boundaries. A layout boundary keeps
 its parent-assigned bounds stable and lets changed descendants relayout locally;
-use it when the application can preserve that geometry contract.
+use it when the application can preserve that geometry contract. This is a
+full-containment boundary, not a per-axis promise: Row/Column do not yet derive
+their external size from children, and `Parent_Size_Dependencies` is not an
+active container-sizing mechanism. Issue #5 owns content-sized containers and
+the future axis-specific propagation they need.
 
 ### Scoped style environment
 
