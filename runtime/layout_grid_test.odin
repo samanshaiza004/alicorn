@@ -183,13 +183,16 @@ test_grid_resolves_width_before_wrapped_row_height_and_rtl_start :: proc(t: ^tes
 	grid_begin(&ui, key_string("rtl-grid"), rtl_columns[:], rtl_rows[:], style=layout_style(width=180, height=60))
 	start_text := text(&ui, "Start", key=key_string("rtl-start"), style=layout_style(width=30), text_style=Text_Style{font_weight=FONT_WEIGHT_REGULAR})
 	_ = grid_cell(&ui, start_text, 0, 0, align_x=.Start)
+	end_text := text(&ui, "End", key=key_string("rtl-end"), style=layout_style(width=30), text_style=Text_Style{font_weight=FONT_WEIGHT_REGULAR})
+	_ = grid_cell(&ui, end_text, 0, 0, align_x=.End)
 	grid_end(&ui)
 	container_end(&ui)
 	end_frame(&ui)
 	start_node := rtl.nodes[start_text]
 	first_cell_left := f32(100) // In RTL, logical column zero is the physical rightmost 80-unit track.
-	testing.expect(t, layout_grid_test_near(start_node.bounds.x, first_cell_left+50),
-		"logical Start alignment should resolve to the physical right under RTL")
+	end_node := rtl.nodes[end_text]
+	testing.expect(t, layout_grid_test_near(start_node.bounds.x, first_cell_left+50) && layout_grid_test_near(end_node.bounds.x, first_cell_left),
+		"logical Start and End alignment should resolve to the correct physical edges under RTL")
 
 	baseline := new_runtime(Rect{0, 0, 360, 100})
 	defer destroy_runtime(&baseline)
