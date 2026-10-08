@@ -87,7 +87,7 @@ test_row_column_main_axis_uses_measured_fixed_sizes_and_weighted_growth :: proc(
 	nested_grow_node := rt.nodes[nested_grow]
 	allocated: [4]f32
 	shape_calls_before := rt.text_engine.shape_calls
-	_ = resolve_main_sizes(&rt, row_node.children[:], .Row, 301, allocated[:])
+	_ = resolve_main_sizes(&rt, row_node.children[:], .Row, layout_unit_extent(301), allocated[:])
 	testing.expect(t, rt.text_engine.shape_calls == shape_calls_before,
 		"the allocator should consume retained measurement results without initiating text shaping")
 	testing.expect(t, fixed_node.bounds.w == 50 && limited_node.bounds.w == 67.75 && nested_node.bounds.w == 125.5 && tail_node.bounds.w == 57.75,
@@ -102,7 +102,7 @@ test_row_column_main_axis_uses_measured_fixed_sizes_and_weighted_growth :: proc(
 	fixed_node.style.min_width = 60
 	rt.nodes[fixed] = fixed_node
 	clamped_sizes: [4]f32
-	_ = resolve_main_sizes(&rt, row_node.children[:], .Row, 301, clamped_sizes[:])
+	_ = resolve_main_sizes(&rt, row_node.children[:], .Row, layout_unit_extent(301), clamped_sizes[:])
 	testing.expect(t, clamped_sizes[0] == 60,
 		"fixed text children should retain the existing min/max clamp after measurement is routed through the allocator")
 }

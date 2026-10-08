@@ -64,7 +64,7 @@ render_keyed :: proc(rt: ^alicorn.Runtime, keys: []string, values: []int, extra,
 	alicorn.invalidate_root(rt, "test structural render")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return ids }
-	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="root", style=alicorn.Layout_Style{.Column, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="root", style=alicorn.layout_style(.Column, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, false))
 	if extra {
 		alicorn.text_ex(&ui, "extra", S_EXTRA)
 	}
@@ -73,7 +73,7 @@ render_keyed :: proc(rt: ^alicorn.Runtime, keys: []string, values: []int, extra,
 	}
 	for i := 0; i < len(keys); i += 1 {
 		if alicorn.key_scope_begin_ex(&ui, keys[i], S_ROW) {
-			id, _ := alicorn.button_ex(&ui, keys[i], S_BUTTON, style=alicorn.Layout_Style{.Column, -1, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false}, paint_value=u64(values[i] if i < len(values) else 0))
+			id, _ := alicorn.button_ex(&ui, keys[i], S_BUTTON, style=alicorn.layout_style(.Column, -1, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false), paint_value=u64(values[i] if i < len(values) else 0))
 			ids[keys[i]] = id
 			alicorn.key_scope_end(&ui)
 		}
@@ -94,7 +94,7 @@ render_numeric_keyed :: proc(rt: ^alicorn.Runtime, keys: []u64, values: []int) -
 	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="numeric-root")
 	for key, i in keys {
 		if alicorn.key_scope_u64(&ui, key, S_ROW) {
-			id, _ := alicorn.button_ex(&ui, fmt.tprintf("n%d", key), S_BUTTON, style=alicorn.Layout_Style{.Column, -1, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false}, paint_value=u64(values[i] if i < len(values) else 0))
+			id, _ := alicorn.button_ex(&ui, fmt.tprintf("n%d", key), S_BUTTON, style=alicorn.layout_style(.Column, -1, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false), paint_value=u64(values[i] if i < len(values) else 0))
 			ids[key] = id
 			alicorn.key_scope_end(&ui)
 		}
@@ -125,14 +125,14 @@ render_stress_region :: proc(rt: ^alicorn.Runtime, revision: u64, include_region
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return 0 }
 	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="stress-root")
-	sibling, _ := alicorn.button_ex(&ui, "fallback", S_REGION_STRESS_SIBLING, style=alicorn.Layout_Style{.Column, 160, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	sibling, _ := alicorn.button_ex(&ui, "fallback", S_REGION_STRESS_SIBLING, style=alicorn.layout_style(.Column, 160, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false))
 	if include_region && alicorn.key_scope_begin_ex(&ui, "retained", S_REGION_STRESS_SCOPE) {
 		id, reused := alicorn.region_begin(&ui, "body", revision, S_REGION_STRESS)
 		if id != 0 && !reused {
 			body_counter^ += 1
 			start := len(rt.pending)
 			if alicorn.key_scope_u64(&ui, 0, S_REGION_STRESS_NODE) {
-				alicorn.button_ex(&ui, "focused descendant", S_REGION_STRESS_NODE, style=alicorn.Layout_Style{.Column, 180, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+				alicorn.button_ex(&ui, "focused descendant", S_REGION_STRESS_NODE, style=alicorn.layout_style(.Column, 180, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false))
 				alicorn.key_scope_end(&ui)
 			}
 			for i := 1; i < 256; i += 1 {
@@ -165,7 +165,7 @@ render_region_collection :: proc(rt: ^alicorn.Runtime, order: []u64, enabled: []
 			body_counter^ += 1
 			start := len(rt.pending)
 			if alicorn.key_scope_u64(&ui, 0, S_REGION_STRESS_NODE) {
-				alicorn.button_ex(&ui, "region-state", S_REGION_STRESS_NODE, style=alicorn.Layout_Style{.Column, 120, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false}, paint_value=key)
+				alicorn.button_ex(&ui, "region-state", S_REGION_STRESS_NODE, style=alicorn.layout_style(.Column, 120, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false), paint_value=key)
 				alicorn.key_scope_end(&ui)
 			}
 			if nested && key == 0 {
@@ -190,7 +190,7 @@ virtual_row :: proc(ui: ^alicorn.UI, index: int) {
 }
 
 virtual_geometry_row :: proc(ui: ^alicorn.UI, index: int) {
-	style := alicorn.Layout_Style{.Column, -1, 20, 0, -1, 0, -1, 0, 0, 0, .Stretch, true}
+	style := alicorn.layout_style(.Column, -1, 20, 0, -1, 0, -1, 0, 0, 0, .Stretch, true)
 	_, _ = alicorn.button_ex(ui, fmt.tprintf("row-%d", index), S_VROW, style=style)
 }
 
@@ -256,7 +256,7 @@ render_single_button :: proc(rt: ^alicorn.Runtime) -> (id: alicorn.Node_ID, clic
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return }
 	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="button-root")
-	id, clicked = alicorn.button_ex(&ui, "button", S_BUTTON, style=alicorn.Layout_Style{.Column, 100, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	id, clicked = alicorn.button_ex(&ui, "button", S_BUTTON, style=alicorn.layout_style(.Column, 100, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false))
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	return
@@ -296,7 +296,7 @@ render_button_content :: proc(rt: ^alicorn.Runtime, content_style := alicorn.DEF
 		&ui,
 		"Action",
 		S_BUTTON,
-		style=alicorn.Layout_Style{.Column, 120, 32, 0, -1, 0, -1, 0, 0, 0, .Stretch, false},
+		style=alicorn.layout_style(.Column, 120, 32, 0, -1, 0, -1, 0, 0, 0, .Stretch, false),
 		content_style=content_style,
 	)
 	alicorn.container_end(&ui)
@@ -379,7 +379,7 @@ virtual_focus_row :: proc(ui: ^alicorn.UI, index: int) {
 		ui,
 		fmt.tprintf("row %d", index),
 		S_VROW,
-		style=alicorn.Layout_Style{.Column, -1, 20, 0, -1, 0, -1, 0, 0, 0, .Stretch, false},
+		style=alicorn.layout_style(.Column, -1, 20, 0, -1, 0, -1, 0, 0, 0, .Stretch, false),
 	)
 }
 
@@ -392,7 +392,7 @@ render_virtual_focus :: proc(rt: ^alicorn.Runtime, scroll: f32) -> (open_id, row
 		&ui,
 		"Open Trace",
 		S_BUTTON,
-		style=alicorn.Layout_Style{.Column, 128, 30, 0, -1, 0, -1, 0, 0, 0, .Stretch, false},
+		style=alicorn.layout_style(.Column, 128, 30, 0, -1, 0, -1, 0, 0, 0, .Stretch, false),
 	)
 	_, _ = alicorn.virtual_list_ex(&ui, 100, scroll, 60, 20, S_VLIST, virtual_item_key, virtual_focus_row)
 	alicorn.container_end(&ui)
@@ -914,9 +914,9 @@ render_focus_ancestor :: proc(rt: ^alicorn.Runtime, include_child: bool) -> alic
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return 0 }
 	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="focus-root")
-	parent := alicorn.container_begin_ex(&ui, .Container, S_WRAP, label="focus-parent", focusable=true, style=alicorn.Layout_Style{.Column, 120, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	parent := alicorn.container_begin_ex(&ui, .Container, S_WRAP, label="focus-parent", focusable=true, style=alicorn.layout_style(.Column, 120, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, false))
 	if include_child {
-		child, _ := alicorn.button_ex(&ui, "child", S_BUTTON, style=alicorn.Layout_Style{.Column, 100, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+		child, _ := alicorn.button_ex(&ui, "child", S_BUTTON, style=alicorn.layout_style(.Column, 100, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false))
 		parent = child
 	}
 	alicorn.container_end(&ui)
@@ -930,8 +930,8 @@ render_clipped :: proc(rt: ^alicorn.Runtime) -> alicorn.Node_ID {
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return 0 }
 	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="clip-root")
-	alicorn.container_begin_ex(&ui, .Container, S_WRAP, label="clip-parent", style=alicorn.Layout_Style{.Column, 50, 50, 0, -1, 0, -1, 0, 0, 0, .Stretch, true})
-	child, _ := alicorn.button_ex(&ui, "oversized", S_BUTTON, style=alicorn.Layout_Style{.Column, 100, 100, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	alicorn.container_begin_ex(&ui, .Container, S_WRAP, label="clip-parent", style=alicorn.layout_style(.Column, 50, 50, 0, -1, 0, -1, 0, 0, 0, .Stretch, true))
+	child, _ := alicorn.button_ex(&ui, "oversized", S_BUTTON, style=alicorn.layout_style(.Column, 100, 100, 0, -1, 0, -1, 0, 0, 0, .Stretch, false))
 	alicorn.container_end(&ui)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
@@ -939,7 +939,7 @@ render_clipped :: proc(rt: ^alicorn.Runtime) -> alicorn.Node_ID {
 }
 
 ergonomic_row :: proc(ui: ^alicorn.UI, label: string) -> alicorn.Node_ID {
-	id, _ := alicorn.button_ex(ui, label, key=label, explicit_key=true, style=alicorn.Layout_Style{.Column, 100, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	id, _ := alicorn.button_ex(ui, label, key=label, explicit_key=true, style=alicorn.layout_style(.Column, 100, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false))
 	return id
 }
 
@@ -1014,7 +1014,7 @@ render_text_growth_pair :: proc(rt: ^alicorn.Runtime, first, second: string) -> 
 	alicorn.invalidate_root(rt, "test text intrinsic growth")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return }
-	row_style := alicorn.Layout_Style{.Row, -1, 40, 0, -1, 0, -1, 0, 0, 0, .Stretch, false}
+	row_style := alicorn.layout_style(.Row, -1, 40, 0, -1, 0, -1, 0, 0, 0, .Stretch, false)
 	alicorn.container_begin_ex(&ui, .Root, S_ROOT, style=row_style)
 	first_id = alicorn.text_ex(&ui, first, S_TEXT_A)
 	second_id = alicorn.text_ex(&ui, second, S_TEXT_B)
@@ -1975,10 +1975,10 @@ test_layout_geometry :: proc(state: ^Test_State) {
 	alicorn.invalidate_root(&rt, "layout test")
 	ui, build := alicorn.begin_frame(&rt)
 	if build {
-		row_style := alicorn.Layout_Style{.Row, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, false}
+		row_style := alicorn.layout_style(.Row, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, false)
 		alicorn.container_begin_ex(&ui, .Root, S_ROOT, style=row_style)
-		fixed := alicorn.Layout_Style{.Column, 30, 20, 0, -1, 0, -1, 0, 0, 0, .Stretch, false}
-		grow := alicorn.Layout_Style{.Column, -1, 20, 0, -1, 0, -1, 1, 0, 0, .Stretch, false}
+		fixed := alicorn.layout_style(.Column, 30, 20, 0, -1, 0, -1, 0, 0, 0, .Stretch, false)
+		grow := alicorn.layout_style(.Column, -1, 20, 0, -1, 0, -1, 1, 0, 0, .Stretch, false)
 		fixed_id, _ := alicorn.button_ex(&ui, "fixed", S_LAYOUT_A, style=fixed)
 		grow_id := alicorn.text_ex(&ui, "grow", S_LAYOUT_B, style=grow)
 		alicorn.container_end(&ui)
@@ -3014,11 +3014,11 @@ test_retained_scroll_region :: proc(state: ^Test_State) {
 	expect(state, build, "scroll region test builds an initial description")
 	if build {
 		alicorn.container_begin(&ui, .Root, label="scroll-root")
-		region := alicorn.scroll_region_begin(&ui, key=alicorn.key_string("items"), viewport_height=60, content_height=400, line_height=20, style=alicorn.Layout_Style{.Column, -1, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, true})
+		region := alicorn.scroll_region_begin(&ui, key=alicorn.key_string("items"), viewport_height=60, content_height=400, line_height=20, style=alicorn.layout_style(.Column, -1, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, true))
 		metrics := alicorn.virtual_list_metrics(20, region.offset_y, region.viewport_height, 20)
-		alicorn.container_begin(&ui, .Virtual_List, label="items", style=alicorn.Layout_Style{.Column, -1, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, true}, scroll_offset_y=metrics.offset_y, layout_scroll_offset_y=metrics.leading_offset_y)
+		alicorn.container_begin(&ui, .Virtual_List, label="items", style=alicorn.layout_style(.Column, -1, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, true), scroll_offset_y=metrics.offset_y, layout_scroll_offset_y=metrics.leading_offset_y)
 		for i := metrics.first; i < metrics.last; i += 1 {
-			_ = alicorn.button(&ui, fmt.tprintf("item %d", i), key=alicorn.key_u64(u64(i)), style=alicorn.Layout_Style{.Row, -1, 20, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+			_ = alicorn.button(&ui, fmt.tprintf("item %d", i), key=alicorn.key_u64(u64(i)), style=alicorn.layout_style(.Row, -1, 20, 0, -1, 0, -1, 0, 0, 0, .Stretch, false))
 		}
 		alicorn.container_end(&ui)
 		alicorn.scroll_region_end(&ui)
@@ -3169,10 +3169,10 @@ render_both_scroll :: proc(rt: ^alicorn.Runtime) -> alicorn.Node_ID {
 	alicorn.invalidate_root(rt, "both-axis scroll test")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return 0 }
-	alicorn.container_begin(&ui, .Root, label="both-axis-scroll-root", style=alicorn.Layout_Style{.Column, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
-	region := alicorn.scroll_region_begin(&ui, key=alicorn.key_string("both-axis"), viewport_width=100, content_width=500, line_width=10, viewport_height=60, content_height=400, line_height=20, style=alicorn.Layout_Style{.Column, 100, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, true}, axes=.Both, axis_behavior=.Auto_Lock)
-	alicorn.container_begin(&ui, .Virtual_List, label="both-axis-content", style=alicorn.Layout_Style{.Column, 500, 400, 0, -1, 0, -1, 0, 0, 0, .Stretch, true}, layout_scroll_offset_y=region.offset_y, layout_scroll_offset_x=region.offset_x)
-	alicorn.text(&ui, "two dimensional content", style=alicorn.Layout_Style{.Row, 500, 400, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	alicorn.container_begin(&ui, .Root, label="both-axis-scroll-root", style=alicorn.layout_style(.Column, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, false))
+	region := alicorn.scroll_region_begin(&ui, key=alicorn.key_string("both-axis"), viewport_width=100, content_width=500, line_width=10, viewport_height=60, content_height=400, line_height=20, style=alicorn.layout_style(.Column, 100, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, true), axes=.Both, axis_behavior=.Auto_Lock)
+	alicorn.container_begin(&ui, .Virtual_List, label="both-axis-content", style=alicorn.layout_style(.Column, 500, 400, 0, -1, 0, -1, 0, 0, 0, .Stretch, true), layout_scroll_offset_y=region.offset_y, layout_scroll_offset_x=region.offset_x)
+	alicorn.text(&ui, "two dimensional content", style=alicorn.layout_style(.Row, 500, 400, 0, -1, 0, -1, 0, 0, 0, .Stretch, false))
 	alicorn.container_end(&ui)
 	alicorn.scroll_region_end(&ui)
 	alicorn.container_end(&ui)
@@ -3185,11 +3185,11 @@ render_scroll_pair :: proc(rt: ^alicorn.Runtime, viewport_height: f32) -> [2]ali
 	alicorn.invalidate_root(rt, "scroll pair test")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return ids }
-	alicorn.container_begin(&ui, .Root, label="scroll-pair-root", style=alicorn.Layout_Style{.Row, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
-	left := alicorn.scroll_region_begin(&ui, key=alicorn.key_string("left"), viewport_height=viewport_height, content_height=400, line_height=20, style=alicorn.Layout_Style{.Column, 100, viewport_height, 0, -1, 0, -1, 0, 0, 0, .Stretch, true})
+	alicorn.container_begin(&ui, .Root, label="scroll-pair-root", style=alicorn.layout_style(.Row, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, false))
+	left := alicorn.scroll_region_begin(&ui, key=alicorn.key_string("left"), viewport_height=viewport_height, content_height=400, line_height=20, style=alicorn.layout_style(.Column, 100, viewport_height, 0, -1, 0, -1, 0, 0, 0, .Stretch, true))
 	ids[0] = left.id
 	alicorn.scroll_region_end(&ui)
-	right := alicorn.scroll_region_begin(&ui, key=alicorn.key_string("right"), viewport_height=viewport_height, content_height=400, line_height=20, style=alicorn.Layout_Style{.Column, 100, viewport_height, 0, -1, 0, -1, 0, 0, 0, .Stretch, true})
+	right := alicorn.scroll_region_begin(&ui, key=alicorn.key_string("right"), viewport_height=viewport_height, content_height=400, line_height=20, style=alicorn.layout_style(.Column, 100, viewport_height, 0, -1, 0, -1, 0, 0, 0, .Stretch, true))
 	ids[1] = right.id
 	alicorn.scroll_region_end(&ui)
 	alicorn.container_end(&ui)
@@ -3201,7 +3201,7 @@ render_horizontal_scroll :: proc(rt: ^alicorn.Runtime, viewport_width: f32) -> a
 	alicorn.invalidate_root(rt, "horizontal scroll test")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return 0 }
-	alicorn.container_begin(&ui, .Root, label="horizontal-scroll-root", style=alicorn.Layout_Style{.Column, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	alicorn.container_begin(&ui, .Root, label="horizontal-scroll-root", style=alicorn.layout_style(.Column, -1, -1, 0, -1, 0, -1, 0, 0, 0, .Stretch, false))
 	region := alicorn.scroll_region_begin(
 		&ui,
 		key=alicorn.key_string("horizontal"),
@@ -3210,12 +3210,12 @@ render_horizontal_scroll :: proc(rt: ^alicorn.Runtime, viewport_width: f32) -> a
 		line_width=10,
 		viewport_height=60,
 		content_height=60,
-		style=alicorn.Layout_Style{.Column, viewport_width, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, true},
+		style=alicorn.layout_style(.Column, viewport_width, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, true),
 		axes=.Horizontal,
 	)
 	id := region.id
-	alicorn.container_begin(&ui, .Virtual_List, label="horizontal-content", style=alicorn.Layout_Style{.Column, 500, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, true}, layout_scroll_offset_x=region.offset_x)
-	alicorn.text(&ui, "a very long line that must remain wider than the viewport", style=alicorn.Layout_Style{.Row, 500, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	alicorn.container_begin(&ui, .Virtual_List, label="horizontal-content", style=alicorn.layout_style(.Column, 500, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, true), layout_scroll_offset_x=region.offset_x)
+	alicorn.text(&ui, "a very long line that must remain wider than the viewport", style=alicorn.layout_style(.Row, 500, 60, 0, -1, 0, -1, 0, 0, 0, .Stretch, false))
 	alicorn.container_end(&ui)
 	alicorn.scroll_region_end(&ui)
 	alicorn.container_end(&ui)
@@ -3906,7 +3906,8 @@ test_retained_split_drag_and_clamp :: proc(state: ^Test_State) {
 	nodes = render_split_test(&rt, .Horizontal, 40, 150, 200)
 	first = rt.nodes[nodes.first]
 	second = rt.nodes[nodes.second]
-	expect(state, first.bounds.w >= 0 && second.bounds.w >= 0 && first.bounds.w+second.bounds.w+rt.nodes[nodes.divider].bounds.w == 60, "tiny window keeps split geometry nonnegative and inside bounds")
+	expect(state, first.bounds.w == 150 && second.bounds.w == 200 && first.bounds.x == 0 && second.clip.w == 60,
+		"when pane minima exceed the viewport, Split preserves both hard minima and clips the overflow to the parent")
 }
 
 test_split_axis_nested_identity_and_cancel :: proc(state: ^Test_State) {

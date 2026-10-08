@@ -393,7 +393,7 @@ virtual_list_ex :: proc(ui: ^UI, item_count: int, scroll_y, viewport_height, row
 	metrics := virtual_list_metrics(item_count, scroll_y, viewport_height, row_height)
 	first, last = metrics.first, metrics.last
 	if first == last { return }
-	style := Layout_Style{.Column, -1, viewport_height, 0, -1, 0, -1, 0, 0, 0, .Stretch, true}
+	style := layout_style(.Column, width=-1, height=viewport_height, align=.Stretch, clip=true)
 	container_begin_ex(ui, .Virtual_List, source, label="virtual-list", style=style, scroll_offset_y=metrics.offset_y, layout_scroll_offset_y=metrics.leading_offset_y)
 	for i := first; i < last; i += 1 {
 		if key_scope_begin_ex(ui, item_key(i), source) {
@@ -409,7 +409,7 @@ virtual_list_simple :: proc(ui: ^UI, item_count: int, scroll_y, viewport_height,
 	metrics := virtual_list_metrics(item_count, scroll_y, viewport_height, row_height)
 	first, last = metrics.first, metrics.last
 	if first == last { return }
-	style := Layout_Style{.Column, -1, viewport_height, 0, -1, 0, -1, 0, 0, 0, .Stretch, true}
+	style := layout_style(.Column, width=-1, height=viewport_height, align=.Stretch, clip=true)
 	container_begin_simple(ui, .Virtual_List, label="virtual-list", style=style, loc=loc, scroll_offset_y=metrics.offset_y, layout_scroll_offset_y=metrics.leading_offset_y)
 	for i := first; i < last; i += 1 {
 		if key_scope_begin_key(ui, item_key(i), Source_Site{}, loc) {

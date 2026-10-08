@@ -57,15 +57,18 @@ asking the application to describe the whole UI again. Changed constraints
 can require layout even when the description itself is reused.
 
 The #25 axis allocator is a deterministic primitive over `Layout_Unit`
-participants and now owns Row/Column main-axis distribution. Fixed and natural
-children enter as measured extents; a grow child starts at its hard minimum and
-maps `grow` to a normalized expansion weight. Maxima saturate and release their
-share for redistribution; hard minima remain intact, and any unresolved
-overflow or unused surplus stays explicit. Text shaping remains in the measure
-stage and is never initiated by allocation. Cross-axis alignment and the
-specialized Split sizing path are unchanged. This is not content-sized
-container measurement (#5), Grid (#26), or a new compression policy: current
-Row/Column children do not compress below their ideal/minimum.
+participants and drives Row/Column main-axis allocation and Split panes. Fixed
+and natural children enter as measured extents; a grow child retains the legacy
+minimum-start behavior and maps `grow` to a normalized expansion weight.
+Explicit compression weights shrink measured ideals only toward hard minima.
+Maxima saturate and release their share for redistribution; hard minima remain
+intact, and unresolved overflow or unused surplus stays explicit. Row/Column
+main-axis justification uses exact fixed-point shares, while baseline and
+logical writing direction affect placement. Split keeps its absolute logical
+preferred position through resize and drag, constrained by pane bounds. Text
+shaping remains in the measure stage and allocation never initiates it. This is
+not recursive content-sized container measurement (#5), Grid (#26), or a
+general adaptive-layout policy.
 
 `Style_Environment` is the inherited dependency surface for a compact theme ID,
 density, normalized text scale, accent override, and backend-neutral

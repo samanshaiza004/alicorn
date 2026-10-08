@@ -30,11 +30,11 @@ render_native_ui :: proc(rt: ^alicorn.Runtime, value := NATIVE_TEXT_BASE) -> Nat
 		&ui,
 		.Root,
 		label="native-root",
-		style=alicorn.Layout_Style{.Column, -1, -1, 0, -1, 0, -1, 0, 12, 8, .Stretch, true},
+		style=alicorn.layout_style(.Column, -1, -1, 0, -1, 0, -1, 0, 12, 8, .Stretch, true),
 		color=alicorn.Color{0.04, 0.05, 0.08, 1},
 	)
-	field := alicorn.text_field(&ui, value, style=alicorn.Layout_Style{.Column, -1, 32, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
-	alicorn.button(&ui, "GPU frame", style=alicorn.Layout_Style{.Column, 180, 32, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+	field := alicorn.text_field(&ui, value, style=alicorn.layout_style(.Column, -1, 32, 0, -1, 0, -1, 0, 0, 0, .Stretch, false))
+	alicorn.button(&ui, "GPU frame", style=alicorn.layout_style(.Column, 180, 32, 0, -1, 0, -1, 0, 0, 0, .Stretch, false))
 	surface := alicorn.custom_surface(&ui, "animated-surface", alicorn.Rect{0, 0, 280, 120}, 560, 240, 2)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)

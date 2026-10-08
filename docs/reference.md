@@ -124,13 +124,29 @@ use UTF-8 byte offsets with grapheme-safe boundaries; the application still
 owns hit-testing, source mapping, viewport scrolling, and edits.
 
 The default layout direction is column. Use `.Row` for horizontal children.
-Fixed and natural children keep their measured main-axis size; positive `grow`
-starts a child at its minimum and shares surplus by weight, respecting its
-maximum. If fixed sizes and hard minima exceed the available extent, Alicorn
-preserves them and reports overflow internally; if all growers reach their
-maximum, leftover space remains after the last child. Current Row/Column layout
-does not compress children below their ideal/minimum. Cross-axis alignment is
-independent. Layout is in logical window coordinates.
+Fixed and natural children keep their measured main-axis size. Positive `grow`
+shares surplus by weight, respecting each child's maximum; an ordinary grower
+starts at its minimum for compatibility. Set `compress_weight` to opt a child
+into shrinking from its measured ideal toward its hard minimum when the main
+axis is short. Minima are never violated; if they do not fit, the children
+overflow and Alicorn records the unresolved extent. If all growers reach their
+maximum, unallocated space remains available to the selected `justify` policy.
+`justify` supports `.Start`, `.Center`, `.End`, `.Space_Between`, and
+`.Space_Around`, distributing only positive leftover space. `align=.Baseline`
+aligns first text baselines in Rows; non-text children use their bottom edge.
+`writing_direction` inherits by default and can be set to `.Left_To_Right` or
+`.Right_To_Left`; horizontal Rows resolve logical order accordingly, and
+cross-axis Start/End in Columns follows that direction. Layout is in logical
+window coordinates.
+
+Split panes use the same bounded axis allocator. Their initial position is an
+absolute logical-unit preference that remains stable as the Split resizes;
+pane min/max bounds constrain that preference, and dragging updates it. When
+pane minima exceed the available extent, Alicorn preserves them, clips their
+overflow to the Split, and reports it. Horizontal Split placement and drag
+direction follow inherited writing direction. These flow controls do not make
+arbitrary containers content-sized: the limited Column `FIT_CONTENT` behavior
+is described below, and Grid tracks are a separate facility.
 Style scopes do not implicitly create layout boundaries. A layout boundary keeps
 its parent-assigned bounds stable and lets changed descendants relayout locally;
 use it when the application can preserve that geometry contract. This is a

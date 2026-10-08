@@ -18,6 +18,8 @@ hash_style :: proc(style: Layout_Style) -> u64 {
 	h = hash_mix(h, u64(transmute(u32)style.gap))
 	h = hash_mix(h, u64(style.align))
 	h = hash_mix(h, u64(style.clip ? 1 : 0))
+	h = hash_mix(h, u64(style.compress_weight))
+	h = hash_mix(h, u64(style.options))
 	return h
 }
 

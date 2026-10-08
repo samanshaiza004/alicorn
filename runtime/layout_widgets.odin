@@ -10,7 +10,30 @@ Split_Handle :: struct {
 	position: f32,
 }
 
-DEFAULT_SPLIT_STYLE :: Layout_Style{.Column, -1, -1, 0, -1, 0, -1, 1, 0, 0, .Stretch, true}
+DEFAULT_SPLIT_STYLE :: Layout_Style{
+	direction=.Column,
+	width=-1,
+	height=-1,
+	min_width=0,
+	max_width=-1,
+	min_height=0,
+	max_height=-1,
+	grow=1,
+	align=.Stretch,
+	clip=true,
+}
+DEFAULT_SPLIT_PANE_STYLE :: Layout_Style{
+	direction=.Column,
+	width=-1,
+	height=-1,
+	min_width=0,
+	max_width=-1,
+	min_height=0,
+	max_height=-1,
+	grow=1,
+	align=.Stretch,
+	clip=true,
+}
 SPLIT_DIVIDER_MIN_THICKNESS :: 1.0
 SPLIT_DIVIDER_MAX_THICKNESS :: 4.0
 SPLIT_DIVIDER_MIN_HIT_SIZE :: 8.0
@@ -50,19 +73,23 @@ split_begin :: proc(
 	return Split_Handle{id, axis, position}
 }
 
-split_first_begin :: proc(ui: ^UI, split: Split_Handle) -> Node_ID {
+split_first_begin :: proc(ui: ^UI, split: Split_Handle, style := DEFAULT_SPLIT_PANE_STYLE) -> Node_ID {
+	pane_style := style
+	pane_style.clip = true
 	return container_begin_simple(
 		ui, .Container, label="split-first", key=key_string("first"),
-		style=layout_style(grow=1, clip=true),
+		style=pane_style,
 	)
 }
 
 split_first_end :: proc(ui: ^UI, split: Split_Handle) { container_end(ui) }
 
-split_second_begin :: proc(ui: ^UI, split: Split_Handle) -> Node_ID {
+split_second_begin :: proc(ui: ^UI, split: Split_Handle, style := DEFAULT_SPLIT_PANE_STYLE) -> Node_ID {
+	pane_style := style
+	pane_style.clip = true
 	return container_begin_simple(
 		ui, .Container, label="split-second", key=key_string("second"),
-		style=layout_style(grow=1, clip=true),
+		style=pane_style,
 	)
 }
 

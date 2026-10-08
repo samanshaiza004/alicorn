@@ -193,18 +193,47 @@ layout_grow_weight_units :: proc(value, maximum: f32) -> u32 {
 	return u32(units)
 }
 
-layout_main_measured_units :: proc(rt: ^Runtime, node: ^Node, direction: Layout_Direction) -> Layout_Unit {
-	if node_has_text_product(node.kind) {
-		if state, ok := rt.measure_states[node.id]; ok && state.cache_key.valid {
-			measured := layout_unit_to_f32(state.result.size.width if direction == .Row else state.result.size.height)
-			return layout_unit_extent(resolved_main_size(node, direction, measured))
-		}
+layout_main_style_bounds :: proc(rt: ^Runtime, node: ^Node, direction: Layout_Direction) -> (minimum, maximum: Layout_Unit, max_unbounded: bool) {
+	minimum_value := main_axis_min(node.style, direction)
+	if math.is_nan(minimum_value) || math.is_inf(minimum_value) || minimum_value < 0 {
+		layout_trace_allocator_input_error(rt, node, "minimum must be finite and nonnegative; using zero")
+		minimum_value = 0
 	}
-	// Containers and other non-text nodes retain their existing fixed/natural
-	// size policy. This fallback reads retained inputs only; allocation never
-	// shapes text or mutates measurement state.
-	size := resolved_main_size(node, direction, intrinsic_main(rt, node, direction))
-	return layout_unit_extent(size)
+	minimum = layout_unit_extent(minimum_value)
+	maximum_value := main_axis_max(node.style, direction)
+	if maximum_value < 0 && !math.is_nan(maximum_value) && !math.is_inf(maximum_value) {
+		max_unbounded = true
+		maximum = minimum
+		return
+	}
+	if math.is_nan(maximum_value) || math.is_inf(maximum_value) {
+		layout_trace_allocator_input_error(rt, node, "maximum must be finite or a negative unbounded sentinel; using minimum")
+		maximum = minimum
+		return
+	}
+	maximum = layout_unit_maximum(maximum_value)
+	if maximum < minimum {
+		layout_trace_allocator_input_error(rt, node, "minimum exceeds maximum; canonicalizing maximum to minimum")
+		maximum = minimum
+	}
+	return
+}
+
+layout_main_measured_units :: proc(rt: ^Runtime, node: ^Node, direction: Layout_Direction) -> Layout_Unit {
+	// Allocation consumes the retained measure product when available. This
+	// fallback reads existing natural-size policy only; it never shapes text.
+	size := intrinsic_main(rt, node, direction)
+	minimum, maximum, unbounded := layout_main_style_bounds(rt, node, direction)
+	measured := layout_unit_extent(size)
+	// Explicit extents are hard authored sizes, so quantize them inward. The
+	// ceiling used for measured content is conservative for text, but can make
+	// a fixed child overrun its parent by one Layout_Unit.
+	if direction == .Row && node.style.width >= 0 || direction == .Column && node.style.height >= 0 {
+		measured = layout_unit_maximum(size)
+	}
+	if measured < minimum { measured = minimum }
+	if !unbounded && measured > maximum { measured = maximum }
+	return measured
 }
 
 layout_trace_allocator_input_error :: proc(rt: ^Runtime, node: ^Node, message: string) {
@@ -226,7 +255,7 @@ resolve_main_sizes :: proc(
 	rt: ^Runtime,
 	children: []Node_ID,
 	direction: Layout_Direction,
-	available: f32,
+	available: Layout_Unit,
 	sizes: []f32,
 	) -> Axis_Allocation_Result {
 	items := make([]Elastic_Item, len(children), allocator=rt.scratch_allocator)
@@ -239,45 +268,46 @@ resolve_main_sizes :: proc(
 		grow := child.style.grow
 		if layout_grow_weight_is_finite_positive(grow) {
 			if grow > maximum_grow { maximum_grow = grow }
-		} else if math.is_nan(grow) || math.is_inf(grow) {
-			layout_trace_allocator_input_error(rt, child, "grow weight must be finite")
+		} else if grow < 0 || math.is_nan(grow) || math.is_inf(grow) {
+			layout_trace_allocator_input_error(rt, child, "expand weight must be finite and nonnegative")
 		}
 	}
 
 	for id, index in children {
 		child := rt.nodes[id]
 		grow := child.style.grow
-		if layout_grow_weight_is_finite_positive(grow) {
-			minimum_value := main_axis_min(child.style, direction)
-			maximum_value := main_axis_max(child.style, direction)
-			minimum := layout_unit_extent(maxf(minimum_value, 0))
-			max_unbounded := maximum_value < 0
-			maximum := minimum
-			if math.is_nan(maximum_value) || math.is_inf(maximum_value) {
-				layout_trace_allocator_input_error(rt, child, "maximum must be finite or negative for unbounded")
-				max_unbounded = true
-			} else if !max_unbounded {
-				maximum = layout_unit_maximum(maxf(maximum_value, 0))
-			}
-			if math.is_nan(minimum_value) || math.is_inf(minimum_value) || minimum_value < 0 {
-				layout_trace_allocator_input_error(rt, child, "minimum must be finite and nonnegative")
-			}
-			items[index] = Elastic_Item{
-				minimum=minimum,
-				ideal=minimum,
-				maximum=maximum,
-				max_unbounded=max_unbounded,
-				expand_weight=layout_grow_weight_units(grow, maximum_grow),
-			}
-		} else {
-			fixed := layout_main_measured_units(rt, child, direction)
-			items[index] = Elastic_Item{minimum=fixed, ideal=fixed, maximum=fixed}
+		if !layout_grow_weight_is_finite_positive(grow) { grow = 0 }
+		minimum, maximum, max_unbounded := layout_main_style_bounds(rt, child, direction)
+		ideal := layout_main_measured_units(rt, child, direction)
+		if ideal < minimum { ideal = minimum }
+		if !max_unbounded && ideal > maximum { ideal = maximum }
+		expand_weight := layout_grow_weight_units(grow, maximum_grow)
+		compress_weight := u32(child.style.compress_weight)
+		// Compatibility: ordinary grow starts at the hard minimum exactly as
+		// before. Supplying a compression weight opts into a measured ideal so
+		// the allocator can shrink toward the minimum under a deficit.
+		if expand_weight > 0 && compress_weight == 0 { ideal = minimum }
+		item_maximum := maximum
+		item_unbounded := max_unbounded
+		if expand_weight == 0 && compress_weight == 0 {
+			// Fixed and natural children remain rigid unless compression is
+			// explicitly requested.
+			item_maximum = ideal
+			item_unbounded = false
+		}
+		items[index] = Elastic_Item{
+			minimum=minimum,
+			ideal=ideal,
+			maximum=item_maximum,
+			max_unbounded=item_unbounded,
+			expand_weight=expand_weight,
+			compress_weight=compress_weight,
 		}
 	}
 
 	axis := "row"
 	if direction == .Column { axis = "column" }
-	result := layout_allocate_axis(layout_unit_maximum(maxf(available, 0)), items, allocated)
+	result := layout_allocate_axis(available, items, allocated)
 	for id, index in children {
 		child := rt.nodes[id]
 		sizes[index] = layout_unit_to_f32(allocated[index])
@@ -285,19 +315,33 @@ resolve_main_sizes :: proc(
 		if invalid {
 			layout_trace_allocator_input_error(rt, child, "minimum exceeds maximum or a bound is outside the supported range; canonicalized safely")
 		}
-		if items[index].expand_weight > 0 && allocated[index] != canonical.ideal {
+		if allocated[index] < canonical.ideal {
 			record_trace(rt, .Layout, child.id, fmt.tprintf(
-				"%s allocation: ideal %.3f, allocated %.3f, expand weight %d",
+				"%s compressed: ideal %.3f, allocated %.3f, compress weight %d",
+				axis,
+				layout_unit_to_f32(canonical.ideal),
+				sizes[index],
+				items[index].compress_weight,
+			))
+			if allocated[index] == canonical.minimum {
+				record_trace(rt, .Layout, child.id, fmt.tprintf("%s compression reached hard minimum %.3f", axis, sizes[index]))
+			}
+		} else if allocated[index] > canonical.ideal {
+			record_trace(rt, .Layout, child.id, fmt.tprintf(
+				"%s expanded: ideal %.3f, allocated %.3f, expand weight %d",
 				axis,
 				layout_unit_to_f32(canonical.ideal),
 				sizes[index],
 				items[index].expand_weight,
 			))
+			if !canonical.max_unbounded && allocated[index] == canonical.maximum {
+				record_trace(rt, .Layout, child.id, fmt.tprintf("%s expansion reached hard maximum %.3f", axis, sizes[index]))
+			}
 		}
 	}
 	if result.overflow > 0 {
 		record_trace(rt, .Layout, children[0] if len(children) > 0 else 0, fmt.tprintf(
-			"%s allocation overflow: hard minima exceed available by %.3f",
+			"%s allocation overflow: hard minima exceed available by %.3f; minima preserved",
 			axis,
 			layout_unit_to_f32(result.overflow),
 		))
@@ -329,29 +373,211 @@ layout_text_constraint :: proc(parent: ^Node, child: ^Node, cross_size: f32) -> 
 	return constraint
 }
 
-split_clamp_position :: proc(total, thickness, requested, min_first, min_second: f32) -> f32 {
-	available := maxf(total-maxf(thickness, 1), 0)
-	minimum_sum := maxf(min_first, 0) + maxf(min_second, 0)
-	if available >= minimum_sum {
-		return clampf(requested, maxf(min_first, 0), available-maxf(min_second, 0))
+layout_effective_writing_direction :: proc(rt: ^Runtime, node: ^Node) -> Writing_Direction {
+	current := node
+	for current != nil {
+		direction := layout_options_writing_direction(current.style.options)
+		if direction == .Left_To_Right || direction == .Right_To_Left { return direction }
+		parent, ok := rt.nodes[current.parent]
+		if !ok || current.parent == 0 { break }
+		current = parent
 	}
-	if minimum_sum > 0 { return available * maxf(min_first, 0) / minimum_sum }
-	return clampf(requested, 0, available)
+	return .Left_To_Right
+}
+
+layout_child_cross_size :: proc(rt: ^Runtime, parent, child: ^Node, cross_size: f32) -> f32 {
+	if parent.style.direction == .Row {
+		cross := child.style.height if child.style.height >= 0 else cross_size
+		if layout_node_has_content_height(child) {
+			if state, ok := rt.measure_states[child.id]; ok && state.cache_key.valid {
+				cross = layout_unit_to_f32(state.result.size.height)
+			}
+		}
+		return clampf(cross, child.style.min_height, child.style.max_height)
+	}
+	cross := child.style.width if child.style.width >= 0 else cross_size
+	return clampf(cross, child.style.min_width, child.style.max_width)
+}
+
+layout_child_baseline :: proc(rt: ^Runtime, child: ^Node, cross_size: f32) -> f32 {
+	if state, ok := rt.measure_states[child.id]; ok && state.cache_key.valid && state.result.baseline_valid {
+		return layout_unit_to_f32(state.result.baseline)
+	}
+	// A non-text visual such as an icon aligns its bottom edge to the text
+	// baseline, which is the useful desktop convention for mixed toolbars.
+	return cross_size
+}
+
+layout_distribution_leading :: proc(free: Layout_Unit, count: int, distribution: Main_Axis_Distribution) -> Layout_Unit {
+	units := i64(free)
+	if units <= 0 || count <= 0 { return 0 }
+	#partial switch distribution {
+	case .Center: return Layout_Unit(units/2)
+	case .End: return free
+	case .Space_Around:
+		first_slot := units/i64(count)
+		if units%i64(count) > 0 { first_slot += 1 }
+		return Layout_Unit(first_slot/2)
+	}
+	return 0
+}
+
+layout_distribution_gap :: proc(free: Layout_Unit, count, after_index: int, distribution: Main_Axis_Distribution) -> Layout_Unit {
+	units := i64(free)
+	if units <= 0 || after_index < 0 || after_index >= count-1 { return 0 }
+	#partial switch distribution {
+	case .Space_Between:
+		divisor := i64(count-1)
+		gap := units/divisor
+		if i64(after_index) < units%divisor { gap += 1 }
+		return Layout_Unit(gap)
+	case .Space_Around:
+		divisor := i64(count)
+		base, remainder := units/divisor, units%divisor
+		before_slot := base
+		after_slot := base
+		if i64(after_index) < remainder { before_slot += 1 }
+		if i64(after_index+1) < remainder { after_slot += 1 }
+		return Layout_Unit((before_slot+1)/2 + after_slot/2)
+	}
+	return 0
+}
+
+layout_split_pane_bounds :: proc(
+	rt: ^Runtime,
+	owner, pane: ^Node,
+	explicit_minimum: f32,
+	direction: Layout_Direction,
+) -> (minimum, maximum: f32, max_unbounded: bool) {
+	minimum = explicit_minimum
+	style_minimum := main_axis_min(pane.style, direction)
+	if math.is_nan(minimum) || math.is_inf(minimum) || minimum < 0 {
+		layout_trace_allocator_input_error(rt, owner, "Split minimum must be finite and nonnegative; using zero")
+		minimum = 0
+	}
+	if math.is_nan(style_minimum) || math.is_inf(style_minimum) || style_minimum < 0 {
+		layout_trace_allocator_input_error(rt, pane, "Split pane minimum must be finite and nonnegative; using zero")
+		style_minimum = 0
+	}
+	minimum = maxf(minimum, style_minimum)
+	maximum = main_axis_max(pane.style, direction)
+	if maximum < 0 && !math.is_nan(maximum) && !math.is_inf(maximum) {
+		max_unbounded = true
+		return
+	}
+	if math.is_nan(maximum) || math.is_inf(maximum) {
+		layout_trace_allocator_input_error(rt, pane, "Split pane maximum must be finite or a negative unbounded sentinel; using minimum")
+		maximum = minimum
+		return
+	}
+	if maximum < minimum {
+		layout_trace_allocator_input_error(rt, pane, "Split pane minimum exceeds maximum; canonicalizing maximum to minimum")
+		maximum = minimum
+	}
+	return
+}
+
+layout_split_item :: proc(
+	rt: ^Runtime,
+	owner, pane: ^Node,
+	explicit_minimum, ideal: f32,
+	direction: Layout_Direction,
+	expand_weight, compress_weight: u32,
+) -> Elastic_Item {
+	minimum, maximum, max_unbounded := layout_split_pane_bounds(rt, owner, pane, explicit_minimum, direction)
+	return Elastic_Item{
+		minimum=layout_unit_extent(minimum),
+		ideal=layout_unit_extent(ideal),
+		maximum=layout_unit_maximum(maximum),
+		max_unbounded=max_unbounded,
+		expand_weight=expand_weight,
+		compress_weight=compress_weight,
+	}
+}
+
+layout_split_allocate_pair :: proc(
+	available: Layout_Unit,
+	requested_first: Layout_Unit,
+	first_item, second_item: Elastic_Item,
+) -> (first, second: Layout_Unit, result: Axis_Allocation_Result) {
+	items := [2]Elastic_Item{first_item, second_item}
+	first_canonical, _ := layout_allocator_canonical_item(items[0])
+	second_canonical, _ := layout_allocator_canonical_item(items[1])
+	available_i := max(i64(available), 0)
+	minimum_total := i64(first_canonical.minimum)+i64(second_canonical.minimum)
+	if minimum_total <= available_i {
+		lower := i64(first_canonical.minimum)
+		upper := available_i-i64(second_canonical.minimum)
+		preferred := i64(requested_first)
+		if preferred < lower { preferred = lower }
+		if preferred > upper { preferred = upper }
+		items[0].ideal = Layout_Unit(preferred)
+		items[1].ideal = Layout_Unit(available_i-preferred)
+	}
+	output: [2]Layout_Unit
+	result = layout_allocate_axis(available, items[:], output[:])
+	return output[0], output[1], result
+}
+
+split_clamp_position :: proc(
+	total, thickness, requested, min_first, min_second: f32,
+	max_first: f32 = -1,
+	max_second: f32 = -1,
+) -> f32 {
+	available := layout_unit_maximum(maxf(total-maxf(thickness, 1), 0))
+	item := proc(minimum, maximum, ideal: f32) -> Elastic_Item {
+		min_units := layout_unit_extent(maxf(minimum, 0))
+		unbounded := maximum < 0 && !math.is_nan(maximum) && !math.is_inf(maximum)
+		max_units := min_units
+		if !unbounded && !math.is_nan(maximum) && !math.is_inf(maximum) { max_units = layout_unit_maximum(maximum) }
+		return Elastic_Item{minimum=min_units, ideal=layout_unit_extent(maxf(ideal, 0)), maximum=max_units, max_unbounded=unbounded, expand_weight=1, compress_weight=1}
+	}
+	first_item := item(min_first, max_first, requested)
+	second_item := item(min_second, max_second, maxf(layout_unit_to_f32(available)-requested, 0))
+	first, _, _ := layout_split_allocate_pair(available, layout_unit_extent(requested), first_item, second_item)
+	return layout_unit_to_f32(first)
 }
 
 layout_split_children :: proc(rt: ^Runtime, parent: ^Node, inner: Rect, children: []Node_ID) {
 	if len(children) != 3 { return }
 	axis := parent.split_axis
 	total := inner.w if axis == .Horizontal else inner.h
-	thickness := clampf(rt.nodes[children[1]].split_handle_size, 1, total)
+	total = maxf(total, 0)
+	thickness := minf(maxf(rt.nodes[children[1]].split_handle_size, 1), total)
 	available := maxf(total-thickness, 0)
-	// When the window is smaller than both minima, preserve their ratio and
-	// keep all geometry nonnegative. Normal-size layouts enforce both mins.
-	first := split_clamp_position(total, thickness, parent.split_position, parent.split_min_first, parent.split_min_second)
+	available_units := layout_unit_maximum(available)
+	// Split keeps its established absolute logical-unit preference on resize;
+	// the shared allocator applies pane bounds and fills the second pane.
+	requested_first := parent.split_position
+	direction := Layout_Direction.Row if axis == .Horizontal else .Column
+	first_pane, second_pane := rt.nodes[children[0]], rt.nodes[children[2]]
+	maximum_grow := maxf(first_pane.style.grow, second_pane.style.grow)
+	if !layout_grow_weight_is_finite_positive(maximum_grow) { maximum_grow = 1 }
+	first_expand := layout_grow_weight_units(first_pane.style.grow, maximum_grow)
+	second_expand := layout_grow_weight_units(second_pane.style.grow, maximum_grow)
+	if first_expand == 0 { first_expand = 1 }
+	if second_expand == 0 { second_expand = 1 }
+	first_compress := u32(first_pane.style.compress_weight)
+	second_compress := u32(second_pane.style.compress_weight)
+	if first_compress == 0 { first_compress = 1 }
+	if second_compress == 0 { second_compress = 1 }
+	first_item := layout_split_item(rt, parent, first_pane, parent.split_min_first, requested_first, direction, first_expand, first_compress)
+	second_item := layout_split_item(rt, parent, second_pane, parent.split_min_second, available-requested_first, direction, second_expand, second_compress)
+	first_units, second_units, allocation := layout_split_allocate_pair(available_units, layout_unit_extent(requested_first), first_item, second_item)
+	first, second := layout_unit_to_f32(first_units), layout_unit_to_f32(second_units)
 	parent.split_position = first
-	second := maxf(available-first, 0)
+	if allocation.invalid_items > 0 {
+		record_trace(rt, .Layout, parent.id, "Split allocation canonicalized invalid pane bounds")
+	}
+	if allocation.overflow > 0 {
+		record_trace(rt, .Layout, parent.id, fmt.tprintf("Split allocation overflow: pane hard minima exceed available by %.3f; minima preserved", layout_unit_to_f32(allocation.overflow)))
+	}
+	if allocation.unused > 0 {
+		record_trace(rt, .Layout, parent.id, fmt.tprintf("Split allocation leaves %.3f unused after pane maxima", layout_unit_to_f32(allocation.unused)))
+	}
 	hit_size := minf(total, maxf(rt.nodes[children[1]].split_hit_size, thickness))
 	hit_offset := clampf(first+(thickness-hit_size)*0.5, 0, total-hit_size)
+	rtl := axis == .Horizontal && layout_effective_writing_direction(rt, parent) == .Right_To_Left
 	for id, index in children {
 		child := rt.nodes[id]
 		layout_note_node_visit(rt, child)
@@ -367,11 +593,19 @@ layout_split_children :: proc(rt: ^Runtime, parent: ^Node, inner: Rect, children
 			main_size = second
 		}
 		if axis == .Horizontal {
-			child.bounds = Rect{inner.x+main_offset, inner.y, main_size, inner.h}
+			physical_offset := main_offset
+			if rtl { physical_offset = total-main_offset-main_size }
+			child.bounds = Rect{inner.x+physical_offset, inner.y, main_size, inner.h}
 			child.hit_bounds = child.bounds
 			if index == 1 {
-				child.bounds = Rect{inner.x+first, inner.y, thickness, inner.h}
-				child.hit_bounds = Rect{inner.x+hit_offset, inner.y, hit_size, inner.h}
+				handle_offset := first
+				hit_physical_offset := hit_offset
+				if rtl {
+					handle_offset = total-first-thickness
+					hit_physical_offset = total-hit_offset-hit_size
+				}
+				child.bounds = Rect{inner.x+handle_offset, inner.y, thickness, inner.h}
+				child.hit_bounds = Rect{inner.x+hit_physical_offset, inner.y, hit_size, inner.h}
 			}
 		} else {
 			child.bounds = Rect{inner.x, inner.y+main_offset, inner.w, main_size}
@@ -471,16 +705,27 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	}
 	main_size := parent.style.direction == .Row ? inner.w : inner.h
 	cross_size := parent.style.direction == .Row ? inner.h : inner.w
-	gap_total := parent.style.gap * f32(count-1)
-	available := maxf(main_size-gap_total, 0)
+	gap := parent.style.gap
+	if math.is_nan(gap) || math.is_inf(gap) || gap < 0 {
+		record_trace(rt, .Layout, parent.id, "invalid gap; using zero")
+		gap = 0
+	}
+	gap_units := layout_unit_extent(gap)
+	gap = layout_unit_to_f32(gap_units)
+	// Parent capacity is a constraint, so quantize it inward. Rounding a
+	// fractional available edge outward can place the final child a fraction
+	// beyond its parent's content bounds.
+	main_units := i64(layout_unit_maximum(maxf(main_size, 0)))
+	gap_total_units := u128(i64(gap_units))*u128(count-1)
+	available_units: Layout_Unit = 0
+	if gap_total_units < u128(main_units) { available_units = Layout_Unit(main_units-i64(gap_total_units)) }
+	available := layout_unit_to_f32(available_units)
 	// Leaf measurement is retained against the actual constraints this parent
 	// supplies. Containers keep their existing external sizing policies; this
 	// pass does not recursively derive preferred container sizes.
-	has_grow := false
 	for id in children {
 		child := rt.nodes[id]
 		layout_note_node_visit(rt, child)
-		if child.style.grow > 0 || math.is_nan(child.style.grow) || math.is_inf(child.style.grow) { has_grow = true }
 		if parent.style.direction == .Column && layout_node_has_content_height(child) {
 			parent_constraints := Layout_Constraints{
 				// layout_content_child_constraints subtracts the parent's padding,
@@ -498,37 +743,15 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 			_ = layout_measure_node(rt, child, layout_text_measure_constraints(parent, child, cross_size))
 		}
 	}
-	main_sizes: []f32
-	if has_grow {
-		main_sizes = make([]f32, count, allocator=rt.scratch_allocator)
-		resolve_main_sizes(rt, children, parent.style.direction, available, main_sizes)
-	}
-	// A fixed-height virtual list realizes only the visible rows. Its first
-	// realized row may begin above the viewport when the scroll position is
-	// between row boundaries; the retained clip on the list protects the
-	// surrounding UI while preserving continuous motion.
-	main_offset: f32 = 0
-	cross_offset: f32 = 0
-	if parent.kind == .Virtual_List {
-		if parent.style.direction == .Column {
-			main_offset = -parent.layout_scroll_offset_y
-			cross_offset = -parent.layout_scroll_offset_x
-		} else {
-			main_offset = -parent.layout_scroll_offset_x
-			cross_offset = -parent.layout_scroll_offset_y
-		}
-	}
+	main_sizes := make([]f32, count, allocator=rt.scratch_allocator)
+	resolve_main_sizes(rt, children, parent.style.direction, available_units, main_sizes)
+	// Width-sensitive row measurement waits until elastic allocation supplies
+	// the real main-axis constraint. Measurement still finishes before any child
+	// geometry is placed.
 	for id, index in children {
 		child := rt.nodes[id]
-		layout_note_node_visit(rt, child)
-		old_bounds := child.bounds
-		main := resolved_main_size(child, parent.style.direction, intrinsic_main(rt, child, parent.style.direction))
-		if has_grow { main = main_sizes[index] }
+		main := main_sizes[index]
 		if parent.style.direction == .Row && layout_node_has_content_height(child) {
-			// A fit-height child in a Row must be measured at the width the Row
-			// actually assigned. Measuring it in the earlier prepass would either
-			// invent a width or use the whole Row width and can produce the wrong
-			// wrapped/content height.
 			parent_constraints := Layout_Constraints{
 				width=layout_axis_constraint_normalize(main, main),
 				height=layout_axis_constraint_normalize(0, cross_size),
@@ -536,27 +759,70 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 			constraints := layout_content_child_constraints(parent, child, parent_constraints, assigned_width=main)
 			_ = layout_measure_node(rt, child, constraints)
 		}
-		if layout_grow_weight_is_finite_positive(child.style.grow) && node_has_text_product(child.kind) {
+		if (layout_grow_weight_is_finite_positive(child.style.grow) || child.style.compress_weight > 0) && node_has_text_product(child.kind) {
 			_ = layout_measure_node(rt, child, layout_grow_measure_constraints(parent, child, main, cross_size))
 		}
+	}
+
+	used_units: i64 = 0
+	for id, index in children {
+		main := main_sizes[index]
+		used_units += i64(layout_unit_extent(main))
+	}
+	free_units := i64(available_units)-used_units
+	if free_units < 0 { free_units = 0 }
+	distribution := layout_options_distribution(parent.style.options)
+	main_leading := layout_distribution_leading(Layout_Unit(free_units), count, distribution)
+	main_offset_units := main_leading
+	// A fixed-height virtual list realizes only the visible rows. Its first
+	// realized row may begin above the viewport when the scroll position is
+	// between row boundaries; the retained clip protects surrounding UI.
+	main_scroll_offset: f32 = 0
+	cross_offset: f32 = 0
+	if parent.kind == .Virtual_List {
+		if parent.style.direction == .Column {
+			main_scroll_offset = -parent.layout_scroll_offset_y
+			cross_offset = -parent.layout_scroll_offset_x
+		} else {
+			main_scroll_offset = -parent.layout_scroll_offset_x
+			cross_offset = -parent.layout_scroll_offset_y
+		}
+	}
+	main_offset_units += layout_unit_position(main_scroll_offset)
+	row_rtl := parent.style.direction == .Row && layout_effective_writing_direction(rt, parent) == .Right_To_Left
+	baseline_target := f32(0)
+	if parent.style.direction == .Row && parent.style.align == .Baseline {
+		for id in children {
+			child := rt.nodes[id]
+			cross := layout_child_cross_size(rt, parent, child, cross_size)
+			baseline := layout_child_baseline(rt, child, cross)
+			if baseline > baseline_target { baseline_target = baseline }
+		}
+	}
+	for id, index in children {
+		child := rt.nodes[id]
+		layout_note_node_visit(rt, child)
+		old_bounds := child.bounds
+		main := main_sizes[index]
+		main_units := layout_unit_extent(main)
+		main_offset := layout_unit_to_f32(main_offset_units)
 		if parent.style.direction == .Row {
-			cross := child.style.height >= 0 ? child.style.height : cross_size
-			if layout_node_has_content_height(child) {
-				if state, ok := rt.measure_states[child.id]; ok && state.cache_key.valid {
-					cross = layout_unit_to_f32(state.result.size.height)
-				}
-			}
-			cross = clampf(cross, child.style.min_height, child.style.max_height)
+			cross := layout_child_cross_size(rt, parent, child, cross_size)
 			cross_pos := inner.y + cross_offset
 			if parent.style.align == .Center { cross_pos += (cross_size-cross)/2 }
 			if parent.style.align == .End { cross_pos += cross_size-cross }
-			child.bounds = Rect{inner.x+main_offset, cross_pos, clampf(main, child.style.min_width, child.style.max_width), cross}
+			if parent.style.align == .Baseline {
+				cross_pos = inner.y + cross_offset + baseline_target-layout_child_baseline(rt, child, cross)
+			}
+			main_pos := inner.x+main_offset
+			if row_rtl { main_pos = inner.x+inner.w-main_offset-main }
+			child.bounds = Rect{main_pos, cross_pos, clampf(main, child.style.min_width, child.style.max_width), cross}
 		} else {
-			cross := child.style.width >= 0 ? child.style.width : cross_size
-			cross = clampf(cross, child.style.min_width, child.style.max_width)
+			cross := layout_child_cross_size(rt, parent, child, cross_size)
 			cross_pos := inner.x + cross_offset
+			cross_is_reversed := layout_effective_writing_direction(rt, parent) == .Right_To_Left
 			if parent.style.align == .Center { cross_pos += (cross_size-cross)/2 }
-			if parent.style.align == .End { cross_pos += cross_size-cross }
+			if parent.style.align == .End && !cross_is_reversed || parent.style.align == .Start && cross_is_reversed { cross_pos += cross_size-cross }
 			child.bounds = Rect{cross_pos, inner.y+main_offset, cross, clampf(main, child.style.min_height, child.style.max_height)}
 		}
 		old_clip := child.clip
@@ -595,9 +861,9 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 			layout_children(rt, id)
 		}
 		dirty_set(&child.dirty, .Layout, false)
-		main_offset += main + parent.style.gap
+		main_offset_units += main_units + gap_units + layout_distribution_gap(Layout_Unit(free_units), count, index, distribution)
 	}
-	if has_grow { delete(main_sizes, rt.scratch_allocator) }
+	delete(main_sizes, rt.scratch_allocator)
 }
 
 layout_tree :: proc(rt: ^Runtime) {

@@ -20,12 +20,12 @@ render :: proc(rt: ^alicorn.Runtime, app: ^Crucible) {
 	alicorn.invalidate_root(rt, "crucible state update")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return }
-	alicorn.container_begin(&ui, .Root, label="Alicorn Crucible", style=alicorn.Layout_Style{.Column, -1, -1, 0, -1, 0, -1, 0, 8, 4, .Stretch, true})
+	alicorn.container_begin(&ui, .Root, label="Alicorn Crucible", style=alicorn.layout_style(.Column, -1, -1, 0, -1, 0, -1, 0, 8, 4, .Stretch, true))
 	alicorn.text(&ui, "8 tracks / keyed state / deterministic LOD")
 	for track in app.tracks {
 		if alicorn.key_scope_begin(&ui, alicorn.key_u64(u64(track.id))) {
 			if !app.compact {
-				alicorn.button(&ui, track.name, state=alicorn.Button_State{selected=track.muted}, style=alicorn.Layout_Style{.Column, -1, 28, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+				alicorn.button(&ui, track.name, state=alicorn.Button_State{selected=track.muted}, style=alicorn.layout_style(.Column, -1, 28, 0, -1, 0, -1, 0, 0, 0, .Stretch, false))
 				region_id, reused := alicorn.region_begin(&ui, "meter", track.revision)
 				if region_id != 0 && !reused {
 					start := len(rt.pending)

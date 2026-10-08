@@ -12,7 +12,7 @@ render :: proc(rt: ^alicorn.Runtime, keys: []string) -> map[string]alicorn.Node_
 	alicorn.container_begin(&ui, .Root, label="torture")
 	for key in keys {
 		if alicorn.key_scope_begin(&ui, alicorn.key_string(key)) {
-			id := alicorn.text(&ui, fmt.aprintf("stateful %s", key), style=alicorn.Layout_Style{.Column, -1, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false})
+			id := alicorn.text(&ui, fmt.aprintf("stateful %s", key), style=alicorn.layout_style(.Column, -1, 24, 0, -1, 0, -1, 0, 0, 0, .Stretch, false))
 			ids[key] = id
 			alicorn.key_scope_end(&ui)
 		}

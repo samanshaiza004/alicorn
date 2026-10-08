@@ -244,8 +244,21 @@ update_split_drag :: proc(rt: ^Runtime, handle: ^Node, x, y: f32) {
 	total -= 2 * owner.style.padding
 	if total < 0 { total = 0 }
 	coordinate := split_drag_coordinate(handle, x, y)
-	requested := owner.split_drag_start_position + coordinate-owner.split_drag_start_coordinate
-	next := split_clamp_position(total, handle.split_handle_size, requested, owner.split_min_first, owner.split_min_second)
+	delta := coordinate-owner.split_drag_start_coordinate
+	if owner.split_axis == .Horizontal && layout_effective_writing_direction(rt, owner) == .Right_To_Left {
+		delta = -delta
+	}
+	requested := owner.split_drag_start_position + delta
+	direction := Layout_Direction.Row if owner.split_axis == .Horizontal else .Column
+	min_first, min_second := owner.split_min_first, owner.split_min_second
+	max_first, max_second: f32 = -1, -1
+	if len(owner.children) == 3 {
+		first_pane, first_ok := rt.nodes[owner.children[0]]
+		second_pane, second_ok := rt.nodes[owner.children[2]]
+		if first_ok { min_first, max_first, _ = layout_split_pane_bounds(rt, owner, first_pane, min_first, direction) }
+		if second_ok { min_second, max_second, _ = layout_split_pane_bounds(rt, owner, second_pane, min_second, direction) }
+	}
+	next := split_clamp_position(total, handle.split_handle_size, requested, min_first, min_second, max_first, max_second)
 	if next == owner.split_position { return }
 	owner.split_position = next
 	mark_layout_ancestors(rt, owner.id)

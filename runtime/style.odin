@@ -709,6 +709,9 @@ layout_style :: proc(
 	gap: f32 = 0,
 	align: Align = .Stretch,
 	clip: bool = false,
+	compress_weight: u8 = 0,
+	justify: Main_Axis_Distribution = .Start,
+	writing_direction: Writing_Direction = .Inherit,
 ) -> Layout_Style {
 	return Layout_Style{
 		direction = direction,
@@ -723,6 +726,8 @@ layout_style :: proc(
 		gap = gap,
 		align = align,
 		clip = clip,
+		compress_weight = compress_weight,
+		options = layout_options_make(justify, writing_direction),
 	}
 }
 

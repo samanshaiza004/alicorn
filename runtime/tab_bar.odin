@@ -33,7 +33,17 @@ DEFAULT_TAB_BAR_OPTIONS :: Tab_Bar_Options{
 	close_policy=.Auto,
 }
 
-DEFAULT_TAB_BAR_STYLE :: Layout_Style{.Column, -1, 38, 0, -1, 0, -1, 0, 0, 0, .Stretch, true}
+DEFAULT_TAB_BAR_STYLE :: Layout_Style{
+	direction=.Column,
+	width=-1,
+	height=38,
+	min_width=0,
+	max_width=-1,
+	min_height=0,
+	max_height=-1,
+	align=.Stretch,
+	clip=true,
+}
 
 Tab_Bar_Action :: enum { None, Select, Close }
 
@@ -384,7 +394,7 @@ tab_bar :: proc(
 			ui,
 			surface_core_color_role(.Accent),
 			key=key_u64(6),
-			style=layout_style(.Row, width=tab_width, height=2 if item.selected else 0),
+			style=layout_style(.Row, height=2 if item.selected else 0),
 			label="tab-selected-indicator",
 		)
 		_ = visual_part_attach(ui, indicator_id, tab_id, visual_part_core(.Selected_Indicator))

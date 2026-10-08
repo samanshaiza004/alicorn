@@ -182,8 +182,23 @@ GPU_Surface_Payload_View :: struct {
 	circles:  []GPU_Surface_Filled_Circle,
 }
 
-Layout_Direction :: enum { Row, Column }
-Align :: enum { Start, Center, End, Stretch }
+Layout_Direction :: enum u8 { Row, Column }
+Align :: enum u8 { Start, Center, End, Stretch, Baseline }
+Main_Axis_Distribution :: enum u8 { Start, Center, End, Space_Between, Space_Around }
+Writing_Direction :: enum u8 { Inherit, Left_To_Right, Right_To_Left }
+Layout_Options :: distinct u8
+
+layout_options_make :: proc(distribution: Main_Axis_Distribution, direction: Writing_Direction) -> Layout_Options {
+	return Layout_Options(u8(distribution)&0x07 | ((u8(direction)&0x03)<<3))
+}
+
+layout_options_distribution :: proc(options: Layout_Options) -> Main_Axis_Distribution {
+	return Main_Axis_Distribution(u8(options)&0x07)
+}
+
+layout_options_writing_direction :: proc(options: Layout_Options) -> Writing_Direction {
+	return Writing_Direction((u8(options)>>3)&0x03)
+}
 
 Button_Content_Alignment :: enum { Start, Center, End }
 
@@ -236,6 +251,8 @@ Layout_Style :: struct {
 	gap:       f32,
 	align:     Align,
 	clip:      bool,
+	compress_weight: u8,
+	options:   Layout_Options,
 }
 
 // LAYOUT_SIZE_FIT_CONTENT is an opt-in Layout_Style width/height value.
