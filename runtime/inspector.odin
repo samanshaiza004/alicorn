@@ -336,7 +336,7 @@ inspect :: proc(rt: ^Runtime) -> string {
 			fmt.sbprintf(&sb, "Node: %d parent=%d kind=%v source=%s:%d:%d component=%s key=%q scope=%q bounds=(%.1f,%.1f %.1fx%.1f)\n", node.id, node.parent, node.kind, node.site.file, node.site.line, node.site.column, node.site.component, node.key, node.identity_key, node.bounds.x, node.bounds.y, node.bounds.w, node.bounds.h)
 		}
 		if node.kind == .Split {
-			fmt.sbprintf(&sb, "  split: axis=%v position=%.2f dragging=%t\n", node.split_axis, node.split_position, node.split_dragging)
+			fmt.sbprintf(&sb, "  split: axis=%v preferred=%.2f resolved=%.2f dragging=%t\n", node.split_axis, node.split_preferred_position, node.split_position, node.split_dragging)
 		}
 		if node.kind == .Split_Handle {
 			geometry := layout_node_finalized_geometry(rt, id)

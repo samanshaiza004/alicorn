@@ -62,6 +62,7 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 	rt.pending = make([dynamic]Pending_Item, 0, allocator=rt.persistent_allocator)
 	rt.seen = make(map[Node_ID]Identity_Declaration, allocator=rt.persistent_allocator)
 	rt.identity_scopes = make(map[Node_ID]Identity_Declaration, allocator=rt.persistent_allocator)
+	rt.grid_pending_scopes = make(map[Node_ID]bool, allocator=rt.persistent_allocator)
 	rt.stack = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.identity_stack = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.identity_labels = make([dynamic]string, 0, allocator=rt.persistent_allocator)

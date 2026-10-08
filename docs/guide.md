@@ -168,6 +168,28 @@ need:
   Shift-click extends the current selection;
 - a custom GPU surface for a bounded, high-frequency visualization.
 
+For aligned label/value layouts, use the small retained Grid rather than
+nesting Rows to reproduce the same columns:
+
+```odin
+columns := [2]alicorn.Grid_Track{alicorn.grid_fixed(88), alicorn.grid_fraction(1)}
+rows := [3]alicorn.Grid_Track{alicorn.grid_auto(), alicorn.grid_auto(), alicorn.grid_auto()}
+alicorn.grid_begin(&ui, alicorn.key_string("commit-details"), columns[:], rows[:],
+	style=alicorn.layout_style(width=480, height=120), gap_x=8, gap_y=4)
+author_label := alicorn.text(&ui, "Author")
+_ = alicorn.grid_cell(&ui, author_label, 0, 0)
+author_value := alicorn.text(&ui, commit.author)
+_ = alicorn.grid_cell(&ui, author_value, 0, 1)
+// Emit and place each remaining label/value pair in its own row.
+alicorn.grid_end(&ui)
+```
+
+Every Grid child has an explicit cell. The supported track and span behavior,
+and the fixed width-before-height solve order, are described in the
+[layout reference](reference.md#shared-track-grid).
+For fixed parent-assigned Grid bounds whose cell content may reflow locally,
+pass `layout_boundary=true` to keep that layout work inside the Grid.
+
 These APIs do not replace application state. In particular, Alicorn does not
 infer that a region changed: increment its revision when its logical content
 changes. See the [reference](reference.md) for the relevant APIs and details.

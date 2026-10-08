@@ -42,6 +42,7 @@ native_flight_node_kind_name :: proc(kind: alicorn.Node_Kind, valid: bool) -> st
 	case .Context_Menu_Overlay: return "context_menu_overlay"
 	case .Context_Menu_Panel:   return "context_menu_panel"
 	case .Container:            return "container"
+	case .Grid:                 return "grid"
 	case .Button:               return "button"
 	case .Tab:                  return "tab"
 	case .Tab_Close:            return "tab_close"

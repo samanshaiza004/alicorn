@@ -85,7 +85,7 @@ visual_part_owner_supports_visibility :: proc(
 			return true
 		case .Custom_Surface:
 			return surface_interaction == .Pointer
-		case .Root, .Modal_Overlay, .Context_Menu_Overlay, .Context_Menu_Panel, .Container,
+		case .Root, .Modal_Overlay, .Context_Menu_Overlay, .Context_Menu_Panel, .Container, .Grid,
 		     .Tab, .Tab_Close, .Text, .Text_Composition, .Virtual_List, .Virtual_Row,
 		     .Scroll_Region, .Split, .Split_Handle:
 			return false

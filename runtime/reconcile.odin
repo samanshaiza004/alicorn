@@ -257,10 +257,25 @@ layout_hash :: proc(d: Description) -> u64 {
 	h = hash_mix(h, u64(d.scroll_axes))
 	h = hash_mix(h, u64(d.scrollbar_policy))
 	h = hash_mix(h, u64(d.split_axis))
+	h = hash_mix(h, u64(d.grid_item ? 1 : 0))
+	h = hash_mix(h, u64(d.grid_row))
+	h = hash_mix(h, u64(d.grid_column))
+	h = hash_mix(h, u64(d.grid_row_span))
+	h = hash_mix(h, u64(d.grid_column_span))
+	h = hash_mix(h, u64(d.grid_align_x))
+	h = hash_mix(h, u64(d.grid_align_y))
 	h = hash_mix(h, u64(transmute(u32)d.split_min_first))
 	h = hash_mix(h, u64(transmute(u32)d.split_min_second))
 	h = hash_mix(h, u64(transmute(u32)d.split_handle_size))
 	h = hash_mix(h, u64(transmute(u32)d.split_hit_size))
+	return h
+}
+
+layout_hash_pending :: proc(d: Description, item: Pending_Item) -> u64 {
+	h := layout_hash(d)
+	if d.kind == .Grid {
+		h = hash_mix(h, grid_track_config_hash(item.grid_columns, item.grid_rows, item.grid_gap_x, item.grid_gap_y))
+	}
 	return h
 }
 
@@ -440,6 +455,13 @@ copy_node_description :: proc(
 		node.surface_resource_generation = 0
 	}
 	node.style = d.style
+	node.grid_row = d.grid_row
+	node.grid_column = d.grid_column
+	node.grid_row_span = d.grid_row_span
+	node.grid_column_span = d.grid_column_span
+	node.grid_item = d.grid_item
+	node.grid_align_x = d.grid_align_x
+	node.grid_align_y = d.grid_align_y
 	node.context_menu_bounds = d.context_menu_bounds
 	node.font = d.font
 	node.text_style = d.text_style
@@ -528,6 +550,7 @@ copy_node_description :: proc(
 	node.scrollbar_policy = d.scrollbar_policy
 	if kind_changed && d.kind == .Split {
 		node.split_position = d.split_position
+		node.split_preferred_position = d.split_position
 	}
 	node.split_axis = d.split_axis
 	node.split_min_first = d.split_min_first
@@ -671,6 +694,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	// handles. Their referenced runs and span storage are owned by the node.
 	delete(node.paint)
 	delete(node.children)
+	grid_tracks_destroy(node)
 	delete(node.surface_samples)
 	delete(node.surface_segments)
 	delete(node.surface_circles)
@@ -761,8 +785,9 @@ reconcile :: proc(rt: ^Runtime) {
 			rt.nodes[d.id] = node
 			rt.stats.nodes_created += 1
 			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part, item.accessibility)
+			grid_tracks_copy_retained(rt, node, item)
 			node.description_hash = description_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
-			node.layout_hash = layout_hash(d)
+			node.layout_hash = layout_hash_pending(d, item)
 			rt.measure_states[d.id] = Measure_State{
 				input_hash=measure_input_hash(d),
 				input_revision=1,
@@ -776,7 +801,7 @@ reconcile :: proc(rt: ^Runtime) {
 			record_trace(rt, .Reconcile, d.id, "new retained node")
 		} else {
 			new_desc_hash := description_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
-			new_layout_hash := layout_hash(d)
+			new_layout_hash := layout_hash_pending(d, item)
 			new_measure_input_hash := measure_input_hash(d)
 			new_paint_hash := paint_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
 			was_selected := node.selected
@@ -791,6 +816,7 @@ reconcile :: proc(rt: ^Runtime) {
 			paint_changed := node.paint_hash != new_paint_hash || Dirty_Stage.Paint in style_stages
 			composite_changed := Dirty_Stage.Composite in style_stages
 			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part, item.accessibility)
+			grid_tracks_copy_retained(rt, node, item)
 			if was_selected != node.selected {
 				visual_part_invalidate_dependents(rt, d.id, "visual part owner selection changed")
 			}
@@ -966,6 +992,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	for _, node in rt.nodes {
 		delete(node.paint)
 		delete(node.children)
+		grid_tracks_destroy(node)
 		delete(node.surface_samples)
 		delete(node.surface_segments)
 		delete(node.surface_circles)
@@ -998,6 +1025,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.pending)
 	delete(rt.seen)
 	delete(rt.identity_scopes)
+	delete(rt.grid_pending_scopes)
 	delete(rt.stack)
 	delete(rt.identity_stack)
 	delete(rt.identity_labels)

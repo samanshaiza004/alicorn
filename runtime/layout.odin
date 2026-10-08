@@ -548,7 +548,7 @@ layout_split_children :: proc(rt: ^Runtime, parent: ^Node, inner: Rect, children
 	available_units := layout_unit_maximum(available)
 	// Split keeps its established absolute logical-unit preference on resize;
 	// the shared allocator applies pane bounds and fills the second pane.
-	requested_first := parent.split_position
+	requested_first := parent.split_preferred_position
 	direction := Layout_Direction.Row if axis == .Horizontal else .Column
 	first_pane, second_pane := rt.nodes[children[0]], rt.nodes[children[2]]
 	maximum_grow := maxf(first_pane.style.grow, second_pane.style.grow)
@@ -697,6 +697,10 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	if inner.h < 0 { inner.h = 0 }
 	if parent.kind == .Context_Menu_Overlay {
 		context_menu_layout_children(rt, parent, children[:])
+		return
+	}
+	if parent.kind == .Grid {
+		layout_grid_children(rt, parent, inner, children[:])
 		return
 	}
 	if parent.kind == .Split && len(children) == 3 {

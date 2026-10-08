@@ -101,6 +101,9 @@ error and its correction hint.
 | `runtime_text_run_build` | Shape temporary application text through Alicorn's retained text engine without exposing the engine. |
 | `container_begin` / `container_begin_ex` / `container_end` | Group children and define their layout; `layout_boundary=true` makes the container an explicit retained-layout invalidation boundary. |
 | `layout_style` | Set direction, size constraints, growth, padding, gap, alignment, and clipping. |
+| `grid_begin` / `grid_end` | Describe a bounded two-dimensional container with explicit row/column tracks; optional `layout_boundary=true` contains child reflow within stable parent-assigned bounds. |
+| `grid_fixed` / `grid_auto` / `grid_fraction` / `grid_min_max` | Declare fixed, measured, weighted, or bounded-flexible Grid tracks. |
+| `grid_cell` | Assign an already-emitted direct Grid child to a row/column and optional spans/alignment. |
 | `LAYOUT_SIZE_FIT_CONTENT` | Opt a Column `Container` into measured height, or a `Scroll_Region` into a content-sized, max-capped viewport. |
 | `button_content_style` | Set label alignment and padding inside a button. |
 | `Text_Style` | Select weight, overflow behavior, and other text presentation options. |
@@ -140,10 +143,12 @@ cross-axis Start/End in Columns follows that direction. Layout is in logical
 window coordinates.
 
 Split panes use the same bounded axis allocator. Their initial position is an
-absolute logical-unit preference that remains stable as the Split resizes;
-pane min/max bounds constrain that preference, and dragging updates it. When
-pane minima exceed the available extent, Alicorn preserves them, clips their
-overflow to the Split, and reports it. Horizontal Split placement and drag
+absolute logical-unit preference that remains stable as the Split resizes.
+When the available extent temporarily clamps the resolved divider, the
+preferred position is retained and restored when space returns; dragging the
+divider updates the preference. Pane min/max bounds constrain the resolved
+position. When pane minima exceed the available extent, Alicorn preserves
+them, clips their overflow to the Split, and reports it. Horizontal Split placement and drag
 direction follow inherited writing direction. These flow controls do not make
 arbitrary containers content-sized: the limited Column `FIT_CONTENT` behavior
 is described below, and Grid tracks are a separate facility.
@@ -174,6 +179,59 @@ content-sized parent's measured height changes. A changed measurement with an
 identical output does not by itself trigger ancestor layout. Diagnostics record
 the content contribution and final measured height. This is opt-in; ordinary
 Row/Column sizing and growth remain unchanged.
+
+### Shared-track Grid
+
+Use Grid for aligned property rows and other small desktop-tool layouts. Track
+declarations are explicit and map to the same `Layout_Unit` allocator used by
+Row, Column, and Split:
+
+```odin
+columns := [2]alicorn.Grid_Track{
+	alicorn.grid_fixed(88),
+	alicorn.grid_fraction(1),
+}
+rows := [3]alicorn.Grid_Track{
+	alicorn.grid_auto(),
+	alicorn.grid_auto(),
+	alicorn.grid_auto(),
+}
+alicorn.grid_begin(&ui, alicorn.key_string("commit-properties"), columns[:], rows[:],
+	style=alicorn.layout_style(width=480, height=120), gap_x=8, gap_y=4)
+author := alicorn.text(&ui, "Author")
+_ = alicorn.grid_cell(&ui, author, 0, 0)
+author_value := alicorn.text(&ui, commit.author)
+_ = alicorn.grid_cell(&ui, author_value, 0, 1)
+// Emit the remaining direct children and assign each with grid_cell.
+alicorn.grid_end(&ui)
+```
+
+`grid_fixed(px)` reserves an extent, `grid_auto()` uses measured item
+contributions, `grid_fraction(weight)` shares available space, and
+`grid_min_max(minimum, maximum)` is a bounded flexible track (a negative
+maximum is unbounded). Auto/Fraction begin with a zero track minimum; explicit
+child min constraints and spanning-item min contributions raise flexible track
+minima, subject to hard track maxima. Min/max constraints and unresolved
+overflow follow the shared allocator. `grid_cell` applies only to a direct
+child already emitted inside the open Grid; every child needs an explicit
+cell. Indices are 16-bit, so a Grid can declare at most 65,536 tracks per
+axis. Rows, columns, gaps, spans, and Start/End/Baseline alignment are
+retained.
+
+Pass `layout_boundary=true` when the Grid's parent-assigned outer bounds are
+stable while its cells reflow. This uses the same full-containment promise as
+other layout boundaries; per-axis boundaries remain future work.
+
+The solve has a fixed number of stages: collect non-spanning column
+contributions, allocate columns, apply one bounded span adjustment, measure
+children at their final cell width, then resolve rows and place children. It
+does not loop to convergence. Width-dependent text is supported; arbitrary
+cyclic sizing and content-sized outer Grids are not. Fixed-row virtual lists
+stay virtualized inside a cell because Grid visits only described children.
+The inspector's Layout trace records declared, minimum, ideal, maximum, and
+resolved values per track, allocator overflow/unused space and redistribution
+passes, plus span ranges, contributions, constraint failures, and tracked
+Grid traversal work units.
 
 ### Scoped style environment
 

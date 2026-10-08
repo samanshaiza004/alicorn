@@ -68,7 +68,7 @@ split_begin :: proc(
 	push_identity_scope(ui.runtime, id, "", 0)
 	position := item.split_position
 	if previous, ok := ui.runtime.nodes[id]; ok && previous.kind == .Split {
-		position = previous.split_position
+		position = previous.split_preferred_position
 	}
 	return Split_Handle{id, axis, position}
 }

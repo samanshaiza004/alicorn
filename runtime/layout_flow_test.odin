@@ -263,3 +263,47 @@ test_column_compression_uses_weighted_main_axis_allocation :: proc(t: ^testing.T
 			"Column compression should use weighted measured ideals, preserve minima, and place later children after resized predecessors")
 	}
 }
+
+@(test)
+test_split_restores_preferred_position_after_temporary_clamp :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 302, 100})
+	defer destroy_runtime(&rt)
+	split, first_id, _ := layout_flow_test_describe_split(&rt, 302, 300, 0, 0, -1)
+	first, _ := rt.nodes[first_id]
+	owner := rt.nodes[split.id]
+	testing.expect(t, first.bounds.w == 300 && owner.split_preferred_position == 300,
+		"the initial preferred split extent should fit the original viewport")
+
+	rt.viewport = Rect{0, 0, 182, 100}
+	_, _, _ = layout_flow_test_describe_split(&rt, 182, 300, 0, 0, -1)
+	first = rt.nodes[first_id]
+	owner = rt.nodes[split.id]
+	testing.expect(t, first.bounds.w == 180 && owner.split_position == 180 && owner.split_preferred_position == 300,
+		"a narrow viewport should clamp only the resolved split extent and preserve its preferred position")
+
+	rt.viewport = Rect{0, 0, 302, 100}
+	_, _, _ = layout_flow_test_describe_split(&rt, 302, 300, 0, 0, -1)
+	first = rt.nodes[first_id]
+	owner = rt.nodes[split.id]
+	testing.expect(t, first.bounds.w == 300 && owner.split_position == 300 && owner.split_preferred_position == 300,
+		"expanding the viewport should restore the user's preferred split extent")
+
+	rt.viewport = Rect{0, 0, 182, 100}
+	split, _, _ = layout_flow_test_describe_split(&rt, 182, 300, 0, 0, -1)
+	owner = rt.nodes[split.id]
+	handle := rt.nodes[owner.children[1]]
+	owner.split_drag_start_position = owner.split_position
+	owner.split_drag_start_coordinate = handle.bounds.x+handle.bounds.w*0.5
+	rt.nodes[owner.id] = owner
+	update_split_drag(&rt, handle, owner.split_drag_start_coordinate-20, handle.bounds.y+handle.bounds.h*0.5)
+	owner = rt.nodes[split.id]
+	testing.expect(t, owner.split_position == 160 && owner.split_preferred_position == 160,
+		"an explicit user drag while constrained should replace the prior preferred position")
+
+	rt.viewport = Rect{0, 0, 302, 100}
+	_, _, _ = layout_flow_test_describe_split(&rt, 302, 300, 0, 0, -1)
+	first = rt.nodes[first_id]
+	owner = rt.nodes[split.id]
+	testing.expect(t, first.bounds.w == 160 && owner.split_preferred_position == 160,
+		"after a constrained drag, later expansion should honor the new user preference")
+}

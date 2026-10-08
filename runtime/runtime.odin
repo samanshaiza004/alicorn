@@ -42,6 +42,7 @@ Node_Kind :: enum {
 	Context_Menu_Overlay,
 	Context_Menu_Panel,
 	Container,
+	Grid,
 	Button,
 	// Deprecated compatibility kinds. TabBar now composes ordinary Buttons
 	// and visual-part children; these values remain for existing API callers.
@@ -254,6 +255,17 @@ Layout_Style :: struct {
 	compress_weight: u8,
 	options:   Layout_Options,
 }
+
+Grid_Track_Kind :: enum u8 { Fixed, Auto, Fraction, Min_Max }
+
+Grid_Track :: struct {
+	kind: Grid_Track_Kind,
+	value: f32,
+	minimum: f32,
+	maximum: f32,
+}
+
+Grid_Item_Alignment :: enum u8 { Stretch, Start, Center, End, Baseline }
 
 // LAYOUT_SIZE_FIT_CONTENT is an opt-in Layout_Style width/height value.
 // The first retained-layout slice supports a Column's content-sized height;
@@ -1022,6 +1034,12 @@ Description :: struct {
 	button_content_style: Button_Content_Style,
 	button_variant: Button_Variant,
 	style:       Layout_Style,
+	grid_row: u16,
+	grid_column: u16,
+	grid_row_span: u16,
+	grid_column_span: u16,
+	grid_item: bool,
+	grid_align_x, grid_align_y: Grid_Item_Alignment,
 	context_menu_bounds: Rect,
 	color:       Color,
 	paint_background: bool,
@@ -1096,6 +1114,9 @@ Pending_Item :: struct {
 	visual_part: Visual_Part_Style,
 	semantic:    Semantic_Descriptor,
 	accessibility: Accessibility_Appearance_Preferences,
+	grid_columns: []Grid_Track,
+	grid_rows: []Grid_Track,
+	grid_gap_x, grid_gap_y: f32,
 }
 
 Node :: struct {
@@ -1121,6 +1142,17 @@ Node :: struct {
 	button_content_style: Button_Content_Style,
 	button_variant: Button_Variant,
 	style:       Layout_Style,
+	grid_configuration_hash: u64,
+	grid_columns: [dynamic]Grid_Track,
+	grid_rows: [dynamic]Grid_Track,
+	grid_gap_x, grid_gap_y: f32,
+	grid_work_units: u64,
+	grid_row: u16,
+	grid_column: u16,
+	grid_row_span: u16,
+	grid_column_span: u16,
+	grid_item: bool,
+	grid_align_x, grid_align_y: Grid_Item_Alignment,
 	context_menu_bounds: Rect,
 	color:       Color,
 	paint_background: bool,
@@ -1199,6 +1231,8 @@ Node :: struct {
 	scrollbar_horizontal_thumb: Rect,
 	split_axis: Split_Axis,
 	split_position: f32,
+	// Preserve the requested extent when current constraints temporarily clamp it.
+	split_preferred_position: f32,
 	split_min_first: f32,
 	split_min_second: f32,
 	split_owner: Node_ID,
@@ -1477,6 +1511,7 @@ Runtime :: struct {
 	pending:     [dynamic]Pending_Item,
 	seen:        map[Node_ID]Identity_Declaration,
 	identity_scopes: map[Node_ID]Identity_Declaration,
+	grid_pending_scopes: map[Node_ID]bool,
 	stack:       [dynamic]Node_ID,
 	identity_stack: [dynamic]Node_ID,
 	identity_labels: [dynamic]string,

@@ -328,7 +328,12 @@ layout_measure_constrain_axis :: proc(value: Layout_Unit, constraint: Layout_Axi
 	return result
 }
 
-layout_measure_node :: proc(rt: ^Runtime, node: ^Node, constraints: Layout_Constraints) -> Measure_Result {
+layout_measure_node :: proc(
+	rt: ^Runtime,
+	node: ^Node,
+	constraints: Layout_Constraints,
+	force_unbounded_text_shape := false,
+) -> Measure_Result {
 	if rt == nil || node == nil { return {} }
 	state := rt.measure_states[node.id]
 	state.parent_layout_dependencies = layout_parent_placement_axes(rt, node)
@@ -364,7 +369,7 @@ layout_measure_node :: proc(rt: ^Runtime, node: ^Node, constraints: Layout_Const
 			if node.kind == .Checkbox { max_width = maxf(max_width-36, 0) }
 		}
 		shape_calls_before := rt.text_engine.shape_calls
-		if prepare_text_run_node(rt, node, max_width) {
+		if prepare_text_run_node(rt, node, max_width, force_unbounded=force_unbounded_text_shape && constraints.width.unbounded_max) {
 			dirty_set(&node.dirty, .Paint, true)
 			dirty_set(&node.dirty, .Composite, true)
 			queue_paint(rt, node.id)

@@ -57,7 +57,8 @@ asking the application to describe the whole UI again. Changed constraints
 can require layout even when the description itself is reused.
 
 The #25 axis allocator is a deterministic primitive over `Layout_Unit`
-participants and drives Row/Column main-axis allocation and Split panes. Fixed
+participants and drives Row/Column main-axis allocation, Split panes, and
+Grid tracks. Fixed
 and natural children enter as measured extents; a grow child retains the legacy
 minimum-start behavior and maps `grow` to a normalized expansion weight.
 Explicit compression weights shrink measured ideals only toward hard minima.
@@ -66,9 +67,9 @@ intact, and unresolved overflow or unused surplus stays explicit. Row/Column
 main-axis justification uses exact fixed-point shares, while baseline and
 logical writing direction affect placement. Split keeps its absolute logical
 preferred position through resize and drag, constrained by pane bounds. Text
-shaping remains in the measure stage and allocation never initiates it. This is
-not recursive content-sized container measurement (#5), Grid (#26), or a
-general adaptive-layout policy.
+shaping remains in the measure stage and allocation never initiates it. This
+does not make ordinary containers content-sized (#5), or add a general
+adaptive-layout policy.
 
 `Style_Environment` is the inherited dependency surface for a compact theme ID,
 density, normalized text scale, accent override, and backend-neutral
@@ -97,6 +98,16 @@ containers. A content-sized Scroll_Region caps its viewport and keeps its full
 logical extent for internal scrolling. Parent size propagation remains
 axis-mapped; layout boundaries are still full-containment promises rather than
 per-axis boundaries.
+
+Grid (#26) is a bounded two-dimensional consumer of the same allocator. It
+uses explicit Fixed, Auto, Fraction, and MinMax tracks, direct-child cell
+placement, spans, and logical alignment. Its staged path allocates columns,
+remeasures width-dependent children, then allocates rows and places them; it
+has no open-ended convergence pass. Track/span decisions are available in the
+Layout trace. A Grid can opt into the existing full-containment
+`layout_boundary=true` contract when its parent-assigned outer bounds remain
+stable; child reflow then stays inside the Grid. Automatic placement,
+content-sized outer Grids, and arbitrary cyclic sizing remain unsupported.
 `style_metric` leaves the meaning and use of each dimension with the
 application. This is explicit dependency tracking, not a general cascade or
 implicit observation of app state. The

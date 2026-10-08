@@ -1126,7 +1126,7 @@ text_run_build_with_overflow :: proc(
 // measure_node supplies the real retained constraints. A node owns this
 // product for its retained lifetime; the native renderer only resolves it to
 // physical glyph residency after logical layout.
-prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) -> bool {
+prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1, force_unbounded := false) -> bool {
 	if !node_has_text_product(node.kind) || !node.active { return false }
 	text_value := node.text
 	if node.kind == .Button || node.kind == .Checkbox || node.kind == .Slider { text_value = node.label }
@@ -1160,7 +1160,7 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1) ->
 		// For auto-width text, the parent layout pass owns the real wrapping
 		// constraint. Once that pass has produced a valid run, do not rebuild it
 		// here with the temporary unconstrained value on every root wake.
-		if node.style.width <= 0 && node.text_run_valid &&
+		if !force_unbounded && node.style.width <= 0 && node.text_run_valid &&
 			node.text_run.size == requested_size &&
 			node.text_run.font_generation == rt.text_engine.font_generation &&
 			node.text_run.font_weight == font_weight &&

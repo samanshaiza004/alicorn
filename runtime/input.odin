@@ -261,6 +261,7 @@ update_split_drag :: proc(rt: ^Runtime, handle: ^Node, x, y: f32) {
 	next := split_clamp_position(total, handle.split_handle_size, requested, min_first, min_second, max_first, max_second)
 	if next == owner.split_position { return }
 	owner.split_position = next
+	owner.split_preferred_position = next
 	mark_layout_ancestors(rt, owner.id)
 	request_presentation(rt, "split divider dragged")
 	record_trace(rt, .Pointer, handle.id, "retained split position changed")

@@ -418,6 +418,7 @@ begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
 	clear(&rt.semantic_collection_touched)
 	clear(&rt.seen)
 	clear(&rt.identity_scopes)
+	clear(&rt.grid_pending_scopes)
 	clear(&rt.stack)
 	clear(&rt.identity_stack)
 	clear(&rt.identity_labels)
