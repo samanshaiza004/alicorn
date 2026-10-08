@@ -149,3 +149,44 @@ test_retained_row_column_reallocation_matches_clean_fractional_dpi_layout :: pro
 		incremental.stats.measure_requests == old_measure_requests && incremental.stats.layout_nodes_visited == old_layout_visits,
 		"fractional DPI changes should refinalize shared edges without remeasuring or reallocating logical layout")
 }
+
+@(test)
+test_randomized_retained_row_column_replays_match_clean_layouts :: proc(t: ^testing.T) {
+	incremental := new_runtime(Rect{0, 0, 640, 320})
+	defer destroy_runtime(&incremental)
+	if !text_engine_load_font(&incremental.text_engine, LAYOUT_ALLOCATION_TEST_FONT) {
+		testing.expect(t, false, "incremental fixture font should load")
+		return
+	}
+	_, _, _, _, _, _, _ = layout_allocation_test_describe(&incremental, 1)
+
+	seed: u64 = 0x25A110CA7E
+	for iteration in 0..<96 {
+		width := f32(220+layout_allocate_next(&seed)%520) + f32(layout_allocate_next(&seed)%1024)/1024
+		height := f32(120+layout_allocate_next(&seed)%240)
+		grow_weight := f32(1+layout_allocate_next(&seed)%32)/8
+		scale_x := f32(1+layout_allocate_next(&seed)%4)/2
+		scale_y := f32(1+layout_allocate_next(&seed)%4)/2
+		viewport := Rect{0, 0, width, height}
+		incremental.viewport = viewport
+		incremental.presentation_scale_x = scale_x
+		incremental.presentation_scale_y = scale_y
+		_, _, _, _, _, _, _ = layout_allocation_test_describe(&incremental, grow_weight)
+
+		cold := new_runtime(viewport)
+		if !text_engine_load_font(&cold.text_engine, LAYOUT_ALLOCATION_TEST_FONT) {
+			destroy_runtime(&cold)
+			testing.expect(t, false, "clean replay fixture font should load")
+			return
+		}
+		cold.presentation_scale_x = scale_x
+		cold.presentation_scale_y = scale_y
+		_, _, _, _, _, _, _ = layout_allocation_test_describe(&cold, grow_weight)
+		matches := layout_allocation_test_geometry_matches(&incremental, &cold)
+		destroy_runtime(&cold)
+		if !matches {
+			testing.expect(t, false, "randomized retained Row/Column allocation should equal an independent clean layout for identical inputs")
+			return
+		}
+	}
+}
