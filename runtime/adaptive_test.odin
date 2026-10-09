@@ -4,6 +4,7 @@ import "core:testing"
 
 Adaptive_Test_Semantic_ID :: Semantic_ID{namespace=0x4144415054495645, value=1}
 Adaptive_Test_Focus_ID :: Semantic_ID{namespace=0x4144415054495645, value=2}
+Adaptive_Test_Nested_Action_ID :: Semantic_ID{namespace=0x4144415054495645, value=3}
 
 Adaptive_Test_Nodes :: struct {
 	owner: Node_ID,
@@ -193,5 +194,102 @@ test_adaptive_invalid_alternative_end_preserves_owner_scope :: proc(t: ^testing.
 		"the malformed alternative fixture should finish with balanced container and adaptive scopes")
 	testing.expect(t, rt.hard_error && rt.diagnostic == "adaptive regions support exactly two ordered alternatives in v1",
 		"the rejected alternative should retain its useful validation diagnostic without a scope-corruption error")
+}
+
+Adaptive_Nested_Test_Nodes :: struct {
+	outer_owner: Node_ID,
+	outer_wide: Node_ID,
+	outer_compact: Node_ID,
+	nested_owner: Node_ID,
+	nested_wide: Node_ID,
+	nested_compact: Node_ID,
+	nested_wide_button: Node_ID,
+	nested_compact_button: Node_ID,
+	outer_compact_button: Node_ID,
+}
+
+adaptive_nested_test_describe :: proc(rt: ^Runtime, viewport_width: f32) -> Adaptive_Nested_Test_Nodes {
+	rt.viewport = Rect{0, 0, viewport_width, 180}
+	invalidate_root(rt, "nested adaptive assigned-width test description")
+	ui, build := begin_frame(rt)
+	if !build { return {} }
+	nodes := Adaptive_Nested_Test_Nodes{}
+	container_begin(&ui, .Root, key=key_string("adaptive-nested-root"), style=layout_style(.Row))
+	nodes.outer_owner = adaptive_begin(&ui, key_string("adaptive-nested-outer-owner"),
+		style=layout_style(.Column, grow=1, height=140), label="Outer adaptive region")
+	nodes.outer_wide = adaptive_alternative_begin(&ui, key_string("adaptive-nested-outer-wide"), "Wide", minimum_width=380,
+		style=layout_style(.Column))
+	nodes.nested_owner = adaptive_begin(&ui, key_string("adaptive-nested-inner-owner"),
+		style=layout_style(.Column, grow=1, height=64), label="Nested adaptive region")
+	nodes.nested_wide = adaptive_alternative_begin(&ui, key_string("adaptive-nested-inner-wide"), "Nested Wide", minimum_width=390)
+	nodes.nested_wide_button, _ = button_begin(&ui, "Nested action", key_string("adaptive-nested-inner-wide-action"),
+		style=layout_style(width=140, height=32))
+	_ = semantic_bind(&ui, Adaptive_Test_Nested_Action_ID)
+	button_end(&ui)
+	adaptive_alternative_end(&ui)
+	nodes.nested_compact = adaptive_alternative_begin(&ui, key_string("adaptive-nested-inner-compact"), "Nested Compact")
+	nodes.nested_compact_button, _ = button_begin(&ui, "Nested action", key_string("adaptive-nested-inner-compact-action"),
+		style=layout_style(width=140, height=32))
+	_ = semantic_bind(&ui, Adaptive_Test_Nested_Action_ID)
+	button_end(&ui)
+	adaptive_alternative_end(&ui)
+	adaptive_end(&ui)
+	adaptive_alternative_end(&ui)
+	nodes.outer_compact = adaptive_alternative_begin(&ui, key_string("adaptive-nested-outer-compact"), "Compact")
+	nodes.outer_compact_button, _ = button_begin(&ui, "Nested action", key_string("adaptive-nested-outer-compact-action"),
+		style=layout_style(width=140, height=32))
+	_ = semantic_bind(&ui, Adaptive_Test_Nested_Action_ID)
+	button_end(&ui)
+	adaptive_alternative_end(&ui)
+	adaptive_end(&ui)
+	_ = button(&ui, "Fixed sibling", key=key_string("adaptive-nested-fixed-sibling"),
+		style=layout_style(width=100, height=32))
+	container_end(&ui)
+	end_frame(&ui)
+	return nodes
+}
+
+@(test)
+test_nested_adaptive_visibility_and_focus_survive_outer_switches :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 500, 180})
+	defer destroy_runtime(&rt)
+	wide := adaptive_nested_test_describe(&rt, 500)
+	outer_wide_state := adaptive_selection_state(&rt, wide.outer_owner)
+	nested_wide_state := adaptive_selection_state(&rt, wide.nested_owner)
+	testing.expect(t, outer_wide_state.valid && outer_wide_state.selected_alternative == wide.outer_wide &&
+		nested_wide_state.valid && nested_wide_state.selected_alternative == wide.nested_wide &&
+		rt.nodes[wide.nested_wide].present && !rt.nodes[wide.nested_compact].present,
+		"the initial outer and nested widths should select the Wide presentation at both levels")
+	testing.expect(t, focus(&rt, wide.nested_wide_button), "the selected nested action should accept keyboard focus")
+
+	nested_compact := adaptive_nested_test_describe(&rt, 480)
+	outer_still_wide := adaptive_selection_state(&rt, nested_compact.outer_owner)
+	nested_now_compact := adaptive_selection_state(&rt, nested_compact.nested_owner)
+	testing.expect(t, outer_still_wide.selected_alternative == nested_compact.outer_wide &&
+		nested_now_compact.selected_alternative == nested_compact.nested_compact &&
+		rt.nodes[nested_compact.nested_compact].present && !rt.nodes[nested_compact.nested_wide].present,
+		"a nested width transition should update only the nested adaptive presentation")
+	testing.expect(t, rt.focused == nested_compact.nested_compact_button,
+		"focus should transfer to the semantic peer when the nested presentation changes")
+
+	outer_compact := adaptive_nested_test_describe(&rt, 450)
+	outer_now_compact := adaptive_selection_state(&rt, outer_compact.outer_owner)
+	testing.expect(t, outer_now_compact.selected_alternative == outer_compact.outer_compact &&
+		!rt.nodes[outer_compact.outer_wide].present && !rt.nodes[outer_compact.nested_owner].present &&
+		!rt.nodes[outer_compact.nested_wide].present && !rt.nodes[outer_compact.nested_compact].present &&
+		rt.nodes[outer_compact.outer_compact].present,
+		"hiding the outer Wide branch should hide the nested owner and all of its presentations")
+	testing.expect(t, rt.focused == outer_compact.outer_compact_button,
+		"focus should leave the hidden nested subtree for the equivalent outer Compact action")
+
+	restored := adaptive_nested_test_describe(&rt, 500)
+	restored_outer := adaptive_selection_state(&rt, restored.outer_owner)
+	restored_nested := adaptive_selection_state(&rt, restored.nested_owner)
+	testing.expect(t, restored_outer.selected_alternative == restored.outer_wide &&
+		restored_nested.selected_alternative == restored.nested_wide &&
+		rt.nodes[restored.nested_wide].present && !rt.nodes[restored.nested_compact].present,
+		"restoring the outer branch should recompute and restore the nested selection")
+	testing.expect(t, rt.focused == restored.nested_wide_button && node_is_presentation_active(&rt, rt.focused),
+		"focus should return to the matching nested action without remaining in a hidden presentation")
 }
 
