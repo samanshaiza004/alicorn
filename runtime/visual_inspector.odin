@@ -250,6 +250,21 @@ inspector_overlay_node_lines :: proc(inspected: ^Runtime, id: Node_ID, allocator
 	append(&lines, fmt.tprintf("final bounds: x=%.1f y=%.1f w=%.1f h=%.1f", geometry.bounds.x, geometry.bounds.y, geometry.bounds.w, geometry.bounds.h))
 	append(&lines, fmt.tprintf("final clip: x=%.1f y=%.1f w=%.1f h=%.1f", geometry.clip.x, geometry.clip.y, geometry.clip.w, geometry.clip.h))
 	append(&lines, fmt.tprintf("active=%t present=%t focusable=%t disabled=%t", node.active, node.present, node.focusable, node.disabled))
+	if node.adaptive_owner {
+		state := adaptive_selection_state(inspected, node.id)
+		if state.valid {
+			append(&lines, fmt.tprintf("adaptive: available=%.3f selected=%s node=%d reason=%s",
+				state.available_width, state.selected_name, state.selected_alternative, adaptive_selection_reason_name(state.reason)))
+			for index := 0; index < int(state.rejected_count); index += 1 {
+				rejected := state.rejected[index]
+				append(&lines, fmt.tprintf("adaptive rejected: %s node=%d minimum=%.3f reason=%v",
+					rejected.name, rejected.node, rejected.minimum_width, rejected.reason))
+			}
+		}
+	}
+	if node.adaptive_alternative {
+		append(&lines, fmt.tprintf("adaptive alternative: minimum_width=%.3f", node.adaptive_min_width))
+	}
 	append(&lines, fmt.tprintf("hovered=%t pressed=%t selected=%t semantic_active=%t", node.hovered, node.pressed, node.selected, node.semantic_active))
 	append(&lines, fmt.tprintf("keyboard_focus=%t captured=%t", inspected.focused == node.id, inspected.captured_node == node.id))
 	append(&lines, fmt.tprintf("semantic: namespace=%d value=%d", node.semantic_id.namespace, node.semantic_id.value))

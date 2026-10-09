@@ -1034,7 +1034,7 @@ semantic_sync_node :: proc(rt: ^Runtime, node: ^Node, semantic: Semantic_Descrip
 		// paint and hit testing. Re-describing an unchanged node must not briefly
 		// publish its unsnapped solver target as a semantic bounds change.
 		bounds=layout_node_finalized_geometry(rt, node.id).bounds,
-		has_bounds=node.active,
+		has_bounds=node.active && node.present,
 		tree_order=tree_order,
 		is_collection=semantic.is_collection,
 		logical_count=semantic.logical_count,
@@ -1080,10 +1080,15 @@ semantic_sync_tree_order :: proc(rt: ^Runtime, node_id: Node_ID, tree_order: u64
 // virtual/current/selected/focused logical entity. The entity can be rebound
 // to a later realization with the same Semantic_ID.
 semantic_retire_node :: proc(rt: ^Runtime, node: ^Node) {
-	if rt == nil || node == nil || !semantic_id_is_valid(node.semantic_id) { return }
-	entity, found := rt.semantic_entities[node.semantic_id]
+	if node == nil { return }
+	semantic_retire_node_id(rt, node, node.semantic_id)
+}
+
+semantic_retire_node_id :: proc(rt: ^Runtime, node: ^Node, id: Semantic_ID) {
+	if rt == nil || node == nil || !semantic_id_is_valid(id) { return }
+	entity, found := rt.semantic_entities[id]
 	if !found || entity.node.visual_node != node.id { return }
-	preserve := entity.node.is_virtual_item || rt.semantic_focus.id == node.semantic_id ||
+	preserve := entity.node.is_virtual_item || rt.semantic_focus.id == id ||
 		semantic_states_has(entity.node.states, .Selected) || semantic_states_has(entity.node.states, .Current)
 	if entity.node.is_collection {
 		_, selected_found := rt.semantic_entities[entity.node.selected_id]
@@ -1091,11 +1096,11 @@ semantic_retire_node :: proc(rt: ^Runtime, node: ^Node) {
 		focused_child, focused_found := rt.semantic_entities[rt.semantic_focus.id]
 		preserve = preserve || (semantic_id_is_valid(entity.node.selected_id) && selected_found) ||
 			(semantic_id_is_valid(entity.node.current_id) && current_found) ||
-			(focused_found && focused_child.node.collection_id == node.semantic_id)
+			(focused_found && focused_child.node.collection_id == id)
 	}
 	if semantic_id_is_valid(entity.node.collection_id) {
 		if collection, collection_found := rt.semantic_entities[entity.node.collection_id]; collection_found {
-			preserve = preserve || collection.node.selected_id == node.semantic_id || collection.node.current_id == node.semantic_id
+			preserve = preserve || collection.node.selected_id == id || collection.node.current_id == id
 		}
 	}
 	if preserve {
@@ -1129,18 +1134,18 @@ semantic_retire_node :: proc(rt: ^Runtime, node: ^Node) {
 			text_selection=entity.node.text_selection,
 		}
 		_ = semantic_node_set(rt, description)
-		entity, found = rt.semantic_entities[node.semantic_id]
-		if found { entity.node.has_bounds = false; entity.node.bounds = {}; rt.semantic_entities[node.semantic_id] = entity }
+		entity, found = rt.semantic_entities[id]
+		if found { entity.node.has_bounds = false; entity.node.bounds = {}; rt.semantic_entities[id] = entity }
 		if found && entity.node.is_collection {
 			// The collection remains logical truth only while it has a selected,
 			// current, or semantically focused item. Advance its working-set
 			// generation so detaching the visual owner drops incidental rows.
 			rt.semantic_collection_generation += 1
 			if rt.semantic_collection_generation == 0 { rt.semantic_collection_generation = 1 }
-			rt.semantic_collection_touched[node.semantic_id] = rt.semantic_collection_generation
+			rt.semantic_collection_touched[id] = rt.semantic_collection_generation
 		}
 	} else {
-		_ = semantic_node_remove(rt, node.semantic_id)
+		_ = semantic_node_remove(rt, id)
 	}
 }
 
@@ -1222,7 +1227,7 @@ semantic_action_request :: proc(
 	if action == .Set_Text_Selection { return false }
 	if entity.node.visual_node != 0 {
 		visual, visual_found := rt.nodes[entity.node.visual_node]
-		if !visual_found || !visual.active || visual.disabled { return false }
+		if !visual_found || !node_is_presentation_active(rt, visual.id) || visual.disabled { return false }
 		#partial switch action {
 		case .Press:
 			if entity.node.role != .Button && entity.node.role != .Checkbox { break }
@@ -1310,6 +1315,16 @@ semantic_sync_bounds :: proc(rt: ^Runtime, node: ^Node) {
 	if rt == nil || node == nil || !semantic_id_is_valid(node.semantic_id) { return }
 	entity, found := rt.semantic_entities[node.semantic_id]
 	if !found || entity.node.visual_node != node.id { return }
+	if !node.active || !node.present {
+		if entity.node.has_bounds {
+			entity.node.bounds = {}
+			entity.node.has_bounds = false
+			rt.semantic_entities[node.semantic_id] = entity
+			rt.semantic_pending_changed[node.semantic_id] = true
+			rt.stats.semantic_entities_resolved += 1
+		}
+		return
+	}
 	bounds := node.bounds
 	if geometry, ok := rt.finalized_geometry[node.id]; ok && geometry.valid { bounds = geometry.bounds }
 	if entity.node.visual_node != node.id || (entity.node.has_bounds && entity.node.bounds == bounds) { return }

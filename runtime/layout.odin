@@ -644,9 +644,124 @@ layout_note_node_visit :: proc(rt: ^Runtime, node: ^Node) {
 	rt.stats.stage_visits[.Layout] += 1
 }
 
+layout_adaptive_children :: proc(rt: ^Runtime, parent: ^Node, inner: Rect, children: []Node_ID) {
+	if rt == nil || parent == nil { return }
+	content := inner
+	if content.w < 0 { content.w = 0 }
+	if content.h < 0 { content.h = 0 }
+	available_width := layout_rect_to_target(content).w
+	selected := Node_ID(0)
+	reason := Adaptive_Selection_Reason.Invalid_Configuration_Fallback
+	first_minimum: f32 = -1
+	second_minimum: f32 = -1
+	valid_alternatives := len(children) == 2
+	for id, index in children {
+		alternative, found := rt.nodes[id]
+		if !found || !alternative.adaptive_alternative { valid_alternatives = false; continue }
+		if index == 0 { first_minimum = alternative.adaptive_min_width }
+		else if index == 1 { second_minimum = alternative.adaptive_min_width }
+	}
+	valid_alternatives = valid_alternatives && first_minimum > 0 && second_minimum == 0 && first_minimum > second_minimum
+	if valid_alternatives {
+		if available_width >= first_minimum {
+			selected = children[0]
+			reason = .Minimum_Fit
+		} else {
+			selected = children[1]
+			reason = .Fallback
+		}
+	} else if len(children) > 0 {
+		// Invalid declarations still resolve deterministically and stay bounded:
+		// try the first fitting candidate, then use the final declared candidate.
+		for id in children {
+			alternative, found := rt.nodes[id]
+			if found && alternative.adaptive_alternative && available_width >= alternative.adaptive_min_width {
+				selected = id
+				reason = .Minimum_Fit
+				break
+			}
+		}
+		if selected == 0 { selected = children[len(children)-1] }
+	}
+	previous_selected := parent.adaptive_selected_alternative
+	parent.adaptive_available_width = available_width
+	parent.adaptive_selected_alternative = selected
+	parent.adaptive_selection_reason = reason
+	if selected != 0 && selected != previous_selected {
+		selected_node, selected_found := rt.nodes[selected]
+		selected_name := "<missing>"
+		if selected_found { selected_name = selected_node.label }
+		rejected := "none"
+		for id in children {
+			if id == selected { continue }
+			candidate, found := rt.nodes[id]
+			if !found { continue }
+			rejected = fmt.tprintf("%s (requires %.3f)", candidate.label, candidate.adaptive_min_width)
+			break
+		}
+		record_trace(rt, .Layout, parent.id, fmt.tprintf(
+			"adaptive selected %s at %.3f available width (%s); rejected %s",
+			selected_name,
+			available_width,
+			adaptive_selection_reason_name(reason),
+			rejected,
+		))
+	}
+	if selected == 0 { return }
+	// Make the new branch presentation-active before hiding the old one. This
+	// lets focus repair find an equivalent focused node when both alternatives
+	// intentionally bind the same application Semantic_ID.
+	for id in children {
+		if id == selected { _ = adaptive_set_subtree_presentation(rt, id, true); break }
+	}
+	for id in children {
+		alternative, found := rt.nodes[id]
+		if !found { continue }
+		was_present := alternative.present
+		_ = adaptive_set_subtree_presentation(rt, id, id == selected)
+		if id != selected {
+			alternative.bounds = Rect{content.x, content.y, 0, 0}
+			alternative.clip = {}
+			layout_finalize_node_geometry_for_node(rt, alternative)
+			continue
+		}
+		old_bounds := alternative.bounds
+		old_clip := alternative.clip
+		alternative.bounds = content
+		if parent.style.clip { alternative.clip = rect_intersection(parent.clip, parent.bounds) }
+		else { alternative.clip = parent.clip }
+		layout_finalize_node_geometry_for_node(rt, alternative)
+		semantic_sync_bounds(rt, alternative)
+		bounds_changed := !same_rect(old_bounds, alternative.bounds)
+		clip_changed := !same_rect(old_clip, alternative.clip)
+		if bounds_changed || clip_changed {
+			dirty_set(&alternative.dirty, .Layout, true)
+			dirty_set(&alternative.dirty, .Paint, true)
+			dirty_set(&alternative.dirty, .Composite, true)
+			queue_paint(rt, id)
+			rt.stats.layout_updates += 1
+		}
+		if !was_present || bounds_changed || clip_changed || dirty_has(alternative.dirty, .Layout) {
+			layout_note_node_visit(rt, alternative)
+			layout_children(rt, id)
+		}
+		dirty_set(&alternative.dirty, .Layout, false)
+	}
+}
+
+adaptive_selection_reason_name :: proc(reason: Adaptive_Selection_Reason) -> string {
+	switch reason {
+	case .Minimum_Fit: return "minimum fit"
+	case .Fallback: return "fallback"
+	case .Invalid_Configuration_Fallback: return "invalid configuration fallback"
+	case .Unresolved: return "unresolved"
+	}
+	return "unresolved"
+}
+
 layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	parent, ok := rt.nodes[parent_id]
-	if !ok { return }
+	if !ok || !parent.active || !parent.present { return }
 	children := parent.children[:]
 	count := len(children)
 	inner := Rect{parent.bounds.x + parent.style.padding, parent.bounds.y + parent.style.padding, parent.bounds.w - 2*parent.style.padding, parent.bounds.h - 2*parent.style.padding}
@@ -705,6 +820,10 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	}
 	if parent.kind == .Split && len(children) == 3 {
 		layout_split_children(rt, parent, inner, children[:])
+		return
+	}
+	if parent.adaptive_owner {
+		layout_adaptive_children(rt, parent, inner, children[:])
 		return
 	}
 	main_size := parent.style.direction == .Row ? inner.w : inner.h

@@ -118,6 +118,9 @@ description_hash :: proc(
 	h = hash_mix(h, hash_style_environment(d.style_environment))
 	h = hash_mix(h, hash_accessibility_appearance(accessibility))
 	h = hash_mix(h, u64(d.style_scope_boundary ? 1 : 0))
+	h = hash_mix(h, u64(d.adaptive_owner ? 1 : 0))
+	h = hash_mix(h, u64(d.adaptive_alternative ? 1 : 0))
+	h = hash_mix(h, u64(transmute(u32)d.adaptive_min_width))
 	h = hash_mix(h, d.paint_value)
 	h = hash_mix(h, u64(d.text_input_target ? 1 : 0))
 	h = hash_mix(h, u64(transmute(u32)d.control_value))
@@ -234,6 +237,9 @@ layout_hash :: proc(d: Description) -> u64 {
 	}
 	h := hash_mix(hash_style(style_input), u64(d.parent))
 	h = hash_mix(h, u64(d.layout_boundary ? 1 : 0))
+	h = hash_mix(h, u64(d.adaptive_owner ? 1 : 0))
+	h = hash_mix(h, u64(d.adaptive_alternative ? 1 : 0))
+	h = hash_mix(h, u64(transmute(u32)d.adaptive_min_width))
 	if d.kind == .Context_Menu_Panel {
 		h = hash_mix(h, u64(transmute(u32)d.context_menu_bounds.x))
 		h = hash_mix(h, u64(transmute(u32)d.context_menu_bounds.y))
@@ -468,6 +474,9 @@ copy_node_description :: proc(
 	node.style_environment = next_style_environment
 	node.style_scope_boundary = d.style_scope_boundary
 	node.layout_boundary = d.layout_boundary
+	node.adaptive_owner = d.adaptive_owner
+	node.adaptive_alternative = d.adaptive_alternative
+	node.adaptive_min_width = d.adaptive_min_width
 	node.button_content_style = d.button_content_style
 	node.button_variant = d.button_variant
 	node.color = d.color
@@ -514,7 +523,9 @@ copy_node_description :: proc(
 	node.selected = d.selected || rt.selected == node.id
 	previous_semantic_id := node.semantic_id
 	node.semantic_id = d.semantic_id
-	semantic_sync_node(rt, node, semantic, previous_semantic_id)
+	if !adaptive_node_has_alternative_ancestor(rt, node.id) {
+		semantic_sync_node(rt, node, semantic, previous_semantic_id)
+	}
 	node.drag_source_type = d.drag_source_type
 	node.drag_source_id = d.drag_source_id
 	node.drop_target_type = d.drop_target_type
@@ -837,7 +848,7 @@ reconcile :: proc(rt: ^Runtime) {
 			}
 		}
 		node.active = true
-		node.present = true
+		node.present = adaptive_default_presentation(rt, node.id)
 		if d.region { node.region_cached = true } else { node.region_cached = false }
 	}
 
@@ -893,7 +904,7 @@ reconcile :: proc(rt: ^Runtime) {
 	}
 
 	if previous_focus != 0 {
-		if node, ok := rt.nodes[previous_focus]; ok && node.active && node.focusable {
+		if node, ok := rt.nodes[previous_focus]; ok && node_is_presentation_active(rt, previous_focus) && node.focusable {
 			rt.focused = previous_focus
 		} else {
 			rt.focused = 0
@@ -903,7 +914,7 @@ reconcile :: proc(rt: ^Runtime) {
 					if ancestor == previous_semantic_owner { owner_in_lineage = true; break }
 				}
 				owner, owner_ok := rt.nodes[previous_semantic_owner]
-				if owner_in_lineage && owner_ok && owner.active && owner.focusable &&
+				if owner_in_lineage && owner_ok && node_is_presentation_active(rt, previous_semantic_owner) && owner.focusable &&
 					node_is_in_modal_overlay(rt, previous_semantic_owner, modal_overlay_root(rt)) {
 					rt.focused = previous_semantic_owner
 				}
@@ -917,7 +928,7 @@ reconcile :: proc(rt: ^Runtime) {
 		}
 	}
 	if rt.focused != 0 {
-		if node, ok := rt.nodes[rt.focused]; !ok || !node.active || !node.focusable {
+		if node, ok := rt.nodes[rt.focused]; !ok || !node_is_presentation_active(rt, rt.focused) || !node.focusable {
 			rt.focused = focus_fallback(rt, focus_lineage[:], !focus_was_in_virtual_list)
 		}
 	}
@@ -938,10 +949,13 @@ reconcile :: proc(rt: ^Runtime) {
 		if !owner_ok || !owner.active { rt.semantic_focus.owner = 0 }
 	}
 	semantic_keyboard_focus_refresh(rt)
-	semantic_prune_touched_collections(rt)
 
 	layout_measure_retained_dirty_nodes(rt)
 	layout_tree(rt)
+	adaptive_semantics_sync_descriptions(rt)
+	refresh_semantic_focus_realization(rt)
+	semantic_keyboard_focus_refresh(rt)
+	semantic_prune_touched_collections(rt)
 	semantic_commit(rt)
 	update_paint(rt)
 	rt.frame_open = false
@@ -1099,7 +1113,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 
 focus_fallback :: proc(rt: ^Runtime, lineage: []Node_ID, allow_global := true) -> Node_ID {
 	for i := 1; i < len(lineage); i += 1 {
-		if parent, ok := rt.nodes[lineage[i]]; ok && parent.active && parent.focusable {
+		if parent, ok := rt.nodes[lineage[i]]; ok && node_is_presentation_active(rt, lineage[i]) && parent.focusable {
 			return lineage[i]
 		}
 	}
@@ -1108,7 +1122,7 @@ focus_fallback :: proc(rt: ^Runtime, lineage: []Node_ID, allow_global := true) -
 	// focus only through a surviving ancestor in that list's lineage.
 	if !allow_global { return 0 }
 	for id in rt.order {
-		if node, ok := rt.nodes[id]; ok && node.active && node.focusable {
+		if node, ok := rt.nodes[id]; ok && node_is_presentation_active(rt, id) && node.focusable {
 			return id
 		}
 	}
@@ -1142,7 +1156,7 @@ end_frame :: proc(ui: ^UI) {
 	// also covers controls that disappeared before their event could be read.
 	ui.runtime.activation_node = 0
 	if ui.runtime.context_menu.dismissed {
-		if node, ok := ui.runtime.nodes[ui.runtime.context_menu.overlay]; !ok || !node.active {
+		if node, ok := ui.runtime.nodes[ui.runtime.context_menu.overlay]; !ok || !node_is_presentation_active(ui.runtime, ui.runtime.context_menu.overlay) {
 			ui.runtime.context_menu.dismissed = false
 			ui.runtime.context_menu.overlay = 0
 			ui.runtime.context_menu.panel = 0

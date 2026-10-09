@@ -67,9 +67,14 @@ intact, and unresolved overflow or unused surplus stays explicit. Row/Column
 main-axis justification uses exact fixed-point shares, while baseline and
 logical writing direction affect placement. Split keeps its absolute logical
 preferred position through resize and drag, constrained by pane bounds. Text
-shaping remains in the measure stage and allocation never initiates it. This
-does not make ordinary containers content-sized (#5), or add a general
-adaptive-layout policy.
+shaping remains in the measure stage and allocation never initiates it. These
+primitives do not make ordinary containers content-sized (#5). A bounded
+adaptive region is a separate policy: it retains exactly two ordered
+presentations and selects one during layout from the owner's actual parent-
+assigned inner width. Its fixed outer bounds prevent selection feedback; only
+the selected branch participates in geometry, paint, input, focus, and semantic
+bounds. Both branches are described and reconciled in the normal application
+pass, with no callback-driven or whole-window stabilization loop.
 
 `Style_Environment` is the inherited dependency surface for a compact theme ID,
 density, normalized text scale, accent override, and backend-neutral
