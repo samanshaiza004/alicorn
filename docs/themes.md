@@ -139,10 +139,13 @@ typed runtime default:
 }
 ```
 
-Recipes contain semantic color roles and state transforms, not padding,
-thickness, or scroll geometry. Checkbox and Slider parts resolve independently
-through the same recipe vocabulary, so themes can change their appearance
-without changing widget semantics. The strict JSON source currently authors
+Recipes primarily contain semantic color roles and state transforms.
+`Text_Field_Recipe.horizontal_inset` is the exception: it sets the logical
+horizontal content inset, which Alicorn scales by the active density and uses
+consistently for shaping, clipping, pointer geometry, caret, selection, and
+IME positioning. Checkbox and Slider parts resolve independently through the
+same recipe vocabulary, so themes can change their appearance without
+changing widget semantics. The strict JSON source currently authors
 sparse Button variants and selected/hovered/pressed/disabled role transforms;
 Checkbox, Slider, Text Field, and Scrollbar recipe authoring remains a typed
 Odin setup API.

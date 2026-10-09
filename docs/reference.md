@@ -109,7 +109,7 @@ error and its correction hint.
 | `grid_cell` | Assign an already-emitted direct Grid child to a row/column and optional spans/alignment. |
 | `LAYOUT_SIZE_FIT_CONTENT` | Opt a Column `Container` into measured height, or a `Scroll_Region` into a content-sized, max-capped viewport. |
 | `button_content_style` | Set label alignment and padding inside a button. |
-| `Text_Style` | Select weight, overflow behavior, and other text presentation options. |
+| `Text_Style` | Select weight, overflow behavior, and text presentation options. `font_size` is a logical-unit override; the active text scale still applies. |
 | `Style_Theme` / `style_theme_register` | Register an immutable typed color palette for one runtime. |
 | `Style_Control_State` / `Style_Control_States` | Shared selected, hovered, pressed, and disabled recipe-transform vocabulary. |
 | `style_color` / `style_metric` | Resolve a semantic color or scale an app-owned metric in the active environment. |
@@ -760,8 +760,13 @@ system file drops or arbitrary MIME payloads.
 ## Text, runtime, and presentation
 
 - `Text_Style` and `Font_Role` choose text weight, overflow, and UI/monospace
-  roles. The native host bundles Atkinson Hyperlegible Next and Mono; font
-  notices and file details are in [`assets/fonts/README.md`](../assets/fonts/README.md).
+  roles. `Text_Style.font_size` can set a control-specific logical size without
+  changing the default for labels and buttons; the active accessibility text
+  scale multiplies either size. Text fields use a theme-recipe horizontal
+  inset and center the shaped run vertically, while their declared height
+  remains independent of font size. The native host bundles Atkinson
+  Hyperlegible Next and Mono; font notices and file details are in
+  [`assets/fonts/README.md`](../assets/fonts/README.md).
 - `text_style_spans(ui, id, spans)` applies shaping-aware typography to the
   just-described `.Text` node. Each `Text_Style_Span` uses a half-open UTF-8
   byte range. Weight and italic are independently optional; later spans that

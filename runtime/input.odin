@@ -118,8 +118,8 @@ text_field_pointer_selection_update :: proc(rt: ^Runtime, owner: Node_ID, x, y: 
 		rt.captured_node != owner || !rt.text_field_selection_drag.active { return false }
 	node, ok := rt.nodes[owner]
 	if !ok || !node_is_presentation_active(rt, owner) || node.kind != .Text_Field || !node.text_run_valid { return false }
-	bounds := layout_node_finalized_geometry(rt, owner).bounds
-	position := text_run_hit_test(&node.text_run, x-bounds.x, y-bounds.y, rt.scratch_allocator)
+	origin := text_field_run_origin(rt, node, &node.text_run)
+	position := text_run_hit_test(&node.text_run, x-origin.x, y-origin.y, rt.scratch_allocator)
 	endpoints, changed := text_selection.text_selection_drag_extend(
 		node.text,
 		rt.text_field_selection_drag,
@@ -637,8 +637,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 				}
 				if node.kind == .Text_Field && node.text_run_valid &&
 					(event.button == 0 || event.button == POINTER_BUTTON_PRIMARY) {
-					bounds := layout_node_finalized_geometry(rt, node.id).bounds
-					position := text_run_hit_test(&node.text_run, event.x-bounds.x, event.y-bounds.y, rt.scratch_allocator)
+					position := text_field_hit_test(rt, node.id, event.x, event.y)
 					drag_state, endpoints := text_selection.text_selection_drag_begin(
 						node.text,
 						position.byte,
@@ -919,8 +918,13 @@ text_node_hit_test :: proc(rt: ^Runtime, id: Node_ID, x, y: f32) -> (position: T
 	if !found || !node_is_presentation_active(rt, id) || (node.kind != .Text && node.kind != .Text_Field) || !node.text_run_valid || len(node.text_run.lines) == 0 {
 		return Text_Position{}, false
 	}
-	bounds := layout_node_finalized_geometry(rt, id).bounds
-	position = text_run_hit_test(&node.text_run, x-bounds.x, y-bounds.y, rt.scratch_allocator)
+	if node.kind == .Text_Field {
+		origin := text_field_run_origin(rt, node, &node.text_run)
+		position = text_run_hit_test(&node.text_run, x-origin.x, y-origin.y, rt.scratch_allocator)
+	} else {
+		bounds := layout_node_finalized_geometry(rt, id).bounds
+		position = text_run_hit_test(&node.text_run, x-bounds.x, y-bounds.y, rt.scratch_allocator)
+	}
 	return position, true
 }
 
@@ -936,9 +940,15 @@ text_node_caret_geometry :: proc(rt: ^Runtime, id: Node_ID, position: Text_Posit
 	}
 	geometry := text_run_caret_geometry(&node.text_run, position, rt.scratch_allocator)
 	if geometry.valid {
-		bounds := layout_node_finalized_geometry(rt, id).bounds
-		geometry.rect.x += bounds.x
-		geometry.rect.y += bounds.y
+		if node.kind == .Text_Field {
+			origin := text_field_run_origin(rt, node, &node.text_run)
+			geometry.rect.x += origin.x
+			geometry.rect.y += origin.y
+		} else {
+			bounds := layout_node_finalized_geometry(rt, id).bounds
+			geometry.rect.x += bounds.x
+			geometry.rect.y += bounds.y
+		}
 		geometry.rect = layout_finalize_rect(geometry.rect, rt.presentation_scale_x, rt.presentation_scale_y)
 	}
 	return geometry
@@ -949,13 +959,16 @@ text_field_caret_geometry :: proc(rt: ^Runtime, id: Node_ID) -> Text_Caret_Geome
 	if !ok || !node_is_presentation_active(rt, id) || node.kind != .Text_Field || !node.text_run_valid {
 		return Text_Caret_Geometry{}
 	}
-	geometry := text_run_caret_geometry(&node.text_run, node.caret, rt.scratch_allocator)
+	run := &node.text_run
+	position := node.caret
 	if node.composition.active && node.composition_run_valid {
-		geometry = text_run_caret_geometry(&node.composition_run, text_composition_visual_position(node), rt.scratch_allocator)
+		run = &node.composition_run
+		position = text_composition_visual_position(node)
 	}
-	bounds := layout_node_finalized_geometry(rt, id).bounds
-	geometry.rect.x += bounds.x
-	geometry.rect.y += bounds.y
+	geometry := text_run_caret_geometry(run, position, rt.scratch_allocator)
+	origin := text_field_run_origin(rt, node, run)
+	geometry.rect.x += origin.x
+	geometry.rect.y += origin.y
 	geometry.rect = layout_finalize_rect(geometry.rect, rt.presentation_scale_x, rt.presentation_scale_y)
 	return geometry
 }
@@ -965,8 +978,8 @@ text_field_hit_test :: proc(rt: ^Runtime, id: Node_ID, x, y: f32) -> Text_Positi
 	if !ok || !node_is_presentation_active(rt, id) || node.kind != .Text_Field || !node.text_run_valid {
 		return Text_Position{}
 	}
-	bounds := layout_node_finalized_geometry(rt, id).bounds
-	return text_run_hit_test(&node.text_run, x-bounds.x, y-bounds.y, rt.scratch_allocator)
+	origin := text_field_run_origin(rt, node, &node.text_run)
+	return text_run_hit_test(&node.text_run, x-origin.x, y-origin.y, rt.scratch_allocator)
 }
 
 text_field_selection_rects :: proc(rt: ^Runtime, id: Node_ID, allocator := context.allocator) -> [dynamic]Text_Selection_Rect {
@@ -981,10 +994,10 @@ text_field_selection_rects :: proc(rt: ^Runtime, id: Node_ID, allocator := conte
 		allocator,
 		rt.scratch_allocator,
 	)
-	bounds := layout_node_finalized_geometry(rt, id).bounds
+	origin := text_field_run_origin(rt, node, &node.text_run)
 	for &selection in result {
-		selection.rect.x += bounds.x
-		selection.rect.y += bounds.y
+		selection.rect.x += origin.x
+		selection.rect.y += origin.y
 		selection.rect = layout_finalize_rect(selection.rect, rt.presentation_scale_x, rt.presentation_scale_y)
 	}
 	return result

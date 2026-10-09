@@ -272,6 +272,14 @@ update_paint :: proc(rt: ^Runtime) {
 					focused=rt.focused == node.id,
 				})
 			}
+			field_content_bounds := Rect{}
+			field_content_clip := node.clip
+			field_text_origin := [2]f32{}
+			if node.kind == .Text_Field {
+				field_content_bounds = text_field_content_bounds(rt, node)
+				field_content_clip = rect_intersection(node.clip, field_content_bounds)
+				field_text_origin = text_field_run_origin(rt, node, &node.text_run)
+			}
 			if node.kind == .Checkbox {
 				checkbox_style = style_checkbox_resolve_retained(rt, node, Checkbox_Visual_State{
 					checked=node.paint_value&1 != 0,
@@ -291,6 +299,9 @@ update_paint :: proc(rt: ^Runtime) {
 			}
 			if node.kind == .Text_Field && node.composition.active {
 				prepare_text_composition_node(rt, node)
+				if node.composition_run_valid {
+					field_text_origin = text_field_run_origin(rt, node, &node.composition_run)
+				}
 			}
 			clear(&node.paint)
 			if node.kind == .Text_Field {
@@ -307,9 +318,10 @@ update_paint :: proc(rt: ^Runtime) {
 					)
 					for selected in selection {
 						bounds := selected.rect
-						bounds.x += node.bounds.x
-						bounds.y += node.bounds.y
-						append(&node.paint, paint_surface_command(node.id, bounds, node.clip, field_style.selection))
+						selection_origin := text_field_run_origin(rt, node, &node.text_run)
+						bounds.x += selection_origin.x
+						bounds.y += selection_origin.y
+						append(&node.paint, paint_surface_command(node.id, bounds, field_content_clip, field_style.selection))
 						if node.style_environment.accessibility.increased_contrast {
 							append_rect_outline_bounds(node, bounds,
 								style_environment_color(rt, node.style_environment, .Focus),
@@ -333,10 +345,11 @@ update_paint :: proc(rt: ^Runtime) {
 					)
 					for selected in selection {
 						bounds := selected.rect
-						bounds.x += node.bounds.x
-						bounds.y += node.bounds.y + bounds.h - 2
+						composition_origin := text_field_run_origin(rt, node, &node.composition_run)
+						bounds.x += composition_origin.x
+						bounds.y += composition_origin.y + bounds.h - 2
 						bounds.h = 1
-						append(&node.paint, paint_surface_command(node.id, bounds, node.clip, style_environment_color(rt, node.style_environment, .Accent)))
+						append(&node.paint, paint_surface_command(node.id, bounds, field_content_clip, style_environment_color(rt, node.style_environment, .Accent)))
 					}
 					delete(selection)
 				}
@@ -499,7 +512,11 @@ update_paint :: proc(rt: ^Runtime) {
 				append(&node.paint, paint_geometry_command(node.id, node.bounds, node.clip, paint_geometry_handle_for_node(node)))
 			} else {
 				text_clip := node.clip
-				if node.text_style.overflow != .Wrap {
+				text_bounds := node.bounds
+				if node.kind == .Text_Field {
+					text_bounds = Rect{field_text_origin.x, field_text_origin.y, field_content_bounds.w, field_content_bounds.h}
+					text_clip = field_content_clip
+				} else if node.text_style.overflow != .Wrap {
 					text_clip = rect_intersection(node.clip, node.bounds)
 				}
 				paint_geometry := Text_Paint_Geometry{}
@@ -535,7 +552,7 @@ update_paint :: proc(rt: ^Runtime) {
 						text_color = part_color
 					}
 				}
-				append(&node.paint, paint_text_command(node.id, node.bounds, text_clip, text_run_handle, text_color, node.text_paint_spans[:]))
+				append(&node.paint, paint_text_command(node.id, text_bounds, text_clip, text_run_handle, text_color, node.text_paint_spans[:]))
 				append_text_paint_geometry(node, &paint_geometry, text_clip, false)
 				text_paint_geometry_destroy(&paint_geometry)
 			}
@@ -549,13 +566,8 @@ update_paint :: proc(rt: ^Runtime) {
 			}
 			if node.kind == .Text_Field && rt.focused == node.id {
 				caret := text_field_caret_geometry(rt, node.id)
-				caret.rect.x -= node.bounds.x
-				caret.rect.y -= node.bounds.y
 				if caret.valid {
-					bounds := caret.rect
-					bounds.x += node.bounds.x
-					bounds.y += node.bounds.y
-					append(&node.paint, paint_surface_command(node.id, bounds, node.clip, field_style.caret))
+					append(&node.paint, paint_surface_command(node.id, caret.rect, field_content_clip, field_style.caret))
 				}
 			}
 			if node.kind == .Text_Field {

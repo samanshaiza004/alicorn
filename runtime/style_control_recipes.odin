@@ -102,6 +102,8 @@ Slider_Resolved_Style :: struct {
 
 Text_Field_Recipe :: struct {
 	defined: bool,
+	// horizontal_inset is a logical distance on each side of the text content.
+	horizontal_inset: f32,
 	surface_role: Style_Color_Role,
 	text_role: Style_Color_Role,
 	border_role: Style_Color_Role,
@@ -130,6 +132,7 @@ Text_Field_Resolved_Style :: struct {
 
 DEFAULT_TEXT_FIELD_RECIPE :: Text_Field_Recipe{
 	defined=true,
+	horizontal_inset=10,
 	surface_role=.Surface,
 	text_role=.Text,
 	border_role=.Border,
@@ -295,6 +298,16 @@ style_text_field_recipe :: proc(rt: ^Runtime, environment: Style_Environment) ->
 	return DEFAULT_TEXT_FIELD_RECIPE
 }
 
+// style_text_field_horizontal_inset resolves the theme-provided logical inset
+// and applies environment density once. Callers use this same value for text
+// shaping, painting, pointer geometry, and native input positioning.
+style_text_field_horizontal_inset :: proc(rt: ^Runtime, environment: Style_Environment) -> f32 {
+	recipe := style_text_field_recipe(rt, environment)
+	density := environment.density
+	if !(density > 0) || !(density < 100) { density = 1 }
+	return recipe.horizontal_inset * density
+}
+
 style_scrollbar_recipe :: proc(rt: ^Runtime, environment: Style_Environment) -> Scrollbar_Recipe {
 	if rt != nil {
 		index := u64(u32(environment.theme))
@@ -346,7 +359,8 @@ control_part_transform_is_valid :: proc(transform: Control_Part_Transform) -> bo
 
 style_text_field_recipe_is_valid :: proc(recipe: Text_Field_Recipe) -> bool {
 	if !recipe.defined { return true }
-	return style_color_role_is_valid(recipe.surface_role) &&
+	return recipe.horizontal_inset == recipe.horizontal_inset && recipe.horizontal_inset >= 0 && recipe.horizontal_inset <= 10000 &&
+	       style_color_role_is_valid(recipe.surface_role) &&
 	       style_color_role_is_valid(recipe.text_role) &&
 	       style_color_role_is_valid(recipe.border_role) &&
 	       style_color_role_is_valid(recipe.focused_border_role) &&

@@ -61,6 +61,27 @@ clear_text_composition :: proc(node: ^Node, allocator := context.allocator) -> b
 	return was_active
 }
 
+// text_field_content_bounds is the shared clipped content box inside the
+// control's outer, accessible hit bounds. The absolute edges are finalized
+// together so paint, pointer, and native input geometry agree at fractional DPI.
+text_field_content_bounds :: proc(rt: ^Runtime, node: ^Node) -> Rect {
+	if rt == nil || node == nil { return {} }
+	outer := layout_node_finalized_geometry(rt, node.id).bounds
+	inset := style_text_field_horizontal_inset(rt, node.style_environment)
+	content := Rect{outer.x+inset, outer.y, maxf(outer.w-2*inset, 0), outer.h}
+	return layout_finalize_rect(content, rt.presentation_scale_x, rt.presentation_scale_y)
+}
+
+// TextField glyphs are vertically centered in the content box. Keep the text
+// run's origin as the single source for paint, caret, selection, hit tests, and
+// IME positioning.
+text_field_run_origin :: proc(rt: ^Runtime, node: ^Node, run: ^Text_Run) -> [2]f32 {
+	content := text_field_content_bounds(rt, node)
+	run_height: f32 = 0
+	if run != nil { run_height = run.height }
+	return [2]f32{content.x, content.y+(content.h-run_height)*0.5}
+}
+
 // cancel_text_composition is the explicit application/runtime cancellation
 // boundary used by Escape and platform focus changes. It clears only the
 // transient preedit; committed field text and its current selection remain
@@ -102,7 +123,10 @@ prepare_text_composition_node :: proc(rt: ^Runtime, node: ^Node) -> bool {
 		return false
 	}
 	max_width := node.text_run.max_width if node.text_run_valid else node.style.width
-	requested_size := DEFAULT_TEXT_SIZE * node.style_environment.text_scale
+	if !node.text_run_valid && max_width >= 0 {
+		max_width = maxf(max_width-2*style_text_field_horizontal_inset(rt, node.style_environment), 0)
+	}
+	requested_size := text_style_requested_size(node.text_style, node.style_environment)
 	value := text_composition_visual_value(node)
 	defer { if len(value) > 0 { delete(value, rt.persistent_allocator) } }
 	if node.composition_run_valid &&
@@ -196,7 +220,7 @@ text_field_input_area :: proc(rt: ^Runtime, id: Node_ID) -> (area: Rect, cursor:
 	if !found || !node.active || node.kind != .Text_Field || !node.text_run_valid { return }
 	caret := text_field_caret_geometry(rt, id)
 	if !caret.valid { return }
-	area = layout_node_finalized_geometry(rt, id).bounds
+	area = text_field_content_bounds(rt, node)
 	cursor = caret.rect.x - area.x
 	if cursor < 0 { cursor = 0 }
 	ok = true
@@ -271,7 +295,7 @@ text_input_area :: proc(rt: ^Runtime, id: Node_ID) -> (area: Text_Input_Area, ok
 	if node.kind == .Text_Field {
 		rect, cursor, valid := text_field_input_area(rt, id)
 		if valid { return Text_Input_Area{rect=rect, cursor_x=cursor}, true }
-		bounds := layout_node_finalized_geometry(rt, id).bounds
+		bounds := text_field_content_bounds(rt, node)
 		if bounds.w <= 0 || bounds.h <= 0 { return }
 		return Text_Input_Area{rect=bounds}, true
 	}
