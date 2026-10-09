@@ -22,7 +22,8 @@ text_selection_pointer_test_point :: proc(rt: ^Runtime, id: Node_ID, byte: int) 
 	local_x, x_ok := text_run_position_x(&node.text_run, line_index, position, rt.scratch_allocator)
 	if !x_ok || line_index < 0 { return }
 	line := node.text_run.lines[line_index]
-	return node.bounds.x+local_x, node.bounds.y+line.y+line.height*0.5, true
+	origin := text_field_run_origin(rt, node, &node.text_run)
+	return origin.x+local_x, origin.y+line.y+line.height*0.5, true
 }
 
 text_selection_pointer_test_click :: proc(rt: ^Runtime, id: Node_ID, byte: int, click_count: u8, shift := false) -> bool {

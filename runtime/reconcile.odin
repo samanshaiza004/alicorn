@@ -113,6 +113,7 @@ description_hash :: proc(
 	}
 	if node_has_text_product(d.kind) {
 		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
+		h = hash_mix(h, u64(transmute(u32)text_style_requested_size(d.text_style, DEFAULT_STYLE_ENVIRONMENT)))
 		h = hash_mix(h, u64(d.text_style.overflow))
 	}
 	h = hash_mix(h, hash_style_environment(d.style_environment))
@@ -183,6 +184,7 @@ measure_input_hash :: proc(d: Description) -> u64 {
 	h = hash_mix(h, hash_text_style_spans(d.text_style_spans))
 	h = hash_mix(h, u64(d.font))
 	h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
+	h = hash_mix(h, u64(transmute(u32)text_style_requested_size(d.text_style, DEFAULT_STYLE_ENVIRONMENT)))
 	h = hash_mix(h, u64(d.text_style.overflow))
 	// Local layout inputs are fingerprinted together with text because they
 	// affect the measured product. Inherited metric/typography changes are
@@ -394,6 +396,11 @@ copy_node_description :: proc(
 	text_changed := node.text != d.text || label_changed
 	next_style_environment := style_environment_with_accessibility(d.style_environment, accessibility)
 	style_changes := style_environment_changed_domains(node.style_environment, next_style_environment)
+	if node.kind == .Text_Field && node.style_environment.theme != next_style_environment.theme {
+		previous_inset := style_text_field_horizontal_inset(rt, node.style_environment)
+		next_inset := style_text_field_horizontal_inset(rt, next_style_environment)
+		if previous_inset != next_inset { style_changes += {.Metrics} }
+	}
 	previous_surface_style := rt.semantic_surfaces[node.id]
 	if semantic_surface_role_changed(previous_surface_style, semantic_surface_style) {
 		style_changes += {.Paint}
@@ -407,10 +414,11 @@ copy_node_description :: proc(
 	typography_changed := Style_Domain.Typography in style_changes
 	font_changed := node.font != d.font
 	weight_changed := effective_font_weight(node.text_style.font_weight) != effective_font_weight(d.text_style.font_weight)
+	font_size_changed := text_style_requested_size(node.text_style, DEFAULT_STYLE_ENVIRONMENT) != text_style_requested_size(d.text_style, DEFAULT_STYLE_ENVIRONMENT)
 	style_spans_changed := hash_text_style_spans(node.text_style_spans[:]) != hash_text_style_spans(d.text_style_spans)
 	overflow_changed := node.text_style.overflow != d.text_style.overflow
 	kind_changed := node.kind != d.kind
-	if node.text_run_valid && (text_changed || typography_changed || font_changed || weight_changed || overflow_changed || style_spans_changed || kind_changed || !node_has_text_product(d.kind)) {
+	if node.text_run_valid && (text_changed || typography_changed || font_changed || weight_changed || font_size_changed || overflow_changed || style_spans_changed || kind_changed || !node_has_text_product(d.kind)) {
 		text_run_destroy(&node.text_run)
 		node.text_run_valid = false
 	}

@@ -9,6 +9,17 @@ import runa "../third_party/Runa"
 
 FONT_WEIGHT_AXIS_TAG :: runa.Axis_Tag(0x77676874)
 
+// text_style_requested_size resolves the per-control logical font size while
+// preserving the inherited user/host text scale. Non-positive, NaN, or
+// unreasonable overrides fall back to the framework default.
+text_style_requested_size :: proc(style: Text_Style, environment: Style_Environment) -> f32 {
+	size := style.font_size
+	if !(size > 0) || !(size < 1_000_000) { size = DEFAULT_TEXT_SIZE }
+	scale := environment.text_scale
+	if !(scale > 0) || !(scale < 100) { scale = 1 }
+	return size * scale
+}
+
 Font_Weight_Axis :: struct {
 	available: bool,
 	tag:       runa.Axis_Tag,
@@ -1154,7 +1165,7 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1, fo
 	}
 	requested_width := max_width
 	font_weight := effective_font_weight(node.text_style.font_weight)
-	requested_size := DEFAULT_TEXT_SIZE * node.style_environment.text_scale
+	requested_size := text_style_requested_size(node.text_style, node.style_environment)
 	style_hash := hash_text_style_spans(node.text_style_spans[:])
 	if requested_width < 0 {
 		// For auto-width text, the parent layout pass owns the real wrapping

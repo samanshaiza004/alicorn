@@ -283,7 +283,7 @@ measure_cache_reason :: proc(old, next: Measure_Cache_Key) -> string {
 	return "declared measurement dependency changed"
 }
 
-layout_measure_intrinsic_size :: proc(node: ^Node) -> Layout_Size {
+layout_measure_intrinsic_size :: proc(rt: ^Runtime, node: ^Node) -> Layout_Size {
 	padding_x: f32 = 0
 	padding_y: f32 = 0
 	if node.kind == .Button {
@@ -298,6 +298,10 @@ layout_measure_intrinsic_size :: proc(node: ^Node) -> Layout_Size {
 			width = 116
 			if node.text_run_valid { width = node.text_run.width+36 }
 		case .Slider: width = 180
+		case .Text_Field:
+			inset_x := style_text_field_horizontal_inset(rt, node.style_environment)
+			width = 80+2*inset_x
+			if node.text_run_valid { width = node.text_run.width+2*inset_x }
 		case:
 			width = 80+2*padding_x
 			if node.text_run_valid { width = node.text_run.width+2*padding_x }
@@ -311,6 +315,9 @@ layout_measure_intrinsic_size :: proc(node: ^Node) -> Layout_Size {
 		case .Slider:
 			height = 44
 			if node.text_run_valid { height = maxf(44, node.text_run.height+24) }
+		case .Text_Field:
+			height = 28
+			if node.text_run_valid { height = node.text_run.height+8 }
 		case:
 			height = 24+2*padding_y
 			if node.text_run_valid { height = node.text_run.height+2*padding_y }
@@ -367,6 +374,7 @@ layout_measure_node :: proc(
 		if max_width >= 0 {
 			if node.kind == .Button { max_width = maxf(max_width-2*maxf(node.button_content_style.padding_x, 0), 0) }
 			if node.kind == .Checkbox { max_width = maxf(max_width-36, 0) }
+			if node.kind == .Text_Field { max_width = maxf(max_width-2*style_text_field_horizontal_inset(rt, node.style_environment), 0) }
 		}
 		shape_calls_before := rt.text_engine.shape_calls
 		if prepare_text_run_node(rt, node, max_width, force_unbounded=force_unbounded_text_shape && constraints.width.unbounded_max) {
@@ -376,7 +384,7 @@ layout_measure_node :: proc(
 		}
 		rt.stats.text_shape_requests += rt.text_engine.shape_calls-shape_calls_before
 	}
-	result := Measure_Result{size=layout_measure_intrinsic_size(node)}
+	result := Measure_Result{size=layout_measure_intrinsic_size(rt, node)}
 	content_height: Layout_Unit = 0
 	if layout_node_has_content_height(node) {
 		content_height = layout_measure_content_height(rt, node, constraints)
@@ -401,6 +409,8 @@ layout_measure_node :: proc(
 	if node.text_run_valid && len(node.text_run.lines) > 0 {
 		baseline := node.text_run.lines[0].baseline
 		#partial switch node.kind {
+		case .Text_Field:
+			baseline += (layout_unit_to_f32(result.size.height)-node.text_run.height)*0.5
 		case .Button:
 			padding_y := maxf(node.button_content_style.padding_y, 0)
 			content_height := maxf(layout_unit_to_f32(result.size.height)-2*padding_y, 0)

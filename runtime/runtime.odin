@@ -906,6 +906,9 @@ Style_Generations :: struct {
 // default regular face. Wrap remains the backwards-compatible default.
 Text_Style :: struct {
 	font_weight: f32,
+	// font_size is a logical-unit override. Zero preserves the default text
+	// size; Style_Environment.text_scale is applied to either value.
+	font_size:   f32,
 	overflow:    Text_Overflow,
 }
 

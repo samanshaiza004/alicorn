@@ -145,6 +145,11 @@ intrinsic_main :: proc(rt: ^Runtime, node: ^Node, direction: Layout_Direction) -
 			return 116
 		}
 		if node.kind == .Slider { return 180 }
+		if node.kind == .Text_Field {
+			inset_x := style_text_field_horizontal_inset(rt, node.style_environment)
+			if node.text_run_valid { return node.text_run.width+2*inset_x }
+			return 80+2*inset_x
+		}
 		if node.text_run_valid {
 			return node.text_run.width + 2*padding_x
 		}
@@ -158,6 +163,10 @@ intrinsic_main :: proc(rt: ^Runtime, node: ^Node, direction: Layout_Direction) -
 	if node.kind == .Slider {
 		if node.text_run_valid { return maxf(44, node.text_run.height+24) }
 		return 44
+	}
+	if node.kind == .Text_Field {
+		if node.text_run_valid { return node.text_run.height+8 }
+		return 28
 	}
 	if node.text_run_valid { return node.text_run.height + 2*padding_y }
 	return 24 + 2*padding_y

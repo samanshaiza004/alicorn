@@ -31,10 +31,12 @@ test_text_field_recipe_keeps_focus_independent_from_hover :: proc(t: ^testing.T)
 test_text_field_recipe_rejects_invalid_roles_and_mixes :: proc(t: ^testing.T) {
 	invalid_role := Text_Field_Recipe{defined=true, border_role=.Count}
 	invalid_mix := Text_Field_Recipe{defined=true, hovered=Control_Part_Transform{border_mix=1.5}}
+	invalid_inset := Text_Field_Recipe{defined=true, horizontal_inset=-1}
 	valid := style_text_field_recipe_is_valid(DEFAULT_TEXT_FIELD_RECIPE)
 	testing.expect(t, valid, "the built-in text-field recipe should satisfy the typed recipe contract")
 	testing.expect(t, !style_text_field_recipe_is_valid(invalid_role), "invalid semantic roles should be rejected")
 	testing.expect(t, !style_text_field_recipe_is_valid(invalid_mix), "out-of-range state mixes should be rejected")
+	testing.expect(t, !style_text_field_recipe_is_valid(invalid_inset), "negative content insets should be rejected")
 }
 
 @(test)
@@ -106,6 +108,7 @@ test_registered_theme_overrides_text_field_and_scrollbar_recipes :: proc(t: ^tes
 	theme.colors[int(Style_Color_Role.Danger)] = Color{0.75, 0.08, 0.12, 1}
 	theme.text_field_recipe.surface_role = .Surface
 	theme.text_field_recipe.focused_border_role = .Danger
+	theme.text_field_recipe.horizontal_inset = 12
 	theme.scrollbar_recipe.thumb_role = .Accent
 	theme_id := style_theme_register(&rt, theme)
 	testing.expect(t, theme_id != 0, "theme with valid control recipes should register")
@@ -113,11 +116,16 @@ test_registered_theme_overrides_text_field_and_scrollbar_recipes :: proc(t: ^tes
 	environment.theme = theme_id
 
 	field_recipe := style_text_field_recipe(&rt, environment)
+	dense_environment := environment
+	dense_environment.density = 1.25
 	field := style_text_field_resolve(&rt, environment, field_recipe, Text_Field_Visual_State{focused=true})
 	scroll_recipe := style_scrollbar_recipe(&rt, environment)
 	scroll := style_scrollbar_resolve(&rt, environment, scroll_recipe, {})
 	testing.expect(t, field.surface == theme.colors[int(Style_Color_Role.Surface)] && field.border == theme.colors[int(Style_Color_Role.Danger)],
 		"registered text-field recipe should resolve through the owning theme")
+	testing.expect(t, style_text_field_horizontal_inset(&rt, environment) == 12 &&
+		style_text_field_horizontal_inset(&rt, dense_environment) == 15,
+		"text-field content inset should resolve from its theme recipe and scale with environment density")
 	testing.expect(t, scroll.thumb == theme.colors[int(Style_Color_Role.Accent)],
 		"registered scrollbar recipe should resolve its thumb role through the owning theme")
 
