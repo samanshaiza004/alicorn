@@ -101,6 +101,9 @@ error and its correction hint.
 | `runtime_text_run_build` | Shape temporary application text through Alicorn's retained text engine without exposing the engine. |
 | `container_begin` / `container_begin_ex` / `container_end` | Group children and define their layout; `layout_boundary=true` makes the container an explicit retained-layout invalidation boundary. |
 | `layout_style` | Set direction, size constraints, growth, padding, gap, alignment, and clipping. |
+| `adaptive_begin` / `adaptive_end` | Describe a bounded two-alternative region selected from the actual parent-assigned inner width. |
+| `adaptive_alternative_begin` / `adaptive_alternative_end` | Begin an ordered presentation with a minimum-width requirement; v1 supports a preferred candidate and a zero-width fallback. |
+| `adaptive_selection_state` | Inspect the selected candidate, actual available width, rejected alternative, and selection reason. |
 | `grid_begin` / `grid_end` | Describe a bounded two-dimensional container with explicit row/column tracks; optional `layout_boundary=true` contains child reflow within stable parent-assigned bounds. |
 | `grid_fixed` / `grid_auto` / `grid_fraction` / `grid_min_max` | Declare fixed, measured, weighted, or bounded-flexible Grid tracks. |
 | `grid_cell` | Assign an already-emitted direct Grid child to a row/column and optional spans/alignment. |
@@ -179,6 +182,56 @@ content-sized parent's measured height changes. A changed measurement with an
 identical output does not by itself trigger ancestor layout. Diagnostics record
 the content contribution and final measured height. This is opt-in; ordinary
 Row/Column sizing and growth remain unchanged.
+
+### Constraint-driven adaptive regions
+
+Use an adaptive region when a component has two intentional spatial
+presentations. The owner must have explicit or parent-assigned outer bounds;
+`FIT_CONTENT` is rejected because a presentation must not change the width used
+to choose itself. Selection uses the owner's actual assigned inner width during
+layout, after its parent has allocated space.
+
+V1 accepts exactly two ordered alternatives: a preferred first alternative
+with a positive minimum width, then a zero-width fallback. The application
+describes both alternatives in the ordinary retained tree, but only the
+selected alternative is laid out, painted, hit-tested, focusable, and given
+semantic bounds. The owner retains one node identity across switches and can carry the component's stable semantic entity.
+If equivalent
+interactive descendants in both alternatives use the same `Semantic_ID`, focus
+can transfer to the selected peer; application-owned state remains outside the
+physical presentation subtree.
+
+```odin
+alicorn.adaptive_begin(&ui, alicorn.key_string("commit-metadata"),
+	style=alicorn.layout_style(.Column, height=116),
+	label="commit-metadata")
+
+alicorn.adaptive_alternative_begin(&ui,
+	alicorn.key_string("commit-metadata-wide"), "Wide",
+	minimum_width=380, style=alicorn.layout_style(.Column))
+// Describe a Grid or other wide presentation.
+alicorn.adaptive_alternative_end(&ui)
+
+alicorn.adaptive_alternative_begin(&ui,
+	alicorn.key_string("commit-metadata-compact"), "Compact",
+	minimum_width=0, style=alicorn.layout_style(.Column))
+// Describe a compact Row/Column presentation.
+alicorn.adaptive_alternative_end(&ui)
+alicorn.adaptive_end(&ui)
+```
+
+The threshold is an explicit minimum-fit requirement, not a global device
+breakpoint. There is no hysteresis or iterative solver: one bounded selection
+chooses one of two retained alternatives from the incoming width. Both branch
+descriptions are reconciled with the application description, so inactive
+alternatives still consume description, reconciliation, and retained-node
+cost. Keep alternatives modest and measure large or expensive branches before
+considering lazy description. Constraint changes do not invoke callbacks or
+trigger whole-window re-description loops.
+The Layout trace and visual inspector report available width, selected
+alternative, rejected alternative, and selection reason. Applications can
+query the same data with `adaptive_selection_state`. An unchanged selection
+does not reconstruct either branch and preserves true idle behavior.
 
 ### Shared-track Grid
 

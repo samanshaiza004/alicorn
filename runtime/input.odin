@@ -29,7 +29,7 @@ Scrollbar_Hit :: struct {
 modal_overlay_root :: proc(rt: ^Runtime) -> Node_ID {
 	for index := len(rt.top_level)-1; index >= 0; index -= 1 {
 		id := rt.top_level[index]
-		if node, ok := rt.nodes[id]; ok && node.active {
+		if node, ok := rt.nodes[id]; ok && node_is_presentation_active(rt, id) {
 			if node.kind == .Modal_Overlay { return id }
 			if node.kind == .Context_Menu_Overlay && id == rt.context_menu.overlay &&
 				(rt.context_menu.open || rt.context_menu.dismissed) { return id }
@@ -55,7 +55,7 @@ scrollbar_hit_test :: proc(rt: ^Runtime, x, y: f32) -> Scrollbar_Hit {
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
 		id := rt.order[i]
 		node, ok := rt.nodes[id]
-		if !ok || !node.active || node.kind != .Scroll_Region ||
+		if !ok || !node_is_presentation_active(rt, id) || node.kind != .Scroll_Region ||
 			!node_is_in_modal_overlay(rt, id, modal_root) || !rect_contains(layout_node_finalized_geometry(rt, id).clip, x, y) { continue }
 		if node.scrollbar_vertical_visible && rect_contains(layout_finalize_rect(node.scrollbar_vertical_track, rt.presentation_scale_x, rt.presentation_scale_y), x, y) {
 			return Scrollbar_Hit{id, .Vertical, rect_contains(layout_finalize_rect(node.scrollbar_vertical_thumb, rt.presentation_scale_x, rt.presentation_scale_y), x, y)}
@@ -71,7 +71,7 @@ scrollbar_handle_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> bool {
 	if rt.scrollbar_drag_node == 0 || event.kind != .Move && event.kind != .Up { return false }
 	id := rt.scrollbar_drag_node
 	node, ok := rt.nodes[id]
-	if event.kind == .Up || !ok || !node.active {
+	if event.kind == .Up || !ok || !node_is_presentation_active(rt, id) {
 		rt.scrollbar_drag_node = 0
 		rt.captured_node = 0
 		return true
@@ -117,7 +117,7 @@ text_field_pointer_selection_update :: proc(rt: ^Runtime, owner: Node_ID, x, y: 
 	if rt == nil || owner == 0 || rt.text_field_selection_owner != owner ||
 		rt.captured_node != owner || !rt.text_field_selection_drag.active { return false }
 	node, ok := rt.nodes[owner]
-	if !ok || !node.active || node.kind != .Text_Field || !node.text_run_valid { return false }
+	if !ok || !node_is_presentation_active(rt, owner) || node.kind != .Text_Field || !node.text_run_valid { return false }
 	bounds := layout_node_finalized_geometry(rt, owner).bounds
 	position := text_run_hit_test(&node.text_run, x-bounds.x, y-bounds.y, rt.scratch_allocator)
 	endpoints, changed := text_selection.text_selection_drag_extend(
@@ -187,7 +187,7 @@ hit_test :: proc(rt: ^Runtime, x, y: f32, include_reveal_targets := false) -> No
 	// grab area intentionally overlaps both adjacent panes.
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
 		id := rt.order[i]
-		if node, ok := rt.nodes[id]; ok && node.active && node.kind == .Split_Handle &&
+		if node, ok := rt.nodes[id]; ok && node_is_presentation_active(rt, id) && node.kind == .Split_Handle &&
 			node_is_in_modal_overlay(rt, id, modal_root) &&
 			rect_contains(layout_node_finalized_geometry(rt, id).hit_bounds, x, y) &&
 			rect_contains(layout_node_finalized_geometry(rt, id).clip, x, y) {
@@ -196,7 +196,7 @@ hit_test :: proc(rt: ^Runtime, x, y: f32, include_reveal_targets := false) -> No
 	}
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
 		id := rt.order[i]
-		if node, ok := rt.nodes[id]; ok && node.active && !node.disabled &&
+		if node, ok := rt.nodes[id]; ok && node_is_presentation_active(rt, id) && !node.disabled &&
 			visual_part_hit_test_visible(rt, id, include_reveal_target=include_reveal_targets) &&
 			node_is_in_modal_overlay(rt, id, modal_root) &&
 			rect_contains(layout_node_finalized_geometry(rt, id).bounds, x, y) &&
@@ -214,7 +214,7 @@ hit_test :: proc(rt: ^Runtime, x, y: f32, include_reveal_targets := false) -> No
 	if rt.drag.phase == .Dragging {
 		for i := len(rt.order)-1; i >= 0; i -= 1 {
 			id := rt.order[i]
-			if node, ok := rt.nodes[id]; ok && node.active && !node.disabled && visual_part_is_visible(rt, id) &&
+			if node, ok := rt.nodes[id]; ok && node_is_presentation_active(rt, id) && !node.disabled && visual_part_is_visible(rt, id) &&
 				node.drop_target_type == rt.drag.drag_type && semantic_id_is_valid(node.drop_target_id) &&
 				node_is_in_modal_overlay(rt, id, modal_root) &&
 				rect_contains(layout_node_finalized_geometry(rt, id).bounds, x, y) &&
@@ -223,7 +223,7 @@ hit_test :: proc(rt: ^Runtime, x, y: f32, include_reveal_targets := false) -> No
 			}
 		}
 	}
-	if overlay, ok := rt.nodes[modal_root]; ok && overlay.active &&
+	if overlay, ok := rt.nodes[modal_root]; ok && node_is_presentation_active(rt, modal_root) &&
 		rect_contains(layout_node_finalized_geometry(rt, modal_root).bounds, x, y) &&
 		rect_contains(layout_node_finalized_geometry(rt, modal_root).clip, x, y) {
 		if overlay.kind == .Modal_Overlay || overlay.kind == .Context_Menu_Overlay { return modal_root }
@@ -237,7 +237,7 @@ split_drag_coordinate :: proc(node: ^Node, x, y: f32) -> f32 {
 
 update_split_drag :: proc(rt: ^Runtime, handle: ^Node, x, y: f32) {
 	owner, ok := rt.nodes[handle.split_owner]
-	if !ok || !owner.active { return }
+	if !ok || !node_is_presentation_active(rt, handle.split_owner) { return }
 	// Drag math remains in target logical geometry, matching split placement.
 	// Finalized bounds are only for pointer hit testing and presentation.
 	total := owner.bounds.w if owner.split_axis == .Horizontal else owner.bounds.h
@@ -271,7 +271,7 @@ scroll_region_hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 	modal_root := modal_overlay_root(rt)
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
 		id := rt.order[i]
-		if node, ok := rt.nodes[id]; ok && node.active && node.kind == .Scroll_Region &&
+		if node, ok := rt.nodes[id]; ok && node_is_presentation_active(rt, id) && node.kind == .Scroll_Region &&
 			node_is_in_modal_overlay(rt, id, modal_root) &&
 			rect_contains(layout_node_finalized_geometry(rt, id).bounds, x, y) &&
 			rect_contains(layout_node_finalized_geometry(rt, id).clip, x, y) {
@@ -320,7 +320,7 @@ process_scroll :: proc(rt: ^Runtime, event: Scroll_Event) -> bool {
 
 focus :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 	node, ok := rt.nodes[id]
-	if !ok || !node.active || !node.focusable || !node_is_in_modal_overlay(rt, id, modal_overlay_root(rt)) {
+	if !ok || !node_is_presentation_active(rt, id) || !node.focusable || !node_is_in_modal_overlay(rt, id, modal_overlay_root(rt)) {
 		return false
 	}
 	previous := rt.focused
@@ -377,7 +377,7 @@ focus_traverse :: proc(rt: ^Runtime, direction: Focus_Direction) -> Node_ID {
 		for index >= len(rt.order) { index -= len(rt.order) }
 		id := rt.order[index]
 		node, ok := rt.nodes[id]
-		if ok && node.active && node.focusable && !node.disabled && node_is_in_modal_overlay(rt, id, modal_root) {
+		if ok && node_is_presentation_active(rt, id) && node.focusable && !node.disabled && node_is_in_modal_overlay(rt, id, modal_root) {
 			if focus(rt, id) {
 				focus_indicator_set(rt, true)
 				return id
@@ -395,7 +395,7 @@ activate_focused :: proc(rt: ^Runtime, key: Activation_Key) -> bool {
 	node, ok := rt.nodes[id]
 	if !ok { return false }
 	can_activate := node.kind == .Button || (node.kind == .Checkbox && key == .Space)
-	if !node.active || !node.focusable || node.disabled || !can_activate {
+	if !node_is_presentation_active(rt, id) || !node.focusable || node.disabled || !can_activate {
 		return false
 	}
 	focus_indicator_set(rt, true)
@@ -436,7 +436,7 @@ slider_set_from_pointer :: proc(rt: ^Runtime, node: ^Node, x: f32) -> bool {
 adjust_focused_slider :: proc(rt: ^Runtime, direction: int) -> bool {
 	if direction == 0 { return false }
 	node, ok := rt.nodes[rt.focused]
-	if !ok || !node.active || node.kind != .Slider || !node.focusable || node.disabled || node.control_maximum <= node.control_minimum {
+	if !ok || !node_is_presentation_active(rt, rt.focused) || node.kind != .Slider || !node.focusable || node.disabled || node.control_maximum <= node.control_minimum {
 		return false
 	}
 	current := node.control_value
@@ -452,7 +452,7 @@ adjust_focused_slider :: proc(rt: ^Runtime, direction: int) -> bool {
 // into unrelated application shortcuts.
 set_focused_slider_bound :: proc(rt: ^Runtime, bound: Slider_Bound) -> bool {
 	node, ok := rt.nodes[rt.focused]
-	if !ok || !node.active || node.kind != .Slider || !node.focusable || node.disabled || node.control_maximum <= node.control_minimum {
+	if !ok || !node_is_presentation_active(rt, rt.focused) || node.kind != .Slider || !node.focusable || node.disabled || node.control_maximum <= node.control_minimum {
 		return false
 	}
 	value := node.control_minimum if bound == .Minimum else node.control_maximum
@@ -465,7 +465,7 @@ set_focused_slider_bound :: proc(rt: ^Runtime, bound: Slider_Bound) -> bool {
 // deterministically when its retained node leaves the description.
 select :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 	next, ok := rt.nodes[id]
-	if !ok || !next.active { return false }
+	if !ok || !node_is_presentation_active(rt, id) { return false }
 	if rt.selected == id { return true }
 	if rt.selected != 0 {
 		if old, old_ok := rt.nodes[rt.selected]; old_ok {
@@ -495,7 +495,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 		return 0
 	}
 	if menu_active && rt.context_menu.open {
-		if overlay, ok := rt.nodes[rt.context_menu.overlay]; !ok || !overlay.active {
+		if overlay, ok := rt.nodes[rt.context_menu.overlay]; !ok || !node_is_presentation_active(rt, rt.context_menu.overlay) {
 			// The application has requested a menu but has not described its
 			// overlay yet. Do not let the invoking pointer sequence reach content.
 			return 0
@@ -510,7 +510,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 	if event.kind == .Move { tooltip_pointer_update(rt, target, event.timestamp_ns) }
 	if menu_active && rt.context_menu.open && event.kind == .Down && target == rt.context_menu.overlay {
 		inside_panel := false
-		if panel, ok := rt.nodes[rt.context_menu.panel]; ok && panel.active {
+		if panel, ok := rt.nodes[rt.context_menu.panel]; ok && node_is_presentation_active(rt, rt.context_menu.panel) {
 			inside_panel = rect_contains(panel.bounds, event.x, event.y) && rect_contains(panel.clip, event.x, event.y)
 		}
 		if !inside_panel {
@@ -569,10 +569,10 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 			_ = text_field_pointer_selection_update(rt, rt.text_field_selection_owner, event.x, event.y)
 		}
 		hover_target := target
-		if captured, ok := rt.nodes[rt.captured_node]; ok && captured.active && captured.kind == .Split_Handle {
+		if captured, ok := rt.nodes[rt.captured_node]; ok && node_is_presentation_active(rt, rt.captured_node) && captured.kind == .Split_Handle {
 			hover_target = captured.id
 			update_split_drag(rt, captured, event.x, event.y)
-		} else if captured, ok := rt.nodes[rt.captured_node]; ok && captured.active && captured.kind == .Slider {
+		} else if captured, ok := rt.nodes[rt.captured_node]; ok && node_is_presentation_active(rt, rt.captured_node) && captured.kind == .Slider {
 			hover_target = captured.id
 			_ = slider_set_from_pointer(rt, captured, event.x)
 		}
@@ -760,7 +760,7 @@ text_replace_owned :: proc(value, insert: string, start, end: int, allocator: me
 process_text_edit :: proc(rt: ^Runtime, id: Node_ID, edit: Text_Edit) -> Text_Change {
 	change := Text_Change{id, "", false}
 	node, ok := rt.nodes[id]
-	if !ok || !node.active || node.kind != .Text_Field {
+	if !ok || !node_is_presentation_active(rt, id) || node.kind != .Text_Field {
 		return change
 	}
 	if !focus(rt, id) {
@@ -822,7 +822,7 @@ process_text_edit :: proc(rt: ^Runtime, id: Node_ID, edit: Text_Edit) -> Text_Ch
 // or an extended grapheme cluster.
 set_text_position :: proc(rt: ^Runtime, id: Node_ID, position: Text_Position) -> bool {
 	node, ok := rt.nodes[id]
-	if !ok || !node.active || node.kind != .Text_Field { return false }
+	if !ok || !node_is_presentation_active(rt, id) || node.kind != .Text_Field { return false }
 	caret := grapheme_floor_boundary(node.text, position.byte)
 	next := Text_Position{caret, position.affinity}
 	changed := node.caret != next || node.selection_anchor != next || node.selection_focus != next
@@ -841,7 +841,7 @@ set_text_caret :: proc(rt: ^Runtime, id: Node_ID, byte_index: int) -> bool {
 
 set_text_selection :: proc(rt: ^Runtime, id: Node_ID, start, end: int) -> bool {
 	node, ok := rt.nodes[id]
-	if !ok || !node.active || node.kind != .Text_Field { return false }
+	if !ok || !node_is_presentation_active(rt, id) || node.kind != .Text_Field { return false }
 	anchor: Text_Position
 	focus_position: Text_Position
 	if start <= end {
@@ -869,7 +869,7 @@ set_text_selection :: proc(rt: ^Runtime, id: Node_ID, start, end: int) -> bool {
 process_text_command :: proc(rt: ^Runtime, id: Node_ID, command: Text_Command) -> Text_Change {
 	change := Text_Change{id, "", false}
 	node, ok := rt.nodes[id]
-	if !ok || !node.active || node.kind != .Text_Field || !focus(rt, id) {
+	if !ok || !node_is_presentation_active(rt, id) || node.kind != .Text_Field || !focus(rt, id) {
 		return change
 	}
 
@@ -916,7 +916,7 @@ process_text_command :: proc(rt: ^Runtime, id: Node_ID, command: Text_Command) -
 // active retained node has a valid shaped run.
 text_node_hit_test :: proc(rt: ^Runtime, id: Node_ID, x, y: f32) -> (position: Text_Position, ok: bool) {
 	node, found := rt.nodes[id]
-	if !found || !node.active || (node.kind != .Text && node.kind != .Text_Field) || !node.text_run_valid || len(node.text_run.lines) == 0 {
+	if !found || !node_is_presentation_active(rt, id) || (node.kind != .Text && node.kind != .Text_Field) || !node.text_run_valid || len(node.text_run.lines) == 0 {
 		return Text_Position{}, false
 	}
 	bounds := layout_node_finalized_geometry(rt, id).bounds
@@ -931,7 +931,7 @@ text_node_hit_test :: proc(rt: ^Runtime, id: Node_ID, x, y: f32) -> (position: T
 // geometry with valid=false.
 text_node_caret_geometry :: proc(rt: ^Runtime, id: Node_ID, position: Text_Position) -> Text_Caret_Geometry {
 	node, found := rt.nodes[id]
-	if !found || !node.active || (node.kind != .Text && node.kind != .Text_Field) || !node.text_run_valid {
+	if !found || !node_is_presentation_active(rt, id) || (node.kind != .Text && node.kind != .Text_Field) || !node.text_run_valid {
 		return Text_Caret_Geometry{}
 	}
 	geometry := text_run_caret_geometry(&node.text_run, position, rt.scratch_allocator)
@@ -946,7 +946,7 @@ text_node_caret_geometry :: proc(rt: ^Runtime, id: Node_ID, position: Text_Posit
 
 text_field_caret_geometry :: proc(rt: ^Runtime, id: Node_ID) -> Text_Caret_Geometry {
 	node, ok := rt.nodes[id]
-	if !ok || !node.active || node.kind != .Text_Field || !node.text_run_valid {
+	if !ok || !node_is_presentation_active(rt, id) || node.kind != .Text_Field || !node.text_run_valid {
 		return Text_Caret_Geometry{}
 	}
 	geometry := text_run_caret_geometry(&node.text_run, node.caret, rt.scratch_allocator)
@@ -962,7 +962,7 @@ text_field_caret_geometry :: proc(rt: ^Runtime, id: Node_ID) -> Text_Caret_Geome
 
 text_field_hit_test :: proc(rt: ^Runtime, id: Node_ID, x, y: f32) -> Text_Position {
 	node, ok := rt.nodes[id]
-	if !ok || !node.active || node.kind != .Text_Field || !node.text_run_valid {
+	if !ok || !node_is_presentation_active(rt, id) || node.kind != .Text_Field || !node.text_run_valid {
 		return Text_Position{}
 	}
 	bounds := layout_node_finalized_geometry(rt, id).bounds
@@ -971,7 +971,7 @@ text_field_hit_test :: proc(rt: ^Runtime, id: Node_ID, x, y: f32) -> Text_Positi
 
 text_field_selection_rects :: proc(rt: ^Runtime, id: Node_ID, allocator := context.allocator) -> [dynamic]Text_Selection_Rect {
 	node, ok := rt.nodes[id]
-	if !ok || !node.active || node.kind != .Text_Field || !node.text_run_valid {
+	if !ok || !node_is_presentation_active(rt, id) || node.kind != .Text_Field || !node.text_run_valid {
 		return make([dynamic]Text_Selection_Rect, 0, 4, allocator)
 	}
 	result := text_run_selection_rects(

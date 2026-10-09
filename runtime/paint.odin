@@ -203,7 +203,7 @@ append_scrollbar_display :: proc(rt: ^Runtime, node: ^Node) {
 
 compose_subtree :: proc(rt: ^Runtime, id: Node_ID) {
 	node, ok := rt.nodes[id]
-	if !ok || !node.active { return }
+	if !ok || !node.active || !node.present { return }
 	if !visual_part_is_visible(rt, id) { return }
 
 	node.display_index = -1
@@ -259,7 +259,7 @@ update_paint :: proc(rt: ^Runtime) {
 		node, ok := rt.nodes[id]
 		if !ok { continue }
 		node.paint_queued = false
-		if !node.active { continue }
+		if !node.active || !node.present { continue }
 		rt.stats.paint_nodes_visited += 1
 		rt.stats.stage_visits[.Paint] += 1
 		if dirty_has(node.dirty, .Paint) || len(node.paint) == 0 {

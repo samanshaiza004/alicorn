@@ -112,7 +112,7 @@ layout_size_is_fit_content :: proc(value: f32) -> bool {
 }
 
 layout_node_has_content_height :: proc(node: ^Node) -> bool {
-	if node == nil || !layout_size_is_fit_content(node.style.height) { return false }
+	if node == nil || node.adaptive_owner || !layout_size_is_fit_content(node.style.height) { return false }
 	if node.kind == .Scroll_Region { return true }
 	return node.kind == .Container && node.style.direction == .Column
 }
@@ -471,7 +471,7 @@ layout_measure_retained_dirty_nodes :: proc(rt: ^Runtime) {
 	if font_changed { rt.text_font_generation_seen = rt.text_engine.font_generation }
 	for id in rt.order {
 		node, ok := rt.nodes[id]
-		if !ok || node == nil || !node.active { continue }
+		if !ok || node == nil || !node.active || !node_is_presentation_active(rt, id) { continue }
 		if font_changed && node_has_text_product(node.kind) { dirty_set(&node.dirty, .Measure, true) }
 		state := rt.measure_states[id]
 		if !dirty_has(node.dirty, .Measure) || !state.cache_key.valid { continue }
@@ -529,7 +529,7 @@ layout_node_finalized_geometry :: proc(rt: ^Runtime, id: Node_ID) -> Finalized_G
 
 layout_finalize_node_geometry_for_node :: proc(rt: ^Runtime, node: ^Node) {
 	if rt == nil || node == nil { return }
-	if !node.active {
+	if !node.active || !node.present {
 		delete_key(&rt.finalized_geometry, node.id)
 		return
 	}
@@ -545,7 +545,7 @@ layout_finalize_node_geometry :: proc(rt: ^Runtime) {
 	if rt == nil { return }
 	for id in rt.order {
 		node, ok := rt.nodes[id]
-		if !ok || node == nil || !node.active { delete_key(&rt.finalized_geometry, id); continue }
+		if !ok || node == nil || !node.active || !node.present { delete_key(&rt.finalized_geometry, id); continue }
 		layout_finalize_node_geometry_for_node(rt, node)
 	}
 }

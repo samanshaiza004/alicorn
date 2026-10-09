@@ -74,6 +74,7 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 	append(&rt.style_themes, DEFAULT_STYLE_THEME)
 	rt.style_materials = make([dynamic]Style_Material, 0, allocator=rt.persistent_allocator)
 	rt.style_scope_stack = make([dynamic]Style_Environment_Scope, 0, allocator=rt.persistent_allocator)
+	rt.adaptive_description_scopes = make([dynamic]Adaptive_Description_Scope, 0, allocator=rt.persistent_allocator)
 	rt.layout_roots = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.paint_queue = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.display = make([dynamic]Paint_Command, 0, allocator=rt.persistent_allocator)

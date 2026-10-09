@@ -430,6 +430,7 @@ begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
 	rt.style_environment.accessibility = rt.root_accessibility_appearance
 	rt.style_environment.accessibility_set = true
 	clear(&rt.style_scope_stack)
+	clear(&rt.adaptive_description_scopes)
 	// Interaction invalidation may have queued a retained node before the
 	// next frame begins. update_paint clears the queue after consuming it;
 	// clearing it here would discard focus/caret/selection repaint requests.

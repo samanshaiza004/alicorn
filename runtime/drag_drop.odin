@@ -210,7 +210,7 @@ drag_source_at :: proc(rt: ^Runtime, hit: Node_ID) -> (node: Node_ID, drag_type:
 	for current != 0 {
 		candidate, ok := rt.nodes[current]
 		if !ok { break }
-		if candidate.active && candidate.drag_source_type != Drag_Type(0) && semantic_id_is_valid(candidate.drag_source_id) {
+		if node_is_presentation_active(rt, current) && candidate.drag_source_type != Drag_Type(0) && semantic_id_is_valid(candidate.drag_source_id) {
 			return current, candidate.drag_source_type, candidate.drag_source_id, true
 		}
 		// A nested interactive target owns the click unless it explicitly opts
@@ -236,7 +236,7 @@ drag_target_at :: proc(rt: ^Runtime, hit: Node_ID, drag_type: Drag_Type, x, y: f
 	for current != 0 {
 		candidate, ok := rt.nodes[current]
 		if !ok { break }
-		if candidate.active && candidate.drop_target_type == drag_type && semantic_id_is_valid(candidate.drop_target_id) {
+		if node_is_presentation_active(rt, current) && candidate.drop_target_type == drag_type && semantic_id_is_valid(candidate.drop_target_id) {
 			candidate_bounds := layout_node_finalized_geometry(rt, current).bounds
 			position := Drop_Position.On
 			#partial switch candidate.drop_target_mode {
@@ -350,7 +350,7 @@ drag_autoscroll_edge :: proc(rt: ^Runtime) -> (region_id: Node_ID, direction, st
 	for index := len(rt.order)-1; index >= 0; index -= 1 {
 		id := rt.order[index]
 		node, ok := rt.nodes[id]
-		if !ok || !node.active || node.kind != .Scroll_Region { continue }
+		if !ok || !node_is_presentation_active(rt, id) || node.kind != .Scroll_Region { continue }
 		viewport := layout_finalize_rect(node.scroll_viewport_bounds, rt.presentation_scale_x, rt.presentation_scale_y)
 		if viewport.w <= 0 || viewport.h <= 0 { viewport = layout_node_finalized_geometry(rt, id).bounds }
 		if node.scroll_axes == .Horizontal || node.scroll_axes == .Both {
@@ -389,7 +389,7 @@ drag_process_pointer :: proc(rt: ^Runtime, event: Pointer_Event, hit: Node_ID) -
 			dx := event.x-rt.drag.start_x
 			dy := event.y-rt.drag.start_y
 			if dx*dx+dy*dy >= DRAG_START_THRESHOLD*DRAG_START_THRESHOLD {
-				if source_node, ok := rt.nodes[rt.drag.source_node]; !ok || !source_node.active {
+				if _, ok := rt.nodes[rt.drag.source_node]; !ok || !node_is_presentation_active(rt, rt.drag.source_node) {
 					rt.drag = {}
 					return false
 				}
