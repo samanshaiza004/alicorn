@@ -11,6 +11,21 @@ Adaptive_Selection_Reason :: enum {
 	Invalid_Configuration_Fallback,
 }
 
+Adaptive_Description_Scope_Kind :: enum {
+	Owner,
+	Alternative,
+}
+
+// Description scopes track which adaptive API begin call actually opened a
+// retained container. An invalid alternative still gets a closed marker so
+// its matching end call cannot accidentally close the enclosing owner.
+Adaptive_Description_Scope :: struct {
+	kind: Adaptive_Description_Scope_Kind,
+	node: Node_ID,
+	container_depth: int,
+	opened: bool,
+}
+
 Adaptive_Rejection_Reason :: enum {
 	Minimum_Width_Not_Met,
 	Earlier_Alternative_Selected,
@@ -54,6 +69,12 @@ adaptive_begin :: proc(
 		if layout_size_is_fit_content(normalized.height) { normalized.height = -1 }
 	}
 	id := container_begin_simple(ui, .Container, label=label, key=key, style=normalized, loc=loc, layout_boundary=true)
+	append(&ui.runtime.adaptive_description_scopes, Adaptive_Description_Scope{
+		kind=.Owner,
+		node=id,
+		container_depth=len(ui.runtime.stack),
+		opened=id != 0,
+	})
 	if id != 0 {
 		pending := &ui.runtime.pending[len(ui.runtime.pending)-1]
 		pending.description.adaptive_owner = true
@@ -75,6 +96,8 @@ adaptive_alternative_begin :: proc(
 	if ui == nil || ui.runtime == nil || !ui.runtime.frame_open { return 0 }
 	rt := ui.runtime
 	owner_id := current_node_parent(ui)
+	append(&rt.adaptive_description_scopes, Adaptive_Description_Scope{kind=.Alternative})
+	scope_index := len(rt.adaptive_description_scopes)-1
 	owner_pending: ^Pending_Item = nil
 	for i := len(rt.pending)-1; i >= 0; i -= 1 {
 		if rt.pending[i].kind == .Description && rt.pending[i].description.id == owner_id {
@@ -82,7 +105,10 @@ adaptive_alternative_begin :: proc(
 			break
 		}
 	}
-	if owner_pending == nil || !owner_pending.description.adaptive_owner {
+	if owner_pending == nil || !owner_pending.description.adaptive_owner ||
+		len(rt.adaptive_description_scopes) < 2 ||
+		rt.adaptive_description_scopes[len(rt.adaptive_description_scopes)-2].kind != .Owner ||
+		rt.adaptive_description_scopes[len(rt.adaptive_description_scopes)-2].node != owner_id {
 		append_diagnostic(rt, "adaptive_alternative_begin must be called directly inside adaptive_begin")
 		return 0
 	}
@@ -100,6 +126,12 @@ adaptive_alternative_begin :: proc(
 		threshold = 0
 	}
 	id := container_begin_simple(ui, .Container, label=name, key=key, style=style, loc=loc)
+	rt.adaptive_description_scopes[scope_index] = Adaptive_Description_Scope{
+		kind=.Alternative,
+		node=id,
+		container_depth=len(rt.stack),
+		opened=id != 0,
+	}
 	if id != 0 {
 		pending := &rt.pending[len(rt.pending)-1]
 		pending.description.adaptive_alternative = true
@@ -109,13 +141,53 @@ adaptive_alternative_begin :: proc(
 }
 
 adaptive_alternative_end :: proc(ui: ^UI) {
+	if ui == nil || ui.runtime == nil || !ui.runtime.frame_open { return }
+	rt := ui.runtime
+	if len(rt.adaptive_description_scopes) == 0 ||
+		rt.adaptive_description_scopes[len(rt.adaptive_description_scopes)-1].kind != .Alternative {
+		append_diagnostic(rt, "adaptive_alternative_end has no matching adaptive_alternative_begin")
+		return
+	}
+	scope := rt.adaptive_description_scopes[len(rt.adaptive_description_scopes)-1]
+	if !scope.opened {
+		pop(&rt.adaptive_description_scopes)
+		return
+	}
+	if len(rt.stack) > scope.container_depth {
+		append_diagnostic(rt, "adaptive_alternative_end called with an unclosed nested container")
+		return
+	}
+	pop(&rt.adaptive_description_scopes)
+	if len(rt.stack) != scope.container_depth || current_node_parent(ui) != scope.node {
+		append_diagnostic(rt, "adaptive_alternative_end scope no longer matches its opened container")
+		return
+	}
 	container_end(ui)
 }
 
 adaptive_end :: proc(ui: ^UI) {
-	if ui == nil || ui.runtime == nil { return }
+	if ui == nil || ui.runtime == nil || !ui.runtime.frame_open { return }
 	rt := ui.runtime
-	owner_id := current_node_parent(ui)
+	if len(rt.adaptive_description_scopes) == 0 ||
+		rt.adaptive_description_scopes[len(rt.adaptive_description_scopes)-1].kind != .Owner {
+		append_diagnostic(rt, "adaptive_end has no matching adaptive_begin or an alternative is still open")
+		return
+	}
+	scope := rt.adaptive_description_scopes[len(rt.adaptive_description_scopes)-1]
+	if !scope.opened {
+		pop(&rt.adaptive_description_scopes)
+		return
+	}
+	if len(rt.stack) > scope.container_depth {
+		append_diagnostic(rt, "adaptive_end called with an unclosed alternative or nested container")
+		return
+	}
+	pop(&rt.adaptive_description_scopes)
+	if len(rt.stack) != scope.container_depth || current_node_parent(ui) != scope.node {
+		append_diagnostic(rt, "adaptive_end scope no longer matches its opened owner container")
+		return
+	}
+	owner_id := scope.node
 	count := 0
 	first_minimum: f32 = -1
 	second_minimum: f32 = -1
@@ -206,6 +278,10 @@ adaptive_set_subtree_presentation :: proc(rt: ^Runtime, root_id: Node_ID, visibl
 	if rt == nil { return false }
 	root, found := rt.nodes[root_id]
 	if !found { return false }
+	// Reconciliation computes presentation state for every described node.
+	// If the alternative root already matches, the entire subtree is already
+	// coherent and no descendant walk is needed during an ordinary resize.
+	if root.present == visible { return false }
 	changed := false
 	stack := make([dynamic]Node_ID, 0, allocator=rt.scratch_allocator)
 	append(&stack, root_id)
@@ -223,6 +299,7 @@ adaptive_set_subtree_presentation :: proc(rt: ^Runtime, root_id: Node_ID, visibl
 		id := pop(&stack)
 		node, ok := rt.nodes[id]
 		if !ok { continue }
+		rt.stats.adaptive_presentation_nodes_visited += 1
 		if node.present != visible {
 			node.present = visible
 			changed = true

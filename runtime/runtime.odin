@@ -1437,6 +1437,10 @@ Frame_Stats :: struct {
 	layout_nodes_visited: u64,
 	paint_nodes_visited: u64,
 	composition_nodes_visited: u64,
+	// Cumulative adaptive_presentation_nodes_visited counts descendants
+	// inspected when a selected branch changes presentation state. It excludes
+	// fast paths whose branch root already has the requested state.
+	adaptive_presentation_nodes_visited: u64,
 	// style_resolutions counts computed-style cache misses; style_cache_hits
 	// counts retained values reused while rebuilding paint. Both are cumulative.
 	style_resolutions: u64,
@@ -1537,6 +1541,7 @@ Runtime :: struct {
 	style_themes: [dynamic]Style_Theme,
 	style_materials: [dynamic]Style_Material,
 	style_scope_stack: [dynamic]Style_Environment_Scope,
+	adaptive_description_scopes: [dynamic]Adaptive_Description_Scope,
 	layout_roots: [dynamic]Node_ID,
 	layout_visit_probe: map[Node_ID]u64,
 	focused:     Node_ID,

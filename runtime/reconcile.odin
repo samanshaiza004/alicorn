@@ -1070,6 +1070,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.style_themes)
 	delete(rt.style_materials)
 	delete(rt.style_scope_stack)
+	delete(rt.adaptive_description_scopes)
 	delete(rt.layout_roots)
 	delete(rt.layout_visit_probe)
 	delete(rt.paint_queue)
@@ -1136,6 +1137,10 @@ end_frame :: proc(ui: ^UI) {
 	if len(ui.runtime.style_scope_stack) != 0 {
 		append_diagnostic(ui.runtime, "unbalanced style environment scope at end_frame")
 		clear(&ui.runtime.style_scope_stack)
+	}
+	if len(ui.runtime.adaptive_description_scopes) != 0 {
+		append_diagnostic(ui.runtime, "unbalanced adaptive owner or alternative scope at end_frame")
+		clear(&ui.runtime.adaptive_description_scopes)
 	}
 	ui.runtime.style_environment = DEFAULT_STYLE_ENVIRONMENT
 	ui.runtime.style_environment.accessibility = ui.runtime.root_accessibility_appearance

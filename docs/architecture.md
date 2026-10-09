@@ -74,6 +74,8 @@ presentations and selects one during layout from the owner's actual parent-
 assigned inner width. Its fixed outer bounds prevent selection feedback; only
 the selected branch participates in geometry, paint, input, focus, and semantic
 bounds. Both branches are described and reconciled in the normal application
+description, so the inactive branch still incurs reconciliation and retained
+node costs; the current API is intended for modest alternatives.
 pass, with no callback-driven or whole-window stabilization loop.
 
 `Style_Environment` is the inherited dependency surface for a compact theme ID,

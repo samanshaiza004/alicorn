@@ -223,8 +223,11 @@ alicorn.adaptive_end(&ui)
 The threshold is an explicit minimum-fit requirement, not a global device
 breakpoint. There is no hysteresis or iterative solver: one bounded selection
 chooses one of two retained alternatives from the incoming width. Both branch
-descriptions are reconciled with the application description; constraint
-changes do not invoke callbacks or trigger whole-window re-description loops.
+descriptions are reconciled with the application description, so inactive
+alternatives still consume description, reconciliation, and retained-node
+cost. Keep alternatives modest and measure large or expensive branches before
+considering lazy description. Constraint changes do not invoke callbacks or
+trigger whole-window re-description loops.
 The Layout trace and visual inspector report available width, selected
 alternative, rejected alternative, and selection reason. Applications can
 query the same data with `adaptive_selection_state`. An unchanged selection

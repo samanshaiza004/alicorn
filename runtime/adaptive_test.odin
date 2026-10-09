@@ -31,12 +31,18 @@ adaptive_test_describe :: proc(rt: ^Runtime, viewport_width: f32) -> Adaptive_Te
 		style=layout_style(width=140, height=32))
 	_ = semantic_bind(&ui, Adaptive_Test_Focus_ID)
 	button_end(&ui)
+	for i in 0..<48 {
+		text(&ui, "Wide branch detail", key=key_u64(u64(i)), style=layout_style(.Row, height=16))
+	}
 	adaptive_alternative_end(&ui)
 	nodes.compact = adaptive_alternative_begin(&ui, key_string("adaptive-test-compact"), "Compact")
 	nodes.compact_button, _ = button_begin(&ui, "Compact action", key_string("adaptive-test-compact-action"),
 		style=layout_style(width=140, height=32))
 	_ = semantic_bind(&ui, Adaptive_Test_Focus_ID)
 	button_end(&ui)
+	for i in 0..<48 {
+		text(&ui, "Compact branch detail", key=key_u64(u64(i)), style=layout_style(.Row, height=16))
+	}
 	adaptive_alternative_end(&ui)
 	adaptive_end(&ui)
 	nodes.other_button, _ = button_begin(&ui, "Outside", key_string("adaptive-test-outside"),
@@ -80,6 +86,9 @@ test_adaptive_switch_hides_input_and_semantics_and_replays :: proc(t: ^testing.T
 	rt := new_runtime(Rect{0, 0, 500, 180})
 	defer destroy_runtime(&rt)
 	first := adaptive_test_describe(&rt, 500)
+	branch_walks_after_initial := rt.stats.adaptive_presentation_nodes_visited
+	testing.expect(t, branch_walks_after_initial == 50,
+		"the initial selection should visit the inactive 50-node branch exactly once")
 	wide_bounds := rt.nodes[first.widest_button].bounds
 	owner_semantic, owner_semantic_found := semantic_node_lookup(&rt, Adaptive_Test_Semantic_ID)
 	wide_semantic_id := Adaptive_Test_Focus_ID
@@ -98,6 +107,9 @@ test_adaptive_switch_hides_input_and_semantics_and_replays :: proc(t: ^testing.T
 	testing.expect(t, focus(&rt, first.widest_button), "the selected Wide control should accept keyboard focus")
 
 	compact := adaptive_test_describe(&rt, 450)
+	branch_walks_after_switch := rt.stats.adaptive_presentation_nodes_visited
+	testing.expect(t, branch_walks_after_switch-branch_walks_after_initial == 100,
+		"switching selection should visit both 50-node subtrees once, recording 100 visits")
 	state := adaptive_selection_state(&rt, compact.owner)
 	wide_node, wide_ok := rt.nodes[compact.wide]
 	compact_node, compact_ok := rt.nodes[compact.compact]
@@ -132,11 +144,14 @@ test_adaptive_switch_hides_input_and_semantics_and_replays :: proc(t: ^testing.T
 
 	created_before := rt.stats.nodes_created
 	retired_before := rt.stats.nodes_retired
+	branch_walks_before_steady := rt.stats.adaptive_presentation_nodes_visited
 	steady := adaptive_test_describe(&rt, 460)
 	steady_state := adaptive_selection_state(&rt, steady.owner)
 	testing.expect(t, steady_state.selected_alternative == steady.compact &&
 		rt.stats.nodes_created == created_before && rt.stats.nodes_retired == retired_before,
 		"resizing without crossing the selection threshold should not reconstruct either alternative")
+	testing.expect(t, rt.stats.adaptive_presentation_nodes_visited == branch_walks_before_steady,
+		"resizing within an unchanged selection should skip both retained alternative subtrees")
 
 	wide_again := adaptive_test_describe(&rt, 500)
 	wide_again_state := adaptive_selection_state(&rt, wide_again.owner)
@@ -150,5 +165,33 @@ test_adaptive_switch_hides_input_and_semantics_and_replays :: proc(t: ^testing.T
 	testing.expect(t, same_rect(rt.nodes[wide_again.owner].bounds, clean.nodes[clean_nodes.owner].bounds) &&
 		same_rect(rt.nodes[wide_again.widest_button].bounds, clean.nodes[clean_nodes.widest_button].bounds),
 		"retained replay should match a clean solve for identical final constraints")
+}
+
+@(test)
+test_adaptive_invalid_alternative_end_preserves_owner_scope :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 500, 180})
+	defer destroy_runtime(&rt)
+	ui, build := begin_frame(&rt)
+	if !build { testing.expect(t, false, "the first adaptive scope fixture should build"); return }
+	root := container_begin(&ui, .Root, key=key_string("adaptive-scope-root"), style=layout_style(.Column))
+	owner := adaptive_begin(&ui, key_string("adaptive-scope-owner"), style=layout_style(.Column, width=420, height=120))
+	_ = adaptive_alternative_begin(&ui, key_string("adaptive-scope-wide"), "Wide", minimum_width=380)
+	adaptive_alternative_end(&ui)
+	_ = adaptive_alternative_begin(&ui, key_string("adaptive-scope-compact"), "Compact")
+	adaptive_alternative_end(&ui)
+	invalid := adaptive_alternative_begin(&ui, key_string("adaptive-scope-third"), "Third", minimum_width=100)
+	testing.expect(t, invalid == 0, "a third alternative should be rejected without opening a retained container")
+	adaptive_alternative_end(&ui)
+	testing.expect(t, current_node_parent(&ui) == owner && len(rt.stack) == 2,
+		"ending an invalid alternative must leave the enclosing adaptive owner on the container stack")
+	adaptive_end(&ui)
+	testing.expect(t, current_node_parent(&ui) == root && len(rt.stack) == 1,
+		"adaptive_end should close its own owner after the invalid alternative marker is consumed")
+	container_end(&ui)
+	end_frame(&ui)
+	testing.expect(t, len(rt.stack) == 0 && len(rt.adaptive_description_scopes) == 0,
+		"the malformed alternative fixture should finish with balanced container and adaptive scopes")
+	testing.expect(t, rt.hard_error && rt.diagnostic == "adaptive regions support exactly two ordered alternatives in v1",
+		"the rejected alternative should retain its useful validation diagnostic without a scope-corruption error")
 }
 
