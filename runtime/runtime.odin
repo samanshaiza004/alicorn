@@ -748,7 +748,10 @@ DEFAULT_BUTTON_RECIPES :: Button_Recipe_Set{recipes={
 	Button_Recipe{
 		defined=true, surface_role=.Subtle_Surface, text_role=.Text, surface_visible=true,
 		selected=Style_Transform{surface_role=.Accent, surface_mix=0.24},
-		hovered=Style_Transform{surface_role=.Surface, surface_mix=0.60},
+		// The neutral Surface and Subtle_Surface roles can be nearly identical
+		// in a theme, making the hover state appear to disappear. A restrained
+		// accent tint stays visible without turning an ordinary button primary.
+		hovered=Style_Transform{surface_role=.Accent_Hover, surface_mix=0.18},
 		pressed=Style_Transform{surface_role=.Border, surface_mix=0.45},
 		disabled=Style_Transform{surface_role=.Surface, surface_mix=1, text_role=.Muted_Text, text_mix=1},
 		selected_indicator_role=.Text,
