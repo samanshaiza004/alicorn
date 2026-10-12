@@ -6,6 +6,18 @@ import "vendor:sdl3"
 
 Menu_Wake_Test_State :: struct { application_wakes: int }
 
+Menu_Chrome_Appearance_Test_State :: struct {
+	appearance: Window_Chrome_Appearance,
+	reads:      int,
+}
+
+menu_chrome_appearance_test_callback :: proc(data: rawptr, rt: ^alicorn.Runtime) -> Window_Chrome_Appearance {
+	_ = rt
+	state := cast(^Menu_Chrome_Appearance_Test_State)data
+	state.reads += 1
+	return state.appearance
+}
+
 menu_application_wake_test_callback :: proc(data: rawptr, rt: ^alicorn.Runtime) {
 	state := cast(^Menu_Wake_Test_State)data
 	state.application_wakes += 1
@@ -92,6 +104,42 @@ menu_application_wake_test_callback :: proc(data: rawptr, rt: ^alicorn.Runtime) 
 	)
 	testing.expect(t, state.application_wakes == 1, "application wake event must remain independently deliverable")
 	testing.expect(t, rt.invalidated, "actual application wake should retain its normal application invalidation")
+}
+
+@(test)
+test_native_chrome_appearance_updates_are_retained_and_host_owned :: proc(t: ^testing.T) {
+	state := Menu_Chrome_Appearance_Test_State{
+		appearance=Window_Chrome_Appearance{
+			defined=true,
+			background=alicorn.Color{0.12, 0.16, 0.22, 1},
+			foreground=alicorn.Color{0.88, 0.90, 0.94, 1},
+		},
+	}
+	application := Application{
+		state=rawptr(&state),
+		window_chrome_appearance=menu_chrome_appearance_test_callback,
+	}
+	menu := Native_Menu_Runtime{application=&application}
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 200}, alicorn.Runtime_Config{trace_capacity=8})
+	defer alicorn.destroy_runtime(&rt)
+	menu.runtime = &rt
+	rt.invalidated = false
+
+	changed := native_menu_sync_chrome_appearance(&menu, request_redraw=false)
+	testing.expect(t, changed && menu.chrome_appearance_resolved && menu.chrome_appearance == state.appearance,
+		"initial theme appearance should be retained by the host")
+	testing.expect(t, !menu.chrome_redraw_pending,
+		"initial chrome appearance should join the already-pending first application frame")
+	changed = native_menu_sync_chrome_appearance(&menu)
+	testing.expect(t, !changed && !menu.chrome_redraw_pending,
+		"an unchanged theme appearance should not request another frame")
+
+	state.appearance.background = alicorn.Color{0.42, 0.48, 0.58, 1}
+	changed = native_menu_sync_chrome_appearance(&menu)
+	testing.expect(t, changed && menu.chrome_redraw_pending && menu.chrome_appearance == state.appearance,
+		"a changed theme appearance should update retained host colors and request chrome redraw")
+	testing.expect(t, !rt.invalidated && state.reads == 3,
+		"resolving host chrome must not invalidate application content")
 }
 
 Menu_Dispatch_Test_State :: struct {

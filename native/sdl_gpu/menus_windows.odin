@@ -575,6 +575,15 @@ win32_menu_feedback_colors :: proc(background, foreground: alicorn.Color) -> (ho
 }
 
 win32_menu_chrome_colors :: proc(state: ^Win32_Menu_State) -> (background, foreground: alicorn.Color) {
+	if state != nil && !state.high_contrast && state.menu != nil && state.menu.chrome_appearance.defined {
+		background = state.menu.chrome_appearance.background
+		foreground = state.menu.chrome_appearance.foreground
+		if !state.active {
+			// Keep inactive chrome legible while softly reducing its emphasis.
+			foreground = win32_color_mix(background, foreground, 0.72)
+		}
+		return
+	}
 	background = win32_color_ref(win.GetSysColor(win.COLOR_MENU))
 	foreground_index := i32(win.COLOR_MENUTEXT)
 	if !state.active && !state.high_contrast { foreground_index = i32(win.COLOR_GRAYTEXT) }

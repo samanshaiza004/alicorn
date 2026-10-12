@@ -242,6 +242,20 @@ application_wake :: proc(waker: Application_Waker) {
 	if waker.wake != nil { waker.wake(waker.data) }
 }
 
+// Window_Chrome_Appearance is optional host presentation policy for integrated
+// window chrome. The native host keeps ownership of rendering and interaction;
+// applications may supply colors resolved from their active theme.
+Window_Chrome_Appearance :: struct {
+	defined:    bool,
+	background: alicorn.Color,
+	foreground: alicorn.Color,
+}
+
+Application_Chrome_Appearance_Proc :: proc(
+	state: rawptr,
+	rt: ^alicorn.Runtime,
+) -> Window_Chrome_Appearance
+
 // Application is the intended public boundary for a small native Alicorn
 // program. State is borrowed by callbacks for the duration of Run; retained
 // runtime nodes never store this pointer.
@@ -252,6 +266,8 @@ Application :: struct {
 	height:             int,
 	menus:              []Application_Menu,
 	window_decorations: Window_Decoration_Mode,
+	// Optional theme-resolved appearance for host-owned integrated chrome.
+	window_chrome_appearance: Application_Chrome_Appearance_Proc,
 	build:              Application_Build_Proc,
 	on_text_change:     Application_Text_Change_Proc,
 	on_text_input:      Application_Text_Input_Proc,

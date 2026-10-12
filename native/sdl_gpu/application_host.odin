@@ -56,6 +56,8 @@ Native_Menu_Runtime :: struct {
 	// The window/client coordinate space includes this host-owned top chrome;
 	// application logical coordinates begin immediately below it.
 	content_inset_top: f32,
+	chrome_appearance: Window_Chrome_Appearance,
+	chrome_appearance_resolved: bool,
 	chrome_redraw_pending: bool,
 	host_waker: ^Native_Host_Event_Waker,
 	pending_command: Application_Command_ID,
@@ -69,6 +71,30 @@ native_menu_request_chrome_redraw :: proc(menu: ^Native_Menu_Runtime) {
 	was_pending := menu.chrome_redraw_pending
 	menu.chrome_redraw_pending = true
 	if !was_pending { native_host_event_wake(menu.host_waker) }
+}
+
+native_window_chrome_appearance_equal :: proc(a, b: Window_Chrome_Appearance) -> bool {
+	if a.defined != b.defined { return false }
+	if !a.defined { return true }
+	return a.background == b.background && a.foreground == b.foreground
+}
+
+// Resolve the app's optional chrome colors at description boundaries. If app
+// paint already needs a frame, that submission will include the new host
+// appearance. Otherwise request a host-only frame to repaint chrome.
+native_menu_sync_chrome_appearance :: proc(menu: ^Native_Menu_Runtime, request_redraw := true) -> bool {
+	if menu == nil || menu.application == nil || menu.runtime == nil ||
+	   menu.application.window_chrome_appearance == nil {
+		return false
+	}
+	next := menu.application.window_chrome_appearance(menu.application.state, menu.runtime)
+	if menu.chrome_appearance_resolved && native_window_chrome_appearance_equal(menu.chrome_appearance, next) {
+		return false
+	}
+	menu.chrome_appearance = next
+	menu.chrome_appearance_resolved = true
+	if request_redraw { native_menu_request_chrome_redraw(menu) }
+	return true
 }
 
 native_menu_dispatch_command :: proc(menu: ^Native_Menu_Runtime, command: Application_Command_ID) {
