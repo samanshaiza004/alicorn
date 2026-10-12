@@ -1,5 +1,7 @@
 package alicorn
 
+import "core:fmt"
+
 NOTICE_DEFAULT_DURATION_MS :: u32(5_000)
 NOTICE_MAX_DURATION_MS :: u32(60_000)
 NOTICE_CARD_WIDTH :: f32(360)
@@ -58,6 +60,7 @@ notice_post :: proc(rt: ^Runtime, notice: Notice, now_ns: u64) -> bool {
 	}
 
 	if existing := notice_find(rt, notice.id); existing >= 0 {
+		record.handle = rt.notices[existing].handle
 		record.sequence = notice_next_sequence(rt)
 		rt.notices[existing] = record
 		invalidate_root(rt, "notice updated")
@@ -77,10 +80,31 @@ notice_post :: proc(rt: ^Runtime, notice: Notice, now_ns: u64) -> bool {
 		notice_remove_at(rt, oldest_transient)
 	}
 	record.sequence = notice_next_sequence(rt)
+	record.handle = notice_next_handle(rt)
 	rt.notices[rt.notice_count] = record
 	rt.notice_count += 1
 	invalidate_root(rt, "notice posted")
 	return true
+}
+
+// notice_emit adds one distinct event even when another event has identical
+// text. Use notice_post with a stable ID when repeated reports describe one
+// ongoing condition that should update in place.
+notice_emit :: proc(rt: ^Runtime, notice: Notice, now_ns: u64) -> (handle: Notice_Handle, accepted: bool) {
+	if rt == nil || rt.frame_open { return }
+	event_id := ""
+	for {
+		rt.notice_event_sequence += 1
+		if rt.notice_event_sequence == 0 { rt.notice_event_sequence = 1 }
+		event_id = fmt.aprintf("alicorn-event-%d", rt.notice_event_sequence, allocator=rt.scratch_allocator)
+		if notice_find(rt, event_id) < 0 { break }
+	}
+	event := notice
+	event.id = event_id
+	if !notice_post(rt, event, now_ns) { return }
+	index := notice_find(rt, event_id)
+	if index < 0 { return }
+	return rt.notices[index].handle, true
 }
 
 // notice_dismiss removes a record by its application-owned stable ID.
@@ -91,6 +115,18 @@ notice_dismiss :: proc(rt: ^Runtime, id: string) -> bool {
 	notice_remove_at(rt, index)
 	invalidate_root(rt, "notice dismissed")
 	return true
+}
+
+// notice_dismiss_handle removes one occurrence returned by notice_emit.
+notice_dismiss_handle :: proc(rt: ^Runtime, handle: Notice_Handle) -> bool {
+	if rt == nil || rt.frame_open || handle == Notice_Handle(0) { return false }
+	for index in 0..<rt.notice_count {
+		if rt.notices[index].handle != handle { continue }
+		notice_remove_at(rt, index)
+		invalidate_root(rt, "notice occurrence dismissed")
+		return true
+	}
+	return false
 }
 
 // notice_take_action drains one button activation from the bounded action
@@ -138,7 +174,7 @@ notice_advance :: proc(rt: ^Runtime, now_ns: u64) -> bool {
 
 // notice_overlay_describe adds independent nonmodal notice roots after the
 // application has closed its ordinary roots. It never inserts a child into
-// the workspace tree. Modals and other transient menus/popups take precedence.
+// the workspace tree. Modal dialogs and unrelated transient menus/popups take precedence.
 notice_overlay_describe :: proc(ui: ^UI) {
 	if ui == nil || ui.runtime == nil || !ui.runtime.frame_open { return }
 	rt := ui.runtime
@@ -201,12 +237,16 @@ notice_overlay_describe :: proc(ui: ^UI) {
 @(private)
 notice_overlay_is_suppressed :: proc(rt: ^Runtime) -> bool {
 	if rt == nil { return false }
-	if modal_overlay_root(rt) != 0 || rt.context_menu.open || rt.context_menu.dismissed { return true }
+	if modal_overlay_root(rt) != 0 { return true }
+	// Select shares the context-menu input machinery but has an explicit
+	// nonmodal layering policy. Other application/context menus keep precedence.
+	if (rt.context_menu.open || rt.context_menu.dismissed) && !rt.select.open { return true }
 	for item in rt.pending {
-		if item.kind == .Description &&
-			(item.description.kind == .Modal_Overlay || item.description.kind == .Context_Menu_Overlay) {
+		if item.kind != .Description { continue }
+		if item.description.kind == .Modal_Overlay {
 			return true
 		}
+		if item.description.kind == .Context_Menu_Overlay && !rt.select.open { return true }
 	}
 	return false
 }
@@ -259,17 +299,17 @@ notice_describe_card :: proc(
 	semantic_pending.live_atomic = true
 
 	container_begin_simple(ui, .Container, label="notice-heading-row", key=key_pair(record.id_hash, u64(0x48454144)), style=layout_style(.Row, height=28, gap=6, align=.Center))
-	severity_label := notice_severity_label(record.severity)
-	text(ui, severity_label, key=key_pair(record.id_hash, u64(0x53455645)), style=layout_style(.Row, width=56, height=24))
+	severity_icon, severity_color := notice_severity_icon(record.severity)
+	icon(ui, severity_icon, key=key_pair(record.id_hash, u64(0x53455645)), size=16, color_role=severity_color)
 	if record.title_length > 0 {
 		text(ui, notice_record_title(record), key=key_pair(record.id_hash, u64(0x5449544C)), style=layout_style(.Row, grow=1, height=24))
 	}
-	close_clicked := button(
+	_, close_clicked := icon_button(
 		ui,
-		"×",
+		"Dismiss notice",
+		.Close,
 		key=key_pair(record.id_hash, u64(0x434C4F53)),
 		style=layout_style(.Row, width=28, height=28),
-		variant=.Quiet,
 	)
 	container_end(ui)
 	if record.message_length > 0 {
@@ -288,7 +328,7 @@ notice_describe_card :: proc(
 				style=layout_style(.Row, width=96, height=30),
 				variant=.Quiet,
 			) {
-				_ = notice_enqueue_action(rt, Notice_Action_Event{notice_id_hash=record.id_hash, action=action.id})
+				_ = notice_enqueue_action(rt, Notice_Action_Event{notice=record.handle, notice_id_hash=record.id_hash, action=action.id})
 			}
 		}
 		container_end(ui)
@@ -302,6 +342,14 @@ notice_describe_card :: proc(
 		return true
 	}
 	return false
+}
+
+@(private)
+notice_next_handle :: proc(rt: ^Runtime) -> Notice_Handle {
+	if rt == nil { return 0 }
+	rt.notice_handle_sequence += 1
+	if rt.notice_handle_sequence == 0 { rt.notice_handle_sequence = 1 }
+	return Notice_Handle(rt.notice_handle_sequence)
 }
 
 @(private)
@@ -376,12 +424,12 @@ notice_record_message :: proc(record: ^Notice_Record) -> string { return string(
 notice_record_details :: proc(record: ^Notice_Record) -> string { return string(record.details[:record.details_length]) }
 
 @(private)
-notice_severity_label :: proc(severity: Notice_Severity) -> string {
+notice_severity_icon :: proc(severity: Notice_Severity) -> (Icon_ID, Style_Color_Role) {
 	switch severity {
-	case .Info: return "Info"
-	case .Success: return "Done"
-	case .Warning: return "Warning"
-	case .Error: return "Error"
+	case .Info: return .Info, .Accent
+	case .Success: return .Check, .Success
+	case .Warning: return .Warning, .Accent_Hover
+	case .Error: return .Warning, .Danger
 	}
-	return "Notice"
+	return .Info, .Muted_Text
 }

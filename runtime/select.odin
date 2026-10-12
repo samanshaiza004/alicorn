@@ -1,6 +1,5 @@
 package alicorn
 
-import "core:fmt"
 import "core:strings"
 import "core:unicode"
 
@@ -220,15 +219,12 @@ select_control :: proc(
 			display_value = options[changed_index].label
 		}
 	}
-	// Use an ASCII indicator because the default UI font is not guaranteed to
-	// contain U+25BE; a missing glyph otherwise appears as a crossed box.
-	visible_label := fmt.aprintf("%s  v", display_value, allocator=rt.scratch_allocator)
 	disabled := !valid || len(options) == 0 || !select_has_enabled_option(options)
 	trigger := emit_key(
 		ui,
 		.Button,
 		source,
-		label=visible_label,
+		label=display_value,
 		key=key,
 		style=style,
 		focusable=!disabled,
@@ -237,6 +233,13 @@ select_control :: proc(
 		button_variant=.Default,
 	)
 	if trigger == 0 { return Select_Result{selected_key=selected_key, valid=valid} }
+	for index := len(rt.pending)-1; index >= 0; index -= 1 {
+		item := &rt.pending[index]
+		if item.kind == .Description && item.description.id == trigger {
+			item.description.icon_id = .Chevron_Down
+			break
+		}
+	}
 	trigger_semantic := semantic_visual_id(trigger)
 	anchor := layout_node_finalized_geometry(rt, trigger).bounds
 	can_claim_state := !state.open || state.trigger_node == trigger ||

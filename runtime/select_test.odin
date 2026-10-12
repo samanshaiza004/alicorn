@@ -58,12 +58,17 @@ test_select_opens_anchored_listbox_with_theme_semantics_and_selected_focus :: pr
 	_, trigger := select_test_build(&rt)
 	if trigger == 0 { testing.expect(t, false, "Select trigger should be retained"); return }
 	before := rt.nodes[trigger].bounds
-	testing.expect(t, rt.nodes[trigger].label == "Beta  v",
-		"the Select trigger should use a glyph available in the default font")
+	testing.expect(t, rt.nodes[trigger].label == "Beta" && rt.nodes[trigger].icon_id == .Chevron_Down,
+		"the Select trigger should keep its value text separate from a font-independent chevron icon")
+	trigger_icon_seen := false
+	for command in rt.nodes[trigger].paint {
+		if icon, ok := command.payload.(Icon_Paint); ok && icon.id == .Chevron_Down { trigger_icon_seen = true }
+	}
+	testing.expect(t, trigger_icon_seen, "the Select trigger should retain a separate vector chevron paint command")
 	trigger_semantic, found := semantic_node_lookup(&rt, semantic_visual_id(trigger))
 	testing.expect(t, found && trigger_semantic.role == .Combo_Box && trigger_semantic.label == "Theme" && trigger_semantic.value == "Beta",
 		"closed trigger semantics should expose the field name and selected value")
-	
+
 	opened_trigger := select_test_open(&rt)
 	testing.expect(t, opened_trigger == trigger && context_menu_is_open(&rt), "pointer activation should open the Select-owned popup")
 	testing.expect(t, rt.nodes[trigger].bounds == before, "opening a Select overlay must not move the ordinary workbench geometry")
@@ -88,6 +93,58 @@ test_select_opens_anchored_listbox_with_theme_semantics_and_selected_focus :: pr
 	testing.expect(t, option_found && option.role == .List_Box_Option && semantic_states_has(option.states, .Selected) &&
 		semantic_actions_has(option.actions, .Select),
 		"the controlled selected value should be a selectable, selected option")
+}
+
+@(test)
+test_select_coexists_above_notices_and_outside_click_dismisses_only_select :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 360, 240})
+	defer destroy_runtime(&rt)
+	if !text_engine_load_font(&rt.text_engine, NOTICE_TEST_FONT) {
+		testing.expect(t, false, "overlay precedence fixture should load its UI font")
+		return
+	}
+	retry := [1]Notice_Action{{id=Action_ID(991), label="Retry"}}
+	notice := Notice{
+		id="select-overlap-test",
+		title="Folder needs refresh",
+		message="The folder contents may be out of date.",
+		severity=.Warning,
+		lifetime=.Persistent,
+		placement=.Toast,
+		actions=retry[:],
+	}
+	testing.expect(t, notice_post(&rt, notice, 1), "the persistent actionable toast should post")
+	trigger := select_test_open(&rt)
+	if trigger == 0 { testing.expect(t, false, "the Select trigger should open"); return }
+	notice_card := notice_test_find_node(&rt, "notice-card")
+	panel := context_menu_test_find(&rt, "context-menu-panel", .Context_Menu_Panel)
+	option := select_test_row(&rt, "Alpha")
+	if notice_card == 0 || panel == 0 || option == 0 {
+		testing.expect(t, false, "the toast and Select popup should both remain retained while Select is open")
+		return
+	}
+	card_bounds, panel_bounds := rt.nodes[notice_card].bounds, rt.nodes[panel].bounds
+	overlap := rect_intersection(card_bounds, panel_bounds)
+	testing.expect(t, overlap.w > 0 && overlap.h > 0,
+		"the fixture should exercise actual overlap between the toast and anchored popup")
+	option_bounds := rt.nodes[option].bounds
+	target := hit_test(&rt, option_bounds.x+option_bounds.w/2, option_bounds.y+option_bounds.h/2)
+	testing.expect(t, target == option,
+		"the Select listbox should own pointer input above overlapping notice content")
+
+	close := notice_test_find_node(&rt, "", .Button)
+	if close == 0 { testing.expect(t, false, "the notice should retain an accessible close button"); return }
+	close_bounds := rt.nodes[close].bounds
+	x, y := close_bounds.x+close_bounds.w/2, close_bounds.y+close_bounds.h/2
+	if !rect_contains(panel_bounds, x, y) {
+		outside_target := process_pointer(&rt, Pointer_Event{kind=.Down, x=x, y=y, button=POINTER_BUTTON_PRIMARY})
+		testing.expect(t, outside_target == rt.context_menu.overlay && !context_menu_is_open(&rt),
+			"pressing the notice behind the popup should first be consumed to dismiss Select")
+		_, _ = select_test_build(&rt)
+		_, notice_root := select_test_build(&rt)
+		testing.expect(t, notice_root != 0 && rt.notice_count == 1,
+			"dismissing Select should leave the actionable notice available to the user")
+	}
 }
 
 @(test)
@@ -209,7 +266,7 @@ test_select_navigation_skips_disabled_supports_typeahead_and_returns_one_control
 	_, _ = select_test_build(&rt)
 	testing.expect(t, select_handle_key(&rt, .End) && rt.select.active_key == 30, "End should skip disabled trailing options")
 	_, _ = select_test_build(&rt)
-	
+
 	testing.expect(t, select_typeahead(&rt, "b"), "text input should be consumed while the popup owns focus")
 	result, _ := select_test_build(&rt)
 	testing.expect(t, rt.select.active_key == 20 && rt.focused == select_test_row(&rt, "Beta"),
@@ -265,7 +322,7 @@ test_select_large_list_scrolls_selected_option_into_view_and_typeahead_skips_dis
 	options[11].label = "Target"
 	rt := new_runtime(Rect{0, 0, 280, 190})
 	defer destroy_runtime(&rt)
-	
+
 	build := proc(rt: ^Runtime, options: []Select_Option) -> (result: Select_Result, trigger: Node_ID) {
 		if !rt.invalidated { invalidate_root(rt, "large Select test rebuild") }
 		ui, ready := begin_frame(rt)

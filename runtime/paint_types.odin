@@ -14,8 +14,36 @@ Paint_Command :: struct {
 
 Paint_Payload :: union #no_nil {
 	Surface_Paint,
+	Icon_Paint,
 	Text_Paint,
 	Geometry_Paint,
+}
+
+// Icon_ID names font-independent, theme-tinted line icons rendered from
+// normalized vector paths. None is reserved for controls without an icon.
+Icon_ID :: enum {
+	None,
+	Check,
+	Chevron_Down,
+	Chevron_Right,
+	Close,
+	Minus,
+	Radio_Selected,
+	Warning,
+	Info,
+	Folder_Closed,
+	Folder_Open,
+	File,
+	Search,
+	Settings,
+	Terminal,
+	Count,
+}
+
+Icon_Paint :: struct {
+	id: Icon_ID,
+	color: Color,
+	stroke_width: f32,
 }
 
 Surface_Shape_Kind :: enum {
@@ -130,6 +158,25 @@ paint_text_command :: proc(
 	}
 }
 
+paint_icon_command :: proc(
+	owner: Node_ID,
+	bounds, clip: Rect,
+	id: Icon_ID,
+	color: Color,
+	stroke_width: f32 = 1.8,
+	opacity: f32 = 1,
+	translation: [2]f32 = {},
+) -> Paint_Command {
+	return Paint_Command{
+		owner=owner,
+		bounds=bounds,
+		clip=clip,
+		opacity=opacity,
+		translation=translation,
+		payload=Icon_Paint{id, color, stroke_width},
+	}
+}
+
 paint_geometry_command :: proc(
 	owner: Node_ID,
 	bounds, clip: Rect,
@@ -154,6 +201,11 @@ paint_command_is_surface :: proc(command: Paint_Command) -> bool {
 
 paint_command_is_text :: proc(command: Paint_Command) -> bool {
 	_, ok := command.payload.(Text_Paint)
+	return ok
+}
+
+paint_command_is_icon :: proc(command: Paint_Command) -> bool {
+	_, ok := command.payload.(Icon_Paint)
 	return ok
 }
 

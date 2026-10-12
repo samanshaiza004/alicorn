@@ -25,6 +25,8 @@ App :: struct {
 	notice_request: int,
 	notice_feedback: string,
 	notice_action_count: int,
+	notice_handles: [alicorn.NOTICE_QUEUE_CAPACITY]alicorn.Notice_Handle,
+	notice_handle_write: int,
 	name: string,
 	name_owned: bool,
 }
@@ -37,6 +39,12 @@ GALLERY_NOTICE_ACTIONABLE :: 3
 GALLERY_NOTICE_DISMISS_ALL :: 4
 GALLERY_NOTICE_RETRY :: alicorn.Action_ID(7101)
 GALLERY_NOTICE_DETAILS :: alicorn.Action_ID(7102)
+
+gallery_remember_notice_handle :: proc(app: ^App, handle: alicorn.Notice_Handle) {
+	if app == nil || handle == 0 { return }
+	app.notice_handles[app.notice_handle_write] = handle
+	app.notice_handle_write = (app.notice_handle_write+1)%len(app.notice_handles)
+}
 
 GALLERY_SELECT_OPTIONS :: [4]alicorn.Select_Option{
 	{key=1, label="Warm"},
@@ -61,8 +69,7 @@ gallery_process_notice_request :: proc(app: ^App, rt: ^alicorn.Runtime) {
 	accepted := false
 	switch request {
 	case GALLERY_NOTICE_TRANSIENT:
-		accepted = alicorn.notice_post(rt, alicorn.Notice{
-			id="gallery-transient",
+		handle, emitted := alicorn.notice_emit(rt, alicorn.Notice{
 			title="Saved",
 			message="This success notice expires after five seconds.",
 			severity=.Success,
@@ -70,7 +77,9 @@ gallery_process_notice_request :: proc(app: ^App, rt: ^alicorn.Runtime) {
 			placement=.Toast,
 			duration_ms=5_000,
 		}, u64(sdl3.GetTicksNS()))
-		app.notice_feedback = "Posted a transient success notice."
+		accepted = emitted
+		gallery_remember_notice_handle(app, handle)
+		app.notice_feedback = "Emitted a success event; repeated events stack."
 	case GALLERY_NOTICE_PERSISTENT:
 		accepted = alicorn.notice_post(rt, alicorn.Notice{
 			id="gallery-persistent",
@@ -81,14 +90,13 @@ gallery_process_notice_request :: proc(app: ^App, rt: ^alicorn.Runtime) {
 			lifetime=.Persistent,
 			placement=.Toast,
 		}, u64(sdl3.GetTicksNS()))
-		app.notice_feedback = "Posted a persistent warning notice."
+		app.notice_feedback = "Posted or updated the stable warning condition."
 	case GALLERY_NOTICE_ACTIONABLE:
 		actions := [2]alicorn.Notice_Action{
 			{id=GALLERY_NOTICE_DETAILS, label="Details"},
 			{id=GALLERY_NOTICE_RETRY, label="Retry"},
 		}
-		accepted = alicorn.notice_post(rt, alicorn.Notice{
-			id="gallery-actionable",
+		handle, emitted := alicorn.notice_emit(rt, alicorn.Notice{
 			title="Couldn't refresh folder",
 			message="The folder's contents may be out of date.",
 			details="The gallery leaves recovery decisions to the application.",
@@ -97,11 +105,15 @@ gallery_process_notice_request :: proc(app: ^App, rt: ^alicorn.Runtime) {
 			placement=.Toast,
 			actions=actions[:],
 		}, u64(sdl3.GetTicksNS()))
-		app.notice_feedback = "Posted an actionable error. Try Details or Retry in the notice."
+		accepted = emitted
+		gallery_remember_notice_handle(app, handle)
+		app.notice_feedback = "Emitted an actionable error event; each has its own actions."
 	case GALLERY_NOTICE_DISMISS_ALL:
-		dismissed := alicorn.notice_dismiss(rt, "gallery-transient")
+		dismissed := false
+		for handle in app.notice_handles {
+			dismissed = alicorn.notice_dismiss_handle(rt, handle) || dismissed
+		}
 		dismissed = alicorn.notice_dismiss(rt, "gallery-persistent") || dismissed
-		dismissed = alicorn.notice_dismiss(rt, "gallery-actionable") || dismissed
 		app.notice_feedback = "Dismissed the gallery notices." if dismissed else "There are no gallery notices to dismiss."
 		alicorn.invalidate_root(rt, "gallery notice dismissal feedback changed")
 		return
@@ -124,8 +136,8 @@ gallery_process_notice_actions :: proc(app: ^App, rt: ^alicorn.Runtime) {
 		case GALLERY_NOTICE_DETAILS:
 			app.notice_feedback = "Details action reached the application; the notice remains open."
 		case GALLERY_NOTICE_RETRY:
-			app.notice_feedback = "Retry action reached the application; the demo dismissed the notice."
-			_ = alicorn.notice_dismiss(rt, "gallery-actionable")
+			app.notice_feedback = "Retry action reached the application; the demo dismissed that occurrence."
+			_ = alicorn.notice_dismiss_handle(rt, event.notice)
 		case:
 			app.notice_feedback = "A notice action reached the application."
 		}
@@ -246,6 +258,15 @@ build_app :: proc(
 		if choice.changed {
 			app.selected_choice = choice.selected_key
 		}
+		alicorn.text(&ui, "Font-independent indicators", style=alicorn.layout_style(height=22))
+		alicorn.container_begin(&ui, .Container, label="gallery-icon-samples", style=alicorn.layout_style(.Row, height=24, gap=8, align=.Center))
+		_ = alicorn.icon(&ui, .Folder_Closed, key=alicorn.key_string("gallery-folder-closed"), size=18)
+		alicorn.text(&ui, "Closed")
+		_ = alicorn.icon(&ui, .Folder_Open, key=alicorn.key_string("gallery-folder-open"), size=18)
+		alicorn.text(&ui, "Open")
+		_ = alicorn.icon(&ui, .Search, key=alicorn.key_string("gallery-search-icon"), size=18)
+		alicorn.text(&ui, "Search")
+		alicorn.container_end(&ui)
 		alicorn.text(&ui, fmt.tprintf("Application value: %s", gallery_select_label(app.selected_choice)))
 		_ = alicorn.semantic_static_text(&ui)
 		alicorn.text(&ui, "Keyboard: Up/Down, Home/End, type to jump, Enter to choose, Escape to close.")
@@ -268,15 +289,15 @@ build_app :: proc(
 		alicorn.text(&ui, "Notices float above the gallery without moving its layout or taking editor focus.")
 		_ = alicorn.semantic_static_text(&ui)
 		alicorn.container_begin(&ui, .Container, label="notice-demo-actions", style=alicorn.layout_style(.Row, gap=8))
-		if alicorn.button(&ui, "Post transient", key=alicorn.key_string("notice-transient"), style=alicorn.layout_style(.Row, width=142, height=34)) {
+		if alicorn.button(&ui, "Emit transient", key=alicorn.key_string("notice-transient"), style=alicorn.layout_style(.Row, width=142, height=34)) {
 			app.notice_request = GALLERY_NOTICE_TRANSIENT
 		}
-		if alicorn.button(&ui, "Post warning", key=alicorn.key_string("notice-persistent"), style=alicorn.layout_style(.Row, width=132, height=34)) {
+		if alicorn.button(&ui, "Post/update warning", key=alicorn.key_string("notice-persistent"), style=alicorn.layout_style(.Row, width=164, height=34)) {
 			app.notice_request = GALLERY_NOTICE_PERSISTENT
 		}
 		alicorn.container_end(&ui)
 		alicorn.container_begin(&ui, .Container, label="notice-demo-actions-secondary", style=alicorn.layout_style(.Row, gap=8))
-		if alicorn.button(&ui, "Post actionable error", key=alicorn.key_string("notice-actionable"), style=alicorn.layout_style(.Row, width=184, height=34)) {
+		if alicorn.button(&ui, "Emit actionable error", key=alicorn.key_string("notice-actionable"), style=alicorn.layout_style(.Row, width=184, height=34)) {
 			app.notice_request = GALLERY_NOTICE_ACTIONABLE
 		}
 		if alicorn.button(&ui, "Dismiss examples", key=alicorn.key_string("notice-dismiss-all"), style=alicorn.layout_style(.Row, width=148, height=34)) {
@@ -288,6 +309,8 @@ build_app :: proc(
 		alicorn.text(&ui, fmt.tprintf("Notice actions handled: %d", app.notice_action_count))
 		_ = alicorn.semantic_static_text(&ui)
 		alicorn.text(&ui, "Errors announce assertively; informational notices use a polite live announcement.")
+		_ = alicorn.semantic_static_text(&ui)
+		alicorn.text(&ui, "Repeated events stack; a repeated stable warning ID updates the existing notice.")
 		_ = alicorn.semantic_static_text(&ui)
 		alicorn.container_begin(&ui, .Container, label="notices-panel-spacer", style=alicorn.layout_style(grow=1))
 		alicorn.container_end(&ui)

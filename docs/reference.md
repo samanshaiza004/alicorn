@@ -738,6 +738,17 @@ requests use the same retained state and controlled result path. The popup is
 described automatically at `end_frame`; applications do not calculate popup
 coordinates or add overlay roots themselves.
 
+### Icons
+
+Built-in indicators are vector paths and do not depend on text-font glyph
+coverage. `icon(ui, icon_id, key, size, color_role)` adds a decorative icon to
+ordinary layout; the surrounding control or adjacent text remains responsible
+for its accessible name. `icon_button(ui, accessible_label, icon_id, key,
+style)` creates an icon-only button with an explicit semantic name. Available
+IDs include check, chevrons, close, minus, radio, warning, info, folder-open and
+folder-closed, file, search, settings, and terminal. Icon paint is theme tinted
+and scaled at the host rendering boundary.
+
 ### Notices
 
 `notice_post(runtime, notice, now_ns)` copies an application-owned notice into
@@ -745,23 +756,28 @@ Alicorn's bounded retained queue. `now_ns` uses the host's monotonic clock;
 transient notices default to five seconds and may specify up to 60 seconds.
 `notice_next_deadline` exposes the next expiration so the host can wait once,
 and `notice_advance` expires due notices without a recurring timer. Stable IDs
-deduplicate/update repeated failures. The queue retains at most four notices;
+deduplicate/update repeated failures. Use `notice_emit` for independent events
+that should stack even when their text is identical; it returns a
+`Notice_Handle` for dismissing that occurrence with `notice_dismiss_handle`.
+The queue retains at most four notices;
 when full it evicts the oldest transient notice, and rejects a new notice when
 all retained entries are persistent. Action-bearing notices are persistent so
 an action cannot expire before the user can reach it.
 
 Notices are described as independent overlay roots after the app's normal
 roots, so they do not change workspace geometry or keyboard focus. Toasts are
-click-through outside their controls and are suppressed while a modal or
-transient menu/Select popup is active. Contextual notices require an anchor
-node. Informational/success/warning notices announce through a polite Status
+click-through outside their controls. A Select popup paints above notices and
+owns pointer input where the overlays overlap; modal dialogs and ordinary
+context menus take precedence over notices. Contextual notices require an
+anchor node. Informational/success/warning notices announce through a polite Status
 region; errors use an assertive Alert. Alicorn renders and queues action IDs but
 does not decide whether an error should be transient, persistent, contextual,
 or blocking, and never performs a Retry operation itself.
 
-Call `notice_dismiss` when app state resolves or the user dismisses a persistent
-notice. Drain user actions with `notice_take_action`; use its `Action_ID` to run
-the application-owned operation, then update or dismiss the notice as
+Call `notice_dismiss` when app state resolves or the user dismisses a stable-ID
+notice. Drain user actions with `notice_take_action`; its `notice` handle
+identifies the occurrence and its `Action_ID` selects the application-owned
+operation. Run that operation, then update or dismiss the notice as
 appropriate. Posting, dismissing, and expiring notices invalidate presentation
 but never alter the application's ordinary layout tree.
 

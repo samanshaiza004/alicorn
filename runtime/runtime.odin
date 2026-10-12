@@ -1027,6 +1027,7 @@ Description :: struct {
 	text:        string,
 	tooltip_text: string,
 	tooltip_delay_ms: u32,
+	icon_id: Icon_ID,
 	text_paint_spans: []Text_Paint_Span,
 	text_style_spans: []Text_Style_Span,
 	font:        Font_Role,
@@ -1137,6 +1138,7 @@ Node :: struct {
 	text:        string,
 	tooltip_text: string,
 	tooltip_delay_ms: u32,
+	icon_id: Icon_ID,
 	text_paint_spans: [dynamic]Text_Paint_Span,
 	text_style_spans: [dynamic]Text_Style_Span,
 	font:        Font_Role,
@@ -1367,6 +1369,8 @@ NOTICE_MESSAGE_MAX_BYTES :: 512
 NOTICE_DETAILS_MAX_BYTES :: 1024
 NOTICE_ACTION_LABEL_MAX_BYTES :: 64
 
+Notice_Handle :: distinct u64
+
 Notice_Severity :: enum { Info, Success, Warning, Error }
 Notice_Lifetime :: enum { Transient, Persistent }
 Notice_Placement :: enum { Toast, Contextual }
@@ -1398,6 +1402,7 @@ Notice_Action_Record :: struct {
 }
 
 Notice_Record :: struct {
+	handle: Notice_Handle,
 	id: [NOTICE_ID_MAX_BYTES]u8,
 	id_length: int,
 	id_hash: u64,
@@ -1418,6 +1423,7 @@ Notice_Record :: struct {
 }
 
 Notice_Action_Event :: struct {
+	notice: Notice_Handle,
 	notice_id_hash: u64,
 	action: Action_ID,
 }
@@ -1620,6 +1626,8 @@ Runtime :: struct {
 	notices: [NOTICE_QUEUE_CAPACITY]Notice_Record,
 	notice_count: int,
 	notice_sequence: u64,
+	notice_handle_sequence: u64,
+	notice_event_sequence: u64,
 	notice_actions: [NOTICE_ACTION_EVENT_CAPACITY]Notice_Action_Event,
 	notice_action_read: int,
 	notice_action_write: int,
