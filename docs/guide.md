@@ -33,6 +33,33 @@ arbitrary application memory. When a logical change needs a new description,
 invalidate the root or the affected region. The native host handles ordinary
 pointer and window input and schedules the next build.
 
+## Select a value
+
+Use `select_control` when the user chooses one value from a fixed set. Keep the
+selected key in application state and apply the returned change:
+
+```odin
+theme_options := [2]alicorn.Select_Option{
+	{key=1, label="Warm"},
+	{key=2, label="Cool Light"},
+}
+theme := alicorn.select_control(
+	&ui,
+	"settings-theme",
+	"Theme",
+	theme_options[:],
+	app.theme_key,
+)
+if theme.changed {
+	app.theme_key = theme.selected_key
+}
+```
+
+The control supplies an anchored, scrollable listbox, keyboard navigation,
+type-ahead, focus restoration, and Combo_Box/List_Box accessibility semantics.
+Keep keys stable when the option order changes. The popup is an Alicorn overlay
+and is added automatically when `end_frame` describes the retained frame.
+
 ## Describe layout with containers
 
 Calls are nested in the same order as the layout. Choose `.Row` for horizontal
@@ -218,6 +245,40 @@ After describing the ordinary root, add the menu with
 navigation, placement, outside-click dismissal, and focus restoration. See the
 [context-menu reference](reference.md#context-menus).
 
+## Report an application notice
+
+Choose a notice presentation based on what the user needs to do. A brief
+success message can expire automatically; a failed save or retryable workspace
+operation should remain until the application resolves or dismisses it. A
+blocking decision still belongs in a modal dialog. For example:
+
+```odin
+retry_action := [1]alicorn.Notice_Action{{id=RETRY_SCAN, label="Retry"}}
+_ = alicorn.notice_post(rt, alicorn.Notice{
+	id="workspace-scan-failure",
+	title="Couldn't refresh folder",
+	message="The folder's contents may be out of date.",
+	details=original_error,
+	severity=.Warning,
+	lifetime=.Persistent,
+	placement=.Toast,
+	actions=retry_action[:],
+}, monotonic_now_ns)
+
+if event, ok := alicorn.notice_take_action(rt); ok {
+	if event.action == RETRY_SCAN {
+		start_workspace_scan(app)
+	}
+}
+```
+
+Alicorn keeps notice text and action storage bounded, deduplicates by stable
+ID, draws notices in an independent overlay, and schedules a one-shot wake for
+transient expiry. The app owns severity, lifetime, retry behavior, and
+dismissal. Notices do not take editor focus or move the main layout. See the
+[Notice reference](reference.md#notices) for queue limits and accessibility
+announcements.
+
 ## Accessibility status
 
 Alicorn has keyboard-level interaction support: Tab and Shift+Tab traverse
@@ -236,6 +297,10 @@ apply a discontinuous delta. A caller already at the current revision gets an
 empty update; any other base must match the single retained transition or
 requires a snapshot. The native Windows/macOS host projects these snapshots
 and deltas through AccessKit; the semantic runtime remains the source of truth.
+Select controls expose Combo_Box, List_Box, and List_Box_Option semantics.
+Notices expose polite Status or assertive Alert live regions and never steal
+keyboard focus. This is bridge coverage; native Narrator/NVDA/VoiceOver behavior
+still needs platform testing.
 
 Ordinary visual `Text` is intentionally not exported automatically. For
 standalone informational copy, call `semantic_static_text` immediately after

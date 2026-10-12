@@ -548,6 +548,44 @@ test_semantic_virtual_action_is_delivered_as_domain_event :: proc(t: ^testing.T)
 }
 
 @(test)
+test_semantic_live_region_changes_publish_without_focus :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 200})
+	defer destroy_runtime(&rt)
+	id := semantic_virtual_test_id(0xB101)
+	initial := Semantic_Node_Description{
+		id=id,
+		role=.Status,
+		value="Ready",
+		live=.Polite,
+		live_atomic=true,
+	}
+	testing.expect(t, semantic_node_set(&rt, initial), "a live status node should enter semantic state")
+	_ = semantic_commit(&rt)
+	first_revision := semantic_revision(&rt)
+	snapshot := semantic_snapshot(&rt, context.temp_allocator)
+	node, found := semantic_snapshot_node_for_test(snapshot, id)
+	testing.expect(t, found && node.live == .Polite && node.live_atomic,
+		"snapshots must retain the live-region announcement mode and atomic flag")
+	semantic_snapshot_destroy(&snapshot)
+	updated := initial
+	updated.value = "Saved"
+	testing.expect(t, semantic_node_set(&rt, updated) && semantic_commit(&rt),
+		"a changed live-region value should publish a semantic revision")
+	update := semantic_update_since(&rt, first_revision)
+	testing.expect(t, update.to_revision > first_revision && len(update.changed_ids) == 1 && update.changed_ids[0] == id,
+		"live announcements should update through ordinary semantic deltas")
+	testing.expect(t, rt.semantic_keyboard_focus == (Semantic_ID{}),
+		"posting status content must not move semantic keyboard focus")
+}
+
+semantic_snapshot_node_for_test :: proc(snapshot: Semantic_Snapshot, id: Semantic_ID) -> (node: Semantic_Node, found: bool) {
+	for candidate in snapshot.nodes {
+		if candidate.id == id { return candidate, true }
+	}
+	return {}, false
+}
+
+@(test)
 test_detached_collection_keeps_logical_selection_and_drops_incidental_rows :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 320, 200})
 	defer destroy_runtime(&rt)

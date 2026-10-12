@@ -659,8 +659,9 @@ Activation produces a bounded full snapshot, while later updates require an
 exact base revision and fall back to a snapshot on mismatch. Actions route by
 stable `Semantic_ID` through semantic action/reveal requests, never fake
 pointer input. The adapter covers common controls, text fields/areas/runs,
-SetTextSelection and ReplaceSelectedText actions, Tab/TabList, and the
-bounded-collection slice. Linux platform integration is not included.
+SetTextSelection and ReplaceSelectedText actions, Tab/TabList, list boxes and
+options, combo boxes, status and alert live regions, and the bounded-collection
+slice. Linux platform integration is not included.
 
 The bridge has compile/link coverage, but real Narrator/NVDA/VoiceOver behavior
 and screen-reader traversal across gaps in virtualized collections are not yet
@@ -716,6 +717,53 @@ the menu from its focused/semantic target and call `context_menu_open`.
 The popup is a top-level transient layer, so it is not clipped by its invoking
 pane. This first primitive is single-level and has no submenu, checkmark, or
 embedded-widget model.
+
+### Select controls
+
+`select_control(ui, key, label, options, selected_key, style)` describes a
+single-choice control. Each `Select_Option` has a stable `key`, a nonempty
+`label`, and an optional `disabled` flag. Keys must be unique, the
+current value must be present, and one control accepts at most 128 options.
+The returned `Select_Result` is controlled: when `changed` is true, store
+`selected_key` in application state and pass it to the next description.
+
+Select describes a semantic Combo_Box trigger and an anchored List_Box popup
+with List_Box_Option children. It reuses Alicorn's retained popup placement,
+clamping, scrolling, keyboard focus, outside-click dismissal, and focus
+restoration. Up/Down move the active option, Home/End find the first/last
+enabled option, committed text input performs prefix type-ahead, Enter/Space
+chooses the active value, Escape closes, and Tab closes and advances focus.
+Disabled options are skipped. Accessibility Expand/Collapse and option Select
+requests use the same retained state and controlled result path. The popup is
+described automatically at `end_frame`; applications do not calculate popup
+coordinates or add overlay roots themselves.
+
+### Notices
+
+`notice_post(runtime, notice, now_ns)` copies an application-owned notice into
+Alicorn's bounded retained queue. `now_ns` uses the host's monotonic clock;
+transient notices default to five seconds and may specify up to 60 seconds.
+`notice_next_deadline` exposes the next expiration so the host can wait once,
+and `notice_advance` expires due notices without a recurring timer. Stable IDs
+deduplicate/update repeated failures. The queue retains at most four notices;
+when full it evicts the oldest transient notice, and rejects a new notice when
+all retained entries are persistent. Action-bearing notices are persistent so
+an action cannot expire before the user can reach it.
+
+Notices are described as independent overlay roots after the app's normal
+roots, so they do not change workspace geometry or keyboard focus. Toasts are
+click-through outside their controls and are suppressed while a modal or
+transient menu/Select popup is active. Contextual notices require an anchor
+node. Informational/success/warning notices announce through a polite Status
+region; errors use an assertive Alert. Alicorn renders and queues action IDs but
+does not decide whether an error should be transient, persistent, contextual,
+or blocking, and never performs a Retry operation itself.
+
+Call `notice_dismiss` when app state resolves or the user dismisses a persistent
+notice. Drain user actions with `notice_take_action`; use its `Action_ID` to run
+the application-owned operation, then update or dismiss the notice as
+appropriate. Posting, dismissing, and expiring notices invalidate presentation
+but never alter the application's ordinary layout tree.
 
 ### Local drag and drop
 

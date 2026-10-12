@@ -22,7 +22,8 @@ native_text_input_owner_is_valid :: proc(rt: ^alicorn.Runtime, id: alicorn.Node_
 	node, ok := rt.nodes[id]
 	if !ok || !node.active || !node.focusable || node.disabled { return false }
 	if alicorn.text_input_target_is_suspended(rt, id) { return false }
-	return node.kind == .Text_Field || alicorn.text_input_target_is_active(rt, id)
+	return node.kind == .Text_Field || alicorn.text_input_target_is_active(rt, id) ||
+		(alicorn.select_wants_text_input(rt) && id == rt.focused)
 }
 
 native_current_text_input_owner :: proc(rt: ^alicorn.Runtime, state: ^Native_Text_Input_State = nil) -> alicorn.Node_ID {
@@ -225,7 +226,8 @@ sync_text_input_focus :: proc(
 	desired := rt.focused
 	if state.suspended || !state.window_focused || !native_text_input_owner_is_valid(rt, desired) { desired = 0 }
 	if desired != 0 {
-		if node, ok := rt.nodes[desired]; ok && node.kind != .Text_Field && (application == nil || application.on_text_input == nil) {
+		if node, ok := rt.nodes[desired]; ok && node.kind != .Text_Field &&
+			(application == nil || application.on_text_input == nil) && !alicorn.select_wants_text_input(rt) {
 			desired = 0
 		}
 	}

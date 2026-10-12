@@ -53,7 +53,16 @@ function Get-AlicornAccessKit {
     $archive = Join-Path $cacheRoot "accesskit-c-$version.zip"
     $distribution = Join-Path $cacheRoot "accesskit-c-$version"
 
-    $architecture = [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
+    # Windows PowerShell on .NET Framework may expose RuntimeInformation
+    # without ProcessArchitecture. The process environment remains available
+    # there, so use it as the portable fallback and normalize AMD64 to .NET's
+    # X64 spelling.
+    $architecture = $env:PROCESSOR_ARCHITECTURE
+    if ([string]::IsNullOrWhiteSpace($architecture)) {
+        try { $architecture = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString() }
+        catch { $architecture = '' }
+    }
+    if ($architecture -eq 'AMD64') { $architecture = 'X64' }
     if ($env:OS -ne 'Windows_NT') { throw "AccessKit static bootstrap does not support this OS in PowerShell: '$env:OS'." }
     if ($architecture -ne 'X64') { throw "AccessKit $version Windows static library is only configured here for x86_64 MSVC; process architecture is '$architecture'." }
 

@@ -1160,7 +1160,13 @@ end_frame :: proc(ui: ^UI) {
 		clear(&ui.runtime.identity_labels)
 		clear(&ui.runtime.identity_key_u64)
 		clear(&ui.runtime.identity_key_numeric)
+		clear(&ui.runtime.identity_key_kind)
+		clear(&ui.runtime.identity_key_pair)
 	}
+	// Composite overlays are described after the application's ordinary roots,
+	// so retained widgets and notices never consume workbench layout space.
+	select_overlay_describe(ui)
+	notice_overlay_describe(ui)
 	if ui.runtime.context_menu.open && !ui.runtime.context_menu.described {
 		context_menu_close_internal(ui.runtime, false)
 	}

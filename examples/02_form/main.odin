@@ -1,13 +1,15 @@
 package main
 
 // 02 · Widget Gallery exercises accessible static text, composite tabs,
-// app-owned values, controlled text input, and per-widget style/color overrides.
+// controlled selection and notices, app-owned values, controlled text input,
+// and per-widget style/color overrides.
 // Run with `odin run examples/02_form` and interact with the controls.
 
 import "core:fmt"
 import "core:strings"
 import alicorn "../../runtime"
 import host "../../native/sdl_gpu"
+import sdl3 "vendor:sdl3"
 
 App :: struct {
 	show_grid: bool,
@@ -19,11 +21,117 @@ App :: struct {
 	selected_gallery_tab: int,
 	tab_close_requests: int,
 	last_closed_tab: int,
+	selected_choice: u64,
+	notice_request: int,
+	notice_feedback: string,
+	notice_action_count: int,
 	name: string,
 	name_owned: bool,
 }
 
 GALLERY_TAB_SEMANTIC_NAMESPACE :: u64(0x5749444745544741)
+GALLERY_NOTICE_NONE :: 0
+GALLERY_NOTICE_TRANSIENT :: 1
+GALLERY_NOTICE_PERSISTENT :: 2
+GALLERY_NOTICE_ACTIONABLE :: 3
+GALLERY_NOTICE_DISMISS_ALL :: 4
+GALLERY_NOTICE_RETRY :: alicorn.Action_ID(7101)
+GALLERY_NOTICE_DETAILS :: alicorn.Action_ID(7102)
+
+GALLERY_SELECT_OPTIONS :: [4]alicorn.Select_Option{
+	{key=1, label="Warm"},
+	{key=2, label="Cool Light"},
+	{key=3, label="Forest"},
+	{key=4, label="High Contrast"},
+}
+
+gallery_select_label :: proc(key: u64) -> string {
+	for option in GALLERY_SELECT_OPTIONS {
+		if option.key == key { return option.label }
+	}
+	return "No selection"
+}
+
+gallery_process_notice_request :: proc(app: ^App, rt: ^alicorn.Runtime) {
+	if app == nil || rt == nil { return }
+	request := app.notice_request
+	app.notice_request = GALLERY_NOTICE_NONE
+	if request == GALLERY_NOTICE_NONE { return }
+
+	accepted := false
+	switch request {
+	case GALLERY_NOTICE_TRANSIENT:
+		accepted = alicorn.notice_post(rt, alicorn.Notice{
+			id="gallery-transient",
+			title="Saved",
+			message="This success notice expires after five seconds.",
+			severity=.Success,
+			lifetime=.Transient,
+			placement=.Toast,
+			duration_ms=5_000,
+		}, u64(sdl3.GetTicksNS()))
+		app.notice_feedback = "Posted a transient success notice."
+	case GALLERY_NOTICE_PERSISTENT:
+		accepted = alicorn.notice_post(rt, alicorn.Notice{
+			id="gallery-persistent",
+			title="Folder needs attention",
+			message="This warning stays until you dismiss it.",
+			details="Persistent notices do not expire automatically.",
+			severity=.Warning,
+			lifetime=.Persistent,
+			placement=.Toast,
+		}, u64(sdl3.GetTicksNS()))
+		app.notice_feedback = "Posted a persistent warning notice."
+	case GALLERY_NOTICE_ACTIONABLE:
+		actions := [2]alicorn.Notice_Action{
+			{id=GALLERY_NOTICE_DETAILS, label="Details"},
+			{id=GALLERY_NOTICE_RETRY, label="Retry"},
+		}
+		accepted = alicorn.notice_post(rt, alicorn.Notice{
+			id="gallery-actionable",
+			title="Couldn't refresh folder",
+			message="The folder's contents may be out of date.",
+			details="The gallery leaves recovery decisions to the application.",
+			severity=.Error,
+			lifetime=.Persistent,
+			placement=.Toast,
+			actions=actions[:],
+		}, u64(sdl3.GetTicksNS()))
+		app.notice_feedback = "Posted an actionable error. Try Details or Retry in the notice."
+	case GALLERY_NOTICE_DISMISS_ALL:
+		dismissed := alicorn.notice_dismiss(rt, "gallery-transient")
+		dismissed = alicorn.notice_dismiss(rt, "gallery-persistent") || dismissed
+		dismissed = alicorn.notice_dismiss(rt, "gallery-actionable") || dismissed
+		app.notice_feedback = "Dismissed the gallery notices." if dismissed else "There are no gallery notices to dismiss."
+		alicorn.invalidate_root(rt, "gallery notice dismissal feedback changed")
+		return
+	}
+	if accepted {
+		// notice_post already invalidates the root when it accepts the record.
+	} else {
+		app.notice_feedback = "Notice request was rejected; the queue may be full of persistent notices."
+		alicorn.invalidate_root(rt, "gallery notice request was rejected")
+	}
+}
+
+gallery_process_notice_actions :: proc(app: ^App, rt: ^alicorn.Runtime) {
+	if app == nil || rt == nil { return }
+	for {
+		event, found := alicorn.notice_take_action(rt)
+		if !found { break }
+		app.notice_action_count += 1
+		switch event.action {
+		case GALLERY_NOTICE_DETAILS:
+			app.notice_feedback = "Details action reached the application; the notice remains open."
+		case GALLERY_NOTICE_RETRY:
+			app.notice_feedback = "Retry action reached the application; the demo dismissed the notice."
+			_ = alicorn.notice_dismiss(rt, "gallery-actionable")
+		case:
+			app.notice_feedback = "A notice action reached the application."
+		}
+		alicorn.invalidate_root(rt, "gallery notice action handled")
+	}
+}
 
 reset_values :: proc(app: ^App) {
 	app.show_grid = true
@@ -72,13 +180,15 @@ build_app :: proc(
 	alicorn.text(&ui, "Interactive controls · Tab to focus · Space toggles · arrows adjust sliders · select/close a document tab to test tab actions")
 	_ = alicorn.semantic_static_text(&ui)
 
-	document_tabs := [3]alicorn.Tab_Bar_Item{
+	document_tabs := [4]alicorn.Tab_Bar_Item{
 		{key=alicorn.key_string("gallery-tab-readme"), label="README.md", selected=app.selected_gallery_tab == 0, closable=true,
 			semantic_id=alicorn.Semantic_ID{namespace=GALLERY_TAB_SEMANTIC_NAMESPACE, value=1}},
 		{key=alicorn.key_string("gallery-tab-main"), label="main.odin", selected=app.selected_gallery_tab == 1, closable=true,
 			semantic_id=alicorn.Semantic_ID{namespace=GALLERY_TAB_SEMANTIC_NAMESPACE, value=2}},
 		{key=alicorn.key_string("gallery-tab-license"), label="LICENSE", selected=app.selected_gallery_tab == 2, closable=true, dirty=true,
 			semantic_id=alicorn.Semantic_ID{namespace=GALLERY_TAB_SEMANTIC_NAMESPACE, value=3}},
+		{key=alicorn.key_string("gallery-tab-select-notices"), label="Select + Notices", selected=app.selected_gallery_tab == 3,
+			semantic_id=alicorn.Semantic_ID{namespace=GALLERY_TAB_SEMANTIC_NAMESPACE, value=4}},
 	}
 	tab_result := alicorn.tab_bar(
 		&ui,
@@ -111,6 +221,78 @@ build_app :: proc(
 		label="gallery-panels",
 		style=alicorn.layout_style(.Row, grow=1, gap=16, clip=true),
 	)
+	if app.selected_gallery_tab == 3 {
+		alicorn.container_begin(
+			&ui,
+			.Container,
+			label="select-panel",
+			style=alicorn.layout_style(.Column, grow=1, padding=20, gap=12, clip=true),
+			color=alicorn.Color{0.075, 0.09, 0.125, 1},
+		)
+		alicorn.text(&ui, "Select", style=alicorn.layout_style(height=28), text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_SEMIBOLD})
+		_ = alicorn.semantic_static_text(&ui)
+		alicorn.text(&ui, "Choose one value from a fixed set. The selection remains app-owned.")
+		_ = alicorn.semantic_static_text(&ui)
+		alicorn.text(&ui, "Theme")
+		select_options := GALLERY_SELECT_OPTIONS
+		choice := alicorn.select_control(
+			&ui,
+			alicorn.key_string("gallery-theme-select"),
+			"Theme",
+			select_options[:],
+			app.selected_choice,
+			style=alicorn.layout_style(.Row, width=300, height=36),
+		)
+		if choice.changed {
+			app.selected_choice = choice.selected_key
+		}
+		alicorn.text(&ui, fmt.tprintf("Application value: %s", gallery_select_label(app.selected_choice)))
+		_ = alicorn.semantic_static_text(&ui)
+		alicorn.text(&ui, "Keyboard: Up/Down, Home/End, type to jump, Enter to choose, Escape to close.")
+		_ = alicorn.semantic_static_text(&ui)
+		alicorn.text(&ui, "Open the list, switch focus away with Tab, then return to inspect focus restoration.")
+		_ = alicorn.semantic_static_text(&ui)
+		alicorn.container_begin(&ui, .Container, label="select-panel-spacer", style=alicorn.layout_style(grow=1))
+		alicorn.container_end(&ui)
+		alicorn.container_end(&ui)
+
+		alicorn.container_begin(
+			&ui,
+			.Container,
+			label="notices-panel",
+			style=alicorn.layout_style(.Column, grow=1, padding=20, gap=10, clip=true),
+			color=alicorn.Color{0.075, 0.09, 0.125, 1},
+		)
+		alicorn.text(&ui, "Notices", style=alicorn.layout_style(height=28), text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_SEMIBOLD})
+		_ = alicorn.semantic_static_text(&ui)
+		alicorn.text(&ui, "Notices float above the gallery without moving its layout or taking editor focus.")
+		_ = alicorn.semantic_static_text(&ui)
+		alicorn.container_begin(&ui, .Container, label="notice-demo-actions", style=alicorn.layout_style(.Row, gap=8))
+		if alicorn.button(&ui, "Post transient", key=alicorn.key_string("notice-transient"), style=alicorn.layout_style(.Row, width=142, height=34)) {
+			app.notice_request = GALLERY_NOTICE_TRANSIENT
+		}
+		if alicorn.button(&ui, "Post warning", key=alicorn.key_string("notice-persistent"), style=alicorn.layout_style(.Row, width=132, height=34)) {
+			app.notice_request = GALLERY_NOTICE_PERSISTENT
+		}
+		alicorn.container_end(&ui)
+		alicorn.container_begin(&ui, .Container, label="notice-demo-actions-secondary", style=alicorn.layout_style(.Row, gap=8))
+		if alicorn.button(&ui, "Post actionable error", key=alicorn.key_string("notice-actionable"), style=alicorn.layout_style(.Row, width=184, height=34)) {
+			app.notice_request = GALLERY_NOTICE_ACTIONABLE
+		}
+		if alicorn.button(&ui, "Dismiss examples", key=alicorn.key_string("notice-dismiss-all"), style=alicorn.layout_style(.Row, width=148, height=34)) {
+			app.notice_request = GALLERY_NOTICE_DISMISS_ALL
+		}
+		alicorn.container_end(&ui)
+		alicorn.text(&ui, app.notice_feedback, style=alicorn.layout_style(height=48))
+		_ = alicorn.semantic_static_text(&ui)
+		alicorn.text(&ui, fmt.tprintf("Notice actions handled: %d", app.notice_action_count))
+		_ = alicorn.semantic_static_text(&ui)
+		alicorn.text(&ui, "Errors announce assertively; informational notices use a polite live announcement.")
+		_ = alicorn.semantic_static_text(&ui)
+		alicorn.container_begin(&ui, .Container, label="notices-panel-spacer", style=alicorn.layout_style(grow=1))
+		alicorn.container_end(&ui)
+		alicorn.container_end(&ui)
+	} else {
 
 	alicorn.container_begin(
 		&ui,
@@ -254,12 +436,14 @@ build_app :: proc(
 		disabled=true,
 	)
 	alicorn.container_end(&ui)
-
+	}
 	alicorn.container_end(&ui)
 	alicorn.text(&ui, "Controlled values live in the application · Reset values restores the initial settings")
 	alicorn.container_end(&ui)
 
 	alicorn.end_frame(&ui)
+	gallery_process_notice_request(app, rt)
+	gallery_process_notice_actions(app, rt)
 	return root
 }
 
@@ -271,6 +455,8 @@ main :: proc() {
 		offset=-1.5,
 		selected_gallery_tab=0,
 		last_closed_tab=-1,
+		selected_choice=1,
+		notice_feedback="Post examples to inspect transient, persistent, and actionable presentation.",
 		name="Alicorn",
 	}
 	host.Run(host.Application{
