@@ -773,9 +773,9 @@ DEFAULT_BUTTON_RECIPES :: Button_Recipe_Set{recipes={
 		focus_role=.Focus, semantic_active_role=.Semantic_Focus,
 	},
 	Button_Recipe{
-		defined=true, surface_role=.Subtle_Surface, text_role=.Text, surface_visible=false,
+		defined=true, surface_role=.Subtle_Surface, text_role=.Muted_Text, surface_visible=false,
 		selected=Style_Transform{surface_role=.Accent, surface_mix=0.18},
-		hovered=Style_Transform{surface_role=.Subtle_Surface, surface_mix=1},
+		hovered=Style_Transform{surface_role=.Subtle_Surface, surface_mix=1, text_role=.Text, text_mix=0.45},
 		pressed=Style_Transform{surface_role=.Border, surface_mix=1},
 		disabled=Style_Transform{text_role=.Muted_Text, text_mix=1},
 		selected_indicator_role=.Text,

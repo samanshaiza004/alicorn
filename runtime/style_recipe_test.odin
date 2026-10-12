@@ -20,6 +20,7 @@ test_button_recipe_variants_use_neutral_defaults_and_explicit_primary :: proc(t:
 	primary := style_button_resolve(&rt, environment, .Primary, Button_Visual_State{})
 	toolbar := style_button_resolve(&rt, environment, .Toolbar, Button_Visual_State{})
 	quiet := style_button_resolve(&rt, environment, .Quiet, Button_Visual_State{})
+	quiet_hover := style_button_resolve(&rt, environment, .Quiet, Button_Visual_State{hovered=true})
 	tab := style_button_resolve(&rt, environment, .Tab, Button_Visual_State{selected=true})
 	danger := style_button_resolve(&rt, environment, .Danger, Button_Visual_State{})
 	danger_hover := style_button_resolve(&rt, environment, .Danger, Button_Visual_State{hovered=true})
@@ -32,7 +33,10 @@ test_button_recipe_variants_use_neutral_defaults_and_explicit_primary :: proc(t:
 	testing.expect(t, primary.text == style_color(&UI{runtime=&rt}, .Accent_Text), "primary buttons should use the accent text role")
 	testing.expect(t, toolbar.surface == style_color(&UI{runtime=&rt}, .Surface) && toolbar.surface != style_color(&UI{runtime=&rt}, .Accent),
 		"toolbar buttons should use their distinct neutral surface recipe")
-	testing.expect(t, quiet.surface.a == 0, "quiet buttons should leave the idle surface transparent")
+	testing.expect(t, quiet.surface.a == 0 && quiet.text == style_environment_color(&rt, environment, .Muted_Text),
+		"quiet buttons should leave the idle surface transparent and use muted text at rest")
+	testing.expect(t, quiet_hover.text == style_color_mix(quiet.text, style_environment_color(&rt, environment, .Text), 0.45) && quiet_hover.text != quiet.text,
+		"quiet button text should brighten on hover without adopting a destructive color")
 	testing.expect(t, tab.surface == style_color(&UI{runtime=&rt}, .Subtle_Surface) && tab.text == style_color(&UI{runtime=&rt}, .Text),
 		"selected tabs should use the tab recipe's selected surface and text transforms")
 	testing.expect(t, tab.selected_indicator == .Underline, "selected tabs should add a non-color selection indicator")
