@@ -7,6 +7,17 @@ import "core:strings"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
+// Keep the stable AccessKit action-data payload type available to the
+// platform-independent projection helpers and tests. The native callback is
+// Windows/macOS-only, but its serialized C union layout is not.
+AccessKit_Action_Data :: struct {
+	tag: c.int,
+	padding: c.int,
+	// The largest C union arm is accesskit_text_selection (two 16-byte
+	// positions), so preserve the full 32-byte payload and its alignment.
+	value: [4]u64,
+}
+
 when ODIN_OS == .Windows || ODIN_OS == .Darwin {
 	when ODIN_OS == .Windows {
 		foreign import accesskit "system:accesskit.lib"
@@ -23,14 +34,6 @@ when ODIN_OS == .Windows || ODIN_OS == .Darwin {
 	}
 	#assert(size_of(AccessKit_Rect) == 32)
 	#assert(align_of(AccessKit_Rect) == 8)
-
-	AccessKit_Action_Data :: struct {
-		tag: c.int,
-		padding: c.int,
-		// The largest C union arm is accesskit_text_selection (two 16-byte
-		// positions), so preserve the full 32-byte payload and its alignment.
-		value: [4]u64,
-	}
 
 	AccessKit_Optional_Action_Data :: struct {
 		has_value: bool,
