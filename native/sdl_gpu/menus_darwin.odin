@@ -87,7 +87,9 @@ darwin_menu_key_string :: proc(key: rune) -> string {
 	normalized := key
 	if normalized >= 'A' && normalized <= 'Z' { normalized += 'a' - 'A' }
 	bytes, length := utf8.encode_rune(normalized)
-	return string(bytes[:length])
+	key_string, err := strings.clone_from_bytes(bytes[:length], context.temp_allocator)
+	if err != nil { return "" }
+	return key_string
 }
 
 darwin_menu_shortcut_mask :: proc(modifiers: Application_Menu_Modifiers) -> NS.EventModifierFlags {
