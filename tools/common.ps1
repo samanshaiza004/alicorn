@@ -68,7 +68,17 @@ function Get-AlicornAccessKit {
         if ($LASTEXITCODE -ne 0) { throw "AccessKit $version download failed (curl exit $LASTEXITCODE): $url" }
     }
 
-    $actualHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+    $sha256Hasher = [Security.Cryptography.SHA256]::Create()
+    try {
+        $archiveStream = [IO.File]::OpenRead($archive)
+        try {
+            $actualHash = [BitConverter]::ToString($sha256Hasher.ComputeHash($archiveStream)).Replace('-', '').ToLowerInvariant()
+        } finally {
+            $archiveStream.Dispose()
+        }
+    } finally {
+        $sha256Hasher.Dispose()
+    }
     if ($actualHash -ne $sha256) {
         throw "AccessKit $version archive SHA-256 mismatch. Expected $sha256; got $actualHash. Cached archive: '$archive'."
     }
