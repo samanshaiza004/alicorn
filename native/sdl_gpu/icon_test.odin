@@ -24,7 +24,6 @@ test_icon_mask_quad_preserves_clipping_dpi_and_tint :: proc(t: ^testing.T) {
 		alicorn.Rect{5, 0, 10, 20},
 		.Chevron_Down,
 		alicorn.Color{0.2, 0.4, 0.8, 0.8},
-		stroke_width=2,
 		opacity=0.5,
 	)
 	scales := [4]f32{1, 1.25, 1.5, 2}

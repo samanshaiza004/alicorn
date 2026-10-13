@@ -41,9 +41,8 @@ Icon_ID :: enum {
 }
 
 Icon_Paint :: struct {
-	id: Icon_ID,
+	id:    Icon_ID,
 	color: Color,
-	stroke_width: f32,
 }
 
 Surface_Shape_Kind :: enum {
@@ -163,7 +162,6 @@ paint_icon_command :: proc(
 	bounds, clip: Rect,
 	id: Icon_ID,
 	color: Color,
-	stroke_width: f32 = 1.8,
 	opacity: f32 = 1,
 	translation: [2]f32 = {},
 ) -> Paint_Command {
@@ -173,7 +171,7 @@ paint_icon_command :: proc(
 		clip=clip,
 		opacity=opacity,
 		translation=translation,
-		payload=Icon_Paint{id, color, stroke_width},
+		payload=Icon_Paint{id, color},
 	}
 }
 

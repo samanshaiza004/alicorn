@@ -479,7 +479,7 @@ update_paint :: proc(rt: ^Runtime) {
 				if node.paint_value&1 != 0 {
 					check_color := checkbox_style.checkmark.text
 					mark_bounds := Rect{box.x+3, box.y+3, maxf(box.w-6, 0), maxf(box.h-6, 0)}
-					append(&node.paint, paint_icon_command(node.id, mark_bounds, node.clip, .Check, check_color, stroke_width=2))
+					append(&node.paint, paint_icon_command(node.id, mark_bounds, node.clip, .Check, check_color))
 				}
 				show_focus := checkbox_style.focus_indicator_mode == .Always || rt.focus_visible
 				if checkbox_style.focused && show_focus && !checkbox_style.disabled {

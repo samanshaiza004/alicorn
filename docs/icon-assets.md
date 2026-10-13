@@ -46,8 +46,7 @@ pixels, each against dark and light surfaces.
 
 `icon(...)`, `icon_button(...)`, control semantics and hit rectangles retain
 their existing API. `Icon_Paint` carries identity, tint and normal retained
-paint geometry. The initial `stroke_width` argument is accepted for source
-compatibility but has no effect: filled artwork is fixed at asset generation.
+paint geometry. Artwork weight is fixed by the selected generated asset.
 
 The native `Native_Icon_Renderer` owns its pipeline, sampler, textures and mesh
 storage independently of Runa's text atlas. Its lifetime is aggregated into

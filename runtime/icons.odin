@@ -1,8 +1,5 @@
 package alicorn
 
-// Kept for source compatibility with the initial procedural icon API. Filled
-// compiled assets own their geometry; runtime stroke widths have no effect.
-ICON_DEFAULT_STROKE_WIDTH :: f32(1.8)
 ICON_TRAILING_SLOT_WIDTH :: f32(26)
 
 icon_id_is_valid :: proc(id: Icon_ID) -> bool {

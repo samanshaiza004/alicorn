@@ -751,9 +751,8 @@ and sized at the host rendering boundary. Each integer physical size from 8
 through 64 pixels has its own offline rasterization; sizes outside that range
 resample the nearest endpoint. Atlas pages are uploaded once per device
 lifetime. Theme, hover and disabled colors change only the tint, and no SVG
-parser or rasterizer ships in the runtime. The legacy `stroke_width` paint
-argument is accepted for source compatibility but has no effect on filled
-artwork. See [icon assets](icon-assets.md) for regeneration and native validation.
+parser or rasterizer ships in the runtime. See [icon assets](icon-assets.md)
+for regeneration and native validation.
 
 ### Notices
 
