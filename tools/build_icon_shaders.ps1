@@ -28,7 +28,16 @@ try {
         } else { Copy-Item -LiteralPath "$Stage/$Name" -Destination "$Source/$Name" -Force }
     }
     foreach ($Name in @('icon.frag.hlsl', 'icon.frag.glsl', 'icon.frag.metal', 'icon.frag.dxil', 'icon.frag.spv')) {
-        $Hash = (Get-FileHash "$Source/$Name" -Algorithm SHA256).Hash.ToLowerInvariant()
+        $Path = Join-Path $Source $Name
+        if ([IO.Path]::GetExtension($Name) -in @('.hlsl', '.glsl', '.metal')) {
+            $Content = [IO.File]::ReadAllText((Resolve-Path -LiteralPath $Path).Path).Replace("`r`n", "`n")
+            $Hasher = [Security.Cryptography.SHA256]::Create()
+            try {
+                $Hash = [BitConverter]::ToString($Hasher.ComputeHash([Text.Encoding]::UTF8.GetBytes($Content))).Replace('-', '').ToLowerInvariant()
+            } finally { $Hasher.Dispose() }
+        } else {
+            $Hash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
         if ($Verify -and $Manifest.sha256.$Name -ne $Hash) { throw "Icon shader manifest differs: $Name" }
         $Manifest.sha256.$Name = $Hash
     }

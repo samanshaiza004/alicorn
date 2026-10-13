@@ -1,4 +1,3 @@
-import hashlib
 import json
 import unittest
 import generate_icon_atlas as icons
@@ -9,7 +8,13 @@ class IconAssets(unittest.TestCase):
         root = icons.ROOT / 'native/sdl_gpu/icon_shaders'
         manifest = json.loads((root / 'manifest.json').read_text())
         for name, expected in manifest['sha256'].items():
-            self.assertEqual(hashlib.sha256((root / name).read_bytes()).hexdigest(), expected, name)
+            self.assertEqual(icons.shader_hash(name, (root / name).read_bytes()), expected, name)
+
+    def test_shader_hash_normalizes_platform_line_endings(self):
+        lf = b"line one\nline two\n"
+        crlf = lf.replace(b"\n", b"\r\n")
+        self.assertEqual(icons.shader_hash("icon.frag.hlsl", lf), icons.shader_hash("icon.frag.hlsl", crlf))
+        self.assertNotEqual(icons.shader_hash("icon.frag.dxil", lf), icons.shader_hash("icon.frag.dxil", crlf))
 
     def test_rejects_external_resources_and_non_monochrome_art(self):
         for content in [b'<image href="https://example.com/a.png"/>', b'<script/>',

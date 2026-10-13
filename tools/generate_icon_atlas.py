@@ -20,6 +20,12 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def shader_hash(name, data):
+    if pathlib.Path(name).suffix.lower() in {".hlsl", ".glsl", ".metal"}:
+        data = data.replace(b"\r\n", b"\n")
+    return sha(data)
+
+
 def validate_svg(data):
     if b"<!" in data or b"<?" in data:
         raise ValueError("SVG declarations and external entities are forbidden")
