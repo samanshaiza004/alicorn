@@ -30,6 +30,7 @@ Native_Image_Draw :: struct {
 Native_Image_Renderer :: struct {
 	device: ^sdl3.GPUDevice,
 	runtime: ^alicorn.Runtime,
+	texture_format: sdl3.GPUTextureFormat,
 	pipeline: ^sdl3.GPUGraphicsPipeline,
 	sampler: ^sdl3.GPUSampler,
 	vertex_buffer: ^sdl3.GPUBuffer,
@@ -61,6 +62,13 @@ native_image_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTex
 	if device == nil || runtime == nil { return renderer, false }
 	renderer.device = device
 	renderer.runtime = runtime
+	// SDL's default SDR swapchain consumes sRGB-encoded values without a
+	// hardware transfer function. Only linear/sRGB targets should decode the
+	// source texture; decoding for an ordinary UNORM target darkens midtones.
+	renderer.texture_format = .R8G8B8A8_UNORM
+	if swapchain_format == .R8G8B8A8_UNORM_SRGB || swapchain_format == .B8G8R8A8_UNORM_SRGB {
+		renderer.texture_format = .R8G8B8A8_UNORM_SRGB
+	}
 	defer if !ok { native_image_destroy(&renderer) }
 	renderer.vertex_capacity = NATIVE_IMAGE_INITIAL_VERTICES
 	renderer.vertices = make([dynamic]Native_Text_Vertex, 0, 4096)
@@ -157,7 +165,7 @@ native_image_sync :: proc(renderer: ^Native_Image_Renderer, command: ^sdl3.GPUCo
 		}
 		width, height := sdl3.Uint32(pixels.width), sdl3.Uint32(pixels.height)
 		texture := sdl3.CreateGPUTexture(renderer.device, sdl3.GPUTextureCreateInfo{
-			type=.D2, format=.R8G8B8A8_UNORM_SRGB, usage={.SAMPLER},
+			type=.D2, format=renderer.texture_format, usage={.SAMPLER},
 			width=width, height=height, layer_count_or_depth=1, num_levels=1, sample_count=._1,
 		})
 		if texture == nil { return false }
