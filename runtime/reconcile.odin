@@ -532,6 +532,9 @@ copy_node_description :: proc(
 	// description to opt a node into the selected visual state.
 	node.selected = d.selected || rt.selected == node.id
 	previous_semantic_id := node.semantic_id
+	if adaptive_node_has_alternative_ancestor(rt, node.id) && previous_semantic_id != d.semantic_id {
+		rt.adaptive_semantic_previous_ids[node.id] = previous_semantic_id
+	}
 	node.semantic_id = d.semantic_id
 	if !adaptive_node_has_alternative_ancestor(rt, node.id) {
 		semantic_sync_node(rt, node, semantic, previous_semantic_id)
@@ -689,6 +692,9 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	delete_key(&rt.computed_styles, id)
 	delete_key(&rt.semantic_surfaces, id)
 	delete_key(&rt.visual_parts, id)
+	delete_key(&rt.semantic_tree_orders, id)
+	adaptive_semantic_descriptor_delete(rt, id)
+	delete_key(&rt.adaptive_semantic_previous_ids, id)
 	delete_key(&rt.measure_states, id)
 	delete_key(&rt.finalized_geometry, id)
 	children := node.children[:]
@@ -914,7 +920,7 @@ reconcile :: proc(rt: ^Runtime) {
 	}
 
 	if previous_focus != 0 {
-		if node, ok := rt.nodes[previous_focus]; ok && node_is_presentation_active(rt, previous_focus) && node.focusable {
+		if focus_candidate_is_valid(rt, previous_focus) {
 			rt.focused = previous_focus
 		} else {
 			rt.focused = 0
@@ -923,9 +929,7 @@ reconcile :: proc(rt: ^Runtime) {
 				for ancestor in focus_lineage {
 					if ancestor == previous_semantic_owner { owner_in_lineage = true; break }
 				}
-				owner, owner_ok := rt.nodes[previous_semantic_owner]
-				if owner_in_lineage && owner_ok && node_is_presentation_active(rt, previous_semantic_owner) && owner.focusable &&
-					node_is_in_modal_overlay(rt, previous_semantic_owner, modal_overlay_root(rt)) {
+				if owner_in_lineage && focus_candidate_is_valid(rt, previous_semantic_owner) {
 					rt.focused = previous_semantic_owner
 				}
 			}
@@ -938,7 +942,7 @@ reconcile :: proc(rt: ^Runtime) {
 		}
 	}
 	if rt.focused != 0 {
-		if node, ok := rt.nodes[rt.focused]; !ok || !node_is_presentation_active(rt, rt.focused) || !node.focusable {
+		if !focus_candidate_is_valid(rt, rt.focused) {
 			rt.focused = focus_fallback(rt, focus_lineage[:], !focus_was_in_virtual_list)
 		}
 	}
@@ -995,6 +999,11 @@ end_presentation_frame :: proc(ui: ^UI) {
 	// child adjacency remains authoritative; pending retained layout and paint
 	// work are flushed without rerunning application code.
 	if rt.layout_pending { layout_tree(rt) }
+	// Retained layout can change the selected adaptive branch. Publish those
+	// semantic rebindings and bounds in the same frame as its new presentation.
+	refresh_semantic_focus_realization(rt)
+	semantic_keyboard_focus_refresh(rt)
+	semantic_commit(rt)
 	update_paint(rt)
 	rt.frame_open = false
 	rt.invalidated = rt.virtual_viewport_changed || rt.geometry_surface_bounds_changed
@@ -1033,6 +1042,10 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.visual_parts)
 	for _, &entity in rt.semantic_entities { semantic_entity_strings_destroy(&entity, rt.persistent_allocator) }
 	delete(rt.semantic_entities)
+	delete(rt.semantic_tree_orders)
+	for _, &descriptor in rt.adaptive_semantic_descriptors { adaptive_semantic_descriptor_destroy(rt, &descriptor) }
+	delete(rt.adaptive_semantic_descriptors)
+	delete(rt.adaptive_semantic_previous_ids)
 	delete(rt.semantic_pending_changed)
 	delete(rt.semantic_pending_added)
 	delete(rt.semantic_pending_structure)
@@ -1124,7 +1137,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 
 focus_fallback :: proc(rt: ^Runtime, lineage: []Node_ID, allow_global := true) -> Node_ID {
 	for i := 1; i < len(lineage); i += 1 {
-		if parent, ok := rt.nodes[lineage[i]]; ok && node_is_presentation_active(rt, lineage[i]) && parent.focusable {
+		if focus_candidate_is_valid(rt, lineage[i]) {
 			return lineage[i]
 		}
 	}
@@ -1133,7 +1146,7 @@ focus_fallback :: proc(rt: ^Runtime, lineage: []Node_ID, allow_global := true) -
 	// focus only through a surviving ancestor in that list's lineage.
 	if !allow_global { return 0 }
 	for id in rt.order {
-		if node, ok := rt.nodes[id]; ok && node_is_presentation_active(rt, id) && node.focusable {
+		if focus_candidate_is_valid(rt, id) {
 			return id
 		}
 	}

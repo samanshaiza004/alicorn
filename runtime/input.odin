@@ -50,6 +50,15 @@ node_is_in_modal_overlay :: proc(rt: ^Runtime, id, overlay_id: Node_ID) -> bool 
 	return false
 }
 
+// focus_candidate_is_valid is shared by focus recovery paths. Candidates must
+// still be visible, enabled controls in the active modal scope. With no modal,
+// this preserves the ordinary retained-tree focus policy.
+focus_candidate_is_valid :: proc(rt: ^Runtime, id: Node_ID) -> bool {
+	node, ok := rt.nodes[id]
+	return ok && node_is_presentation_active(rt, id) && node.focusable && !node.disabled &&
+		visual_part_is_visible(rt, id) && node_is_in_modal_overlay(rt, id, modal_overlay_root(rt))
+}
+
 scrollbar_hit_test :: proc(rt: ^Runtime, x, y: f32) -> Scrollbar_Hit {
 	modal_root := modal_overlay_root(rt)
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
@@ -395,7 +404,8 @@ activate_focused :: proc(rt: ^Runtime, key: Activation_Key) -> bool {
 	node, ok := rt.nodes[id]
 	if !ok { return false }
 	can_activate := node.kind == .Button || (node.kind == .Checkbox && key == .Space)
-	if !node_is_presentation_active(rt, id) || !node.focusable || node.disabled || !can_activate {
+	if !node_is_presentation_active(rt, id) || !node.focusable || node.disabled ||
+		!node_is_in_modal_overlay(rt, id, modal_overlay_root(rt)) || !can_activate {
 		return false
 	}
 	focus_indicator_set(rt, true)

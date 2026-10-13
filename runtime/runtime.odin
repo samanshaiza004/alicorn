@@ -1580,6 +1580,12 @@ Runtime :: struct {
 	semantic_surfaces: map[Node_ID]Semantic_Surface_Style,
 	visual_parts: map[Node_ID]Visual_Part_Style,
 	semantic_entities: map[Semantic_ID]Semantic_Entity,
+	semantic_tree_orders: map[Node_ID]u64,
+	// Adaptive alternatives retain their authored semantic descriptors outside
+	// the per-frame pending buffer so retained-only constraint selection can
+	// rebind semantics without invoking application code.
+	adaptive_semantic_descriptors: map[Node_ID]Semantic_Descriptor,
+	adaptive_semantic_previous_ids: map[Node_ID]Semantic_ID,
 	semantic_pending_changed: map[Semantic_ID]bool,
 	semantic_pending_added: map[Semantic_ID]bool,
 	semantic_pending_structure: map[Semantic_ID]bool,

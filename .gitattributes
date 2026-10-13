@@ -1,0 +1,6 @@
+# Asset verification hashes these text files byte for byte. Keep their checked
+# out representation identical on Windows, macOS, and Linux.
+assets/icons/reicon/*.svg text eol=lf
+assets/icons/reicon/sources.json text eol=lf
+assets/icons/generated/manifest.json text eol=lf
+runtime/icon_atlas_generated.odin text eol=lf

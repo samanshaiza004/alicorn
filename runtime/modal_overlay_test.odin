@@ -18,6 +18,20 @@ modal_overlay_test_node :: proc(rt: ^Runtime, label: string) -> Node_ID {
 	return 0
 }
 
+modal_focus_test_describe :: proc(ui: ^UI, omit_first_modal_action, show_modal: bool) {
+	container_begin_simple(ui, .Root, label="modal-focus-root", key=key_string("modal-focus-root"), style=layout_style())
+	button(ui, "Background", key=key_string("modal-focus-background"), style=layout_style())
+	container_end(ui)
+	if show_modal {
+		modal_overlay_begin(ui, key_string("modal-focus-overlay"), style=layout_style(.Column), backdrop_color=Color{0, 0, 0, 0.5})
+		if !omit_first_modal_action {
+			button(ui, "First modal action", key=key_string("modal-focus-first"), style=layout_style())
+		}
+		button(ui, "Second modal action", key=key_string("modal-focus-second"), style=layout_style())
+		modal_overlay_end(ui)
+	}
+}
+
 @(test)
 test_modal_overlay_blocks_workspace_and_limits_focus :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 800, 600})
@@ -67,6 +81,20 @@ test_modal_overlay_blocks_workspace_and_limits_focus :: proc(t: ^testing.T) {
 		"interactive modal descendants must remain hit-testable")
 	testing.expect(t, focus(&rt, field_id), "modal query field should accept focus")
 	testing.expect(t, !focus(&rt, underlying_id), "modal state should reject programmatic focus of the covered workspace")
+	testing.expect(t, focus_candidate_is_valid(&rt, field_id), "visible enabled modal controls should be valid focus candidates")
+	testing.expect(t, !focus_candidate_is_valid(&rt, underlying_id), "covered workspace controls should not be focus candidates")
+	rt.nodes[overlay_button_id].disabled = true
+	testing.expect(t, !focus_candidate_is_valid(&rt, overlay_button_id), "disabled modal controls should not be focus candidates")
+	rt.nodes[overlay_button_id].disabled = false
+	rt.nodes[overlay_button_id].active = false
+	testing.expect(t, !focus_candidate_is_valid(&rt, overlay_button_id), "hidden modal controls should not be focus candidates")
+	rt.nodes[overlay_button_id].active = true
+	rt.focused = underlying_id // Model a stale focus owner during a modal transition.
+	sequence_before_blocked_activation := rt.activation_sequence
+	testing.expect(t, !activate_focused(&rt, .Enter), "keyboard activation must not reach a covered workspace control")
+	testing.expect(t, !activate_focused(&rt, .Space), "Space activation must not reach a covered workspace control")
+	testing.expect(t, rt.activation_sequence == sequence_before_blocked_activation, "blocked activation must not advance the activation sequence")
+	rt.focused = field_id
 	testing.expect(t, focus_traverse(&rt, .Next) == overlay_button_id,
 		"forward focus traversal should stay inside the modal subtree")
 	testing.expect(t, focus_traverse(&rt, .Next) == field_id,
@@ -83,6 +111,62 @@ test_modal_overlay_blocks_workspace_and_limits_focus :: proc(t: ^testing.T) {
 	underlying_after := modal_overlay_test_button(&rt, "Underlying action")
 	testing.expect(t, underlying_after != 0 && hit_test(&rt, 10, 590) == underlying_after,
 		"removing the modal should reveal the still-retained workspace")
+	testing.expect(t, focus_candidate_is_valid(&rt, underlying_after), "no-modal focus candidates should retain legacy eligibility")
+}
+
+@(test)
+test_modal_focus_recovery_stays_inside_overlay :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 640, 480})
+	defer destroy_runtime(&rt)
+
+	ui, should_build := begin_frame(&rt)
+	if !should_build { testing.expect(t, false, "new runtime should request its first description"); return }
+	modal_focus_test_describe(&ui, false, true)
+	end_frame(&ui)
+	background_id := modal_overlay_test_button(&rt, "Background")
+	first_id := modal_overlay_test_button(&rt, "First modal action")
+	modal_id := modal_overlay_root(&rt)
+	second_id := modal_overlay_test_button(&rt, "Second modal action")
+	testing.expect(t, background_id != 0 && first_id != 0, "test controls should be retained")
+	if background_id == 0 || first_id == 0 { return }
+	testing.expect(t, focus(&rt, first_id), "first modal action should accept focus")
+
+	ui, should_build = begin_frame(&rt)
+	if !should_build { testing.expect(t, false, "removing focused modal child should rebuild"); return }
+	modal_focus_test_describe(&ui, true, true)
+	end_frame(&ui)
+	testing.expect(t, modal_overlay_test_button(&rt, "Background") == background_id, "background node identity should remain stable")
+	testing.expect(t, modal_overlay_root(&rt) == modal_id, "modal root identity should remain stable")
+	testing.expect(t, modal_overlay_test_button(&rt, "Second modal action") == second_id, "surviving modal control identity should remain stable")
+	testing.expect(t, rt.focused != background_id, "removing a focused modal child must not move focus behind the modal")
+	testing.expect(t, focus_candidate_is_valid(&rt, rt.focused), "focus recovery should select a valid candidate within the active modal")
+	testing.expect(t, rt.focused == modal_overlay_test_button(&rt, "Second modal action"), "the surviving modal action should receive recovered focus")
+}
+
+@(test)
+test_modal_opening_does_not_leave_focus_on_covered_workspace :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 640, 480})
+	defer destroy_runtime(&rt)
+	ui, should_build := begin_frame(&rt)
+	if !should_build { testing.expect(t, false, "new runtime should request its first description"); return }
+	modal_focus_test_describe(&ui, false, false)
+	end_frame(&ui)
+	background_id := modal_overlay_test_button(&rt, "Background")
+	testing.expect(t, background_id != 0 && focus(&rt, background_id), "background action should accept focus before opening a modal")
+
+	ui, should_build = begin_frame(&rt)
+	if !should_build { testing.expect(t, false, "opening modal should rebuild"); return }
+	modal_focus_test_describe(&ui, false, true)
+	end_frame(&ui)
+	testing.expect(t, modal_overlay_root(&rt) != 0, "modal should be active after opening")
+	testing.expect(t, rt.focused != background_id, "opening a modal must not leave keyboard focus on the covered workspace")
+	if rt.focused != 0 {
+		testing.expect(t, focus_candidate_is_valid(&rt, rt.focused), "modal-open focus should be eligible within the modal scope")
+	}
+	rt.focused = background_id // Model a host retaining the previous owner during the transition.
+	sequence_before_blocked_activation := rt.activation_sequence
+	testing.expect(t, !activate_focused(&rt, .Enter), "covered workspace must not receive activation after modal opens")
+	testing.expect(t, rt.activation_sequence == sequence_before_blocked_activation, "covered workspace activation must not advance the sequence")
 }
 
 @(test)

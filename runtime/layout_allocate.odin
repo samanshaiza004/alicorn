@@ -178,25 +178,15 @@ layout_allocate_axis :: proc(
 		available_value = i64(LAYOUT_ALLOCATOR_UNIT_LIMIT)
 	}
 	available_value_u := u128(available_value)
-	minimum_total: u128 = 0
 	ideal_total: u128 = 0
 	for item, index in items {
 		canonical, invalid := layout_allocator_canonical_item(item)
 		output[index] = canonical.ideal
-		minimum_total += u128(i64(canonical.minimum))
 		ideal_total += u128(i64(canonical.ideal))
 		if invalid {
 			result.invalid_items += 1
 			if result.first_invalid_index < 0 { result.first_invalid_index = index }
 		}
-	}
-	if minimum_total > available_value_u {
-		for item, index in items {
-			canonical, _ := layout_allocator_canonical_item(item)
-			output[index] = canonical.minimum
-		}
-		result.overflow = layout_allocator_clamp_total(minimum_total-available_value_u)
-		return result
 	}
 	if ideal_total > available_value_u {
 		remaining := ideal_total-available_value_u

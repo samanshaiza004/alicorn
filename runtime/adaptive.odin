@@ -246,6 +246,38 @@ node_is_presentation_active :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 	return true
 }
 
+adaptive_semantic_descriptor_destroy :: proc(rt: ^Runtime, descriptor: ^Semantic_Descriptor) {
+	if rt == nil || descriptor == nil { return }
+	if len(descriptor.label) > 0 { delete(descriptor.label, rt.persistent_allocator) }
+	if len(descriptor.description) > 0 { delete(descriptor.description, rt.persistent_allocator) }
+	if len(descriptor.value) > 0 { delete(descriptor.value, rt.persistent_allocator) }
+	if len(descriptor.text_run_character_lengths) > 0 { delete(descriptor.text_run_character_lengths, rt.persistent_allocator) }
+	descriptor^ = Semantic_Descriptor{}
+}
+
+adaptive_semantic_descriptor_delete :: proc(rt: ^Runtime, id: Node_ID) {
+	if rt == nil { return }
+	if descriptor, found := rt.adaptive_semantic_descriptors[id]; found {
+		adaptive_semantic_descriptor_destroy(rt, &descriptor)
+		delete_key(&rt.adaptive_semantic_descriptors, id)
+	}
+}
+
+adaptive_semantic_descriptor_retain :: proc(rt: ^Runtime, id: Node_ID, source: Semantic_Descriptor) {
+	if rt == nil { return }
+	adaptive_semantic_descriptor_delete(rt, id)
+	d := source
+	d.label = owned_with_allocator(source.label, rt.persistent_allocator)
+	d.description = owned_with_allocator(source.description, rt.persistent_allocator)
+	d.value = owned_with_allocator(source.value, rt.persistent_allocator)
+	d.text_run_character_lengths = nil
+	if len(source.text_run_character_lengths) > 0 {
+		d.text_run_character_lengths = make([]u8, len(source.text_run_character_lengths), allocator=rt.persistent_allocator)
+		copy(d.text_run_character_lengths, source.text_run_character_lengths)
+	}
+	rt.adaptive_semantic_descriptors[id] = d
+}
+
 adaptive_selection_state :: proc(rt: ^Runtime, owner_id: Node_ID) -> Adaptive_Selection_State {
 	if rt == nil { return {} }
 	owner, ok := rt.nodes[owner_id]
@@ -311,6 +343,7 @@ adaptive_set_subtree_presentation :: proc(rt: ^Runtime, root_id: Node_ID, visibl
 			queue_paint(rt, id)
 		}
 		if !visible {
+			if rt.tooltip.target == id { tooltip_dismiss(rt) }
 			if rt.drag.phase != .Idle && (rt.drag.source_node == id || rt.drag.target_node == id) {
 				drag_cancel_session(rt)
 			}
@@ -324,7 +357,19 @@ adaptive_set_subtree_presentation :: proc(rt: ^Runtime, root_id: Node_ID, visibl
 			delete_key(&rt.finalized_geometry, id)
 			semantic_sync_bounds(rt, node)
 		}
-		for child in node.children { append(&stack, child) }
+		// Keep retained semantic synchronization in preorder: a Text_Area parent
+		// may have a new semantic ID that its Text_Run children need to resolve.
+		// The stack is LIFO, so append siblings in reverse child order.
+		for child_index := len(node.children)-1; child_index >= 0; child_index -= 1 {
+			append(&stack, node.children[child_index])
+		}
+		if descriptor, descriptor_found := rt.adaptive_semantic_descriptors[id]; descriptor_found {
+			previous_id := node.semantic_id
+			if !semantic_id_is_valid(previous_id) { previous_id = semantic_visual_id(id) }
+			if entity, entity_found := rt.semantic_entities[previous_id]; !entity_found || entity.node.visual_node != id { previous_id = Semantic_ID{} }
+			if node_is_presentation_active(rt, id) { semantic_sync_node(rt, node, descriptor, previous_id) }
+			else if semantic_id_is_valid(previous_id) { semantic_retire_node_id(rt, node, previous_id) }
+		}
 	}
 	delete(stack)
 	if changed { rt.composition_rebuild = true }
@@ -343,8 +388,7 @@ adaptive_set_subtree_presentation :: proc(rt: ^Runtime, root_id: Node_ID, visibl
 					candidate_id := pop(&focus_stack)
 					candidate, candidate_found := rt.nodes[candidate_id]
 					if !candidate_found { continue }
-					if candidate.semantic_id == focused_semantic_id && candidate.focusable && !candidate.disabled &&
-						node_is_presentation_active(rt, candidate_id) {
+					if candidate.semantic_id == focused_semantic_id && focus_candidate_is_valid(rt, candidate_id) {
 						repaired = focus(rt, candidate_id)
 						if repaired { break }
 					}
@@ -357,7 +401,7 @@ adaptive_set_subtree_presentation :: proc(rt: ^Runtime, root_id: Node_ID, visibl
 		for current != 0 && !repaired {
 			candidate, ok := rt.nodes[current]
 			if !ok { break }
-			if candidate.active && candidate.present && candidate.focusable && !candidate.disabled {
+			if focus_candidate_is_valid(rt, current) {
 				rt.focused = current
 				repaired = true
 				break
@@ -367,7 +411,7 @@ adaptive_set_subtree_presentation :: proc(rt: ^Runtime, root_id: Node_ID, visibl
 		if !repaired {
 			for id in rt.order {
 				candidate, ok := rt.nodes[id]
-				if ok && candidate.active && candidate.present && candidate.focusable && !candidate.disabled {
+				if ok && focus_candidate_is_valid(rt, id) {
 					rt.focused = id
 					repaired = true
 					break
@@ -387,15 +431,17 @@ adaptive_semantics_sync_descriptions :: proc(rt: ^Runtime) {
 		if item.kind != .Description { continue }
 		node, found := rt.nodes[item.description.id]
 		if !found || !adaptive_node_has_alternative_ancestor(rt, node.id) { continue }
-		previous_id := Semantic_ID{}
-		previous_visual_semantic := false
-		for semantic_id, entity in rt.semantic_entities {
-			if entity.node.visual_node == node.id {
-				previous_id = semantic_id
-				previous_visual_semantic = true
-				break
-			}
+		adaptive_semantic_descriptor_retain(rt, node.id, item.semantic)
+		previous_id, identity_changed := rt.adaptive_semantic_previous_ids[node.id]
+		delete_key(&rt.adaptive_semantic_previous_ids, node.id)
+		if !identity_changed {
+			previous_id = node.semantic_id
+			if !semantic_id_is_valid(previous_id) { previous_id = semantic_visual_id(node.id) }
 		}
+		previous_visual_semantic := false
+		if entity, entity_found := rt.semantic_entities[previous_id]; entity_found && entity.node.visual_node == node.id {
+			previous_visual_semantic = true
+		} else if identity_changed { previous_id = Semantic_ID{} }
 		if node_is_presentation_active(rt, node.id) {
 			semantic_sync_node(rt, node, item.semantic, previous_id)
 		} else if previous_visual_semantic {

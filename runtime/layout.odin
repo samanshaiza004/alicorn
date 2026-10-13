@@ -350,7 +350,7 @@ resolve_main_sizes :: proc(
 	}
 	if result.overflow > 0 {
 		record_trace(rt, .Layout, children[0] if len(children) > 0 else 0, fmt.tprintf(
-			"%s allocation overflow: hard minima exceed available by %.3f; minima preserved",
+			"%s allocation overflow: preserved child sizes exceed available by %.3f; hard minima and unweighted ideals preserved",
 			axis,
 			layout_unit_to_f32(result.overflow),
 		))
