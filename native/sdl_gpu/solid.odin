@@ -17,6 +17,7 @@ Native_Solid_Draw :: struct {
 }
 
 Native_Solid_Renderer :: struct {
+	icons: Native_Icon_Renderer,
 	device:          ^sdl3.GPUDevice,
 	runtime:         ^alicorn.Runtime,
 	pipeline:        ^sdl3.GPUGraphicsPipeline,
@@ -36,6 +37,7 @@ Native_Solid_Renderer :: struct {
 native_solid_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTextureFormat, runtime: ^alicorn.Runtime) -> (renderer: Native_Solid_Renderer, ok: bool) {
 	renderer.device = device
 	renderer.runtime = runtime
+	defer if !ok { native_solid_destroy(&renderer) }
 	renderer.vertex_capacity = NATIVE_SOLID_INITIAL_VERTICES
 	renderer.vertices = make([dynamic]Native_Text_Vertex, 0, 4096)
 	renderer.draws = make([dynamic]Native_Solid_Draw, 0, 1024)
@@ -96,6 +98,9 @@ native_solid_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTex
 	if renderer.sampler == nil || renderer.white_texture == nil || renderer.vertex_buffer == nil || renderer.vertex_transfer == nil {
 		return renderer, false
 	}
+	icon_ok := false
+	renderer.icons, icon_ok = native_icon_make(device, swapchain_format, runtime)
+	if !icon_ok { return renderer, false }
 	return renderer, true
 }
 
@@ -132,6 +137,7 @@ native_solid_ensure_vertex_capacity :: proc(renderer: ^Native_Solid_Renderer, re
 }
 
 native_solid_destroy :: proc(renderer: ^Native_Solid_Renderer) {
+	native_icon_destroy(&renderer.icons)
 	if renderer.vertex_transfer != nil { sdl3.ReleaseGPUTransferBuffer(renderer.device, renderer.vertex_transfer) }
 	if renderer.vertex_buffer != nil { sdl3.ReleaseGPUBuffer(renderer.device, renderer.vertex_buffer) }
 	if renderer.white_texture != nil { sdl3.ReleaseGPUTexture(renderer.device, renderer.white_texture) }
@@ -152,83 +158,6 @@ native_solid_append_quad :: proc(vertices: ^[dynamic]Native_Text_Vertex, x0, y0,
 		Native_Text_Vertex{[3]f32{x1, y1, 0}, color, uv},
 		Native_Text_Vertex{[3]f32{x0, y1, 0}, color, uv},
 	)
-}
-
-native_solid_clip_segment :: proc(
-	x0, y0, x1, y1, left, top, right, bottom: f32,
-) -> (ax, ay, bx, by: f32, visible: bool) {
-	dx, dy := x1-x0, y1-y0
-	enter, leave := f32(0), f32(1)
-	for edge in 0..<4 {
-		p, q: f32
-		switch edge {
-		case 0: p, q = -dx, x0-left
-		case 1: p, q = dx, right-x0
-		case 2: p, q = -dy, y0-top
-		case 3: p, q = dy, bottom-y0
-		}
-		if p == 0 {
-			if q < 0 { return }
-			continue
-		}
-		ratio := q/p
-		if p < 0 {
-			if ratio > leave { return }
-			if ratio > enter { enter = ratio }
-		} else {
-			if ratio < enter { return }
-			if ratio < leave { leave = ratio }
-		}
-	}
-	ax, ay = x0+enter*dx, y0+enter*dy
-	bx, by = x0+leave*dx, y0+leave*dy
-	visible = leave >= enter
-	return
-}
-
-native_solid_append_icon :: proc(
-	vertices: ^[dynamic]Native_Text_Vertex,
-	draw: alicorn.Paint_Command,
-	scale_x, scale_y: f32,
-) -> int {
-	icon, ok := draw.payload.(alicorn.Icon_Paint)
-	if !ok || !alicorn.icon_id_is_valid(icon.id) { return 0 }
-	geometry := alicorn.icon_geometry(icon.id)
-	if geometry.count == 0 { return 0 }
-	left := max(draw.bounds.x+draw.translation[0], draw.clip.x)*scale_x
-	top := max(draw.bounds.y+draw.translation[1], draw.clip.y)*scale_y
-	right := min(draw.bounds.x+draw.bounds.w+draw.translation[0], draw.clip.x+draw.clip.w)*scale_x
-	bottom := min(draw.bounds.y+draw.bounds.h+draw.translation[1], draw.clip.y+draw.clip.h)*scale_y
-	stroke_width := icon.stroke_width
-	if stroke_width <= 0 { stroke_width = alicorn.ICON_DEFAULT_STROKE_WIDTH }
-	half_width := stroke_width*(scale_x+scale_y)*0.25
-	if right-left <= 2*half_width || bottom-top <= 2*half_width { return 0 }
-	clip_left, clip_top := left+half_width, top+half_width
-	clip_right, clip_bottom := right-half_width, bottom-half_width
-	color := [4]f32{icon.color.r, icon.color.g, icon.color.b, icon.color.a*draw.opacity}
-	initial_count := len(vertices^)
-	for segment in geometry.segments[:geometry.count] {
-		x0 := (draw.bounds.x+draw.translation[0]+segment.x0*draw.bounds.w)*scale_x
-		y0 := (draw.bounds.y+draw.translation[1]+segment.y0*draw.bounds.h)*scale_y
-		x1 := (draw.bounds.x+draw.translation[0]+segment.x1*draw.bounds.w)*scale_x
-		y1 := (draw.bounds.y+draw.translation[1]+segment.y1*draw.bounds.h)*scale_y
-		ax, ay, bx, by, visible := native_solid_clip_segment(x0, y0, x1, y1, clip_left, clip_top, clip_right, clip_bottom)
-		if !visible { continue }
-		dx, dy := bx-ax, by-ay
-		length := math.sqrt(dx*dx+dy*dy)
-		if length <= 0 { continue }
-		offset_x, offset_y := -dy/length*half_width, dx/length*half_width
-		p0 := [3]f32{ax+offset_x, ay+offset_y, 0}
-		p1 := [3]f32{bx+offset_x, by+offset_y, 0}
-		p2 := [3]f32{bx-offset_x, by-offset_y, 0}
-		p3 := [3]f32{ax-offset_x, ay-offset_y, 0}
-		uv := [2]f32{0.5, 0.5}
-		append(vertices,
-			Native_Text_Vertex{p0, color, uv}, Native_Text_Vertex{p1, color, uv}, Native_Text_Vertex{p2, color, uv},
-			Native_Text_Vertex{p0, color, uv}, Native_Text_Vertex{p2, color, uv}, Native_Text_Vertex{p3, color, uv},
-		)
-	}
-	return len(vertices^)-initial_count
 }
 
 native_solid_pixel_bounds :: proc(
@@ -285,13 +214,6 @@ native_solid_build :: proc(
 	clear(&renderer.draws)
 	required_vertices := 0
 	for draw in display {
-		if alicorn.paint_command_is_icon(draw) {
-			_, _, _, _, visible := native_solid_pixel_bounds(draw, scale_x, scale_y, target_w, target_h)
-			if icon, ok := draw.payload.(alicorn.Icon_Paint); ok && visible && alicorn.icon_id_is_valid(icon.id) {
-				required_vertices += alicorn.icon_geometry(icon.id).count*6
-			}
-			continue
-		}
 		if !alicorn.paint_command_is_surface(draw) { continue }
 		material, surface, valid := native_solid_material_for_command(renderer.runtime, draw)
 		if !valid { continue }
@@ -307,20 +229,6 @@ native_solid_build :: proc(
 		append(&renderer.draws, Native_Solid_Draw{})
 	}
 	for draw, i in display {
-		if alicorn.paint_command_is_icon(draw) {
-			_, _, _, _, visible := native_solid_pixel_bounds(draw, scale_x, scale_y, target_w, target_h)
-			if !visible { continue }
-			icon, icon_ok := draw.payload.(alicorn.Icon_Paint)
-			if !icon_ok || !alicorn.icon_id_is_valid(icon.id) { continue }
-			required := alicorn.icon_geometry(icon.id).count*6
-			if len(renderer.vertices)+required > renderer.vertex_capacity && !native_solid_ensure_vertex_capacity(renderer, len(renderer.vertices)+required) {
-				return false
-			}
-			first := sdl3.Uint32(len(renderer.vertices))
-			native_solid_append_icon(&renderer.vertices, draw, scale_x, scale_y)
-			renderer.draws[i] = Native_Solid_Draw{first, sdl3.Uint32(len(renderer.vertices)-int(first))}
-			continue
-		}
 		if !alicorn.paint_command_is_surface(draw) { continue }
 		x0, y0, x1, y1, visible := native_solid_pixel_bounds(draw, scale_x, scale_y, target_w, target_h)
 		if !visible { continue }
@@ -485,5 +393,6 @@ native_solid_render_batch :: proc(
 }
 
 native_solid_commit_submission :: proc(renderer: ^Native_Solid_Renderer) {
+	renderer.icons.upload_pending = false
 	renderer.upload_pending = false
 }

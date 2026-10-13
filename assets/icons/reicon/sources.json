@@ -1,0 +1,96 @@
+{
+  "repository": "https://github.com/dqev/reicon",
+  "revision": "580d777a3c8d3dbcb66115eb2ef5dfab550e68b6",
+  "source": "data/filled.json",
+  "weight": "filled",
+  "license": "MIT",
+  "resvg_version": "0.48.1",
+  "icons": [
+    {
+      "id": "Check",
+      "source": "ui/check",
+      "file": "check.svg",
+      "sha256": "fc0d7fe11897017c410e6c20c3981c6986ae3d3589bd0724cc6c443d63064c59"
+    },
+    {
+      "id": "Chevron_Down",
+      "source": "arrows/angle-down",
+      "file": "chevron_down.svg",
+      "sha256": "19cf132baf79f5d572fbc1c44c6af4be008989c918c4105d224fc5c577f73533"
+    },
+    {
+      "id": "Chevron_Right",
+      "source": "arrows/angle-right",
+      "file": "chevron_right.svg",
+      "sha256": "cbce5553191095687fda541eb4050c087956db52dd6fef17b57f5f3704566bcd"
+    },
+    {
+      "id": "Close",
+      "source": "ui/x",
+      "file": "close.svg",
+      "sha256": "4f5a3d3133aafb973781daf4db09bcf233460f163a4a2d7fbf9c987a73e56a41"
+    },
+    {
+      "id": "Minus",
+      "source": "ui/minus",
+      "file": "minus.svg",
+      "sha256": "52f0a62b77db00e6fbfc1d3cbdb32dab68a6597614b929fe0ebd5a579a211116"
+    },
+    {
+      "id": "Radio_Selected",
+      "source": "video/record",
+      "file": "radio_selected.svg",
+      "sha256": "208712d0c9154587d7edd7166d83e16661e737bd235b2371985153126cecbd39"
+    },
+    {
+      "id": "Warning",
+      "source": "ui/triangle-warning",
+      "file": "warning.svg",
+      "sha256": "ed1707ad5532f308a8ffb712cd490bd24d253a370ff2ea51d7ff56fd29a0d3ee"
+    },
+    {
+      "id": "Info",
+      "source": "ui/info-circle",
+      "file": "info.svg",
+      "sha256": "b3e033ce0e7417fd85f6b928af6f5bc56cb7c7a1f6c7c808b350be676000ee3c"
+    },
+    {
+      "id": "Folder_Closed",
+      "source": "folders/folder",
+      "file": "folder_closed.svg",
+      "sha256": "95d8f8cba0931cbeb77174483d399579250a14ca1d1b8329e9b4d246fd5f5e10"
+    },
+    {
+      "id": "Folder_Open",
+      "source": "folders/folder-open",
+      "file": "folder_open.svg",
+      "sha256": "a5e3cb02555d6cd9097657170979fa0e40b7b567db5805fc7607544fd543aa88"
+    },
+    {
+      "id": "File",
+      "source": "files/file",
+      "file": "file.svg",
+      "sha256": "9b91f8aa57deef3d17a0849767586b69c412c8cea60355bde5ac3d07021de0d8"
+    },
+    {
+      "id": "Search",
+      "source": "search/search",
+      "file": "search.svg",
+      "sha256": "680618e200bc25d686092f3e5477aca60fe1e830501670c03a1e065298756e2f"
+    },
+    {
+      "id": "Settings",
+      "source": "settings/settings",
+      "file": "settings.svg",
+      "sha256": "cb9679d2759af955c648cbc05f8d72d127bbc266b335acabc038274314b1395d"
+    },
+    {
+      "id": "Terminal",
+      "source": "it/terminal-square",
+      "file": "terminal.svg",
+      "sha256": "a569353a0a7c38eca0ddd35dd87a76b330d0e8bc18ef10ee2b9e83d2991a055b"
+    }
+  ],
+  "source_sha256": "3c0120e90356446fbb500a14510455747c86928d7859c1d21739df568cede57e",
+  "license_sha256": "c3fb62a9a75902941407987c98982b7793c707729fd7763a7044b7eb02cbfee1"
+}

@@ -340,7 +340,12 @@ native_write_diagnostics :: proc(
     "surface_encodes": %d,
     "surface_vertex_uploads": %d,
     "solid_batches": %d,
-    "solid_vertices_uploaded": %d
+    "solid_vertices_uploaded": %d,
+    "icon_atlas_uploads": %d,
+    "icon_atlas_upload_bytes": %d,
+    "icon_mesh_rebuilds": %d,
+    "icon_mesh_cache_hits": %d,
+    "icon_vertex_uploads": %d
   }},
 `, timing.gpu_submissions, rt.stats.gpu_submits, timing.gpu_submissions-rt.stats.gpu_submits, timing.fence_waits,
 		rt.text_engine.shape_calls, rt.text_engine.glyph_cache_hits, rt.text_engine.glyph_cache_misses,
@@ -349,7 +354,9 @@ native_write_diagnostics :: proc(
 		text_renderer.fingerprint_ns, text_renderer.fingerprint_bytes, text_renderer.mesh_rebuild_ns,
 		text_renderer.mesh_text_commands, text_renderer.vertex_uploads,
 		surface_renderer.encodes, surface_renderer.vertex_uploads,
-		solid_renderer.batches, solid_renderer.vertices_uploaded)
+		solid_renderer.batches, solid_renderer.vertices_uploaded,
+		solid_renderer.icons.atlas_uploads, solid_renderer.icons.atlas_upload_bytes,
+		solid_renderer.icons.mesh_rebuilds, solid_renderer.icons.mesh_cache_hits, solid_renderer.icons.vertices_uploaded)
 	if text_events != nil {
 		fmt.sbprintf(&builder, `  "text_events": {{
     "change_dispatches": %d,

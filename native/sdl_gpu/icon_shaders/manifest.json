@@ -1,0 +1,14 @@
+{
+  "dxc": "1.9.2609",
+  "glslang": "16.6.0",
+  "source_alpha": "straight",
+  "color_blend": "SRC_ALPHA / ONE_MINUS_SRC_ALPHA",
+  "alpha_blend": "ONE / ONE_MINUS_SRC_ALPHA",
+  "sha256": {
+    "icon.frag.hlsl": "87b42e779cbf27a68c99f6852f4365bbbc5feb4861725a89476247772ffb694e",
+    "icon.frag.glsl": "73c16c82a663e78f8aa4ae561b7f8328c717455d435ea9cd79169d1d2d345871",
+    "icon.frag.metal": "c6833c72be8a4ddbdcb7cb0ae839431f9c60b33457d09fedb771861caeaefdfb",
+    "icon.frag.dxil": "0d3a79967a41f074c6268610e68f4c9296a811885602571466f44d3cc2613c78",
+    "icon.frag.spv": "3ff628b2a7a717eafea6612b06404c3430f10f8fb953e6d0698b1e94b98cf0ad"
+  }
+}

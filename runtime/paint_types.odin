@@ -19,8 +19,8 @@ Paint_Payload :: union #no_nil {
 	Geometry_Paint,
 }
 
-// Icon_ID names font-independent, theme-tinted line icons rendered from
-// normalized vector paths. None is reserved for controls without an icon.
+// Icon_ID names font-independent, theme-tinted icons backed by compiled
+// monochrome coverage masks. None is reserved for controls without an icon.
 Icon_ID :: enum {
 	None,
 	Check,

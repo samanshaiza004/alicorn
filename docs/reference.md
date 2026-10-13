@@ -740,14 +740,20 @@ coordinates or add overlay roots themselves.
 
 ### Icons
 
-Built-in indicators are vector paths and do not depend on text-font glyph
-coverage. `icon(ui, icon_id, key, size, color_role)` adds a decorative icon to
+Built-in indicators use embedded antialiased Reicon filled coverage masks and
+do not depend on text-font glyph coverage. `icon(ui, icon_id, key, size, color_role)` adds a decorative icon to
 ordinary layout; the surrounding control or adjacent text remains responsible
 for its accessible name. `icon_button(ui, accessible_label, icon_id, key,
 style)` creates an icon-only button with an explicit semantic name. Available
 IDs include check, chevrons, close, minus, radio, warning, info, folder-open and
 folder-closed, file, search, settings, and terminal. Icon paint is theme tinted
-and scaled at the host rendering boundary.
+and sized at the host rendering boundary. Each integer physical size from 8
+through 64 pixels has its own offline rasterization; sizes outside that range
+resample the nearest endpoint. Atlas pages are uploaded once per device
+lifetime. Theme, hover and disabled colors change only the tint, and no SVG
+parser or rasterizer ships in the runtime. The legacy `stroke_width` paint
+argument is accepted for source compatibility but has no effect on filled
+artwork. See [icon assets](icon-assets.md) for regeneration and native validation.
 
 ### Notices
 

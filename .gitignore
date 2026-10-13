@@ -7,4 +7,6 @@ out/
 *.lib
 *.ilk
 *.log
+__pycache__/
+*.pyc
 

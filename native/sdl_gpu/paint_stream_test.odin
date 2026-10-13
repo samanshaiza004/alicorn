@@ -38,4 +38,14 @@ test_paint_stream_keeps_heterogeneous_order_and_only_batches_neighbors :: proc(t
 	}
 	kind, end := native_paint_run(batched[:], 0)
 	testing.expect(t, kind == .Surface && end == 2, "only adjacent compatible surface primitives may share a renderer batch")
+	icons := [4]alicorn.Paint_Command{
+		alicorn.paint_icon_command(1, overlap, clip, .Search, alicorn.Color{1,1,1,1}),
+		alicorn.paint_icon_command(2, overlap, clip, .Folder_Open, alicorn.Color{1,1,1,1}),
+		alicorn.paint_surface_command(3, overlap, clip, alicorn.Color{1,0,0,1}),
+		alicorn.paint_icon_command(4, overlap, clip, .Close, alicorn.Color{1,1,1,1}),
+	}
+	kind, end = native_paint_run(icons[:], 0)
+	testing.expect(t, kind == .Icon && end == 2, "adjacent icons should batch without crossing an intervening surface")
+	kind, end = native_paint_run(icons[:], 2)
+	testing.expect(t, kind == .Surface && end == 3, "surfaces must not swallow icon commands into their pipeline")
 }

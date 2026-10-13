@@ -1,0 +1,23 @@
+name: Icon asset reproducibility
+on:
+  push:
+  pull_request:
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: .deps/icon-tools
+          key: icon-resvg-0.48.1-${{ runner.os }}-${{ runner.arch }}
+      - name: Install pinned asset rasterizer
+        run: test -x .deps/icon-tools/bin/resvg || cargo install resvg --version 0.48.1 --locked --root .deps/icon-tools
+      - name: Verify generated masks and manifest byte for byte
+        run: python tools/generate_icon_atlas.py --resvg .deps/icon-tools/bin/resvg --verify
+      - name: Verify restricted SVG inputs and alpha extraction
+        run: python tools/test_icon_assets.py

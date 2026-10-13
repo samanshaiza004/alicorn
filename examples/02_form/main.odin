@@ -6,6 +6,7 @@ package main
 // Run with `odin run examples/02_form` and interact with the controls.
 
 import "core:fmt"
+import "core:os"
 import "core:strings"
 import alicorn "../../runtime"
 import host "../../native/sdl_gpu"
@@ -258,7 +259,7 @@ build_app :: proc(
 		if choice.changed {
 			app.selected_choice = choice.selected_key
 		}
-		alicorn.text(&ui, "Font-independent indicators", style=alicorn.layout_style(height=22))
+		alicorn.text(&ui, "Filled Reicon icons", style=alicorn.layout_style(height=22))
 		alicorn.container_begin(&ui, .Container, label="gallery-icon-samples", style=alicorn.layout_style(.Row, height=24, gap=8, align=.Center))
 		_ = alicorn.icon(&ui, .Folder_Closed, key=alicorn.key_string("gallery-folder-closed"), size=18)
 		alicorn.text(&ui, "Closed")
@@ -482,6 +483,14 @@ main :: proc() {
 		notice_feedback="Post examples to inspect transient, persistent, and actionable presentation.",
 		name="Alicorn",
 	}
+	smoke := false
+	for argument in os.args {
+		if argument == "--smoke" { smoke = true }
+		if argument == "--icon-fixture" {
+			app.selected_gallery_tab = 3
+			app.notice_request = GALLERY_NOTICE_PERSISTENT
+		}
+	}
 	host.Run(host.Application{
 		state=rawptr(&app),
 		title="Alicorn Widget Gallery",
@@ -490,5 +499,5 @@ main :: proc() {
 		build=build_app,
 		on_text_change=form_text_change,
 		on_stop=form_stop,
-	})
+	}, smoke=smoke)
 }
