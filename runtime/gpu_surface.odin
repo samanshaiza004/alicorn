@@ -21,6 +21,19 @@ GPU_Backend :: struct {
 // GPU_SURFACE_MAX_WAVEFORM_SAMPLES are rejected atomically; the native backend
 // emits one background quad and one six-vertex segment per adjacent pair.
 GPU_SURFACE_UPDATE_REVISION_MAX :: u64(0xFFFF_FFFF_FFFF_FFFF)
+GPU_SURFACE_MAX_IMAGES :: 256
+
+// GPU_Surface_Image is a borrowed reference to a Runtime-owned image resource.
+// bounds are local logical units within the declaring custom surface.
+GPU_Surface_Image :: struct {
+	image: Image_Handle,
+	bounds: Rect,
+	opacity: f32,
+}
+
+gpu_surface_image :: proc(image: Image_Handle, bounds: Rect, opacity: f32 = 1) -> GPU_Surface_Image {
+	return GPU_Surface_Image{image, bounds, opacity}
+}
 
 gpu_surface_next_payload_revision :: proc(current: GPU_Surface_Update_Revision) -> (next: GPU_Surface_Update_Revision, ok: bool) {
 	value := u64(current)
@@ -29,9 +42,44 @@ gpu_surface_next_payload_revision :: proc(current: GPU_Surface_Update_Revision) 
 }
 
 gpu_surface_payload_node :: proc(rt: ^Runtime, id: Node_ID) -> (^Node, bool) {
+	if rt == nil { return nil, false }
 	node, ok := rt.nodes[id]
 	if !ok || node == nil || !node.active || node.kind != .Custom_Surface { return nil, false }
 	return node, true
+}
+
+gpu_surface_image_layers_destroy :: proc(rt: ^Runtime, id: Node_ID) {
+	if rt == nil { return }
+	if layers, ok := rt.gpu_surface_images[id]; ok {
+		delete(layers)
+		delete_key(&rt.gpu_surface_images, id)
+	}
+}
+
+gpu_surface_update_images :: proc(rt: ^Runtime, id: Node_ID, images: []GPU_Surface_Image) -> bool {
+	node, ok := gpu_surface_payload_node(rt, id)
+	if !ok || len(images) > GPU_SURFACE_MAX_IMAGES { return false }
+	for layer in images {
+		if _, image_ok := image_resolve(rt, layer.image); !image_ok ||
+			!gpu_surface_geometry_scalar_valid(layer.bounds.x) || !gpu_surface_geometry_scalar_valid(layer.bounds.y) ||
+			!gpu_surface_geometry_scalar_valid(layer.bounds.w) || !gpu_surface_geometry_scalar_valid(layer.bounds.h) ||
+			layer.bounds.w <= 0 || layer.bounds.h <= 0 ||
+			layer.opacity < 0 || layer.opacity > 1 || layer.opacity != layer.opacity {
+			return false
+		}
+	}
+	revision, revision_ok := gpu_surface_next_payload_revision(node.surface_payload_revision)
+	if !revision_ok { return false }
+	owned := make([dynamic]GPU_Surface_Image, 0, len(images), allocator=rt.persistent_allocator)
+	if owned == nil && len(images) > 0 { return false }
+	for layer in images { append(&owned, layer) }
+	gpu_surface_image_layers_destroy(rt, id)
+	if len(owned) > 0 { rt.gpu_surface_images[id] = owned }
+	gpu_surface_note_payload_commit(rt, id, revision, "custom surface image layers replaced", false)
+	dirty_set(&node.dirty, .Paint, true)
+	queue_paint(rt, id)
+	request_presentation(rt, "custom surface image layers changed")
+	return true
 }
 
 gpu_surface_note_payload_commit :: proc(rt: ^Runtime, id: Node_ID, revision: GPU_Surface_Update_Revision, reason: string, geometry: bool) {
@@ -181,17 +229,22 @@ gpu_surface_update_geometry_versioned :: proc(
 	return true
 }
 
-// gpu_surface_clear explicitly removes the last retained payload while keeping
-// the surface node and its declared kind/background alive. An already-empty
-// surface is a no-op and does not schedule a frame.
+// gpu_surface_clear explicitly removes the last retained waveform, geometry,
+// and image-layer payload while keeping the surface node and its declared
+// kind/background alive. An already-empty surface is a no-op.
 gpu_surface_clear :: proc(rt: ^Runtime, id: Node_ID) -> bool {
+	if rt == nil { return false }
 	node, ok := gpu_surface_payload_node(rt, id)
-	if !ok || (len(node.surface_samples) == 0 && len(node.surface_segments) == 0 && len(node.surface_circles) == 0) { return false }
+	if !ok { return false }
+	image_layers_changed := false
+	if layers, found := rt.gpu_surface_images[id]; found && len(layers) > 0 { image_layers_changed = true }
+	if len(node.surface_samples) == 0 && len(node.surface_segments) == 0 && len(node.surface_circles) == 0 && !image_layers_changed { return false }
 	revision, revision_ok := gpu_surface_next_payload_revision(node.surface_payload_revision)
 	if !revision_ok { return false }
 	clear(&node.surface_samples)
 	clear(&node.surface_segments)
 	clear(&node.surface_circles)
+	if image_layers_changed { gpu_surface_image_layers_destroy(rt, id) }
 	node.surface_geometry_active = node.surface_kind == .Geometry
 	node.surface_payload_revision = revision
 	rt.surface_frame_pending = true
@@ -201,6 +254,11 @@ gpu_surface_clear :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 	if node.surface_kind == .Geometry { rt.stats.surface_geometry_updates += 1 }
 	record_trace_literal(rt, .Invalidation, id, "GPU surface payload explicitly cleared")
 	note_submission_cause(rt, trace_current_cause(rt))
+	if image_layers_changed {
+		dirty_set(&node.dirty, .Paint, true)
+		queue_paint(rt, id)
+		request_presentation(rt, "custom surface image layers cleared")
+	}
 	return true
 }
 

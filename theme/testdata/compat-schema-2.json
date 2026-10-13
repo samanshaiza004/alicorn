@@ -1,0 +1,10 @@
+{
+  "schema": 2,
+  "contract": "0.2",
+  "tokens": {
+    "compat.ink": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.12, 0.18, 0.24], "alpha": 1}
+    }
+  }
+}

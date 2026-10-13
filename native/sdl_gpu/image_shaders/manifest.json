@@ -1,0 +1,15 @@
+{
+  "dxc": "1.9.2609",
+  "glslang": "16.6.0",
+  "source_alpha": "straight",
+  "color_blend": "SRC_ALPHA / ONE_MINUS_SRC_ALPHA",
+  "alpha_blend": "ONE / ONE_MINUS_SRC_ALPHA",
+  "texture": "RGBA8 sRGB, linear-filtered",
+  "sha256": {
+    "image.frag.hlsl": "788ba91930fdd5c2a47674f46143e73badf4d1907c31937c1e20453b6cbc208d",
+    "image.frag.glsl": "365bd802aeffbf881857ec1ee1100a2423cc0f956ac10fd28d6b370ebe0a68ff",
+    "image.frag.metal": "291566f3c1c82537671896dc7d233e1dca62980754af9d46443e7b0dc5254abc",
+    "image.frag.dxil": "43ff702a36aa39a57e5e0e9f4a224d949050c008e2d0a78e0f10d757ff7c51e9",
+    "image.frag.spv": "2e419b5cca375f219e49990dabf29be5a4a3ee24c9d8cb680a9f90b97b789e02"
+  }
+}

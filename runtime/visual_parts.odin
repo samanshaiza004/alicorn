@@ -87,7 +87,7 @@ visual_part_owner_supports_visibility :: proc(
 			return surface_interaction == .Pointer
 		case .Root, .Modal_Overlay, .Context_Menu_Overlay, .Context_Menu_Panel, .Container, .Grid,
 		     .Tab, .Tab_Close, .Text, .Text_Composition, .Virtual_List, .Virtual_Row,
-		     .Scroll_Region, .Split, .Split_Handle:
+		     .Scroll_Region, .Split, .Split_Handle, .Image:
 			return false
 		}
 	case .Owner_Selected_Or_Hovered:

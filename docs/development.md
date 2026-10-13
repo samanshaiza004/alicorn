@@ -153,6 +153,13 @@ and sequence make repeated captures
 distinct, and the JSON records the capture ID and frame. Treat these as
 investigation artifacts, not golden-image compatibility promises.
 
+`tools/validate_images.ps1` on Windows or `sh tools/validate_images.sh` on
+macOS builds a small SDL_GPU readback probe. It samples a decoded QOI image,
+checks source-over RGB and alpha blending against a transparent-aware target,
+and repeats at 100%, 125%, 150%, and 200% scale. This checks the platform's
+selected GPU backend; it does not launch a window or validate app-specific
+resource paths.
+
 ## Change boundaries
 
 - Keep app state in the app; do not make retained nodes own arbitrary pointers.

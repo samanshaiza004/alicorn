@@ -226,10 +226,17 @@ Extension_Role_Provenance :: struct {
 	span:      Source_Span,
 }
 
+Core_Role_Provenance :: struct {
+	role:  Core_Color_Role,
+	token: string,
+	span:  Source_Span,
+}
+
 // Debug/provenance data is separately owned so a release runtime can retain
 // Compiled_Theme without also retaining authored names or source locations.
 Theme_Debug_Metadata :: struct {
 	tokens:          []Token_Provenance,
+	core_roles:      []Core_Role_Provenance,
 	extension_roles: []Extension_Role_Provenance,
 	materials:       []Theme_Material_Provenance,
 	button_recipes:  []Theme_Button_Recipe_Provenance,
@@ -279,6 +286,7 @@ Diagnostic_Code :: enum u16 {
 	Invalid_Material,
 	Invalid_Button_Recipe,
 	Duplicate_Button_Recipe,
+	Deprecated_Theme_Feature,
 }
 
 // symbol_path is populated for alias cycles (repeats the first symbol at the
@@ -291,6 +299,7 @@ Theme_Diagnostic :: struct {
 	span:                       Source_Span,
 	symbol_path:                []string,
 	related_name:               string,
+	replacement:                string,
 	expected_kind:              Token_Kind,
 	actual_kind:                Token_Kind,
 	expected_schema_version:    u32,
@@ -541,13 +550,9 @@ theme_compile :: proc(
 	theme_sort_effective_extension_roles(&extension_roles)
 	theme_assign_extension_role_ids(&extension_roles, &diagnostics)
 
-	if len(diagnostics) > 0 {
-		theme_sort_diagnostics(&diagnostics)
-		output_diagnostics := make([]Theme_Diagnostic, len(diagnostics), allocator)
-		for diagnostic, index in diagnostics {
-			output_diagnostics[index] = theme_copy_diagnostic(diagnostic, allocator)
-		}
-		return Theme_Compile_Output{diagnostics=output_diagnostics}
+	theme_sort_diagnostics(&diagnostics)
+	if theme_diagnostics_have_errors(diagnostics[:]) {
+		return Theme_Compile_Output{diagnostics=theme_copy_diagnostics(diagnostics[:], allocator)}
 	}
 
 	color_count, length_count := 0, 0
@@ -611,9 +616,30 @@ theme_compile :: proc(
 		}
 	}
 
-	debug := theme_build_debug_metadata(tokens[:], extension_roles[:], materials[:], button_recipes[:], allocator)
+	debug := theme_build_debug_metadata(tokens[:], core_roles[:], extension_roles[:], materials[:], button_recipes[:], allocator)
 	compiled.content_signature = theme_content_signature(compiled, debug)
-	return Theme_Compile_Output{theme=compiled, debug=debug, ok=true}
+	return Theme_Compile_Output{
+		theme=compiled,
+		debug=debug,
+		diagnostics=theme_copy_diagnostics(diagnostics[:], allocator),
+		ok=true,
+	}
+}
+
+theme_diagnostics_have_errors :: proc(diagnostics: []Theme_Diagnostic) -> bool {
+	for diagnostic in diagnostics {
+		if diagnostic.severity == .Error { return true }
+	}
+	return false
+}
+
+theme_copy_diagnostics :: proc(diagnostics: []Theme_Diagnostic, allocator: mem.Allocator) -> []Theme_Diagnostic {
+	if len(diagnostics) == 0 { return nil }
+	copies := make([]Theme_Diagnostic, len(diagnostics), allocator)
+	for diagnostic, index in diagnostics {
+		copies[index] = theme_copy_diagnostic(diagnostic, allocator)
+	}
+	return copies
 }
 
 theme_resolve_token :: proc(
@@ -704,6 +730,7 @@ theme_resolve_token :: proc(
 
 theme_build_debug_metadata :: proc(
 	tokens: []Effective_Token,
+	core_roles: []Effective_Core_Role,
 	extension_roles: []Effective_Extension_Role,
 	materials: []Effective_Material,
 	button_recipes: []Effective_Button_Recipe,
@@ -711,6 +738,7 @@ theme_build_debug_metadata :: proc(
 ) -> Theme_Debug_Metadata {
 	debug := Theme_Debug_Metadata{
 		tokens=make([]Token_Provenance, len(tokens), allocator),
+		core_roles=make([]Core_Role_Provenance, len(core_roles), allocator),
 		extension_roles=make([]Extension_Role_Provenance, len(extension_roles), allocator),
 		materials=make([]Theme_Material_Provenance, len(materials), allocator),
 		button_recipes=make([]Theme_Button_Recipe_Provenance, len(button_recipes), allocator),
@@ -731,6 +759,15 @@ theme_build_debug_metadata :: proc(
 			kind=token.definition.kind,
 			span=span,
 			alias_target=alias_target,
+		}
+	}
+	for entry, index in core_roles {
+		span := entry.binding.span
+		span.path = theme_clone_string(span.path, allocator)
+		debug.core_roles[index] = Core_Role_Provenance{
+			role=entry.binding.role,
+			token=theme_clone_string(entry.binding.token, allocator),
+			span=span,
 		}
 	}
 	for entry, index in extension_roles {
@@ -887,18 +924,24 @@ theme_output_destroy :: proc(output: ^Theme_Compile_Output, allocator := context
 		delete(role.name, allocator)
 		delete(role.span.path, allocator)
 	}
+	for role in output.debug.core_roles {
+		delete(role.token, allocator)
+		delete(role.span.path, allocator)
+	}
 	for material in output.debug.materials {
 		delete(material.name, allocator)
 		delete(material.span.path, allocator)
 	}
 	for recipe in output.debug.button_recipes { delete(recipe.span.path, allocator) }
 	delete(output.debug.tokens, allocator)
+	delete(output.debug.core_roles, allocator)
 	delete(output.debug.extension_roles, allocator)
 	delete(output.debug.materials, allocator)
 	delete(output.debug.button_recipes, allocator)
 	for diagnostic in output.diagnostics {
 		delete(diagnostic.path, allocator)
 		delete(diagnostic.related_name, allocator)
+		delete(diagnostic.replacement, allocator)
 		for symbol in diagnostic.symbol_path { delete(symbol, allocator) }
 		delete(diagnostic.symbol_path, allocator)
 	}
@@ -921,6 +964,7 @@ theme_copy_diagnostic :: proc(diagnostic: Theme_Diagnostic, allocator: mem.Alloc
 	copy.path = theme_clone_string(diagnostic.path, allocator)
 	copy.span.path = copy.path
 	copy.related_name = theme_clone_string(diagnostic.related_name, allocator)
+	copy.replacement = theme_clone_string(diagnostic.replacement, allocator)
 	if len(diagnostic.symbol_path) > 0 {
 		copy.symbol_path = make([]string, len(diagnostic.symbol_path), allocator)
 		for symbol, index in diagnostic.symbol_path {

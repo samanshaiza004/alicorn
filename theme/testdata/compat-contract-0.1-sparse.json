@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "contract": "0.1",
+  "tokens": {
+    "compat.ink": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.12, 0.18, 0.24], "alpha": 1}
+    },
+    "compat.gutter": {"$type": "dimension", "$value": {"value": 8, "unit": "px"}}
+  },
+  "roles": {
+    "core": {"text": "{compat.ink}"},
+    "extensions": {
+      "app.scratchpad.gutter": {"$type": "dimension", "$value": "{compat.gutter}"},
+      "vendor.example.scratchpad.meter": {"$type": "color", "$value": "{compat.ink}"}
+    }
+  }
+}

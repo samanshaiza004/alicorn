@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "contract": "0.2",
+  "tokens": {
+    "compat.gutter": {"$type": "dimension", "$value": {"value": 8, "unit": "px"}}
+  },
+  "roles": {"extensions": {"app.scratchpad.state": {"$type": "dimension", "$value": "{compat.gutter}"}}}
+}

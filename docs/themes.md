@@ -282,15 +282,46 @@ line tool accepts only the built-in `alicorn.base` identifier. File loading,
 inheritance policy, and application-specific theme discovery remain with the
 host application.
 
-### v0.2 source and fallback policy
+### Version compatibility and fallback policy
 
-The source schema is exact (`1`). The style contract is a separate `major.minor`
-version: a compiler accepts the same major and any minor no newer than its
-supported minor; it rejects a different major or a future minor. When compiling
-multiple layers, the compiled contract records the highest compatible minor.
+The source schema is exact (`1`) and independent from style semantics. Alicorn
+currently supports this contract matrix:
+
+| Theme contract | Result with Alicorn contract 0.2 | Reason |
+| --- | --- | --- |
+| `0.0` | Accepted | Same major; older minor |
+| `0.1` | Accepted | Same major; older minor |
+| `0.2` | Accepted | Current contract |
+| `0.3` | Rejected | Future minor may require semantics this compiler lacks |
+| `1.0` | Rejected | Different major is incompatible |
+| Any schema other than `1` | Rejected | Source parsing is an exact schema contract |
+
+The compiler accepts the same contract major and any minor no newer than its
+supported minor. A layered compile reports the highest compatible minor among
+its input layers. A future optional contract feature must define a deterministic
+fallback before it ships; an older theme must not acquire a different meaning
+merely because a new optional role or recipe property was added.
+
 The initial source requires `schema`, `contract`, and a `tokens` object;
-`roles`, `materials`, `recipes`, and `extends` are optional. `extends: "alicorn.base"` supplies typed
-symbolic defaults for aliases and role overrides. It never loads a file path.
+`roles`, `materials`, `recipes`, and `extends` are optional.
+`extends: "alicorn.base"` supplies typed symbolic values for aliases and role
+overrides. It never loads a file path.
+
+Fallbacks are part of the contract, not a parser convenience:
+
+| Omitted value | Resolved behavior | Inspection |
+| --- | --- | --- |
+| Core color-role binding | Preserve the corresponding typed `DEFAULT_STYLE_THEME` color | `theme explain <file> role.<name>` reports the value and binding/token source; `alicorn.base` is identified as a typed built-in source |
+| Button recipe or individual recipe field | Preserve that field from `DEFAULT_STYLE_THEME.button_recipes`; sparse overlays replace only fields they specify | `theme explain <file> recipe.button.<variant>` distinguishes authored fields from inherited defaults |
+| App/vendor extension role | No binding is created; lookup remains unresolved until an explicit declaration is present | `theme check` reports the declared extension count |
+| Named material definition | No named definition is synthesized; ordinary flat surfaces continue to use `MATERIAL_FLAT` / `STYLE_MATERIAL_FLAT` | `theme explain <file> material.flat` shows the built-in fallback |
+
+The built-in base is a complete typed source projection of Alicorn defaults. A
+theme that omits `extends` can still omit core bindings: the runtime adapter
+preserves `DEFAULT_STYLE_THEME` values. `theme check` reports resolved counts
+and the fallback source categories. `theme explain role.*` reports the concrete
+linear-sRGB value, role binding location, and terminal token location, including
+alias chains.
 
 `materials` names must use the `app.*` or `vendor.*` namespace. The supported
 kinds are `flat` and `analytic_relief`; analytic bevel and shadow parameters
@@ -348,6 +379,36 @@ repeatable tooling output. A failed parse or compile must not replace an
 already-active runtime theme; only a successful immutable result is suitable
 for registration.
 
+Compatibility fixtures freeze this behavior. `theme/compatibility_test.odin`
+checks contract 0.0, 0.1, and 0.2; rejects a future minor, a different major,
+an unsupported schema, an unknown core role, and an extension type change; and
+asserts that omitted core roles, recipes, and named materials follow the rules
+above. The Scratchpad Warm and Cool Light JSON fixtures are copied from
+Scratchpad commit `ff5cddf23c4efd97564f9c9fcc4072f6165088a8`. Their compiled
+and adapted theme signatures are release-contract snapshots. Updating a golden
+is a deliberate contract review: inspect the resolved values and document why
+an existing compatible theme should now resolve differently. A new compiler
+must not silently refresh the expected signatures.
+
+### Deprecation and migration policy
+
+Contract 0.2 has no deprecated theme names or properties. When Alicorn
+introduces a real replacement, it will keep the old form accepted for the rest
+of that contract major, emit a source-located warning, and name the exact
+replacement in the diagnostic. Warnings do not make a theme invalid. The
+compiler diagnostic carries the deprecated `related_name` and optional exact
+`replacement`; `theme check` prints the warning and replacement, while
+`theme explain` continues to show the resolved value and origin. The compiler
+returns a successful result when diagnostics contain warnings only.
+
+Contract-minor releases add backward-compatible behavior with explicit
+fallbacks. A breaking semantic removal requires a new contract major. The JSON
+source schema remains exact; a syntax-breaking schema change is not silently
+rewritten by `theme check` or `theme compile`. Alicorn will add a one-time
+conversion command only when a concrete source-format transition exists, and
+that command must report each transformed or unsupported field. There is no
+speculative general migration language or automatic source rewrite today.
+
 The built-in Odin test suite exercises the source model, compiler, JSON
 frontend, and runtime adapter with:
 
@@ -361,6 +422,9 @@ token values/alias chains:
 ```sh
 odin run tools/theme -- check path/to/theme.json
 odin run tools/theme -- explain path/to/theme.json text.primary
+odin run tools/theme -- explain path/to/theme.json role.text
+odin run tools/theme -- explain path/to/theme.json recipe.button.tab
+odin run tools/theme -- explain path/to/theme.json material.flat
 odin run tools/theme -- compile path/to/theme.json --output generated_theme.odin --symbol APP_THEME
 ```
 
@@ -413,7 +477,5 @@ The retained domain boundary is part of the contract:
 - Sibling scopes keep their own generations, and an unchanged idle frame does
   no style-resolution or layout work.
 
-This fixture closes the runtime architecture proof for issue #28. Declarative
-recipe/material authoring remains a separate compiler task; source schema and
-contract compatibility remain a separate evolution task. The current JSON
-source still accepts explicit sRGB and logical `px` dimensions only.
+This fixture closes the runtime architecture proof for issue #28. The current
+JSON source still accepts explicit sRGB and logical `px` dimensions only.

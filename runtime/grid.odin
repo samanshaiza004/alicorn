@@ -48,6 +48,7 @@ grid_begin :: proc(
 	label := "grid",
 	loc := #caller_location,
 	layout_boundary := false,
+	layout_boundary_axes: Layout_Axes = {},
 ) -> Node_ID {
 	rt := ui.runtime
 	if len(columns) == 0 || len(rows) == 0 {
@@ -62,7 +63,7 @@ grid_begin :: proc(
 	normalized_gap_y := gap_y
 	if math.is_nan(normalized_gap_x) || math.is_inf(normalized_gap_x) || normalized_gap_x < 0 { normalized_gap_x = 0 }
 	if math.is_nan(normalized_gap_y) || math.is_inf(normalized_gap_y) || normalized_gap_y < 0 { normalized_gap_y = 0 }
-	id := container_begin_simple(ui, .Grid, label=label, key=key, style=style, loc=loc, layout_boundary=layout_boundary)
+	id := container_begin_simple(ui, .Grid, label=label, key=key, style=style, loc=loc, layout_boundary=layout_boundary, layout_boundary_axes=layout_boundary_axes)
 	if id == 0 { return 0 }
 	index := len(rt.pending)-1
 	item := &rt.pending[index]

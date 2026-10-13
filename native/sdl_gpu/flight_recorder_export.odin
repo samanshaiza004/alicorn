@@ -57,6 +57,7 @@ native_flight_node_kind_name :: proc(kind: alicorn.Node_Kind, valid: bool) -> st
 	case .Split:                return "split"
 	case .Split_Handle:         return "split_handle"
 	case .Custom_Surface:       return "custom_surface"
+	case .Image:                return "image"
 	}
 	return "unknown"
 }

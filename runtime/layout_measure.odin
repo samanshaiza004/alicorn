@@ -241,6 +241,33 @@ layout_measure_changed_axes :: proc(old, next: Measure_Result) -> Layout_Axes {
 	return changed
 }
 
+layout_axes_intersection :: proc(a, b: Layout_Axes) -> Layout_Axes {
+	result: Layout_Axes = {}
+	for axis in Layout_Axis {
+		if axis in a && axis in b { result += {axis} }
+	}
+	return result
+}
+
+layout_axes_difference :: proc(a, b: Layout_Axes) -> Layout_Axes {
+	result: Layout_Axes = {}
+	for axis in Layout_Axis {
+		if axis in a && !(axis in b) { result += {axis} }
+	}
+	return result
+}
+
+// A layout boundary may contain invalidation only on axes whose outer size is
+// independent of its descendants. Ordinary -1 sizes are parent allocated;
+// FIT_CONTENT explicitly makes that outer axis depend on child measurement.
+layout_boundary_stable_axes :: proc(node: ^Node) -> Layout_Axes {
+	if node == nil { return {} }
+	stable: Layout_Axes = {}
+	if .Width in node.layout_boundary_axes && !layout_size_is_fit_content(node.style.width) { stable += {.Width} }
+	if .Height in node.layout_boundary_axes && !layout_size_is_fit_content(node.style.height) { stable += {.Height} }
+	return stable
+}
+
 layout_measure_result_equal :: proc(a, b: Measure_Result) -> bool {
 	return a.size == b.size && a.baseline == b.baseline && a.baseline_valid == b.baseline_valid &&
 	       a.input_axis_dependencies == b.input_axis_dependencies
@@ -292,6 +319,14 @@ layout_measure_intrinsic_size :: proc(rt: ^Runtime, node: ^Node) -> Layout_Size 
 	}
 	width := node.style.width
 	height := node.style.height
+	if node.kind == .Image {
+		if image, ok := image_resolve(rt, Image_Handle(node.paint_value)); ok && image.width > 0 && image.height > 0 {
+			if width < 0 && height >= 0 { width = height*f32(image.width)/f32(image.height) }
+			if height < 0 && width >= 0 { height = width*f32(image.height)/f32(image.width) }
+			if width < 0 { width = f32(image.width) }
+			if height < 0 { height = f32(image.height) }
+		}
+	}
 	if width < 0 {
 		#partial switch node.kind {
 		case .Checkbox:
@@ -458,7 +493,7 @@ layout_measure_propagate_parent_size_change :: proc(rt: ^Runtime, child_id: Node
 	parent_state := rt.measure_states[parent.id]
 	if !parent_state.cache_key.valid {
 		dirty_set(&parent.dirty, .Measure, true)
-		mark_layout_ancestors(rt, parent.id)
+		mark_layout_ancestors(rt, parent.id, parent_axes)
 		return
 	}
 	old_result := parent_state.result
@@ -471,7 +506,7 @@ layout_measure_propagate_parent_size_change :: proc(rt: ^Runtime, child_id: Node
 		return
 	}
 	record_trace(rt, .Measure, parent.id, fmt.tprintf("content size changed on axes %v after child change", changed_axes))
-	mark_layout_ancestors(rt, parent.id)
+	mark_layout_ancestors(rt, parent.id, changed_axes)
 	layout_measure_propagate_parent_size_change(rt, parent.id, changed_axes)
 }
 
@@ -499,8 +534,9 @@ layout_measure_retained_dirty_nodes :: proc(rt: ^Runtime) {
 		}
 		record_trace(rt, .Measure, id, fmt.tprintf("measured output changed on axes %v", changed_axes))
 		layout_measure_propagate_parent_size_change(rt, id, changed_axes)
-		if layout_parent_placement_depends_on(state, changed_axes) {
-			mark_layout_ancestors(rt, id)
+		placement_axes := layout_axes_intersection(changed_axes, state.parent_layout_dependencies)
+		if placement_axes != {} {
+			mark_layout_ancestors(rt, id, placement_axes)
 			record_trace(rt, .Layout, node.parent, "child measurement changed; parent placement invalidated")
 		}
 	}
