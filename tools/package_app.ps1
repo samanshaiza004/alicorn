@@ -67,6 +67,7 @@ function Copy-PackageFile([string]$Source, [string]$Destination) {
 Copy-PackageFile $Executable (Join-Path $PackageRoot ($App.executableName + '.exe'))
 Copy-PackageFile $SDLLicense (Join-Path $PackageRoot 'SDL-LICENSE.txt')
 Copy-PackageFile (Join-Path $RepoRoot 'assets/icons/reicon/LICENSE') (Join-Path $PackageRoot 'Reicon-LICENSE.txt')
+Copy-PackageFile (Join-Path $RepoRoot 'third_party/windows_caption/LICENSE') (Join-Path $PackageRoot 'Windows-Caption-LICENSE.txt')
 if (-not [string]::IsNullOrWhiteSpace($AccessKitLicenseApache)) {
     Copy-PackageFile $AccessKitLicenseApache (Join-Path $PackageRoot 'AccessKit-LICENSE-APACHE.txt')
     Copy-PackageFile $AccessKitLicenseMIT (Join-Path $PackageRoot 'AccessKit-LICENSE-MIT.txt')

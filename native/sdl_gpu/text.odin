@@ -224,6 +224,22 @@ native_text_register_host_run :: proc(renderer: ^Native_Text_Renderer, node: ali
 	return true
 }
 
+// Host chrome can change typography when its monitor DPI changes. Replace the
+// owned run and its resource generation without rebuilding application nodes.
+native_text_set_host_run :: proc(renderer: ^Native_Text_Renderer, node: alicorn.Node_ID, run: alicorn.Text_Run) -> bool {
+	if renderer == nil || node == 0 { return false }
+	for &host_run in renderer.host_runs {
+		if host_run.host_id != node { continue }
+		alicorn.text_run_destroy(&host_run.run)
+		renderer.host_run_generation += 1
+		if renderer.host_run_generation == 0 { renderer.host_run_generation = 1 }
+		host_run.run = run
+		host_run.handle = alicorn.Text_Run_Handle{.Host, u64(node), renderer.host_run_generation}
+		return true
+	}
+	return native_text_register_host_run(renderer, node, run)
+}
+
 native_text_host_run :: proc(renderer: ^Native_Text_Renderer, node: alicorn.Node_ID) -> ^alicorn.Text_Run {
 	if renderer == nil || node == 0 { return nil }
 	for &host_run in renderer.host_runs {
