@@ -1038,6 +1038,7 @@ semantic_sync_node :: proc(rt: ^Runtime, node: ^Node, semantic: Semantic_Descrip
 		}
 	}
 	tree_order: u64 = 0
+	if order, found := rt.semantic_tree_orders[node.id]; found { tree_order = order }
 	if previous, found := rt.semantic_entities[id]; found && previous.node.visual_node == node.id {
 		tree_order = previous.node.tree_order
 	}
@@ -1089,6 +1090,8 @@ semantic_sync_node :: proc(rt: ^Runtime, node: ^Node, semantic: Semantic_Descrip
 semantic_sync_tree_order :: proc(rt: ^Runtime, node_id: Node_ID, tree_order: u64) {
 	if rt == nil { return }
 	node, found := rt.nodes[node_id]
+	if found && adaptive_node_has_alternative_ancestor(rt, node_id) { rt.semantic_tree_orders[node_id] = tree_order }
+	else { delete_key(&rt.semantic_tree_orders, node_id) }
 	if !found || !semantic_id_is_valid(node.semantic_id) { return }
 	entity, semantic_found := rt.semantic_entities[node.semantic_id]
 	if !semantic_found || entity.node.visual_node != node_id || entity.node.tree_order == tree_order { return }

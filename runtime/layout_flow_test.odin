@@ -89,12 +89,12 @@ test_main_axis_distribution_remainders_follow_logical_order :: proc(t: ^testing.
 		"Space_Around should distribute odd units in stable logical order")
 }
 
-layout_flow_test_describe_compressible_row :: proc(rt: ^Runtime, width, first_width, second_width, first_min, second_min: f32) -> (first, second: Node_ID) {
+layout_flow_test_describe_compressible_row :: proc(rt: ^Runtime, width, first_width, second_width, first_min, second_min: f32, first_compress_weight: u8 = 1) -> (first, second: Node_ID) {
 	invalidate_root(rt, "compressible Row fixture")
 	ui, build := begin_frame(rt)
 	if !build { return }
 	container_begin(&ui, .Root, key=key_string("compression-root"), style=layout_style(.Row, width=width, height=60))
-	first = container_begin(&ui, .Container, key=key_string("compression-first"), style=layout_style(.Column, width=first_width, min_width=first_min, height=20, compress_weight=1))
+	first = container_begin(&ui, .Container, key=key_string("compression-first"), style=layout_style(.Column, width=first_width, min_width=first_min, height=20, compress_weight=first_compress_weight))
 	container_end(&ui)
 	second = container_begin(&ui, .Container, key=key_string("compression-second"), style=layout_style(.Column, width=second_width, min_width=second_min, height=20, compress_weight=3))
 	container_end(&ui)
@@ -124,6 +124,16 @@ test_row_compression_weights_and_hard_minimum_overflow :: proc(t: ^testing.T) {
 	if first_ok && second_ok {
 		testing.expect(t, first.bounds.w == 55 && second.bounds.w == 55 && second.bounds.x == 55,
 			"when hard minima exceed the Row, the allocator must preserve them and expose the overflow instead of shrinking below them")
+	}
+
+	rigid := new_runtime(Rect{0, 0, 100, 60})
+	defer destroy_runtime(&rigid)
+	first_id, second_id = layout_flow_test_describe_compressible_row(&rigid, 100, 40, 120, 0, 120, 0)
+	first, first_ok = rigid.nodes[first_id]
+	second, second_ok = rigid.nodes[second_id]
+	if first_ok && second_ok {
+		testing.expect(t, first.bounds.w == 40 && second.bounds.w == 120 && second.bounds.x == 40,
+			"an infeasible Row should preserve a rigid fixed-width child and a compressible child's hard minimum")
 	}
 }
 
@@ -261,6 +271,25 @@ test_column_compression_uses_weighted_main_axis_allocation :: proc(t: ^testing.T
 	if first_ok && second_ok {
 		testing.expect(t, layout_flow_test_close(first.bounds.h, 110) && layout_flow_test_close(second.bounds.h, 90) && layout_flow_test_close(second.bounds.y-first.bounds.y, 110),
 			"Column compression should use weighted measured ideals, preserve minima, and place later children after resized predecessors")
+	}
+
+	overflow := new_runtime(Rect{0, 0, 80, 100})
+	defer destroy_runtime(&overflow)
+	invalidate_root(&overflow, "infeasible Column rigidity fixture")
+	ui, build = begin_frame(&overflow)
+	if !build { testing.expect(t, false, "infeasible Column fixture should request a description"); return }
+	container_begin(&ui, .Root, key=key_string("column-rigid-overflow-root"), style=layout_style(.Column, width=80, height=100))
+	first_id = container_begin(&ui, .Container, key=key_string("column-rigid-overflow-first"), style=layout_style(.Row, width=30, height=40))
+	container_end(&ui)
+	second_id = container_begin(&ui, .Container, key=key_string("column-rigid-overflow-second"), style=layout_style(.Row, width=30, height=120, min_height=120, compress_weight=1))
+	container_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+	first, first_ok = overflow.nodes[first_id]
+	second, second_ok = overflow.nodes[second_id]
+	if first_ok && second_ok {
+		testing.expect(t, first.bounds.h == 40 && second.bounds.h == 120 && second.bounds.y == 40,
+			"an infeasible Column should preserve a rigid fixed-height child and a compressible child's hard minimum")
 	}
 }
 

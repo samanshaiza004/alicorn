@@ -29,7 +29,7 @@ tooltip_source_at :: proc(rt: ^Runtime, hit: Node_ID) -> Node_ID {
 	for current != 0 {
 		node, ok := rt.nodes[current]
 		if !ok { break }
-		if node.active && len(node.tooltip_text) > 0 { return current }
+		if node.active && node_is_presentation_active(rt, current) && len(node.tooltip_text) > 0 { return current }
 		current = node.parent
 	}
 	return 0
@@ -72,7 +72,7 @@ tooltip_pointer_update :: proc(rt: ^Runtime, hit: Node_ID, now_ns: u64) {
 	tooltip_dismiss(rt)
 	if next_target == 0 { return }
 	node, ok := rt.nodes[next_target]
-	if !ok || !node.active { return }
+	if !ok || !node.active || !node_is_presentation_active(rt, next_target) { return }
 	delay_ns := u64(node.tooltip_delay_ms) * 1_000_000
 	deadline := now_ns + delay_ns
 	if deadline < now_ns { deadline = u64(0xFFFFFFFFFFFFFFFF) }
@@ -94,7 +94,7 @@ tooltip_advance :: proc(rt: ^Runtime, now_ns: u64) -> bool {
 	}
 	target := rt.tooltip.target
 	node, ok := rt.nodes[target]
-	if !ok || !node.active || len(node.tooltip_text) == 0 || rt.drag.phase != .Idle ||
+	if !ok || !node.active || !node_is_presentation_active(rt, target) || len(node.tooltip_text) == 0 || rt.drag.phase != .Idle ||
 	   rt.context_menu.open || rt.context_menu.dismissed || modal_overlay_root(rt) != 0 {
 		tooltip_dismiss(rt)
 		return false
@@ -133,7 +133,10 @@ tooltip_placement :: proc(viewport, anchor: Rect, width, height: f32) -> Rect {
 append_tooltip_overlay :: proc(rt: ^Runtime) {
 	if rt == nil || !rt.tooltip.visible || !rt.tooltip.run_ready || rt.transient_overlay_kind != .None { return }
 	node, ok := rt.nodes[rt.tooltip.target]
-	if !ok || !node.active { return }
+	if !ok || !node.active || !node_is_presentation_active(rt, rt.tooltip.target) {
+		tooltip_dismiss(rt)
+		return
+	}
 	run := &rt.tooltip.run
 	width := minf(maxf(run.width+2*TOOLTIP_HORIZONTAL_PADDING, 72), TOOLTIP_MAX_WIDTH)
 	height := maxf(run.height+2*TOOLTIP_VERTICAL_PADDING, 26)

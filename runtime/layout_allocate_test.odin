@@ -75,6 +75,29 @@ test_layout_allocate_compresses_by_weight_and_preserves_hard_minima :: proc(t: ^
 	minimum_result := layout_allocate_axis(7, minima[:], minimum_output[:])
 	testing.expect(t, minimum_output == [2]Layout_Unit{8, 5}, "hard minima must be preserved when their total exceeds available space")
 	testing.expect(t, minimum_result.overflow == 6 && minimum_result.unused == 0, "minimum overflow should be explicit")
+
+	infeasible := [2]Elastic_Item{
+		{minimum=0, ideal=40, maximum=40},
+		{minimum=120, ideal=120, maximum=120, compress_weight=1},
+	}
+	infeasible_output: [2]Layout_Unit
+	infeasible_result := layout_allocate_axis(100, infeasible[:], infeasible_output[:])
+	testing.expect(t, infeasible_output == [2]Layout_Unit{40, 120},
+		"an infeasible axis should keep an unweighted fixed ideal while preserving the other item's hard minimum")
+	testing.expect(t, infeasible_result.overflow == 60 && infeasible_result.unused == 0,
+		"overflow should describe the preserved output extent, including rigid fixed space")
+
+	weighted_infeasible := [3]Elastic_Item{
+		{minimum=5, ideal=9, maximum=9, compress_weight=1},
+		{minimum=7, ideal=13, maximum=13, compress_weight=3},
+		{minimum=4, ideal=8, maximum=8, compress_weight=2},
+	}
+	weighted_infeasible_output: [3]Layout_Unit
+	weighted_infeasible_result := layout_allocate_axis(10, weighted_infeasible[:], weighted_infeasible_output[:])
+	testing.expect(t, weighted_infeasible_output == [3]Layout_Unit{5, 7, 4},
+		"weighted compression should reach each hard minimum even when the aggregate minima remain infeasible")
+	testing.expect(t, weighted_infeasible_result.overflow == 6 && weighted_infeasible_result.unused == 0,
+		"weighted infeasible minima should report the remaining aggregate overflow")
 }
 
 @(test)

@@ -1,5 +1,6 @@
 package alicorn
 
+import "core:fmt"
 import "core:testing"
 
 Adaptive_Test_Semantic_ID :: Semantic_ID{namespace=0x4144415054495645, value=1}
@@ -31,6 +32,7 @@ adaptive_test_describe :: proc(rt: ^Runtime, viewport_width: f32) -> Adaptive_Te
 	nodes.widest_button, _ = button_begin(&ui, "Wide action", key_string("adaptive-test-wide-action"),
 		style=layout_style(width=140, height=32))
 	_ = semantic_bind(&ui, Adaptive_Test_Focus_ID)
+	_ = tooltip(&ui, "Wide only help")
 	button_end(&ui)
 	for i in 0..<48 {
 		text(&ui, "Wide branch detail", key=key_u64(u64(i)), style=layout_style(.Row, height=16))
@@ -52,6 +54,201 @@ adaptive_test_describe :: proc(rt: ^Runtime, viewport_width: f32) -> Adaptive_Te
 	container_end(&ui)
 	end_frame(&ui)
 	return nodes
+}
+
+@(test)
+test_adaptive_hidden_branch_dismisses_pending_and_visible_tooltips :: proc(t: ^testing.T) {
+	// Pending timers and already-composed overlays both belong to a specific
+	// presentation. Hiding that branch must retire the tooltip immediately.
+	rt := new_runtime(Rect{0, 0, 500, 180})
+	defer destroy_runtime(&rt)
+	nodes := adaptive_test_describe(&rt, 500)
+	tooltip_pointer_update(&rt, nodes.widest_button, 100)
+	testing.expect(t, rt.tooltip.target == nodes.widest_button, "hovering Wide should arm its tooltip")
+	_ = adaptive_test_describe(&rt, 450)
+	testing.expect(t, rt.tooltip.target == 0 && !tooltip_advance(&rt, 500_000_100),
+		"selection change should cancel a pending tooltip owned by the now-hidden branch")
+
+	visible := new_runtime(Rect{0, 0, 500, 180})
+	defer destroy_runtime(&visible)
+	_ = text_engine_load_font(&visible.text_engine, TOOLTIP_TEST_FONT)
+	visible_nodes := adaptive_test_describe(&visible, 500)
+	tooltip_pointer_update(&visible, visible_nodes.widest_button, 100)
+	testing.expect(t, tooltip_advance(&visible, 500_000_100), "Wide tooltip should become visible after its delay")
+	_ = adaptive_test_describe(&visible, 450)
+	testing.expect(t, !visible.tooltip.visible && visible.tooltip.target == 0,
+		"selection change should dismiss a visible tooltip owned by the hidden branch")
+	for command in visible.display { testing.expect(t, command.owner != Node_ID(0), "hidden-branch tooltip commands must leave retained composition") }
+}
+
+Adaptive_Retained_Semantic_ID :: Semantic_ID{namespace=0x4144415054495645, value=91}
+Adaptive_Retained_Run_ID :: Semantic_ID{namespace=0x4144415054495645, value=93}
+Adaptive_Retained_Area_ID :: Semantic_ID{namespace=0x4144415054495645, value=94}
+Adaptive_Retained_Compact_Area_ID :: Semantic_ID{namespace=0x4144415054495645, value=95}
+
+adaptive_retained_split_describe :: proc(
+	rt: ^Runtime,
+	semantic_id := Adaptive_Retained_Semantic_ID,
+	omit_semantic_role := false,
+) -> (handle: Node_ID, wide_button, compact_button: Node_ID) {
+	invalidate_root(rt, "adaptive retained semantic fixture description")
+	ui, build := begin_frame(rt)
+	if !build { return }
+	container_begin(&ui, .Root, key=key_string("adaptive-retained-root"), style=layout_style(.Column, width=500, height=200))
+	split := split_begin(&ui, key_string("adaptive-retained-split"), .Horizontal, 100,
+		style=layout_style(.Row, grow=1, height=200, clip=true))
+	_ = split_first_begin(&ui, split, style=layout_style(width=100, grow=0))
+	split_first_end(&ui, split)
+	handle = split_divider(&ui, split, thickness=2, hit_size=10)
+	_ = split_second_begin(&ui, split)
+	_ = adaptive_begin(&ui, key_string("adaptive-retained-owner"), style=layout_style(.Column, grow=1, height=80))
+	_ = adaptive_alternative_begin(&ui, key_string("adaptive-retained-wide"), "Wide", minimum_width=380)
+	wide_button, _ = button_begin(&ui, "Wide action", key_string("adaptive-retained-wide-action"), style=layout_style(width=120, height=32))
+	if omit_semantic_role {
+		_ = semantic_bind(&ui, semantic_id)
+		ui.runtime.pending[len(ui.runtime.pending)-1].semantic = Semantic_Descriptor{}
+	} else {
+		_ = semantic_describe_as(&ui, semantic_id, .Button, "Wide custom name", actions=semantic_actions_add({}, .Press))
+	}
+	button_end(&ui)
+	adaptive_retained_run_describe(&ui, "Wide", Adaptive_Retained_Area_ID)
+	adaptive_alternative_end(&ui)
+	_ = adaptive_alternative_begin(&ui, key_string("adaptive-retained-compact"), "Compact")
+	compact_button, _ = button_begin(&ui, "Compact action", key_string("adaptive-retained-compact-action"), style=layout_style(width=120, height=32))
+	if omit_semantic_role {
+		_ = semantic_bind(&ui, semantic_id)
+		ui.runtime.pending[len(ui.runtime.pending)-1].semantic = Semantic_Descriptor{}
+	} else {
+		_ = semantic_describe_as(&ui, semantic_id, .Button, "Compact custom name", actions=semantic_actions_add({}, .Press))
+	}
+	button_end(&ui)
+	adaptive_retained_run_describe(&ui, "Compact", Adaptive_Retained_Compact_Area_ID)
+	adaptive_alternative_end(&ui)
+	adaptive_end(&ui)
+	split_second_end(&ui, split)
+	split_end(&ui, split)
+	container_end(&ui)
+	end_frame(&ui)
+	return
+}
+
+adaptive_retained_run_describe :: proc(ui: ^UI, prefix: string, run_area_id: Semantic_ID) {
+	text(ui, "Accessible run", key=key_string("adaptive-retained-run"), style=layout_style(.Row, height=20))
+	rt := ui.runtime
+	area_label := fmt.aprintf("%s area", prefix, allocator=rt.scratch_allocator)
+	area_description := fmt.aprintf("%s area description", prefix, allocator=rt.scratch_allocator)
+	area_value := fmt.aprintf("%s area value", prefix, allocator=rt.scratch_allocator)
+	_ = semantic_describe_as(ui, run_area_id, .Text_Area, area_label, area_description, area_value)
+	text(ui, "Accessible run", key=key_string("adaptive-retained-text-run"), style=layout_style(.Row, height=20))
+	label := fmt.aprintf("%s label", prefix, allocator=rt.scratch_allocator)
+	description := fmt.aprintf("%s description", prefix, allocator=rt.scratch_allocator)
+	value := fmt.aprintf("%s %s", prefix, "a🙂", allocator=rt.scratch_allocator)
+	lengths := make([]u8, 4, allocator=rt.scratch_allocator)
+	lengths[0] = u8(len(prefix))
+	lengths[1] = 1
+	lengths[2] = 1
+	lengths[3] = 4
+	_ = semantic_describe_as(ui, Adaptive_Retained_Run_ID, .Text_Run, label, description, value)
+	run := &rt.pending[len(rt.pending)-1].semantic
+	run.parent = run_area_id
+	run.text_run_character_lengths = lengths
+}
+
+adaptive_retained_split_drag :: proc(rt: ^Runtime, handle_id: Node_ID, delta: f32) {
+	handle := rt.nodes[handle_id]
+	x := handle.bounds.x + handle.bounds.w*0.5
+	y := handle.bounds.y + handle.bounds.h*0.5
+	_ = process_pointer(rt, Pointer_Event{kind=.Down, x=x, y=y, button=POINTER_BUTTON_PRIMARY})
+	_ = process_pointer(rt, Pointer_Event{kind=.Move, x=x+delta, y=y, timestamp_ns=1})
+	_ = process_pointer(rt, Pointer_Event{kind=.Up, x=x+delta, y=y, button=POINTER_BUTTON_PRIMARY})
+}
+
+@(test)
+test_retained_split_drag_rebinds_adaptive_semantics_without_description :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 500, 200})
+	defer destroy_runtime(&rt)
+	handle, wide_button, compact_button := adaptive_retained_split_describe(&rt)
+	initial_revision := semantic_revision(&rt)
+	initial, initial_found := semantic_node_lookup(&rt, Adaptive_Retained_Semantic_ID)
+	testing.expect(t, initial_found && initial.visual_node == wide_button && initial.label == "Wide custom name",
+		"initial Wide selection should publish its custom descriptor")
+	frames_built := rt.stats.frames_built
+	adaptive_retained_split_drag(&rt, handle, 50)
+	testing.expect(t, !rt.invalidated && rt.presentation_pending && rt.focused == 0,
+		"divider movement should schedule a retained presentation without invalidating description or taking focus")
+	ui, ready := begin_presentation_frame(&rt)
+	testing.expect(t, ready, "split drag should open a retained presentation frame")
+	if ready { end_presentation_frame(&ui) }
+	compact, compact_found := semantic_node_lookup(&rt, Adaptive_Retained_Semantic_ID)
+	compact_run, compact_run_found := semantic_node_lookup(&rt, Adaptive_Retained_Run_ID)
+	update := semantic_update_since(&rt, initial_revision)
+	testing.expect(t, rt.stats.frames_built == frames_built && rt.focused == 0,
+		"adaptive semantic rebinding should not ask the application to describe again or change focus")
+	testing.expect(t, compact_found && compact.visual_node == compact_button && compact.label == "Compact custom name" &&
+		compact.has_bounds && compact.bounds.w > 0,
+		"retained width selection should publish the selected branch descriptor and finalized bounds")
+	testing.expect(t, compact_run_found && compact_run.label == "Compact label" &&
+		compact_run.description == "Compact description" && compact_run.value == "Compact a🙂" &&
+		compact_run.parent == Adaptive_Retained_Compact_Area_ID &&
+		len(compact_run.text_run_character_lengths) == 4 && compact_run.text_run_character_lengths[0] == 7 &&
+		compact_run.text_run_character_lengths[1] == 1 && compact_run.text_run_character_lengths[2] == 1 &&
+		compact_run.text_run_character_lengths[3] == 4,
+		"scratch-backed semantic strings and Text_Run byte lengths should survive the presentation-frame scratch reset")
+	testing.expect(t, semantic_revision(&rt) != initial_revision && !update.requires_snapshot &&
+		update.to_revision == semantic_revision(&rt) && len(update.changed_ids) > 0,
+		"the retained presentation should publish a semantic delta for the branch replacement")
+	adaptive_retained_split_drag(&rt, handle, -50)
+	ui, ready = begin_presentation_frame(&rt)
+	if ready { end_presentation_frame(&ui) }
+	wide, wide_found := semantic_node_lookup(&rt, Adaptive_Retained_Semantic_ID)
+	wide_run, wide_run_found := semantic_node_lookup(&rt, Adaptive_Retained_Run_ID)
+	testing.expect(t, wide_found && wide.visual_node == wide_button && wide.label == "Wide custom name" && wide.has_bounds,
+		"dragging back across the threshold should rebind the same semantic ID to Wide again")
+	testing.expect(t, wide_run_found && wide_run.label == "Wide label" && wide_run.description == "Wide description" &&
+		wide_run.value == "Wide a🙂" && wide_run.parent == Adaptive_Retained_Area_ID && len(wide_run.text_run_character_lengths) == 4 &&
+		wide_run.text_run_character_lengths[0] == 4 && wide_run.text_run_character_lengths[3] == 4,
+		"returning to Wide should restore its independently owned custom Text_Run descriptor")
+	testing.expect(t, semantic_action_request(&rt, Adaptive_Retained_Semantic_ID, .Press),
+		"Press should route to the active Wide visual node after the return transition")
+}
+
+@(test)
+test_adaptive_full_description_removes_previous_semantic_identity_and_role :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 500, 200})
+	defer destroy_runtime(&rt)
+	_, _, _ = adaptive_retained_split_describe(&rt)
+	changed_id := Semantic_ID{namespace=Adaptive_Retained_Semantic_ID.namespace, value=92}
+	_, _, _ = adaptive_retained_split_describe(&rt, changed_id)
+	_, previous_still_found := semantic_node_lookup(&rt, Adaptive_Retained_Semantic_ID)
+	changed, changed_found := semantic_node_lookup(&rt, changed_id)
+	testing.expect(t, !previous_still_found && changed_found && changed.label == "Wide custom name",
+		"full adaptive reconciliation should retire an old semantic ID when its active node is rebound")
+	_, _, _ = adaptive_retained_split_describe(&rt, changed_id, true)
+	_, role_still_found := semantic_node_lookup(&rt, changed_id)
+	testing.expect(t, !role_still_found,
+		"removing the active adaptive node's semantic role should retire its prior logical entity")
+}
+
+@(test)
+test_adaptive_semantic_sidecars_free_on_retirement_and_destroy :: proc(t: ^testing.T) {
+	stats := Runtime_Allocation_Stats{}
+	rt := new_runtime(Rect{0, 0, 500, 200}, Runtime_Config{allocation_stats=&stats})
+	_, _, _ = adaptive_retained_split_describe(&rt)
+	frees_before_retire := stats.persistent_free_calls
+	invalidate_root(&rt, "retire adaptive semantic fixture")
+	ui, build := begin_frame(&rt)
+	if build {
+		container_begin(&ui, .Root, key=key_string("adaptive-retained-root"), style=layout_style(.Column, width=500, height=200))
+		text(&ui, "replacement", key=key_string("replacement"))
+		container_end(&ui)
+		end_frame(&ui)
+	}
+	testing.expect(t, len(rt.adaptive_semantic_descriptors) == 0 && len(rt.semantic_tree_orders) == 0 &&
+		stats.persistent_free_calls > frees_before_retire,
+		"retiring adaptive alternatives should release their owned descriptors and per-node order entries")
+	destroy_runtime(&rt)
+	testing.expect(t, stats.persistent_requested_bytes_live == 0 && stats.persistent_free_calls > frees_before_retire,
+		"runtime destruction should release tracked persistent adaptive sidecar allocations")
 }
 
 @(test)
