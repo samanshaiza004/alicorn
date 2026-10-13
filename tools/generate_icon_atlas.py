@@ -77,12 +77,81 @@ def read_alpha(path, expected):
     return result
 
 
-def png_rgba(width, height, pixels):
+def png_rgba(width, height, pixels, compression_level=9):
     def chunk(kind, data):
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
     rows = b"".join(b"\0" + pixels[y * width * 4:(y + 1) * width * 4] for y in range(height))
     return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
-            + chunk(b"IDAT", zlib.compress(rows, 9)) + chunk(b"IEND", b""))
+            + chunk(b"IDAT", zlib.compress(rows, compression_level)) + chunk(b"IEND", b""))
+
+
+def decode_png_rgba(data):
+    """Return dimensions and RGBA pixels, independent of PNG compression bytes."""
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("Expected PNG data")
+    position, compressed, dimensions = 8, bytearray(), None
+    while position + 12 <= len(data):
+        count = struct.unpack_from(">I", data, position)[0]
+        end = position + count + 12
+        if end > len(data):
+            raise ValueError("Truncated PNG chunk")
+        kind, body = data[position + 4:position + 8], data[position + 8:position + 8 + count]
+        if kind == b"IHDR":
+            width, height, depth, color, compression, filtering, interlace = struct.unpack(">IIBBBBB", body)
+            if (depth, color, compression, filtering, interlace) != (8, 6, 0, 0, 0):
+                raise ValueError("Expected non-interlaced RGBA8 PNG")
+            dimensions = width, height
+        elif kind == b"IDAT":
+            compressed.extend(body)
+        elif kind == b"IEND":
+            break
+        position = end
+    if dimensions is None:
+        raise ValueError("PNG is missing its header")
+    width, height = dimensions
+    stride = width * 4
+    raw = zlib.decompress(compressed)
+    if len(raw) != height * (stride + 1):
+        raise ValueError("Unexpected PNG pixel data length")
+    pixels, previous = bytearray(), bytearray(stride)
+    for y in range(height):
+        start = y * (stride + 1)
+        mode = raw[start]
+        row = bytearray(raw[start + 1:start + stride + 1])
+        for x in range(stride):
+            a = row[x - 4] if x >= 4 else 0
+            b = previous[x]
+            c = previous[x - 4] if x >= 4 else 0
+            if mode == 0:
+                predictor = 0
+            elif mode == 1:
+                predictor = a
+            elif mode == 2:
+                predictor = b
+            elif mode == 3:
+                predictor = (a + b) // 2
+            elif mode == 4:
+                p = a + b - c
+                distances = (abs(p - a), abs(p - b), abs(p - c))
+                predictor = (a, b, c)[distances.index(min(distances))]
+            else:
+                raise ValueError("Invalid PNG filter")
+            row[x] = (row[x] + predictor) & 255
+        pixels.extend(row)
+        previous = row
+    return width, height, bytes(pixels)
+
+
+def artifact_matches(relative, existing, generated):
+    # zlib can encode identical PNG pixels differently across operating systems.
+    # Runtime masks, manifests, and Odin source remain byte-for-byte verified;
+    # the visual-only contact sheet is checked by decoded pixels instead.
+    if relative == "assets/icons/generated/contact_sheet.png":
+        try:
+            return decode_png_rgba(existing) == decode_png_rgba(generated)
+        except (ValueError, zlib.error, struct.error):
+            return False
+    return existing == generated
 
 
 def generate(resvg, temporary):
@@ -173,12 +242,12 @@ def main():
     for relative, data in outputs.items():
         path = ROOT / relative
         if args.verify:
-            if not path.exists() or path.read_bytes() != data:
+            if not path.exists() or not artifact_matches(relative, path.read_bytes(), data):
                 raise SystemExit("Generated artifact differs: " + relative)
         else:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
-    print("%s %d deterministic artifacts" % ("Verified" if args.verify else "Generated", len(outputs)))
+    print("%s %d generated artifacts" % ("Verified" if args.verify else "Generated", len(outputs)))
 
 
 if __name__ == "__main__":

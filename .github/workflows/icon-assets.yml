@@ -17,7 +17,7 @@ jobs:
           key: icon-resvg-0.48.1-${{ runner.os }}-${{ runner.arch }}
       - name: Install pinned asset rasterizer
         run: test -x .deps/icon-tools/bin/resvg || cargo install resvg --version 0.48.1 --locked --root .deps/icon-tools
-      - name: Verify generated masks and manifest byte for byte
+      - name: Verify runtime artifacts byte for byte and contact sheet pixels
         run: python tools/generate_icon_atlas.py --resvg .deps/icon-tools/bin/resvg --verify
       - name: Verify restricted SVG inputs and alpha extraction
         run: python tools/test_icon_assets.py

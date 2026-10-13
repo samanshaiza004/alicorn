@@ -29,6 +29,21 @@ class IconAssets(unittest.TestCase):
         path.write_bytes(icons.png_rgba(2, 2, pixels))
         self.assertEqual(icons.read_alpha(path, 2), bytes([0, 64, 128, 255]))
 
+    def test_contact_sheet_comparison_ignores_png_compression_differences(self):
+        pixels = bytes([18, 18, 18, 255, 225, 225, 225, 255])
+        generated = icons.png_rgba(2, 1, pixels)
+        other_compression = icons.png_rgba(2, 1, pixels, compression_level=1)
+        self.assertNotEqual(generated, other_compression)
+        self.assertEqual(icons.decode_png_rgba(generated), (2, 1, pixels))
+        self.assertTrue(icons.artifact_matches(
+            'assets/icons/generated/contact_sheet.png', generated, other_compression))
+
+    def test_contact_sheet_comparison_still_detects_pixel_changes(self):
+        original = icons.png_rgba(1, 1, bytes([18, 18, 18, 255]))
+        changed = icons.png_rgba(1, 1, bytes([19, 18, 18, 255]))
+        self.assertFalse(icons.artifact_matches(
+            'assets/icons/generated/contact_sheet.png', original, changed))
+
 
 if __name__ == '__main__':
     unittest.main()
