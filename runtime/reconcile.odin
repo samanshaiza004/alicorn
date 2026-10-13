@@ -1128,7 +1128,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.actions)
 	delete(rt.display)
 	delete(rt.display_target)
-	for _, image in rt.images { delete(image.rgba8, rt.persistent_allocator) }
+	for _, image in rt.images { delete(image.rgba8, image.allocator) }
 	delete(rt.images)
 	for _, layers in rt.gpu_surface_images { delete(layers) }
 	delete(rt.gpu_surface_images)

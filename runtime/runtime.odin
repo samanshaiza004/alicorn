@@ -574,8 +574,7 @@ Font_Role :: enum {
 
 // Image_Load_Error is intentionally small and format-independent. Alicorn's
 // built-in byte decoder currently accepts PNG and QOI images with bounded
-// dimensions; applications may decode other formats themselves and later use
-// a future raw-pixel registration API if real use requires it.
+// dimensions. Decoding may run on a worker; adoption remains UI-thread owned.
 Image_Load_Error :: enum {
 	None,
 	Empty_Input,
@@ -591,6 +590,16 @@ Image_Load_Error :: enum {
 Image_Resource :: struct {
 	width, height: int,
 	rgba8:         []u8,
+	allocator:     mem.Allocator,
+}
+
+// Image_Decoded owns straight-alpha RGBA8 pixels independently of a Runtime.
+// Treat it as move-only: destroy it or transfer it once with image_adopt_decoded.
+// Its allocator must remain valid until the resource is released by its owner.
+Image_Decoded :: struct {
+	width, height: int,
+	rgba8: []u8,
+	allocator: mem.Allocator,
 }
 
 Text_Overflow :: enum {

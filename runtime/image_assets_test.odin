@@ -131,3 +131,33 @@ test_font_asset_api_copies_input_and_invalidates_typography :: proc(t: ^testing.
 	testing.expect(t, !font_load_bytes(&rt, .Monospace, bad) && rt.text_engine.font_generation == generation,
 		"invalid replacement bytes should leave the last valid face and generation intact")
 }
+
+@(test)
+test_worker_decoded_image_adoption_transfers_pixels_once :: proc(t: ^testing.T) {
+    encoded := image_asset_test_qoi()
+    decoded, err := image_decode_bytes(encoded[:], context.allocator, context.temp_allocator)
+    testing.expect(t, err == .None && decoded.width == 1, "image should decode without any Runtime")
+    if err != .None { return }
+    defer image_decoded_destroy(&decoded)
+    original := rawptr(&decoded.rgba8[0])
+    rt := new_runtime(Rect{0,0,80,50})
+    defer destroy_runtime(&rt)
+    handle, adopt_error := image_adopt_decoded(&rt, &decoded)
+    pixels, live := image_resolve(&rt, handle)
+    testing.expect(t, adopt_error == .None && live && rawptr(&pixels.rgba8[0]) == original && decoded.rgba8 == nil,
+        "UI adoption should move the worker's buffer without copying or decoding")
+    _, duplicate_error := image_adopt_decoded(&rt, &decoded)
+    testing.expect(t, duplicate_error != .None, "a consumed decoded buffer must not be adopted twice")
+    testing.expect(t, image_release(&rt, handle), "adopted buffer should release using its original allocator")
+}
+
+@(test)
+test_failed_image_adoption_preserves_worker_ownership :: proc(t: ^testing.T) {
+    encoded := image_asset_test_qoi()
+    decoded, err := image_decode_bytes(encoded[:])
+    if err != .None { testing.expect(t, false, "fixture should decode"); return }
+    defer image_decoded_destroy(&decoded)
+    _, adopt_error := image_adopt_decoded(nil, &decoded)
+    testing.expect(t, adopt_error != .None && len(decoded.rgba8) == 4,
+        "failure must leave the buffer available for its worker to destroy")
+}
