@@ -51,6 +51,8 @@ The default output is under `out/native-package/`. It includes the app,
 `alicorn-package.json` with the app/build identity, target architecture,
 SDL/AccessKit versions and licenses, system dependencies, and hashes for the
 executable and bundled native libraries. The result is unsigned.
+Windows packages also include `Windows-Caption-LICENSE.txt`, the notice for
+the Chromium/Electron geometric conventions used by integrated captions.
 
 For shared SDL packaging, use `-SDLLinkage Shared` on Windows or
 `--sdl-linkage shared` on macOS. Shared mode copies SDL beside the Windows EXE

@@ -37,17 +37,41 @@ candidate geometry is translated into window coordinates. Applications do not
 need to know that an integrated title/menu band exists.
 
 Win32 non-client handling asks `DwmDefWindowProc` first for caption-button
-behavior. Caption-control bounds come from `DWMWA_CAPTION_BUTTON_BOUNDS` and are
-split into minimize, maximize, and close rectangles. Those same rectangles
-position the GPU glyphs and return `HTMINBUTTON`, `HTMAXBUTTON`, and `HTCLOSE`;
+behavior. Caption-control bounds come from `DWMWA_CAPTION_BUTTON_BOUNDS` in
+outer-window physical pixels. They are translated into client pixels and split
+into minimize, maximize, and close rectangles with a common visible band. The
+band is at least 32 Windows DIPs high; DWM's negative maximized Y offset cannot
+move the marks above it. The maximized Close target reaches the client edge;
+restored windows reserve an outer resize strip. Those same rectangles position
+the GPU glyphs and return `HTMINBUTTON`, `HTMAXBUTTON`, and `HTCLOSE`;
 DWM receives the caption messages and performs the system actions, including
-Windows 11 Snap Layout for `HTMAXBUTTON`. The host draws its own caption marks
-because SDL_GPU rejects transparent windows on the current D3D12 path. The
-integrated band uses Windows menu surface/text colors, keeps ordinary hover
+Windows 11 Snap Layout for `HTMAXBUTTON`. The host draws its own caption marks.
+SDL_GPU rejects transparent windows; this alone does not establish that an
+AppWindow caption overlay is incompatible with the opaque swapchain. The
+bounded deployment experiment is recorded in
+[Windows caption validation](validation/windows-captions.md).
+The integrated band uses the resolved application menu chrome colors (or
+Windows menu colors when no appearance is supplied), keeps ordinary hover
 neutral, and uses the conventional red close-button hover. High-contrast mode
 uses Windows highlight colors. Caption state changes post one coalesced SDL wake
 so hover and press feedback redraws even while the app loop is waiting. HMENU
 popup surfaces remain OS-drawn.
+
+Caption marks use a common 10-DIP symbol box and rounded physical-pixel stroke
+widths. Windows 11 gets rounded window outlines; Windows 10 gets square ones.
+Restore occludes its rear outline, and Close is geometric rather than a font
+character. Four tiny coverage masks are retained per host and replaced only
+when DPI changes. Their physical output is converted into SDL window units at
+the paint boundary using pixel density, which need not equal Windows DPI scale.
+Title and menu runs refresh on that same effective typography-scale change;
+ordinary resizing does not reshape them. Each label clips to its own allocated
+content box; a truncated title includes an ellipsis. None of this describes
+application nodes or adds an idle tick.
+
+This is the framework-drawn fallback approved for the caption correction. It
+differs from #6's original system-owned-pixels/non-redrawing goal. #6 must remain
+open until that scope is reconciled and the outstanding manual Windows checks
+are recorded. `System` decorations continue to use OS-owned caption pixels.
 
 Windows menu navigation keeps the system-menu shortcut separate: Alt+Space
 continues to open the native system menu. Alt+F/E/V opens the matching
@@ -97,6 +121,15 @@ The fixture includes File, Edit, View, and Help; a nested recent-items menu; a
 separator; disabled and checked items; and Ctrl shortcuts. Its callback prints
 the semantic command ID and invocation count. `--menu-fixture-smoke` initializes
 the host and exits after the normal three-second smoke interval.
+
+`tools/validate_captions.ps1` additionally checks real D3D12 pixels and writes
+restored/maximized caption captures at four DPIs under `out/caption-fixtures/`.
+It tests Windows 10/11 marks, both SDL pixel-density conventions, narrow titles,
+active/inactive, hover/pressed and high-contrast paint policy. A live SDL HWND
+then exercises restore/maximize/restore, chained caption hit tests, and monitor
+work-area bounds at the current desktop DPI. The synthetic scale and contrast
+cases are renderer tests, not evidence of physical monitor or OS contrast
+transitions. See the linked validation record for limits and remaining checks.
 
 Validation record (2026-10-02): the project owner manually verified on macOS
 that AppKit menu commands activate, keyboard shortcuts dispatch, IME works,

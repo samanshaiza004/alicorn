@@ -42,17 +42,13 @@ test_system_window_without_menus_needs_no_gpu_chrome_state :: proc(t: ^testing.T
 
 @(test)
 test_integrated_frame_screen_conversion_handles_negative_monitor_coordinates :: proc(t: ^testing.T) {
-	x, y := win32_screen_point_to_window_logical(-1500, -200, -1600, -300, 96)
+	x, y := win32_screen_point_to_client_pixels(-1500, -200, -1600, -300)
 	testing.expect(t, x == 100 && y == 100,
 		"signed screen coordinates on a monitor left/above the primary display should map to positive window coordinates")
 
-	x, y = win32_screen_point_to_window_logical(150, 300, 0, 0, 144)
-	testing.expect(t, x == 100 && y == 200,
-		"150 percent DPI should convert physical screen pixels to logical coordinates")
-
-	x, y = win32_screen_point_to_window_logical(200, 400, 0, 0, 192)
-	testing.expect(t, x == 100 && y == 200,
-		"200 percent DPI should convert physical screen pixels to logical coordinates")
+	x, y = win32_screen_point_to_client_pixels(150, 301, 0, 300)
+	testing.expect(t, x == 150 && y == 1,
+		"physical hit coordinates must preserve one-pixel resize boundaries at fractional DPI")
 }
 
 @(test)
@@ -66,12 +62,12 @@ test_integrated_frame_leaves_bare_f10_for_devtools :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_caption_button_bounds_convert_to_client_logical_coordinates :: proc(t: ^testing.T) {
+test_caption_button_bounds_convert_to_client_physical_coordinates :: proc(t: ^testing.T) {
 	window_bounds := win.RECT{left=1380, top=0, right=1515, bottom=40}
 	window_rect := win.RECT{left=-1500, top=400, right=300, bottom=1400}
-	got := win32_caption_bounds_to_client_logical(window_bounds, window_rect, -1500, 400, 144)
-	testing.expect(t, got.left == 920 && got.top == 0 && got.right == 1010 && got.bottom == 26,
-		"DWM window-relative bounds should map to client logical coordinates at 150 percent DPI")
+	got := win32_caption_bounds_to_client_pixels(window_bounds, window_rect, -1492, 408)
+	testing.expect(t, got.left == 1372 && got.top == -8 && got.right == 1507 && got.bottom == 32,
+		"DWM outer-frame offsets should translate to physical client pixels without DPI rounding")
 }
 
 @(test)
@@ -98,27 +94,40 @@ test_caption_control_geometry_is_shared_by_draw_and_hit_testing :: proc(t: ^test
 }
 
 @(test)
-test_close_caption_backplate_bleeds_to_edge_without_expanding_hit_target :: proc(t: ^testing.T) {
-	close_hit_bounds := win.RECT{left=1100, top=0, right=1192, bottom=32}
-	close_visual := win32_caption_control_visual_rect(close_hit_bounds, 2, 1200, 32)
-	controls := [3]Win32_Caption_Control{
-		{},
-		{},
-		{bounds=close_hit_bounds, hit_test=win.LRESULT(win.HTCLOSE)},
+test_caption_band_normalizes_maximized_dwm_offsets_and_shares_hit_bounds :: proc(t: ^testing.T) {
+	dpis := [4]u32{96,120,144,192}
+	states := [2]bool{false,true}
+	densities := [2]f32{1,2}
+	for dpi in dpis {
+		scale := f32(dpi)/96
+		width := i32(native_pixel_edge(1200, scale))
+		height := i32(native_pixel_edge(32, scale))
+		edge := i32(native_pixel_edge(8, scale))
+		raw := win.RECT{win.LONG(width-i32(native_pixel_edge(138,scale))-edge), -win.LONG(edge), win.LONG(width-edge), win.LONG(height-edge)}
+		for maximized in states {
+			controls := win32_caption_layout_controls(raw, true, width, height, dpi, maximized)
+			for control, i in controls {
+				testing.expect(t, control.bounds.top == (0 if maximized else 1) && control.bounds.bottom == win.LONG(height),
+					"all caption controls must share the visible band even when DWM reports negative Y")
+				x := i32((control.bounds.left+control.bounds.right)/2)
+				y := i32((control.bounds.top+control.bounds.bottom)/2)
+				testing.expect_value(t, win32_integrated_frame_hit_test(x,y,width,800,height,edge,edge,maximized,controls[:],nil), control.hit_test)
+				for density in densities {
+					visual := win32_chrome_rect_to_window(control.bounds,density)
+					x0,y0,x1,y1 := logical_to_pixel_bounds(visual,density,density)
+					testing.expect(t, x0 == int(control.bounds.left) && y0 == int(control.bounds.top) && x1 == int(control.bounds.right) && y1 == int(control.bounds.bottom),
+						"paint must round-trip to canonical physical hit geometry independently of SDL density")
+				}
+				if i == 2 && maximized {
+					testing.expect_value(t, win32_integrated_frame_hit_test(width-1,0,width,800,height,edge,edge,true,controls[:],nil), win.LRESULT(win.HTCLOSE))
+				}
+			}
+			if !maximized {
+				testing.expect_value(t, win32_integrated_frame_hit_test(width-1,height/2,width,800,height,edge,edge,false,controls[:],nil), win.LRESULT(win.HTRIGHT))
+				testing.expect_value(t, win32_integrated_frame_hit_test(width-edge-20,0,width,800,height,edge,edge,false,controls[:],nil), win.LRESULT(win.HTTOP))
+			}
+		}
 	}
-	hit_stays_inside_dwm_bounds := win32_integrated_frame_hit_test(
-		1190, 16, 1200, 800, 32, 8, 8, false, controls[:], nil) == win.LRESULT(win.HTCLOSE)
-	right_edge_keeps_resize_behavior := win32_integrated_frame_hit_test(
-		1195, 16, 1200, 800, 32, 8, 8, false, controls[:], nil) == win.LRESULT(win.HTRIGHT)
-	maximized_edge_remains_caption := win32_integrated_frame_hit_test(
-		1195, 16, 1200, 800, 32, 8, 8, true, controls[:], nil) == win.LRESULT(win.HTCAPTION)
-	hit_center := (f32(close_hit_bounds.left)+f32(close_hit_bounds.right))/2
-	glyph_center := close_visual.x+close_visual.w/2
-	geometry_is_split := close_hit_bounds.right == 1192 && close_visual.x == f32(close_hit_bounds.left) &&
-		close_visual.x+close_visual.w == 1200 && close_visual.y == 0 && close_visual.h == 32 &&
-		hit_center == 1146 && glyph_center == 1150
-	testing.expect(t, geometry_is_split && hit_stays_inside_dwm_bounds && right_edge_keeps_resize_behavior && maximized_edge_remains_caption,
-		"the close glyph should center in its full-bleed visual bounds while hit testing retains DWM's narrower rectangle")
 }
 
 @(test)
