@@ -126,6 +126,12 @@ scroll_bar_geometry :: proc(
 }
 
 intrinsic_main :: proc(rt: ^Runtime, node: ^Node, direction: Layout_Direction) -> f32 {
+	// Images have intrinsic geometry on both axes. They should not be expanded
+	// to the parent's cross size the way ordinary content nodes are.
+	if node.kind == .Image {
+		intrinsic := layout_measure_intrinsic_size(rt, node)
+		return layout_unit_to_f32(intrinsic.width if direction == .Row else intrinsic.height)
+	}
 	state := rt.measure_states[node.id]
 	if state.cache_key.valid {
 		if direction == .Row && node.style.width >= 0 { return node.style.width }
@@ -396,6 +402,10 @@ layout_effective_writing_direction :: proc(rt: ^Runtime, node: ^Node) -> Writing
 
 layout_child_cross_size :: proc(rt: ^Runtime, parent, child: ^Node, cross_size: f32) -> f32 {
 	if parent.style.direction == .Row {
+		if child.kind == .Image {
+			intrinsic := layout_measure_intrinsic_size(rt, child)
+			return clampf(layout_unit_to_f32(intrinsic.height), child.style.min_height, child.style.max_height)
+		}
 		cross := child.style.height if child.style.height >= 0 else cross_size
 		if layout_node_has_content_height(child) {
 			if state, ok := rt.measure_states[child.id]; ok && state.cache_key.valid {
@@ -403,6 +413,10 @@ layout_child_cross_size :: proc(rt: ^Runtime, parent, child: ^Node, cross_size: 
 			}
 		}
 		return clampf(cross, child.style.min_height, child.style.max_height)
+	}
+	if child.kind == .Image {
+		intrinsic := layout_measure_intrinsic_size(rt, child)
+		return clampf(layout_unit_to_f32(intrinsic.width), child.style.min_width, child.style.max_width)
 	}
 	cross := child.style.width if child.style.width >= 0 else cross_size
 	return clampf(cross, child.style.min_width, child.style.max_width)

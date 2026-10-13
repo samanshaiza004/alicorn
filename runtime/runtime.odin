@@ -59,6 +59,7 @@ Node_Kind :: enum {
 	Split,
 	Split_Handle,
 	Custom_Surface,
+	Image,
 }
 
 // Visual parts describe the meaning of retained presentation nodes without
@@ -571,6 +572,27 @@ Font_Role :: enum {
 	Monospace,
 }
 
+// Image_Load_Error is intentionally small and format-independent. Alicorn's
+// built-in byte decoder currently accepts PNG and QOI images with bounded
+// dimensions; applications may decode other formats themselves and later use
+// a future raw-pixel registration API if real use requires it.
+Image_Load_Error :: enum {
+	None,
+	Empty_Input,
+	Input_Too_Large,
+	Unsupported_Format,
+	Invalid_Header,
+	Dimensions_Too_Large,
+	Decode_Failed,
+	Unsupported_Pixel_Format,
+	Resource_Limit,
+}
+
+Image_Resource :: struct {
+	width, height: int,
+	rgba8:         []u8,
+}
+
 Text_Overflow :: enum {
 	Wrap,
 	Clip,
@@ -1037,7 +1059,7 @@ Description :: struct {
 	text_style:  Text_Style,
 	style_environment: Style_Environment_Core,
 	style_scope_boundary: bool,
-	layout_boundary: bool,
+	layout_boundary_axes: Layout_Axes,
 	adaptive_owner: bool,
 	adaptive_alternative: bool,
 	adaptive_min_width: f32,
@@ -1148,7 +1170,7 @@ Node :: struct {
 	text_style:  Text_Style,
 	style_environment: Style_Environment,
 	style_scope_boundary: bool,
-	layout_boundary: bool,
+	layout_boundary_axes: Layout_Axes,
 	adaptive_owner: bool,
 	adaptive_alternative: bool,
 	adaptive_min_width: f32,
@@ -1694,6 +1716,9 @@ Runtime :: struct {
 	display:     [dynamic]Paint_Command,
 	display_target: [dynamic]Paint_Command,
 	paint_resource_generation: u64,
+	images: map[u64]Image_Resource,
+	image_resource_sequence: u64,
+	gpu_surface_images: map[Node_ID][dynamic]GPU_Surface_Image,
 	text_engine: Text_Engine,
 	text_font_generation_seen: u64,
 	surface_frame_pending: bool,

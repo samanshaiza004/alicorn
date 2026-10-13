@@ -2,6 +2,7 @@ package alicorn
 
 import "core:testing"
 import "core:math"
+import "core:strings"
 
 LAYOUT_MEASURE_TEST_FONT :: #load("../assets/fonts/AtkinsonHyperlegibleNext-Variable.ttf")
 
@@ -132,6 +133,89 @@ test_scoped_text_measure_reflows_inside_explicit_layout_boundary :: proc(t: ^tes
 		"text scale should reshape and change the editor's measured height")
 	testing.expect(t, rt.layout_visit_probe[editor] > 0 && rt.layout_visit_probe[sidebar] == 0,
 		"the editor layout boundary should contain the reflow and leave its sibling unvisited")
+}
+
+layout_measure_test_describe_axis_scoped_text :: proc(rt: ^Runtime, scale: f32) -> (panel, sibling: Node_ID) {
+	invalidate_root(rt, "axis-scoped layout boundary fixture")
+	ui, build := begin_frame(rt)
+	if !build { return }
+	container_begin(&ui, .Root, key=key_string("axis-boundary-root"), style=layout_style(.Column, width=240, height=160))
+	panel = container_begin(
+		&ui,
+		.Container,
+		key=key_string("axis-boundary-panel"),
+		style=layout_style(.Column, width=120, height=LAYOUT_SIZE_FIT_CONTENT),
+		layout_boundary_axes={.Width},
+	)
+	scope := style_environment_push(&ui, Style_Environment{text_scale=scale})
+	text_field(&ui, "A wrapped editor line whose measured height grows with text scale", key=key_string("axis-boundary-editor"), style=layout_style(width=110))
+	style_environment_pop(&ui, scope)
+	container_end(&ui)
+	sibling = text(&ui, "Sibling", key=key_string("axis-boundary-sibling"), style=layout_style(width=100, height=24))
+	container_end(&ui)
+	end_frame(&ui)
+	return
+}
+
+@(test)
+test_axis_scoped_layout_boundary_allows_fit_content_height_to_escape :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 160}, Runtime_Config{trace_capacity=32})
+	defer destroy_runtime(&rt)
+	testing.expect(t, text_engine_load_font(&rt.text_engine, LAYOUT_MEASURE_TEST_FONT), "axis-boundary fixture font should load")
+	panel, sibling := layout_measure_test_describe_axis_scoped_text(&rt, 1)
+	if panel == 0 || sibling == 0 { testing.expect(t, false, "axis-boundary fixture should be retained"); return }
+	if rt.nodes[panel].layout_boundary_axes != {.Width} {
+		testing.expect(t, false, "axis-selective boundary API should retain only the requested width axis")
+		return
+	}
+	old_height := rt.nodes[panel].bounds.h
+	rt.layout_visit_probe[panel] = 0
+	rt.layout_visit_probe[sibling] = 0
+	next_panel, next_sibling := layout_measure_test_describe_axis_scoped_text(&rt, 1.5)
+	if next_panel != panel || next_sibling != sibling { testing.expect(t, false, "text scale should preserve fixture identities"); return }
+	testing.expect(t, rt.nodes[panel].bounds.h > old_height,
+		"the auto-height boundary should adopt the larger wrapped-text measurement")
+	testing.expect(t, rt.layout_visit_probe[panel] > 0 && rt.layout_visit_probe[sibling] > 0,
+		"height invalidation must escape a width-only boundary and refresh ancestor placement")
+}
+
+@(test)
+test_fit_content_boundary_axis_is_not_claimed_stable :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 160}, Runtime_Config{trace_capacity=32})
+	defer destroy_runtime(&rt)
+	root := new(Node, allocator=rt.persistent_allocator)
+	root.id = 7901
+	root.kind = .Root
+	root.active = true
+	root.layout_boundary_axes = {.Width, .Height}
+	rt.nodes[root.id] = root
+	boundary := new(Node, allocator=rt.persistent_allocator)
+	boundary.id = 7902
+	boundary.parent = root.id
+	boundary.kind = .Container
+	boundary.active = true
+	boundary.style.height = LAYOUT_SIZE_FIT_CONTENT
+	boundary.layout_boundary_axes = {.Width, .Height}
+	rt.nodes[boundary.id] = boundary
+	child := new(Node, allocator=rt.persistent_allocator)
+	child.id = 7903
+	child.parent = boundary.id
+	child.kind = .Text
+	child.active = true
+	rt.nodes[child.id] = child
+
+	mark_layout_ancestors(&rt, child.id, {.Height})
+	root_dirty := dirty_has(root.dirty, .Layout)
+	boundary_queued := boundary.layout_root_queued
+	found_unstable_trace := false
+	for event in rt.trace.events {
+		if event.kind == .Invalidation && strings.contains(event.reason, "cannot contain") && strings.contains(event.reason, "FIT_CONTENT") {
+			found_unstable_trace = true
+		}
+	}
+	testing.expect(t, root_dirty && !boundary_queued,
+		"FIT_CONTENT height must continue to the ancestor instead of becoming a local boundary root")
+	testing.expect(t, found_unstable_trace, "trace should explain that FIT_CONTENT makes the boundary height unstable")
 }
 
 @(test)

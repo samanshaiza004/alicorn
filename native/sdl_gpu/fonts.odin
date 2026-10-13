@@ -44,13 +44,17 @@ native_load_optional_fallback_font :: proc(rt: ^alicorn.Runtime, role: alicorn.F
 }
 
 native_load_default_fonts :: proc(rt: ^alicorn.Runtime) -> bool {
-	if !alicorn.text_engine_load_font(&rt.text_engine, NATIVE_UI_FONT_DATA) { return false }
-	if !alicorn.text_engine_load_font_role(&rt.text_engine, .Monospace, NATIVE_MONO_FONT_DATA) { return false }
-	if !alicorn.text_engine_load_italic_font_role(&rt.text_engine, .UI, NATIVE_UI_ITALIC_FONT_DATA) { return false }
-	if !alicorn.text_engine_load_italic_font_role(&rt.text_engine, .Monospace, NATIVE_MONO_ITALIC_FONT_DATA) { return false }
+	if !rt.text_engine.font_loaded && !alicorn.text_engine_load_font(&rt.text_engine, NATIVE_UI_FONT_DATA) { return false }
+	if !rt.text_engine.monospace_font_loaded && !alicorn.text_engine_load_font_role(&rt.text_engine, .Monospace, NATIVE_MONO_FONT_DATA) { return false }
+	if !rt.text_engine.italic_font_loaded && !rt.text_engine.application_primary_font[.UI] && !alicorn.text_engine_load_italic_font_role(&rt.text_engine, .UI, NATIVE_UI_ITALIC_FONT_DATA) { return false }
+	if !rt.text_engine.monospace_italic_font_loaded && !rt.text_engine.application_primary_font[.Monospace] && !alicorn.text_engine_load_italic_font_role(&rt.text_engine, .Monospace, NATIVE_MONO_ITALIC_FONT_DATA) { return false }
 	// System faces are optional, script-oriented fallbacks; they do not alter
 	// the bundled primary typography for text the default face can render.
-	_ = native_load_optional_fallback_font(rt, .UI, native_ui_fallback_font_path())
-	_ = native_load_optional_fallback_font(rt, .Monospace, native_monospace_fallback_font_path())
+	if !rt.text_engine.fallback_font_loaded && !rt.text_engine.application_fallback_font[.UI] {
+		_ = native_load_optional_fallback_font(rt, .UI, native_ui_fallback_font_path())
+	}
+	if !rt.text_engine.monospace_fallback_font_loaded && !rt.text_engine.application_fallback_font[.Monospace] {
+		_ = native_load_optional_fallback_font(rt, .Monospace, native_monospace_fallback_font_path())
+	}
 	return true
 }

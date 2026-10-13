@@ -209,7 +209,7 @@ compose_subtree :: proc(rt: ^Runtime, id: Node_ID) {
 	node.display_index = -1
 	for cached_command in node.paint {
 		command := cached_command
-		command.opacity = drag_source_opacity(rt, node.id)
+		command.opacity *= drag_source_opacity(rt, node.id)
 		if node.display_index < 0 { node.display_index = len(rt.display_target) }
 		append(&rt.display_target, command)
 		rt.stats.composition_nodes_visited += 1
@@ -518,11 +518,28 @@ update_paint :: proc(rt: ^Runtime) {
 				append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, handle_color))
 			} else if node.kind == .Custom_Surface {
 				// Waveforms retain their backing surface as an ordinary paint
-				// primitive. Geometry remains transparent unless it supplies fills.
+				// primitive. Image layers paint above that background and below
+				// app-authored geometry; geometry remains transparent unless it
+				// supplies fills.
 				if node.surface_kind == .Waveform {
 					append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, Color{0.08, 0.14, 0.24, 1}))
 				}
+				if layers, found := rt.gpu_surface_images[node.id]; found {
+					surface_clip := rect_intersection(node.clip, node.bounds)
+					for layer in layers {
+						if _, image_ok := image_resolve(rt, layer.image); !image_ok { continue }
+						bounds := Rect{node.bounds.x+layer.bounds.x, node.bounds.y+layer.bounds.y, layer.bounds.w, layer.bounds.h}
+						clip := rect_intersection(surface_clip, bounds)
+						if clip.w <= 0 || clip.h <= 0 { continue }
+						append(&node.paint, paint_image_command(node.id, bounds, clip, layer.image, opacity=layer.opacity))
+					}
+				}
 				append(&node.paint, paint_geometry_command(node.id, node.bounds, node.clip, paint_geometry_handle_for_node(node)))
+			} else if node.kind == .Image {
+				image_handle := Image_Handle(node.paint_value)
+				if _, image_ok := image_resolve(rt, image_handle); image_ok {
+					append(&node.paint, paint_image_command(node.id, node.bounds, node.clip, image_handle))
+				}
 			} else {
 				text_clip := node.clip
 				text_bounds := node.bounds

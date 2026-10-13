@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "contract": "0.1",
+  "tokens": {
+    "compat.ink": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.12, 0.18, 0.24], "alpha": 1}
+    }
+  },
+  "roles": {"extensions": {"app.scratchpad.state": {"$type": "color", "$value": "{compat.ink}"}}}
+}

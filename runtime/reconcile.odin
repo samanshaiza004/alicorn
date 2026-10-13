@@ -239,7 +239,9 @@ layout_hash :: proc(d: Description) -> u64 {
 		style_input.max_height = -1
 	}
 	h := hash_mix(hash_style(style_input), u64(d.parent))
-	h = hash_mix(h, u64(d.layout_boundary ? 1 : 0))
+	for axis in Layout_Axis {
+		h = hash_mix(h, u64(axis in d.layout_boundary_axes ? 1 : 0))
+	}
 	h = hash_mix(h, u64(d.adaptive_owner ? 1 : 0))
 	h = hash_mix(h, u64(d.adaptive_alternative ? 1 : 0))
 	h = hash_mix(h, u64(transmute(u32)d.adaptive_min_width))
@@ -483,7 +485,7 @@ copy_node_description :: proc(
 	node.text_style = d.text_style
 	node.style_environment = next_style_environment
 	node.style_scope_boundary = d.style_scope_boundary
-	node.layout_boundary = d.layout_boundary
+	node.layout_boundary_axes = d.layout_boundary_axes
 	node.adaptive_owner = d.adaptive_owner
 	node.adaptive_alternative = d.adaptive_alternative
 	node.adaptive_min_width = d.adaptive_min_width
@@ -641,18 +643,37 @@ invalidate_interaction_paint :: proc(rt: ^Runtime, id: Node_ID, reason := "inter
 	record_trace(rt, .Invalidation, id, reason)
 }
 
-mark_layout_ancestors :: proc(rt: ^Runtime, id: Node_ID) {
+mark_layout_ancestors :: proc(rt: ^Runtime, id: Node_ID, changed_axes: Layout_Axes = {.Width, .Height}) {
+	if rt == nil || id == 0 { return }
 	rt.layout_pending = true
 	current := id
 	scope_root := Node_ID(0)
+	remaining_axes := changed_axes
+	record_trace(rt, .Invalidation, id, fmt.tprintf("layout invalidation starts on axes %v", remaining_axes))
 	for current != 0 {
 		node, ok := rt.nodes[current]
 		if !ok { break }
 		dirty_set(&node.dirty, .Layout, true)
 		dirty_set(&node.dirty, .Composite, true)
-		if node.layout_boundary {
-			scope_root = current
-			break
+		if current != id {
+			record_trace(rt, .Invalidation, current, fmt.tprintf("layout invalidation propagated from node %d on axes %v", id, remaining_axes))
+		}
+		boundary_axes := layout_boundary_stable_axes(node)
+		contained_axes := layout_axes_intersection(remaining_axes, boundary_axes)
+		if contained_axes != {} {
+			remaining_axes = layout_axes_difference(remaining_axes, contained_axes)
+			if remaining_axes == {} {
+				scope_root = current
+				record_trace(rt, .Invalidation, current, fmt.tprintf("layout boundary stops axes %v; its requested outer dimensions are stable", contained_axes))
+				break
+			}
+			record_trace(rt, .Invalidation, current, fmt.tprintf("layout boundary contains axes %v; axes %v escape to ancestors", contained_axes, remaining_axes))
+		} else {
+			for axis in Layout_Axis {
+				if axis in remaining_axes && axis in node.layout_boundary_axes && !(axis in boundary_axes) {
+					record_trace(rt, .Invalidation, current, fmt.tprintf("layout boundary cannot contain %v because that outer dimension uses FIT_CONTENT", axis))
+				}
+			}
 		}
 		current = node.parent
 	}
@@ -690,6 +711,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	if !ok { return }
 	if rt.tooltip.target == id { tooltip_dismiss(rt) }
 	delete_key(&rt.computed_styles, id)
+	gpu_surface_image_layers_destroy(rt, id)
 	delete_key(&rt.semantic_surfaces, id)
 	delete_key(&rt.visual_parts, id)
 	delete_key(&rt.semantic_tree_orders, id)
@@ -1106,6 +1128,10 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.actions)
 	delete(rt.display)
 	delete(rt.display_target)
+	for _, image in rt.images { delete(image.rgba8, rt.persistent_allocator) }
+	delete(rt.images)
+	for _, layers in rt.gpu_surface_images { delete(layers) }
+	delete(rt.gpu_surface_images)
 	text_engine_destroy(&rt.text_engine)
 	if rt.scratch_arena != nil {
 		mem.dynamic_arena_destroy(rt.scratch_arena)

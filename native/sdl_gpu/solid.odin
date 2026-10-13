@@ -18,6 +18,7 @@ Native_Solid_Draw :: struct {
 
 Native_Solid_Renderer :: struct {
 	icons: Native_Icon_Renderer,
+	images: Native_Image_Renderer,
 	device:          ^sdl3.GPUDevice,
 	runtime:         ^alicorn.Runtime,
 	pipeline:        ^sdl3.GPUGraphicsPipeline,
@@ -101,6 +102,9 @@ native_solid_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTex
 	icon_ok := false
 	renderer.icons, icon_ok = native_icon_make(device, swapchain_format, runtime)
 	if !icon_ok { return renderer, false }
+	image_ok := false
+	renderer.images, image_ok = native_image_make(device, swapchain_format, runtime)
+	if !image_ok { return renderer, false }
 	return renderer, true
 }
 
@@ -137,6 +141,7 @@ native_solid_ensure_vertex_capacity :: proc(renderer: ^Native_Solid_Renderer, re
 }
 
 native_solid_destroy :: proc(renderer: ^Native_Solid_Renderer) {
+	native_image_destroy(&renderer.images)
 	native_icon_destroy(&renderer.icons)
 	if renderer.vertex_transfer != nil { sdl3.ReleaseGPUTransferBuffer(renderer.device, renderer.vertex_transfer) }
 	if renderer.vertex_buffer != nil { sdl3.ReleaseGPUBuffer(renderer.device, renderer.vertex_buffer) }
@@ -395,4 +400,6 @@ native_solid_render_batch :: proc(
 native_solid_commit_submission :: proc(renderer: ^Native_Solid_Renderer) {
 	renderer.icons.upload_pending = false
 	renderer.upload_pending = false
+	renderer.images.upload_pending = false
+	native_image_commit_submission(&renderer.images)
 }
