@@ -15,6 +15,7 @@ Paint_Command :: struct {
 Paint_Payload :: union #no_nil {
 	Surface_Paint,
 	Icon_Paint,
+	Image_Paint,
 	Text_Paint,
 	Geometry_Paint,
 }
@@ -107,6 +108,19 @@ Geometry_Handle :: struct {
 	generation: u64,
 }
 
+// Image_Handle is a monotonically allocated Runtime-local resource ID. IDs
+// are never reused during a Runtime lifetime, so a released handle stays stale.
+Image_Handle :: distinct u64
+
+Image_Pixels_View :: struct {
+	width, height: int,
+	rgba8:         []u8,
+}
+
+Image_Paint :: struct {
+	image: Image_Handle,
+}
+
 Geometry_Paint :: struct {
 	geometry: Geometry_Handle,
 }
@@ -192,6 +206,23 @@ paint_geometry_command :: proc(
 	}
 }
 
+paint_image_command :: proc(
+	owner: Node_ID,
+	bounds, clip: Rect,
+	image: Image_Handle,
+	opacity: f32 = 1,
+	translation: [2]f32 = {},
+) -> Paint_Command {
+	return Paint_Command{
+		owner=owner,
+		bounds=bounds,
+		clip=clip,
+		opacity=opacity,
+		translation=translation,
+		payload=Image_Paint{image},
+	}
+}
+
 paint_command_is_surface :: proc(command: Paint_Command) -> bool {
 	_, ok := command.payload.(Surface_Paint)
 	return ok
@@ -209,6 +240,11 @@ paint_command_is_icon :: proc(command: Paint_Command) -> bool {
 
 paint_command_is_geometry :: proc(command: Paint_Command) -> bool {
 	_, ok := command.payload.(Geometry_Paint)
+	return ok
+}
+
+paint_command_is_image :: proc(command: Paint_Command) -> bool {
+	_, ok := command.payload.(Image_Paint)
 	return ok
 }
 

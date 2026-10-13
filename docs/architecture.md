@@ -93,8 +93,14 @@ container opts into local layout invalidation with `layout_boundary=true` when
 its parent-assigned bounds can remain stable. Measurement invalidation alone
 does not propagate layout; the runtime compares retained measure results and
 propagates changed output axes through the parent's placement dependencies.
-The current `layout_boundary=true` contract is full containment: the boundary
-keeps its parent-assigned outer geometry stable while its contents relayout.
+`layout_boundary=true` remains the source-compatible shorthand for containing
+both axes. Use `layout_boundary_axes={.Width}` or `{.Height}` when only one
+outer dimension is stable. A boundary only contains axes declared by the
+caller; an axis using `LAYOUT_SIZE_FIT_CONTENT` always propagates because its
+outer extent depends on its children. Layout traces identify changed axes,
+each ancestor visited, and whether a boundary stopped or passed the
+invalidation onward. A full boundary is a caller promise that both
+parent-assigned outer dimensions stay stable while descendants relayout.
 `Parent_Size_Dependencies` records the child-output-to-parent-output mapping,
 and opt-in content sizing now consumes that contract for Column containers and
 Scroll_Region viewports. `LAYOUT_SIZE_FIT_CONTENT` requests a measured height
@@ -103,17 +109,16 @@ applies min/max and parent constraints. It does not change ordinary `-1`
 allocation or recursively derive preferred sizes for arbitrary nested
 containers. A content-sized Scroll_Region caps its viewport and keeps its full
 logical extent for internal scrolling. Parent size propagation remains
-axis-mapped; layout boundaries are still full-containment promises rather than
-per-axis boundaries.
+axis-mapped; boundaries stop only declared stable axes.
 
 Grid (#26) is a bounded two-dimensional consumer of the same allocator. It
 uses explicit Fixed, Auto, Fraction, and MinMax tracks, direct-child cell
 placement, spans, and logical alignment. Its staged path allocates columns,
 remeasures width-dependent children, then allocates rows and places them; it
 has no open-ended convergence pass. Track/span decisions are available in the
-Layout trace. A Grid can opt into the existing full-containment
-`layout_boundary=true` contract when its parent-assigned outer bounds remain
-stable; child reflow then stays inside the Grid. Automatic placement,
+Layout trace. A Grid can opt into `layout_boundary=true` when both
+parent-assigned outer bounds remain stable, or use `layout_boundary_axes` to
+contain only stable dimensions. Automatic placement,
 content-sized outer Grids, and arbitrary cyclic sizing remain unsupported.
 `style_metric` leaves the meaning and use of each dimension with the
 application. This is explicit dependency tracking, not a general cascade or
@@ -246,9 +251,13 @@ rectangular relief into bounded ordinary vertices; optical height never affects
 layout or stacking order. Analytic relief uses a fixed upper-left light and
 scales/reverses edge shading with signed physical height. Flat materials and
 zero-height surfaces emit the same single quad as ordinary solid paint; they
-need no auxiliary buffer, blur, compute pass, or continuing redraw. Image paint
-is deferred until Alicorn defines its image resource lifetime and upload
-contract. Applications author semantic widgets and host integrations; the
+need no auxiliary buffer, blur, compute pass, or continuing redraw. Application
+images decode into Runtime-owned RGBA8 resources and enter the same ordered
+retained paint stream as surfaces, icons, text, and geometry. The SDL_GPU host
+uploads a visible image on first use, caches its texture for that device, and
+recreates it from Runtime pixels after device recreation. Image pixels remain
+owned by the Runtime until the application releases the handle or destroys the
+Runtime. Applications author semantic widgets and host integrations; the
 generic paint payload union is an internal renderer boundary, not a replacement
 UI authoring API.
 

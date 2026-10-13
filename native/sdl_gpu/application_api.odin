@@ -113,6 +113,11 @@ Application_Build_Proc :: proc(
 	dpi_scale: f32,
 ) -> alicorn.Node_ID
 
+// Application_Initialize_Proc runs on the application thread after Runtime
+// creation and before host-default fonts and renderer resources initialize.
+// It is the intended place to install embedded or disk-loaded font roles.
+Application_Initialize_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
+
 Application_Text_Change_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, change: alicorn.Text_Change)
 
 Application_Text_Input_Event_Kind :: enum { Commit, Preedit, Cancel }
@@ -268,6 +273,7 @@ Application :: struct {
 	window_decorations: Window_Decoration_Mode,
 	// Optional theme-resolved appearance for host-owned integrated chrome.
 	window_chrome_appearance: Application_Chrome_Appearance_Proc,
+	on_initialize:      Application_Initialize_Proc,
 	build:              Application_Build_Proc,
 	on_text_change:     Application_Text_Change_Proc,
 	on_text_input:      Application_Text_Input_Proc,

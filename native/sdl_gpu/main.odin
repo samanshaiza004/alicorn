@@ -90,6 +90,7 @@ Run :: proc(application: Application, smoke := false) {
 	if !sdl3.SetGPUAllowedFramesInFlight(device, 2) { fail("SDL_SetGPUAllowedFramesInFlight failed") }
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, f32(metrics.logical_width), f32(metrics.logical_height)})
 	defer alicorn.destroy_runtime(&rt)
+	if application.on_initialize != nil { application.on_initialize(application.state, &rt) }
 	if !native_load_default_fonts(&rt) { fail("application bundled Runa fonts could not be initialized") }
 	text_renderer, text_ok := native_text_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
 	if !text_ok { fail("application GPU text pipeline initialization failed") }

@@ -19,6 +19,14 @@ to do. Optional callbacks handle text changes, keys, pointer/scroll input,
 drag/drop transitions, scheduled wakes, dialogs, worker wakeups, and lifecycle
 events.
 
+`Application.on_initialize` is called after Runtime creation and before the
+host's default font faces and GPU renderers initialize. Use it for
+`font_load_bytes`, `font_load_italic_bytes`, and `font_load_fallback_bytes`.
+Each font call copies and validates the bytes before replacing a face; the
+application thread owns subsequent font changes. A successful replacement
+invalidates shaping products and glyph residency. The application is
+responsible for the font's license and redistribution terms.
+
 `on_pointer` receives a platform-neutral `Pointer_Event` with the pointer kind,
 logical window coordinates, button number, `Input_Modifiers`, and a native
 `click_count`. The modifier flags describe the host's best event-time keyboard
@@ -90,6 +98,11 @@ error and its correction hint.
 | API | Use |
 | --- | --- |
 | `text` | Emit a text label. |
+| `image` | Emit a retained, noninteractive image with intrinsic dimensions, optional logical sizing, and optional alternate text. |
+| `image_load_bytes` / `image_release` | Decode PNG or QOI into Runtime-owned RGBA8 pixels, then release a Runtime-local handle after its widgets or surface layers are removed. |
+| `GPU_Surface_Image` / `gpu_surface_image` / `gpu_surface_update_images` | Retain up to 256 Runtime-owned image handles as surface-local layers above the background and below custom geometry. |
+| `Image_Handle` / `Image_Load_Error` | Identify a retained image resource and report bounded decode failures. |
+| `font_load_bytes` / `font_load_italic_bytes` / `font_load_fallback_bytes` | Install app-owned fonts by `Font_Role`; the host keeps defaults for faces not supplied. |
 | `button` | Emit an interactive button; returns `bool` when activated. |
 | `checkbox` | Emit a controlled checkbox; returns `{value, changed}`. |
 | `slider_f32` | Emit a controlled horizontal `f32` slider; returns `{value, changed}`. |
@@ -99,12 +112,12 @@ error and its correction hint.
 | `node_info` / `node_identity_key` / `node_by_key` | Read a node's geometry, interaction state, scroll metrics, and explicit identity. |
 | `text_node_line_geometry` / `text_node_hit_test_line` | Query retained visual-line geometry and hit-test without exposing its shaped run. |
 | `runtime_text_run_build` | Shape temporary application text through Alicorn's retained text engine without exposing the engine. |
-| `container_begin` / `container_begin_ex` / `container_end` | Group children and define their layout; `layout_boundary=true` makes the container an explicit retained-layout invalidation boundary. |
+| `container_begin` / `container_begin_ex` / `container_end` | Group children and define their layout; `layout_boundary=true` contains both stable axes, while `layout_boundary_axes={.Width}` or `{.Height}` opts into axis-selective invalidation containment. `FIT_CONTENT` axes always propagate. |
 | `layout_style` | Set direction, size constraints, growth, padding, gap, alignment, and clipping. |
 | `adaptive_begin` / `adaptive_end` | Describe a bounded two-alternative region selected from the actual parent-assigned inner width. |
 | `adaptive_alternative_begin` / `adaptive_alternative_end` | Begin an ordered presentation with a minimum-width requirement; v1 supports a preferred candidate and a zero-width fallback. |
 | `adaptive_selection_state` | Inspect the selected candidate, actual available width, rejected alternative, and selection reason. |
-| `grid_begin` / `grid_end` | Describe a bounded two-dimensional container with explicit row/column tracks; optional `layout_boundary=true` contains child reflow within stable parent-assigned bounds. |
+| `grid_begin` / `grid_end` | Describe a bounded two-dimensional container with explicit row/column tracks; `layout_boundary=true` contains both axes or `layout_boundary_axes` selects stable axes. |
 | `grid_fixed` / `grid_auto` / `grid_fraction` / `grid_min_max` | Declare fixed, measured, weighted, or bounded-flexible Grid tracks. |
 | `grid_cell` | Assign an already-emitted direct Grid child to a row/column and optional spans/alignment. |
 | `LAYOUT_SIZE_FIT_CONTENT` | Opt a Column `Container` into measured height, or a `Scroll_Region` into a content-sized, max-capped viewport. |
@@ -271,9 +284,10 @@ cell. Indices are 16-bit, so a Grid can declare at most 65,536 tracks per
 axis. Rows, columns, gaps, spans, and Start/End/Baseline alignment are
 retained.
 
-Pass `layout_boundary=true` when the Grid's parent-assigned outer bounds are
-stable while its cells reflow. This uses the same full-containment promise as
-other layout boundaries; per-axis boundaries remain future work.
+Pass `layout_boundary=true` when both Grid outer bounds are stable, or set
+`layout_boundary_axes` for only the stable dimensions. FIT_CONTENT axes are
+not contained. This uses the same invalidation contract as other layout
+boundaries.
 
 The solve has a fixed number of stages: collect non-spanning column
 contributions, allocate columns, apply one bounded span adjustment, measure

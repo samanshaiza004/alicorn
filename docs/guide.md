@@ -33,6 +33,79 @@ arbitrary application memory. When a logical change needs a new description,
 invalidate the root or the affected region. The native host handles ordinary
 pointer and window input and schedules the next build.
 
+## Load application fonts and images
+
+Load app-owned fonts in `Application.on_initialize`. It runs after Alicorn
+creates the Runtime and before the native host installs its default faces or
+creates renderer resources. Font loading copies the input, replaces the
+selected face only after validation succeeds, and invalidates shaped text and
+glyph resources. The callback runs on the application thread:
+
+```odin
+Demo_App :: struct {
+	logo: alicorn.Image_Handle,
+}
+
+APP_UI_FONT :: #load("assets/StudioSans.ttf")
+APP_LOGO_PNG :: #load("assets/studio-logo.png")
+
+initialize :: proc(state: rawptr, rt: ^alicorn.Runtime) {
+	app := cast(^Demo_App)state
+	if !alicorn.font_load_bytes(rt, .UI, APP_UI_FONT) {
+		// Keep the host default face if the app asset is invalid.
+	}
+	logo, err := alicorn.image_load_bytes(rt, APP_LOGO_PNG)
+	if err == .None { app.logo = logo }
+}
+```
+
+Use `.Monospace` for code-oriented text. Optional italic and fallback faces
+can be installed with `font_load_italic_bytes` and
+`font_load_fallback_bytes`. The app supplies the font license and distribution
+rights. Call these APIs on the application thread; loading a face invalidates
+text shaping and paint so retained content is rebuilt with the new font.
+
+`image_load_bytes` currently decodes PNG and QOI into Runtime-owned RGBA8
+pixels. It copies decoded pixels, so a disk buffer can be released as soon as
+the call returns. The image widget is a regular retained paint node, with
+intrinsic pixel dimensions when no size is specified and an aspect ratio
+preserved when only width or height is set:
+
+```odin
+// In build, among the other retained children:
+alicorn.image(&ui, app.logo, alt_text="Studio logo", key=alicorn.key_string("logo"))
+```
+
+The `initialize` procedure is assigned to `host.Application.on_initialize`.
+For a file loaded from disk, pass its bytes to the same APIs and release that
+temporary buffer after the call; Alicorn retains its own copy.
+
+Image handles belong to one Runtime and are never reused. Release them with
+`image_release` after removing ordinary image widgets and custom-surface image
+layers from the app's next presentation. The native renderer creates a texture
+the first time an image is visible, retains it for the GPU-device lifetime,
+and recreates it after device recreation. DPI changes scale retained bounds
+through the ordinary layout and compositor path. A custom surface can retain a
+bounded set of image layers with `gpu_surface_update_images`; each layer uses
+surface-local logical bounds and paints above its background and below its
+app-authored geometry.
+
+```odin
+layers := [1]alicorn.GPU_Surface_Image{
+	alicorn.gpu_surface_image(app.logo, alicorn.Rect{8, 6, 32, 24}, opacity=0.9),
+}
+_ = alicorn.gpu_surface_update_images(rt, app.preview_surface, layers[:])
+```
+
+The surface must already be retained. The update copies its descriptors,
+allows at most 256 layers, and schedules paint/presentation work without
+re-describing application layout. Call it on the Runtime's owning thread.
+
+The built-in decoder is intentionally small: PNG and QOI only, bounded to
+128 MiB encoded input and 64 MiB decoded RGBA8 data. Alicorn does not search OS
+font locations or infer licenses. Keep third-party attribution with the
+application's distributed assets.
+
 ## Select a value
 
 Use `select_control` when the user chooses one value from a fixed set. Keep the
@@ -215,7 +288,9 @@ Every Grid child has an explicit cell. The supported track and span behavior,
 and the fixed width-before-height solve order, are described in the
 [layout reference](reference.md#shared-track-grid).
 For fixed parent-assigned Grid bounds whose cell content may reflow locally,
-pass `layout_boundary=true` to keep that layout work inside the Grid.
+pass `layout_boundary=true` to contain both axes, or `layout_boundary_axes`
+to contain only stable dimensions. FIT_CONTENT dimensions always propagate
+to the Grid's parent.
 
 These APIs do not replace application state. In particular, Alicorn does not
 infer that a region changed: increment its revision when its logical content

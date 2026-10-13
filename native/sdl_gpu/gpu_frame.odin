@@ -98,6 +98,9 @@ draw_display_list :: proc(
 	if !native_text_upload_vertices(text_renderer, command) { return false }
 	if !native_icon_build(&solid_renderer.icons, render_display, logical_to_pixel_x, logical_to_pixel_y, swap_w, swap_h) { return false }
 	if !native_icon_upload(&solid_renderer.icons, command) { return false }
+	if !native_image_sync(&solid_renderer.images, command, render_display) { return false }
+	if !native_image_build(&solid_renderer.images, render_display, logical_to_pixel_x, logical_to_pixel_y, swap_w, swap_h) { return false }
+	if !native_image_upload_vertices(&solid_renderer.images, command) { return false }
 	if !native_solid_build(solid_renderer, render_display, logical_to_pixel_x, logical_to_pixel_y, swap_w, swap_h) { return false }
 	debug_draw_start := len(solid_renderer.draws)
 	if debug_bounds {
@@ -138,6 +141,11 @@ draw_display_list :: proc(
 			display_index = run_end
 			continue
 		}
+		if run_kind == .Image {
+			if !native_image_render_batch(&solid_renderer.images, command, swapchain, swap_w, swap_h, solid_renderer.images.draws[display_index:run_end]) { return false }
+			display_index = run_end
+			continue
+		}
 		if run_kind == .Geometry {
 			if !native_surface_render_command(surface_renderer, command, draw, swapchain, swap_w, swap_h, logical_to_pixel_x, logical_to_pixel_y, content_inset_top=content_inset_top) {
 				return false
@@ -158,18 +166,23 @@ draw_display_list :: proc(
 	return true
 }
 
-Native_Paint_Run_Kind :: enum { Surface, Text, Geometry, Icon }
+Native_Paint_Run_Kind :: enum { Surface, Text, Geometry, Icon, Image }
 
-// Adjacent surfaces and icons may batch within their own pipeline. Text and
-// custom geometry remain barriers; no run crosses a different paint kind.
+// Adjacent surfaces, icons, and images may batch within their own pipeline.
+// Text and custom geometry remain barriers; no run crosses a different kind.
 native_paint_run :: proc(display: []alicorn.Paint_Command, start: int) -> (kind: Native_Paint_Run_Kind, end: int) {
     if start < 0 || start >= len(display) { return .Surface, len(display) }
     if alicorn.paint_command_is_text(display[start]) { return .Text, start+1 }
     if alicorn.paint_command_is_geometry(display[start]) { return .Geometry, start+1 }
-    kind = .Icon if alicorn.paint_command_is_icon(display[start]) else .Surface
+	if alicorn.paint_command_is_image(display[start]) {
+		end = start+1
+		for end < len(display) && alicorn.paint_command_is_image(display[end]) { end += 1 }
+		return .Image, end
+	}
+	kind = .Icon if alicorn.paint_command_is_icon(display[start]) else .Surface
     end = start+1
     for end < len(display) {
-        if alicorn.paint_command_is_text(display[end]) || alicorn.paint_command_is_geometry(display[end]) { break }
+		if alicorn.paint_command_is_text(display[end]) || alicorn.paint_command_is_geometry(display[end]) || alicorn.paint_command_is_image(display[end]) { break }
         next_kind := Native_Paint_Run_Kind.Icon if alicorn.paint_command_is_icon(display[end]) else .Surface
         if next_kind != kind { break }
         end += 1
