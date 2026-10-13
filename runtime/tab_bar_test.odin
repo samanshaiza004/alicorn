@@ -259,8 +259,21 @@ test_tab_bar_builds_retained_scroll_list_tab_and_close_hierarchy :: proc(t: ^tes
 		if matches != 1 { continue }
 		testing.expect(t, rt.nodes[tab_id].parent == list_id,
 			"each tab item should be a child of the bar's Virtual_List")
-		testing.expect(t, tab_bar_test_child_count(&rt, tab_id, .Container) == 2,
-			"a tab should compose its content row and selected-indicator surface as retained layout children")
+		tab := rt.nodes[tab_id]
+		testing.expect(t, tab_bar_test_child_count(&rt, tab_id, .Container) == 3,
+			"a tab should compose its top inset, centered content row, and independent selected-indicator track")
+		content_id, content_count := tab_bar_test_part(&rt, tab_id, "tab-content")
+		label_bounds, label_found := tab_bar_test_text_bounds(&rt, tab_id)
+		if content_count == 1 {
+			content := rt.nodes[content_id].bounds
+			center_y := tab.bounds.y+tab.bounds.h*0.5
+			testing.expect(t, abs(content.y+content.h*0.5-center_y) < 0.01,
+				"tab content should be vertically centered independently of its bottom underline track")
+			if label_found {
+				testing.expect(t, abs(label_bounds.y+label_bounds.h*0.5-center_y) < 0.01,
+					"the tab label should share the tab control's vertical center")
+			}
+		}
 		close_id, close_count := tab_bar_test_close_node(&rt, tab_id)
 		testing.expect(t, close_count == 1,
 			"a closable tab should represent its close affordance as an independent Button visual part")
@@ -269,9 +282,20 @@ test_tab_bar_builds_retained_scroll_list_tab_and_close_hierarchy :: proc(t: ^tes
 			testing.expect(t, part.owner == tab_id && part.identity == visual_part_core(.Overlay),
 				"the close action should be a typed visual part owned by its tab Button")
 			close := rt.nodes[close_id]
-			tab := rt.nodes[tab_id]
-			testing.expect(t, close.button_variant == .Danger && close.button_content_style.padding_x == 0 && close.button_content_style.padding_y == 0,
-				"the close action should use the destructive recipe without squeezing its × glyph into padded overflow")
+			testing.expect(t, close.button_variant == .Quiet && close.button_content_style.padding_x == 0 && close.button_content_style.padding_y == 0,
+				"the close action should use a quiet resting treatment without squeezing its × glyph into padded overflow")
+			muted_text := style_environment_color(&rt, DEFAULT_STYLE_ENVIRONMENT, .Muted_Text)
+			regular_text := style_environment_color(&rt, DEFAULT_STYLE_ENVIRONMENT, .Text)
+			close_idle := style_button_resolve(&rt, DEFAULT_STYLE_ENVIRONMENT, .Quiet, Button_Visual_State{})
+			close_hovered := style_button_resolve(&rt, DEFAULT_STYLE_ENVIRONMENT, .Quiet, Button_Visual_State{hovered=true})
+			testing.expect(t, close_idle.text == muted_text &&
+				close_hovered.text == style_color_mix(muted_text, regular_text, 0.45) &&
+				close_hovered.text != close_idle.text,
+				"the tab close glyph should brighten from muted text on hover without using danger red at rest")
+			if content_count == 1 {
+				testing.expect(t, abs(close.bounds.y+close.bounds.h*0.5-(tab.bounds.y+tab.bounds.h*0.5)) < 0.01,
+					"the 24-unit close target should share the tab and label vertical center")
+			}
 			expected_close_width := TAB_CLOSE_CONTROL_SIZE
 			if item.dirty && item.closable && options.close_policy != .Always { expected_close_width = TAB_CLOSE_SLOT_WIDTH }
 			testing.expect(t, abs(close.bounds.w-expected_close_width) < 0.01 &&

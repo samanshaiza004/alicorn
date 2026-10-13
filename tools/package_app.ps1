@@ -66,6 +66,7 @@ function Copy-PackageFile([string]$Source, [string]$Destination) {
 
 Copy-PackageFile $Executable (Join-Path $PackageRoot ($App.executableName + '.exe'))
 Copy-PackageFile $SDLLicense (Join-Path $PackageRoot 'SDL-LICENSE.txt')
+Copy-PackageFile (Join-Path $RepoRoot 'assets/icons/reicon/LICENSE') (Join-Path $PackageRoot 'Reicon-LICENSE.txt')
 if (-not [string]::IsNullOrWhiteSpace($AccessKitLicenseApache)) {
     Copy-PackageFile $AccessKitLicenseApache (Join-Path $PackageRoot 'AccessKit-LICENSE-APACHE.txt')
     Copy-PackageFile $AccessKitLicenseMIT (Join-Path $PackageRoot 'AccessKit-LICENSE-MIT.txt')
@@ -276,6 +277,11 @@ $Manifest = [ordered]@{
         sdlSource = $(if ($SDLLinkage -eq 'Static') { 'https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-3.4.16.tar.gz' } else { $null })
         sdlSourceSha256 = $(if ($SDLLinkage -eq 'Static') { '7322236cd12090c3eb40b9728be4d49c76f66ad17d04369584d4ecad5cf77c68' } else { $null })
         license = [ordered]@{ path='SDL-LICENSE.txt'; sha256=(Get-FileHash -LiteralPath (Join-Path $PackageRoot 'SDL-LICENSE.txt') -Algorithm SHA256).Hash.ToLowerInvariant() }
+        reiconIcons = [ordered]@{
+            weight='filled'
+            sourceRevision=(Get-Content -LiteralPath (Join-Path $RepoRoot 'assets/icons/reicon/sources.json') -Raw | ConvertFrom-Json).revision
+            license=[ordered]@{ path='Reicon-LICENSE.txt'; sha256=(Get-FileHash -LiteralPath (Join-Path $PackageRoot 'Reicon-LICENSE.txt') -Algorithm SHA256).Hash.ToLowerInvariant() }
+        }
         accesskit = $(if (-not [string]::IsNullOrWhiteSpace($AccessKitLicenseApache)) {
             [ordered]@{
                 version='0.23.1'

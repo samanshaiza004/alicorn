@@ -78,6 +78,8 @@ when ODIN_OS == .Windows || ODIN_OS == .Darwin {
 		accesskit_node_set_value_with_length :: proc "c" (node: rawptr, value: rawptr, length: uint) ---
 		accesskit_node_set_character_lengths :: proc "c" (node: rawptr, length: uint, values: rawptr) ---
 		accesskit_node_set_text_selection :: proc "c" (node: rawptr, value: AccessKit_Text_Selection) ---
+		accesskit_node_set_live :: proc "c" (node: rawptr, value: u8) ---
+		accesskit_node_set_live_atomic :: proc "c" (node: rawptr) ---
 		accesskit_node_set_bounds :: proc "c" (node: rawptr, value: AccessKit_Rect) ---
 		accesskit_node_set_disabled :: proc "c" (node: rawptr) ---
 		accesskit_node_set_required :: proc "c" (node: rawptr) ---
@@ -175,6 +177,11 @@ ACCESSKIT_ROLE_CHECK_BOX :: u8(15)
 ACCESSKIT_ROLE_TEXT_INPUT :: u8(17)
 ACCESSKIT_ROLE_BUTTON :: u8(18)
 ACCESSKIT_ROLE_LIST :: u8(24)
+ACCESSKIT_ROLE_LIST_BOX_OPTION :: u8(10)
+ACCESSKIT_ROLE_COMBO_BOX :: u8(56)
+ACCESSKIT_ROLE_LIST_BOX :: u8(85)
+ACCESSKIT_ROLE_STATUS :: u8(114)
+ACCESSKIT_ROLE_ALERT :: u8(44)
 ACCESSKIT_ROLE_DIALOG :: u8(66)
 ACCESSKIT_ROLE_GROUP :: u8(78)
 ACCESSKIT_ROLE_SCROLL_VIEW :: u8(108)
@@ -190,6 +197,9 @@ ACCESSKIT_ROLE_WINDOW :: u8(133)
 
 ACCESSKIT_TOGGLED_FALSE :: u8(0)
 ACCESSKIT_TOGGLED_TRUE :: u8(1)
+ACCESSKIT_LIVE_OFF :: u8(0)
+ACCESSKIT_LIVE_POLITE :: u8(1)
+ACCESSKIT_LIVE_ASSERTIVE :: u8(2)
 
 NATIVE_ACCESSIBILITY_ACTION_QUEUE_CAPACITY :: 64
 NATIVE_ACCESSIBILITY_ACTION_TEXT_LIMIT :: 1 << 20
@@ -809,6 +819,13 @@ native_accessibility_build_node :: proc(source: Accessibility_Projection_Node, c
 	if len(source.value) > 0 || source.role == .Text_Run {
 		accesskit_node_set_value_with_length(node, raw_data(source.value), uint(len(source.value)))
 	}
+	if source.live != .Off {
+		live := ACCESSKIT_LIVE_OFF
+		if source.live == .Polite { live = ACCESSKIT_LIVE_POLITE }
+		if source.live == .Assertive { live = ACCESSKIT_LIVE_ASSERTIVE }
+		accesskit_node_set_live(node, live)
+		if source.live_atomic { accesskit_node_set_live_atomic(node) }
+	}
 	if source.has_bounds {
 		bounds := AccessKit_Rect{
 			x0=f64(source.bounds.x),
@@ -912,6 +929,11 @@ native_accessibility_accesskit_role :: proc(role: Accessibility_Projection_Role)
 	case .Dialog: return ACCESSKIT_ROLE_DIALOG
 	case .Tooltip: return ACCESSKIT_ROLE_TOOLTIP
 	case .Scroll_View: return ACCESSKIT_ROLE_SCROLL_VIEW
+	case .Combo_Box: return ACCESSKIT_ROLE_COMBO_BOX
+	case .List_Box: return ACCESSKIT_ROLE_LIST_BOX
+	case .List_Box_Option: return ACCESSKIT_ROLE_LIST_BOX_OPTION
+	case .Status: return ACCESSKIT_ROLE_STATUS
+	case .Alert: return ACCESSKIT_ROLE_ALERT
 	case .Generic_Container: return ACCESSKIT_ROLE_GENERIC_CONTAINER
 	}
 	return ACCESSKIT_ROLE_UNKNOWN

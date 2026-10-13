@@ -388,7 +388,14 @@ pump_events :: proc(
 			alicorn.tooltip_dismiss(rt)
 			key_cause := alicorn.cause_begin(rt, .Keyboard, "SDL key down")
 			if devtools_last_cause != nil { devtools_last_cause^ = key_cause.cause }
-			context_menu_handled := alicorn.context_menu_handle_key(rt, native_context_menu_key_from_sdl(event.key.key))
+			context_key := native_context_menu_key_from_sdl(event.key.key)
+			select_handled := false
+			if alicorn.select_wants_text_input(rt) && event.key.key == sdl3.K_TAB {
+				select_handled = alicorn.select_handle_tab(rt, native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT))
+			} else {
+				select_handled = alicorn.select_handle_key(rt, context_key)
+			}
+			context_menu_handled := select_handled || alicorn.context_menu_handle_key(rt, context_key)
 			drag_cancelled := false
 			if !context_menu_handled && event.key.key == sdl3.K_ESCAPE && alicorn.drag_is_active(rt) {
 				_ = alicorn.drag_cancel(rt)
@@ -649,14 +656,16 @@ pump_events :: proc(
 				fmt.println("sdl_event", "TEXT_INPUT", "text", raw_text)
 			}
 			if event.text.text != nil {
-				owner := native_current_text_input_owner(rt, text_input_state)
-				if node, ok := rt.nodes[owner]; ok && node.active && node.kind == .Text_Field {
-					change := alicorn.process_text_input(rt, owner, string(event.text.text))
-					native_dispatch_text_change(app_text, application, rt, change, telemetry)
-					if manual_log && application == nil { fmt.println("alicorn_after_TEXT_INPUT", "text", app_text^) }
-				} else if alicorn.text_input_target_is_active(rt, owner) {
-					_ = native_dispatch_generic_text_input_event(application, rt, text_input_state,
-						Application_Text_Input_Event{kind=.Commit, text=string(event.text.text)})
+				if !alicorn.select_typeahead(rt, string(event.text.text)) {
+					owner := native_current_text_input_owner(rt, text_input_state)
+					if node, ok := rt.nodes[owner]; ok && node.active && node.kind == .Text_Field {
+						change := alicorn.process_text_input(rt, owner, string(event.text.text))
+						native_dispatch_text_change(app_text, application, rt, change, telemetry)
+						if manual_log && application == nil { fmt.println("alicorn_after_TEXT_INPUT", "text", app_text^) }
+					} else if alicorn.text_input_target_is_active(rt, owner) {
+						_ = native_dispatch_generic_text_input_event(application, rt, text_input_state,
+							Application_Text_Input_Event{kind=.Commit, text=string(event.text.text)})
+					}
 				}
 			}
 			alicorn.cause_end(rt, text_cause)

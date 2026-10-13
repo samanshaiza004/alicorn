@@ -17,9 +17,11 @@ test_button_recipe_variants_use_neutral_defaults_and_explicit_primary :: proc(t:
 	environment := DEFAULT_STYLE_ENVIRONMENT
 
 	ordinary := style_button_resolve(&rt, environment, .Default, Button_Visual_State{})
+	ordinary_hover := style_button_resolve(&rt, environment, .Default, Button_Visual_State{hovered=true})
 	primary := style_button_resolve(&rt, environment, .Primary, Button_Visual_State{})
 	toolbar := style_button_resolve(&rt, environment, .Toolbar, Button_Visual_State{})
 	quiet := style_button_resolve(&rt, environment, .Quiet, Button_Visual_State{})
+	quiet_hover := style_button_resolve(&rt, environment, .Quiet, Button_Visual_State{hovered=true})
 	tab := style_button_resolve(&rt, environment, .Tab, Button_Visual_State{selected=true})
 	danger := style_button_resolve(&rt, environment, .Danger, Button_Visual_State{})
 	danger_hover := style_button_resolve(&rt, environment, .Danger, Button_Visual_State{hovered=true})
@@ -27,12 +29,21 @@ test_button_recipe_variants_use_neutral_defaults_and_explicit_primary :: proc(t:
 
 	testing.expect(t, ordinary.surface == style_color(&UI{runtime=&rt}, .Subtle_Surface),
 		"ordinary buttons should use a neutral surface by default")
+	hover_surface_delta := maxf(
+		abs(ordinary_hover.surface.r-ordinary.surface.r),
+		maxf(abs(ordinary_hover.surface.g-ordinary.surface.g), abs(ordinary_hover.surface.b-ordinary.surface.b)),
+	)
+	testing.expect(t, ordinary_hover.surface != ordinary.surface && hover_surface_delta >= 0.04,
+		"ordinary button hover should remain visibly distinct in themes with similar neutral surfaces")
 	testing.expect(t, ordinary.text == style_color(&UI{runtime=&rt}, .Text), "ordinary buttons should use the semantic text role")
 	testing.expect(t, primary.surface == style_color(&UI{runtime=&rt}, .Accent), "primary buttons should use the accent recipe")
 	testing.expect(t, primary.text == style_color(&UI{runtime=&rt}, .Accent_Text), "primary buttons should use the accent text role")
 	testing.expect(t, toolbar.surface == style_color(&UI{runtime=&rt}, .Surface) && toolbar.surface != style_color(&UI{runtime=&rt}, .Accent),
 		"toolbar buttons should use their distinct neutral surface recipe")
-	testing.expect(t, quiet.surface.a == 0, "quiet buttons should leave the idle surface transparent")
+	testing.expect(t, quiet.surface.a == 0 && quiet.text == style_environment_color(&rt, environment, .Muted_Text),
+		"quiet buttons should leave the idle surface transparent and use muted text at rest")
+	testing.expect(t, quiet_hover.text == style_color_mix(quiet.text, style_environment_color(&rt, environment, .Text), 0.45) && quiet_hover.text != quiet.text,
+		"quiet button text should brighten on hover without adopting a destructive color")
 	testing.expect(t, tab.surface == style_color(&UI{runtime=&rt}, .Subtle_Surface) && tab.text == style_color(&UI{runtime=&rt}, .Text),
 		"selected tabs should use the tab recipe's selected surface and text transforms")
 	testing.expect(t, tab.selected_indicator == .Underline, "selected tabs should add a non-color selection indicator")
@@ -45,6 +56,34 @@ test_button_recipe_variants_use_neutral_defaults_and_explicit_primary :: proc(t:
 		"hovering a destructive control should show a muted danger tint with readable contrasting text")
 	testing.expect(t, danger_pressed.surface == style_color(&UI{runtime=&rt}, .Danger),
 		"pressing a destructive control should show the full danger surface")
+}
+
+@(test)
+test_default_button_pointer_hover_paints_its_visible_recipe :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 100})
+	defer destroy_runtime(&rt)
+	ui, build := begin_frame(&rt)
+	if !build { testing.expect(t, false, "button hover fixture should begin a frame"); return }
+	container_begin_simple(&ui, .Root, label="hover-root", key=key_string("hover-root"), style=layout_style(.Column, width=320, height=100))
+	_ = button(&ui, "Reset values", key=key_string("reset-values"), style=layout_style(width=140, height=36))
+	container_end(&ui)
+	end_frame(&ui)
+	button_id := style_recipe_test_button(&rt, "Reset values")
+	if button_id == 0 { testing.expect(t, false, "the fixture button should be retained"); return }
+	bounds := rt.nodes[button_id].bounds
+	hit := process_pointer(&rt, Pointer_Event{kind=.Move, x=bounds.x+bounds.w/2, y=bounds.y+bounds.h/2})
+	presentation, ready := begin_presentation_frame(&rt)
+	if ready { end_presentation_frame(&presentation) }
+	button_node := rt.nodes[button_id]
+	expected := style_button_resolve_retained(&rt, button_node, Button_Visual_State{hovered=true})
+	hover_surface_found := false
+	for command in button_node.paint {
+		if fill, ok := paint_surface_color(command); ok && command.bounds == button_node.bounds && fill == expected.surface {
+			hover_surface_found = true
+		}
+	}
+	testing.expect(t, hit == button_id && button_node.hovered && hover_surface_found,
+		"pointer hover should reach the button and repaint its visible hovered recipe")
 }
 
 @(test)

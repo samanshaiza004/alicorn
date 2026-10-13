@@ -106,6 +106,7 @@ description_hash :: proc(
 	h = hash_mix(h, hash_text_paint_spans(d.text_paint_spans))
 	h = hash_mix(h, hash_text_style_spans(d.text_style_spans))
 	h = hash_mix(h, u64(d.kind))
+	h = hash_mix(h, u64(d.icon_id))
 	h = hash_mix(h, u64(d.font))
 	if d.kind == .Button {
 		h = hash_mix(h, hash_button_content_style(d.button_content_style))
@@ -461,6 +462,7 @@ copy_node_description :: proc(
 	}
 	node.parent = d.parent
 	node.kind = d.kind
+	node.icon_id = d.icon_id
 	if d.kind == .Custom_Surface {
 		if node.surface_resource_generation == 0 {
 			node.surface_resource_generation = paint_next_resource_generation(rt)
@@ -1160,7 +1162,14 @@ end_frame :: proc(ui: ^UI) {
 		clear(&ui.runtime.identity_labels)
 		clear(&ui.runtime.identity_key_u64)
 		clear(&ui.runtime.identity_key_numeric)
+		clear(&ui.runtime.identity_key_kind)
+		clear(&ui.runtime.identity_key_pair)
 	}
+	// Toasts paint above ordinary content but below anchored menus such as
+	// Select. Describing them first also gives the popup input layer precedence
+	// where the two overlays overlap.
+	notice_overlay_describe(ui)
+	select_overlay_describe(ui)
 	if ui.runtime.context_menu.open && !ui.runtime.context_menu.described {
 		context_menu_close_internal(ui.runtime, false)
 	}

@@ -9,6 +9,7 @@ Native_DevTools_Renderer_Metrics :: struct {
 	text_fingerprint_ns, text_fingerprint_bytes, text_mesh_rebuild_ns: u64,
 	surface_resource_creations, surface_vertex_uploads, surface_encodes: u64,
 	solid_batches, solid_vertices_uploaded: u64,
+	icon_mesh_rebuilds, icon_mesh_cache_hits, icon_vertices_uploaded: u64,
 }
 
 native_devtools_renderer_metrics_capture :: proc(
@@ -31,6 +32,9 @@ native_devtools_renderer_metrics_capture :: proc(
 		surface_encodes=surface_renderer.encodes,
 		solid_batches=solid_renderer.batches,
 		solid_vertices_uploaded=solid_renderer.vertices_uploaded,
+		icon_mesh_rebuilds=solid_renderer.icons.mesh_rebuilds,
+		icon_mesh_cache_hits=solid_renderer.icons.mesh_cache_hits,
+		icon_vertices_uploaded=solid_renderer.icons.vertices_uploaded,
 	}
 }
 
@@ -54,6 +58,9 @@ native_devtools_renderer_metrics_restore :: proc(
 	surface_renderer.encodes = metrics.surface_encodes
 	solid_renderer.batches = metrics.solid_batches
 	solid_renderer.vertices_uploaded = metrics.solid_vertices_uploaded
+	solid_renderer.icons.mesh_rebuilds = metrics.icon_mesh_rebuilds
+	solid_renderer.icons.mesh_cache_hits = metrics.icon_mesh_cache_hits
+	solid_renderer.icons.vertices_uploaded = metrics.icon_vertices_uploaded
 }
 
 // Native_DevTools_Cursor captures the cumulative counters at the last recorder

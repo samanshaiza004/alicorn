@@ -28,7 +28,18 @@ Accessibility_Projection_Role :: enum {
 	Dialog,
 	Tooltip,
 	Scroll_View,
+	Combo_Box,
+	List_Box,
+	List_Box_Option,
+	Status,
+	Alert,
 	Generic_Container,
+}
+
+Accessibility_Projection_Live :: enum {
+	Off,
+	Polite,
+	Assertive,
 }
 
 Accessibility_Projection_State :: enum {
@@ -87,6 +98,8 @@ Accessibility_Projection_Node :: struct {
 	value: string,
 	text_run_character_lengths: []u8,
 	text_selection: Accessibility_Projection_Text_Selection,
+	live: Accessibility_Projection_Live,
+	live_atomic: bool,
 	authored_states: alicorn.Semantic_States,
 	states: Accessibility_Projection_States,
 	actions: Accessibility_Projection_Actions,
@@ -285,6 +298,8 @@ accessibility_projection_node_from_semantic :: proc(
 		semantic_id=source.id,
 		semantic_parent=source.parent,
 		role=accessibility_projection_role(source.role),
+		live=accessibility_projection_live(source.live),
+		live_atomic=source.live_atomic,
 		authored_states=source.states,
 		bounds=source.bounds,
 		has_bounds=source.has_bounds,
@@ -353,9 +368,24 @@ accessibility_projection_role :: proc(role: alicorn.Semantic_Role) -> Accessibil
 	case .Dialog: return .Dialog
 	case .Tooltip: return .Tooltip
 	case .Scroll_View: return .Scroll_View
+	case .Combo_Box: return .Combo_Box
+	case .List_Box: return .List_Box
+	case .List_Box_Option: return .List_Box_Option
+	case .Status: return .Status
+	case .Alert: return .Alert
 	case .None: return .Generic_Container
 	}
 	return .Generic_Container
+}
+
+@(private)
+accessibility_projection_live :: proc(live: alicorn.Semantic_Live_Announcement) -> Accessibility_Projection_Live {
+	switch live {
+	case .Off: return .Off
+	case .Polite: return .Polite
+	case .Assertive: return .Assertive
+	}
+	return .Off
 }
 
 @(private)
@@ -886,7 +916,8 @@ accessibility_projection_sort_semantic_nodes :: proc(projection: ^Accessibility_
 accessibility_projection_nodes_equal :: proc(a, b: Accessibility_Projection_Node) -> bool {
 	if a.id != b.id || a.semantic_id != b.semantic_id || a.semantic_parent != b.semantic_parent ||
 	   a.role != b.role || a.label != b.label || a.description != b.description || a.value != b.value ||
-	   a.text_selection != b.text_selection || !accessibility_projection_byte_lengths_equal(a.text_run_character_lengths, b.text_run_character_lengths) ||
+	   a.text_selection != b.text_selection || a.live != b.live || a.live_atomic != b.live_atomic ||
+	   !accessibility_projection_byte_lengths_equal(a.text_run_character_lengths, b.text_run_character_lengths) ||
 	   a.states != b.states || a.actions != b.actions || a.bounds != b.bounds || a.has_bounds != b.has_bounds ||
 	   a.is_collection != b.is_collection || a.logical_count != b.logical_count ||
 	   a.position_in_set != b.position_in_set || a.has_position_in_set != b.has_position_in_set ||

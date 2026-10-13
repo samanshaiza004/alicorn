@@ -1,6 +1,7 @@
 package alicorn_sdl_gpu
 
 import "core:c"
+import "core:math"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
@@ -16,6 +17,7 @@ Native_Solid_Draw :: struct {
 }
 
 Native_Solid_Renderer :: struct {
+	icons: Native_Icon_Renderer,
 	device:          ^sdl3.GPUDevice,
 	runtime:         ^alicorn.Runtime,
 	pipeline:        ^sdl3.GPUGraphicsPipeline,
@@ -35,6 +37,7 @@ Native_Solid_Renderer :: struct {
 native_solid_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTextureFormat, runtime: ^alicorn.Runtime) -> (renderer: Native_Solid_Renderer, ok: bool) {
 	renderer.device = device
 	renderer.runtime = runtime
+	defer if !ok { native_solid_destroy(&renderer) }
 	renderer.vertex_capacity = NATIVE_SOLID_INITIAL_VERTICES
 	renderer.vertices = make([dynamic]Native_Text_Vertex, 0, 4096)
 	renderer.draws = make([dynamic]Native_Solid_Draw, 0, 1024)
@@ -95,6 +98,9 @@ native_solid_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTex
 	if renderer.sampler == nil || renderer.white_texture == nil || renderer.vertex_buffer == nil || renderer.vertex_transfer == nil {
 		return renderer, false
 	}
+	icon_ok := false
+	renderer.icons, icon_ok = native_icon_make(device, swapchain_format, runtime)
+	if !icon_ok { return renderer, false }
 	return renderer, true
 }
 
@@ -131,6 +137,7 @@ native_solid_ensure_vertex_capacity :: proc(renderer: ^Native_Solid_Renderer, re
 }
 
 native_solid_destroy :: proc(renderer: ^Native_Solid_Renderer) {
+	native_icon_destroy(&renderer.icons)
 	if renderer.vertex_transfer != nil { sdl3.ReleaseGPUTransferBuffer(renderer.device, renderer.vertex_transfer) }
 	if renderer.vertex_buffer != nil { sdl3.ReleaseGPUBuffer(renderer.device, renderer.vertex_buffer) }
 	if renderer.white_texture != nil { sdl3.ReleaseGPUTexture(renderer.device, renderer.white_texture) }
@@ -386,5 +393,6 @@ native_solid_render_batch :: proc(
 }
 
 native_solid_commit_submission :: proc(renderer: ^Native_Solid_Renderer) {
+	renderer.icons.upload_pending = false
 	renderer.upload_pending = false
 }

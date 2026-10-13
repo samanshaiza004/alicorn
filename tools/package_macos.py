@@ -157,12 +157,13 @@ def package(args: argparse.Namespace) -> None:
     app_executable = macos / executable_name
     shutil.copy2(executable, app_executable)
     shutil.copy2(license_path, resources / "SDL-LICENSE.txt")
+    shutil.copy2(pathlib.Path(__file__).resolve().parents[1] / "assets/icons/reicon/LICENSE", resources / "Reicon-LICENSE.txt")
     if accesskit_licenses is not None:
         shutil.copy2(accesskit_licenses[0], resources / "AccessKit-LICENSE-APACHE.txt")
         shutil.copy2(accesskit_licenses[1], resources / "AccessKit-LICENSE-MIT.txt")
 
     source_dir = metadata_path.parent
-    resource_names: set[str] = {"sdl-license.txt"}
+    resource_names: set[str] = {"sdl-license.txt", "reicon-license.txt"}
     if accesskit_licenses is not None:
         resource_names.update({"accesskit-license-apache.txt", "accesskit-license-mit.txt"})
 
@@ -300,6 +301,11 @@ def package(args: argparse.Namespace) -> None:
             "license": {
                 "path": "Contents/Resources/SDL-LICENSE.txt",
                 "sha256": sha256(resources / "SDL-LICENSE.txt"),
+            },
+            "reiconIcons": {
+                "weight": "filled",
+                "sourceRevision": json.loads((pathlib.Path(__file__).resolve().parents[1] / "assets/icons/reicon/sources.json").read_text())["revision"],
+                "license": {"path": "Contents/Resources/Reicon-LICENSE.txt", "sha256": sha256(resources / "Reicon-LICENSE.txt")},
             },
             "accesskit": (
                 {

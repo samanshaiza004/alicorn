@@ -382,6 +382,9 @@ update_paint :: proc(rt: ^Runtime) {
 				if node.kind == .Scroll_Region && semantic_focus_owner_needs_outline(rt, node.id) {
 					append_focus_outline(node, style_environment_color(rt, node.style_environment, .Focus), style_focus_indicator_thickness(node.style_environment))
 				}
+				if node.icon_id != .None {
+					append(&node.paint, paint_icon_command(node.id, node.bounds, node.clip, node.icon_id, node.color))
+				}
 			} else if node.kind == .Button {
 				padding_x := maxf(node.button_content_style.padding_x, 0)
 				padding_y := maxf(node.button_content_style.padding_y, 0)
@@ -392,12 +395,13 @@ update_paint :: proc(rt: ^Runtime) {
 					maxf(node.bounds.h - 2*padding_y, 0),
 				}
 				text_bounds := content_bounds
+				if node.icon_id != .None { text_bounds.w = maxf(text_bounds.w-ICON_TRAILING_SLOT_WIDTH, 0) }
 				if node.text_run_valid {
 					#partial switch node.button_content_style.horizontal {
 					case .Center:
-						text_bounds.x += (content_bounds.w-node.text_run.width)/2
+						text_bounds.x += (text_bounds.w-node.text_run.width)/2
 					case .End:
-						text_bounds.x += content_bounds.w-node.text_run.width
+						text_bounds.x += text_bounds.w-node.text_run.width
 					}
 					#partial switch node.button_content_style.vertical {
 					case .Center:
@@ -454,6 +458,18 @@ update_paint :: proc(rt: ^Runtime) {
 				if len(node.label) > 0 {
 					append(&node.paint, paint_text_command(node.id, text_bounds, text_clip, paint_text_handle_for_node(node), text_color))
 				}
+				if node.icon_id != .None {
+					icon_size := minf(16, maxf(content_bounds.h-4, 10))
+					icon_x := node.bounds.x+node.bounds.w-padding_x-icon_size
+					if len(node.label) == 0 { icon_x = node.bounds.x+(node.bounds.w-icon_size)*0.5 }
+					icon_bounds := Rect{
+						icon_x,
+						node.bounds.y+(node.bounds.h-icon_size)*0.5,
+						icon_size,
+						icon_size,
+					}
+					append(&node.paint, paint_icon_command(node.id, icon_bounds, node.clip, node.icon_id, text_color))
+				}
 			} else if node.kind == .Checkbox {
 				box_size := minf(18, maxf(node.bounds.h-6, 12))
 				box := Rect{node.bounds.x+4, node.bounds.y+(node.bounds.h-box_size)*0.5, box_size, box_size}
@@ -462,11 +478,8 @@ update_paint :: proc(rt: ^Runtime) {
 				append(&node.paint, paint_surface_command(node.id, inner, node.clip, checkbox_style.box.surface))
 				if node.paint_value&1 != 0 {
 					check_color := checkbox_style.checkmark.text
-					append(&node.paint,
-						paint_surface_command(node.id, Rect{box.x+4, box.y+box.h*0.55, box.w*0.24, 2}, node.clip, check_color),
-						paint_surface_command(node.id, Rect{box.x+7, box.y+box.h*0.48, box.w*0.27, 2}, node.clip, check_color),
-						paint_surface_command(node.id, Rect{box.x+10, box.y+box.h*0.36, box.w*0.26, 2}, node.clip, check_color),
-					)
+					mark_bounds := Rect{box.x+3, box.y+3, maxf(box.w-6, 0), maxf(box.h-6, 0)}
+					append(&node.paint, paint_icon_command(node.id, mark_bounds, node.clip, .Check, check_color))
 				}
 				show_focus := checkbox_style.focus_indicator_mode == .Always || rt.focus_visible
 				if checkbox_style.focused && show_focus && !checkbox_style.disabled {

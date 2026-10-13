@@ -748,7 +748,10 @@ DEFAULT_BUTTON_RECIPES :: Button_Recipe_Set{recipes={
 	Button_Recipe{
 		defined=true, surface_role=.Subtle_Surface, text_role=.Text, surface_visible=true,
 		selected=Style_Transform{surface_role=.Accent, surface_mix=0.24},
-		hovered=Style_Transform{surface_role=.Surface, surface_mix=0.60},
+		// The neutral Surface and Subtle_Surface roles can be nearly identical
+		// in a theme, making the hover state appear to disappear. A restrained
+		// accent tint stays visible without turning an ordinary button primary.
+		hovered=Style_Transform{surface_role=.Accent_Hover, surface_mix=0.18},
 		pressed=Style_Transform{surface_role=.Border, surface_mix=0.45},
 		disabled=Style_Transform{surface_role=.Surface, surface_mix=1, text_role=.Muted_Text, text_mix=1},
 		selected_indicator_role=.Text,
@@ -773,9 +776,9 @@ DEFAULT_BUTTON_RECIPES :: Button_Recipe_Set{recipes={
 		focus_role=.Focus, semantic_active_role=.Semantic_Focus,
 	},
 	Button_Recipe{
-		defined=true, surface_role=.Subtle_Surface, text_role=.Text, surface_visible=false,
+		defined=true, surface_role=.Subtle_Surface, text_role=.Muted_Text, surface_visible=false,
 		selected=Style_Transform{surface_role=.Accent, surface_mix=0.18},
-		hovered=Style_Transform{surface_role=.Subtle_Surface, surface_mix=1},
+		hovered=Style_Transform{surface_role=.Subtle_Surface, surface_mix=1, text_role=.Text, text_mix=0.45},
 		pressed=Style_Transform{surface_role=.Border, surface_mix=1},
 		disabled=Style_Transform{text_role=.Muted_Text, text_mix=1},
 		selected_indicator_role=.Text,
@@ -1027,6 +1030,7 @@ Description :: struct {
 	text:        string,
 	tooltip_text: string,
 	tooltip_delay_ms: u32,
+	icon_id: Icon_ID,
 	text_paint_spans: []Text_Paint_Span,
 	text_style_spans: []Text_Style_Span,
 	font:        Font_Role,
@@ -1137,6 +1141,7 @@ Node :: struct {
 	text:        string,
 	tooltip_text: string,
 	tooltip_delay_ms: u32,
+	icon_id: Icon_ID,
 	text_paint_spans: [dynamic]Text_Paint_Span,
 	text_style_spans: [dynamic]Text_Style_Span,
 	font:        Font_Role,
@@ -1358,6 +1363,74 @@ Context_Menu_Key :: enum {
 	Cancel,
 }
 
+NOTICE_QUEUE_CAPACITY :: 4
+NOTICE_ACTION_CAPACITY :: 3
+NOTICE_ACTION_EVENT_CAPACITY :: NOTICE_QUEUE_CAPACITY * NOTICE_ACTION_CAPACITY
+NOTICE_ID_MAX_BYTES :: 96
+NOTICE_TITLE_MAX_BYTES :: 128
+NOTICE_MESSAGE_MAX_BYTES :: 512
+NOTICE_DETAILS_MAX_BYTES :: 1024
+NOTICE_ACTION_LABEL_MAX_BYTES :: 64
+
+Notice_Handle :: distinct u64
+
+Notice_Severity :: enum { Info, Success, Warning, Error }
+Notice_Lifetime :: enum { Transient, Persistent }
+Notice_Placement :: enum { Toast, Contextual }
+
+Notice_Action :: struct {
+	id: Action_ID,
+	label: string,
+}
+
+// Notice is a bounded, application-authored notification request. The
+// runtime copies all strings into inline storage when notice_post accepts it.
+Notice :: struct {
+	id: string,
+	title: string,
+	message: string,
+	details: string,
+	severity: Notice_Severity,
+	lifetime: Notice_Lifetime,
+	placement: Notice_Placement,
+	anchor: Node_ID,
+	actions: []Notice_Action,
+	duration_ms: u32,
+}
+
+Notice_Action_Record :: struct {
+	id: Action_ID,
+	label: [NOTICE_ACTION_LABEL_MAX_BYTES]u8,
+	label_length: int,
+}
+
+Notice_Record :: struct {
+	handle: Notice_Handle,
+	id: [NOTICE_ID_MAX_BYTES]u8,
+	id_length: int,
+	id_hash: u64,
+	title: [NOTICE_TITLE_MAX_BYTES]u8,
+	title_length: int,
+	message: [NOTICE_MESSAGE_MAX_BYTES]u8,
+	message_length: int,
+	details: [NOTICE_DETAILS_MAX_BYTES]u8,
+	details_length: int,
+	severity: Notice_Severity,
+	lifetime: Notice_Lifetime,
+	placement: Notice_Placement,
+	anchor: Node_ID,
+	actions: [NOTICE_ACTION_CAPACITY]Notice_Action_Record,
+	action_count: int,
+	deadline_ns: u64,
+	sequence: u64,
+}
+
+Notice_Action_Event :: struct {
+	notice: Notice_Handle,
+	notice_id_hash: u64,
+	action: Action_ID,
+}
+
 Tooltip_State :: struct {
 	target: Node_ID,
 	deadline_ns: u64,
@@ -1552,6 +1625,16 @@ Runtime :: struct {
 	// selected state is already conveyed separately (notably tabs).
 	focus_visible: bool,
 	context_menu: Context_Menu_State,
+	select: Select_State,
+	notices: [NOTICE_QUEUE_CAPACITY]Notice_Record,
+	notice_count: int,
+	notice_sequence: u64,
+	notice_handle_sequence: u64,
+	notice_event_sequence: u64,
+	notice_actions: [NOTICE_ACTION_EVENT_CAPACITY]Notice_Action_Event,
+	notice_action_read: int,
+	notice_action_write: int,
+	notice_action_count: int,
 	tooltip: Tooltip_State,
 	transient_overlay_kind: Transient_Overlay_Kind,
 	selected:    Node_ID,

@@ -601,6 +601,59 @@ button :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style := DEFA
 	return button_simple(ui, label, key, style, state, loc, text_style, content_style, variant)
 }
 
+// icon_button is a square, font-independent button. Its accessible name is
+// supplied separately from the decorative vector icon.
+icon_button :: proc(
+	ui: ^UI,
+	accessible_label: string,
+	icon_id: Icon_ID,
+	key: UI_Key = UI_Unkeyed{},
+	style := DEFAULT_STYLE,
+	variant := Button_Variant.Quiet,
+	disabled := false,
+	loc := #caller_location,
+) -> (node: Node_ID, clicked: bool) {
+	if ui == nil || ui.runtime == nil || !ui.runtime.frame_open { return }
+	if len(accessible_label) == 0 || !icon_id_is_valid(icon_id) {
+		append_diagnostic(ui.runtime, "icon_button requires an accessible name and a built-in icon ID")
+		return
+	}
+	rt := ui.runtime
+	resolved_variant := style_button_variant_resolve(rt, variant)
+	button_layout := style
+	button_layout.direction = .Row
+	button_layout.align = .Center
+	if button_layout.width < 0 { button_layout.width = 32 }
+	if button_layout.height < 0 { button_layout.height = 32 }
+	node = emit_key(
+		ui,
+		.Button,
+		resolve_source(Source_Site{}, "icon_button", loc),
+		label="",
+		key=key,
+		style=button_layout,
+		disabled=disabled,
+		focusable=!disabled,
+		button_content=button_content_style(.Center, .Center, padding_x=6, padding_y=3),
+		button_variant=resolved_variant,
+	)
+	if node == 0 { return }
+	for index := len(rt.pending)-1; index >= 0; index -= 1 {
+		item := &rt.pending[index]
+		if item.kind == .Description && item.description.id == node {
+			item.description.icon_id = icon_id
+			break
+		}
+	}
+	actions := Semantic_Actions{}
+	states := Semantic_States{}
+	if !disabled { actions = semantic_actions_add(actions, .Press) }
+	if disabled { states = semantic_states_add(states, .Disabled) }
+	_ = semantic_description(ui, .Button, accessible_label, states=states, actions=actions)
+	clicked = consume_activation(rt, node)
+	return
+}
+
 // semantic_bind associates the most recently described presentation node with
 // an application-owned logical identity. Call it immediately after describing
 // the widget; the identity is retained independently from that node's lifetime.

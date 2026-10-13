@@ -293,16 +293,28 @@ tab_bar :: proc(
 		}
 		if tab_activated && result.action == .None { result = Tab_Bar_Result{.Select, index} }
 
+		// Keep the selected underline in its own bottom track while centering
+		// the tab content in the full control bounds. Reserving only the bottom
+		// two units made labels and close controls sit one unit too high.
+		_ = container_begin_simple(
+			ui,
+			.Container,
+			label="tab-content-top-inset",
+			key=key_u64(7),
+			style=layout_style(.Row, height=2),
+		)
+		container_end(ui)
+		content_height := maxf(opts.height-4, 0)
 		content_id := container_begin_simple(
 			ui,
 			.Container,
 			label="tab-content",
 			key=key_u64(1),
-			style=layout_style(.Row, width=tab_width, height=maxf(opts.height-2, 0), gap=0, align=.Center, clip=true, padding=8),
+			style=layout_style(.Row, width=tab_width, height=content_height, gap=0, align=.Center, clip=true, padding=8),
 		)
 		_ = visual_part_attach(ui, content_id, tab_id, visual_part_core(.Content))
 		label_style := DEFAULT_BUTTON_TEXT_STYLE
-		label_id := text(ui, item.label, key=key_u64(2), style=layout_style(.Row, height=maxf(opts.height-2, 0), grow=1), font=Font_Role.UI, text_style=label_style)
+		label_id := text(ui, item.label, key=key_u64(2), style=layout_style(.Row, height=content_height, grow=1), font=Font_Role.UI, text_style=label_style)
 		_ = visual_part_attach(ui, label_id, tab_id, visual_part_core(.Label))
 
 		trailing_width := f32(0)
@@ -319,7 +331,7 @@ tab_bar :: proc(
 				.Container,
 				label="tab-trailing-parts",
 				key=key_u64(3),
-				style=layout_style(.Row, width=trailing_width, height=maxf(opts.height-2, 0), gap=0, align=.Center),
+				style=layout_style(.Row, width=trailing_width, height=content_height, gap=0, align=.Center),
 			)
 			_ = visual_part_attach(ui, trailing, tab_id, visual_part_core(.Content))
 			if item.dirty && !item.closable {
@@ -351,7 +363,7 @@ tab_bar :: proc(
 					style=layout_style(.Row, width=close_width, height=TAB_CLOSE_CONTROL_SIZE, align=.Center),
 					text_style=DEFAULT_BUTTON_TEXT_STYLE,
 					content_style=button_content_style(padding_x=0, padding_y=0),
-					variant=.Danger,
+					variant=.Quiet,
 					focusable=false,
 				)
 				if close_id != 0 {

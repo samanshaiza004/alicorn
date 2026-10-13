@@ -306,6 +306,7 @@ layout_measure_intrinsic_size :: proc(rt: ^Runtime, node: ^Node) -> Layout_Size 
 			width = 80+2*padding_x
 			if node.text_run_valid { width = node.text_run.width+2*padding_x }
 		}
+		if node.kind == .Button && node.icon_id != .None { width += ICON_TRAILING_SLOT_WIDTH }
 	}
 	if height < 0 {
 		#partial switch node.kind {
@@ -372,7 +373,10 @@ layout_measure_node :: proc(
 			max_width = node.style.max_width
 		}
 		if max_width >= 0 {
-			if node.kind == .Button { max_width = maxf(max_width-2*maxf(node.button_content_style.padding_x, 0), 0) }
+			if node.kind == .Button {
+				max_width = maxf(max_width-2*maxf(node.button_content_style.padding_x, 0), 0)
+				if node.icon_id != .None { max_width = maxf(max_width-ICON_TRAILING_SLOT_WIDTH, 0) }
+			}
 			if node.kind == .Checkbox { max_width = maxf(max_width-36, 0) }
 			if node.kind == .Text_Field { max_width = maxf(max_width-2*style_text_field_horizontal_inset(rt, node.style_environment), 0) }
 		}

@@ -299,7 +299,7 @@ test_checkbox_slider_recipes_drive_retained_paint_cache_and_inspector :: proc(t:
 	checkbox_border_seen, checkbox_mark_seen, checkbox_label_seen := false, false, false
 	for command in checkbox_node.paint {
 		if color, ok := paint_surface_color(command); ok && color == theme.colors[int(Style_Color_Role.Danger)] { checkbox_border_seen = true }
-		if color, ok := paint_surface_color(command); ok && color == theme.colors[int(Style_Color_Role.Success)] { checkbox_mark_seen = true }
+		if icon, ok := command.payload.(Icon_Paint); ok && icon.id == .Check && icon.color == theme.colors[int(Style_Color_Role.Success)] { checkbox_mark_seen = true }
 		if text, ok := command.payload.(Text_Paint); ok && text.color == theme.colors[int(Style_Color_Role.Accent_Hover)] { checkbox_label_seen = true }
 	}
 	slider_track_seen, slider_fill_seen, slider_thumb_seen, slider_label_seen := false, false, false, false
@@ -329,7 +329,7 @@ test_checkbox_slider_recipes_drive_retained_paint_cache_and_inspector :: proc(t:
 	checkbox_focus_seen, checkbox_mark_after_focus := false, false
 	for command in checkbox_node.paint {
 		if color, ok := paint_surface_color(command); ok && color == focus_color { checkbox_focus_seen = true }
-		if color, ok := paint_surface_color(command); ok && color == theme.colors[int(Style_Color_Role.Success)] { checkbox_mark_after_focus = true }
+		if icon, ok := command.payload.(Icon_Paint); ok && icon.id == .Check && icon.color == theme.colors[int(Style_Color_Role.Success)] { checkbox_mark_after_focus = true }
 	}
 	testing.expect(t, checkbox_focus_seen && checkbox_mark_after_focus,
 		"Checkbox focus should paint as an independent outline without replacing the checked mark")

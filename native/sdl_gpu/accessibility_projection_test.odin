@@ -85,6 +85,41 @@ test_accessibility_projection_maps_static_text_to_label_value :: proc(t: ^testin
 }
 
 @(test)
+test_accessibility_projection_preserves_live_regions_and_select_roles :: proc(t: ^testing.T) {
+	status_id := alicorn.Semantic_ID{namespace=26, value=1}
+	alert_id := alicorn.Semantic_ID{namespace=26, value=2}
+	combo_id := alicorn.Semantic_ID{namespace=26, value=3}
+	list_id := alicorn.Semantic_ID{namespace=26, value=4}
+	option_id := alicorn.Semantic_ID{namespace=26, value=5}
+	nodes := [5]alicorn.Semantic_Node{
+		{id=status_id, role=.Status, value="Saved", live=.Polite, live_atomic=true, tree_order=1},
+		{id=alert_id, role=.Alert, value="Save failed", live=.Assertive, live_atomic=true, tree_order=2},
+		{id=combo_id, role=.Combo_Box, label="Theme", value="Warm", tree_order=3},
+		{id=list_id, role=.List_Box, label="Themes", is_collection=true, logical_count=1, tree_order=4},
+		{id=option_id, role=.List_Box_Option, label="Warm", parent=list_id, states=alicorn.semantic_states_add({}, .Selected), tree_order=5},
+	}
+	snapshot := accessibility_projection_test_snapshot(10, nodes[:])
+	projection, status := accessibility_projection_from_snapshot(snapshot, context.temp_allocator)
+	defer accessibility_projection_destroy(&projection)
+	status_node, status_found := accessibility_projection_node_by_semantic_id(projection, status_id)
+	alert_node, alert_found := accessibility_projection_node_by_semantic_id(projection, alert_id)
+	combo_node, combo_found := accessibility_projection_node_by_semantic_id(projection, combo_id)
+	list_node, list_found := accessibility_projection_node_by_semantic_id(projection, list_id)
+	option_node, option_found := accessibility_projection_node_by_semantic_id(projection, option_id)
+	selected := accessibility_projection_state_has(option_node.states, .Selected)
+	checking := status == .Success && status_found && alert_found && combo_found && list_found && option_found && selected &&
+		status_node.live == .Polite && status_node.live_atomic && alert_node.live == .Assertive && alert_node.live_atomic &&
+		combo_node.role == .Combo_Box && list_node.role == .List_Box && option_node.role == .List_Box_Option &&
+		native_accessibility_accesskit_role(status_node.role) == ACCESSKIT_ROLE_STATUS &&
+		native_accessibility_accesskit_role(alert_node.role) == ACCESSKIT_ROLE_ALERT &&
+		native_accessibility_accesskit_role(combo_node.role) == ACCESSKIT_ROLE_COMBO_BOX &&
+		native_accessibility_accesskit_role(list_node.role) == ACCESSKIT_ROLE_LIST_BOX &&
+		native_accessibility_accesskit_role(option_node.role) == ACCESSKIT_ROLE_LIST_BOX_OPTION
+	testing.expect(t, checking,
+		"live status/alert attributes and Select roles should survive projection to the native accessibility contract")
+}
+
+@(test)
 test_accessibility_projection_maps_text_runs_and_area_selection :: proc(t: ^testing.T) {
 	area_id := alicorn.Semantic_ID{namespace=25, value=20}
 	first_run_id := alicorn.Semantic_ID{namespace=25, value=21}

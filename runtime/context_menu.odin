@@ -302,6 +302,17 @@ context_menu_direct_item :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 }
 
 context_menu_focus_edge :: proc(rt: ^Runtime, reverse := false) -> Node_ID {
+	// Select owns the shared popup when its trigger restored focus. Opening a
+	// Select should put keyboard focus on its controlled selected value when
+	// that option is enabled, rather than always choosing the first row.
+	if !reverse && rt.select.open && rt.context_menu.restore_focus == rt.select.trigger_node {
+		index := rt.select.active_index
+		if index >= 0 && index < rt.select.option_count {
+			id := rt.select.option_nodes[index]
+			if node, ok := rt.nodes[id]; ok && node.active && node.focusable && !node.disabled &&
+				node_is_in_modal_overlay(rt, id, rt.context_menu.overlay) { return id }
+		}
+	}
 	if reverse {
 		for index := len(rt.order)-1; index >= 0; index -= 1 {
 			id := rt.order[index]

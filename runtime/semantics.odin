@@ -26,6 +26,17 @@ Semantic_Role :: enum {
 	Dialog,
 	Tooltip,
 	Scroll_View,
+	Combo_Box,
+	List_Box,
+	List_Box_Option,
+	Status,
+	Alert,
+}
+
+Semantic_Live_Announcement :: enum {
+	Off,
+	Polite,
+	Assertive,
 }
 
 Semantic_State :: enum {
@@ -121,6 +132,9 @@ Semantic_Descriptor :: struct {
 	text_run_character_lengths: []u8,
 	// Text_Area owns the current selection; endpoints refer to Text_Run children.
 	text_selection: Semantic_Text_Selection,
+	// Live regions are announced without changing keyboard focus.
+	live: Semantic_Live_Announcement,
+	live_atomic: bool,
 }
 
 semantic_actions_add :: proc(actions: Semantic_Actions, action: Semantic_Action) -> Semantic_Actions {
@@ -173,6 +187,8 @@ Semantic_Node :: struct {
 	has_numeric_value: bool,
 	text_run_character_lengths: []u8,
 	text_selection: Semantic_Text_Selection,
+	live: Semantic_Live_Announcement,
+	live_atomic: bool,
 }
 
 Semantic_Node_Description :: struct {
@@ -205,6 +221,8 @@ Semantic_Node_Description :: struct {
 	has_numeric_value: bool,
 	text_run_character_lengths: []u8,
 	text_selection: Semantic_Text_Selection,
+	live: Semantic_Live_Announcement,
+	live_atomic: bool,
 }
 
 Semantic_Entity :: struct {
@@ -288,6 +306,8 @@ semantic_node_from_description :: proc(d: Semantic_Node_Description) -> Semantic
 		has_numeric_value=d.has_numeric_value,
 		text_run_character_lengths=d.text_run_character_lengths,
 		text_selection=d.text_selection,
+		live=d.live,
+		live_atomic=d.live_atomic,
 	}
 }
 
@@ -304,7 +324,7 @@ semantic_node_equal :: proc(a, b: Semantic_Node) -> bool {
 		a.numeric_minimum == b.numeric_minimum && a.numeric_maximum == b.numeric_maximum &&
 		a.numeric_step == b.numeric_step && a.has_numeric_value == b.has_numeric_value &&
 		semantic_byte_lengths_equal(a.text_run_character_lengths, b.text_run_character_lengths) &&
-		a.text_selection == b.text_selection
+		a.text_selection == b.text_selection && a.live == b.live && a.live_atomic == b.live_atomic
 }
 
 semantic_byte_lengths_equal :: proc(a, b: []u8) -> bool {
@@ -440,7 +460,8 @@ semantic_node_set :: proc(rt: ^Runtime, description: Semantic_Node_Description) 
 	if description.collection_id.namespace != 0 && description.size_of_set != 0 && description.position_in_set >= description.size_of_set {
 		return false
 	}
-	if description.is_collection && description.role != .List && description.role != .Tree && description.role != .Tab_List {
+	if description.is_collection && description.role != .List && description.role != .Tree &&
+	   description.role != .Tab_List && description.role != .List_Box {
 		return false
 	}
 	next := semantic_node_from_description(description)
@@ -732,7 +753,7 @@ semantic_collection_begin :: proc(
 	actions := Semantic_Actions{},
 ) -> Semantic_Collection_Handle {
 	if ui == nil || ui.runtime == nil || !semantic_id_is_valid(id) ||
-	   (role != .List && role != .Tree && role != .Tab_List) ||
+	   (role != .List && role != .Tree && role != .Tab_List && role != .List_Box) ||
 	   realized_first > realized_last || realized_last > logical_count { return {} }
 	rt := ui.runtime
 	rt.semantic_collection_generation += 1
@@ -1051,6 +1072,8 @@ semantic_sync_node :: proc(rt: ^Runtime, node: ^Node, semantic: Semantic_Descrip
 		has_numeric_value=semantic.has_numeric_value,
 		text_run_character_lengths=semantic.text_run_character_lengths,
 		text_selection=semantic.text_selection,
+		live=semantic.live,
+		live_atomic=semantic.live_atomic,
 	}
 	if semantic_id_is_valid(semantic.collection_id) {
 		if collection, found := rt.semantic_entities[semantic.collection_id]; found {
@@ -1132,6 +1155,8 @@ semantic_retire_node_id :: proc(rt: ^Runtime, node: ^Node, id: Semantic_ID) {
 			has_numeric_value=entity.node.has_numeric_value,
 			text_run_character_lengths=entity.node.text_run_character_lengths,
 			text_selection=entity.node.text_selection,
+			live=entity.node.live,
+			live_atomic=entity.node.live_atomic,
 		}
 		_ = semantic_node_set(rt, description)
 		entity, found = rt.semantic_entities[id]
@@ -1223,6 +1248,7 @@ semantic_action_request :: proc(
 	entity, found := rt.semantic_entities[id]
 	if !found || !semantic_actions_has(entity.node.actions, action) { return false }
 	if action == .None { return false }
+	if select_semantic_action(rt, id, action) { return true }
 	// Selection carries two text-run positions and must use the typed API above.
 	if action == .Set_Text_Selection { return false }
 	if entity.node.visual_node != 0 {
@@ -1238,12 +1264,12 @@ semantic_action_request :: proc(
 			record_trace(rt, .Action, visual.id, "semantic Press/Select routed as control activation")
 			return true
 		case .Select:
-			if entity.node.role != .Tab { break }
+			if entity.node.role != .Tab && entity.node.role != .List_Box_Option { break }
 			rt.activation_sequence += 1
 			rt.activation_node = visual.id
 			rt.stats.accessibility_action_wakes += 1
 			invalidate_root(rt, "semantic action requested")
-			record_trace(rt, .Action, visual.id, "semantic Select routed as tab activation")
+			record_trace(rt, .Action, visual.id, "semantic Select routed as selection activation")
 			return true
 		case .Focus:
 			if visual.focusable && focus(rt, visual.id) {
