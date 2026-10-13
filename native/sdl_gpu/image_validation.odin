@@ -11,12 +11,24 @@ image_validation_qoi :: [27]u8{
 	0,0,0,0,0,0,0,1,
 }
 
+image_validation_decode_srgb :: proc(value: f32) -> f32 {
+	if value <= 0.04045 { return value/12.92 }
+	return math.pow((value+0.055)/1.055, f32(2.4))
+}
+
+image_validation_encode_srgb :: proc(value: f32) -> f32 {
+	if value <= 0.0031308 { return value*12.92 }
+	return 1.055*math.pow(value, f32(1.0/2.4))-0.055
+}
+
 native_image_readback_case :: proc(
 	renderer: ^Native_Image_Renderer,
 	target: ^sdl3.GPUTexture,
 	download: ^sdl3.GPUTransferBuffer,
 	display: []alicorn.Paint_Command,
 	scale: f32,
+	source_rgba: [4]u8,
+	target_srgb: bool,
 ) -> bool {
 	device := renderer.device
 	width, height := sdl3.Uint32(64), sdl3.Uint32(64)
@@ -52,23 +64,27 @@ native_image_readback_case :: proc(
 	if mapped == nil { return false }
 	defer sdl3.UnmapGPUTransferBuffer(device, download)
 	pixels := cast([^]u8)mapped
-	left, top, right, bottom := logical_to_pixel_bounds(alicorn.Rect{4,4,8,8}, scale, scale)
-	blend_alpha := (f32(128)/f32(255))*0.5
+	draw := display[0]
+	bounds := draw.bounds
+	bounds.x += draw.translation[0]; bounds.y += draw.translation[1]
+	left, top, right, bottom := logical_to_pixel_bounds(alicorn.rect_intersection(bounds, draw.clip), scale, scale)
+	blend_alpha := (f32(source_rgba[3])/255)*draw.opacity
 	background_channels := [4]f32{background.r, background.g, background.b, background.a}
 	for y in 0..<int(height) {
 		for x in 0..<int(width) {
 			inside := x >= left && x < right && y >= top && y < bottom
 			alpha := f32(0)
 			if inside { alpha = blend_alpha }
-			expected := [4]f32{
-				alpha + background_channels[0]*(1-alpha),
-				alpha + background_channels[1]*(1-alpha),
-				alpha + background_channels[2]*(1-alpha),
-				alpha + background_channels[3]*(1-alpha),
-			}
 			offset := (y*int(width)+x)*4
 			for channel in 0..<4 {
-				want := math.round(expected[channel]*255)
+				expected := alpha+background_channels[channel]*(1-alpha)
+				if channel < 3 {
+					source := f32(source_rgba[channel])/255
+					if target_srgb { source = image_validation_decode_srgb(source) }
+					expected = source*alpha+background_channels[channel]*(1-alpha)
+					if target_srgb { expected = image_validation_encode_srgb(expected) }
+				}
+				want := math.round(expected*255)
 				if abs(f32(pixels[offset+channel])-want) > 2 {
 					fmt.println("image_readback_mismatch", "scale", scale, "pixel", x, y, "channel", channel, "actual", pixels[offset+channel], "expected", want)
 					return false
@@ -88,15 +104,20 @@ native_image_validate_device :: proc() -> bool {
 	defer sdl3.DestroyGPUDevice(device)
 	rt := alicorn.new_runtime(alicorn.Rect{0,0,64,64})
 	defer alicorn.destroy_runtime(&rt)
-	encoded := image_validation_qoi
-	handle, load_error := alicorn.image_load_bytes(&rt, encoded[:])
-	if load_error != .None { return false }
-	defer _ = alicorn.image_release(&rt, handle)
-	renderer, renderer_ok := native_image_make(device, .R8G8B8A8_UNORM, &rt)
+	formats := [?]sdl3.GPUTextureFormat{.R8G8B8A8_UNORM, .R8G8B8A8_UNORM_SRGB}
+	for format in formats {
+		if !native_image_validate_target(device, &rt, format) { return false }
+	}
+	fmt.println("image_gpu_validation", "driver", sdl3.GetGPUDeviceDriver(device), "scales", "1,1.25,1.5,2", "targets", "SDR,SDR_LINEAR", "midtone_fidelity", true, "clipped_translation", true, "correct_source_over", true)
+	return true
+}
+
+native_image_validate_target :: proc(device: ^sdl3.GPUDevice, rt: ^alicorn.Runtime, format: sdl3.GPUTextureFormat) -> bool {
+	renderer, renderer_ok := native_image_make(device, format, rt)
 	if !renderer_ok { return false }
 	defer native_image_destroy(&renderer)
 	target := sdl3.CreateGPUTexture(device, sdl3.GPUTextureCreateInfo{
-		type=.D2, format=.R8G8B8A8_UNORM, usage={.COLOR_TARGET},
+		type=.D2, format=format, usage={.COLOR_TARGET},
 		width=64, height=64, layer_count_or_depth=1, num_levels=1, sample_count=._1,
 	})
 	if target == nil { return false }
@@ -104,15 +125,27 @@ native_image_validate_device :: proc() -> bool {
 	download := sdl3.CreateGPUTransferBuffer(device, sdl3.GPUTransferBufferCreateInfo{usage=.DOWNLOAD, size=64*64*4})
 	if download == nil { return false }
 	defer sdl3.ReleaseGPUTransferBuffer(device, download)
-	display := [1]alicorn.Paint_Command{
-		alicorn.paint_image_command(1, alicorn.Rect{4,4,8,8}, alicorn.Rect{0,0,64,64}, handle, opacity=0.5),
-	}
 	scales := [4]f32{1,1.25,1.5,2}
-	for scale in scales {
-		if !native_image_readback_case(&renderer, target, download, display[:], scale) { return false }
+	clip_cases := [2]bool{false,true}
+	colors := [?][4]u8{{255,255,255,128}, {128,96,180,255}, {35,120,193,128}}
+	for color in colors {
+		encoded := image_validation_qoi
+		for channel in 0..<4 { encoded[15+channel] = color[channel] }
+		handle, load_error := alicorn.image_load_bytes(rt, encoded[:])
+		if load_error != .None { return false }
+		defer _ = alicorn.image_release(rt, handle)
+		for scale in scales {
+			for clipped in clip_cases {
+				clip := alicorn.Rect{0,0,64,64}
+				if clipped { clip = alicorn.Rect{5,5,5,5} }
+				display := [1]alicorn.Paint_Command{
+					alicorn.paint_image_command(1, alicorn.Rect{2,2,8,8}, clip, handle, opacity=1 if color[3] == 255 else 0.5, translation={2,2}),
+				}
+				if !native_image_readback_case(&renderer, target, download, display[:], scale, color, format == .R8G8B8A8_UNORM_SRGB) { return false }
+				if len(renderer.images) != 1 || !renderer.images[0].ready || len(renderer.uploads) != 0 { return false }
+			}
+		}
 	}
-	if len(renderer.images) != 1 || !renderer.images[0].ready || len(renderer.uploads) != 0 { return false }
-	fmt.println("image_gpu_validation", "driver", sdl3.GetGPUDeviceDriver(device), "scales", "1,1.25,1.5,2", "cached_textures", len(renderer.images), "correct_source_over", true)
 	return true
 }
 
