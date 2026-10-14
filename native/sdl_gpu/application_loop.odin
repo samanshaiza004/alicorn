@@ -373,6 +373,8 @@ run_application_loop :: proc(
 				appearance_monitor=&child.appearance_monitor,
 				secondary_child=child,
 				replay_secondary_events=true,
+				flight_recorder=&child.flight_recorder,
+				diagnostics_capture_requested=&diagnostics.capture_requested,
 			)
 			if command, ok := native_menu_take_pending(&child.native_menu); ok {
 				native_menu_dispatch_command(&child.native_menu, command)
@@ -709,19 +711,30 @@ run_application_loop :: proc(
 			devtools_hud_deadline_ns = native_devtools_hud_next_wake_ns(&devtools_recorder, u64(sdl3.GetTicksNS()))
 		}
 		if native_write_diagnostics(&diagnostics, start, gpu_driver, metrics^, rt, text_renderer, surface_renderer, solid_renderer, &timing, &text_events, &devtools_recorder) {
+			windows_path := fmt.tprintf("%s/windows.json", diagnostics.last_capture_dir)
+			if native_write_window_diagnostics(windows_path, window, metrics^, rt, native_menu, &secondary_windows) {
+				fmt.println("alicorn_diagnostics", "windows", windows_path)
+			} else {
+				fmt.println("alicorn_diagnostics", "windows_failed", windows_path)
+			}
 			screenshot_path := fmt.tprintf("%s/screenshot.ppm", diagnostics.last_capture_dir)
 			if native_capture_display_ppm(
 				device, text_renderer, surface_renderer, solid_renderer, rt.display[:],
 				sdl3.Uint32(metrics.pixel_width), sdl3.Uint32(metrics.pixel_height),
 				f32(metrics.pixel_width) / f32(metrics.logical_width),
-				f32(metrics.pixel_height) / f32(metrics.logical_height),
+				f32(metrics.pixel_height) / f32(max(metrics.window_logical_height, 1)),
 				screenshot_path,
 				debug_bounds=debug_bounds,
 				inspector=&inspector,
+				content_inset_top=native_menu.content_inset_top if native_menu != nil else 0,
+				native_menu=native_menu,
 			) {
 				fmt.println("alicorn_diagnostics", "screenshot", screenshot_path)
 			} else {
 				fmt.println("alicorn_diagnostics", "screenshot_failed", screenshot_path)
+			}
+			if !native_capture_secondary_diagnostics(diagnostics.last_capture_dir, device, &secondary_windows, debug_bounds) {
+				fmt.println("alicorn_diagnostics", "secondary_capture_failed", diagnostics.last_capture_dir)
 			}
 		}
 	}

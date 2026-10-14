@@ -3,8 +3,98 @@
 package alicorn_sdl_gpu
 
 import "core:testing"
+import "core:encoding/json"
 import win "core:sys/windows"
 import alicorn "../../runtime"
+import "vendor:sdl3"
+
+@(test)
+test_integrated_topmost_window_mouse_entry_preserves_native_rectangle :: proc(t: ^testing.T) {
+	if !sdl3.Init(sdl3.INIT_VIDEO) { testing.expect(t, false, "SDL video initialization failed"); return }
+	defer sdl3.Quit()
+	window := sdl3.CreateWindow("Alicorn topmost entry regression", 480, 320, {.HIDDEN, .RESIZABLE})
+	if window == nil { testing.expect(t, false, "hidden SDL window creation failed"); return }
+	defer sdl3.DestroyWindow(window)
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 480, 320})
+	defer alicorn.destroy_runtime(&rt)
+	menus := [1]Application_Menu{{label="Tool"}}
+	app := Application{title="Alicorn topmost entry regression", menus=menus[:], window_decorations=.Integrated_Title_Bar}
+	menu := Native_Menu_Runtime{window=window, application=&app, runtime=&rt}
+	defer native_menu_destroy(&menu)
+	if !native_menu_prepare(&menu) { testing.expect(t, false, "integrated frame initialization failed"); return }
+	state := cast(^Win32_Menu_State)menu.platform_data
+	if !sdl3.SetWindowAlwaysOnTop(window, true) { testing.expect(t, false, "topmost transition failed"); return }
+	_ = win.SendMessageW(state.hwnd, win.WM_MOUSELEAVE, 0, 0)
+	before: win.RECT
+	if !win.GetWindowRect(state.hwnd, &before) { testing.expect(t, false, "native window rectangle unavailable"); return }
+	keyboard_focus := sdl3.GetKeyboardFocus()
+	for i in 0..<8 {
+		point := win.LPARAM(uintptr(120+i) | uintptr(120)<<16)
+		_ = win.SendMessageW(state.hwnd, win.WM_MOUSEMOVE, 0, point)
+		testing.expect(t, sdl3.GetMouseFocus() == window, "the real SDL mouse-entry path must be exercised")
+		after: win.RECT
+		_ = win.GetWindowRect(state.hwnd, &after)
+		testing.expect_value(t, after, before)
+		testing.expect(t, sdl3.GetKeyboardFocus() == keyboard_focus, "mouse entry must not activate the window")
+		_ = win.SendMessageW(state.hwnd, win.WM_MOUSELEAVE, 0, 0)
+	}
+	testing.expect_value(t, state.window_geometry.topmost_promotions_preserved, u64(8))
+	// Native caption dragging and explicit placement use ordinary move requests.
+	move_flags := win.UINT(win.SWP_NOSIZE | win.SWP_NOACTIVATE | win.SWP_NOZORDER)
+	testing.expect(t, win.SetWindowPos(state.hwnd, nil, before.left+40, before.top+20, 0, 0, move_flags) != false)
+	before.left += 40; before.right += 40; before.top += 20; before.bottom += 20
+	moved: win.RECT
+	_ = win.GetWindowRect(state.hwnd, &moved)
+	testing.expect_value(t, moved, before)
+	resize_flags := win.UINT(win.SWP_NOMOVE | win.SWP_NOACTIVATE | win.SWP_NOZORDER)
+	testing.expect(t, win.SetWindowPos(state.hwnd, nil, 0, 0, before.right-before.left+40, before.bottom-before.top+30, resize_flags) != false)
+	before.right += 40; before.bottom += 30
+	resized: win.RECT
+	_ = win.GetWindowRect(state.hwnd, &resized)
+	testing.expect_value(t, resized, before)
+	topmost_states := [2]bool{false, true}
+	for topmost in topmost_states {
+		testing.expect(t, sdl3.SetWindowAlwaysOnTop(window, topmost))
+		for i in 0..<8 {
+			_ = win.SendMessageW(state.hwnd, win.WM_MOUSEMOVE, 0, win.LPARAM(uintptr(140+i) | uintptr(140)<<16))
+			after: win.RECT
+			_ = win.GetWindowRect(state.hwnd, &after)
+			testing.expect_value(t, after, before)
+			_ = win.SendMessageW(state.hwnd, win.WM_MOUSELEAVE, 0, 0)
+		}
+	}
+	testing.expect_value(t, state.window_geometry.topmost_promotions_preserved, u64(16))
+	// The same capture exports two independent native identities and viewports,
+	// plus the child HWND history that was absent from the original capture.
+	primary_window := sdl3.CreateWindow("Primary diagnostics fixture", 800, 600, {.HIDDEN})
+	if primary_window == nil { testing.expect(t, false, "primary fixture creation failed"); return }
+	defer sdl3.DestroyWindow(primary_window)
+	primary_rt := alicorn.new_runtime(alicorn.Rect{0, 0, 800, 600})
+	defer alicorn.destroy_runtime(&primary_rt)
+	primary_metrics, child_metrics: Window_Metrics
+	_ = read_window_metrics(primary_window, &primary_metrics)
+	_ = read_window_metrics(window, &child_metrics, menu.content_inset_top)
+	child := Native_Secondary_Window{active=true, window=window, runtime=&rt, metrics=child_metrics, native_menu=menu}
+	manager := Native_Secondary_Window_Manager{child=&child}
+	serialized := native_window_diagnostics_json(primary_window, primary_metrics, &primary_rt, nil, &manager)
+	defer delete(serialized)
+	value, err := json.parse_string(serialized)
+	if err != .None { testing.expect(t, false, "window inventory must be valid JSON"); return }
+	defer json.destroy_value(value)
+	root := value.(json.Object)
+	primary := root["primary"].(json.Object)
+	secondary := root["secondary"].(json.Object)
+	testing.expect(t, primary["sdl_window_id"].(json.Float) != secondary["sdl_window_id"].(json.Float))
+	primary_runtime := primary["runtime"].(json.Object)
+	secondary_runtime := secondary["runtime"].(json.Object)
+	primary_viewport := primary_runtime["viewport"].(json.Object)
+	secondary_viewport := secondary_runtime["viewport"].(json.Object)
+	testing.expect_value(t, primary_viewport["width"].(json.Float), json.Float(800))
+	testing.expect_value(t, secondary_viewport["width"].(json.Float), json.Float(480))
+	native := secondary["win32"].(json.Object)
+	testing.expect_value(t, native["topmost_promotions_preserved"].(json.Float), json.Float(16))
+	testing.expect(t, len(native["position_history"].(json.Array)) > 0)
+}
 
 @(test)
 test_native_chrome_feedback_uses_distinct_derived_states :: proc(t: ^testing.T) {

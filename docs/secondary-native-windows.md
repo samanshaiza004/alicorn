@@ -60,3 +60,26 @@ window-ID/wake routing, deferred one-slot lifecycle, and bounded event ordering.
 Before shipping, a native fixture should still be exercised on Windows and
 macOS for moving the child across displays with different scales, resizing,
 focus transfer, close/reopen, worker wakeups, and clean process shutdown.
+
+## Diagnostic captures
+
+A native host capture (F12 in either window) includes `windows.json` with primary and live secondary
+SDL window IDs, focus/topmost state, size and scale, Runtime viewport, and frame
+counters. On Windows, each window entry also contains platform geometry and
+recent position-message history. When a child is live, the bundle includes
+`secondary-inspector.txt`, `secondary-timeline.json` (the child's pointer-event
+history), and `secondary-screenshot.ppm` rendered from that child Runtime and
+its caption inset. These artifacts make a floating-window
+issue inspectable even when the primary window remains focused.
+The original `diagnostics.json`, `inspector.txt`, `timeline.json`, and
+`screenshot.ppm` continue to describe the primary window; the JSON explicitly
+labels that role.
+
+Windows integrated frames preserve the HWND position during SDL's automatic
+topmost promotion on mouse entry. SDL's standard-frame adjustment would otherwise
+subtract a caption/resize inset from the custom full-client frame repeatedly.
+The host recognizes that z-order promotion in `WM_WINDOWPOSCHANGING` and applies
+`SWP_NOMOVE`; explicit moves, resizing, and DPI/frame changes retain their normal
+geometry handling. A hidden native regression exercises repeated SDL mouse
+entry/leave, topmost toggles, ordinary movement, and resizing without activating
+or moving the user's cursor.

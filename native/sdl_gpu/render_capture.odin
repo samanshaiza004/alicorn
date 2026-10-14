@@ -20,6 +20,8 @@ native_capture_display_ppm :: proc(
 	path: string,
 	debug_bounds := false,
 	inspector: ^Native_Inspector_Overlay = nil,
+	content_inset_top: f32 = 0,
+	native_menu: ^Native_Menu_Runtime = nil,
 	scratch_allocator := context.temp_allocator,
 ) -> bool {
 	if width == 0 || height == 0 { return false }
@@ -37,7 +39,9 @@ native_capture_display_ppm :: proc(
 	defer sdl3.ReleaseGPUTransferBuffer(device, download)
 	command := sdl3.AcquireGPUCommandBuffer(device)
 	if command == nil { return false }
-	if !draw_display_list(command, texture, width, height, text_renderer, surface_renderer, solid_renderer, display, scale_x, scale_y, debug_bounds=debug_bounds, scratch_allocator=scratch_allocator) {
+	if !draw_display_list(command, texture, width, height, text_renderer, surface_renderer, solid_renderer, display, scale_x, scale_y,
+		debug_bounds=debug_bounds, content_inset_top=content_inset_top, native_menu=native_menu,
+		scratch_allocator=scratch_allocator) {
 		_ = sdl3.CancelGPUCommandBuffer(command)
 		return false
 	}

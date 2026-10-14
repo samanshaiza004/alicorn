@@ -108,6 +108,7 @@ Win32_Menu_State :: struct {
 	frame_extended: bool,
 	frame_enabled: bool,
 	text_renderer: ^Native_Text_Renderer,
+	window_geometry: Win32_Window_Geometry_Recorder,
 }
 
 win32_menu_state :: proc(data: win.DWORD_PTR) -> ^Win32_Menu_State {
@@ -895,12 +896,50 @@ win32_menu_set_active :: proc(state: ^Win32_Menu_State, active: bool) -> bool {
 	return true
 }
 
+win32_menu_preserve_topmost_promotion_position :: proc(state: ^Win32_Menu_State, position: ^win.WINDOWPOS) -> bool {
+	if state == nil || !state.frame_enabled || position == nil { return false }
+	required := win.UINT(win.SWP_NOSIZE | win.SWP_NOACTIVATE)
+	excluded := win.UINT(win.SWP_NOMOVE | win.SWP_NOZORDER | win.SWP_FRAMECHANGED)
+	if (position.flags & required) != required || (position.flags & excluded) != 0 { return false }
+	if state.menu == nil || state.menu.window == nil { return false }
+	topmost := (sdl3.GetWindowFlags(state.menu.window) & sdl3.WindowFlags{.ALWAYS_ON_TOP}) != sdl3.WindowFlags{}
+	if !topmost { return false }
+	// Windows may replace HWND_TOPMOST with an actual insertion HWND before
+	// sending WINDOWPOSCHANGING, so identify SDL's standard-frame adjustment
+	// from the requested coordinates rather than the normalized z-order target.
+	standard_frame: win.RECT
+	style := cast(win.DWORD)win.GetWindowLongW(state.hwnd, win.GWL_STYLE)
+	ex_style := cast(win.DWORD)win.GetWindowLongW(state.hwnd, win.GWL_EXSTYLE)
+	if !win.AdjustWindowRectExForDpi(&standard_frame, style, win.BOOL(state.menu_attached), ex_style, win.GetDpiForWindow(state.hwnd)) { return false }
+	if standard_frame.left == 0 && standard_frame.top == 0 { return false }
+	x, y: c.int
+	if !sdl3.GetWindowPosition(state.menu.window, &x, &y) ||
+		position.x != x+standard_frame.left || position.y != y+standard_frame.top { return false }
+	// SDL's WIN_OnWindowEnter promotes topmost windows with an adjusted position
+	// and no SWP_NOMOVE. Its standard-frame adjustment disagrees with our full
+	// client WM_NCCALCSIZE contract. This is a z-order promotion: preserve the
+	// HWND rectangle before Windows applies it. Explicit moves keep SWP_NOZORDER
+	// and resize/DPI/frame changes do not satisfy this predicate.
+	position.flags |= win.SWP_NOMOVE
+	state.window_geometry.topmost_promotions_preserved += 1
+	return true
+}
+
 win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam: win.WPARAM, lparam: win.LPARAM, subclass_id: win.UINT_PTR, ref_data: win.DWORD_PTR) -> win.LRESULT {
 	context = runtime.default_context()
 	state := win32_menu_state(ref_data)
 	if state == nil { return win.DefSubclassProc(hwnd, message, wparam, lparam) }
 	state.hwnd = hwnd
 	integrated := state.frame_enabled
+	if integrated && message == win.WM_WINDOWPOSCHANGING {
+		position := cast(^win.WINDOWPOS)uintptr(lparam)
+		requested_flags := position.flags if position != nil else win.UINT(0)
+		preserved := win32_menu_preserve_topmost_promotion_position(state, position)
+		win32_window_geometry_record(state, message, position, requested_flags, preserved)
+	} else if integrated && (message == win.WM_MOUSELEAVE ||
+		(message == win.WM_MOUSEMOVE && sdl3.GetMouseFocus() != state.menu.window)) {
+		win32_window_geometry_record(state, message, nil, 0, false)
+	}
 
 	if integrated && message == win.WM_NCCALCSIZE {
 		// Keep the outer window and client coordinates aligned. On maximize,
@@ -1027,6 +1066,12 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 	}
 
 	result := win.DefSubclassProc(hwnd, message, wparam, lparam)
+	if integrated && (message == win.WM_WINDOWPOSCHANGED || message == win.WM_ACTIVATE || message == win.WM_DPICHANGED) {
+		position: ^win.WINDOWPOS
+		if message == win.WM_WINDOWPOSCHANGED { position = cast(^win.WINDOWPOS)uintptr(lparam) }
+		flags := position.flags if position != nil else win.UINT(0)
+		win32_window_geometry_record(state, message, position, flags, false)
+	}
 	if message == win.WM_DWMCOMPOSITIONCHANGED && integrated {
 		if !win32_menu_reapply_frame(state) { win32_menu_disable_frame(state) }
 	} else if message == win.WM_NCACTIVATE {

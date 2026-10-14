@@ -54,6 +54,7 @@ Native_Secondary_Window :: struct {
 	drag_autoscroll_deadline_ns: u64,
 	last_tick_ns: u64,
 	timing: Native_Host_Timing,
+	flight_recorder: Native_Flight_Recorder,
 	host_scratch: Native_Host_Scratch,
 }
 
@@ -474,7 +475,9 @@ native_secondary_window_render :: proc(
 	if application_submission_pending {
 		alicorn.gpu_surface_frame_consumed(child.runtime)
 		alicorn.frame_submission_succeeded(child.runtime)
+		child.runtime.stats.gpu_submits += 1
 	}
+	child.timing.gpu_submissions += 1
 	child.native_menu.chrome_redraw_pending = false
 	return true
 }

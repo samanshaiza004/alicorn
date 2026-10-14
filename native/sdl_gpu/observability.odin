@@ -250,6 +250,7 @@ native_write_diagnostics :: proc(
 	fmt.sbprintf(&builder, `{{
   "schema": 1,
   "kind": "alicorn-native-diagnostics",
+  "window_role": "primary",
   "capture": {{
     "id": "%s-%04d",
     "captured_at_utc": "%s",
