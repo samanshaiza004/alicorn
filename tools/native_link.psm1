@@ -179,7 +179,7 @@ function Get-AlicornCMakeCompilerFacts([string]$BuildDirectory) {
         targetProcessor = [string]$report.targetProcessor
         crt = [string]$report.crt
         visualStudioVersion = $cache['CMAKE_VS_VERSION_BUILD_NUMBER']
-        windowsSdkVersion = $env:WindowsSDKVersion
+        windowsSdkVersion = [string]$report.windowsSdkVersion
         vcToolsInstallDir = $env:VCToolsInstallDir
     }
 }
@@ -398,7 +398,7 @@ function New-AlicornWindowsStaticLinkRecipe {
         cmake = [ordered]@{ executable=(Get-AlicornFullPath $cmake); executableSha256=(Get-AlicornFileHash $cmake); version=$cmakeVersion; generatorArguments=@($generatorArguments); toolchain=$toolchain }
         odin = [ordered]@{ executable=(Get-AlicornFullPath $Odin); executableSha256=(Get-AlicornFileHash $Odin); fileVersion=$odinVersion.FileVersion; version=$odinVersionOutput; sdkRoot=(Get-AlicornFullPath $OdinRoot); vendorSdl=$sdkSdlInventory }
         accesskit = [ordered]@{ version='0.23.1'; archiveSha256=(Get-AlicornFileHash $accessKitArchive); librarySha256=(Get-AlicornFileHash $accessKitLibrary) }
-        environment = [ordered]@{ windowsSdkVersion=$env:WindowsSDKVersion; vcToolsInstallDir=$env:VCToolsInstallDir; generatorInstance=$env:CMAKE_GENERATOR_INSTANCE }
+        environment = [ordered]@{ windowsSdkVersion=$toolchain.windowsSdkVersion; vcToolsInstallDir=$env:VCToolsInstallDir; generatorInstance=$env:CMAKE_GENERATOR_INSTANCE }
     }
     $fingerprint = Get-AlicornObjectHash $inputs
     $generationRoot = Join-Path $generationRootParent $fingerprint

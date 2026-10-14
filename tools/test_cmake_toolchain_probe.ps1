@@ -30,6 +30,9 @@ try {
     if ($facts.cCompilerId -ne 'MSVC' -or $facts.cxxCompilerId -ne 'MSVC') {
         throw 'The real CMake probe did not report MSVC for both C and C++.'
     }
+    if ($generator -match '^Visual Studio' -and [string]::IsNullOrWhiteSpace($facts.windowsSdkVersion)) {
+        throw 'The real Visual Studio probe did not report the Windows SDK selected by CMake.'
+    }
     if ($generator -match '^Visual Studio' -and $facts.platform -notin @('x64', 'amd64', 'AMD64')) {
         throw "The real Visual Studio generator did not target x64 (reported '$($facts.platform)')."
     }

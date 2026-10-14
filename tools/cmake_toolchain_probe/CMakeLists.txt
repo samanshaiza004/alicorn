@@ -28,6 +28,7 @@ endfunction()
 
 alicorn_json_escape(c_compiler "${CMAKE_C_COMPILER}")
 alicorn_json_escape(cxx_compiler "${CMAKE_CXX_COMPILER}")
+alicorn_json_escape(windows_sdk_version "${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}")
 
 # CMAKE_SIZEOF_VOID_P is a configure-time variable, not a portable cache
 # contract. Record the evaluated toolchain facts while they are in scope so
@@ -47,6 +48,7 @@ file(WRITE "${CMAKE_BINARY_DIR}/alicorn-toolchain-report.json"
     "  \"generator\": \"${CMAKE_GENERATOR}\",\n"
     "  \"generatorPlatform\": \"${CMAKE_GENERATOR_PLATFORM}\",\n"
     "  \"visualStudioPlatform\": \"${CMAKE_VS_PLATFORM_NAME}\",\n"
+    "  \"windowsSdkVersion\": \"${windows_sdk_version}\",\n"
     "  \"crt\": \"${CMAKE_MSVC_RUNTIME_LIBRARY}\"\n"
     "}\n"
 )

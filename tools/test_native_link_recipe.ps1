@@ -63,7 +63,7 @@ try {
     $report = [ordered]@{
         schemaVersion=1; pointerSize=4; cCompiler=$compiler; cCompilerId='MSVC'; cCompilerVersion='19.40'
         cxxCompiler=$compiler; cxxCompilerId='MSVC'; cxxCompilerVersion='19.40'; targetSystem='Windows'
-        targetProcessor='AMD64'; generator='Ninja'; generatorPlatform=''; visualStudioPlatform=''; crt='MultiThreaded'
+        targetProcessor='AMD64'; generator='Ninja'; generatorPlatform=''; visualStudioPlatform=''; windowsSdkVersion='10.0.26100.0'; crt='MultiThreaded'
     }
     Set-Content -LiteralPath $reportPath -Value (ConvertTo-Json -InputObject $report -Compress)
     Assert-Throws { Get-AlicornCMakeCompilerFacts $toolchainFixtureRoot } '64-bit Windows' 'A non-x64 compiler must fail validation.'
@@ -79,7 +79,8 @@ try {
     Set-Content -LiteralPath $reportPath -Value (ConvertTo-Json -InputObject $report -Compress)
     $toolchainFacts = Get-AlicornCMakeCompilerFacts $toolchainFixtureRoot
     if ($toolchainFacts.pointerSize -ne '8' -or $toolchainFacts.crt -ne 'MultiThreaded' -or $toolchainFacts.targetSystem -ne 'Windows' -or
-        $toolchainFacts.cCompiler -ne $compiler -or $toolchainFacts.cxxCompiler -ne $compiler) {
+        $toolchainFacts.cCompiler -ne $compiler -or $toolchainFacts.cxxCompiler -ne $compiler -or
+        $toolchainFacts.windowsSdkVersion -ne '10.0.26100.0') {
         throw 'The accepted MSVC toolchain facts were not preserved.'
     }
 } finally {
