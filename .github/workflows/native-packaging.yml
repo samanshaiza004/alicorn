@@ -37,8 +37,9 @@ jobs:
           $timer = [Diagnostics.Stopwatch]::StartNew()
           .\tools\build_native_release.ps1 -Odin odin -SDLLinkage Static -OutputDirectory out\native-package\windows-x86_64
           $timer.Stop()
-          $package = Get-ChildItem out\native-package\windows-x86_64 -Filter 01_hello.exe -File -Recurse | Select-Object -First 1
-          if (-not $package) { throw 'Static 01_hello package did not contain 01_hello.exe.' }
+          $executableName = ((Get-Content examples\01_hello\package.json -Raw | ConvertFrom-Json).executableName) + '.exe'
+          $package = Get-ChildItem out\native-package\windows-x86_64 -Filter $executableName -File -Recurse | Select-Object -First 1
+          if (-not $package) { throw "Static 01_hello package did not contain $executableName." }
           $size = $package.Length
           $seconds = [Math]::Round($timer.Elapsed.TotalSeconds, 2)
           $row = "| Static 01_hello package build | $seconds s |`n| Static 01_hello executable | $size bytes |`n"
@@ -51,9 +52,10 @@ jobs:
           .\tools\build_native_release.ps1 -Odin odin -SDLLinkage Shared -OutputDirectory out\native-package\windows-x86_64-shared
           $timer.Stop()
           $packageRoot = 'out\native-package\windows-x86_64-shared'
-          $executable = Get-ChildItem $packageRoot -Filter 01_hello.exe -File -Recurse | Select-Object -First 1
+          $executableName = ((Get-Content examples\01_hello\package.json -Raw | ConvertFrom-Json).executableName) + '.exe'
+          $executable = Get-ChildItem $packageRoot -Filter $executableName -File -Recurse | Select-Object -First 1
           $sdl = Get-ChildItem $packageRoot -Filter SDL3.dll -File -Recurse | Select-Object -First 1
-          if (-not $executable -or -not $sdl) { throw 'Shared 01_hello package must contain its executable and SDL3.dll.' }
+          if (-not $executable -or -not $sdl) { throw "Shared 01_hello package must contain $executableName and SDL3.dll." }
           $executableBytes = $executable.Length
           $sdlBytes = $sdl.Length
           $packageBytes = $executableBytes + $sdlBytes
