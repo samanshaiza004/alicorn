@@ -58,8 +58,11 @@ Win32_Menu_Label :: struct {
 }
 
 Win32_Caption_Control :: struct {
-	// Client-relative physical pixels used for the glyph and WM_NCHITTEST.
+	// Client-relative physical pixels used for WM_NCHITTEST.
 	bounds: win.RECT,
+	// Icon alignment can follow the visible button while leaving the resize
+	// gutter outside the native button hit target.
+	glyph_bounds: win.RECT,
 	// Hover paint may cover the resize gutter without changing its hit target.
 	hover_bounds: win.RECT,
 	hit_test: win.LRESULT,

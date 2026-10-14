@@ -46,15 +46,16 @@ win32_caption_layout_controls :: proc(
 	cluster.bottom = win.LONG(chrome_height)
 	rects := win32_caption_control_rects(cluster, true)
 	if maximized { rects[2].right = win.LONG(client_width) }
-	close_hover := rects[2]
-	// Match the native Windows close hover treatment to the visible client
-	// edges. Keep rects[2] canonical for glyph placement and resize hit testing.
+	close_glyph := rects[2]
+	close_glyph.right = win.LONG(client_width)
+	close_hover := close_glyph
+	// Match the close glyph and hover fill to the visible client edge, while
+	// preserving rects[2] for native button activation and the resize border.
 	close_hover.top = 0
-	close_hover.right = win.LONG(client_width)
 	return [3]Win32_Caption_Control{
-		{bounds=rects[0], hover_bounds=rects[0], hit_test=win.LRESULT(win.HTMINBUTTON)},
-		{bounds=rects[1], hover_bounds=rects[1], hit_test=win.LRESULT(win.HTMAXBUTTON)},
-		{bounds=rects[2], hover_bounds=close_hover, hit_test=win.LRESULT(win.HTCLOSE)},
+		{bounds=rects[0], glyph_bounds=rects[0], hover_bounds=rects[0], hit_test=win.LRESULT(win.HTMINBUTTON)},
+		{bounds=rects[1], glyph_bounds=rects[1], hover_bounds=rects[1], hit_test=win.LRESULT(win.HTMAXBUTTON)},
+		{bounds=rects[2], glyph_bounds=close_glyph, hover_bounds=close_hover, hit_test=win.LRESULT(win.HTCLOSE)},
 	}
 }
 
@@ -163,7 +164,7 @@ win32_caption_append_glyph :: proc(
 	if index == 2 { icon = .Close }
 	mask := state.caption_masks[int(icon)]
 	if mask.size == 0 { return }
-	control := state.caption_controls[index].bounds
+	control := state.caption_controls[index].glyph_bounds
 	x0 := int(control.left)+(int(control.right-control.left)-mask.size)/2
 	y0 := int(control.top)+(int(control.bottom-control.top)-mask.size)/2
 	scale := 1/(state.pixels_per_unit if state.pixels_per_unit > 0 else 1)
