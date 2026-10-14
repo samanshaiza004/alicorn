@@ -72,6 +72,11 @@ check that these inputs preserve the actual SDL link semantics.
 `tools/test_native_link_recipe.ps1` checks path quoting, link ordering,
 duplicate preservation, unsupported CMake expressions, invalid x86/CRT
 toolchains, unmanifested files, and artifact corruption.
+`tools/test_cmake_toolchain_probe.ps1` configures the real CMake toolchain
+probe on Windows and validates its machine-readable report. The report records
+the resolved pointer size, compiler IDs and versions, target system, generator
+platform, and CRT selection; the recipe does not assume configure-time CMake
+variables appear in `CMakeCache.txt`.
 `tools/test_external_native_link.ps1` starts two cold recipe requests at once,
 checks that they publish and reuse one generation, then builds a small Alicorn
 app from a temporary external directory whose path contains spaces. It packages

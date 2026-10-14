@@ -45,35 +45,42 @@ if (-not ([IO.Path]::GetFullPath($toolchainFixtureRoot)).StartsWith($fixtureBoun
     throw "Refusing to create toolchain fixture outside generated output: '$toolchainFixtureRoot'."
 }
 try {
-    $compilerFiles = Join-Path $toolchainFixtureRoot 'CMakeFiles\3.31.0'
-    New-Item -ItemType Directory -Path $compilerFiles -Force | Out-Null
+    New-Item -ItemType Directory -Path $toolchainFixtureRoot -Force | Out-Null
     foreach ($name in @('cl.exe', 'link.exe')) {
         [IO.File]::WriteAllBytes((Join-Path $toolchainFixtureRoot $name), [byte[]]@(0, 1, 2, 3))
     }
-    Set-Content -LiteralPath (Join-Path $compilerFiles 'CMakeCCompiler.cmake') -Value "set(CMAKE_C_COMPILER_ID `"MSVC`")`nset(CMAKE_C_COMPILER_VERSION `"19.40`")" -NoNewline
-    Set-Content -LiteralPath (Join-Path $compilerFiles 'CMakeCXXCompiler.cmake') -Value "set(CMAKE_CXX_COMPILER_ID `"MSVC`")`nset(CMAKE_CXX_COMPILER_VERSION `"19.40`")" -NoNewline
     $cachePath = Join-Path $toolchainFixtureRoot 'CMakeCache.txt'
     $compiler = Join-Path $toolchainFixtureRoot 'cl.exe'
     $linker = Join-Path $toolchainFixtureRoot 'link.exe'
     $cacheLines = @(
         'CMAKE_GENERATOR:INTERNAL=Ninja',
-        'CMAKE_GENERATOR_PLATFORM:INTERNAL=x64',
         "CMAKE_C_COMPILER:FILEPATH=$compiler",
         "CMAKE_CXX_COMPILER:FILEPATH=$compiler",
-        "CMAKE_LINKER:FILEPATH=$linker",
-        'CMAKE_SIZEOF_VOID_P:INTERNAL=4',
-        'CMAKE_MSVC_RUNTIME_LIBRARY:UNINITIALIZED=MultiThreaded'
+        "CMAKE_LINKER:FILEPATH=$linker"
     )
     Set-Content -LiteralPath $cachePath -Value $cacheLines
+    $reportPath = Join-Path $toolchainFixtureRoot 'alicorn-toolchain-report.json'
+    $report = [ordered]@{
+        schemaVersion=1; pointerSize=4; cCompilerId='MSVC'; cCompilerVersion='19.40'
+        cxxCompilerId='MSVC'; cxxCompilerVersion='19.40'; targetSystem='Windows'
+        targetProcessor='AMD64'; generator='Ninja'; generatorPlatform=''; visualStudioPlatform=''; crt='MultiThreaded'
+    }
+    Set-Content -LiteralPath $reportPath -Value (ConvertTo-Json -InputObject $report -Compress)
     Assert-Throws { Get-AlicornCMakeCompilerFacts $toolchainFixtureRoot } '64-bit Windows' 'A non-x64 compiler must fail validation.'
-    $cacheLines = $cacheLines | ForEach-Object { if ($_ -like 'CMAKE_SIZEOF_VOID_P:*') { 'CMAKE_SIZEOF_VOID_P:INTERNAL=8' } else { $_ } }
-    $cacheLines = $cacheLines | ForEach-Object { if ($_ -like 'CMAKE_MSVC_RUNTIME_LIBRARY:*') { 'CMAKE_MSVC_RUNTIME_LIBRARY:UNINITIALIZED=MultiThreadedDLL' } else { $_ } }
-    Set-Content -LiteralPath $cachePath -Value $cacheLines
+    $report.pointerSize = 8
+    $report.crt = 'MultiThreadedDLL'
+    Set-Content -LiteralPath $reportPath -Value (ConvertTo-Json -InputObject $report -Compress)
     Assert-Throws { Get-AlicornCMakeCompilerFacts $toolchainFixtureRoot } 'static MSVC CRT' 'A dynamic-CRT toolchain must fail validation.'
-    $cacheLines = $cacheLines | ForEach-Object { if ($_ -like 'CMAKE_MSVC_RUNTIME_LIBRARY:*') { 'CMAKE_MSVC_RUNTIME_LIBRARY:UNINITIALIZED=MultiThreaded' } else { $_ } }
-    Set-Content -LiteralPath $cachePath -Value $cacheLines
+    $report.crt = 'MultiThreaded'
+    $report.targetSystem = 'Linux'
+    Set-Content -LiteralPath $reportPath -Value (ConvertTo-Json -InputObject $report -Compress)
+    Assert-Throws { Get-AlicornCMakeCompilerFacts $toolchainFixtureRoot } 'Windows target' 'A non-Windows target must fail validation.'
+    $report.targetSystem = 'Windows'
+    Set-Content -LiteralPath $reportPath -Value (ConvertTo-Json -InputObject $report -Compress)
     $toolchainFacts = Get-AlicornCMakeCompilerFacts $toolchainFixtureRoot
-    if ($toolchainFacts.pointerSize -ne '8' -or $toolchainFacts.crt -ne 'MultiThreaded') { throw 'The accepted MSVC toolchain facts were not preserved.' }
+    if ($toolchainFacts.pointerSize -ne '8' -or $toolchainFacts.crt -ne 'MultiThreaded' -or $toolchainFacts.targetSystem -ne 'Windows') {
+        throw 'The accepted MSVC toolchain facts were not preserved.'
+    }
 } finally {
     if (Test-Path -LiteralPath $toolchainFixtureRoot) {
         if (-not ([IO.Path]::GetFullPath($toolchainFixtureRoot)).StartsWith($fixtureBoundary, [StringComparison]::OrdinalIgnoreCase)) { throw "Refusing to remove toolchain fixture outside generated output: '$toolchainFixtureRoot'." }

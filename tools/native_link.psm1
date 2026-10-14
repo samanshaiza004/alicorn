@@ -118,25 +118,30 @@ function Get-AlicornCMakeCompilerFacts([string]$BuildDirectory) {
     $cachePath = Join-Path $BuildDirectory 'CMakeCache.txt'
     if (-not (Test-Path -LiteralPath $cachePath -PathType Leaf)) { throw "CMake toolchain probe did not write '$cachePath'." }
     $cache = Get-AlicornCMakeCache $cachePath
-    $compilerFiles = Get-ChildItem -LiteralPath (Join-Path $BuildDirectory 'CMakeFiles') -Filter 'CMakeCCompiler.cmake' -File -Recurse | Select-Object -First 1
-    $cxxCompilerFiles = Get-ChildItem -LiteralPath (Join-Path $BuildDirectory 'CMakeFiles') -Filter 'CMakeCXXCompiler.cmake' -File -Recurse | Select-Object -First 1
-    if (-not $compilerFiles -or -not $cxxCompilerFiles) { throw 'CMake did not identify both C and C++ compiler toolchains.' }
-    $cText = Get-Content -LiteralPath $compilerFiles.FullName -Raw
-    $cxxText = Get-Content -LiteralPath $cxxCompilerFiles.FullName -Raw
-    $cId = [regex]::Match($cText, 'set\(CMAKE_C_COMPILER_ID "([^"]+)"\)').Groups[1].Value
-    $cVersion = [regex]::Match($cText, 'set\(CMAKE_C_COMPILER_VERSION "([^"]+)"\)').Groups[1].Value
-    $cxxId = [regex]::Match($cxxText, 'set\(CMAKE_CXX_COMPILER_ID "([^"]+)"\)').Groups[1].Value
-    $cxxVersion = [regex]::Match($cxxText, 'set\(CMAKE_CXX_COMPILER_VERSION "([^"]+)"\)').Groups[1].Value
+    $reportPath = Join-Path $BuildDirectory 'alicorn-toolchain-report.json'
+    if (-not (Test-Path -LiteralPath $reportPath -PathType Leaf)) { throw "CMake toolchain probe did not write '$reportPath'." }
+    try { $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json }
+    catch { throw "CMake toolchain probe wrote an invalid JSON report '$reportPath': $($_.Exception.Message)" }
+    if ($report.schemaVersion -ne 1) { throw "Unsupported CMake toolchain report schema '$($report.schemaVersion)'." }
+    $cId = [string]$report.cCompilerId
+    $cVersion = [string]$report.cCompilerVersion
+    $cxxId = [string]$report.cxxCompilerId
+    $cxxVersion = [string]$report.cxxCompilerVersion
     if ($cId -ne 'MSVC' -or $cxxId -ne 'MSVC') {
         throw "Static native linking requires the MSVC C and C++ compilers; C='$cId', C++='$cxxId'."
     }
-    if ($cache['CMAKE_SIZEOF_VOID_P'] -ne '8') { throw 'The selected MSVC toolchain does not target 64-bit Windows.' }
-    if ($cache['CMAKE_MSVC_RUNTIME_LIBRARY'] -ne 'MultiThreaded') {
-        $crt = $cache['CMAKE_MSVC_RUNTIME_LIBRARY']
+    $pointerSize = [string]$report.pointerSize
+    if ($pointerSize -ne '8') { throw 'The selected MSVC toolchain does not target 64-bit Windows.' }
+    if ([string]$report.targetSystem -ne 'Windows') {
+        throw "Static native linking requires a Windows target; CMake reported '$($report.targetSystem)'."
+    }
+    if ([string]$report.crt -ne 'MultiThreaded') {
+        $crt = [string]$report.crt
         throw "The SDL static build must use the static MSVC CRT (/MT); CMake reported '$crt'."
     }
-    $platform = $cache['CMAKE_GENERATOR_PLATFORM']
-    if ([string]::IsNullOrWhiteSpace($platform)) { $platform = $cache['CMAKE_VS_PLATFORM_NAME'] }
+    if ([string]$report.generator -ne $cache['CMAKE_GENERATOR']) { throw 'CMake generator disagrees with the evaluated toolchain report.' }
+    $platform = [string]$report.generatorPlatform
+    if ([string]::IsNullOrWhiteSpace($platform)) { $platform = [string]$report.visualStudioPlatform }
     if ($cache['CMAKE_GENERATOR'] -match '^Visual Studio' -and $platform -notin @('x64', 'amd64', 'AMD64')) {
         throw "The selected Visual Studio generator is not targeting x64 (platform='$platform')."
     }
@@ -169,8 +174,10 @@ function Get-AlicornCMakeCompilerFacts([string]$BuildDirectory) {
         linker = $linker
         linkerVersion = $linkerInfo.FileVersion
         linkerSha256 = (Get-AlicornFileHash $linker)
-        pointerSize = $cache['CMAKE_SIZEOF_VOID_P']
-        crt = $cache['CMAKE_MSVC_RUNTIME_LIBRARY']
+        pointerSize = $pointerSize
+        targetSystem = [string]$report.targetSystem
+        targetProcessor = [string]$report.targetProcessor
+        crt = [string]$report.crt
         visualStudioVersion = $cache['CMAKE_VS_VERSION_BUILD_NUMBER']
         windowsSdkVersion = $env:WindowsSDKVersion
         vcToolsInstallDir = $env:VCToolsInstallDir
@@ -536,4 +543,4 @@ function New-AlicornWindowsStaticLinkRecipe {
     }
 }
 
-Export-ModuleMember -Function New-AlicornWindowsStaticLinkRecipe, ConvertFrom-AlicornCMakeLinkInterface, Test-AlicornNativeLinkGeneration, Get-AlicornCMakeGeneratorArguments, Get-AlicornCMakeCompilerFacts
+Export-ModuleMember -Function New-AlicornWindowsStaticLinkRecipe, ConvertFrom-AlicornCMakeLinkInterface, Test-AlicornNativeLinkGeneration, Get-AlicornCMakeDefaultGenerator, Get-AlicornCMakeGeneratorArguments, Get-AlicornCMakeCompilerFacts

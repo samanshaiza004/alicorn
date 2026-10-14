@@ -17,6 +17,7 @@ $OldOdinRoot = $env:ODIN_ROOT
 $PreparationProcesses = [Collections.Generic.List[Diagnostics.Process]]::new()
 try {
     $recipeRuns = [Collections.Generic.List[object]]::new()
+    $coldPreparationTimer = [Diagnostics.Stopwatch]::StartNew()
     for ($index = 1; $index -le 2; $index++) {
         $stdoutPath = Join-Path $TempRoot "recipe-$index.json"
         $stderrPath = Join-Path $TempRoot "recipe-$index.log"
@@ -36,6 +37,8 @@ try {
             throw "Native link recipe command failed with exit $($run.process.ExitCode).`n$diagnostics"
         }
     }
+    $coldPreparationTimer.Stop()
+    $coldPreparationSeconds = [Math]::Round($coldPreparationTimer.Elapsed.TotalSeconds, 2)
     $recipeCandidates = @($recipeRuns | ForEach-Object { Get-Content -LiteralPath $_.stdout -Raw | ConvertFrom-Json })
     if ($recipeCandidates.Count -ne 2 -or $recipeCandidates[0].provenance.fingerprint -ne $recipeCandidates[1].provenance.fingerprint) {
         throw 'Concurrent cold-cache recipe requests did not publish and reuse one validated generation.'
@@ -51,8 +54,11 @@ try {
         throw 'Recipe compiler arguments must be an Odin argument array, not a shell command.'
     }
 
+    $warmRecipeTimer = [Diagnostics.Stopwatch]::StartNew()
     $warmJson = & $PowerShell -NoLogo -NoProfile -File $RecipeCommand -Odin $Odin -Target windows-x86_64
+    $warmRecipeTimer.Stop()
     if ($LASTEXITCODE -ne 0) { throw "Warm native link recipe request failed with exit $LASTEXITCODE." }
+    $warmRecipeSeconds = [Math]::Round($warmRecipeTimer.Elapsed.TotalSeconds, 2)
     $warmRecipe = ($warmJson -join "`n") | ConvertFrom-Json
     if ($warmRecipe.provenance.fingerprint -ne $recipe.provenance.fingerprint -or $warmRecipe.environment.ODIN_ROOT -ne $recipe.environment.ODIN_ROOT) {
         throw 'A repeated recipe request did not validate and reuse the same immutable generation.'
@@ -70,10 +76,14 @@ try {
     $env:ODIN_ROOT = [string]$recipe.environment.ODIN_ROOT
     Push-Location $TempRoot
     try {
+        $externalBuildTimer = [Diagnostics.Stopwatch]::StartNew()
         & $recipe.odin.executable @buildArgs
+        $externalBuildTimer.Stop()
         if ($LASTEXITCODE -ne 0) { throw "External Odin/Alicorn consumer build failed (exit $LASTEXITCODE)." }
     } finally { Pop-Location }
     if (-not [IO.File]::Exists($executable)) { throw 'External consumer build reported success without producing its executable.' }
+    $externalBuildSeconds = [Math]::Round($externalBuildTimer.Elapsed.TotalSeconds, 2)
+    $externalExecutableBytes = (Get-Item -LiteralPath $executable).Length
 
     $packageArgs = @{
         Executable=$executable
@@ -91,6 +101,19 @@ try {
     $packageManifest = Get-Content -LiteralPath (Join-Path $TempRoot 'package\alicorn-package.json') -Raw | ConvertFrom-Json
     if ($packageManifest.dependencies.bundled.Count -ne 0) { throw 'The external static SDL fixture unexpectedly requires bundled private DLLs.' }
     Write-Host "External static Alicorn consumer passed from '$TempRoot'."
+    $measurements = @"
+| Measurement | Result |
+| --- | ---: |
+| Cold concurrent SDL preparation and recipe requests | $coldPreparationSeconds s |
+| Warm recipe request | $warmRecipeSeconds s |
+| External Odin compile and link | $externalBuildSeconds s |
+| External static consumer executable | $externalExecutableBytes bytes |
+"@
+    Write-Host "Native-link measurements:`n$measurements"
+    if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_STEP_SUMMARY)) {
+        $summary = "## Windows static SDL recipe measurements`n`nRunner: ``$env:ImageOS / $env:ImageVersion``; Odin: ``$($recipe.provenance.odinVersion)``; target: ``$($recipe.target)``.`n`n$measurements`n"
+        [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, $summary, [Text.UTF8Encoding]::new($false))
+    }
 } finally {
     foreach ($process in $PreparationProcesses) {
         if (-not $process.HasExited) { $process.Kill() }
