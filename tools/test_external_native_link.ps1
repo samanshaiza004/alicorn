@@ -44,6 +44,10 @@ try {
         throw 'Concurrent cold-cache recipe requests did not publish and reuse one validated generation.'
     }
     $recipe = $recipeCandidates[0]
+    $nativeManifest = Get-Content -LiteralPath $recipe.provenance.manifest -Raw | ConvertFrom-Json
+    $toolchain = $nativeManifest.toolchain
+    $measurementContext = "Runner: $env:ImageOS $env:ImageVersion; Odin: $($recipe.provenance.odinVersion); CMake: $($nativeManifest.inputs.cmake.version); generator: $($toolchain.generator); C/C++ compiler: $($toolchain.cCompilerVersion) / $($toolchain.cxxCompilerVersion) ($($toolchain.cCompilerFileVersion)); linker: $($toolchain.linkerVersion); Windows SDK: $($toolchain.windowsSdkVersion); CRT: $($toolchain.crt)."
+    Write-Host "Native-link validation environment: $measurementContext"
     if ($recipe.schemaVersion -ne 1 -or $recipe.linkage -ne 'static' -or $recipe.target -ne 'windows-x86_64-msvc') {
         throw 'The native-link recipe returned an unsupported or malformed contract.'
     }
@@ -111,7 +115,7 @@ try {
 "@
     Write-Host "Native-link measurements:`n$measurements"
     if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_STEP_SUMMARY)) {
-        $summary = "## Windows static SDL recipe measurements`n`nRunner: ``$env:ImageOS / $env:ImageVersion``; Odin: ``$($recipe.provenance.odinVersion)``; target: ``$($recipe.target)``.`n`n$measurements`n"
+        $summary = "## Windows static SDL recipe measurements`n`n$measurementContext Target: ``$($recipe.target)``.`n`n$measurements`n"
         [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, $summary, [Text.UTF8Encoding]::new($false))
     }
 } finally {
