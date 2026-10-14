@@ -1432,6 +1432,9 @@ Notice :: struct {
 	anchor: Node_ID,
 	actions: []Notice_Action,
 	duration_ms: u32,
+	// A zeroed environment keeps the runtime's standard notice appearance.
+	// Nonzero fields are captured with the notice and applied to its card.
+	style_environment: Style_Environment,
 }
 
 Notice_Action_Record :: struct {
@@ -1455,6 +1458,8 @@ Notice_Record :: struct {
 	lifetime: Notice_Lifetime,
 	placement: Notice_Placement,
 	anchor: Node_ID,
+	style_environment: Style_Environment,
+	style_environment_set: bool,
 	actions: [NOTICE_ACTION_CAPACITY]Notice_Action_Record,
 	action_count: int,
 	deadline_ns: u64,

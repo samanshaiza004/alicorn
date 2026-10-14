@@ -114,6 +114,7 @@ run_application_loop :: proc(
 				open=native_secondary_window_open_request,
 				close=native_secondary_window_close_request,
 				set_always_on_top=native_secondary_window_set_always_on_top,
+				set_title=native_secondary_window_set_title,
 			},
 		})
 	}
@@ -351,6 +352,7 @@ run_application_loop :: proc(
 		if child := secondary_windows.child; child != nil && child.active {
 			native_host_scratch_reset(&child.host_scratch)
 			queued_events := len(child.event_queue)-child.event_queue_read
+			if queued_events > 0 { child.presentation_suspended = false }
 			pump_events(
 				child.window, child.runtime, &child.metrics, &child.quit_requested,
 				&child.logical_resize_events, &child.pixel_resize_events, &child.scale_events,
@@ -367,9 +369,14 @@ run_application_loop :: proc(
 				pointer_modifier_state=&child.pointer_modifier_state,
 				pointer_button_state=&child.pointer_button_state,
 				accessibility=&child.accessibility_host,
+				native_menu=&child.native_menu,
+				appearance_monitor=&child.appearance_monitor,
 				secondary_child=child,
 				replay_secondary_events=true,
 			)
+			if command, ok := native_menu_take_pending(&child.native_menu); ok {
+				native_menu_dispatch_command(&child.native_menu, command)
+			}
 			_ = alicorn.tooltip_advance(child.runtime, u64(sdl3.GetTicksNS()))
 			_ = alicorn.notice_advance(child.runtime, u64(sdl3.GetTicksNS()))
 			native_drag_autoscroll_update(child.runtime, &child.drag_autoscroll_deadline_ns, u64(sdl3.GetTicksNS()))
@@ -377,7 +384,7 @@ run_application_loop :: proc(
 			native_dispatch_scheduled_wakes(&child.application, child.runtime, &child.scheduler_state, child.last_user_interaction_ns, &child.timing)
 			when ODIN_OS == .Windows || ODIN_OS == .Darwin {
 				if child.accessibility_ready {
-					_ = native_accessibility_sync(&child.accessibility_host, child.runtime)
+					_ = native_accessibility_sync(&child.accessibility_host, child.runtime, child.native_menu.content_inset_top)
 					counters := native_accessibility_take_counters(&child.accessibility_host)
 					child.runtime.stats.accessibility_activation_wakes += counters.activation_wakes
 					child.runtime.stats.accessibility_updates_submitted += counters.updates_submitted
@@ -396,6 +403,10 @@ run_application_loop :: proc(
 			}
 			if child.runtime.invalidated {
 				_ = native_application_build_until_stable(&child.application, child.runtime, &child.metrics, &child.timing)
+			}
+			if child.native_menu.application != nil {
+				application_frame_pending := alicorn.frame_needs_submission(child.runtime)
+				_ = native_menu_sync_chrome_appearance(&child.native_menu, request_redraw=!application_frame_pending)
 			}
 			if !child.runtime.invalidated && alicorn.presentation_needs_frame(child.runtime) {
 				presentation_ui, ready := alicorn.begin_presentation_frame(child.runtime)

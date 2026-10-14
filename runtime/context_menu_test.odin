@@ -9,21 +9,51 @@ context_menu_test_find :: proc(rt: ^Runtime, label: string, kind: Node_Kind) -> 
 	return 0
 }
 
-context_menu_test_build :: proc(rt: ^Runtime) -> (action: Action_ID, opener: Node_ID) {
+context_menu_test_build :: proc(rt: ^Runtime, theme: Style_Theme_ID = DEFAULT_STYLE_THEME_ID) -> (action: Action_ID, opener: Node_ID) {
 	ui, should_build := begin_frame(rt)
 	if !should_build { return }
 	container_begin_simple(&ui, .Root, label="context-menu-test-root", key=key_string("root"), style=layout_style())
+	theme_scope := style_environment_push(&ui, Style_Environment{theme=theme})
 	opener, _ = button_ex(&ui, "Workspace row", key="workspace-row", style=layout_style(width=180, height=32))
 	container_end(&ui)
-	if context_menu_is_open(rt) && context_menu_begin(&ui, key_string("context-menu-test"), width=180, item_height=28) {
-		context_menu_item(&ui, Action_ID(11), "Rename")
-		context_menu_separator(&ui)
-		context_menu_item(&ui, Action_ID(12), "Unavailable", enabled=false)
-		context_menu_item(&ui, Action_ID(13), "Move to Trash")
-		action = context_menu_end(&ui)
+	if context_menu_is_open(rt) {
+		if context_menu_begin(&ui, key_string("context-menu-test"), width=180, item_height=28) {
+			context_menu_item(&ui, Action_ID(11), "Rename")
+			context_menu_separator(&ui)
+			context_menu_item(&ui, Action_ID(12), "Unavailable", enabled=false)
+			context_menu_item(&ui, Action_ID(13), "Move to Trash")
+			action = context_menu_end(&ui)
+		}
 	}
+	style_environment_pop(&ui, theme_scope)
 	end_frame(&ui)
 	return
+}
+
+@(test)
+test_context_menu_panel_and_separator_use_active_theme :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 400, 300})
+	defer destroy_runtime(&rt)
+	theme := DEFAULT_STYLE_THEME
+	theme.colors[int(Style_Color_Role.Surface)] = Color{0.83, 0.17, 0.26, 1}
+	theme.colors[int(Style_Color_Role.Border)] = Color{0.21, 0.81, 0.37, 1}
+	theme_id := style_theme_register(&rt, theme)
+	testing.expect(t, theme_id != 0, "context-menu test theme should register")
+	if theme_id == 0 { return }
+	_, opener := context_menu_test_build(&rt)
+	if opener == 0 { testing.expect(t, false, "test workspace row should be retained"); return }
+	_ = context_menu_open(&rt, Rect{120, 80, 0, 0}, opener)
+	_, _ = context_menu_test_build(&rt, theme_id)
+	panel := rt.nodes[rt.context_menu.panel]
+	separator_line_id := context_menu_test_find(&rt, "context-menu-separator-line", .Container)
+	if separator_line_id == 0 { testing.expect(t, false, "the themed context menu should retain its separator line"); return }
+	separator_line := rt.nodes[separator_line_id]
+	testing.expect(t, panel.color == theme.colors[int(Style_Color_Role.Surface)] &&
+		panel.style_environment.theme == theme_id,
+		"the popup panel should resolve its background through the active theme Surface role")
+	testing.expect(t, separator_line.color == theme.colors[int(Style_Color_Role.Border)] &&
+		separator_line.style_environment.theme == theme_id,
+		"the separator should resolve its line through the active theme Border role")
 }
 
 @(test)

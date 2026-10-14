@@ -4,6 +4,21 @@ import "core:testing"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
+@(test)
+test_secondary_unavailable_swapchain_does_not_force_idle_spin :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 200})
+	defer alicorn.destroy_runtime(&rt)
+	child := Native_Secondary_Window{active=true, runtime=&rt, presentation_suspended=true}
+	child.native_menu.chrome_redraw_pending = true
+	manager := Native_Secondary_Window_Manager{child=&child}
+	testing.expect(t, !native_secondary_window_has_work(&manager), "a hidden/minimized child must not keep the host polling for an unavailable swapchain")
+	child.presentation_suspended = false
+	testing.expect(t, native_secondary_window_has_work(&manager), "a restore/input event must make the retained pending frame eligible for submission")
+	child.presentation_suspended = true
+	manager.pending_close = true
+	testing.expect(t, native_secondary_window_has_work(&manager), "closing a suspended child must still be processed immediately")
+}
+
 secondary_window_test_build :: proc(
 	state: rawptr,
 	rt: ^alicorn.Runtime,

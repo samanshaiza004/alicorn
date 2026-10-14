@@ -15,14 +15,18 @@ NATIVE_SECONDARY_EVENT_CAPACITY :: 4096
 
 Native_Secondary_Window :: struct {
 	active: bool,
+	presentation_suspended: bool,
 	closing: bool,
 	claimed: bool,
 	callbacks_started: bool,
 	window: ^sdl3.Window,
 	window_id: sdl3.WindowID,
 	application: Application,
+	owned_title: string,
 	runtime: ^alicorn.Runtime,
 	metrics: Window_Metrics,
+	native_menu: Native_Menu_Runtime,
+	appearance_monitor: Native_Appearance_Monitor,
 	text_renderer: Native_Text_Renderer,
 	surface_renderer: Native_Surface_Renderer,
 	solid_renderer: Native_Solid_Renderer,
@@ -87,10 +91,6 @@ native_secondary_window_open_request :: proc(data: rawptr, description: Applicat
 	if err != nil { return false }
 	manager.pending_description = description
 	manager.pending_description.application.title = owned_title
-	// A secondary window uses ordinary native chrome and a separate focus scope.
-	// Menu ownership is application-global on several platforms, so native menus
-	// are deliberately retained on the primary window in this first proof.
-	manager.pending_description.application.menus = nil
 	manager.pending_title = owned_title
 	manager.pending = true
 	return true
@@ -108,10 +108,42 @@ native_secondary_window_set_always_on_top :: proc(data: rawptr, always_on_top: b
 	return sdl3.SetWindowAlwaysOnTop(manager.child.window, always_on_top)
 }
 
+native_secondary_window_set_title :: proc(data: rawptr, title: string) -> bool {
+	manager := cast(^Native_Secondary_Window_Manager)data
+	if manager == nil || manager.child == nil || !manager.child.callbacks_started || manager.child.window == nil { return false }
+	child := manager.child
+	owned_title, err := strings.clone(title, context.allocator)
+	if err != nil { return false }
+	title_cstring, cstring_error := strings.clone_to_cstring(owned_title, context.temp_allocator)
+	if cstring_error != nil {
+		delete(owned_title, context.allocator)
+		return false
+	}
+	if !sdl3.SetWindowTitle(child.window, title_cstring) {
+		delete(owned_title, context.allocator)
+		return false
+	}
+	if len(child.owned_title) > 0 { delete(child.owned_title, context.allocator) }
+	child.owned_title = owned_title
+	child.application.title = owned_title
+	when ODIN_OS == .Windows {
+		if child.native_menu.platform_data != nil {
+			menu_state := cast(^Win32_Menu_State)child.native_menu.platform_data
+			menu_state.title_text = owned_title
+			menu_state.text_scale = 0
+			// Resolve appearance after the application callback returns. A title
+			// change during build must not re-enter a window's build context.
+			native_menu_request_chrome_redraw(&child.native_menu)
+		}
+	}
+	return true
+}
+
 native_secondary_window_has_work :: proc(manager: ^Native_Secondary_Window_Manager) -> bool {
 	if manager == nil { return false }
-	return manager.pending || manager.pending_close || (manager.child != nil && manager.child.active &&
-		(manager.child.runtime.invalidated || alicorn.presentation_needs_frame(manager.child.runtime)))
+	return manager.pending || manager.pending_close || (manager.child != nil && manager.child.active && !manager.child.presentation_suspended &&
+		(manager.child.runtime.invalidated || alicorn.presentation_needs_frame(manager.child.runtime) ||
+		 manager.child.native_menu.chrome_redraw_pending))
 }
 
 native_secondary_window_create :: proc(manager: ^Native_Secondary_Window_Manager) -> bool {
@@ -154,6 +186,23 @@ native_secondary_window_create :: proc(manager: ^Native_Secondary_Window_Manager
 	child.window = window
 	child.window_id = sdl3.GetWindowID(window)
 	child.application = application
+	when ODIN_OS == .Windows {
+		if child.application.window_decorations == .Integrated_Title_Bar {
+			child.native_menu = Native_Menu_Runtime{window=window, application=&child.application}
+			if !native_menu_prepare(&child.native_menu) {
+				native_secondary_window_destroy(manager, wait_for_gpu=false)
+				return false
+			}
+		} else {
+			child.application.menus = nil
+			child.application.window_decorations = .System
+		}
+	} else {
+		// Menus are application-global on macOS, and integrated child chrome is
+		// currently implemented only by the per-window Win32 adapter.
+		child.application.menus = nil
+		child.application.window_decorations = .System
+	}
 	child.event_queue = make([dynamic]sdl3.Event, 0, allocator=context.allocator)
 	child.host_scratch = native_host_scratch_make()
 	child.last_tick_ns = u64(sdl3.GetTicksNS())
@@ -169,7 +218,7 @@ native_secondary_window_create :: proc(manager: ^Native_Secondary_Window_Manager
 		return false
 	}
 	child.claimed = true
-	if !read_window_metrics(window, &child.metrics) {
+	if !read_window_metrics(window, &child.metrics, child.native_menu.content_inset_top) {
 		native_secondary_window_destroy(manager, wait_for_gpu=false)
 		return false
 	}
@@ -217,6 +266,25 @@ native_secondary_window_create :: proc(manager: ^Native_Secondary_Window_Manager
 		return false
 	}
 	child.application_waker = Application_Waker{data=rawptr(&child.wake_state), wake=native_application_wake}
+	child.native_menu.host_waker = &child.host_wake_state
+	child.native_menu.runtime = child.runtime
+	when ODIN_OS == .Windows {
+		if child.native_menu.application != nil &&
+		   !native_menu_prepare_gpu(&child.native_menu, child.runtime, &child.text_renderer) {
+			native_secondary_window_destroy(manager, wait_for_gpu=false)
+			return false
+		}
+	}
+	when ODIN_OS == .Windows || ODIN_OS == .Darwin {
+		if !native_appearance_monitor_init(&child.appearance_monitor, window, &child.host_wake_state, child.runtime) {
+			fmt.println("appearance", "secondary native preference notifications unavailable; using default appearance inputs")
+		}
+		native_menu_accessibility_appearance_changed(
+			&child.native_menu,
+			child.appearance_monitor.snapshot.preferences.increased_contrast,
+			request_redraw=false,
+		)
+	}
 	child.dialog_bridge = native_dialog_bridge_make(window, child.application_waker)
 	child.callbacks_started = true
 	callbacks_started = true
@@ -231,11 +299,15 @@ native_secondary_window_create :: proc(manager: ^Native_Secondary_Window_Manager
 				open=native_secondary_window_open_request,
 				close=native_secondary_window_close_request,
 				set_always_on_top=native_secondary_window_set_always_on_top,
+				set_title=native_secondary_window_set_title,
 			},
 		})
 	}
 	flags_now := sdl3.GetWindowFlags(window)
-	child.text_input_state = Native_Text_Input_State{window_focused=(flags_now & sdl3.WindowFlags{.INPUT_FOCUS}) != sdl3.WindowFlags{}}
+	child.text_input_state = Native_Text_Input_State{
+		window_focused=(flags_now & sdl3.WindowFlags{.INPUT_FOCUS}) != sdl3.WindowFlags{},
+		content_inset_top=child.native_menu.content_inset_top,
+	}
 	if application.on_start != nil { application.on_start(application.state, child.application_waker) }
 	child.active = true
 	alicorn.invalidate_root(child.runtime, "secondary native window initial frame")
@@ -273,7 +345,9 @@ native_secondary_window_destroy :: proc(manager: ^Native_Secondary_Window_Manage
 	child.scheduler_state.active = false
 	for &pending in child.scheduler_state.pending { pending = false }
 	if child.callbacks_started && child.application.on_stop != nil { child.application.on_stop(child.application.state) }
+	native_appearance_monitor_destroy(&child.appearance_monitor)
 	native_accessibility_host_destroy(&child.accessibility_host)
+	native_menu_destroy(&child.native_menu)
 	if child.dialog_bridge != nil {
 		native_dialog_bridge_shutdown(child.dialog_bridge)
 		native_dialog_bridge_release(child.dialog_bridge)
@@ -295,6 +369,7 @@ native_secondary_window_destroy :: proc(manager: ^Native_Secondary_Window_Manage
 		child.window = nil
 	}
 	delete(child.event_queue)
+	if len(child.owned_title) > 0 { delete(child.owned_title, context.allocator) }
 	free(child, allocator=context.allocator)
 	manager.child = nil
 	if !manager.pending { native_secondary_window_request_storage_clear(manager) }
@@ -340,10 +415,12 @@ native_secondary_window_render :: proc(
 	child: ^Native_Secondary_Window,
 	debug_bounds := false,
 ) -> bool {
-	if manager == nil || manager.device == nil || child == nil || !child.active || child.runtime == nil ||
-	   !alicorn.frame_needs_submission(child.runtime) {
+	if manager == nil || manager.device == nil || child == nil || !child.active || child.runtime == nil {
 		return true
 	}
+	application_submission_pending := alicorn.frame_needs_submission(child.runtime)
+	chrome_submission_pending := child.native_menu.chrome_redraw_pending
+	if !application_submission_pending && !chrome_submission_pending { return true }
 	command := sdl3.AcquireGPUCommandBuffer(manager.device)
 	if command == nil { return false }
 	swapchain: ^sdl3.GPUTexture
@@ -354,8 +431,12 @@ native_secondary_window_render :: proc(
 	}
 	if swapchain == nil || swap_w == 0 || swap_h == 0 {
 		_ = sdl3.CancelGPUCommandBuffer(command)
+		// Keep the unsubmitted frame for restore, but let the event loop sleep
+		// while a minimized/hidden window has no drawable swapchain.
+		child.presentation_suspended = true
 		return true
 	}
+	child.presentation_suspended = false
 	child.metrics.pixel_width = int(swap_w)
 	child.metrics.pixel_height = int(swap_h)
 	scale_x := f32(swap_w)/f32(max(child.metrics.logical_width, 1))
@@ -366,6 +447,8 @@ native_secondary_window_render :: proc(
 		&child.text_renderer, &child.surface_renderer, &child.solid_renderer,
 		child.runtime.display[:], scale_x, scale_y,
 		debug_bounds=debug_bounds,
+		content_inset_top=child.native_menu.content_inset_top,
+		native_menu=&child.native_menu,
 		scratch_allocator=child.host_scratch.allocator,
 	) {
 		_ = sdl3.CancelGPUCommandBuffer(command)
@@ -381,7 +464,10 @@ native_secondary_window_render :: proc(
 	native_text_commit_submission(&child.text_renderer)
 	native_surface_commit_submission(&child.surface_renderer)
 	native_solid_commit_submission(&child.solid_renderer)
-	alicorn.gpu_surface_frame_consumed(child.runtime)
-	alicorn.frame_submission_succeeded(child.runtime)
+	if application_submission_pending {
+		alicorn.gpu_surface_frame_consumed(child.runtime)
+		alicorn.frame_submission_succeeded(child.runtime)
+	}
+	child.native_menu.chrome_redraw_pending = false
 	return true
 }

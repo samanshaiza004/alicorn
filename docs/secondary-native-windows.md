@@ -22,9 +22,14 @@ contracts without claiming arbitrary multi-window composition.
   callbacks have started, `on_stop` owns cleanup, including partial startup.
 
 Window creation is deferred until the next event-loop safe point. The service
-rejects a second open while one is pending or live. Secondary native menus are
-not installed; menu ownership remains with the primary window. A child close
-request uses its own `on_close_requested` callback and Runtime.
+rejects a second open while one is pending or live. Windows children can use an
+independent integrated title bar, including direct top-level commands with
+borrowed enabled/checked states and shortcuts. They share the primary caption
+geometry, theme appearance policy, input transforms, and compositor. macOS
+children use system chrome and leave application-global menus on the primary
+window. A child close request uses its own `on_close_requested` callback and
+Runtime. The title service copies replacement text and refreshes only chrome;
+it does not re-enter application callbacks while a build is running.
 
 ## Events, DPI, and rendering
 
