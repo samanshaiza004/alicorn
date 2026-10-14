@@ -46,10 +46,15 @@ win32_caption_layout_controls :: proc(
 	cluster.bottom = win.LONG(chrome_height)
 	rects := win32_caption_control_rects(cluster, true)
 	if maximized { rects[2].right = win.LONG(client_width) }
+	close_hover := rects[2]
+	// Match the native Windows close hover treatment to the visible client
+	// edges. Keep rects[2] canonical for glyph placement and resize hit testing.
+	close_hover.top = 0
+	close_hover.right = win.LONG(client_width)
 	return [3]Win32_Caption_Control{
-		{rects[0], win.LRESULT(win.HTMINBUTTON)},
-		{rects[1], win.LRESULT(win.HTMAXBUTTON)},
-		{rects[2], win.LRESULT(win.HTCLOSE)},
+		{bounds=rects[0], hover_bounds=rects[0], hit_test=win.LRESULT(win.HTMINBUTTON)},
+		{bounds=rects[1], hover_bounds=rects[1], hit_test=win.LRESULT(win.HTMAXBUTTON)},
+		{bounds=rects[2], hover_bounds=close_hover, hit_test=win.LRESULT(win.HTCLOSE)},
 	}
 }
 

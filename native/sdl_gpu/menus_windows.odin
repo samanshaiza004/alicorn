@@ -58,8 +58,10 @@ Win32_Menu_Label :: struct {
 }
 
 Win32_Caption_Control :: struct {
-	// Client-relative physical pixels, shared by paint and WM_NCHITTEST.
+	// Client-relative physical pixels used for the glyph and WM_NCHITTEST.
 	bounds: win.RECT,
+	// Hover paint may cover the resize gutter without changing its hit target.
+	hover_bounds: win.RECT,
 	hit_test: win.LRESULT,
 }
 
@@ -670,7 +672,7 @@ native_menu_overlay_commands :: proc(menu: ^Native_Menu_Runtime, width, height: 
 			}
 			append(&commands, alicorn.paint_surface_command(
 				NATIVE_MENU_HOST_SOLID_NODE+2+alicorn.Node_ID(index),
-				win32_chrome_rect_to_window(control.bounds, state.pixels_per_unit),
+				win32_chrome_rect_to_window(control.hover_bounds, state.pixels_per_unit),
 				full, hover_color,
 			))
 		}
