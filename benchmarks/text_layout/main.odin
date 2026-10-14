@@ -127,6 +127,51 @@ describe_frame :: proc(rt: ^alicorn.Runtime, workload: ^Text_Workload, width, he
 	return
 }
 
+direct_sparse_item_at :: proc(index: ^alicorn.Virtual_List_Height_Index, content_y: f32) -> int {
+	if index == nil || index.item_count <= 0 { return -1 }
+	alicorn.virtual_list_height_index_rebuild_prefix(index)
+	target := max(content_y, f32(0))
+	target = min(target, max(index.total_height-0.001, f32(0)))
+	low, high := 0, len(index.entries)
+	for low < high {
+		mid := (low+high)/2
+		entry := index.entries[mid]
+		bottom := f32(entry.index+1)*index.estimated_height+entry.prefix_delta
+		if bottom <= target { low = mid+1 } else { high = mid }
+	}
+	previous_delta: f32 = 0
+	if low > 0 { previous_delta = index.entries[low-1].prefix_delta }
+	gap_last := index.item_count-1
+	if low < len(index.entries) {
+		measured := index.entries[low]
+		measured_top := f32(measured.index)*index.estimated_height+previous_delta
+		if measured_top <= target { return measured.index }
+		gap_last = measured.index-1
+	}
+	item := clamp(int((target-previous_delta)/index.estimated_height), 0, gap_last)
+	if item < gap_last && f32(item+1)*index.estimated_height+previous_delta <= target { item += 1 }
+	if item > 0 && f32(item)*index.estimated_height+previous_delta > target { item -= 1 }
+	return item
+}
+
+direct_sparse_variable_metrics :: proc(index: ^alicorn.Virtual_List_Height_Index, scroll_y, viewport_height: f32) -> alicorn.Virtual_List_Metrics {
+	result := alicorn.Virtual_List_Metrics{}
+	if index == nil || index.item_count <= 0 || index.estimated_height <= 0 || viewport_height <= 0 { return result }
+	alicorn.virtual_list_height_index_rebuild_prefix(index)
+	result.content_height = index.total_height
+	result.max_scroll_y = max(result.content_height-viewport_height, 0)
+	result.offset_y = clamp(scroll_y, 0, result.max_scroll_y)
+	result.first = direct_sparse_item_at(index, result.offset_y)
+	viewport_end := result.offset_y+viewport_height
+	trailing := direct_sparse_item_at(index, viewport_end)
+	trailing_top := alicorn.virtual_list_height_index_item_top(index, trailing)
+	result.last = trailing
+	if trailing_top < viewport_end { result.last += 1 }
+	result.last = min(max(result.first+1, result.last), index.item_count)
+	result.leading_offset_y = result.offset_y-alicorn.virtual_list_height_index_item_top(index, result.first)
+	return result
+}
+
 print_measurement :: proc(label: string, elapsed_ns: i64, frames: int, shape_before, cache_before, layout_before: u64, rt: ^alicorn.Runtime) {
 	shape_calls := rt.text_engine.shape_calls-shape_before
 	cache_hits := rt.text_engine.cache_hits-cache_before
@@ -155,6 +200,60 @@ print_height_range :: proc(label: string, index: ^alicorn.Virtual_List_Height_In
 		if entry.height > maximum { maximum = entry.height }
 	}
 	fmt.println(label, "measured_height_rows", len(index.entries), "height_min", minimum, "height_max", maximum)
+}
+
+profile_variable_index :: proc(index: ^alicorn.Virtual_List_Height_Index) {
+	// Measure the same sparse viewport geometry helper used by the variable
+	// virtual-list path, separately from shaping, retained reconciliation, and
+	// paint preparation. The surrounding full-frame benchmark remains the
+	// end-to-end reference.
+	alicorn.virtual_list_height_index_rebuild_prefix(index)
+	current_samples := make([]i64, SCROLL_FRAMES)
+	direct_samples := make([]i64, SCROLL_FRAMES)
+	defer delete(current_samples)
+	defer delete(direct_samples)
+	current_checksum, direct_checksum, semantic_differences := 0, 0, 0
+	for frame in 0..<SCROLL_FRAMES {
+		scroll_y := f32(frame+1)*f32(160)
+		start := time.now()
+		current_metrics := alicorn.virtual_list_variable_metrics(index, scroll_y, VIEWPORT_HEIGHT)
+		current_samples[frame] = time.duration_nanoseconds(time.since(start))
+		start = time.now()
+		direct_metrics := direct_sparse_variable_metrics(index, scroll_y, VIEWPORT_HEIGHT)
+		direct_samples[frame] = time.duration_nanoseconds(time.since(start))
+		current_checksum += current_metrics.first+current_metrics.last
+		direct_checksum += direct_metrics.first+direct_metrics.last
+		if current_metrics.first != direct_metrics.first || current_metrics.last != direct_metrics.last ||
+		   abs(current_metrics.leading_offset_y-direct_metrics.leading_offset_y) > 0.001 {
+			semantic_differences += 1
+		}
+	}
+	for i in 1..<len(current_samples) {
+		value := current_samples[i]
+		j := i
+		for j > 0 && current_samples[j-1] > value {
+			current_samples[j] = current_samples[j-1]
+			j -= 1
+		}
+		current_samples[j] = value
+		value = direct_samples[i]
+		j = i
+		for j > 0 && direct_samples[j-1] > value {
+			direct_samples[j] = direct_samples[j-1]
+			j -= 1
+		}
+		direct_samples[j] = value
+	}
+	fmt.println("sparse_variable_metrics_only",
+		"measured_overrides", len(index.entries),
+		"calls", len(current_samples),
+		"current_p50_ns", current_samples[len(current_samples)/2],
+		"current_p95_ns", current_samples[(len(current_samples)*95)/100],
+		"direct_y_p50_ns", direct_samples[len(direct_samples)/2],
+		"direct_y_p95_ns", direct_samples[(len(direct_samples)*95)/100],
+		"semantic_differences", semantic_differences,
+		"checksums", current_checksum, direct_checksum,
+	)
 }
 
 main :: proc() {
@@ -209,5 +308,6 @@ main :: proc() {
 	resize_ns := time.duration_nanoseconds(time.since(start))
 	print_measurement("wrapped_width_reflow", resize_ns, RESIZE_FRAMES, shape_before, cache_before, layout_before, &rt)
 	print_height_range("final_geometry", &workload.index)
+	profile_variable_index(&workload.index)
 	fmt.println("text_cache_entries", alicorn.runa_cache_size(&rt.text_engine))
 }

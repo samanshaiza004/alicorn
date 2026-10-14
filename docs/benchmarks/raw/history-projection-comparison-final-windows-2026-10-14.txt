@@ -1,0 +1,411 @@
+
+fresh_process 1
+History projection comparison; local-splice prototypes; Odin dev-2026-09-nightly:a2fb372; one process
+history_expanded_display_baseline visible_rows 100 checksum 13751768553826269380 display_reference_payload_bytes 713360
+readonly_direct_display transactions 180 p50_ns 1800 p95_ns 1900 max_ns 4300
+history_expanded_display_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 224400 p95_ns 259600 max_ns 278700
+expanded_display_storage_payload_bytes 713360 visible_rows 44585
+history_flat_run_readonly visible_rows 100 checksum 13751768553826269380
+readonly_flat_run transactions 180 p50_ns 400 p95_ns 600 max_ns 900
+history_flat_run_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 228100 p95_ns 240900 max_ns 376300
+projection_storage_payload_bytes records 800000 prefix 320032 total 1120032
+history_flat_run_readonly visible_rows 100 checksum 2293810055179786446
+readonly_flat_run transactions 180 p50_ns 1300 p95_ns 1800 max_ns 2000
+history_flat_run_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 229800 p95_ns 294000 max_ns 341700
+projection_storage_payload_bytes records 800000 prefix 320032 total 1120032
+history_expanded_display_baseline visible_rows 100 checksum 2293810055179786446 display_reference_payload_bytes 156000
+readonly_direct_display transactions 180 p50_ns 2100 p95_ns 2100 max_ns 2600
+history_expanded_display_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 61600 p95_ns 65800 max_ns 68800
+expanded_display_storage_payload_bytes 156000 visible_rows 9750
+history_blocked_readonly visible_rows 100 checksum 13751768553826269380
+readonly_blocked_run transactions 180 p50_ns 400 p95_ns 500 max_ns 1100
+history_blocked_run_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 6800 p95_ns 8500 max_ns 12800
+projection_storage_payload_bytes blocks 813800 block_prefix 10048 total 823848
+history_blocked_readonly visible_rows 100 checksum 2293810055179786446
+readonly_blocked_run transactions 180 p50_ns 1000 p95_ns 1100 max_ns 1200
+history_blocked_run_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 7900 p95_ns 8900 max_ns 12000
+projection_storage_payload_bytes blocks 813800 block_prefix 10048 total 823848
+history_measured_tree_readonly visible_rows 100 checksum 13751768553826269380
+readonly_tree_run transactions 180 p50_ns 600 p95_ns 700 max_ns 800
+history_measured_tree_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 2800 p95_ns 3100 max_ns 4200
+tree_storage_payload_bytes leaf_nodes 60096 branch_nodes 13248 total 73344 leaf_capacity 32 branch_capacity 16
+history_measured_tree_readonly visible_rows 100 checksum 2293810055179786446
+readonly_tree_run transactions 180 p50_ns 1300 p95_ns 1400 max_ns 1500
+history_measured_tree_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 4200 p95_ns 4600 max_ns 7700
+tree_storage_payload_bytes leaf_nodes 60096 branch_nodes 13248 total 73344 leaf_capacity 32 branch_capacity 16
+history_expanded_display_baseline visible_rows 100 checksum 13751768553826269380 display_reference_payload_bytes 3566720
+readonly_direct_display transactions 180 p50_ns 1800 p95_ns 1900 max_ns 3800
+history_expanded_display_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 1122800 p95_ns 1247000 max_ns 1510500
+expanded_display_storage_payload_bytes 3566720 visible_rows 222920
+history_flat_run_readonly visible_rows 100 checksum 13751768553826269380
+readonly_flat_run transactions 180 p50_ns 400 p95_ns 500 max_ns 1000
+history_flat_run_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 1147200 p95_ns 1230400 max_ns 1448000
+projection_storage_payload_bytes records 4000000 prefix 1600032 total 5600032
+history_flat_run_readonly visible_rows 100 checksum 554060342784655822
+readonly_flat_run transactions 180 p50_ns 1300 p95_ns 1700 max_ns 2900
+history_flat_run_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 1149700 p95_ns 1162000 max_ns 1256900
+projection_storage_payload_bytes records 4000000 prefix 1600032 total 5600032
+history_expanded_display_baseline visible_rows 100 checksum 554060342784655822 display_reference_payload_bytes 780000
+readonly_direct_display transactions 180 p50_ns 1900 p95_ns 1900 max_ns 3700
+history_expanded_display_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 246000 p95_ns 250900 max_ns 264000
+expanded_display_storage_payload_bytes 780000 visible_rows 48750
+history_blocked_readonly visible_rows 100 checksum 13751768553826269380
+readonly_blocked_run transactions 180 p50_ns 400 p95_ns 500 max_ns 1000
+history_blocked_run_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 28400 p95_ns 29000 max_ns 40400
+projection_storage_payload_bytes blocks 4063800 block_prefix 50048 total 4113848
+history_blocked_readonly visible_rows 100 checksum 554060342784655822
+readonly_blocked_run transactions 180 p50_ns 1000 p95_ns 1100 max_ns 2100
+history_blocked_run_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 29500 p95_ns 29900 max_ns 40800
+projection_storage_payload_bytes blocks 4063800 block_prefix 50048 total 4113848
+history_measured_tree_readonly visible_rows 100 checksum 13751768553826269380
+readonly_tree_run transactions 180 p50_ns 600 p95_ns 700 max_ns 1400
+history_measured_tree_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 3000 p95_ns 4200 max_ns 6500
+tree_storage_payload_bytes leaf_nodes 300096 branch_nodes 61056 total 361152 leaf_capacity 32 branch_capacity 16
+history_measured_tree_readonly visible_rows 100 checksum 554060342784655822
+readonly_tree_run transactions 180 p50_ns 1300 p95_ns 1400 max_ns 1800
+history_measured_tree_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 4400 p95_ns 4900 max_ns 7200
+tree_storage_payload_bytes leaf_nodes 300096 branch_nodes 61056 total 361152 leaf_capacity 32 branch_capacity 16
+fresh_process 2
+History projection comparison; local-splice prototypes; Odin dev-2026-09-nightly:a2fb372; one process
+history_expanded_display_baseline visible_rows 100 checksum 13751768553826269380 display_reference_payload_bytes 713360
+readonly_direct_display transactions 180 p50_ns 900 p95_ns 900 max_ns 3300
+history_expanded_display_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 225000 p95_ns 229000 max_ns 251600
+expanded_display_storage_payload_bytes 713360 visible_rows 44585
+history_flat_run_readonly visible_rows 100 checksum 13751768553826269380
+readonly_flat_run transactions 180 p50_ns 400 p95_ns 500 max_ns 900
+history_flat_run_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 228600 p95_ns 232000 max_ns 278400
+projection_storage_payload_bytes records 800000 prefix 320032 total 1120032
+history_flat_run_readonly visible_rows 100 checksum 2293810055179786446
+readonly_flat_run transactions 180 p50_ns 1000 p95_ns 1200 max_ns 2000
+history_flat_run_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 229800 p95_ns 313000 max_ns 325000
+projection_storage_payload_bytes records 800000 prefix 320032 total 1120032
+history_expanded_display_baseline visible_rows 100 checksum 2293810055179786446 display_reference_payload_bytes 156000
+readonly_direct_display transactions 180 p50_ns 1400 p95_ns 1500 max_ns 2700
+history_expanded_display_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 50300 p95_ns 67200 max_ns 87000
+expanded_display_storage_payload_bytes 156000 visible_rows 9750
+history_blocked_readonly visible_rows 100 checksum 13751768553826269380
+readonly_blocked_run transactions 180 p50_ns 400 p95_ns 500 max_ns 700
+history_blocked_run_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 6800 p95_ns 8500 max_ns 10800
+projection_storage_payload_bytes blocks 813800 block_prefix 10048 total 823848
+history_blocked_readonly visible_rows 100 checksum 2293810055179786446
+readonly_blocked_run transactions 180 p50_ns 1000 p95_ns 1100 max_ns 1300
+history_blocked_run_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 7900 p95_ns 10400 max_ns 11300
+projection_storage_payload_bytes blocks 813800 block_prefix 10048 total 823848
+history_measured_tree_readonly visible_rows 100 checksum 13751768553826269380
+readonly_tree_run transactions 180 p50_ns 600 p95_ns 700 max_ns 800
+history_measured_tree_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 2800 p95_ns 3100 max_ns 4500
+tree_storage_payload_bytes leaf_nodes 60096 branch_nodes 13248 total 73344 leaf_capacity 32 branch_capacity 16
+history_measured_tree_readonly visible_rows 100 checksum 2293810055179786446
+readonly_tree_run transactions 180 p50_ns 1300 p95_ns 1400 max_ns 1500
+history_measured_tree_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 4200 p95_ns 5300 max_ns 11400
+tree_storage_payload_bytes leaf_nodes 60096 branch_nodes 13248 total 73344 leaf_capacity 32 branch_capacity 16
+history_expanded_display_baseline visible_rows 100 checksum 13751768553826269380 display_reference_payload_bytes 3566720
+readonly_direct_display transactions 180 p50_ns 900 p95_ns 900 max_ns 1300
+history_expanded_display_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 1120200 p95_ns 1133100 max_ns 1484400
+expanded_display_storage_payload_bytes 3566720 visible_rows 222920
+history_flat_run_readonly visible_rows 100 checksum 13751768553826269380
+readonly_flat_run transactions 180 p50_ns 400 p95_ns 500 max_ns 600
+history_flat_run_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 1141100 p95_ns 1166100 max_ns 1626800
+projection_storage_payload_bytes records 4000000 prefix 1600032 total 5600032
+history_flat_run_readonly visible_rows 100 checksum 554060342784655822
+readonly_flat_run transactions 180 p50_ns 1000 p95_ns 1100 max_ns 1100
+history_flat_run_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 1140200 p95_ns 1153000 max_ns 1473100
+projection_storage_payload_bytes records 4000000 prefix 1600032 total 5600032
+history_expanded_display_baseline visible_rows 100 checksum 554060342784655822 display_reference_payload_bytes 780000
+readonly_direct_display transactions 180 p50_ns 900 p95_ns 900 max_ns 1300
+history_expanded_display_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 246500 p95_ns 249300 max_ns 261200
+expanded_display_storage_payload_bytes 780000 visible_rows 48750
+history_blocked_readonly visible_rows 100 checksum 13751768553826269380
+readonly_blocked_run transactions 180 p50_ns 400 p95_ns 500 max_ns 1000
+history_blocked_run_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 28100 p95_ns 40300 max_ns 53700
+projection_storage_payload_bytes blocks 4063800 block_prefix 50048 total 4113848
+history_blocked_readonly visible_rows 100 checksum 554060342784655822
+readonly_blocked_run transactions 180 p50_ns 1000 p95_ns 1100 max_ns 1300
+history_blocked_run_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 29100 p95_ns 30000 max_ns 38800
+projection_storage_payload_bytes blocks 4063800 block_prefix 50048 total 4113848
+history_measured_tree_readonly visible_rows 100 checksum 13751768553826269380
+readonly_tree_run transactions 180 p50_ns 600 p95_ns 700 max_ns 1400
+history_measured_tree_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 3000 p95_ns 3300 max_ns 6000
+tree_storage_payload_bytes leaf_nodes 300096 branch_nodes 61056 total 361152 leaf_capacity 32 branch_capacity 16
+history_measured_tree_readonly visible_rows 100 checksum 554060342784655822
+readonly_tree_run transactions 180 p50_ns 1200 p95_ns 1400 max_ns 1500
+history_measured_tree_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 4300 p95_ns 4900 max_ns 6500
+tree_storage_payload_bytes leaf_nodes 300096 branch_nodes 61056 total 361152 leaf_capacity 32 branch_capacity 16
+fresh_process 3
+History projection comparison; local-splice prototypes; Odin dev-2026-09-nightly:a2fb372; one process
+history_expanded_display_baseline visible_rows 100 checksum 13751768553826269380 display_reference_payload_bytes 713360
+readonly_direct_display transactions 180 p50_ns 900 p95_ns 900 max_ns 3300
+history_expanded_display_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 224000 p95_ns 261300 max_ns 359200
+expanded_display_storage_payload_bytes 713360 visible_rows 44585
+history_flat_run_readonly visible_rows 100 checksum 13751768553826269380
+readonly_flat_run transactions 180 p50_ns 400 p95_ns 500 max_ns 900
+history_flat_run_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 229000 p95_ns 310100 max_ns 322800
+projection_storage_payload_bytes records 800000 prefix 320032 total 1120032
+history_flat_run_readonly visible_rows 100 checksum 2293810055179786446
+readonly_flat_run transactions 180 p50_ns 1700 p95_ns 2000 max_ns 13600
+history_flat_run_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 228200 p95_ns 334300 max_ns 399800
+projection_storage_payload_bytes records 800000 prefix 320032 total 1120032
+history_expanded_display_baseline visible_rows 100 checksum 2293810055179786446 display_reference_payload_bytes 156000
+readonly_direct_display transactions 180 p50_ns 800 p95_ns 1300 max_ns 8000
+history_expanded_display_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 51100 p95_ns 64200 max_ns 128200
+expanded_display_storage_payload_bytes 156000 visible_rows 9750
+history_blocked_readonly visible_rows 100 checksum 13751768553826269380
+readonly_blocked_run transactions 180 p50_ns 400 p95_ns 500 max_ns 700
+history_blocked_run_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 6800 p95_ns 7000 max_ns 9100
+projection_storage_payload_bytes blocks 813800 block_prefix 10048 total 823848
+history_blocked_readonly visible_rows 100 checksum 2293810055179786446
+readonly_blocked_run transactions 180 p50_ns 1200 p95_ns 1300 max_ns 1400
+history_blocked_run_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 7800 p95_ns 9900 max_ns 14000
+projection_storage_payload_bytes blocks 813800 block_prefix 10048 total 823848
+history_measured_tree_readonly visible_rows 100 checksum 13751768553826269380
+readonly_tree_run transactions 180 p50_ns 600 p95_ns 700 max_ns 800
+history_measured_tree_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 2800 p95_ns 3100 max_ns 4800
+tree_storage_payload_bytes leaf_nodes 60096 branch_nodes 13248 total 73344 leaf_capacity 32 branch_capacity 16
+history_measured_tree_readonly visible_rows 100 checksum 2293810055179786446
+readonly_tree_run transactions 180 p50_ns 1300 p95_ns 1400 max_ns 2700
+history_measured_tree_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 4300 p95_ns 4600 max_ns 6200
+tree_storage_payload_bytes leaf_nodes 60096 branch_nodes 13248 total 73344 leaf_capacity 32 branch_capacity 16
+history_expanded_display_baseline visible_rows 100 checksum 13751768553826269380 display_reference_payload_bytes 3566720
+readonly_direct_display transactions 180 p50_ns 900 p95_ns 1000 max_ns 1400
+history_expanded_display_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 1127600 p95_ns 1138800 max_ns 1334300
+expanded_display_storage_payload_bytes 3566720 visible_rows 222920
+history_flat_run_readonly visible_rows 100 checksum 13751768553826269380
+readonly_flat_run transactions 180 p50_ns 400 p95_ns 500 max_ns 600
+history_flat_run_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 1148100 p95_ns 1162400 max_ns 1249400
+projection_storage_payload_bytes records 4000000 prefix 1600032 total 5600032
+history_flat_run_readonly visible_rows 100 checksum 554060342784655822
+readonly_flat_run transactions 180 p50_ns 1100 p95_ns 1100 max_ns 1200
+history_flat_run_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 1148900 p95_ns 1158400 max_ns 1223600
+projection_storage_payload_bytes records 4000000 prefix 1600032 total 5600032
+history_expanded_display_baseline visible_rows 100 checksum 554060342784655822 display_reference_payload_bytes 780000
+readonly_direct_display transactions 180 p50_ns 800 p95_ns 900 max_ns 1400
+history_expanded_display_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 247100 p95_ns 295000 max_ns 315500
+expanded_display_storage_payload_bytes 780000 visible_rows 48750
+history_blocked_readonly visible_rows 100 checksum 13751768553826269380
+readonly_blocked_run transactions 180 p50_ns 400 p95_ns 500 max_ns 2200
+history_blocked_run_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 28100 p95_ns 31900 max_ns 38100
+projection_storage_payload_bytes blocks 4063800 block_prefix 50048 total 4113848
+history_blocked_readonly visible_rows 100 checksum 554060342784655822
+readonly_blocked_run transactions 180 p50_ns 1000 p95_ns 1100 max_ns 1300
+history_blocked_run_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 29200 p95_ns 31400 max_ns 46300
+projection_storage_payload_bytes blocks 4063800 block_prefix 50048 total 4113848
+history_measured_tree_readonly visible_rows 100 checksum 13751768553826269380
+readonly_tree_run transactions 180 p50_ns 600 p95_ns 700 max_ns 900
+history_measured_tree_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 3000 p95_ns 3500 max_ns 5600
+tree_storage_payload_bytes leaf_nodes 300096 branch_nodes 61056 total 361152 leaf_capacity 32 branch_capacity 16
+history_measured_tree_readonly visible_rows 100 checksum 554060342784655822
+readonly_tree_run transactions 180 p50_ns 1300 p95_ns 1400 max_ns 2100
+history_measured_tree_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 4400 p95_ns 5000 max_ns 6200
+tree_storage_payload_bytes leaf_nodes 300096 branch_nodes 61056 total 361152 leaf_capacity 32 branch_capacity 16
+fresh_process 4
+History projection comparison; local-splice prototypes; Odin dev-2026-09-nightly:a2fb372; one process
+history_expanded_display_baseline visible_rows 100 checksum 13751768553826269380 display_reference_payload_bytes 713360
+readonly_direct_display transactions 180 p50_ns 900 p95_ns 900 max_ns 7600
+history_expanded_display_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 224200 p95_ns 262200 max_ns 339200
+expanded_display_storage_payload_bytes 713360 visible_rows 44585
+history_flat_run_readonly visible_rows 100 checksum 13751768553826269380
+readonly_flat_run transactions 180 p50_ns 400 p95_ns 500 max_ns 600
+history_flat_run_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 228300 p95_ns 232600 max_ns 277300
+projection_storage_payload_bytes records 800000 prefix 320032 total 1120032
+history_flat_run_readonly visible_rows 100 checksum 2293810055179786446
+readonly_flat_run transactions 180 p50_ns 1300 p95_ns 1500 max_ns 1600
+history_flat_run_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 229500 p95_ns 234200 max_ns 263600
+projection_storage_payload_bytes records 800000 prefix 320032 total 1120032
+history_expanded_display_baseline visible_rows 100 checksum 2293810055179786446 display_reference_payload_bytes 156000
+readonly_direct_display transactions 180 p50_ns 900 p95_ns 900 max_ns 1000
+history_expanded_display_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 50800 p95_ns 64000 max_ns 81200
+expanded_display_storage_payload_bytes 156000 visible_rows 9750
+history_blocked_readonly visible_rows 100 checksum 13751768553826269380
+readonly_blocked_run transactions 180 p50_ns 400 p95_ns 500 max_ns 900
+history_blocked_run_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 6800 p95_ns 6900 max_ns 8700
+projection_storage_payload_bytes blocks 813800 block_prefix 10048 total 823848
+history_blocked_readonly visible_rows 100 checksum 2293810055179786446
+readonly_blocked_run transactions 180 p50_ns 1000 p95_ns 1100 max_ns 1100
+history_blocked_run_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 7800 p95_ns 8000 max_ns 10200
+projection_storage_payload_bytes blocks 813800 block_prefix 10048 total 823848
+history_measured_tree_readonly visible_rows 100 checksum 13751768553826269380
+readonly_tree_run transactions 180 p50_ns 600 p95_ns 700 max_ns 900
+history_measured_tree_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 2900 p95_ns 3200 max_ns 4300
+tree_storage_payload_bytes leaf_nodes 60096 branch_nodes 13248 total 73344 leaf_capacity 32 branch_capacity 16
+history_measured_tree_readonly visible_rows 100 checksum 2293810055179786446
+readonly_tree_run transactions 180 p50_ns 1300 p95_ns 1400 max_ns 1500
+history_measured_tree_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 4300 p95_ns 4600 max_ns 6200
+tree_storage_payload_bytes leaf_nodes 60096 branch_nodes 13248 total 73344 leaf_capacity 32 branch_capacity 16
+history_expanded_display_baseline visible_rows 100 checksum 13751768553826269380 display_reference_payload_bytes 3566720
+readonly_direct_display transactions 180 p50_ns 900 p95_ns 900 max_ns 1800
+history_expanded_display_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 1122600 p95_ns 1141300 max_ns 1278100
+expanded_display_storage_payload_bytes 3566720 visible_rows 222920
+history_flat_run_readonly visible_rows 100 checksum 13751768553826269380
+readonly_flat_run transactions 180 p50_ns 400 p95_ns 700 max_ns 800
+history_flat_run_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 1144500 p95_ns 1159000 max_ns 1483600
+projection_storage_payload_bytes records 4000000 prefix 1600032 total 5600032
+history_flat_run_readonly visible_rows 100 checksum 554060342784655822
+readonly_flat_run transactions 180 p50_ns 1000 p95_ns 1100 max_ns 1100
+history_flat_run_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 1146800 p95_ns 1160000 max_ns 1175000
+projection_storage_payload_bytes records 4000000 prefix 1600032 total 5600032
+history_expanded_display_baseline visible_rows 100 checksum 554060342784655822 display_reference_payload_bytes 780000
+readonly_direct_display transactions 180 p50_ns 900 p95_ns 900 max_ns 1300
+history_expanded_display_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 246900 p95_ns 250900 max_ns 273500
+expanded_display_storage_payload_bytes 780000 visible_rows 48750
+history_blocked_readonly visible_rows 100 checksum 13751768553826269380
+readonly_blocked_run transactions 180 p50_ns 400 p95_ns 500 max_ns 800
+history_blocked_run_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 28100 p95_ns 29500 max_ns 38100
+projection_storage_payload_bytes blocks 4063800 block_prefix 50048 total 4113848
+history_blocked_readonly visible_rows 100 checksum 554060342784655822
+readonly_blocked_run transactions 180 p50_ns 1000 p95_ns 1100 max_ns 1200
+history_blocked_run_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 29100 p95_ns 30400 max_ns 42600
+projection_storage_payload_bytes blocks 4063800 block_prefix 50048 total 4113848
+history_measured_tree_readonly visible_rows 100 checksum 13751768553826269380
+readonly_tree_run transactions 180 p50_ns 600 p95_ns 700 max_ns 800
+history_measured_tree_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 3000 p95_ns 3300 max_ns 3500
+tree_storage_payload_bytes leaf_nodes 300096 branch_nodes 61056 total 361152 leaf_capacity 32 branch_capacity 16
+history_measured_tree_readonly visible_rows 100 checksum 554060342784655822
+readonly_tree_run transactions 180 p50_ns 1300 p95_ns 1400 max_ns 1500
+history_measured_tree_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 4400 p95_ns 4800 max_ns 5900
+tree_storage_payload_bytes leaf_nodes 300096 branch_nodes 61056 total 361152 leaf_capacity 32 branch_capacity 16
+fresh_process 5
+History projection comparison; local-splice prototypes; Odin dev-2026-09-nightly:a2fb372; one process
+history_expanded_display_baseline visible_rows 100 checksum 13751768553826269380 display_reference_payload_bytes 713360
+readonly_direct_display transactions 180 p50_ns 900 p95_ns 900 max_ns 4000
+history_expanded_display_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 225000 p95_ns 235100 max_ns 399300
+expanded_display_storage_payload_bytes 713360 visible_rows 44585
+history_flat_run_readonly visible_rows 100 checksum 13751768553826269380
+readonly_flat_run transactions 180 p50_ns 400 p95_ns 700 max_ns 800
+history_flat_run_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 228600 p95_ns 260600 max_ns 305100
+projection_storage_payload_bytes records 800000 prefix 320032 total 1120032
+history_flat_run_readonly visible_rows 100 checksum 2293810055179786446
+readonly_flat_run transactions 180 p50_ns 1200 p95_ns 1300 max_ns 1400
+history_flat_run_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 230600 p95_ns 235600 max_ns 303500
+projection_storage_payload_bytes records 800000 prefix 320032 total 1120032
+history_expanded_display_baseline visible_rows 100 checksum 2293810055179786446 display_reference_payload_bytes 156000
+readonly_direct_display transactions 180 p50_ns 800 p95_ns 800 max_ns 1200
+history_expanded_display_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 50800 p95_ns 61500 max_ns 64900
+expanded_display_storage_payload_bytes 156000 visible_rows 9750
+history_blocked_readonly visible_rows 100 checksum 13751768553826269380
+readonly_blocked_run transactions 180 p50_ns 400 p95_ns 500 max_ns 600
+history_blocked_run_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 6800 p95_ns 7000 max_ns 10100
+projection_storage_payload_bytes blocks 813800 block_prefix 10048 total 823848
+history_blocked_readonly visible_rows 100 checksum 2293810055179786446
+readonly_blocked_run transactions 180 p50_ns 1000 p95_ns 1100 max_ns 1200
+history_blocked_run_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 7900 p95_ns 8100 max_ns 12100
+projection_storage_payload_bytes blocks 813800 block_prefix 10048 total 823848
+history_measured_tree_readonly visible_rows 100 checksum 13751768553826269380
+readonly_tree_run transactions 180 p50_ns 600 p95_ns 700 max_ns 800
+history_measured_tree_projection records 10000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 2800 p95_ns 3100 max_ns 12700
+tree_storage_payload_bytes leaf_nodes 60096 branch_nodes 13248 total 73344 leaf_capacity 32 branch_capacity 16
+history_measured_tree_readonly visible_rows 100 checksum 2293810055179786446
+readonly_tree_run transactions 180 p50_ns 1300 p95_ns 1400 max_ns 1500
+history_measured_tree_projection records 10000 alternating true transactions 180 viewport_rows 100 checksum 14685613126783911532
+collapse_expand_plus_viewport transactions 180 p50_ns 4200 p95_ns 4500 max_ns 12100
+tree_storage_payload_bytes leaf_nodes 60096 branch_nodes 13248 total 73344 leaf_capacity 32 branch_capacity 16
+history_expanded_display_baseline visible_rows 100 checksum 13751768553826269380 display_reference_payload_bytes 3566720
+readonly_direct_display transactions 180 p50_ns 900 p95_ns 900 max_ns 2300
+history_expanded_display_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 1127200 p95_ns 1146900 max_ns 1395400
+expanded_display_storage_payload_bytes 3566720 visible_rows 222920
+history_flat_run_readonly visible_rows 100 checksum 13751768553826269380
+readonly_flat_run transactions 180 p50_ns 400 p95_ns 500 max_ns 600
+history_flat_run_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 1145900 p95_ns 1159200 max_ns 1168700
+projection_storage_payload_bytes records 4000000 prefix 1600032 total 5600032
+history_flat_run_readonly visible_rows 100 checksum 554060342784655822
+readonly_flat_run transactions 180 p50_ns 1000 p95_ns 1100 max_ns 1100
+history_flat_run_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 1147700 p95_ns 1183300 max_ns 1477300
+projection_storage_payload_bytes records 4000000 prefix 1600032 total 5600032
+history_expanded_display_baseline visible_rows 100 checksum 554060342784655822 display_reference_payload_bytes 780000
+readonly_direct_display transactions 180 p50_ns 800 p95_ns 800 max_ns 1200
+history_expanded_display_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 246900 p95_ns 250800 max_ns 260200
+expanded_display_storage_payload_bytes 780000 visible_rows 48750
+history_blocked_readonly visible_rows 100 checksum 13751768553826269380
+readonly_blocked_run transactions 180 p50_ns 500 p95_ns 800 max_ns 1000
+history_blocked_run_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 28100 p95_ns 28700 max_ns 40000
+projection_storage_payload_bytes blocks 4063800 block_prefix 50048 total 4113848
+history_blocked_readonly visible_rows 100 checksum 554060342784655822
+readonly_blocked_run transactions 180 p50_ns 1000 p95_ns 1100 max_ns 2200
+history_blocked_run_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 29300 p95_ns 30500 max_ns 40300
+projection_storage_payload_bytes blocks 4063800 block_prefix 50048 total 4113848
+history_measured_tree_readonly visible_rows 100 checksum 13751768553826269380
+readonly_tree_run transactions 180 p50_ns 600 p95_ns 700 max_ns 1000
+history_measured_tree_projection records 50000 alternating false transactions 180 viewport_rows 100 checksum 9056793033942987144
+collapse_expand_plus_viewport transactions 180 p50_ns 3000 p95_ns 3300 max_ns 4200
+tree_storage_payload_bytes leaf_nodes 300096 branch_nodes 61056 total 361152 leaf_capacity 32 branch_capacity 16
+history_measured_tree_readonly visible_rows 100 checksum 554060342784655822
+readonly_tree_run transactions 180 p50_ns 1300 p95_ns 1400 max_ns 1500
+history_measured_tree_projection records 50000 alternating true transactions 180 viewport_rows 100 checksum 1108120685569311644
+collapse_expand_plus_viewport transactions 180 p50_ns 4400 p95_ns 4700 max_ns 5900
+tree_storage_payload_bytes leaf_nodes 300096 branch_nodes 61056 total 361152 leaf_capacity 32 branch_capacity 16
