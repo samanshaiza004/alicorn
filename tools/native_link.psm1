@@ -357,7 +357,7 @@ function New-AlicornWindowsStaticLinkRecipe {
     if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { throw 'A 64-bit host is not sufficient: the initial recipe requires an x64 MSVC host toolchain.' }
 
     $accessKit = Get-AlicornAccessKit
-    $accessKitArchive = Join-Path $accessKit.Root "accesskit-c-0.23.1.zip"
+    $accessKitArchive = $accessKit.Archive
     $accessKitLibrary = $accessKit.Library
     $accessKitLicenseApache = Join-Path $accessKit.Root 'LICENSE-APACHE'
     $accessKitLicenseMIT = Join-Path $accessKit.Root 'LICENSE-MIT'

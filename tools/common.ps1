@@ -132,5 +132,5 @@ function Get-AlicornAccessKit {
     $libraryDirectory = Join-Path $distribution 'lib\windows\x86_64\msvc\static'
     $quotedLibraryDirectory = if ($libraryDirectory -match '\s') { "`"$libraryDirectory`"" } else { $libraryDirectory }
     $linkerFlags = "/LIBPATH:$quotedLibraryDirectory bcrypt.lib ntdll.lib propsys.lib runtimeobject.lib uiautomationcore.lib userenv.lib ws2_32.lib"
-    return [pscustomobject]@{ Root = $distribution; Library = $library; LinkerFlags = $linkerFlags }
+    return [pscustomobject]@{ Root = $distribution; Archive = $archive; Library = $library; LinkerFlags = $linkerFlags }
 }
