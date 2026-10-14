@@ -247,6 +247,7 @@ split_drag_coordinate :: proc(node: ^Node, x, y: f32) -> f32 {
 update_split_drag :: proc(rt: ^Runtime, handle: ^Node, x, y: f32) {
 	owner, ok := rt.nodes[handle.split_owner]
 	if !ok || !node_is_presentation_active(rt, handle.split_owner) { return }
+	_ = restore_cancel_pending(rt, .Split, owner.id, .User_Interaction)
 	// Drag math remains in target logical geometry, matching split placement.
 	// Finalized bounds are only for pointer hit testing and presentation.
 	total := owner.bounds.w if owner.split_axis == .Horizontal else owner.bounds.h
@@ -331,6 +332,10 @@ focus :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 	node, ok := rt.nodes[id]
 	if !ok || !node_is_presentation_active(rt, id) || !node.focusable || !node_is_in_modal_overlay(rt, id, modal_overlay_root(rt)) {
 		return false
+	}
+	if restore_state := restore_control_state(rt, .Semantic_Focus, rt.semantic_focus.owner); restore_state != nil &&
+		restore_outcome_pending(restore_state.outcome) && id != rt.semantic_focus.owner && node.semantic_id != restore_state.semantic_id {
+		_ = restore_cancel_pending(rt, .Semantic_Focus, rt.semantic_focus.owner, .User_Interaction)
 	}
 	previous := rt.focused
 	if previous == id {
@@ -543,6 +548,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 		bar_hit := scrollbar_hit_test(rt, event.x, event.y)
 		if bar_hit.node != 0 {
 			node := rt.nodes[bar_hit.node]
+			_ = restore_cancel_pending(rt, .Scroll, bar_hit.node, .User_Interaction)
 			if bar_hit.thumb {
 				rt.scrollbar_drag_node = bar_hit.node
 				rt.scrollbar_drag_axis = bar_hit.axis
@@ -640,6 +646,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 				if node.kind == .Slider { _ = slider_set_from_pointer(rt, node, event.x) }
 				if node.kind == .Split_Handle {
 					if owner, owner_ok := rt.nodes[node.split_owner]; owner_ok {
+						_ = restore_cancel_pending(rt, .Split, owner.id, .User_Interaction)
 						owner.split_dragging = true
 						owner.split_drag_start_position = owner.split_position
 						owner.split_drag_start_coordinate = split_drag_coordinate(node, event.x, event.y)

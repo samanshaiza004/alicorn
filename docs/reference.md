@@ -567,9 +567,41 @@ focusable ancestor as owner, such as a virtual list (`focusable=true`).
 When the bound row is virtualized away, the runtime retains the semantic ID,
 clears its realized node, and keeps keyboard focus at the list owner if focus was
 on that row. A later matching `semantic_bind` reconnects the presentation.
+Resolution is scoped to the requested owner; a duplicate ID elsewhere is never
+used as an implicit fallback.
 `semantic_focus_clear` clears the logical identity; this does not change the
 application's selected item. `semantic_focus_state` and `inspect(runtime)` show
 the identity, owner, and current realization.
+
+### Durable UI restoration
+
+Applications persist logical presentation values such as a preferred split
+extent, a scroll offset, or a `Semantic_ID`. They create a fresh runtime-local
+request token with `restore_token_next(runtime)` when applying those values to
+a new Runtime. Tokens and retained `Node_ID` values are transient; do not write
+them to a session file.
+
+Pass `Split_Restore_Request{token, preferred_position}` to `split_begin`, or
+`Scroll_Restore_Request{token, offset_x, offset_y}` to `scroll_region_begin`,
+`virtual_list_begin`, or `virtual_list_begin_variable`. A split keeps the
+preferred position separately from the size that current pane constraints
+allow. A virtual list seeds its first range from the requested offset, then the
+native host may run one corrective description if final viewport geometry
+changes the range before presentation.
+
+Use `semantic_focus_restore_request(runtime, id, owner, token)` to restore a
+logical virtual-list target. It never moves native keyboard focus and it only
+realizes a matching `semantic_bind` under the requested owner. It remains
+deferred while the row is virtualized or unavailable under that owner.
+
+`restore_state_query(runtime, control, target, token)` reports Requested or
+Deferred progress and one terminal Applied, Clamped, Cancelled, or Superseded
+outcome. Readback is passive. `restore_cancel` cancels a matching pending token.
+A newer request supersedes an older pending request for the same control;
+direct scroll input cancels pending scroll restoration. When geometry clamps a
+value, the report retains both the application preference and resolved value.
+`inspect(runtime)` and the bounded restore trace show the request values,
+outcome, reason, and layout generation.
 
 ### Semantic model and collections
 

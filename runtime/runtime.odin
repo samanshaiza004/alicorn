@@ -1355,6 +1355,87 @@ Semantic_Focus_State :: struct {
 	realized_node: Node_ID,
 }
 
+// Restore_Token identifies one application-owned intent during this Runtime's
+// lifetime. It is not durable state and must never be saved across Runtime
+// destruction.
+Restore_Token :: distinct u64
+RESTORE_TOKEN_NONE :: Restore_Token(0)
+
+Restore_Control :: enum {
+	Split,
+	Scroll,
+	Semantic_Focus,
+}
+
+// Requested and Deferred are in-progress states. Every request ends in exactly
+// one of Applied, Clamped, Cancelled, or Superseded.
+Restore_Outcome :: enum {
+	None,
+	Requested,
+	Deferred,
+	Applied,
+	Clamped,
+	Cancelled,
+	Superseded,
+}
+
+Restore_Reason :: enum {
+	None,
+	Awaiting_Layout,
+	Awaiting_Corrective_Description,
+	Resolved,
+	Constrained,
+	Invalid_Value,
+	User_Interaction,
+	Newer_Request,
+	Target_Retired,
+	Owner_Unavailable,
+	Owner_Mismatch,
+	Application_Cancelled,
+}
+
+Restore_Value :: struct {
+	x, y: f32,
+}
+
+Split_Restore_Request :: struct {
+	token: Restore_Token,
+	preferred_position: f32,
+}
+
+Scroll_Restore_Request :: struct {
+	token: Restore_Token,
+	offset_x, offset_y: f32,
+}
+
+Restore_Control_State :: struct {
+	token: Restore_Token,
+	control: Restore_Control,
+	outcome: Restore_Outcome,
+	reason: Restore_Reason,
+	requested: Restore_Value,
+	preferred: Restore_Value,
+	resolved: Restore_Value,
+	described: Restore_Value,
+	described_viewport: Restore_Value,
+	semantic_id: Semantic_ID,
+	realized_node: Node_ID,
+	layout_generation: u64,
+	awaiting_description: bool,
+}
+
+Restore_Target :: struct {
+	control: Restore_Control,
+	node: Node_ID,
+}
+
+Restore_Report :: struct {
+	target: Node_ID,
+	state: Restore_Control_State,
+}
+
+RESTORE_REPORT_CAPACITY :: 64
+
 Action_Descriptor :: struct {
 	id:    Action_ID,
 	name:  string,
@@ -1520,6 +1601,7 @@ Trace_Kind :: enum {
 	Composite,
 	Submit,
 	Retire,
+	Restore,
 }
 
 Trace_Event :: struct {
@@ -1686,6 +1768,12 @@ Runtime :: struct {
 	transient_overlay_kind: Transient_Overlay_Kind,
 	selected:    Node_ID,
 	semantic_focus: Semantic_Focus_State,
+	semantic_focus_restore: Restore_Control_State,
+	restore_token_sequence: u64,
+	restore_controls: map[Restore_Target]^Restore_Control_State,
+	restore_reports: [RESTORE_REPORT_CAPACITY]Restore_Report,
+	restore_report_next: int,
+	restore_report_count: int,
 	last_hovered: Node_ID,
 	captured_node: Node_ID,
 	text_field_selection_owner: Node_ID,

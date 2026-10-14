@@ -43,6 +43,7 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 	}
 	rt.scratch_allocator = runtime_allocator(rt.scratch_allocator_state)
 	rt.nodes = make(map[Node_ID]^Node, allocator=rt.persistent_allocator)
+	rt.restore_controls = make(map[Restore_Target]^Restore_Control_State, allocator=rt.persistent_allocator)
 	rt.measure_states = make(map[Node_ID]Measure_State, allocator=rt.persistent_allocator)
 	rt.finalized_geometry = make(map[Node_ID]Finalized_Geometry, allocator=rt.persistent_allocator)
 	rt.computed_styles = make(map[Node_ID]Computed_Style, allocator=rt.persistent_allocator)

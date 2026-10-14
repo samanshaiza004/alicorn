@@ -165,6 +165,7 @@ semantic_focus_owner_needs_outline :: proc(rt: ^Runtime, owner: Node_ID) -> bool
 // described node with semantic_bind; reconciliation then updates realized_node
 // as the presentation appears and disappears.
 semantic_focus_set :: proc(rt: ^Runtime, id: Semantic_ID, owner: Node_ID) -> bool {
+	_ = restore_cancel_pending(rt, .Semantic_Focus, rt.semantic_focus.owner, .User_Interaction)
 	if !semantic_id_is_valid(id) { return semantic_focus_clear(rt) }
 	if rt.semantic_focus.id == id && rt.semantic_focus.owner == owner { return false }
 	previous_owner := rt.semantic_focus.owner
@@ -181,6 +182,7 @@ semantic_focus_set :: proc(rt: ^Runtime, id: Semantic_ID, owner: Node_ID) -> boo
 }
 
 semantic_focus_clear :: proc(rt: ^Runtime) -> bool {
+	_ = restore_cancel_pending(rt, .Semantic_Focus, rt.semantic_focus.owner, .User_Interaction)
 	if rt.semantic_focus.id.namespace == 0 && rt.semantic_focus.owner == 0 && rt.semantic_focus.realized_node == 0 {
 		return false
 	}
@@ -209,19 +211,16 @@ semantic_node_within_owner :: proc(rt: ^Runtime, id, owner: Node_ID) -> bool {
 refresh_semantic_focus_realization :: proc(rt: ^Runtime) {
 	previous := rt.semantic_focus.realized_node
 	next := Node_ID(0)
-	fallback := Node_ID(0)
 	if semantic_id_is_valid(rt.semantic_focus.id) {
 		for id in rt.order {
 			rt.stats.semantic_focus_search_visits += 1
 			node, ok := rt.nodes[id]
-			if !ok || !node.active || node.semantic_id != rt.semantic_focus.id { continue }
-			if fallback == 0 { fallback = id }
+			if !ok || !node.active || !node.present || node.semantic_id != rt.semantic_focus.id { continue }
 			if semantic_node_within_owner(rt, id, rt.semantic_focus.owner) {
 				next = id
 				break
 			}
 		}
-		if next == 0 { next = fallback }
 	}
 	for id, node in rt.nodes {
 		rt.stats.semantic_active_update_visits += 1
@@ -238,6 +237,28 @@ refresh_semantic_focus_realization :: proc(rt: ^Runtime) {
 			record_trace(rt, .Focus, 0, "semantic focus has no realized presentation")
 		} else if next != 0 {
 			record_trace(rt, .Focus, next, "semantic focus presentation realized")
+		}
+	}
+	state := &rt.semantic_focus_restore
+	if restore_outcome_pending(state.outcome) && state.control == .Semantic_Focus && state.semantic_id == rt.semantic_focus.id {
+		if next != 0 && semantic_node_within_owner(rt, next, rt.semantic_focus.owner) {
+			state.resolved = {}
+			state.realized_node = next
+			restore_set_outcome(rt, rt.semantic_focus.owner, state, .Applied, .Resolved)
+		} else {
+			reason := Restore_Reason.Awaiting_Layout
+			if rt.semantic_focus.owner == 0 { reason = .Owner_Unavailable }
+			for id in rt.order {
+				if node, ok := rt.nodes[id]; ok && node.active && node.present && node.semantic_id == state.semantic_id {
+					if !semantic_node_within_owner(rt, id, rt.semantic_focus.owner) {
+						reason = .Owner_Mismatch
+						break
+					}
+				}
+			}
+			if state.outcome != .Deferred || state.reason != reason {
+				restore_set_outcome(rt, rt.semantic_focus.owner, state, .Deferred, reason)
+			}
 		}
 	}
 }

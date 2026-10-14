@@ -53,6 +53,7 @@ split_begin :: proc(
 	style := DEFAULT_SPLIT_STYLE,
 	label := "split",
 	loc := #caller_location,
+	restore := Split_Restore_Request{},
 ) -> Split_Handle {
 	split_style := style
 	split_style.direction = .Row if axis == .Horizontal else .Column
@@ -69,6 +70,15 @@ split_begin :: proc(
 	position := item.split_position
 	if previous, ok := ui.runtime.nodes[id]; ok && previous.kind == .Split {
 		position = previous.split_preferred_position
+	}
+	if restore.token != RESTORE_TOKEN_NONE {
+		state, _ := restore_request_begin(
+			ui.runtime, id, .Split, restore.token, Restore_Value{x=restore.preferred_position},
+		)
+		if state != nil && restore_outcome_pending(state.outcome) {
+			position = maxf(state.requested.x, 0)
+			item.split_position = position
+		}
 	}
 	return Split_Handle{id, axis, position}
 }
@@ -154,6 +164,7 @@ scroll_region_begin :: proc(
 	axis_behavior := Scroll_Axis_Behavior.Auto_Lock,
 	scrollbars := Scrollbar_Policy.Auto,
 	focusable := false,
+	restore := Scroll_Restore_Request{},
 ) -> Scroll_Region_Handle {
 	rt := ui.runtime
 	resolved_source := resolve_source(Source_Site{}, "scroll_region", loc)
@@ -216,6 +227,19 @@ scroll_region_begin :: proc(
 		offset_x = clampf(previous.scroll_offset_x, 0, maxf(content_width-resolved_width, 0))
 		max_scroll = maxf(content_height-resolved_viewport, 0)
 		max_scroll_x = maxf(content_width-resolved_width, 0)
+	}
+	request_started := false
+	if restore.token != RESTORE_TOKEN_NONE {
+		request_state, started := restore_request_begin(
+			rt, id, .Scroll, restore.token, Restore_Value{x=restore.offset_x, y=restore.offset_y},
+		)
+		request_started = started && request_state != nil && restore_outcome_pending(request_state.outcome)
+	}
+	if request_started && restore_value_is_finite(restore.offset_x) && restore_value_is_finite(restore.offset_y) {
+		// Seed the very first virtual range from the application intent. Layout
+		// will clamp against the real viewport and may request one correction.
+		offset_x = clampf(restore.offset_x, 0, max_scroll_x)
+		offset_y = clampf(restore.offset_y, 0, max_scroll)
 	}
 	last = len(rt.pending)-1
 	if last >= 0 && rt.pending[last].kind == .Description && rt.pending[last].description.id == id {
@@ -287,6 +311,7 @@ scroll_region_state :: proc(rt: ^Runtime, id: Node_ID) -> Scroll_Region_Handle {
 scroll_region_set_offset :: proc(rt: ^Runtime, id: Node_ID, offset_y: f32, reason := "scroll region offset changed") -> bool {
 	node, ok := rt.nodes[id]
 	if !ok || !node.active || node.kind != .Scroll_Region { return false }
+	_ = restore_cancel_pending(rt, .Scroll, id, .User_Interaction)
 	viewport := node.scroll_viewport_height
 	if viewport <= 0 && !node.scroll_geometry_resolved { viewport = node.bounds.h }
 	max_scroll := maxf(node.scroll_content_height-viewport, 0)
@@ -300,6 +325,7 @@ scroll_region_set_offset :: proc(rt: ^Runtime, id: Node_ID, offset_y: f32, reaso
 scroll_region_set_offset_x :: proc(rt: ^Runtime, id: Node_ID, offset_x: f32, reason := "horizontal scroll region offset changed") -> bool {
 	node, ok := rt.nodes[id]
 	if !ok || !node.active || node.kind != .Scroll_Region { return false }
+	_ = restore_cancel_pending(rt, .Scroll, id, .User_Interaction)
 	viewport := node.scroll_viewport_width
 	if viewport <= 0 && !node.scroll_geometry_resolved { viewport = node.bounds.w }
 	max_scroll := maxf(node.scroll_content_width-viewport, 0)
