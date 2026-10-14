@@ -22,9 +22,47 @@ jobs:
         with:
           path: .deps/accesskit
           key: accesskit-c-0.23.1-${{ runner.os }}-${{ runner.arch }}
+      - name: Test native link recipe parsing and cache validation
+        shell: pwsh
+        run: .\tools\test_native_link_recipe.ps1
+      - name: Verify toolchain facts from real CMake output
+        shell: pwsh
+        run: .\tools\test_cmake_toolchain_probe.ps1
+      - name: Build and smoke-test an independent external Odin consumer
+        shell: pwsh
+        run: .\tools\test_external_native_link.ps1 -Odin odin
       - name: Build, package, audit, and smoke-test 01_hello
         shell: pwsh
-        run: .\tools\build_native_release.ps1 -Odin odin -SDLLinkage Static -OutputDirectory out\native-package\windows-x86_64
+        run: |
+          $timer = [Diagnostics.Stopwatch]::StartNew()
+          .\tools\build_native_release.ps1 -Odin odin -SDLLinkage Static -OutputDirectory out\native-package\windows-x86_64
+          $timer.Stop()
+          $executableName = ((Get-Content examples\01_hello\package.json -Raw | ConvertFrom-Json).executableName) + '.exe'
+          $package = Get-ChildItem out\native-package\windows-x86_64 -Filter $executableName -File -Recurse | Select-Object -First 1
+          if (-not $package) { throw "Static 01_hello package did not contain $executableName." }
+          $size = $package.Length
+          $seconds = [Math]::Round($timer.Elapsed.TotalSeconds, 2)
+          $row = "| Static 01_hello package build | $seconds s |`n| Static 01_hello executable | $size bytes |`n"
+          Write-Host "Static package measurements:`n$row"
+          if ($env:GITHUB_STEP_SUMMARY) { [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "### Static 01_hello package`n`n| Measurement | Result |`n| --- | ---: |`n$row", [Text.UTF8Encoding]::new($false)) }
+      - name: Build and measure shared SDL baseline
+        shell: pwsh
+        run: |
+          $timer = [Diagnostics.Stopwatch]::StartNew()
+          .\tools\build_native_release.ps1 -Odin odin -SDLLinkage Shared -OutputDirectory out\native-package\windows-x86_64-shared
+          $timer.Stop()
+          $packageRoot = 'out\native-package\windows-x86_64-shared'
+          $executableName = ((Get-Content examples\01_hello\package.json -Raw | ConvertFrom-Json).executableName) + '.exe'
+          $executable = Get-ChildItem $packageRoot -Filter $executableName -File -Recurse | Select-Object -First 1
+          $sdl = Get-ChildItem $packageRoot -Filter SDL3.dll -File -Recurse | Select-Object -First 1
+          if (-not $executable -or -not $sdl) { throw "Shared 01_hello package must contain $executableName and SDL3.dll." }
+          $executableBytes = $executable.Length
+          $sdlBytes = $sdl.Length
+          $packageBytes = $executableBytes + $sdlBytes
+          $seconds = [Math]::Round($timer.Elapsed.TotalSeconds, 2)
+          $row = "| Shared 01_hello package build | $seconds s |`n| Shared executable | $executableBytes bytes |`n| SDL3.dll | $sdlBytes bytes |`n| Executable + SDL3.dll | $packageBytes bytes |`n"
+          Write-Host "Shared package measurements:`n$row"
+          if ($env:GITHUB_STEP_SUMMARY) { [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "### Shared SDL baseline`n`n| Measurement | Result |`n| --- | ---: |`n$row", [Text.UTF8Encoding]::new($false)) }
       - name: Verify the static audit rejects SDL3.dll
         shell: pwsh
         run: .\tools\test_package_windows.ps1 -Odin odin

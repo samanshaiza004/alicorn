@@ -1,0 +1,9 @@
+{
+  "name": "Alicorn External Consumer",
+  "version": "0.1.0",
+  "bundleIdentifier": "org.alicorn.external-consumer",
+  "executableName": "AlicornExternalConsumer",
+  "icon": null,
+  "resources": [],
+  "privateLibraries": []
+}

@@ -16,97 +16,29 @@ $App = Get-Content -LiteralPath $MetadataPath -Raw | ConvertFrom-Json
 if ([string]::IsNullOrWhiteSpace([string]$App.odinPackage)) { throw 'Metadata must define odinPackage for the build helper.' }
 $AppPackage = Join-Path $RepoRoot ([string]$App.odinPackage)
 $OutRoot = Join-Path $RepoRoot 'out\native-package'
-$SDLRoot = Join-Path $OutRoot 'sdl-3.4.16'
-$SourceArchive = Join-Path $SDLRoot 'SDL3-3.4.16.tar.gz'
-$SourceDirectory = Join-Path $SDLRoot 'source'
-$BuildDirectory = Join-Path $SDLRoot 'build'
-$Prefix = Join-Path $SDLRoot 'prefix'
-$SDLURL = 'https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-3.4.16.tar.gz'
-$SDLSHA256 = '7322236cd12090c3eb40b9728be4d49c76f66ad17d04369584d4ecad5cf77c68'
-New-Item -ItemType Directory -Force -Path $OutRoot, $SDLRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $OutRoot | Out-Null
 
 $SDLRuntime = $null
-$SDLVersion = '3.4.16'
+$SDLVersion = ''
 $SDLLicense = Join-Path (Split-Path -Parent $Odin) 'vendor\sdl3\LICENSE.txt'
-$SDLLinkFlags = ''
-$AccessKit = Get-AlicornAccessKit
+$NativeRecipe = $null
+$AccessKit = $null
+$AccessKitLicenseApache = $null
+$AccessKitLicenseMIT = $null
 $PreviousOdinRoot = $env:ODIN_ROOT
 try {
     if ($SDLLinkage -eq 'Static') {
-        foreach ($Tool in @('cmake.exe', 'tar.exe')) {
-            if (-not (Get-Command $Tool -ErrorAction SilentlyContinue)) { throw "Required tool '$Tool' was not found." }
-        }
-        if (-not (Test-Path -LiteralPath $SourceArchive -PathType Leaf)) {
-            Invoke-WebRequest -Uri $SDLURL -OutFile $SourceArchive
-        }
-        $ActualHash = (Get-FileHash -LiteralPath $SourceArchive -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($ActualHash -ne $SDLSHA256) { throw "Pinned SDL source checksum mismatch. Expected $SDLSHA256; got $ActualHash." }
-        if (-not (Test-Path -LiteralPath (Join-Path $SourceDirectory 'CMakeLists.txt'))) {
-            New-Item -ItemType Directory -Force -Path $SourceDirectory | Out-Null
-            & tar.exe -xf $SourceArchive -C $SourceDirectory --strip-components=1
-            if ($LASTEXITCODE -ne 0) { throw "SDL source extraction failed (exit $LASTEXITCODE)." }
-        }
-        & cmake -S $SourceDirectory -B $BuildDirectory `
-            "-DCMAKE_INSTALL_PREFIX=$Prefix" `
-            '-DCMAKE_BUILD_TYPE=Release' `
-            '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded' `
-            '-DSDL_SHARED=OFF' '-DSDL_STATIC=ON' `
-            '-DSDL_TEST_LIBRARY=OFF' '-DSDL_TESTS=OFF' `
-            '-DSDL_INSTALL_TESTS=OFF' '-DSDL_DISABLE_INSTALL_DOCS=ON' `
-            '-DSDL_FRAMEWORK=OFF'
-        if ($LASTEXITCODE -ne 0) { throw "SDL CMake configure failed (exit $LASTEXITCODE)." }
-        & cmake --build $BuildDirectory --config Release --target SDL3-static
-        if ($LASTEXITCODE -ne 0) { throw "SDL static build failed (exit $LASTEXITCODE)." }
-        & cmake --install $BuildDirectory --config Release
-        if ($LASTEXITCODE -ne 0) { throw "SDL install failed (exit $LASTEXITCODE)." }
-
-        $ProbeDirectory = Join-Path $SDLRoot 'link-probe'
-        & cmake -S (Join-Path $RepoRoot 'tools\sdl_link_probe') -B $ProbeDirectory "-DCMAKE_PREFIX_PATH=$Prefix"
-        if ($LASTEXITCODE -ne 0) { throw "SDL link-interface probe failed (exit $LASTEXITCODE)." }
-        $LinkInterface = Join-Path $ProbeDirectory 'sdl3-static-link-interface.txt'
-        if (-not (Test-Path -LiteralPath $LinkInterface -PathType Leaf)) { throw 'SDL CMake package did not emit static link requirements.' }
-        $LinkItems = @((Get-Content -LiteralPath $LinkInterface -Raw) -split '[\r\n;]+' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-        $NativeLibraries = [Collections.Generic.List[string]]::new()
-        foreach ($Item in $LinkItems) {
-            if ($Item -match '^\$<LINK_ONLY:([^<>]+)>$') { $Item = $Matches[1] }
-            if ($Item -in @('SDL3::Headers', 'SDL3::SDL3-static', 'SDL3::SDL3')) { continue }
-            if ($Item -match '^\$<') { throw "Unresolved SDL CMake link expression: '$Item'." }
-            if ($Item.StartsWith('-')) { $NativeLibraries.Add($Item); continue }
-            if ($Item -match '^[A-Za-z0-9_.+-]+::') { throw "Unresolved SDL CMake target dependency '$Item'." }
-            if ($Item -match '[/\\]') { throw "Unsupported non-system SDL link dependency '$Item'; inspect the generated CMake target." }
-            $LibraryName = $Item -replace '\.lib$', ''
-            $NativeLibraries.Add("/DEFAULTLIB:$LibraryName.lib")
-        }
-        $SDLLinkFlags = ($NativeLibraries | Select-Object -Unique) -join ' '
-
-        $StaticLibrary = Get-ChildItem -LiteralPath $Prefix -Filter 'SDL3-static.lib' -File -Recurse | Select-Object -First 1
-        if (-not $StaticLibrary) { throw "SDL3-static.lib was not installed under '$Prefix'." }
-        $SDKRoot = Split-Path -Parent $Odin
-        $OverlayRoot = Join-Path $OutRoot 'odin-static-overlay'
-        New-Item -ItemType Directory -Force -Path $OverlayRoot, (Join-Path $OverlayRoot 'vendor') | Out-Null
-        foreach ($SdkDirectory in @('base', 'core', 'shared', 'bin')) {
-            $LinkPath = Join-Path $OverlayRoot $SdkDirectory
-            if (-not (Test-Path -LiteralPath $LinkPath)) {
-                New-Item -ItemType Junction -Path $LinkPath -Target (Join-Path $SDKRoot $SdkDirectory) | Out-Null
-            }
-        }
-        $VendorOverlay = Join-Path $OverlayRoot 'vendor'
-        foreach ($VendorPackage in Get-ChildItem -LiteralPath (Join-Path $SDKRoot 'vendor') -Directory) {
-            if ($VendorPackage.Name -eq 'sdl3') { continue }
-            $LinkPath = Join-Path $VendorOverlay $VendorPackage.Name
-            if (-not (Test-Path -LiteralPath $LinkPath)) {
-                New-Item -ItemType Junction -Path $LinkPath -Target $VendorPackage.FullName | Out-Null
-            }
-        }
-        $SDLPackage = Join-Path $VendorOverlay 'sdl3'
-        if (-not (Test-Path -LiteralPath $SDLPackage)) {
-            Copy-Item -LiteralPath (Join-Path $SDKRoot 'vendor\sdl3') -Destination $SDLPackage -Recurse
-        }
-        Copy-Item -LiteralPath $StaticLibrary.FullName -Destination (Join-Path $SDLPackage 'SDL3.lib') -Force
-        $SDLLicense = Join-Path $SourceDirectory 'LICENSE.txt'
-        if (-not (Test-Path -LiteralPath $SDLLicense -PathType Leaf)) { throw 'Pinned SDL source did not contain LICENSE.txt.' }
-        $env:ODIN_ROOT = $OverlayRoot
+        Import-Module (Join-Path $PSScriptRoot 'native_link.psm1') -Force -ErrorAction Stop
+        $NativeRecipe = New-AlicornWindowsStaticLinkRecipe -Odin $Odin
+        $SDLVersion = $NativeRecipe.artifacts.sdl.version
+        $SDLLicense = $NativeRecipe.artifacts.sdl.license
+        $AccessKitLicenseApache = $NativeRecipe.artifacts.accesskit.licenses[0]
+        $AccessKitLicenseMIT = $NativeRecipe.artifacts.accesskit.licenses[1]
+        $env:ODIN_ROOT = $NativeRecipe.environment.ODIN_ROOT
     } else {
+        $AccessKit = Get-AlicornAccessKit
+        $AccessKitLicenseApache = Join-Path $AccessKit.Root 'LICENSE-APACHE'
+        $AccessKitLicenseMIT = Join-Path $AccessKit.Root 'LICENSE-MIT'
         $SDLRuntime = Join-Path (Split-Path -Parent $Odin) 'vendor\sdl3\SDL3.dll'
         if (-not (Test-Path -LiteralPath $SDLRuntime -PathType Leaf)) { throw "SDL3.dll not found at '$SDLRuntime'." }
         if ((Get-Item -LiteralPath $SDLRuntime).Length -lt 100000) { throw 'SDK SDL3.dll is a Git LFS pointer, not a runtime.' }
@@ -120,8 +52,11 @@ try {
     try {
         $BuiltExecutable = Join-Path $OutRoot ($App.executableName + '.exe')
         $BuildArgs = @('build', $AppPackage, "-out:$BuiltExecutable", '-o:speed')
-        $LinkerFlags = @($AccessKit.LinkerFlags, $SDLLinkFlags | Where-Object { $_ }) -join ' '
-        if ($LinkerFlags) { $BuildArgs += "-extra-linker-flags:$LinkerFlags" }
+        if ($SDLLinkage -eq 'Static') {
+            $BuildArgs += @($NativeRecipe.odin.compilerArguments)
+        } elseif ($AccessKit.LinkerFlags) {
+            $BuildArgs += "-extra-linker-flags:$($AccessKit.LinkerFlags)"
+        }
         & $Odin @BuildArgs
         if ($LASTEXITCODE -ne 0) { throw "Odin release build failed (exit $LASTEXITCODE)." }
 
@@ -132,8 +67,8 @@ try {
             SDLVersion = $SDLVersion
             OutputDirectory = (Join-Path $RepoRoot $OutputDirectory)
             SDLLicense = $SDLLicense
-            AccessKitLicenseApache = (Join-Path $AccessKit.Root 'LICENSE-APACHE')
-            AccessKitLicenseMIT = (Join-Path $AccessKit.Root 'LICENSE-MIT')
+            AccessKitLicenseApache = $AccessKitLicenseApache
+            AccessKitLicenseMIT = $AccessKitLicenseMIT
         }
         if ($SDLRuntime) { $PackageArgs['SDLRuntime'] = $SDLRuntime }
         if (-not $SkipSmokeTest) { $PackageArgs['SmokeTest'] = $true }
