@@ -102,9 +102,16 @@ native_secondary_window_close_request :: proc(data: rawptr) {
 	manager.pending_close = true
 }
 
+native_secondary_window_topmost_matches :: proc(flags: sdl3.WindowFlags, requested: bool) -> bool {
+	current := (flags & sdl3.WindowFlags{.ALWAYS_ON_TOP}) != sdl3.WindowFlags{}
+	return current == requested
+}
+
 native_secondary_window_set_always_on_top :: proc(data: rawptr, always_on_top: bool) -> bool {
 	manager := cast(^Native_Secondary_Window_Manager)data
 	if manager == nil || manager.child == nil || !manager.child.active || manager.child.window == nil { return false }
+	flags := sdl3.GetWindowFlags(manager.child.window)
+	if native_secondary_window_topmost_matches(flags, always_on_top) { return true }
 	return sdl3.SetWindowAlwaysOnTop(manager.child.window, always_on_top)
 }
 

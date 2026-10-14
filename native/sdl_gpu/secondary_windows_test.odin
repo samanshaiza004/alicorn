@@ -29,6 +29,19 @@ secondary_window_test_build :: proc(
 }
 
 @(test)
+test_secondary_window_topmost_updates_are_idempotent :: proc(t: ^testing.T) {
+	plain := sdl3.WindowFlags{}
+	topmost := sdl3.WindowFlags{.ALWAYS_ON_TOP}
+	testing.expect(t, native_secondary_window_topmost_matches(plain, false),
+		"requesting the current normal z-order should be a no-op")
+	testing.expect(t, native_secondary_window_topmost_matches(topmost, true),
+		"requesting the current topmost z-order should be a no-op")
+	testing.expect(t, !native_secondary_window_topmost_matches(plain, true) &&
+		!native_secondary_window_topmost_matches(topmost, false),
+		"a changed topmost state should still reach SDL")
+}
+
+@(test)
 test_secondary_window_event_routing_isolated_by_window_and_wake_id :: proc(t: ^testing.T) {
 	child := Native_Secondary_Window{
 		active=true,

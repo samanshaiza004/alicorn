@@ -176,6 +176,30 @@ test_integrated_frame_hit_test_resizing_and_menu_regions :: proc(t: ^testing.T) 
 }
 
 @(test)
+test_integrated_frame_hit_test_keeps_editor_client_owned_when_dwm_handles :: proc(t: ^testing.T) {
+	client := win.LRESULT(win.HTCLIENT)
+	caption := win.LRESULT(win.HTCAPTION)
+	resize := win.LRESULT(win.HTTOPLEFT)
+	close_button := win.LRESULT(win.HTCLOSE)
+
+	testing.expect(t,
+		win32_integrated_frame_resolve_hit_test(client, true, caption) == client,
+		"DWM must not turn editor client pixels into a caption drag region")
+	testing.expect(t,
+		win32_integrated_frame_resolve_hit_test(client, true, resize) == client,
+		"DWM must not turn editor client pixels into a resize edge")
+	testing.expect(t,
+		win32_integrated_frame_resolve_hit_test(caption, true, resize) == caption,
+		"Alicorn's caption drag geometry must remain authoritative outside system buttons")
+	testing.expect(t,
+		win32_integrated_frame_resolve_hit_test(resize, true, caption) == resize,
+		"Alicorn's resize geometry must remain authoritative")
+	testing.expect(t,
+		win32_integrated_frame_resolve_hit_test(client, true, close_button) == close_button,
+		"DWM may still supply a standard caption-button target when local geometry is unavailable")
+}
+
+@(test)
 test_integrated_frame_hit_test_maximized_does_not_expose_resize_edges :: proc(t: ^testing.T) {
 	got := win32_integrated_frame_hit_test(1, 200, 1000, 800, 32, 8, 8, true, nil, nil)
 	testing.expect(t, got == win.LRESULT(win.HTCLIENT), "maximized frame should not report resize borders")

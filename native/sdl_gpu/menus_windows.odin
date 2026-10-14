@@ -276,6 +276,26 @@ win32_integrated_frame_hit_test :: proc(
 	return win.LRESULT(win.HTCLIENT)
 }
 
+win32_integrated_frame_resolve_hit_test :: proc(
+	frame_result: win.LRESULT,
+	dwm_handled: bool,
+	dwm_result: win.LRESULT,
+) -> win.LRESULT {
+	// DWM owns standard caption-button hit testing. Alicorn owns every other
+	// point because the frame is extended over the client area; allowing an
+	// unrelated DWM non-client classification to replace this result can turn
+	// editor pixels into caption or resize targets.
+	if frame_result == win.LRESULT(win.HTMINBUTTON) || frame_result == win.LRESULT(win.HTMAXBUTTON) ||
+		frame_result == win.LRESULT(win.HTCLOSE) {
+		return frame_result
+	}
+	if dwm_handled && (dwm_result == win.LRESULT(win.HTMINBUTTON) || dwm_result == win.LRESULT(win.HTMAXBUTTON) ||
+		dwm_result == win.LRESULT(win.HTCLOSE)) {
+		return dwm_result
+	}
+	return frame_result
+}
+
 win32_caption_control_rects :: proc(bounds: win.RECT, valid: bool) -> [3]win.RECT {
 	if !valid || bounds.right <= bounds.left || bounds.bottom <= bounds.top { return {} }
 	width := i32(bounds.right-bounds.left)
@@ -920,11 +940,7 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 	if integrated && message == win.WM_NCHITTEST {
 		point := win32_menu_point_from_lparam(lparam)
 		result := win32_menu_frame_hit_test(state, i32(point.x), i32(point.y))
-		if result == win.LRESULT(win.HTMINBUTTON) || result == win.LRESULT(win.HTMAXBUTTON) || result == win.LRESULT(win.HTCLOSE) {
-			return result
-		}
-		if dwm_handled { return dwm_result }
-		return result
+		return win32_integrated_frame_resolve_hit_test(result, dwm_handled, dwm_result)
 	}
 	if dwm_handled { return dwm_result }
 
