@@ -89,3 +89,29 @@ function for Alicorn's `01_hello` example. The ordinary shared-SDL development
 flow and the macOS packaging path are unchanged. Static SDL removes the
 load-time SDL DLL dependency; it does not by itself make a mixed Go/Rust/Odin
 application a single-file executable.
+
+## Measured Windows result
+
+The [Windows static-link job](https://github.com/samanshaiza004/alicorn/actions/runs/38638367490)
+ran on Windows Server 2025, image `windows-2025-vs2026` (`20260925.250.1`),
+with Odin `dev-2026-10-nightly:e87445a`, CMake 4.4.3, Visual Studio generator
+18 2026, MSVC 19.51.36260.0, linker 14.51.36260.0, Windows SDK
+10.0.26100.0, and the static MSVC CRT (`/MT`).
+
+| Measurement | Result |
+| --- | ---: |
+| Cold concurrent SDL preparation and recipe requests | 77.88 s |
+| Warm recipe request | 4.19 s |
+| External Odin compile and link | 1.91 s |
+| External static consumer executable | 10,243,584 bytes |
+| Static `01_hello` package build | 23.25 s |
+| Static `01_hello` executable | 9,225,728 bytes |
+| Shared `01_hello` package build | 19.14 s |
+| Shared executable | 6,422,528 bytes |
+| `SDL3.dll` | 2,790,400 bytes |
+| Shared executable plus `SDL3.dll` | 9,212,928 bytes |
+
+For this example, the static executable is 12,800 bytes (about 0.14%) larger
+than the shared executable and SDL DLL combined. Both packages passed the
+empty-directory launch smoke test; the static package had no private DLL
+imports, while the shared baseline contained only `SDL3.dll`.
