@@ -473,6 +473,11 @@ Drag_Event :: struct {
 	previous_target: Semantic_ID,
 	target: Semantic_ID,
 	position: Drop_Position,
+	// Pointer position is local to the Runtime viewport. It is present on
+	// release events so hosts can distinguish an outside-window tear-off from
+	// an ordinary drag that ended without a valid drop target.
+	pointer_x, pointer_y: f32,
+	has_pointer_position: bool,
 }
 
 Drag_Session :: struct {

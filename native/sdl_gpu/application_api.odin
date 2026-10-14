@@ -292,3 +292,46 @@ Application :: struct {
 	on_stop:            Application_Stop_Proc,
 	on_menu_command:    Application_Menu_Command_Proc,
 }
+
+// Application_Window_Description describes one secondary native window. Its
+// Application callbacks own that window's procedural description and event
+// handling. State should point at a window context that explicitly references
+// shared domain state owned by the parent application; the parent state is not
+// implicitly reused. The native host creates an independent Runtime and
+// renderer set for this window, while the host retains ownership of the shared
+// GPU device. `on_open_failed` runs only if setup fails before callbacks start.
+Application_Window_Open_Failed_Proc :: proc(state: rawptr)
+
+Application_Window_Description :: struct {
+	application:  Application,
+	width:        int,
+	height:       int,
+	always_on_top: bool,
+	on_open_failed: Application_Window_Open_Failed_Proc,
+}
+
+Application_Window_Open_Proc :: proc(data: rawptr, description: Application_Window_Description) -> bool
+Application_Window_Close_Proc :: proc(data: rawptr)
+Application_Window_Topmost_Proc :: proc(data: rawptr, always_on_top: bool) -> bool
+
+// Application_Window_Service currently supports one live secondary window.
+// Applications can request it from a callback, but window creation and GPU
+// resource initialization are deferred to the host's next event-loop safe point.
+Application_Window_Service :: struct {
+	data:  rawptr,
+	open:  Application_Window_Open_Proc,
+	close: Application_Window_Close_Proc,
+	set_always_on_top: Application_Window_Topmost_Proc,
+}
+
+application_open_window :: proc(service: Application_Window_Service, description: Application_Window_Description) -> bool {
+	return service.open != nil && service.open(service.data, description)
+}
+
+application_close_window :: proc(service: Application_Window_Service) {
+	if service.close != nil { service.close(service.data) }
+}
+
+application_window_set_always_on_top :: proc(service: Application_Window_Service, always_on_top: bool) -> bool {
+	return service.set_always_on_top != nil && service.set_always_on_top(service.data, always_on_top)
+}

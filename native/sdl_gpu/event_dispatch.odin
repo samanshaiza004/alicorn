@@ -58,6 +58,9 @@ pump_events :: proc(
 	accessibility: ^Native_Accessibility_Host = nil,
 	appearance_monitor: ^Native_Appearance_Monitor = nil,
 	flight_recorder: ^Native_Flight_Recorder = nil,
+	secondary_manager: ^Native_Secondary_Window_Manager = nil,
+	secondary_child: ^Native_Secondary_Window = nil,
+	replay_secondary_events := false,
 ) {
 	if telemetry != nil { telemetry.events_this_pump = 0 }
 	mod_state := sdl3.GetModState()
@@ -76,9 +79,28 @@ pump_events :: proc(
 		}
 		if !has_event && wait_timed_out != nil { wait_timed_out^ = true }
 	} else {
-		has_event = poll_sdl_event(&event)
+		has_event = native_event_next(&event, secondary_child, replay_secondary_events)
 	}
 	for has_event {
+		if secondary_manager != nil && !replay_secondary_events && secondary_manager.child != nil {
+			event_window := native_event_window_id(event)
+			if native_secondary_window_routes_event(secondary_manager, event) {
+				_ = native_secondary_window_enqueue_event(secondary_manager, event)
+				has_event = native_event_next(&event, secondary_child, replay_secondary_events)
+				continue
+			}
+			if event_window != 0 && event_window != sdl3.GetWindowID(window) {
+				has_event = native_event_next(&event, secondary_child, replay_secondary_events)
+				continue
+			}
+		}
+		if secondary_child != nil && replay_secondary_events {
+			event_window := native_event_window_id(event)
+			if event_window != 0 && event_window != sdl3.GetWindowID(window) {
+				has_event = native_event_next(&event, secondary_child, true)
+				continue
+			}
+		}
 		// This event only returns the sleeping host loop to its compositor. It
 		// must not enter application callbacks, pointer routing, or interaction
 		// telemetry. Application producers use the distinct wake_event below.
@@ -97,7 +119,7 @@ pump_events :: proc(
 			// enqueue immutable requests and use this host-only wake to route them
 			// through Alicorn's semantic action path on the UI thread.
 			if accessibility != nil { native_accessibility_drain_actions(accessibility, rt) }
-			has_event = poll_sdl_event(&event)
+			has_event = native_event_next(&event, secondary_child, replay_secondary_events)
 			continue
 		}
 		// SDL mouse-button events carry no modifier snapshot. Track keyboard
@@ -153,7 +175,7 @@ pump_events :: proc(
 			}
 		}
 		if menu_key_handled {
-			has_event = poll_sdl_event(&event)
+			has_event = native_event_next(&event, secondary_child, replay_secondary_events)
 			continue
 		}
 		event_inside_app := true
@@ -179,7 +201,7 @@ pump_events :: proc(
 					if devtools_hud_redraw_pending != nil { devtools_hud_redraw_pending^ = true }
 				}
 			}
-			has_event = poll_sdl_event(&event)
+			has_event = native_event_next(&event, secondary_child, replay_secondary_events)
 			continue
 		}
 		if telemetry != nil {
@@ -734,7 +756,7 @@ pump_events :: proc(
 			if native_menu != nil { text_input_state.content_inset_top = native_menu.content_inset_top }
 			sync_text_input_focus(window, rt, text_input_state, application)
 		}
-		has_event = poll_sdl_event(&event)
+		has_event = native_event_next(&event, secondary_child, replay_secondary_events)
 	}
 	// A full/filtered SDL queue can reject the coalesced native wake. Any event
 	// that did wake the loop still provides a safe point to consume that pending

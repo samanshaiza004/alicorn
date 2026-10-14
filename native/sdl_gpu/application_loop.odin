@@ -99,6 +99,8 @@ run_application_loop :: proc(
 		cancel=native_application_cancel_scheduled,
 		read_stats=native_application_scheduler_stats,
 	}
+	secondary_windows := Native_Secondary_Window_Manager{device=device, primary_window=window}
+	defer native_secondary_window_manager_destroy(&secondary_windows)
 	dialog_bridge := native_dialog_bridge_make(window, application_waker)
 	defer native_dialog_bridge_release(dialog_bridge)
 	if application_instance.on_services != nil {
@@ -107,6 +109,12 @@ run_application_loop :: proc(
 			clipboard=native_clipboard_service(),
 			scheduler=application_scheduler,
 			quit=Application_Quit_Request{data=rawptr(&quit_requested), request=native_application_request_quit},
+			windows=Application_Window_Service{
+				data=rawptr(&secondary_windows),
+				open=native_secondary_window_open_request,
+				close=native_secondary_window_close_request,
+				set_always_on_top=native_secondary_window_set_always_on_top,
+			},
 		})
 	}
 	if application_instance.on_start != nil {
@@ -230,6 +238,29 @@ run_application_loop :: proc(
 				hud_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(devtools_hud_deadline_ns, current_ns))
 				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, hud_timeout_ms))
 			}
+			if child := secondary_windows.child; child != nil && child.active {
+				if child.application.on_tick != nil {
+					elapsed_ns := i64(current_ns-child.last_tick_ns)
+					remaining_ns := i64(16_666_667)-elapsed_ns
+					if remaining_ns < 0 { remaining_ns = 0 }
+					child_tick_timeout_ms := sdl3.Sint32((remaining_ns+999_999)/1_000_000)
+					wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, child_tick_timeout_ms))
+				}
+				if child_deadline, found := scheduled_wake_next_deadline(&child.scheduler_state); found {
+					child_schedule_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(child_deadline, current_ns))
+					wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, child_schedule_timeout_ms))
+				}
+				if child.runtime != nil {
+					if child_tooltip_deadline := alicorn.tooltip_next_deadline(child.runtime); child_tooltip_deadline != 0 {
+						child_timeout := sdl3.Sint32(scheduled_wake_timeout_ms(child_tooltip_deadline, current_ns))
+						wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, child_timeout))
+					}
+					if child_notice_deadline := alicorn.notice_next_deadline(child.runtime); child_notice_deadline != 0 {
+						child_timeout := sdl3.Sint32(scheduled_wake_timeout_ms(child_notice_deadline, current_ns))
+						wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, child_timeout))
+					}
+				}
+			}
 			if smoke {
 				elapsed := time.duration_nanoseconds(time.since(start))
 				remaining := i64(3_000_000_000) - elapsed
@@ -290,6 +321,7 @@ run_application_loop :: proc(
 			accessibility=&accessibility_host,
 			appearance_monitor=&appearance_monitor,
 			flight_recorder=&devtools_recorder,
+			secondary_manager=&secondary_windows,
 		)
 		_ = alicorn.tooltip_advance(rt, u64(sdl3.GetTicksNS()))
 		_ = alicorn.notice_advance(rt, u64(sdl3.GetTicksNS()))
@@ -300,6 +332,93 @@ run_application_loop :: proc(
 			}
 		}
 		native_dialog_dispatch(dialog_bridge, &application_instance, rt)
+		if secondary_windows.child != nil && rt.invalidated {
+			alicorn.invalidate_root(secondary_windows.child.runtime, "primary window changed shared application state")
+		}
+		if secondary_windows.pending_close && secondary_windows.child != nil {
+			secondary_windows.pending_close = false
+			native_secondary_window_destroy(&secondary_windows)
+		}
+		if secondary_windows.pending {
+			if !native_secondary_window_create(&secondary_windows) {
+				fmt.println("secondary_window", "open_failed", secondary_windows.create_failures)
+			}
+		}
+		if secondary_windows.pending_close && secondary_windows.child != nil {
+			secondary_windows.pending_close = false
+			native_secondary_window_destroy(&secondary_windows)
+		}
+		if child := secondary_windows.child; child != nil && child.active {
+			native_host_scratch_reset(&child.host_scratch)
+			queued_events := len(child.event_queue)-child.event_queue_read
+			pump_events(
+				child.window, child.runtime, &child.metrics, &child.quit_requested,
+				&child.logical_resize_events, &child.pixel_resize_events, &child.scale_events,
+				&child.text_input_events, &child.composition_events, &child.platform_text,
+				application=&child.application,
+				wake_event=child.wake_state.event_type,
+				wake_event_enabled=true,
+				host_wake_event=child.host_wake_state.event_type,
+				host_wake_event_enabled=true,
+				wait_for_event=false,
+				native_host_wake_events=&child.timing.native_host_wake_events,
+				last_user_interaction_ns=&child.last_user_interaction_ns,
+				text_input_state=&child.text_input_state,
+				pointer_modifier_state=&child.pointer_modifier_state,
+				pointer_button_state=&child.pointer_button_state,
+				accessibility=&child.accessibility_host,
+				secondary_child=child,
+				replay_secondary_events=true,
+			)
+			_ = alicorn.tooltip_advance(child.runtime, u64(sdl3.GetTicksNS()))
+			_ = alicorn.notice_advance(child.runtime, u64(sdl3.GetTicksNS()))
+			native_drag_autoscroll_update(child.runtime, &child.drag_autoscroll_deadline_ns, u64(sdl3.GetTicksNS()))
+			native_dialog_dispatch(child.dialog_bridge, &child.application, child.runtime)
+			native_dispatch_scheduled_wakes(&child.application, child.runtime, &child.scheduler_state, child.last_user_interaction_ns, &child.timing)
+			when ODIN_OS == .Windows || ODIN_OS == .Darwin {
+				if child.accessibility_ready {
+					_ = native_accessibility_sync(&child.accessibility_host, child.runtime)
+					counters := native_accessibility_take_counters(&child.accessibility_host)
+					child.runtime.stats.accessibility_activation_wakes += counters.activation_wakes
+					child.runtime.stats.accessibility_updates_submitted += counters.updates_submitted
+					child.runtime.stats.accessibility_requests_received += counters.actions_received
+					child.runtime.stats.accessibility_requests_dropped += counters.actions_dropped
+				}
+			}
+			if child.application.on_tick != nil {
+				now_ns := u64(sdl3.GetTicksNS())
+				if now_ns-child.last_tick_ns >= 16_666_667 {
+					tick_cause := alicorn.cause_begin(child.runtime, .Application, "secondary application tick")
+					child.application.on_tick(child.application.state, child.runtime)
+					alicorn.cause_end(child.runtime, tick_cause)
+					child.last_tick_ns = now_ns
+				}
+			}
+			if child.runtime.invalidated {
+				_ = native_application_build_until_stable(&child.application, child.runtime, &child.metrics, &child.timing)
+			}
+			if !child.runtime.invalidated && alicorn.presentation_needs_frame(child.runtime) {
+				presentation_ui, ready := alicorn.begin_presentation_frame(child.runtime)
+				if ready { alicorn.end_presentation_frame(&presentation_ui) }
+			}
+			if queued_events > 0 && rt != nil {
+				alicorn.invalidate_root(rt, "secondary window input may have changed shared application state")
+			}
+			sync_text_input_focus(child.window, child.runtime, &child.text_input_state, &child.application)
+			if !native_secondary_window_render(&secondary_windows, child) {
+				fail("secondary window GPU presentation failed")
+			}
+			if child.quit_requested { secondary_windows.pending_close = true }
+		}
+		if secondary_windows.pending_close {
+			secondary_windows.pending_close = false
+			native_secondary_window_destroy(&secondary_windows)
+		}
+		if secondary_windows.pending && secondary_windows.child == nil {
+			if !native_secondary_window_create(&secondary_windows) {
+				fmt.println("secondary_window", "open_failed", secondary_windows.create_failures)
+			}
+		}
 		wait_for_event = false
 		if !quit_requested {
 			native_dispatch_scheduled_wakes(&application_instance, rt, &scheduler_state, last_user_interaction_ns, &timing)
@@ -550,9 +669,11 @@ run_application_loop :: proc(
 				native_inspector_update(&inspector, rt, inspector.runtime.viewport, &post_submit_summary)
 			}
 		}
-		if !native_application_has_pending_work(rt, suspend_hard_error=inspector.enabled) && !native_inspector_submission_pending(&inspector) && !devtools_hud_redraw_pending &&
+		child_pending := secondary_windows.child != nil && native_secondary_window_has_work(&secondary_windows)
+		child_ticks := secondary_windows.child != nil && secondary_windows.child.application.on_tick != nil
+		if !child_pending && !native_application_has_pending_work(rt, suspend_hard_error=inspector.enabled) && !native_inspector_submission_pending(&inspector) && !devtools_hud_redraw_pending &&
 			!(native_menu != nil && native_menu.chrome_redraw_pending) {
-			if application_instance.on_tick == nil {
+			if application_instance.on_tick == nil && !child_ticks {
 				// Event-driven apps wait for either input, a worker wake, or their
 				// nearest scheduled deadline; there is no display-cadence tick.
 				// A bounded smoke run adds its own final event-loop deadline.
@@ -596,6 +717,9 @@ run_application_loop :: proc(
 
 	live_resize_state.active = false
 	sdl3.RemoveEventWatch(native_live_resize_event_watch, rawptr(&live_resize_state))
+	// Secondary workers and Runtime resources are retired before application-owned
+	// shared state and the host-owned GPU device begin shutdown.
+	native_secondary_window_manager_destroy(&secondary_windows)
 	native_accessibility_host_shutdown(&accessibility_host)
 	if native_menu != nil { native_menu.inspector = nil }
 	if !sdl3.WaitForGPUIdle(device) { fail("SDL application GPU idle wait failed") }

@@ -404,6 +404,9 @@ drag_process_pointer :: proc(rt: ^Runtime, event: Pointer_Event, hit: Node_ID) -
 					source=rt.drag.source,
 					target=rt.drag.target,
 					position=rt.drag.position,
+					pointer_x=event.x,
+					pointer_y=event.y,
+					has_pointer_position=true,
 				}
 				rt.drag_event_pending = true
 			}
@@ -429,10 +432,16 @@ drag_process_pointer :: proc(rt: ^Runtime, event: Pointer_Event, hit: Node_ID) -
 					source=rt.drag.source,
 					target=rt.drag.target,
 					position=rt.drag.position,
+					pointer_x=event.x,
+					pointer_y=event.y,
+					has_pointer_position=true,
 				}
 				rt.drag_event_pending = true
 			} else {
-				rt.drag_event = Drag_Event{kind=.Cancelled, drag_type=rt.drag.drag_type, source=rt.drag.source}
+				rt.drag_event = Drag_Event{
+					kind=.Cancelled, drag_type=rt.drag.drag_type, source=rt.drag.source,
+					pointer_x=event.x, pointer_y=event.y, has_pointer_position=true,
+				}
 				rt.drag_event_pending = true
 			}
 			drag_clear_target_visual(rt)
