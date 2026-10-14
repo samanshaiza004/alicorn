@@ -7,9 +7,17 @@ if(NOT TARGET SDL3::SDL3-static)
 endif()
 
 # CMake owns the platform-specific transitive link requirements of SDL3.
-# Generate the evaluated interface so Odin's final link can reuse those exact
-# requirements without maintaining a second platform-specific list here.
+# Keep link directories, options, and libraries separate so the Odin recipe
+# can translate each one without losing order or treating flags as libraries.
 file(GENERATE
-    OUTPUT "${CMAKE_BINARY_DIR}/sdl3-static-link-interface.txt"
+    OUTPUT "${CMAKE_BINARY_DIR}/sdl3-static-link-directories-$<CONFIG>.txt"
+    CONTENT "$<JOIN:$<TARGET_PROPERTY:SDL3::SDL3-static,INTERFACE_LINK_DIRECTORIES>,\n>"
+)
+file(GENERATE
+    OUTPUT "${CMAKE_BINARY_DIR}/sdl3-static-link-options-$<CONFIG>.txt"
+    CONTENT "$<JOIN:$<TARGET_PROPERTY:SDL3::SDL3-static,INTERFACE_LINK_OPTIONS>,\n>"
+)
+file(GENERATE
+    OUTPUT "${CMAKE_BINARY_DIR}/sdl3-static-link-libraries-$<CONFIG>.txt"
     CONTENT "$<JOIN:$<TARGET_PROPERTY:SDL3::SDL3-static,INTERFACE_LINK_LIBRARIES>,\n>"
 )

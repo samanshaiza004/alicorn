@@ -22,6 +22,12 @@ jobs:
         with:
           path: .deps/accesskit
           key: accesskit-c-0.23.1-${{ runner.os }}-${{ runner.arch }}
+      - name: Test native link recipe parsing and cache validation
+        shell: pwsh
+        run: .\tools\test_native_link_recipe.ps1
+      - name: Build and smoke-test an independent external Odin consumer
+        shell: pwsh
+        run: .\tools\test_external_native_link.ps1 -Odin odin
       - name: Build, package, audit, and smoke-test 01_hello
         shell: pwsh
         run: .\tools\build_native_release.ps1 -Odin odin -SDLLinkage Static -OutputDirectory out\native-package\windows-x86_64

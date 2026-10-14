@@ -73,8 +73,19 @@ function Get-AlicornAccessKit {
         $curl = Get-Command curl.exe -CommandType Application -ErrorAction SilentlyContinue |
             Select-Object -First 1
         if (-not $curl) { throw 'AccessKit bootstrap requires curl.exe to download the pinned release archive.' }
-        & $curl.Source --fail --location --silent --show-error --output $archive $url
-        if ($LASTEXITCODE -ne 0) { throw "AccessKit $version download failed (curl exit $LASTEXITCODE): $url" }
+        $download = Join-Path $cacheRoot ('.download-' + [guid]::NewGuid().ToString('N') + '.zip')
+        try {
+            & $curl.Source --fail --location --silent --show-error --output $download $url
+            if ($LASTEXITCODE -ne 0) { throw "AccessKit $version download failed (curl exit $LASTEXITCODE): $url" }
+            $downloadHash = (Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($downloadHash -ne $sha256) { throw "AccessKit $version archive SHA-256 mismatch. Expected $sha256; got $downloadHash." }
+            try { [IO.File]::Move($download, $archive) }
+            catch {
+                if (-not [IO.File]::Exists($archive) -or (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sha256) { throw }
+            }
+        } finally {
+            if ([IO.File]::Exists($download)) { Remove-Item -LiteralPath $download -Force }
+        }
     }
 
     $sha256Hasher = [Security.Cryptography.SHA256]::Create()
@@ -96,23 +107,30 @@ function Get-AlicornAccessKit {
     $library = Join-Path $distribution $relativeLibrary
     if (-not [IO.File]::Exists($library)) {
         if ([IO.Directory]::Exists($distribution)) {
-            throw "AccessKit $version cache exists but the required library is missing: '$library'. Remove only that versioned cache directory and retry."
-        }
-        $stage = Join-Path $cacheRoot ('.extract-' + [guid]::NewGuid().ToString('N'))
-        try {
-            Expand-Archive -LiteralPath $archive -DestinationPath $stage
-            $stagedDistribution = Join-Path $stage "accesskit-c-$version"
-            $stagedLibrary = Join-Path $stagedDistribution $relativeLibrary
-            if (-not [IO.File]::Exists($stagedLibrary)) {
-                throw "Verified AccessKit archive does not contain the expected Windows x86_64 MSVC static library: '$relativeLibrary'."
+            if (-not [IO.File]::Exists($library)) {
+                throw "AccessKit $version cache exists but the required library is missing: '$library'. Remove only that versioned cache directory and retry."
             }
-            Move-Item -LiteralPath $stagedDistribution -Destination $distribution
-        } finally {
-            if ([IO.Directory]::Exists($stage)) { Remove-Item -LiteralPath $stage -Recurse -Force }
+        } else {
+            $stage = Join-Path $cacheRoot ('.extract-' + [guid]::NewGuid().ToString('N'))
+            try {
+                Expand-Archive -LiteralPath $archive -DestinationPath $stage
+                $stagedDistribution = Join-Path $stage "accesskit-c-$version"
+                $stagedLibrary = Join-Path $stagedDistribution $relativeLibrary
+                if (-not [IO.File]::Exists($stagedLibrary)) {
+                    throw "Verified AccessKit archive does not contain the expected Windows x86_64 MSVC static library: '$relativeLibrary'."
+                }
+                try { [IO.Directory]::Move($stagedDistribution, $distribution) }
+                catch {
+                    if (-not [IO.File]::Exists($library)) { throw }
+                }
+            } finally {
+                if ([IO.Directory]::Exists($stage)) { Remove-Item -LiteralPath $stage -Recurse -Force }
+            }
         }
     }
 
-    $libraryDirectory = ".deps\accesskit\accesskit-c-$version\lib\windows\x86_64\msvc\static"
-    $linkerFlags = "/LIBPATH:$libraryDirectory bcrypt.lib ntdll.lib propsys.lib runtimeobject.lib uiautomationcore.lib userenv.lib ws2_32.lib"
+    $libraryDirectory = Join-Path $distribution 'lib\windows\x86_64\msvc\static'
+    $quotedLibraryDirectory = if ($libraryDirectory -match '\s') { "`"$libraryDirectory`"" } else { $libraryDirectory }
+    $linkerFlags = "/LIBPATH:$quotedLibraryDirectory bcrypt.lib ntdll.lib propsys.lib runtimeobject.lib uiautomationcore.lib userenv.lib ws2_32.lib"
     return [pscustomobject]@{ Root = $distribution; Library = $library; LinkerFlags = $linkerFlags }
 }
