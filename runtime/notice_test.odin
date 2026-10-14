@@ -172,6 +172,89 @@ test_notice_expiration_uses_one_shot_deadlines_and_returns_to_idle :: proc(t: ^t
 }
 
 @(test)
+test_notice_style_environment_uses_theme_and_repaints_without_layout :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 800, 600})
+	defer destroy_runtime(&rt)
+	if !text_engine_load_font(&rt.text_engine, NOTICE_TEST_FONT) {
+		testing.expect(t, false, "notice theme fixture should load its UI font")
+		return
+	}
+	first_theme := DEFAULT_STYLE_THEME
+	first_theme.colors[int(Style_Color_Role.Surface)] = Color{0.82, 0.9, 0.98, 1}
+	first_theme.colors[int(Style_Color_Role.Subtle_Surface)] = Color{0.72, 0.84, 0.94, 1}
+	first_theme.colors[int(Style_Color_Role.Text)] = Color{0.04, 0.08, 0.15, 1}
+	first_theme.colors[int(Style_Color_Role.Danger)] = Color{0.68, 0.12, 0.16, 1}
+	first_theme_id := style_theme_register(&rt, first_theme)
+	second_theme := DEFAULT_STYLE_THEME
+	second_theme.colors[int(Style_Color_Role.Surface)] = Color{0.94, 0.95, 0.88, 1}
+	second_theme.colors[int(Style_Color_Role.Subtle_Surface)] = Color{0.86, 0.89, 0.73, 1}
+	second_theme.colors[int(Style_Color_Role.Text)] = Color{0.12, 0.14, 0.04, 1}
+	second_theme.colors[int(Style_Color_Role.Danger)] = Color{0.52, 0.22, 0.04, 1}
+	second_theme_id := style_theme_register(&rt, second_theme)
+	testing.expect(t, first_theme_id != 0 && second_theme_id != 0,
+		"both notice themes should register")
+	if first_theme_id == 0 || second_theme_id == 0 { return }
+
+	notice := Notice{
+		id="themed-error",
+		title="Operation needs attention",
+		message="The requested operation could not finish.",
+		severity=.Error,
+		lifetime=.Persistent,
+		placement=.Toast,
+		style_environment=Style_Environment{theme=first_theme_id},
+	}
+	testing.expect(t, notice_post(&rt, notice, 1), "a notice with a registered style environment should post")
+	stored := &rt.notices[0]
+	testing.expect(t, stored.style_environment_set && stored.style_environment.theme == first_theme_id,
+		"the notice record should retain its validated style environment")
+	_, first_root := notice_test_build(&rt)
+	if first_root == 0 { testing.expect(t, false, "the themed toast should render"); return }
+	card_id := notice_test_find_node(&rt, "notice-card")
+	title_id := notice_test_find_text(&rt, "Operation needs attention")
+	icon_id := Node_ID(0)
+	for id in rt.order {
+		if node, ok := rt.nodes[id]; ok && node.active && node.icon_id == .Warning { icon_id = id; break }
+	}
+	if card_id == 0 || title_id == 0 || icon_id == 0 {
+		testing.expect(t, false, "the themed toast should retain its card, title, and severity icon")
+		return
+	}
+	testing.expect(t, rt.nodes[card_id].color == first_theme.colors[int(Style_Color_Role.Surface)] &&
+		rt.nodes[title_id].color == first_theme.colors[int(Style_Color_Role.Text)] &&
+		rt.nodes[icon_id].color == first_theme.colors[int(Style_Color_Role.Danger)],
+		"the notice card, text, and error severity icon should resolve from the captured theme")
+
+	layout_before := rt.stats.layout_nodes_visited
+	measure_before := rt.stats.measure_requests
+	paint_before := rt.stats.paint_nodes_visited
+	notice.style_environment = Style_Environment{theme=second_theme_id}
+	testing.expect(t, notice_post(&rt, notice, 2), "updating the existing notice theme should replace its style environment")
+	_, second_root := notice_test_build(&rt)
+	second_card_id := notice_test_find_node(&rt, "notice-card")
+	second_title_id := notice_test_find_text(&rt, "Operation needs attention")
+	second_icon_id := Node_ID(0)
+	for id in rt.order {
+		if node, ok := rt.nodes[id]; ok && node.active && node.icon_id == .Warning { second_icon_id = id; break }
+	}
+	testing.expect(t, second_root == first_root && second_card_id == card_id && second_title_id == title_id && second_icon_id == icon_id,
+		"changing a notice theme should preserve retained notice identities")
+	testing.expect(t, rt.nodes[second_card_id].color == second_theme.colors[int(Style_Color_Role.Surface)] &&
+		rt.nodes[second_title_id].color == second_theme.colors[int(Style_Color_Role.Text)] &&
+		rt.nodes[second_icon_id].color == second_theme.colors[int(Style_Color_Role.Danger)],
+		"updating a notice should repaint its surface, text, and semantic severity color")
+	testing.expect(t, rt.stats.layout_nodes_visited == layout_before && rt.stats.measure_requests == measure_before &&
+		rt.stats.paint_nodes_visited > paint_before,
+		"a theme-only notice update should repaint without layout or text measurement")
+
+	invalid_notice := notice
+	invalid_notice.style_environment.theme = Style_Theme_ID(0xFFFFFFFF)
+	testing.expect(t, !notice_post(&rt, invalid_notice, 3) &&
+		rt.notices[0].style_environment.theme == second_theme_id,
+		"an unknown theme should be rejected without replacing the retained notice")
+}
+
+@(test)
 test_notice_severity_icon_prevents_header_label_wrapping :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 420, 300})
 	defer destroy_runtime(&rt)

@@ -622,6 +622,7 @@ copy_node_description :: proc(
 		if rt.text_field_selection_owner == node.id { text_field_pointer_selection_cancel(rt) }
 		if rt.activation_node == node.id { rt.activation_node = 0 }
 	}
+	restore_apply_description_request(rt, node, d)
 }
 
 queue_paint :: proc(rt: ^Runtime, id: Node_ID) {
@@ -709,6 +710,10 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	if desired[id] { return }
 	node, ok := rt.nodes[id]
 	if !ok { return }
+	restore_release_node(rt, id)
+	if rt.semantic_focus.owner == id {
+		_ = restore_cancel_pending(rt, .Semantic_Focus, id, .Target_Retired)
+	}
 	if rt.tooltip.target == id { tooltip_dismiss(rt) }
 	delete_key(&rt.computed_styles, id)
 	gpu_surface_image_layers_destroy(rt, id)
@@ -979,15 +984,19 @@ reconcile :: proc(rt: ^Runtime) {
 		invalidate_interaction_paint(rt, previous_focus, "focus visual state changed")
 		invalidate_interaction_paint(rt, rt.focused, "focus visual state changed")
 	}
-	refresh_semantic_focus_realization(rt)
 	if rt.semantic_focus.owner != 0 {
 		owner, owner_ok := rt.nodes[rt.semantic_focus.owner]
-		if !owner_ok || !owner.active { rt.semantic_focus.owner = 0 }
+		if !owner_ok || !owner.active {
+			_ = restore_cancel_pending(rt, .Semantic_Focus, rt.semantic_focus.owner, .Target_Retired)
+			rt.semantic_focus.owner = 0
+		}
 	}
+	refresh_semantic_focus_realization(rt)
 	semantic_keyboard_focus_refresh(rt)
 
 	layout_measure_retained_dirty_nodes(rt)
 	layout_tree(rt)
+	restore_resolve_after_layout(rt)
 	adaptive_semantics_sync_descriptions(rt)
 	refresh_semantic_focus_realization(rt)
 	semantic_keyboard_focus_refresh(rt)
@@ -1057,6 +1066,8 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		free(node, allocator=rt.persistent_allocator)
 	}
 	delete(rt.nodes)
+	for _, state in rt.restore_controls { free(state, allocator=rt.persistent_allocator) }
+	delete(rt.restore_controls)
 	delete(rt.measure_states)
 	delete(rt.finalized_geometry)
 	delete(rt.computed_styles)

@@ -6,6 +6,41 @@ import "vendor:sdl3"
 
 Menu_Wake_Test_State :: struct { application_wakes: int }
 
+@(test)
+test_direct_caption_command_uses_its_window_state :: proc(t: ^testing.T) {
+	state := Menu_Dispatch_Test_State{}
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 200})
+	defer alicorn.destroy_runtime(&rt)
+	command := Application_Command_ID(0x9876)
+	menus := [?]Application_Menu{{label="Save", command=command, state=alicorn.Action_State{enabled=true}}}
+	app := Application{state=rawptr(&state), menus=menus[:], on_menu_command=menu_dispatch_test_callback}
+	menu := Native_Menu_Runtime{application=&app, runtime=&rt}
+	_ = alicorn.action_update(&rt, alicorn.Action_Descriptor{id=command, name="test.save", label="Save"}, alicorn.Action_State{enabled=false})
+	native_menu_dispatch_command(&menu, command)
+	testing.expect(t, state.calls == 1, "a direct caption action must use its window's explicit state rather than another view's action state")
+	menus[0].state.enabled = false
+	native_menu_dispatch_command(&menu, command)
+	testing.expect(t, state.calls == 1, "disabling the borrowed caption action must prevent subsequent invocation")
+}
+
+@(test)
+test_direct_caption_click_defers_application_callback :: proc(t: ^testing.T) {
+	when ODIN_OS == .Windows {
+		calls := Menu_Dispatch_Test_State{}
+		description := Application_Menu{label="Return", command=Application_Command_ID(0x9877), state=alicorn.Action_State{enabled=true}}
+		app := Application{state=rawptr(&calls), on_menu_command=menu_dispatch_test_callback}
+		menu := Native_Menu_Runtime{application=&app}
+		labels := [?]Win32_Menu_Label{{direct_menu=&description}}
+		state := Win32_Menu_State{menu=&menu, labels=labels[:]}
+		win32_menu_label_activate(&state, 0)
+		testing.expect(t, calls.calls == 0 && menu.has_pending, "Win32 subclass input must queue the command until the host reaches its dispatch safe point")
+		command, found := native_menu_take_pending(&menu)
+		testing.expect(t, found && command == description.command, "the pending command must retain the caption action identity")
+		native_menu_dispatch_command(&menu, command)
+		testing.expect(t, calls.calls == 1, "the host should invoke the queued action exactly once")
+	}
+}
+
 Menu_Chrome_Appearance_Test_State :: struct {
 	appearance: Window_Chrome_Appearance,
 	reads:      int,

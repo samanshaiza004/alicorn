@@ -99,7 +99,14 @@ native_menu_sync_chrome_appearance :: proc(menu: ^Native_Menu_Runtime, request_r
 
 native_menu_dispatch_command :: proc(menu: ^Native_Menu_Runtime, command: Application_Command_ID) {
 	if menu == nil || menu.application == nil || menu.application.on_menu_command == nil || native_inspector_visible(menu.inspector) { return }
-	if menu.runtime != nil {
+	direct_command := false
+	for description in menu.application.menus {
+		if description.command == command && command != Application_Command_ID(0) {
+			direct_command = true
+			if !description.state.enabled { return }
+		}
+	}
+	if !direct_command && menu.runtime != nil {
 		_, state, found := alicorn.action_lookup(menu.runtime, command)
 		if found && !state.enabled { return }
 	}

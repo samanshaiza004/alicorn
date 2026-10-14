@@ -277,6 +277,7 @@ virtual_list_begin :: proc(
 	axis_behavior := Scroll_Axis_Behavior.Auto_Lock,
 	scrollbars := Scrollbar_Policy.Auto,
 	focusable := false,
+	restore := Scroll_Restore_Request{},
 ) -> Virtual_List_Handle {
 	if item_count < 0 || row_height <= 0 { return {} }
 	region_style := style
@@ -298,6 +299,7 @@ virtual_list_begin :: proc(
 		axis_behavior=axis_behavior,
 		scrollbars=scrollbars,
 		focusable=focusable,
+		restore=restore,
 	)
 	if scroll.id == 0 { return {} }
 	metrics := virtual_list_metrics(item_count, scroll.offset_y, scroll.viewport_height, row_height)
@@ -339,6 +341,7 @@ virtual_list_begin_variable :: proc(
 	axis_behavior := Scroll_Axis_Behavior.Auto_Lock,
 	scrollbars := Scrollbar_Policy.Auto,
 	focusable := false,
+	restore := Scroll_Restore_Request{},
 ) -> Virtual_List_Handle {
 	if index == nil || index.item_count < 0 || index.estimated_height <= 0 { return {} }
 	virtual_list_height_index_rebuild_prefix(index)
@@ -360,6 +363,7 @@ virtual_list_begin_variable :: proc(
 		axis_behavior=axis_behavior,
 		scrollbars=scrollbars,
 		focusable=focusable,
+		restore=restore,
 	)
 	if scroll.id == 0 { return {} }
 	metrics := virtual_list_variable_metrics(index, scroll.offset_y, scroll.viewport_height)

@@ -289,6 +289,19 @@ inspect :: proc(rt: ^Runtime) -> string {
 	} else {
 		fmt.sbprintln(&sb, "semantic focus: none")
 	}
+	if rt.semantic_focus_restore.token != RESTORE_TOKEN_NONE {
+		state := rt.semantic_focus_restore
+		fmt.sbprintf(&sb, "semantic focus restore: token=%d outcome=%v reason=%v identity=(%d,%d) owner=%d realized=%d\n",
+			u64(state.token), state.outcome, state.reason, state.semantic_id.namespace,
+			state.semantic_id.value, rt.semantic_focus.owner, state.realized_node)
+	}
+	for target, state in rt.restore_controls {
+		fmt.sbprintf(&sb, "restore: target=%d control=%v token=%d outcome=%v reason=%v requested=(%.2f,%.2f) preferred=(%.2f,%.2f) resolved=(%.2f,%.2f) semantic=(%d,%d) realized=%d layout=%d\n",
+			target.node, target.control, u64(state.token), state.outcome, state.reason,
+			state.requested.x, state.requested.y, state.preferred.x, state.preferred.y,
+			state.resolved.x, state.resolved.y, state.semantic_id.namespace, state.semantic_id.value,
+			state.realized_node, state.layout_generation)
+	}
 	fmt.sbprintf(&sb, "retained nodes: %d\n", len(rt.nodes))
 	queued_semantic_requests := max(len(rt.semantic_requests)-rt.semantic_request_read_index, 0)
 	fmt.sbprintf(&sb,

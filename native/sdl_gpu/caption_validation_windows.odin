@@ -70,10 +70,10 @@ native_caption_capture_case :: proc(
 		if index == 1 { icon = .Restore if state.maximized else .Maximize }
 		if index == 2 { icon = .Close }
 		mask := state.caption_masks[int(icon)]
-		x0 := int(control.bounds.left)+(int(control.bounds.right-control.bounds.left)-mask.size)/2
-		y0 := int(control.bounds.top)+(int(control.bounds.bottom-control.bounds.top)-mask.size)/2
-		for y in int(control.bounds.top)..<int(control.bounds.bottom) {
-			for x in int(control.bounds.left)..<int(control.bounds.right) {
+		x0 := int(control.glyph_bounds.left)+(int(control.glyph_bounds.right-control.glyph_bounds.left)-mask.size)/2
+		y0 := int(control.glyph_bounds.top)+(int(control.glyph_bounds.bottom-control.glyph_bounds.top)-mask.size)/2
+		for y in int(control.glyph_bounds.top)..<int(control.glyph_bounds.bottom) {
+			for x in int(control.glyph_bounds.left)..<int(control.glyph_bounds.right) {
 				coverage: f32
 				if x >= x0 && x < x0+mask.size && y >= y0 && y < y0+mask.size {
 					coverage = f32(mask.pixels[(y-y0)*mask.size+x-x0])/255

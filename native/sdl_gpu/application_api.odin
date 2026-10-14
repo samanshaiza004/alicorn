@@ -99,6 +99,11 @@ Application_Menu_Item :: struct {
 Application_Menu :: struct {
 	label: string,
 	items: []Application_Menu_Item,
+	// A nonzero command turns this top-level label into a direct action instead
+	// of a popup menu. Its state and shortcut are borrowed like item state.
+	command: Application_Command_ID,
+	state: alicorn.Action_State,
+	shortcut: Application_Menu_Shortcut,
 }
 
 Window_Decoration_Mode :: enum {
@@ -291,4 +296,53 @@ Application :: struct {
 	on_close_requested: Application_Close_Requested_Proc,
 	on_stop:            Application_Stop_Proc,
 	on_menu_command:    Application_Menu_Command_Proc,
+}
+
+// Application_Window_Description describes one secondary native window. Its
+// Application callbacks own that window's procedural description and event
+// handling. State should point at a window context that explicitly references
+// shared domain state owned by the parent application; the parent state is not
+// implicitly reused. The native host creates an independent Runtime and
+// renderer set for this window, while the host retains ownership of the shared
+// GPU device. `on_open_failed` runs only if setup fails before callbacks start.
+Application_Window_Open_Failed_Proc :: proc(state: rawptr)
+
+Application_Window_Description :: struct {
+	application:  Application,
+	width:        int,
+	height:       int,
+	always_on_top: bool,
+	on_open_failed: Application_Window_Open_Failed_Proc,
+}
+
+Application_Window_Open_Proc :: proc(data: rawptr, description: Application_Window_Description) -> bool
+Application_Window_Close_Proc :: proc(data: rawptr)
+Application_Window_Topmost_Proc :: proc(data: rawptr, always_on_top: bool) -> bool
+Application_Window_Set_Title_Proc :: proc(data: rawptr, title: string) -> bool
+
+// Application_Window_Service currently supports one live secondary window.
+// Applications can request it from a callback, but window creation and GPU
+// resource initialization are deferred to the host's next event-loop safe point.
+Application_Window_Service :: struct {
+	data:  rawptr,
+	open:  Application_Window_Open_Proc,
+	close: Application_Window_Close_Proc,
+	set_always_on_top: Application_Window_Topmost_Proc,
+	set_title: Application_Window_Set_Title_Proc,
+}
+
+application_open_window :: proc(service: Application_Window_Service, description: Application_Window_Description) -> bool {
+	return service.open != nil && service.open(service.data, description)
+}
+
+application_close_window :: proc(service: Application_Window_Service) {
+	if service.close != nil { service.close(service.data) }
+}
+
+application_window_set_always_on_top :: proc(service: Application_Window_Service, always_on_top: bool) -> bool {
+	return service.set_always_on_top != nil && service.set_always_on_top(service.data, always_on_top)
+}
+
+application_window_set_title :: proc(service: Application_Window_Service, title: string) -> bool {
+	return service.set_title != nil && service.set_title(service.data, title)
 }

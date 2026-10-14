@@ -54,11 +54,17 @@ Win32_Menu_Label :: struct {
 	bounds: win.RECT,
 	popup:  win.HMENU,
 	host_node: alicorn.Node_ID,
+	direct_menu: ^Application_Menu,
 }
 
 Win32_Caption_Control :: struct {
-	// Client-relative physical pixels, shared by paint and WM_NCHITTEST.
+	// Client-relative physical pixels used for WM_NCHITTEST.
 	bounds: win.RECT,
+	// Icon alignment can follow the visible button while leaving the resize
+	// gutter outside the native button hit target.
+	glyph_bounds: win.RECT,
+	// Hover paint may cover the resize gutter without changing its hit target.
+	hover_bounds: win.RECT,
 	hit_test: win.LRESULT,
 }
 
@@ -66,6 +72,7 @@ Win32_Menu_Item_Binding :: struct {
 	menu:       win.HMENU,
 	position:   win.UINT,
 	item:       ^Application_Menu_Item,
+	top_menu:   ^Application_Menu,
 	is_command: bool,
 }
 
@@ -106,6 +113,7 @@ Win32_Menu_State :: struct {
 	frame_extended: bool,
 	frame_enabled: bool,
 	text_renderer: ^Native_Text_Renderer,
+	window_geometry: Win32_Window_Geometry_Recorder,
 }
 
 win32_menu_state :: proc(data: win.DWORD_PTR) -> ^Win32_Menu_State {
@@ -187,11 +195,12 @@ win32_menu_refresh_state :: proc(state: ^Win32_Menu_State) {
 	if state == nil { return }
 	for binding in state.bindings {
 		flags := WIN32_MF_BYPOSITION
-		if !binding.item.state.enabled { flags |= WIN32_MF_GRAYED }
+		item_state := binding.item.state if binding.item != nil else binding.top_menu.state
+		if !item_state.enabled { flags |= WIN32_MF_GRAYED }
 		_ = win.EnableMenuItem(binding.menu, binding.position, flags)
 		if binding.is_command {
 			check := WIN32_MF_BYPOSITION
-			if binding.item.state.checked { check |= WIN32_MF_CHECKED }
+			if item_state.checked { check |= WIN32_MF_CHECKED }
 			_ = CheckMenuItem(binding.menu, binding.position, check)
 		}
 	}
@@ -271,6 +280,26 @@ win32_integrated_frame_hit_test :: proc(
 	}
 	if y >= 0 && y < chrome_height { return win.LRESULT(win.HTCAPTION) }
 	return win.LRESULT(win.HTCLIENT)
+}
+
+win32_integrated_frame_resolve_hit_test :: proc(
+	frame_result: win.LRESULT,
+	dwm_handled: bool,
+	dwm_result: win.LRESULT,
+) -> win.LRESULT {
+	// DWM owns standard caption-button hit testing. Alicorn owns every other
+	// point because the frame is extended over the client area; allowing an
+	// unrelated DWM non-client classification to replace this result can turn
+	// editor pixels into caption or resize targets.
+	if frame_result == win.LRESULT(win.HTMINBUTTON) || frame_result == win.LRESULT(win.HTMAXBUTTON) ||
+		frame_result == win.LRESULT(win.HTCLOSE) {
+		return frame_result
+	}
+	if dwm_handled && (dwm_result == win.LRESULT(win.HTMINBUTTON) || dwm_result == win.LRESULT(win.HTMAXBUTTON) ||
+		dwm_result == win.LRESULT(win.HTCLOSE)) {
+		return dwm_result
+	}
+	return frame_result
 }
 
 win32_caption_control_rects :: proc(bounds: win.RECT, valid: bool) -> [3]win.RECT {
@@ -618,6 +647,16 @@ native_menu_overlay_commands :: proc(menu: ^Native_Menu_Runtime, width, height: 
 			))
 		}
 	}
+	for label in state.labels {
+		if label.direct_menu == nil || !label.direct_menu.state.checked || label.bounds.right <= label.bounds.left { continue }
+		selected_background := open_background
+		if state.high_contrast { selected_background = selection_background }
+		append(&commands, alicorn.paint_surface_command(
+			NATIVE_MENU_HOST_SOLID_NODE+1,
+			win32_chrome_rect_to_window(label.bounds, state.pixels_per_unit),
+			full, selected_background,
+		))
+	}
 	maximized := state.maximized
 	for control, index in state.caption_controls {
 		if control.bounds.right <= control.bounds.left || control.bounds.bottom <= control.bounds.top { continue }
@@ -636,7 +675,7 @@ native_menu_overlay_commands :: proc(menu: ^Native_Menu_Runtime, width, height: 
 			}
 			append(&commands, alicorn.paint_surface_command(
 				NATIVE_MENU_HOST_SOLID_NODE+2+alicorn.Node_ID(index),
-				win32_chrome_rect_to_window(control.bounds, state.pixels_per_unit),
+				win32_chrome_rect_to_window(control.hover_bounds, state.pixels_per_unit),
 				full, hover_color,
 			))
 		}
@@ -647,7 +686,14 @@ native_menu_overlay_commands :: proc(menu: ^Native_Menu_Runtime, width, height: 
 		run := native_text_host_run(state.text_renderer, label.host_node)
 		if run == nil || label.bounds.right <= label.bounds.left { continue }
 		label_color := foreground
-		if i == active_index && state.high_contrast { label_color = selection_foreground }
+		if label.direct_menu != nil {
+			if !label.direct_menu.state.enabled {
+				if state.high_contrast { label_color = win32_color_ref(win.GetSysColor(win.COLOR_GRAYTEXT)) }
+				else { label_color = win32_color_mix(background, foreground, 0.48) }
+			} else if i == active_index && state.high_contrast || (label.direct_menu.state.checked && state.high_contrast) {
+				label_color = selection_foreground
+			}
+		} else if i == active_index && state.high_contrast { label_color = selection_foreground }
 		win32_menu_append_text(&commands, state, label, 12, label_color)
 	}
 	return commands[:]
@@ -740,6 +786,23 @@ win32_menu_open_popup :: proc(state: ^Win32_Menu_State, index: int) {
 	_ = win.PostMessageW(state.hwnd, win.WM_NULL, 0, 0)
 }
 
+win32_menu_label_activate :: proc(state: ^Win32_Menu_State, index: int) {
+	if state == nil || state.menu == nil || state.menu.application == nil || index < 0 || index >= len(state.labels) { return }
+	label := &state.labels[index]
+	if label.direct_menu != nil {
+		if label.direct_menu.state.enabled {
+			// Subclass callbacks enqueue intent; the host dispatches it after
+			// the event pump returns to its normal application safe point.
+			state.menu.pending_command = label.direct_menu.command
+			state.menu.has_pending = true
+		}
+		win32_menu_exit_mode(state, -1)
+		return
+	}
+	state.active_menu = index
+	win32_menu_open_popup(state, index)
+}
+
 native_menu_handle_keydown :: proc(menu: ^Native_Menu_Runtime, keycode: int, modifiers: sdl3.Keymod) -> bool {
 	if menu == nil || menu.application == nil || menu.application.window_decorations != .Integrated_Title_Bar || menu.platform_data == nil { return false }
 	state := cast(^Win32_Menu_State)menu.platform_data
@@ -766,7 +829,7 @@ native_menu_handle_keydown :: proc(menu: ^Native_Menu_Runtime, keycode: int, mod
 					state.menu_mode = true
 					state.active_menu = i
 					state.hovered = -1
-					win32_menu_open_popup(state, i)
+					win32_menu_label_activate(state, i)
 					return true
 				}
 			}
@@ -796,14 +859,14 @@ native_menu_handle_keydown :: proc(menu: ^Native_Menu_Runtime, keycode: int, mod
 				if first == upper {
 					state.active_menu = i
 					state.hovered = -1
-					win32_menu_open_popup(state, i)
+					win32_menu_label_activate(state, i)
 					return true
 				}
 			}
 		}
 	}
 	if keycode == int(sdl3.K_RETURN) || keycode == int(sdl3.K_KP_ENTER) || keycode == int(sdl3.K_SPACE) {
-		win32_menu_open_popup(state, state.active_menu)
+		win32_menu_label_activate(state, state.active_menu)
 		return true
 	}
 	return false
@@ -838,12 +901,50 @@ win32_menu_set_active :: proc(state: ^Win32_Menu_State, active: bool) -> bool {
 	return true
 }
 
+win32_menu_preserve_topmost_promotion_position :: proc(state: ^Win32_Menu_State, position: ^win.WINDOWPOS) -> bool {
+	if state == nil || !state.frame_enabled || position == nil { return false }
+	required := win.UINT(win.SWP_NOSIZE | win.SWP_NOACTIVATE)
+	excluded := win.UINT(win.SWP_NOMOVE | win.SWP_NOZORDER | win.SWP_FRAMECHANGED)
+	if (position.flags & required) != required || (position.flags & excluded) != 0 { return false }
+	if state.menu == nil || state.menu.window == nil { return false }
+	topmost := (sdl3.GetWindowFlags(state.menu.window) & sdl3.WindowFlags{.ALWAYS_ON_TOP}) != sdl3.WindowFlags{}
+	if !topmost { return false }
+	// Windows may replace HWND_TOPMOST with an actual insertion HWND before
+	// sending WINDOWPOSCHANGING, so identify SDL's standard-frame adjustment
+	// from the requested coordinates rather than the normalized z-order target.
+	standard_frame: win.RECT
+	style := cast(win.DWORD)win.GetWindowLongW(state.hwnd, win.GWL_STYLE)
+	ex_style := cast(win.DWORD)win.GetWindowLongW(state.hwnd, win.GWL_EXSTYLE)
+	if !win.AdjustWindowRectExForDpi(&standard_frame, style, win.BOOL(state.menu_attached), ex_style, win.GetDpiForWindow(state.hwnd)) { return false }
+	if standard_frame.left == 0 && standard_frame.top == 0 { return false }
+	x, y: c.int
+	if !sdl3.GetWindowPosition(state.menu.window, &x, &y) ||
+		position.x != x+standard_frame.left || position.y != y+standard_frame.top { return false }
+	// SDL's WIN_OnWindowEnter promotes topmost windows with an adjusted position
+	// and no SWP_NOMOVE. Its standard-frame adjustment disagrees with our full
+	// client WM_NCCALCSIZE contract. This is a z-order promotion: preserve the
+	// HWND rectangle before Windows applies it. Explicit moves keep SWP_NOZORDER
+	// and resize/DPI/frame changes do not satisfy this predicate.
+	position.flags |= win.SWP_NOMOVE
+	state.window_geometry.topmost_promotions_preserved += 1
+	return true
+}
+
 win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam: win.WPARAM, lparam: win.LPARAM, subclass_id: win.UINT_PTR, ref_data: win.DWORD_PTR) -> win.LRESULT {
 	context = runtime.default_context()
 	state := win32_menu_state(ref_data)
 	if state == nil { return win.DefSubclassProc(hwnd, message, wparam, lparam) }
 	state.hwnd = hwnd
 	integrated := state.frame_enabled
+	if integrated && message == win.WM_WINDOWPOSCHANGING {
+		position := cast(^win.WINDOWPOS)uintptr(lparam)
+		requested_flags := position.flags if position != nil else win.UINT(0)
+		preserved := win32_menu_preserve_topmost_promotion_position(state, position)
+		win32_window_geometry_record(state, message, position, requested_flags, preserved)
+	} else if integrated && (message == win.WM_MOUSELEAVE ||
+		(message == win.WM_MOUSEMOVE && sdl3.GetMouseFocus() != state.menu.window)) {
+		win32_window_geometry_record(state, message, nil, 0, false)
+	}
 
 	if integrated && message == win.WM_NCCALCSIZE {
 		// Keep the outer window and client coordinates aligned. On maximize,
@@ -883,11 +984,7 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 	if integrated && message == win.WM_NCHITTEST {
 		point := win32_menu_point_from_lparam(lparam)
 		result := win32_menu_frame_hit_test(state, i32(point.x), i32(point.y))
-		if result == win.LRESULT(win.HTMINBUTTON) || result == win.LRESULT(win.HTMAXBUTTON) || result == win.LRESULT(win.HTCLOSE) {
-			return result
-		}
-		if dwm_handled { return dwm_result }
-		return result
+		return win32_integrated_frame_resolve_hit_test(result, dwm_handled, dwm_result)
 	}
 	if dwm_handled { return dwm_result }
 
@@ -909,9 +1006,13 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 			if win32_menu_client_point_to_window(state, &point) {
 				if index := win32_menu_label_at_window_point(state, i32(point.x), i32(point.y)); index >= 0 {
 					win32_menu_cancel_app_pointer(state)
-					state.menu_mode = true
-					state.active_menu = index
-					win32_menu_open_popup(state, index)
+					if state.labels[index].direct_menu != nil {
+						win32_menu_label_activate(state, index)
+					} else {
+						state.menu_mode = true
+						state.active_menu = index
+						win32_menu_open_popup(state, index)
+					}
 					return 0
 				}
 			}
@@ -960,7 +1061,7 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 							state.active_menu = index
 							state.hovered = -1
 							native_menu_request_chrome_redraw(state.menu)
-							win32_menu_open_popup(state, index)
+							win32_menu_label_activate(state, index)
 							return 0
 						}
 					}
@@ -970,6 +1071,12 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 	}
 
 	result := win.DefSubclassProc(hwnd, message, wparam, lparam)
+	if integrated && (message == win.WM_WINDOWPOSCHANGED || message == win.WM_ACTIVATE || message == win.WM_DPICHANGED) {
+		position: ^win.WINDOWPOS
+		if message == win.WM_WINDOWPOSCHANGED { position = cast(^win.WINDOWPOS)uintptr(lparam) }
+		flags := position.flags if position != nil else win.UINT(0)
+		win32_window_geometry_record(state, message, position, flags, false)
+	}
 	if message == win.WM_DWMCOMPOSITIONCHANGED && integrated {
 		if !win32_menu_reapply_frame(state) { win32_menu_disable_frame(state) }
 	} else if message == win.WM_NCACTIVATE {
@@ -1033,22 +1140,35 @@ native_menu_prepare :: proc(menu: ^Native_Menu_Runtime) -> bool {
 	}
 	state.root = win.CreateMenu()
 	if state.root == nil { return false }
-	for description, index in menu.application.menus {
-		popup := win.CreatePopupMenu()
-		if popup == nil || !win32_menu_build_items(state, popup, description.items) {
-			if popup != nil { win.DestroyMenu(popup) }
-			return false
+	for &description, index in menu.application.menus {
+		popup: win.HMENU
+		flags := win.UINT(WIN32_MF_POPUP)
+		native_id := win.UINT_PTR(0)
+		if description.command != Application_Command_ID(0) {
+			if len(state.commands) >= 0x10000 { return false }
+			native_id = win.UINT_PTR(uintptr(len(state.commands)))
+			append(&state.commands, description.command)
+			flags = 0
+			if !description.state.enabled { flags |= WIN32_MF_GRAYED }
+			if description.state.checked { flags |= WIN32_MF_CHECKED }
+		} else {
+			popup = win.CreatePopupMenu()
+			if popup == nil || !win32_menu_build_items(state, popup, description.items) {
+				if popup != nil { win.DestroyMenu(popup) }
+				return false
+			}
+			native_id = win.UINT_PTR(uintptr(popup))
 		}
 		// Native HMENU uses '&' to expose the first character as the Alt key.
 		// The integrated caption is drawn from the untouched label below.
 		wide := win32_menu_wide(state, fmt.tprintf("&%s", description.label))
 		if wide == nil {
-			win.DestroyMenu(popup)
+			if popup != nil { win.DestroyMenu(popup) }
 			return false
 		}
-		if !win.AppendMenuW(state.root, WIN32_MF_POPUP, win.UINT_PTR(uintptr(popup)), win.LPCWSTR(&wide[0])) {
+		if !win.AppendMenuW(state.root, flags, native_id, win.LPCWSTR(&wide[0])) {
 			delete(wide, state.allocator)
-			win.DestroyMenu(popup)
+			if popup != nil { win.DestroyMenu(popup) }
 			return false
 		}
 		label_text := win32_menu_wide(state, description.label)
@@ -1059,6 +1179,10 @@ native_menu_prepare :: proc(menu: ^Native_Menu_Runtime) -> bool {
 		label_length := len(label_text)
 		if label_length > 0 && label_text[label_length-1] == 0 { label_length -= 1 }
 		state.labels[index] = Win32_Menu_Label{text=label_text, length=label_length, popup=popup}
+		if description.command != Application_Command_ID(0) {
+			state.labels[index].direct_menu = &description
+			append(&state.bindings, Win32_Menu_Item_Binding{menu=state.root, position=win.UINT(index), top_menu=&description, is_command=true})
+		}
 	}
 	win.SetWindowSubclass(hwnd, win32_menu_subclass, WIN32_MENU_SUBCLASS_ID, win.DWORD_PTR(uintptr(state)))
 	state.installed = true
@@ -1142,6 +1266,22 @@ native_menu_try_shortcut :: proc(menu: ^Native_Menu_Runtime, keycode: int, modif
 	command: Application_Command_ID
 	found := false
 	for description in menu.application.menus {
+		if description.command != Application_Command_ID(0) && description.state.enabled && description.shortcut.key != 0 {
+			expected := description.shortcut.modifiers
+			if (Application_Menu_Modifier.Primary in expected) == native_text_modifier(modifiers, sdl3.KMOD_CTRL) &&
+			   (Application_Menu_Modifier.Shift in expected) == native_text_modifier(modifiers, sdl3.KMOD_SHIFT) &&
+			   (Application_Menu_Modifier.Alt in expected) == native_text_modifier(modifiers, sdl3.KMOD_ALT) &&
+			   (Application_Menu_Modifier.Super in expected) == native_text_modifier(modifiers, sdl3.KMOD_GUI) {
+				key := rune(keycode)
+				if key >= 'a' && key <= 'z' { key -= ('a'-'A') }
+				expected_key := description.shortcut.key
+				if expected_key >= 'a' && expected_key <= 'z' { expected_key -= ('a'-'A') }
+				if key == expected_key {
+					native_menu_dispatch_command(menu, description.command)
+					return true
+				}
+			}
+		}
 		if candidate, matched := win32_menu_match_shortcut(description.items, rune(keycode), modifiers); matched {
 			command = candidate
 			found = true

@@ -89,6 +89,7 @@ Application_Services :: struct {
 	clipboard: Clipboard_Service,
 	scheduler: Application_Scheduler,
 	quit:      Application_Quit_Request,
+	windows:   Application_Window_Service,
 }
 
 // Application_Quit_Request lets an application complete a previously deferred

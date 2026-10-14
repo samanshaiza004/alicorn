@@ -179,7 +179,7 @@ context_menu_begin :: proc(
 		label="context-menu-panel",
 		key=key_string("panel"),
 		style=layout_style(.Column, width=rt.context_menu.preferred_width, height=1, padding=rt.context_menu.padding, clip=true),
-		color=Color{0.075, 0.09, 0.125, 1},
+		color=style_color(ui, .Surface),
 		loc=loc,
 	)
 	return rt.context_menu.panel != 0
@@ -254,7 +254,7 @@ context_menu_separator :: proc(ui: ^UI, loc := #caller_location) {
 			label="context-menu-separator-line",
 			key=key_pair(1, u64(index+1)),
 			style=layout_style(.Row, width=line_width, height=1),
-			color=Color{0.24, 0.28, 0.36, 1},
+		color=style_color(ui, .Border),
 			loc=loc,
 		)
 		container_end(ui)

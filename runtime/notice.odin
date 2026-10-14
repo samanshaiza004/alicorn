@@ -25,6 +25,15 @@ notice_post :: proc(rt: ^Runtime, notice: Notice, now_ns: u64) -> bool {
 		(notice.placement == .Contextual && notice.anchor == 0) {
 		return false
 	}
+	style_environment_set := notice_style_environment_is_set(notice.style_environment)
+	if style_environment_set {
+		_, style_environment_valid := style_environment_resolve(
+			DEFAULT_STYLE_ENVIRONMENT,
+		notice.style_environment,
+		rt,
+		)
+		if !style_environment_valid { return false }
+	}
 	duration_ms := notice.duration_ms
 	if duration_ms == 0 { duration_ms = NOTICE_DEFAULT_DURATION_MS }
 	effective_lifetime := notice.lifetime
@@ -36,6 +45,8 @@ notice_post :: proc(rt: ^Runtime, notice: Notice, now_ns: u64) -> bool {
 		lifetime=effective_lifetime,
 		placement=notice.placement,
 		anchor=notice.anchor,
+		style_environment=notice.style_environment,
+		style_environment_set=style_environment_set,
 	}
 	if !notice_copy_record_string(record.id[:], &record.id_length, notice.id) ||
 		!notice_copy_record_string(record.title[:], &record.title_length, notice.title) ||
@@ -140,6 +151,12 @@ notice_take_action :: proc(rt: ^Runtime) -> (event: Notice_Action_Event, found: 
 	return event, true
 }
 
+@(private)
+notice_style_environment_is_set :: proc(environment: Style_Environment) -> bool {
+	return environment.theme != 0 || environment.density != 0 || environment.text_scale != 0 ||
+		environment.accent != 0 || environment.accessibility_set
+}
+
 // notice_next_deadline returns the earliest transient expiration, or zero if
 // every notice is persistent or the queue is empty.
 notice_next_deadline :: proc(rt: ^Runtime) -> u64 {
@@ -203,7 +220,10 @@ notice_overlay_describe :: proc(ui: ^UI) {
 				// end_frame reconciles the descriptions emitted below.
 				record := &rt.notices[index]
 				if record.placement != .Toast { continue }
-				if notice_describe_card(ui, record, contextual=false) { break }
+				style_scope := notice_style_environment_push(ui, record)
+				should_stop := notice_describe_card(ui, record, contextual=false)
+				style_environment_pop(ui, style_scope)
+				if should_stop { break }
 			}
 			container_end(ui)
 		}
@@ -226,12 +246,21 @@ notice_overlay_describe :: proc(ui: ^UI) {
 			style=layout_style(.Column, clip=true),
 		)
 		if root == 0 { continue }
-		if notice_describe_card(ui, record, contextual=true, placement=bounds) {
+		style_scope := notice_style_environment_push(ui, record)
+		should_stop := notice_describe_card(ui, record, contextual=true, placement=bounds)
+		style_environment_pop(ui, style_scope)
+		if should_stop {
 			container_end(ui)
 			return
 		}
 		container_end(ui)
 	}
+}
+
+@(private)
+notice_style_environment_push :: proc(ui: ^UI, record: ^Notice_Record) -> Style_Environment_Scope {
+	if ui == nil || record == nil || !record.style_environment_set { return Style_Environment_Scope{} }
+	return style_environment_push(ui, record.style_environment)
 }
 
 @(private)
@@ -269,13 +298,15 @@ notice_describe_card :: proc(
 		gap=5,
 		clip=true,
 	)
+	card_surface_role := Style_Color_Role.Subtle_Surface
+	if record.style_environment_set { card_surface_role = .Surface }
 	card_id := container_begin_simple(
 		ui,
 		.Container,
 		label="notice-card",
 		key=key_pair(record.id_hash, u64(0x43415244)),
 		style=card_style,
-		color=style_color(ui, .Subtle_Surface),
+		color=style_color(ui, card_surface_role),
 	)
 	if card_id == 0 { return false }
 	if contextual {
