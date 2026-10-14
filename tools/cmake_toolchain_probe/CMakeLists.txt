@@ -18,6 +18,17 @@ if(NOT CMAKE_MSVC_RUNTIME_LIBRARY STREQUAL "MultiThreaded")
     message(FATAL_ERROR "Alicorn static native link recipes currently require the static MSVC CRT (/MT).")
 endif()
 
+function(alicorn_json_escape output value)
+    string(REPLACE "\\" "\\\\" escaped "${value}")
+    string(REPLACE "\"" "\\\"" escaped "${escaped}")
+    string(REPLACE "\n" "\\n" escaped "${escaped}")
+    string(REPLACE "\r" "\\r" escaped "${escaped}")
+    set(${output} "${escaped}" PARENT_SCOPE)
+endfunction()
+
+alicorn_json_escape(c_compiler "${CMAKE_C_COMPILER}")
+alicorn_json_escape(cxx_compiler "${CMAKE_CXX_COMPILER}")
+
 # CMAKE_SIZEOF_VOID_P is a configure-time variable, not a portable cache
 # contract. Record the evaluated toolchain facts while they are in scope so
 # the caller validates the compiler CMake actually configured.
@@ -25,8 +36,10 @@ file(WRITE "${CMAKE_BINARY_DIR}/alicorn-toolchain-report.json"
     "{\n"
     "  \"schemaVersion\": 1,\n"
     "  \"pointerSize\": ${CMAKE_SIZEOF_VOID_P},\n"
+    "  \"cCompiler\": \"${c_compiler}\",\n"
     "  \"cCompilerId\": \"${CMAKE_C_COMPILER_ID}\",\n"
     "  \"cCompilerVersion\": \"${CMAKE_C_COMPILER_VERSION}\",\n"
+    "  \"cxxCompiler\": \"${cxx_compiler}\",\n"
     "  \"cxxCompilerId\": \"${CMAKE_CXX_COMPILER_ID}\",\n"
     "  \"cxxCompilerVersion\": \"${CMAKE_CXX_COMPILER_VERSION}\",\n"
     "  \"targetSystem\": \"${CMAKE_SYSTEM_NAME}\",\n"

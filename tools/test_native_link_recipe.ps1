@@ -61,8 +61,8 @@ try {
     Set-Content -LiteralPath $cachePath -Value $cacheLines
     $reportPath = Join-Path $toolchainFixtureRoot 'alicorn-toolchain-report.json'
     $report = [ordered]@{
-        schemaVersion=1; pointerSize=4; cCompilerId='MSVC'; cCompilerVersion='19.40'
-        cxxCompilerId='MSVC'; cxxCompilerVersion='19.40'; targetSystem='Windows'
+        schemaVersion=1; pointerSize=4; cCompiler=$compiler; cCompilerId='MSVC'; cCompilerVersion='19.40'
+        cxxCompiler=$compiler; cxxCompilerId='MSVC'; cxxCompilerVersion='19.40'; targetSystem='Windows'
         targetProcessor='AMD64'; generator='Ninja'; generatorPlatform=''; visualStudioPlatform=''; crt='MultiThreaded'
     }
     Set-Content -LiteralPath $reportPath -Value (ConvertTo-Json -InputObject $report -Compress)
@@ -78,7 +78,8 @@ try {
     $report.targetSystem = 'Windows'
     Set-Content -LiteralPath $reportPath -Value (ConvertTo-Json -InputObject $report -Compress)
     $toolchainFacts = Get-AlicornCMakeCompilerFacts $toolchainFixtureRoot
-    if ($toolchainFacts.pointerSize -ne '8' -or $toolchainFacts.crt -ne 'MultiThreaded' -or $toolchainFacts.targetSystem -ne 'Windows') {
+    if ($toolchainFacts.pointerSize -ne '8' -or $toolchainFacts.crt -ne 'MultiThreaded' -or $toolchainFacts.targetSystem -ne 'Windows' -or
+        $toolchainFacts.cCompiler -ne $compiler -or $toolchainFacts.cxxCompiler -ne $compiler) {
         throw 'The accepted MSVC toolchain facts were not preserved.'
     }
 } finally {

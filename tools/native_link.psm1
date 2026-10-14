@@ -111,7 +111,7 @@ function Resolve-AlicornToolFile([string]$Requested, [string]$Name, [string[]]$C
     }
     $command = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($command) { return Get-AlicornFullPath $command.Source }
-    throw "Could not resolve the selected MSVC tool '$Name'. Run the recipe from a Visual Studio developer environment or repair the CMake toolchain."
+    throw "Could not resolve the selected MSVC tool '$Name' (CMake reported '$Requested'). Run the recipe from a Visual Studio developer environment or repair the CMake toolchain."
 }
 
 function Get-AlicornCMakeCompilerFacts([string]$BuildDirectory) {
@@ -148,8 +148,8 @@ function Get-AlicornCMakeCompilerFacts([string]$BuildDirectory) {
     $vsTools = $env:VCToolsInstallDir
     $cCompilerCandidate = if ($vsTools) { Join-Path $vsTools 'bin\Hostx64\x64\cl.exe' } else { $null }
     $cxxCompilerCandidate = $cCompilerCandidate
-    $cCompiler = Resolve-AlicornToolFile $cache['CMAKE_C_COMPILER'] 'cl.exe' @($cCompilerCandidate)
-    $cxxCompiler = Resolve-AlicornToolFile $cache['CMAKE_CXX_COMPILER'] 'cl.exe' @($cxxCompilerCandidate)
+    $cCompiler = Resolve-AlicornToolFile ([string]$report.cCompiler) 'cl.exe' @($cCompilerCandidate)
+    $cxxCompiler = Resolve-AlicornToolFile ([string]$report.cxxCompiler) 'cl.exe' @($cxxCompilerCandidate)
     $linkerCandidates = [Collections.Generic.List[string]]::new()
     if ($cCompiler) { $linkerCandidates.Add((Join-Path (Split-Path -Parent $cCompiler) 'link.exe')) }
     if ($vsTools) { $linkerCandidates.Add((Join-Path $vsTools 'bin\Hostx64\x64\link.exe')) }
