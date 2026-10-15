@@ -1,6 +1,6 @@
 # Measured sequence experiment — Alicorn #50
 
-Status: Alicorn height-index research is complete: retain the sparse representation. History's real-patch reference/multi-fold milestone is complete on 2026-10-14. Equal-storage block directories approach the tree's latency. General tree mutation, standalone extraction, and consumer integration remain deferred. See [the real-patch report](benchmarks/history-real-patch-projection.md).
+Status: Alicorn height-index research is complete: retain the sparse representation. History's real-patch milestone is followed by an opt-in native binary-block folding dogfood on `codex/folding-projection`. General B+ tree mutation, standalone extraction, and default adoption remain deferred. See [the real-patch report](benchmarks/history-real-patch-projection.md) and [native dogfood findings](benchmarks/history-native-folding-dogfood.md).
 
 ## Recommendation
 
@@ -181,7 +181,7 @@ Passing one consumer's gate permits that consumer's integration. It does not est
 
 1. Profile existing implementations and simpler alternatives. **Complete for Alicorn: no tree.** Keep the sparse representation; direct-Y optimization can proceed independently.
 2. Establish real History ownership and semantics before general mutations. **Complete for this milestone:** unchanged parsed patch model, compact spans, multiple stable folds, accelerated old/new mapping, logical anchors, equal-storage block comparison, and tracked memory. Keep this code experimental.
-3. Capture representative History interaction traces and full native viewport costs. The current fixed block hierarchy approaches the tree's performance, so investigate the simplest structure that supports the same required folds, including partial-run/cross-block cases. Do not assume general tree work is needed.
+3. Dogfood the simplest History projection in a native viewport. **Implemented as opt-in whole-hunk folding with the binary block directory:** typed coordinates, checked summaries, source-row selection, source-relative scroll restoration, later-intent supersession, and native shape/encode/submit measurements. Whole hunks may span blocks without changing topology. Larger recorded interaction traces, arbitrary partial-run folds, and cross-platform/DPI evidence remain open; see the native report. Do not assume general tree work is needed.
 4. If a measured advantage or concrete unsupported requirement remains, implement atomic cross-leaf split/merge with storage reservation, allocation-failure injection, randomized differential tests, stale-cursor checks, and peak memory. Compare both representations with identical capabilities.
 5. Integrate a winning adapter only after separate authorization and the application gates pass. A generic headless core and standalone extraction stay deferred until real consumers justify their contract. An Alicorn integration is not currently part of that path.
 
