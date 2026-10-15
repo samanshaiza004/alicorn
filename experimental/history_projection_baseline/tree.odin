@@ -16,7 +16,9 @@ Tree_Ref_Kind :: enum { Leaf, Branch }
 Tree_Ref :: struct { kind: Tree_Ref_Kind, index: int }
 Tree_Path :: struct { branch_indices: [32]int, depth: int }
 Tree_Item_Ref :: struct { source_record_index: u32 }
-TREE_COLLAPSED_RECORD_INDEX :: u32(0xffff_ffff)
+// Fold descriptors are application-owned and indexed independently. Each
+// active fold has a stable reference; updating one never aliases another.
+TREE_FOLD_REFERENCE_BIT :: u32(0x8000_0000)
 
 Tree_Leaf :: struct {
 	records: [TREE_LEAF_CAPACITY]Tree_Item_Ref,
@@ -42,7 +44,7 @@ History_Tree :: struct {
 	leaves:   [dynamic]Tree_Leaf,
 	branches: [dynamic]Tree_Branch,
 	source_records: []Projection_Record,
-	collapsed_record: Projection_Record,
+	fold_records: []Projection_Record,
 	root:     Tree_Ref,
 	revision: u64,
 }
@@ -57,14 +59,15 @@ tree_branch_count_for :: proc(leaf_count: int) -> int {
 	return total
 }
 
-tree_init :: proc(tree: ^History_Tree, records: []Projection_Record, allocator := context.allocator) -> bool {
-	if tree == nil { return false }
+tree_init :: proc(tree: ^History_Tree, records: []Projection_Record, fold_records: []Projection_Record = nil, allocator := context.allocator) -> bool {
+	if tree == nil || u64(len(records)) >= u64(TREE_FOLD_REFERENCE_BIT) { return false }
 	leaf_count := max((len(records)+TREE_LEAF_CAPACITY-1)/TREE_LEAF_CAPACITY, 1)
 	branch_capacity := tree_branch_count_for(leaf_count)
 	tree^ = History_Tree{
 		leaves=make([dynamic]Tree_Leaf, 0, leaf_count, allocator=allocator),
 		branches=make([dynamic]Tree_Branch, 0, branch_capacity, allocator=allocator),
 		source_records=records,
+		fold_records=fold_records,
 	}
 	for start := 0; start < len(records); start += TREE_LEAF_CAPACITY {
 		end := min(start+TREE_LEAF_CAPACITY, len(records))
@@ -123,8 +126,14 @@ tree_node_summary :: proc(tree: ^History_Tree, ref: Tree_Ref) -> Projection_Summ
 }
 
 tree_item_record_ptr :: proc(tree: ^History_Tree, item: Tree_Item_Ref) -> ^Projection_Record {
-	if item.source_record_index == TREE_COLLAPSED_RECORD_INDEX { return &tree.collapsed_record }
-	return &tree.source_records[int(item.source_record_index)]
+	if item.source_record_index & TREE_FOLD_REFERENCE_BIT != 0 {
+		index := int(item.source_record_index & ~TREE_FOLD_REFERENCE_BIT)
+		if index >= len(tree.fold_records) { return nil }
+		return &tree.fold_records[index]
+	}
+	index := int(item.source_record_index)
+	if index >= len(tree.source_records) { return nil }
+	return &tree.source_records[index]
 }
 
 tree_item_count :: proc(tree: ^History_Tree, ref: Tree_Ref) -> int {
@@ -322,8 +331,11 @@ tree_splice_leaf :: proc(tree: ^History_Tree, leaf_index, first, end: int, inser
 	if first < 0 || end < first || end > leaf.count { return false }
 	new_count := leaf.count-(end-first)+len(inserted)
 	if new_count > TREE_LEAF_CAPACITY { return false }
+	for item in inserted { if tree_item_record_ptr(tree, item) == nil { return false } }
 	path: Tree_Path
 	if !tree_collect_path(tree, leaf_index, &path) { return false }
+	staged: [TREE_LEAF_CAPACITY]Tree_Item_Ref
+	copy(staged[:], inserted)
 	old_count := leaf.count
 	delta := len(inserted)-(end-first)
 	if delta > 0 {
@@ -332,7 +344,7 @@ tree_splice_leaf :: proc(tree: ^History_Tree, leaf_index, first, end: int, inser
 		for i in end..<old_count { leaf.records[i+delta] = leaf.records[i] }
 		for i in new_count..<old_count { leaf.records[i] = Tree_Item_Ref{} }
 	}
-	for i in 0..<len(inserted) { leaf.records[first+i] = inserted[i] }
+	for i in 0..<len(inserted) { leaf.records[first+i] = staged[i] }
 	leaf.count = new_count
 	leaf.items = new_count
 	leaf.summary = {}
@@ -371,13 +383,16 @@ verify_tree_matches_flat :: proc(flat: ^Flat_Projection, tree: ^History_Tree) ->
 }
 
 benchmark_tree_projection :: proc(record_count: int, alternating: bool) -> bool {
+	assert(verify_tree_multiple_folds())
 	source := make_fixture(record_count, alternating)
 	defer delete(source)
 	flat: Flat_Projection
 	if !flat_init(&flat, source, extra_capacity=8) { return false }
 	defer flat_destroy(&flat)
 	tree: History_Tree
-	if !tree_init(&tree, source) { return false }
+	fold_records := make([]Projection_Record, TRANSACTIONS)
+	defer delete(fold_records)
+	if !tree_init(&tree, source, fold_records) { return false }
 	defer tree_destroy(&tree)
 	if !verify_tree_matches_flat(&flat, &tree) { return false }
 	initial_first, initial_end, found := find_collapse_span(flat.records[:], record_count/2)
@@ -420,10 +435,10 @@ benchmark_tree_projection :: proc(record_count: int, alternating: bool) -> bool 
 		span := make([]Tree_Item_Ref, end-first)
 		for i in 0..<len(span) { span[i] = Tree_Item_Ref{u32(first+i)} }
 		collapsed := make_collapsed_record(flat.records[:], first, end)
-		tree.collapsed_record = collapsed
+		fold_records[transaction] = collapsed
 		removed_summary := Projection_Summary{}
 		for record in flat.records[first:end] { removed_summary = summary_combine(removed_summary, record.summary) }
-		placeholder := [1]Tree_Item_Ref{Tree_Item_Ref{TREE_COLLAPSED_RECORD_INDEX}}
+		placeholder := [1]Tree_Item_Ref{Tree_Item_Ref{TREE_FOLD_REFERENCE_BIT | u32(transaction)}}
 		start := time.now()
 		if !tree_splice_leaf(&tree, leaf_index, local_first, local_first+(end-first), placeholder[:]) { return false }
 		display_total := tree_total_summary(&tree).display_rows
@@ -454,4 +469,29 @@ benchmark_tree_projection :: proc(record_count: int, alternating: bool) -> bool 
 	report_samples("collapse_expand_plus_viewport", samples)
 	fmt.println("tree_storage_payload_bytes", "leaf_nodes", cap(tree.leaves)*size_of(Tree_Leaf), "branch_nodes", cap(tree.branches)*size_of(Tree_Branch), "total", cap(tree.leaves)*size_of(Tree_Leaf)+cap(tree.branches)*size_of(Tree_Branch), "leaf_capacity", TREE_LEAF_CAPACITY, "branch_capacity", TREE_BRANCH_CAPACITY)
 	return true
+}
+
+verify_tree_multiple_folds :: proc() -> bool {
+	source := make_fixture(200, false)
+	defer delete(source)
+	folds := [2]Projection_Record{make_collapsed_record(source, 2, 6), make_collapsed_record(source, 42, 46)}
+	tree: History_Tree
+	if !tree_init(&tree, source, folds[:]) { return false }
+	defer tree_destroy(&tree)
+	flat: Flat_Projection
+	if !flat_init(&flat, source) { return false }
+	defer flat_destroy(&flat)
+	for fi in 0..<2 {
+		original_first := 2 if fi == 0 else 42
+		leaf, local, ok := tree_locate_record(&tree, original_first-3*fi)
+		if !ok { return false }
+		placeholder := [1]Tree_Item_Ref{Tree_Item_Ref{TREE_FOLD_REFERENCE_BIT | u32(fi)}}
+		if !tree_splice_leaf(&tree, leaf, local, local+4, placeholder[:]) { return false }
+		if !flat_splice(&flat, original_first-3*fi, original_first-3*fi+4, folds[fi:fi+1]) { return false }
+		if !verify_tree_matches_flat(&flat, &tree) { return false }
+	}
+	if tree_source_lookup(&tree, true, folds[0].old_first).kind != .Collapsed ||
+	   tree_source_lookup(&tree, true, folds[1].old_first).kind != .Collapsed { return false }
+	_, _, valid := tree_validate_summary(&tree, tree.root)
+	return valid
 }

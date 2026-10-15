@@ -1,10 +1,10 @@
 # Measured sequence experiment — Alicorn #50
 
-Status: Alicorn baseline and a synthetic History local-splice B+ tree prototype measured on 2026-10-14. No reusable measured-sequence core or consumer integration has been implemented. Tree integration into Alicorn or History is not approved.
+Status: Alicorn height-index research is complete: retain the sparse representation. History's real-patch reference/multi-fold milestone is complete on 2026-10-14. Equal-storage block directories approach the tree's latency. General tree mutation, standalone extraction, and consumer integration remain deferred. See [the real-patch report](benchmarks/history-real-patch-projection.md).
 
 ## Recommendation
 
-Proceed with an independent, headless Odin prototype and two workload adapters. Decide whether to integrate each adapter from measured results. Treat a result favoring the existing arrays as a successful experiment too.
+Keep Alicorn's sparse index and continue History research with compact references and a small summary directory. The current real-patch measurements do not demonstrate a sufficient advantage for a fully balanced B+ tree. Capture actual projection-changing interactions and compare equal features before extending the container or integrating it. Direct-Y lookup is an optional independent Alicorn follow-up.
 
 The proposed primitive is an ordered sequence of application records with cached subtree summaries. Applications determine record boundaries, summaries, source identities, measurement validity, and invalidation. The package owns storage, balancing, traversal, and summary recomputation.
 
@@ -43,7 +43,9 @@ The chunked candidate stores sorted measurements in bounded-capacity blocks and 
 
 Before building a tree, require evidence that the best simple candidate still spends meaningful time or memory in the index on representative traces. Freeze those traces and record index-only and full-transaction timings. Do not use a synthetic worst case alone to pass this gate. The current Alicorn scroll/reflow profile does not pass this gate; revisit only if a captured source-edit trace shows that the simpler alternatives are material to users. The baseline details and History comparison are in [the benchmark report](benchmarks/measured-sequence-baseline.md).
 
-## Core representation and contract
+## Deferred core representation and contract
+
+The following remains a conditional design, not the current implementation milestone. A generic core needs evidence beyond the fixed-leaf adapters. Neither current consumer has approved tree integration.
 
 Incubate under `experimental/measured_sequence/`, with separate tests, benchmark drivers, and application adapters. The package must import only Odin's base/core packages. Its independent tests and an external collection-import fixture must run without Alicorn, SDL, AccessKit, fonts, or a native window.
 
@@ -98,7 +100,9 @@ Every successful mutation invalidates cursors with a sequence revision. Check th
 
 Invalid ranges and allocation failure must leave contents, summaries, revision, and existing cursors unchanged. Reserve required mutation storage before modifying live paths. Test failure at each allocation point in insert and multi-level splice, compare against a reference array after every injected failure, and verify the old tree remains queryable. Only a committed mutation advances the revision and invalidates cursors. Generic summary policies must provide valid arithmetic; adapters reject invalid heights and checked count overflows. These rules belong in the contract rather than being inferred from happy-path tests.
 
-## Workload A: variable-height list
+## Workload A: variable-height list — closed with sparse index retained
+
+The tree adapter design below is retained as research context. The measured viewport gate rejected its implementation; completing these hypothetical tree operations is not a prerequisite for #50's History work.
 
 Store compressed estimated and measured geometry without requiring one record for every alternating estimated gap and measured row. Compare at least two encodings. A run encoding has separate estimated and measured runs and exposes its fragmentation cost. A gap-plus-override encoding stores the estimated-row count before a measured row and an optional measured height, followed by a trailing estimated gap; scattered overrides then need roughly one record per override plus a final gap. One estimated gap can represent a million unmeasured rows. An update matching the adapter's baseline policy removes the override and coalesces neighbors. Avoid one tree item per logical row in the sparse case, and report the selected record count as well as logical rows and overrides.
 
@@ -139,6 +143,8 @@ Initial collapse traces replace a hunk body or a context span while keeping hunk
 
 The first synthetic comparison is complete for localized four-record context folds. It compares expanded display-row references, flat records with per-record prefixes, fixed blocks with block prefixes, and a B+ prototype. All four produce identical checksums; the tree is much faster than the other measured projection forms and has a smaller node payload than the expanded row references. The result only covers splices wholly inside one leaf with spare capacity. The tree stores 32-bit references into a shared immutable source-record slice, so its memory result depends on the real adapter being able to reference parsed patch storage directly. See the [benchmark report](benchmarks/measured-sequence-baseline.md) and [raw five-process capture](benchmarks/raw/history-projection-comparison-final-windows-2026-10-14.txt). This is evidence to complete the History experiment, not approval to integrate the prototype.
 
+The subsequent [real-patch adapter](../experimental/history_patch_projection/README.md) eliminates the full record table, borrowing actual parsed hunks through identical 16-byte spans in every backend. It verifies independently identified simultaneous folds, old/new source seeking through cached summaries, actual text/kinds/gutters, hunk navigation, and patch-scoped logical anchors. A binary block summary directory matches the fanout-16 tree closely in the amplified real-body trace. See [the equal-storage results](benchmarks/history-real-patch-projection.md). This changes the next gate: establish a requirement or performance advantage beyond a fixed compact-block directory before building general balancing and allocation machinery.
+
 Implement collapse/expand semantics once, then benchmark equivalent traces on a flat run/block-prefix projection and the tree. Keep the exact current flat display array as the no-collapse baseline. Current O(1) random display-row access is a real advantage: report any regression there. A tree win requires better complete viewport transactions, index memory, or actual projection-changing interactions under identical semantics. Replacing one O(H) hunk scan alone would not justify a tree; a small hunk-prefix table is another baseline improvement. Prefer source references such as `(hunk_index, first_line, count)` over pointers into dynamic arrays that may reallocate; if pointers are used, make and enforce the immutable-storage lifetime rule.
 
 ## Measurements and correctness
@@ -173,12 +179,11 @@ Passing one consumer's gate permits that consumer's integration. It does not est
 
 ## Implementation sequence
 
-1. Freeze baseline traces and profile existing implementations before tree work. **Completed for Alicorn viewport geometry and a synthetic History local-fold trace.** Do not add a tree to Alicorn's runtime viewport path. The synthetic History trace shows a promising tree speedup, but it does not prove the memory assumption or arbitrary splice behavior.
-2. Validate the History item reference against real parsed patch storage, and extend the prototype to cross-leaf collapse/expand. Include split/merge, transactional reservation, allocation-failure injection, random differential tests, and peak memory. If the actual item storage or safety machinery erases the advantage, stop and retain the simpler representation.
-3. Implement the generic headless core only after that gate: bulk build, ordered summaries, record lookup, prefix/range queries, and cursors first; then replacement, balanced insertion/removal, subtree-aware splice, and allocator-failure guarantees.
-4. Build independent, application-facing adapters and differential tests. Run manual release-mode benchmarks and publish raw results, including losing cases and full viewport measurements.
-5. Integrate a winning adapter only after the per-consumer gates pass, in a separate change behind a temporary experiment switch. Re-run end-to-end behavior, geometry, lifecycle, and allocation checks using the same traces.
-6. Consider standalone extraction only after both consumer decisions and real use establish the public contract. Keep the existing structures when they win.
+1. Profile existing implementations and simpler alternatives. **Complete for Alicorn: no tree.** Keep the sparse representation; direct-Y optimization can proceed independently.
+2. Establish real History ownership and semantics before general mutations. **Complete for this milestone:** unchanged parsed patch model, compact spans, multiple stable folds, accelerated old/new mapping, logical anchors, equal-storage block comparison, and tracked memory. Keep this code experimental.
+3. Capture representative History interaction traces and full native viewport costs. The current fixed block hierarchy approaches the tree's performance, so investigate the simplest structure that supports the same required folds, including partial-run/cross-block cases. Do not assume general tree work is needed.
+4. If a measured advantage or concrete unsupported requirement remains, implement atomic cross-leaf split/merge with storage reservation, allocation-failure injection, randomized differential tests, stale-cursor checks, and peak memory. Compare both representations with identical capabilities.
+5. Integrate a winning adapter only after separate authorization and the application gates pass. A generic headless core and standalone extraction stay deferred until real consumers justify their contract. An Alicorn integration is not currently part of that path.
 
 Scratchpad source/fold/wrap projections are a later validation opportunity. Scope's arbitrary overlapping-span queries are not automatically solved by prefix seeking; they may need ordered starts, subtree maximum ends, and filtered traversal. Add that pressure only if the first experiment succeeds.
 

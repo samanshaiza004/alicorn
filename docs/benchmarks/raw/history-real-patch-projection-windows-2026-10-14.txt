@@ -1,0 +1,369 @@
+History real-patch projection; C:\Users\saman\Documents\odin\dist\odin.exe version dev-2026-09-nightly:a2fb372
+Windows 10.0.19045.0; -o:speed -thread-count:1; 5 sequential fresh processes
+Both index layouts use identical inline 16-byte spans; no full projection-record table.
+Amplified case repeats/renumbers real hunk bodies; it is a scale test, not a captured History workload.
+Index memory is requested heap bytes; allocator bookkeeping and process overhead are excluded.
+source_sha256 adapter.odin 04C9617434A0A0F8B1BA0977FD451C503D41F4729455A68ADDE41976A1B27E48
+source_sha256 history_parser.odin 6A12C72731397D6631C5801C258D0B64D954ADC52539A6251C659FC05DA37DA5
+source_sha256 index.odin D1D5F0566CFD080935F8A83665B328F8458FDD56CC6DD1D24F4A3B145885FDF0
+source_sha256 main.odin B8A2228CA146A7360A508A312C156FA1F503088BCC7F8E68938AA5E2D37B1EA1
+process 1
+fixture toolbar display_rows 110 compact_spans 15 folds 3 span_bytes 16
+source_payload toolbar parsed_bytes 13631 existing_display_index_bytes 6216 fold_catalog_bytes 368 seed_capacity_bytes 256
+real_patch toolbar backend Block_Prefix build_ns 2100 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5648654931313552175
+readonly_viewport p50_ns 300 p95_ns 600 max_ns 700
+fold_unfold_two_viewports p50_ns 800 p95_ns 1200 max_ns 56600
+real_patch toolbar backend Block_Hierarchy build_ns 1000 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5648654931313552175
+readonly_viewport p50_ns 300 p95_ns 600 max_ns 700
+fold_unfold_two_viewports p50_ns 800 p95_ns 1100 max_ns 1500
+real_patch toolbar backend Measured_Tree build_ns 1000 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 5648654931313552175
+readonly_viewport p50_ns 300 p95_ns 500 max_ns 600
+fold_unfold_two_viewports p50_ns 700 p95_ns 1000 max_ns 1200
+fixture scroll display_rows 128 compact_spans 68 folds 14 span_bytes 16
+source_payload scroll parsed_bytes 22812 existing_display_index_bytes 7224 fold_catalog_bytes 1696 seed_capacity_bytes 2048
+real_patch scroll backend Block_Prefix build_ns 1700 index_live_bytes 1784 index_peak_build_bytes 1784 index_peak_fold_bytes 1784 checksum 15023374906230306279
+readonly_viewport p50_ns 500 p95_ns 800 max_ns 1600
+fold_unfold_two_viewports p50_ns 1600 p95_ns 2100 max_ns 2300
+real_patch scroll backend Block_Hierarchy build_ns 1200 index_live_bytes 1912 index_peak_build_bytes 1912 index_peak_fold_bytes 1912 checksum 15023374906230306279
+readonly_viewport p50_ns 500 p95_ns 800 max_ns 800
+fold_unfold_two_viewports p50_ns 1600 p95_ns 2100 max_ns 2800
+real_patch scroll backend Measured_Tree build_ns 1800 index_live_bytes 1856 index_peak_build_bytes 1888 index_peak_fold_bytes 1856 checksum 15023374906230306279
+readonly_viewport p50_ns 500 p95_ns 800 max_ns 900
+fold_unfold_two_viewports p50_ns 1600 p95_ns 2100 max_ns 2400
+fixture parser-addition display_rows 237 compact_spans 3 folds 1 span_bytes 16
+source_payload parser-addition parsed_bytes 18286 existing_display_index_bytes 13328 fold_catalog_bytes 80 seed_capacity_bytes 128
+real_patch parser-addition backend Block_Prefix build_ns 800 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5612396423846708097
+readonly_viewport p50_ns 700 p95_ns 700 max_ns 700
+fold_unfold_two_viewports p50_ns 900 p95_ns 1000 max_ns 1000
+real_patch parser-addition backend Block_Hierarchy build_ns 500 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5612396423846708097
+readonly_viewport p50_ns 700 p95_ns 700 max_ns 700
+fold_unfold_two_viewports p50_ns 900 p95_ns 1000 max_ns 1000
+real_patch parser-addition backend Measured_Tree build_ns 600 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 5612396423846708097
+readonly_viewport p50_ns 700 p95_ns 700 max_ns 800
+fold_unfold_two_viewports p50_ns 900 p95_ns 1000 max_ns 1000
+fixture edge-cases display_rows 22 compact_spans 19 folds 4 span_bytes 16
+source_payload edge-cases parsed_bytes 6145 existing_display_index_bytes 1288 fold_catalog_bytes 400 seed_capacity_bytes 512
+real_patch edge-cases backend Block_Prefix build_ns 500 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 956935131422824107
+readonly_viewport p50_ns 100 p95_ns 200 max_ns 300
+fold_unfold_two_viewports p50_ns 600 p95_ns 800 max_ns 800
+real_patch edge-cases backend Block_Hierarchy build_ns 500 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 956935131422824107
+readonly_viewport p50_ns 100 p95_ns 200 max_ns 200
+fold_unfold_two_viewports p50_ns 600 p95_ns 700 max_ns 900
+real_patch edge-cases backend Measured_Tree build_ns 700 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 956935131422824107
+readonly_viewport p50_ns 100 p95_ns 200 max_ns 200
+fold_unfold_two_viewports p50_ns 600 p95_ns 700 max_ns 800
+fixture empty display_rows 0 compact_spans 0 folds 0 span_bytes 16
+source_payload empty parsed_bytes 768 existing_display_index_bytes 56 fold_catalog_bytes 0 seed_capacity_bytes 0
+fixture binary display_rows 1 compact_spans 1 folds 0 span_bytes 16
+source_payload binary parsed_bytes 815 existing_display_index_bytes 112 fold_catalog_bytes 0 seed_capacity_bytes 128
+fixture zero-delete display_rows 3 compact_spans 2 folds 1 span_bytes 16
+source_payload zero-delete parsed_bytes 2065 existing_display_index_bytes 224 fold_catalog_bytes 80 seed_capacity_bytes 128
+real_patch zero-delete backend Block_Prefix build_ns 500 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 9949116991296253054
+readonly_viewport p50_ns 100 p95_ns 100 max_ns 100
+fold_unfold_two_viewports p50_ns 200 p95_ns 200 max_ns 400
+real_patch zero-delete backend Block_Hierarchy build_ns 400 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 9949116991296253054
+readonly_viewport p50_ns 100 p95_ns 100 max_ns 100
+fold_unfold_two_viewports p50_ns 200 p95_ns 200 max_ns 300
+real_patch zero-delete backend Measured_Tree build_ns 400 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 9949116991296253054
+readonly_viewport p50_ns 100 p95_ns 100 max_ns 100
+fold_unfold_two_viewports p50_ns 200 p95_ns 200 max_ns 300
+amplified_history_scroll repetitions 256 display_rows 32768 spans 17408 folds 128 existing_display_bytes 1835064 common_peak_prepare_bytes 8046721
+amplified_common_live_bytes 6203465 seed_capacity_bytes 524288
+real_patch amplified-scroll backend Block_Prefix build_ns 172400 index_live_bytes 317728 index_peak_build_bytes 317728 index_peak_fold_bytes 317728 checksum 71345599518449972
+readonly_viewport p50_ns 1000 p95_ns 1100 max_ns 1100
+fold_unfold_two_viewports p50_ns 4100 p95_ns 4900 max_ns 6500
+real_patch amplified-scroll backend Block_Hierarchy build_ns 179500 index_live_bytes 365824 index_peak_build_bytes 365824 index_peak_fold_bytes 365824 checksum 71345599518449972
+readonly_viewport p50_ns 1000 p95_ns 1100 max_ns 2200
+fold_unfold_two_viewports p50_ns 2700 p95_ns 2800 max_ns 2900
+real_patch amplified-scroll backend Measured_Tree build_ns 179700 index_live_bytes 311328 index_peak_build_bytes 315952 index_peak_fold_bytes 311328 checksum 71345599518449972
+readonly_viewport p50_ns 1000 p95_ns 1100 max_ns 2900
+fold_unfold_two_viewports p50_ns 2700 p95_ns 2900 max_ns 4600
+PASS real History patch projection: all backends, actual rows, old/new axes, multi-folds and logical anchors
+process 2
+fixture toolbar display_rows 110 compact_spans 15 folds 3 span_bytes 16
+source_payload toolbar parsed_bytes 13631 existing_display_index_bytes 6216 fold_catalog_bytes 368 seed_capacity_bytes 256
+real_patch toolbar backend Block_Prefix build_ns 2100 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5648654931313552175
+readonly_viewport p50_ns 300 p95_ns 600 max_ns 900
+fold_unfold_two_viewports p50_ns 800 p95_ns 1100 max_ns 2400
+real_patch toolbar backend Block_Hierarchy build_ns 900 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5648654931313552175
+readonly_viewport p50_ns 300 p95_ns 600 max_ns 800
+fold_unfold_two_viewports p50_ns 800 p95_ns 1100 max_ns 1700
+real_patch toolbar backend Measured_Tree build_ns 800 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 5648654931313552175
+readonly_viewport p50_ns 300 p95_ns 600 max_ns 600
+fold_unfold_two_viewports p50_ns 800 p95_ns 1100 max_ns 1300
+fixture scroll display_rows 128 compact_spans 68 folds 14 span_bytes 16
+source_payload scroll parsed_bytes 22812 existing_display_index_bytes 7224 fold_catalog_bytes 1696 seed_capacity_bytes 2048
+real_patch scroll backend Block_Prefix build_ns 1500 index_live_bytes 1784 index_peak_build_bytes 1784 index_peak_fold_bytes 1784 checksum 15023374906230306279
+readonly_viewport p50_ns 500 p95_ns 900 max_ns 2000
+fold_unfold_two_viewports p50_ns 1600 p95_ns 2200 max_ns 2800
+real_patch scroll backend Block_Hierarchy build_ns 1800 index_live_bytes 1912 index_peak_build_bytes 1912 index_peak_fold_bytes 1912 checksum 15023374906230306279
+readonly_viewport p50_ns 500 p95_ns 800 max_ns 900
+fold_unfold_two_viewports p50_ns 1600 p95_ns 2100 max_ns 2700
+real_patch scroll backend Measured_Tree build_ns 2200 index_live_bytes 1856 index_peak_build_bytes 1888 index_peak_fold_bytes 1856 checksum 15023374906230306279
+readonly_viewport p50_ns 500 p95_ns 800 max_ns 1100
+fold_unfold_two_viewports p50_ns 1600 p95_ns 2100 max_ns 3700
+fixture parser-addition display_rows 237 compact_spans 3 folds 1 span_bytes 16
+source_payload parser-addition parsed_bytes 18286 existing_display_index_bytes 13328 fold_catalog_bytes 80 seed_capacity_bytes 128
+real_patch parser-addition backend Block_Prefix build_ns 700 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5612396423846708097
+readonly_viewport p50_ns 700 p95_ns 700 max_ns 800
+fold_unfold_two_viewports p50_ns 900 p95_ns 1000 max_ns 1100
+real_patch parser-addition backend Block_Hierarchy build_ns 500 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5612396423846708097
+readonly_viewport p50_ns 700 p95_ns 700 max_ns 800
+fold_unfold_two_viewports p50_ns 900 p95_ns 1000 max_ns 1100
+real_patch parser-addition backend Measured_Tree build_ns 600 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 5612396423846708097
+readonly_viewport p50_ns 700 p95_ns 700 max_ns 800
+fold_unfold_two_viewports p50_ns 900 p95_ns 1000 max_ns 2000
+fixture edge-cases display_rows 22 compact_spans 19 folds 4 span_bytes 16
+source_payload edge-cases parsed_bytes 6145 existing_display_index_bytes 1288 fold_catalog_bytes 400 seed_capacity_bytes 512
+real_patch edge-cases backend Block_Prefix build_ns 600 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 956935131422824107
+readonly_viewport p50_ns 100 p95_ns 200 max_ns 300
+fold_unfold_two_viewports p50_ns 600 p95_ns 800 max_ns 800
+real_patch edge-cases backend Block_Hierarchy build_ns 500 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 956935131422824107
+readonly_viewport p50_ns 200 p95_ns 200 max_ns 300
+fold_unfold_two_viewports p50_ns 600 p95_ns 700 max_ns 900
+real_patch edge-cases backend Measured_Tree build_ns 600 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 956935131422824107
+readonly_viewport p50_ns 100 p95_ns 200 max_ns 200
+fold_unfold_two_viewports p50_ns 600 p95_ns 700 max_ns 800
+fixture empty display_rows 0 compact_spans 0 folds 0 span_bytes 16
+source_payload empty parsed_bytes 768 existing_display_index_bytes 56 fold_catalog_bytes 0 seed_capacity_bytes 0
+fixture binary display_rows 1 compact_spans 1 folds 0 span_bytes 16
+source_payload binary parsed_bytes 815 existing_display_index_bytes 112 fold_catalog_bytes 0 seed_capacity_bytes 128
+fixture zero-delete display_rows 3 compact_spans 2 folds 1 span_bytes 16
+source_payload zero-delete parsed_bytes 2065 existing_display_index_bytes 224 fold_catalog_bytes 80 seed_capacity_bytes 128
+real_patch zero-delete backend Block_Prefix build_ns 400 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 9949116991296253054
+readonly_viewport p50_ns 100 p95_ns 100 max_ns 100
+fold_unfold_two_viewports p50_ns 200 p95_ns 200 max_ns 300
+real_patch zero-delete backend Block_Hierarchy build_ns 400 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 9949116991296253054
+readonly_viewport p50_ns 0 p95_ns 0 max_ns 100
+fold_unfold_two_viewports p50_ns 100 p95_ns 200 max_ns 200
+real_patch zero-delete backend Measured_Tree build_ns 600 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 9949116991296253054
+readonly_viewport p50_ns 0 p95_ns 100 max_ns 100
+fold_unfold_two_viewports p50_ns 200 p95_ns 200 max_ns 300
+amplified_history_scroll repetitions 256 display_rows 32768 spans 17408 folds 128 existing_display_bytes 1835064 common_peak_prepare_bytes 8046721
+amplified_common_live_bytes 6203465 seed_capacity_bytes 524288
+real_patch amplified-scroll backend Block_Prefix build_ns 171500 index_live_bytes 317728 index_peak_build_bytes 317728 index_peak_fold_bytes 317728 checksum 71345599518449972
+readonly_viewport p50_ns 900 p95_ns 1100 max_ns 1400
+fold_unfold_two_viewports p50_ns 4100 p95_ns 4900 max_ns 5100
+real_patch amplified-scroll backend Block_Hierarchy build_ns 195100 index_live_bytes 365824 index_peak_build_bytes 365824 index_peak_fold_bytes 365824 checksum 71345599518449972
+readonly_viewport p50_ns 1000 p95_ns 1100 max_ns 1100
+fold_unfold_two_viewports p50_ns 2700 p95_ns 2900 max_ns 5400
+real_patch amplified-scroll backend Measured_Tree build_ns 179600 index_live_bytes 311328 index_peak_build_bytes 315952 index_peak_fold_bytes 311328 checksum 71345599518449972
+readonly_viewport p50_ns 1000 p95_ns 1100 max_ns 1900
+fold_unfold_two_viewports p50_ns 2700 p95_ns 2900 max_ns 6600
+PASS real History patch projection: all backends, actual rows, old/new axes, multi-folds and logical anchors
+process 3
+fixture toolbar display_rows 110 compact_spans 15 folds 3 span_bytes 16
+source_payload toolbar parsed_bytes 13631 existing_display_index_bytes 6216 fold_catalog_bytes 368 seed_capacity_bytes 256
+real_patch toolbar backend Block_Prefix build_ns 1700 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5648654931313552175
+readonly_viewport p50_ns 300 p95_ns 600 max_ns 700
+fold_unfold_two_viewports p50_ns 800 p95_ns 1100 max_ns 1300
+real_patch toolbar backend Block_Hierarchy build_ns 900 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5648654931313552175
+readonly_viewport p50_ns 300 p95_ns 600 max_ns 800
+fold_unfold_two_viewports p50_ns 700 p95_ns 1100 max_ns 1700
+real_patch toolbar backend Measured_Tree build_ns 800 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 5648654931313552175
+readonly_viewport p50_ns 300 p95_ns 500 max_ns 600
+fold_unfold_two_viewports p50_ns 700 p95_ns 1100 max_ns 2000
+fixture scroll display_rows 128 compact_spans 68 folds 14 span_bytes 16
+source_payload scroll parsed_bytes 22812 existing_display_index_bytes 7224 fold_catalog_bytes 1696 seed_capacity_bytes 2048
+real_patch scroll backend Block_Prefix build_ns 1600 index_live_bytes 1784 index_peak_build_bytes 1784 index_peak_fold_bytes 1784 checksum 15023374906230306279
+readonly_viewport p50_ns 500 p95_ns 900 max_ns 1900
+fold_unfold_two_viewports p50_ns 1600 p95_ns 2100 max_ns 2700
+real_patch scroll backend Block_Hierarchy build_ns 1900 index_live_bytes 1912 index_peak_build_bytes 1912 index_peak_fold_bytes 1912 checksum 15023374906230306279
+readonly_viewport p50_ns 500 p95_ns 800 max_ns 900
+fold_unfold_two_viewports p50_ns 1600 p95_ns 2100 max_ns 3000
+real_patch scroll backend Measured_Tree build_ns 2300 index_live_bytes 1856 index_peak_build_bytes 1888 index_peak_fold_bytes 1856 checksum 15023374906230306279
+readonly_viewport p50_ns 500 p95_ns 800 max_ns 900
+fold_unfold_two_viewports p50_ns 1600 p95_ns 2000 max_ns 2100
+fixture parser-addition display_rows 237 compact_spans 3 folds 1 span_bytes 16
+source_payload parser-addition parsed_bytes 18286 existing_display_index_bytes 13328 fold_catalog_bytes 80 seed_capacity_bytes 128
+real_patch parser-addition backend Block_Prefix build_ns 700 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5612396423846708097
+readonly_viewport p50_ns 600 p95_ns 700 max_ns 700
+fold_unfold_two_viewports p50_ns 900 p95_ns 1000 max_ns 1000
+real_patch parser-addition backend Block_Hierarchy build_ns 500 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5612396423846708097
+readonly_viewport p50_ns 700 p95_ns 700 max_ns 700
+fold_unfold_two_viewports p50_ns 900 p95_ns 1000 max_ns 1000
+real_patch parser-addition backend Measured_Tree build_ns 600 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 5612396423846708097
+readonly_viewport p50_ns 700 p95_ns 700 max_ns 1300
+fold_unfold_two_viewports p50_ns 900 p95_ns 1000 max_ns 1100
+fixture edge-cases display_rows 22 compact_spans 19 folds 4 span_bytes 16
+source_payload edge-cases parsed_bytes 6145 existing_display_index_bytes 1288 fold_catalog_bytes 400 seed_capacity_bytes 512
+real_patch edge-cases backend Block_Prefix build_ns 800 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 956935131422824107
+readonly_viewport p50_ns 100 p95_ns 200 max_ns 300
+fold_unfold_two_viewports p50_ns 600 p95_ns 800 max_ns 800
+real_patch edge-cases backend Block_Hierarchy build_ns 600 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 956935131422824107
+readonly_viewport p50_ns 100 p95_ns 200 max_ns 200
+fold_unfold_two_viewports p50_ns 600 p95_ns 700 max_ns 2400
+real_patch edge-cases backend Measured_Tree build_ns 700 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 956935131422824107
+readonly_viewport p50_ns 100 p95_ns 200 max_ns 200
+fold_unfold_two_viewports p50_ns 600 p95_ns 700 max_ns 800
+fixture empty display_rows 0 compact_spans 0 folds 0 span_bytes 16
+source_payload empty parsed_bytes 768 existing_display_index_bytes 56 fold_catalog_bytes 0 seed_capacity_bytes 0
+fixture binary display_rows 1 compact_spans 1 folds 0 span_bytes 16
+source_payload binary parsed_bytes 815 existing_display_index_bytes 112 fold_catalog_bytes 0 seed_capacity_bytes 128
+fixture zero-delete display_rows 3 compact_spans 2 folds 1 span_bytes 16
+source_payload zero-delete parsed_bytes 2065 existing_display_index_bytes 224 fold_catalog_bytes 80 seed_capacity_bytes 128
+real_patch zero-delete backend Block_Prefix build_ns 500 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 9949116991296253054
+readonly_viewport p50_ns 100 p95_ns 100 max_ns 100
+fold_unfold_two_viewports p50_ns 200 p95_ns 200 max_ns 400
+real_patch zero-delete backend Block_Hierarchy build_ns 300 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 9949116991296253054
+readonly_viewport p50_ns 100 p95_ns 100 max_ns 100
+fold_unfold_two_viewports p50_ns 200 p95_ns 200 max_ns 300
+real_patch zero-delete backend Measured_Tree build_ns 500 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 9949116991296253054
+readonly_viewport p50_ns 0 p95_ns 100 max_ns 100
+fold_unfold_two_viewports p50_ns 200 p95_ns 200 max_ns 200
+amplified_history_scroll repetitions 256 display_rows 32768 spans 17408 folds 128 existing_display_bytes 1835064 common_peak_prepare_bytes 8046721
+amplified_common_live_bytes 6203465 seed_capacity_bytes 524288
+real_patch amplified-scroll backend Block_Prefix build_ns 172700 index_live_bytes 317728 index_peak_build_bytes 317728 index_peak_fold_bytes 317728 checksum 71345599518449972
+readonly_viewport p50_ns 1000 p95_ns 1100 max_ns 1200
+fold_unfold_two_viewports p50_ns 4100 p95_ns 4900 max_ns 5700
+real_patch amplified-scroll backend Block_Hierarchy build_ns 179600 index_live_bytes 365824 index_peak_build_bytes 365824 index_peak_fold_bytes 365824 checksum 71345599518449972
+readonly_viewport p50_ns 900 p95_ns 1100 max_ns 1800
+fold_unfold_two_viewports p50_ns 2700 p95_ns 2900 max_ns 4700
+real_patch amplified-scroll backend Measured_Tree build_ns 184900 index_live_bytes 311328 index_peak_build_bytes 315952 index_peak_fold_bytes 311328 checksum 71345599518449972
+readonly_viewport p50_ns 900 p95_ns 1100 max_ns 1100
+fold_unfold_two_viewports p50_ns 2700 p95_ns 2900 max_ns 3000
+PASS real History patch projection: all backends, actual rows, old/new axes, multi-folds and logical anchors
+process 4
+fixture toolbar display_rows 110 compact_spans 15 folds 3 span_bytes 16
+source_payload toolbar parsed_bytes 13631 existing_display_index_bytes 6216 fold_catalog_bytes 368 seed_capacity_bytes 256
+real_patch toolbar backend Block_Prefix build_ns 1900 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5648654931313552175
+readonly_viewport p50_ns 300 p95_ns 600 max_ns 1100
+fold_unfold_two_viewports p50_ns 800 p95_ns 1200 max_ns 14100
+real_patch toolbar backend Block_Hierarchy build_ns 2000 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5648654931313552175
+readonly_viewport p50_ns 300 p95_ns 600 max_ns 900
+fold_unfold_two_viewports p50_ns 800 p95_ns 1100 max_ns 1800
+real_patch toolbar backend Measured_Tree build_ns 1600 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 5648654931313552175
+readonly_viewport p50_ns 300 p95_ns 600 max_ns 600
+fold_unfold_two_viewports p50_ns 700 p95_ns 1100 max_ns 1200
+fixture scroll display_rows 128 compact_spans 68 folds 14 span_bytes 16
+source_payload scroll parsed_bytes 22812 existing_display_index_bytes 7224 fold_catalog_bytes 1696 seed_capacity_bytes 2048
+real_patch scroll backend Block_Prefix build_ns 1600 index_live_bytes 1784 index_peak_build_bytes 1784 index_peak_fold_bytes 1784 checksum 15023374906230306279
+readonly_viewport p50_ns 500 p95_ns 800 max_ns 900
+fold_unfold_two_viewports p50_ns 1600 p95_ns 2200 max_ns 3000
+real_patch scroll backend Block_Hierarchy build_ns 1300 index_live_bytes 1912 index_peak_build_bytes 1912 index_peak_fold_bytes 1912 checksum 15023374906230306279
+readonly_viewport p50_ns 500 p95_ns 800 max_ns 1100
+fold_unfold_two_viewports p50_ns 1600 p95_ns 2000 max_ns 2300
+real_patch scroll backend Measured_Tree build_ns 1900 index_live_bytes 1856 index_peak_build_bytes 1888 index_peak_fold_bytes 1856 checksum 15023374906230306279
+readonly_viewport p50_ns 500 p95_ns 800 max_ns 1000
+fold_unfold_two_viewports p50_ns 1600 p95_ns 2000 max_ns 2300
+fixture parser-addition display_rows 237 compact_spans 3 folds 1 span_bytes 16
+source_payload parser-addition parsed_bytes 18286 existing_display_index_bytes 13328 fold_catalog_bytes 80 seed_capacity_bytes 128
+real_patch parser-addition backend Block_Prefix build_ns 800 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5612396423846708097
+readonly_viewport p50_ns 700 p95_ns 700 max_ns 900
+fold_unfold_two_viewports p50_ns 900 p95_ns 1000 max_ns 1300
+real_patch parser-addition backend Block_Hierarchy build_ns 600 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5612396423846708097
+readonly_viewport p50_ns 700 p95_ns 800 max_ns 1200
+fold_unfold_two_viewports p50_ns 900 p95_ns 1200 max_ns 1300
+real_patch parser-addition backend Measured_Tree build_ns 1100 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 5612396423846708097
+readonly_viewport p50_ns 800 p95_ns 1000 max_ns 1000
+fold_unfold_two_viewports p50_ns 1200 p95_ns 1300 max_ns 1600
+fixture edge-cases display_rows 22 compact_spans 19 folds 4 span_bytes 16
+source_payload edge-cases parsed_bytes 6145 existing_display_index_bytes 1288 fold_catalog_bytes 400 seed_capacity_bytes 512
+real_patch edge-cases backend Block_Prefix build_ns 900 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 956935131422824107
+readonly_viewport p50_ns 100 p95_ns 200 max_ns 300
+fold_unfold_two_viewports p50_ns 600 p95_ns 800 max_ns 900
+real_patch edge-cases backend Block_Hierarchy build_ns 700 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 956935131422824107
+readonly_viewport p50_ns 100 p95_ns 200 max_ns 200
+fold_unfold_two_viewports p50_ns 600 p95_ns 700 max_ns 800
+real_patch edge-cases backend Measured_Tree build_ns 600 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 956935131422824107
+readonly_viewport p50_ns 200 p95_ns 200 max_ns 200
+fold_unfold_two_viewports p50_ns 600 p95_ns 700 max_ns 800
+fixture empty display_rows 0 compact_spans 0 folds 0 span_bytes 16
+source_payload empty parsed_bytes 768 existing_display_index_bytes 56 fold_catalog_bytes 0 seed_capacity_bytes 0
+fixture binary display_rows 1 compact_spans 1 folds 0 span_bytes 16
+source_payload binary parsed_bytes 815 existing_display_index_bytes 112 fold_catalog_bytes 0 seed_capacity_bytes 128
+fixture zero-delete display_rows 3 compact_spans 2 folds 1 span_bytes 16
+source_payload zero-delete parsed_bytes 2065 existing_display_index_bytes 224 fold_catalog_bytes 80 seed_capacity_bytes 128
+real_patch zero-delete backend Block_Prefix build_ns 500 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 9949116991296253054
+readonly_viewport p50_ns 100 p95_ns 100 max_ns 100
+fold_unfold_two_viewports p50_ns 200 p95_ns 200 max_ns 400
+real_patch zero-delete backend Block_Hierarchy build_ns 400 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 9949116991296253054
+readonly_viewport p50_ns 100 p95_ns 100 max_ns 100
+fold_unfold_two_viewports p50_ns 200 p95_ns 200 max_ns 300
+real_patch zero-delete backend Measured_Tree build_ns 400 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 9949116991296253054
+readonly_viewport p50_ns 0 p95_ns 100 max_ns 100
+fold_unfold_two_viewports p50_ns 200 p95_ns 200 max_ns 2300
+amplified_history_scroll repetitions 256 display_rows 32768 spans 17408 folds 128 existing_display_bytes 1835064 common_peak_prepare_bytes 8046721
+amplified_common_live_bytes 6203465 seed_capacity_bytes 524288
+real_patch amplified-scroll backend Block_Prefix build_ns 172000 index_live_bytes 317728 index_peak_build_bytes 317728 index_peak_fold_bytes 317728 checksum 71345599518449972
+readonly_viewport p50_ns 1000 p95_ns 1100 max_ns 2200
+fold_unfold_two_viewports p50_ns 4200 p95_ns 4900 max_ns 6200
+real_patch amplified-scroll backend Block_Hierarchy build_ns 179500 index_live_bytes 365824 index_peak_build_bytes 365824 index_peak_fold_bytes 365824 checksum 71345599518449972
+readonly_viewport p50_ns 900 p95_ns 1100 max_ns 1100
+fold_unfold_two_viewports p50_ns 2700 p95_ns 2800 max_ns 3000
+real_patch amplified-scroll backend Measured_Tree build_ns 178800 index_live_bytes 311328 index_peak_build_bytes 315952 index_peak_fold_bytes 311328 checksum 71345599518449972
+readonly_viewport p50_ns 1000 p95_ns 1100 max_ns 1100
+fold_unfold_two_viewports p50_ns 2700 p95_ns 2900 max_ns 3000
+PASS real History patch projection: all backends, actual rows, old/new axes, multi-folds and logical anchors
+process 5
+fixture toolbar display_rows 110 compact_spans 15 folds 3 span_bytes 16
+source_payload toolbar parsed_bytes 13631 existing_display_index_bytes 6216 fold_catalog_bytes 368 seed_capacity_bytes 256
+real_patch toolbar backend Block_Prefix build_ns 1600 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5648654931313552175
+readonly_viewport p50_ns 300 p95_ns 600 max_ns 600
+fold_unfold_two_viewports p50_ns 800 p95_ns 1100 max_ns 1400
+real_patch toolbar backend Block_Hierarchy build_ns 800 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5648654931313552175
+readonly_viewport p50_ns 300 p95_ns 600 max_ns 600
+fold_unfold_two_viewports p50_ns 800 p95_ns 1100 max_ns 1300
+real_patch toolbar backend Measured_Tree build_ns 800 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 5648654931313552175
+readonly_viewport p50_ns 300 p95_ns 600 max_ns 900
+fold_unfold_two_viewports p50_ns 800 p95_ns 1100 max_ns 1500
+fixture scroll display_rows 128 compact_spans 68 folds 14 span_bytes 16
+source_payload scroll parsed_bytes 22812 existing_display_index_bytes 7224 fold_catalog_bytes 1696 seed_capacity_bytes 2048
+real_patch scroll backend Block_Prefix build_ns 1400 index_live_bytes 1784 index_peak_build_bytes 1784 index_peak_fold_bytes 1784 checksum 15023374906230306279
+readonly_viewport p50_ns 500 p95_ns 800 max_ns 1000
+fold_unfold_two_viewports p50_ns 1600 p95_ns 2100 max_ns 3000
+real_patch scroll backend Block_Hierarchy build_ns 1100 index_live_bytes 1912 index_peak_build_bytes 1912 index_peak_fold_bytes 1912 checksum 15023374906230306279
+readonly_viewport p50_ns 500 p95_ns 800 max_ns 2000
+fold_unfold_two_viewports p50_ns 1600 p95_ns 2100 max_ns 38500
+real_patch scroll backend Measured_Tree build_ns 3300 index_live_bytes 1856 index_peak_build_bytes 1888 index_peak_fold_bytes 1856 checksum 15023374906230306279
+readonly_viewport p50_ns 500 p95_ns 800 max_ns 46600
+fold_unfold_two_viewports p50_ns 1600 p95_ns 2100 max_ns 3200
+fixture parser-addition display_rows 237 compact_spans 3 folds 1 span_bytes 16
+source_payload parser-addition parsed_bytes 18286 existing_display_index_bytes 13328 fold_catalog_bytes 80 seed_capacity_bytes 128
+real_patch parser-addition backend Block_Prefix build_ns 800 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5612396423846708097
+readonly_viewport p50_ns 700 p95_ns 700 max_ns 700
+fold_unfold_two_viewports p50_ns 900 p95_ns 1000 max_ns 1000
+real_patch parser-addition backend Block_Hierarchy build_ns 600 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 5612396423846708097
+readonly_viewport p50_ns 700 p95_ns 700 max_ns 700
+fold_unfold_two_viewports p50_ns 900 p95_ns 1000 max_ns 1000
+real_patch parser-addition backend Measured_Tree build_ns 600 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 5612396423846708097
+readonly_viewport p50_ns 600 p95_ns 700 max_ns 700
+fold_unfold_two_viewports p50_ns 900 p95_ns 1000 max_ns 1000
+fixture edge-cases display_rows 22 compact_spans 19 folds 4 span_bytes 16
+source_payload edge-cases parsed_bytes 6145 existing_display_index_bytes 1288 fold_catalog_bytes 400 seed_capacity_bytes 512
+real_patch edge-cases backend Block_Prefix build_ns 600 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 956935131422824107
+readonly_viewport p50_ns 200 p95_ns 200 max_ns 200
+fold_unfold_two_viewports p50_ns 600 p95_ns 700 max_ns 900
+real_patch edge-cases backend Block_Hierarchy build_ns 500 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 956935131422824107
+readonly_viewport p50_ns 100 p95_ns 200 max_ns 200
+fold_unfold_two_viewports p50_ns 600 p95_ns 800 max_ns 1700
+real_patch edge-cases backend Measured_Tree build_ns 700 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 956935131422824107
+readonly_viewport p50_ns 100 p95_ns 200 max_ns 200
+fold_unfold_two_viewports p50_ns 600 p95_ns 700 max_ns 900
+fixture empty display_rows 0 compact_spans 0 folds 0 span_bytes 16
+source_payload empty parsed_bytes 768 existing_display_index_bytes 56 fold_catalog_bytes 0 seed_capacity_bytes 0
+fixture binary display_rows 1 compact_spans 1 folds 0 span_bytes 16
+source_payload binary parsed_bytes 815 existing_display_index_bytes 112 fold_catalog_bytes 0 seed_capacity_bytes 128
+fixture zero-delete display_rows 3 compact_spans 2 folds 1 span_bytes 16
+source_payload zero-delete parsed_bytes 2065 existing_display_index_bytes 224 fold_catalog_bytes 80 seed_capacity_bytes 128
+real_patch zero-delete backend Block_Prefix build_ns 400 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 9949116991296253054
+readonly_viewport p50_ns 100 p95_ns 100 max_ns 100
+fold_unfold_two_viewports p50_ns 200 p95_ns 200 max_ns 300
+real_patch zero-delete backend Block_Hierarchy build_ns 300 index_live_bytes 616 index_peak_build_bytes 616 index_peak_fold_bytes 616 checksum 9949116991296253054
+readonly_viewport p50_ns 100 p95_ns 100 max_ns 100
+fold_unfold_two_viewports p50_ns 200 p95_ns 200 max_ns 200
+real_patch zero-delete backend Measured_Tree build_ns 600 index_live_bytes 560 index_peak_build_bytes 568 index_peak_fold_bytes 560 checksum 9949116991296253054
+readonly_viewport p50_ns 0 p95_ns 100 max_ns 100
+fold_unfold_two_viewports p50_ns 200 p95_ns 200 max_ns 200
+amplified_history_scroll repetitions 256 display_rows 32768 spans 17408 folds 128 existing_display_bytes 1835064 common_peak_prepare_bytes 8046721
+amplified_common_live_bytes 6203465 seed_capacity_bytes 524288
+real_patch amplified-scroll backend Block_Prefix build_ns 173700 index_live_bytes 317728 index_peak_build_bytes 317728 index_peak_fold_bytes 317728 checksum 71345599518449972
+readonly_viewport p50_ns 1000 p95_ns 1100 max_ns 2100
+fold_unfold_two_viewports p50_ns 4100 p95_ns 4900 max_ns 5600
+real_patch amplified-scroll backend Block_Hierarchy build_ns 179400 index_live_bytes 365824 index_peak_build_bytes 365824 index_peak_fold_bytes 365824 checksum 71345599518449972
+readonly_viewport p50_ns 900 p95_ns 1000 max_ns 2300
+fold_unfold_two_viewports p50_ns 2600 p95_ns 2800 max_ns 3000
+real_patch amplified-scroll backend Measured_Tree build_ns 175100 index_live_bytes 311328 index_peak_build_bytes 315952 index_peak_fold_bytes 311328 checksum 71345599518449972
+readonly_viewport p50_ns 1000 p95_ns 1100 max_ns 1100
+fold_unfold_two_viewports p50_ns 2700 p95_ns 2900 max_ns 4100
+PASS real History patch projection: all backends, actual rows, old/new axes, multi-folds and logical anchors

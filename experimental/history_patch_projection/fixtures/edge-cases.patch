@@ -1,0 +1,25 @@
+diff --git a/example.txt b/example.txt
+old mode 100644
+new mode 100755
+--- a/example.txt
++++ b/example.txt
+@@ -0,0 +1,3 @@
++inserted one
++
++inserted three
+@@ -10,5 +13,5 @@
+ context one
+-removed
++added
+ context two
+ 
+ context four
+\ No newline at end of file
+@@ -40,2 +43,0 @@
+-deleted one
+-deleted two
+@@ -60,3 +61,4 @@
+ later one
++later added
+ later two
+ later three
