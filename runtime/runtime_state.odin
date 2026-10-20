@@ -292,6 +292,9 @@ trace_mutation :: proc(rt: ^Runtime, reason: string) {
 
 invalidate_root :: proc(rt: ^Runtime, reason := "explicit root invalidation") {
 	rt.invalidated = true
+	when APP_MUTATION_DIAGNOSTICS_ENABLED {
+		application_mutation_note_request(rt, .Description)
+	}
 	cause_ctx := trace_current_cause(rt)
 	scope: Cause_Scope
 	if cause_ctx.id == 0 {
@@ -310,6 +313,9 @@ invalidate_root :: proc(rt: ^Runtime, reason := "explicit root invalidation") {
 // caret, selection, and other interaction-only visual changes.
 request_presentation :: proc(rt: ^Runtime, reason := "retained presentation changed") {
 	rt.presentation_pending = true
+	when APP_MUTATION_DIAGNOSTICS_ENABLED {
+		application_mutation_note_request(rt, .Presentation)
+	}
 	record_trace(rt, .Invalidation, 0, reason)
 	note_pending_work_cause(rt, trace_current_cause(rt))
 }
@@ -399,6 +405,9 @@ invalidate_region :: proc(rt: ^Runtime, key: string, revision: u64, reason := "e
 		node.region_cached = false
 	}
 	rt.invalidated = true
+	when APP_MUTATION_DIAGNOSTICS_ENABLED {
+		application_mutation_note_request(rt, .Description)
+	}
 	cause_ctx := trace_current_cause(rt)
 	scope: Cause_Scope
 	if cause_ctx.id == 0 {

@@ -268,6 +268,10 @@ need:
   Shift-click extends the current selection;
 - a custom GPU surface for a bounded, high-frequency visualization.
 
+During development, [application mutation diagnostics](application-mutation-diagnostics.md)
+can check that selected app-owned revisions schedule the corresponding
+description or presentation work.
+
 For aligned label/value layouts, use the small retained Grid rather than
 nesting Rows to reproduce the same columns:
 
