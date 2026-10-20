@@ -1130,6 +1130,13 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.layout_roots)
 	delete(rt.layout_visit_probe)
 	delete(rt.paint_queue)
+	when APP_MUTATION_DIAGNOSTICS_ENABLED {
+		for entry in rt.application_mutation_tracking.entries {
+			if len(entry.domain) > 0 { delete(entry.domain, rt.persistent_allocator) }
+			if len(entry.reason) > 0 { delete(entry.reason, rt.persistent_allocator) }
+		}
+		delete(rt.application_mutation_tracking.entries)
+	}
 	for entry in rt.trace.events { if entry.reason_owned && len(entry.reason) > 0 { delete(entry.reason, rt.persistent_allocator) } }
 	delete(rt.trace.events)
 	for entry in rt.actions {

@@ -55,6 +55,7 @@ Inspector_Cause :: struct {
 	action_reason: string,
 	invalidation: string,
 	mutation: string,
+	mutation_diagnostic: string,
 	last_reason: string,
 	visits: [Trace_Kind]u64,
 }
@@ -203,6 +204,7 @@ inspector_overlay_recent_causes :: proc(inspected: ^Runtime, allocator := contex
 		case .Action: if len(cause.action_reason) == 0 { cause.action_reason = event.reason }
 		case .Invalidation: if len(cause.invalidation) == 0 { cause.invalidation = event.reason }
 		case .Mutation: if len(cause.mutation) == 0 { cause.mutation = event.reason }
+		case .Mutation_Diagnostic: if len(cause.mutation_diagnostic) == 0 { cause.mutation_diagnostic = event.reason }
 		}
 	}
 	return causes
@@ -398,6 +400,7 @@ inspector_overlay_causes :: proc(ui: ^UI, inspected: ^Runtime, height: f32) {
 		} else if len(cause.action_reason)>0 { append(&lines,fmt.tprintf("  Action: %s",cause.action_reason)) }
 		if len(cause.mutation)>0 { append(&lines,fmt.tprintf("  Mutation: %s",cause.mutation)) }
 		if len(cause.invalidation)>0 { append(&lines,fmt.tprintf("  Invalidated: %s",cause.invalidation)) }
+		if len(cause.mutation_diagnostic)>0 { append(&lines,fmt.tprintf("  Mutation diagnostic: %s",cause.mutation_diagnostic)) }
 		append(&lines,fmt.tprintf("  Stages: reconcile=%d layout=%d paint=%d composite=%d",cause.visits[.Reconcile],cause.visits[.Layout],cause.visits[.Paint],cause.visits[.Composite]))
 		append(&lines,fmt.tprintf("  Submissions: %d  pointer=%d focus=%d retire=%d",cause.visits[.Submit],cause.visits[.Pointer],cause.visits[.Focus],cause.visits[.Retire]))
 		append(&lines,fmt.tprintf("  Last: node=%d %s",cause.node,cause.last_reason),"")

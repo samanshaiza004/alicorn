@@ -1053,6 +1053,46 @@ Runtime_Config :: struct {
 	allocation_stats:          ^Runtime_Allocation_Stats,
 }
 
+// Application_Mutation_Diagnostics is compile-time empty unless an Odin debug
+// build enables ALICORN_APP_MUTATION_DIAGNOSTICS. The app reports its own
+// mutation domains; Alicorn only checks whether the matching UI work was
+// explicitly requested.
+APP_MUTATION_DIAGNOSTICS_ENABLED :: ODIN_DEBUG && #config(ALICORN_APP_MUTATION_DIAGNOSTICS, false)
+
+Application_Mutation_Impact :: enum {
+	Background,
+	Description,
+	Presentation,
+}
+
+when APP_MUTATION_DIAGNOSTICS_ENABLED {
+	Application_Mutation_Entry :: struct {
+		id: u64,
+		domain: string,
+		impact: Application_Mutation_Impact,
+		before_revision: u64,
+		reason: string,
+		description_requested: bool,
+		presentation_requested: bool,
+		cause: Cause_Context,
+	}
+
+	Application_Mutation_Tracking :: struct {
+		entries: [dynamic]Application_Mutation_Entry,
+		sequence: u64,
+	}
+
+	Application_Mutation_Scope :: struct {
+		runtime: ^Runtime,
+		id: u64,
+		cause_scope: Cause_Scope,
+		active: bool,
+	}
+} else {
+	Application_Mutation_Tracking :: struct {}
+	Application_Mutation_Scope :: struct {}
+}
+
 Description :: struct {
 	id:          Node_ID,
 	parent:      Node_ID,
@@ -1602,6 +1642,7 @@ Trace_Kind :: enum {
 	Submit,
 	Retire,
 	Restore,
+	Mutation_Diagnostic,
 }
 
 Trace_Event :: struct {
@@ -1809,6 +1850,7 @@ Runtime :: struct {
 	last_invalidation_reason: string,
 	stats:       Frame_Stats,
 	trace:       Trace_Ring,
+	application_mutation_tracking: Application_Mutation_Tracking,
 	actions:     [dynamic]Action_Entry,
 	cause_sequence: u64,
 	active_cause: Cause_Context,

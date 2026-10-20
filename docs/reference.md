@@ -93,6 +93,10 @@ rejects a revision lower than the retained high-water mark. These checks are
 always enabled, including release builds; `inspect(runtime)` exposes the hard
 error and its correction hint.
 
+For optional debug-time checks around app-owned state updates, see
+[application mutation diagnostics](application-mutation-diagnostics.md). The
+checker verifies only the mutation scopes the application explicitly reports.
+
 ## Content and layout
 
 | API | Use |

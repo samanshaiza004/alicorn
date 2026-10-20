@@ -86,6 +86,9 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 	rt.images = make(map[u64]Image_Resource, allocator=rt.persistent_allocator)
 	rt.gpu_surface_images = make(map[Node_ID][dynamic]GPU_Surface_Image, allocator=rt.persistent_allocator)
 	rt.trace = Trace_Ring{events = make([dynamic]Trace_Event, capacity, allocator=rt.persistent_allocator)}
+	when APP_MUTATION_DIAGNOSTICS_ENABLED {
+		rt.application_mutation_tracking.entries = make([dynamic]Application_Mutation_Entry, 0, allocator=rt.persistent_allocator)
+	}
 	rt.actions = make([dynamic]Action_Entry, 0, allocator=rt.persistent_allocator)
 	rt.text_engine = new_text_engine("runtime text", false, rt.persistent_allocator)
 	return rt
