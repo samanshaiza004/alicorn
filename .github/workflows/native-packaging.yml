@@ -76,11 +76,19 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Odin
-        uses: laytan/setup-odin@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          release: nightly
+      - name: Install supported Odin SDK
+        shell: bash
+        run: |
+          odin_root="$RUNNER_TEMP/alicorn-odin"
+          sh tools/setup_macos_odin.sh "$odin_root"
+          echo "$odin_root" >> "$GITHUB_PATH"
+          echo "ODIN_ROOT=$odin_root" >> "$GITHUB_ENV"
+          echo "ALICORN_ODIN=$odin_root/odin" >> "$GITHUB_ENV"
+      - name: Report Odin installation
+        shell: sh
+        run: |
+          echo "Odin path: $(command -v odin)"
+          odin version
       - name: Cache AccessKit C release
         uses: actions/cache@v4
         with:
