@@ -163,4 +163,81 @@ when APP_MUTATION_DIAGNOSTICS_ENABLED {
 		testing.expect(t, rt.active_cause.id == 0,
 			"ending nested mutation scopes should restore the prior causal context")
 	}
+
+	@(test)
+	test_application_mutation_out_of_order_end_reports_and_recovers :: proc(t: ^testing.T) {
+		rt := new_runtime(Rect{0, 0, 240, 120}, Runtime_Config{trace_capacity=32})
+		defer destroy_runtime(&rt)
+
+		outer := application_mutation_begin(&rt, "outer update", .Description, 1)
+		inner := application_mutation_begin(&rt, "inner update", .Presentation, 2)
+		application_mutation_end(&rt, &outer, 1)
+		testing.expect(t, application_mutation_test_has_trace(&rt, .Mutation_Diagnostic, "reverse order"),
+			"ending an outer scope first should report the LIFO misuse")
+		testing.expect(t, len(rt.application_mutation_tracking.entries) == 2 && outer.active && inner.active,
+			"an out-of-order end should leave both scopes available for orderly recovery")
+
+		application_mutation_end(&rt, &inner, 2)
+		application_mutation_end(&rt, &outer, 1)
+		testing.expect(t, len(rt.application_mutation_tracking.entries) == 0 && rt.active_cause.id == 0,
+			"closing inner then outer should release tracking entries and restore causal context")
+
+		follow_up := application_mutation_begin(&rt, "follow-up update", .Description, 7)
+		follow_up_cause := follow_up.cause_scope.cause.id
+		application_mutation_end(&rt, &follow_up, 8)
+		trace := trace_snapshot(&rt)
+		defer delete(trace)
+		follow_up_attributed := false
+		for event in trace {
+			if event.kind == .Mutation_Diagnostic && strings.contains(event.reason, "follow-up update") {
+				follow_up_attributed = event.cause_id == follow_up_cause
+			}
+		}
+		testing.expect(t, follow_up_attributed,
+			"a later finding should use its own cause after recovering from an out-of-order end")
+	}
+
+	@(test)
+	test_application_mutation_wrong_runtime_reports_on_owner_and_closes_top_scope :: proc(t: ^testing.T) {
+		owner := new_runtime(Rect{0, 0, 240, 120}, Runtime_Config{trace_capacity=32})
+		defer destroy_runtime(&owner)
+		other := new_runtime(Rect{0, 0, 240, 120}, Runtime_Config{trace_capacity=32})
+		defer destroy_runtime(&other)
+
+		scope := application_mutation_begin(&owner, "owned update", .Description, 4)
+		application_mutation_end(&other, &scope, 4)
+		testing.expect(t, application_mutation_test_has_trace(&owner, .Mutation_Diagnostic, "different Runtime"),
+			"a mismatched Runtime should be reported by the scope's owner")
+		testing.expect(t, application_mutation_test_count_trace(&other, .Mutation_Diagnostic) == 0,
+			"a mismatched Runtime should not receive the owner's diagnostic")
+		testing.expect(t, !scope.active && len(owner.application_mutation_tracking.entries) == 0 && owner.active_cause.id == 0,
+			"a topmost scope passed to another Runtime should still close against its owner")
+
+		next := application_mutation_begin(&owner, "next owned update", .Description, 9)
+		next_cause := next.cause_scope.cause.id
+		application_mutation_end(&owner, &next, 10)
+		trace := trace_snapshot(&owner)
+		defer delete(trace)
+		next_attributed := false
+		for event in trace {
+			if event.kind == .Mutation_Diagnostic && strings.contains(event.reason, "next owned update") {
+				next_attributed = event.cause_id == next_cause
+			}
+		}
+		testing.expect(t, next_attributed,
+			"a later mutation should not inherit attribution from a scope ended with the wrong Runtime")
+	}
+
+	@(test)
+	test_application_mutation_destroy_releases_unclosed_scope_allocations :: proc(t: ^testing.T) {
+		stats := Runtime_Allocation_Stats{}
+		rt := new_runtime(Rect{0, 0, 240, 120}, Runtime_Config{allocation_stats=&stats})
+		scope := application_mutation_begin(&rt, "unclosed document update", .Description, 3,
+			"fixture teardown with a still-open scope")
+		testing.expect(t, scope.active && len(rt.application_mutation_tracking.entries) == 1,
+			"the fixture should retain one open scope before Runtime teardown")
+		destroy_runtime(&rt)
+		testing.expect(t, stats.persistent_requested_bytes_live == 0,
+			"destroying a Runtime with an open scope should release its tracking and trace allocations")
+	}
 }

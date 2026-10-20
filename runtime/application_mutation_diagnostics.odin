@@ -45,6 +45,10 @@ application_mutation_begin :: proc(
 // application_mutation_end reports a changed revision that did not schedule
 // its required UI work. The finding is advisory trace data and does not make
 // the runtime enter its hard-error state. Scopes must be ended in LIFO order.
+// An out-of-order call records a misuse diagnostic and leaves the stack open
+// so the caller can close inner scopes and retry. Passing another Runtime
+// records a diagnostic on the owning Runtime; a topmost scope is still closed
+// against that owner. Runtime destruction releases any unclosed entries.
 application_mutation_end :: proc(rt: ^Runtime, scope: ^Application_Mutation_Scope, after_revision: u64) {
 	when APP_MUTATION_DIAGNOSTICS_ENABLED {
 		if scope == nil || !scope.active { return }
@@ -92,9 +96,11 @@ application_mutation_end :: proc(rt: ^Runtime, scope: ^Application_Mutation_Scop
 	}
 }
 
-// application_mutation_note_request links runtime scheduling APIs to every
-// open application mutation. A root description rebuild satisfies either UI
-// impact; presentation-only work cannot satisfy a description mutation.
+// application_mutation_note_request tracks scheduling, not dependency
+// correctness: the checker does not know which region a mutation affects.
+// Requests made while nested scopes are open count for every open scope. A
+// root description rebuild satisfies either UI impact; presentation-only
+// work cannot satisfy a description mutation.
 application_mutation_note_request :: proc(rt: ^Runtime, requested: Application_Mutation_Impact) {
 	when APP_MUTATION_DIAGNOSTICS_ENABLED {
 		for &entry in rt.application_mutation_tracking.entries {
