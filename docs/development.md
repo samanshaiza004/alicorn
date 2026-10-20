@@ -49,6 +49,40 @@ For focused work:
 The scripts accept `-Odin PATH` on PowerShell and `--odin PATH` on Unix-like
 shells. They otherwise use `ALICORN_ODIN`, then `odin` on `PATH`.
 
+### macOS CI toolchain
+
+Both macOS workflows install the complete official
+[Odin `dev-2026-09` release](https://github.com/odin-lang/Odin/releases/tag/dev-2026-09),
+whose macOS archives contain `dev-2026-09-nightly:a2fb372` from September 1.
+This matches the supported compiler in [Getting Started](getting-started.md).
+`tools/setup_macos_odin.sh` pins each architecture's archive SHA-256, verifies it
+before extraction, and checks the SDK directories and compiler version. CI puts
+this SDK first on `PATH` and sets `ODIN_ROOT` and `ALICORN_ODIN` to the same
+installation, so an unrelated SDK cannot supply its libraries.
+
+To reproduce with a fresh installation (no Homebrew Odin changes):
+
+```sh
+odin_root="$(mktemp -d)/odin"
+sh tools/setup_macos_odin.sh "$odin_root"
+export PATH="$odin_root:$PATH" ODIN_ROOT="$odin_root" ALICORN_ODIN="$odin_root/odin"
+odin version
+./tools/check.sh
+./tools/test.sh
+./tools/bench.sh
+bash tools/build_native_release.sh --odin "$(command -v odin)" --sdl-linkage static
+python3 tools/test_package_macos.py
+```
+
+The destination must not already exist; the bootstrap never reuses an installed
+SDK. Other native prerequisites, including SDL3 `3.4.16`, still apply.
+
+The pin avoids two failures observed with October compilers: Homebrew's
+`84bc3fc` asserts on missing `objc_lookUpClass` during `odin test native/sdl_gpu`,
+and the floating nightly's AppKit bindings no longer expose the `NS.Application`,
+`NS.Menu`, and `NS.Object` API used by Alicorn. Updating this pin requires running
+both macOS workflows and assessing any AppKit API migration first.
+
 ## Native diagnostics
 
 The reusable native `Run` host provides a visual inspector when started with
