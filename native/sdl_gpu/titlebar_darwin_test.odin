@@ -8,6 +8,32 @@ import alicorn "../../runtime"
 import "vendor:sdl3"
 
 @(test)
+test_darwin_titlebar_fixture_callbacks_ignore_ordinary_application_state :: proc(t: ^testing.T) {
+	sentinel := u64(42)
+	application := Application{state=rawptr(&sentinel)}
+	native_state: Darwin_Menu_State
+	menu := Native_Menu_Runtime{application=&application, platform_data=rawptr(&native_state)}
+	native_darwin_titlebar_fixture_note_fullscreen(&menu, .WINDOW_ENTER_FULLSCREEN)
+	testing.expect(t, sentinel == 42 && !native_darwin_titlebar_fixture_exit_fullscreen(&menu),
+		"fixture-only callbacks must not cast or mutate an ordinary app's state during native fullscreen events")
+}
+
+@(test)
+test_darwin_titlebar_layout_does_not_depend_on_fullscreen_control_coordinates :: proc(t: ^testing.T) {
+	controls := [3]alicorn.Rect{{9, 877, 14, 14}, {32, 877, 14, 14}, {55, 877, 14, 14}}
+	geometry, start_x := darwin_titlebar_resolve_geometry(
+		alicorn.Rect{0, 0, 1440, 900}, alicorn.Rect{0, 0, 1440, 900}, 44, controls[:])
+	testing.expect(t, geometry.header.h == 44 && geometry.native_control_count == 0 && start_x == 0,
+		"off-header fullscreen toolbar controls must not enlarge the application header or reserve tab space")
+	controls[0] = alicorn.Rect{9, 41, 14, 14}
+	geometry, start_x = darwin_titlebar_resolve_geometry(
+		alicorn.Rect{0, 0, 1440, 900}, alicorn.Rect{0, 32, 1440, 868}, 44, controls[:])
+	testing.expect(t, geometry.header.y == 32 && geometry.header.h == 44 &&
+		geometry.native_control_count == 1 && start_x == 35,
+		"the native safe area offsets the independently sized header, while only actual control intersections reserve space")
+}
+
+@(test)
 test_darwin_titlebar_does_not_mutate_style_mask_during_fullscreen :: proc(t: ^testing.T) {
 	testing.expect(t,
 		darwin_titlebar_should_add_full_size_content_view(false, false, true),

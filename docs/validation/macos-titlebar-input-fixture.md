@@ -14,6 +14,17 @@ SDL3_PREFIX=/path/to/SDL-3.4.16 tools/build_macos_titlebar_fixture.sh
 open out/native-titlebar-fixture/AlicornTitlebarFixture.app
 ```
 
+Run the opt-in native geometry regression on an unlocked desktop:
+
+```sh
+out/native-titlebar-fixture/AlicornTitlebarFixture.app/Contents/MacOS/AlicornTitlebarFixture --geometry-check
+```
+
+It uses the actual AppKit window and the fixture's ordinary Alicorn builder,
+checks green-control and menu fullscreen entry, two restore cycles and resizing,
+and prints native/SDL/finalized-layout measurements before returning a status.
+Its bounded event pumping runs only in this diagnostic mode.
+
 If AccessKit is not already available to the checkout's common build helper,
 set `ALICORN_ACCESSKIT_LINK_FLAGS` to its static-library linker flags. The app
 retains Alicorn's strict SDL version check. `SDL3_LIBRARY` can select a dylib
@@ -49,18 +60,12 @@ window on the unlocked desktop.
   read `{x=270,y=155}` before and after that automation drag, so it did not
   demonstrate actual window movement. A physical held drag is still required
   to distinguish an automation limitation from an input-arbitration defect.
-- Clicking the native green traffic-light control removed the native controls
-  and entered a full-display AppKit state. One immediate capture showed the
-  fixture body; the next stable capture showed only the tab strip. The fixture
-  diagnostic remained `fullscreen=false (0/0)` during that state, so it did not
-  observe an SDL fullscreen event or refresh its state. Selecting the View-menu
-  `Enter Full Screen` toggle returned the window to windowed mode, restored the
-  native controls, and reported `fullscreen=false (1/1)`. But its logical size
-  changed from 900×560 points before entry to 900×528 after exit (32 points
-  shorter). Treat the inconsistent fullscreen capture/event diagnostics and
-  changed restore geometry as a **failure to investigate**, not an acceptance
-  pass. Typing `input-after-exit` into the ordinary text field worked after
-  returning to windowed mode.
+- Fullscreen now retains a normal-height header and a visible body. The native
+  green control and menu action both enter fullscreen; an active text field
+  accepts input there, and Escape returns to the original 900×560-point window
+  with text and focus preserved. The live diagnostic reports `true (1/0)` while
+  fullscreen and `false (1/1)` after exit. Escape first lets menus, a tab drag,
+  or IME composition consume cancellation before the fixture exits fullscreen.
 - Style-mask reapplication is skipped in the fullscreen transition callbacks.
   It preserves the existing SDL content-view responder link around any later
   `setStyleMask` call, following SDL's AppKit responder-chain repair pattern.
@@ -74,24 +79,73 @@ window on the unlocked desktop.
   This prevents a Cocoa-owned pointer coordinate from being paired with a later
   ordinary client event. The bounded queue behavior is unit-tested.
 
+## Confirmed fullscreen causes and regression
+
+The native regression reproduced the original screenshot twice before the fix,
+without creating a GPU renderer. In fullscreen AppKit's hidden/reparented
+traffic-light rectangles converted to `y=877`. The old `button_bottom+12`
+calculation therefore requested a 903-point header in a 900-point viewport.
+The retained layout obeyed it and gave the body zero height.
+
+The app now chooses the header height independently. Native controls exclude
+only visible, overlapping header space; safe-area top inset is separate from
+the row height. Hidden/transitional button geometry cannot enlarge the row.
+
+| Native phase | Viewport | Header height | Body height |
+| --- | --- | --- | --- |
+| Windowed | 900×560 | 44 | 516 |
+| Fullscreen before fix | 1440×900 | 903 | 0 |
+| Fullscreen after fix | 1440×900 | 44 | 856 |
+| Restored after two cycles | 900×560 | 44 | 516 |
+| Resized | 720×480 | 44 | 436 |
+
+The restore defect was separate: AppKit changed the native frame from
+900×560 to 900×528 inside `setStyleMask` when re-adding `FullSizeContentView`.
+The adapter now preserves the complete restored frame around reapplication;
+initial setup still preserves the requested content size. Host metrics are read
+after that repair, including in the retained live-resize path. SDL's fullscreen
+style construction omits the full-size-content bit, so reapplication is still
+necessary. See the [pinned Cocoa backend](https://github.com/libsdl-org/SDL/blob/release-3.4.16/src/video/cocoa/SDL_cocoawindow.m).
+
+The apparent missing fullscreen event was ruled out: the diagnostic harness
+observed both SDL events, and the corrected live layout displays the expected
+enter/leave counts. Fixture-only event callbacks are guarded before casting
+application state, so ordinary apps with native menus are unaffected.
+
 ## Verification
 
-- macOS `odin test native/sdl_gpu`: 88 tests passed, including measured-rect
+- macOS `odin test native/sdl_gpu`: 90 tests passed, including measured-rect
   conversion, native/Sdl point pairing, gesture ownership, and fullscreen style
-  mutation guards, plus consumed-sample draining.
+  mutation guards, consumed-sample draining, safe-area/hidden-control geometry,
+  and isolation from ordinary application state.
 - `odin check native/sdl_gpu -target:windows_amd64 -no-entry-point`: passed.
 - The macOS fixture app bundle built and passed ad-hoc code-sign verification
   against the pinned SDL dylib.
-- The native checks do not substitute for the unverified held-drag/window-move,
-  fullscreen-rendering, resize, IME, and idle acceptance cases above.
+- `--geometry-check`: passed green-control/menu entry, two fullscreen restores,
+  and resize on the actual Apple Silicon desktop.
+
+## Desktop test matrix
+
+| Action | Current result |
+| --- | --- |
+| Select/close a titlebar tab | Passed visibly |
+| Type in a normal field | Passed in windowed/fullscreen and after restore |
+| Green-control and native-menu fullscreen entry | Passed; header/body remain visible |
+| Escape from focused fullscreen field | Passed; original size and text restored |
+| Repeated fullscreen restore | Two native regression cycles passed without height loss |
+| Resize | Native 720×480 geometry regression passed |
+| Retina | Scale 2 passed; another display/scale remains untested |
+| Physical tab reorder / blank-header window move | Still requires a physical held-gesture pass |
+| Interrupted physical drag, IME, VoiceOver | Still requires desktop validation |
+| Idle after interaction | Pending explicit counter capture |
 
 ## Current API recommendation
 
 Keep Scratchpad's tabs as an ordinary Alicorn `tab_bar`; do not add an AppKit
 tab view or a second Runtime. The live click and text-field evidence supports
 keeping the tabs in Alicorn's content view. Do **not** freeze a public chrome
-API yet: tab-drag ownership, native window movement, fullscreen persistence,
-resize/Retina changes, and cancellation still need a physical desktop pass.
+API yet: tab-drag ownership, native window movement, Retina display changes,
+and cancellation still need a physical desktop pass.
 
 The likely minimum API remains an opt-in integrated-content window mode plus
 host-measured chrome metrics and explicit interactive/blank-drag regions, with

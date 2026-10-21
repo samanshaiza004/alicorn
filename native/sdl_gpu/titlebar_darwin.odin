@@ -143,6 +143,28 @@ darwin_titlebar_rect_contains :: proc(rect: alicorn.Rect, point: sdl3.Point) -> 
 		x < rect.x+rect.w && y < rect.y+rect.h
 }
 
+// The app chooses its row height. Native controls only exclude overlapping
+// header space; hidden/reparented fullscreen toolbar controls cannot grow it.
+darwin_titlebar_resolve_geometry :: proc(
+	viewport, safe_area: alicorn.Rect,
+	header_height: f32,
+	visible_controls: []alicorn.Rect,
+) -> (geometry: Darwin_Titlebar_Geometry, content_start_x: f32) {
+	top := clamp(safe_area.y, 0, viewport.h)
+	geometry.header = alicorn.Rect{0, top, viewport.w, min(max(header_height, 0), max(viewport.h-top, 0))}
+	content_start_x = max(safe_area.x, 0)
+	for bounds in visible_controls {
+		if bounds.w <= 0 || bounds.h <= 0 || bounds.x >= viewport.w || bounds.x+bounds.w <= 0 ||
+			bounds.y >= top+geometry.header.h || bounds.y+bounds.h <= top { continue }
+		if geometry.native_control_count < len(geometry.native_controls) {
+			geometry.native_controls[geometry.native_control_count] = bounds
+			geometry.native_control_count += 1
+		}
+		content_start_x = max(content_start_x, bounds.x+bounds.w+12)
+	}
+	return
+}
+
 darwin_titlebar_should_add_full_size_content_view :: proc(
 	has_full_size_content_view, fullscreen, allow_style_mask_change: bool,
 ) -> bool {
@@ -152,11 +174,13 @@ darwin_titlebar_should_add_full_size_content_view :: proc(
 	return allow_style_mask_change && !has_full_size_content_view && !fullscreen
 }
 
-darwin_titlebar_set_window_style_mask :: proc(window: ^NS.Window, style_mask: NS.WindowStyleMask) {
+darwin_titlebar_set_window_style_mask :: proc(window: ^NS.Window, style_mask: NS.WindowStyleMask, preserve_frame: bool) {
 	if window == nil { return }
+	frame := NS.Window_frame(window)
 	content_view := NS.Window_contentView(window)
 	if content_view == nil {
 		NS.Window_setStyleMask(window, style_mask)
+		if preserve_frame { NS.Window_setFrame(window, frame, false) }
 		return
 	}
 
@@ -173,6 +197,11 @@ darwin_titlebar_set_window_style_mask :: proc(window: ^NS.Window, style_mask: NS
 	if previous_responder != nil && previous_responder != current_responder {
 		intrinsics.objc_send(nil, view_responder, "setNextResponder:", previous_responder)
 	}
+	// AppKit keeps the old content size when FullSizeContentView is added and
+	// subtracts the titlebar from the frame. On fullscreen exit SDL has already
+	// restored the desired outer frame; preserve that frame when restoring our
+	// content extension, so every transition does not shorten the window again.
+	if preserve_frame { NS.Window_setFrame(window, frame, false) }
 }
 
 // SDL's Cocoa backend asks on mouse-down, mouse-up, and pointer motion. Latch
@@ -252,7 +281,7 @@ darwin_titlebar_native_button_bounds :: proc(
 	content_bounds: NS.Rect,
 	content_is_flipped: bool,
 	button_kind: NS.UInteger,
-) -> (bounds: alicorn.Rect, ok: bool) {
+) -> (bounds: alicorn.Rect, ok, visible: bool) {
 	button := intrinsics.objc_send(^NS.View, window, "standardWindowButton:", button_kind)
 	if button == nil { return }
 	parent := intrinsics.objc_send(^NS.View, button, "superview")
@@ -261,6 +290,8 @@ darwin_titlebar_native_button_bounds :: proc(
 	content_frame := intrinsics.objc_send(NS.Rect, content_view, "convertRect:fromView:", frame, parent)
 	bounds = darwin_titlebar_rect_to_window_logical(content_frame, content_bounds, content_is_flipped)
 	ok = bounds.w > 0 && bounds.h > 0
+	visible = intrinsics.objc_send(^NS.Window, button, "window") == window &&
+		!intrinsics.objc_send(NS.BOOL, button, "isHiddenOrHasHiddenAncestor")
 	return
 }
 
@@ -284,7 +315,7 @@ darwin_titlebar_sdl_hit_test :: proc "c" (
 		geometry.header.h = app.titlebar_header_height
 		geometry.interactive[0] = alicorn.Rect{
 			app.titlebar_tab_start_x,
-			0,
+			app.titlebar_safe_top,
 			app.titlebar_tab_width,
 			app.titlebar_header_height,
 		}
@@ -341,6 +372,7 @@ native_darwin_titlebar_fixture_apply_style :: proc(
 	window: ^NS.Window,
 	force := false,
 	allow_style_mask_change := true,
+	preserve_frame := true,
 ) -> bool {
 	if window == nil { return false }
 	style_mask := intrinsics.objc_send(NS.WindowStyleMask, window, "styleMask")
@@ -353,7 +385,7 @@ native_darwin_titlebar_fixture_apply_style :: proc(
 	)
 	if style_changed {
 		style_mask += {.FullSizeContentView}
-		darwin_titlebar_set_window_style_mask(window, style_mask)
+		darwin_titlebar_set_window_style_mask(window, style_mask, preserve_frame)
 	}
 	if force || style_changed {
 		NS.Window_setTitlebarAppearsTransparent(window, true)
@@ -366,7 +398,7 @@ native_darwin_titlebar_fixture_prepare :: proc(menu: ^Native_Menu_Runtime) -> bo
 	if menu == nil || menu.window == nil || menu.platform_data == nil || menu.application == nil { return false }
 	state := cast(^Darwin_Menu_State)menu.platform_data
 	if state.window == nil || state.application == nil { return false }
-	_ = native_darwin_titlebar_fixture_apply_style(state.window, force=true)
+	_ = native_darwin_titlebar_fixture_apply_style(state.window, force=true, preserve_frame=false)
 	NS.Window_setMovableByWindowBackground(state.window, false)
 	menu.content_inset_top = 0
 	state.titlebar_fixture.active = true
@@ -404,47 +436,52 @@ native_darwin_titlebar_fixture_refresh :: proc(
 	content_bounds := NS.View_bounds(content_view)
 	content_is_flipped := NS.View_isFlipped(content_view)
 	button_kinds := [3]NS.UInteger{0, 1, 2}
-	next := Darwin_Titlebar_Geometry{}
+	measured_controls: [3]alicorn.Rect
+	visible_controls: [3]alicorn.Rect
+	visible_count := 0
 	for button_kind, index in button_kinds {
-		bounds, ok := darwin_titlebar_native_button_bounds(
+		bounds, ok, visible := darwin_titlebar_native_button_bounds(
 			state.window,
 			content_view,
 			content_bounds,
 			content_is_flipped,
 			button_kind,
 		)
-		if !ok { return false }
-		next.native_controls[index] = bounds
-		next.native_control_count += 1
+		if !ok { continue }
+		measured_controls[index] = bounds
+		if visible {
+			visible_controls[visible_count] = bounds
+			visible_count += 1
+		}
 	}
 	window_width, window_height: c.int
 	if !sdl3.GetWindowSize(menu.window, &window_width, &window_height) { return false }
-	button_bottom: f32 = 0
-	controls_right: f32 = 0
-	for bounds in next.native_controls[:next.native_control_count] {
-		button_bottom = max(button_bottom, bounds.y+bounds.h)
-		controls_right = max(controls_right, bounds.x+bounds.w)
-	}
-	next_header_height := max(44, f32(math.ceil(f64(button_bottom+12))))
 	old_app := cast(^Menu_Fixture_State)menu.application.state
-	changed := old_app.titlebar_header_height != next_header_height ||
-		old_app.titlebar_control_start_x != controls_right+12 ||
+	safe_area: sdl3.Rect
+	if !sdl3.GetWindowSafeArea(menu.window, &safe_area) { return false }
+	next, content_start_x := darwin_titlebar_resolve_geometry(
+		alicorn.Rect{0, 0, f32(window_width), f32(window_height)},
+		alicorn.Rect{f32(safe_area.x), f32(safe_area.y), f32(safe_area.w), f32(safe_area.h)},
+		old_app.titlebar_header_height,
+		visible_controls[:visible_count],
+	)
+	changed := old_app.titlebar_safe_top != next.header.y ||
+		old_app.titlebar_control_start_x != content_start_x ||
 		old_app.titlebar_window_width != f32(window_width) ||
 		old_app.titlebar_logical_height != f32(window_height)
-	old_app.titlebar_control_bounds = next.native_controls
-	old_app.titlebar_header_height = next_header_height
-	old_app.titlebar_control_start_x = controls_right+12
+	old_app.titlebar_control_bounds = measured_controls
+	old_app.titlebar_safe_top = next.header.y
+	old_app.titlebar_control_start_x = content_start_x
 	old_app.titlebar_window_width = f32(window_width)
 	old_app.titlebar_logical_height = f32(window_height)
 	old_app.titlebar_tab_start_x = old_app.titlebar_control_start_x
 	old_app.titlebar_tab_width = max(f32(window_width)-old_app.titlebar_tab_start_x-160, 0)
 	old_app.titlebar_drag_region = alicorn.Rect{
 		old_app.titlebar_tab_start_x+old_app.titlebar_tab_width,
-		0,
+		next.header.y,
 		max(f32(window_width)-old_app.titlebar_tab_start_x-old_app.titlebar_tab_width, 0),
-		next_header_height,
+		next.header.h,
 	}
-	next.header = alicorn.Rect{0, 0, f32(window_width), next_header_height}
 	next.drag_regions[0] = old_app.titlebar_drag_region
 	if next.drag_regions[0].w > 0 { next.drag_region_count = 1 }
 	state.titlebar_fixture.geometry = next
@@ -452,8 +489,8 @@ native_darwin_titlebar_fixture_refresh :: proc(
 	fmt.println(
 		"macos_titlebar_geometry",
 		"logical", window_width, window_height,
-		"header", next_header_height,
-		"controls", next.native_controls[0], next.native_controls[1], next.native_controls[2],
+		"header", next.header,
+		"measured_controls", measured_controls, "active_controls", next.native_control_count,
 		"display_scale", sdl3.GetWindowDisplayScale(menu.window),
 	)
 	return true
@@ -465,6 +502,28 @@ native_darwin_titlebar_fixture_cancel_gesture :: proc(menu: ^Native_Menu_Runtime
 	if state.titlebar_fixture.active {
 		darwin_titlebar_gesture_cancel(&state.titlebar_fixture.gesture_owner)
 	}
+}
+
+native_darwin_titlebar_fixture_note_fullscreen :: proc(menu: ^Native_Menu_Runtime, event_type: sdl3.EventType) {
+	if menu == nil || menu.platform_data == nil || menu.application == nil || menu.application.state == nil { return }
+	state := cast(^Darwin_Menu_State)menu.platform_data
+	if !state.titlebar_fixture.active { return }
+	app := cast(^Menu_Fixture_State)menu.application.state
+	if event_type == .WINDOW_ENTER_FULLSCREEN {
+		app.titlebar_fullscreen_enters += 1
+	} else if event_type == .WINDOW_LEAVE_FULLSCREEN {
+		app.titlebar_fullscreen_exits += 1
+	} else { return }
+	if menu.runtime != nil { alicorn.invalidate_root(menu.runtime, "fullscreen transition observed by native fixture") }
+}
+
+native_darwin_titlebar_fixture_exit_fullscreen :: proc(menu: ^Native_Menu_Runtime) -> bool {
+	if menu == nil || menu.platform_data == nil || menu.window == nil { return false }
+	state := cast(^Darwin_Menu_State)menu.platform_data
+	if !state.titlebar_fixture.active || state.window == nil { return false }
+	style_mask := intrinsics.objc_send(NS.WindowStyleMask, state.window, "styleMask")
+	if !(NS.WindowStyleFlag.FullScreen in style_mask) { return false }
+	return sdl3.SetWindowFullscreen(menu.window, false)
 }
 
 native_darwin_titlebar_fixture_note_consumed_event :: proc(menu: ^Native_Menu_Runtime) {

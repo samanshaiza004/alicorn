@@ -572,6 +572,11 @@ pump_events :: proc(
 					}
 				}
 			}
+			when ODIN_OS == .Darwin {
+				if !runtime_key_handled && event.key.key == sdl3.K_ESCAPE && !event.key.repeat {
+					runtime_key_handled = native_darwin_titlebar_fixture_exit_fullscreen(native_menu)
+				}
+			}
 			if application != nil && !runtime_key_handled {
 				text_input_focused := native_current_text_input_owner(rt, text_input_state) != 0
 				if !text_input_focused {
@@ -774,26 +779,18 @@ pump_events :: proc(
 		if window_metrics_event {
 			inset_top := f32(0)
 			if native_menu != nil { inset_top = native_menu.content_inset_top }
-			if !read_window_metrics(window, metrics, inset_top) {
-				fail("window metrics became unavailable after a window event")
-			}
 			when ODIN_OS == .Darwin {
 				if native_menu != nil {
 					fullscreen_transition := event.type == .WINDOW_ENTER_FULLSCREEN || event.type == .WINDOW_LEAVE_FULLSCREEN
-					if fullscreen_transition && native_menu.application != nil && native_menu.application.state != nil {
-						app := cast(^Menu_Fixture_State)native_menu.application.state
-						if event.type == .WINDOW_ENTER_FULLSCREEN {
-							app.titlebar_fullscreen_enters += 1
-						} else {
-							app.titlebar_fullscreen_exits += 1
-						}
-						alicorn.invalidate_root(rt, "fullscreen transition observed by native fixture")
-					}
+					if fullscreen_transition { native_darwin_titlebar_fixture_note_fullscreen(native_menu, event.type) }
 					_ = native_darwin_titlebar_fixture_refresh(
 						native_menu,
 						allow_style_mask_change=!fullscreen_transition,
 					)
 				}
+			}
+			if !read_window_metrics(window, metrics, inset_top) {
+				fail("window metrics became unavailable after a window event")
 			}
 			if rt.viewport.w != f32(metrics.logical_width) || rt.viewport.h != f32(metrics.logical_height) {
 				rt.viewport.w = f32(metrics.logical_width)

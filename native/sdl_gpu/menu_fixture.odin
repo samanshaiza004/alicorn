@@ -10,8 +10,12 @@ Menu_Fixture_State :: struct {
 	command_count:                 u64,
 	last_command:                  Application_Command_ID,
 	titlebar_fixture:              bool,
+	titlebar_root_node:            alicorn.Node_ID,
+	titlebar_header_node:          alicorn.Node_ID,
+	titlebar_body_node:            alicorn.Node_ID,
 	titlebar_control_bounds:       [3]alicorn.Rect,
 	titlebar_header_height:        f32,
+	titlebar_safe_top:             f32,
 	titlebar_control_start_x:      f32,
 	titlebar_window_width:         f32,
 	titlebar_logical_height:       f32,
@@ -60,6 +64,7 @@ Menu_Fixture_State :: struct {
 
 TITLEBAR_FIXTURE_NAMESPACE :: u64(0x616c69636f726e)
 TITLEBAR_FIXTURE_TAB_DRAG_TYPE :: alicorn.Drag_Type(0x746162)
+TITLEBAR_FIXTURE_HEADER_HEIGHT :: f32(44)
 
 menu_fixture_build :: proc(
 	state: rawptr,
@@ -102,7 +107,7 @@ menu_fixture_titlebar_build :: proc(
 	app.titlebar_tab_width = max(f32(logical_width)-app.titlebar_tab_start_x-160, 0)
 	app.titlebar_drag_region = alicorn.Rect{
 		app.titlebar_tab_start_x+app.titlebar_tab_width,
-		0,
+		app.titlebar_safe_top,
 		max(f32(logical_width)-app.titlebar_tab_start_x-app.titlebar_tab_width, 0),
 		app.titlebar_header_height,
 	}
@@ -113,6 +118,11 @@ menu_fixture_titlebar_build :: proc(
 		style=alicorn.layout_style(.Column, grow=1, padding=0, gap=0, clip=true),
 		color=alicorn.Color{0.04, 0.05, 0.08, 1},
 	)
+	if app.titlebar_safe_top > 0 {
+		_ = alicorn.container_begin(&ui, .Container, label="macos-titlebar-safe-area",
+			style=alicorn.layout_style(.Row, height=app.titlebar_safe_top))
+		alicorn.container_end(&ui)
+	}
 	bar := alicorn.container_begin(
 		&ui,
 		.Container,
@@ -187,7 +197,7 @@ menu_fixture_titlebar_build :: proc(
 	)
 	alicorn.container_end(&ui)
 	alicorn.container_end(&ui)
-	alicorn.container_begin(
+	body := alicorn.container_begin(
 		&ui,
 		.Container,
 		label="macos-titlebar-fixture-body",
@@ -257,6 +267,9 @@ menu_fixture_titlebar_build :: proc(
 	alicorn.container_end(&ui)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
+	app.titlebar_root_node = root
+	app.titlebar_header_node = bar
+	app.titlebar_body_node = body
 	return root
 }
 
@@ -373,6 +386,7 @@ run_menu_fixture :: proc(titlebar_fixture, smoke: bool, decoration_mode: Window_
 	}
 	state := Menu_Fixture_State{
 		titlebar_fixture=titlebar_fixture,
+		titlebar_header_height=TITLEBAR_FIXTURE_HEADER_HEIGHT,
 		titlebar_tab_order=[2]u64{1, 2},
 		titlebar_selected_tab=1,
 	}
@@ -413,5 +427,13 @@ RunMenuFixture :: proc() {
 // RunMacOSTitlebarFixture is used only by the dedicated native fixture app
 // entrypoint, which avoids relying on LaunchServices preserving argv.
 RunMacOSTitlebarFixture :: proc() {
+	when ODIN_OS == .Darwin {
+		for argument in os.args {
+			if argument == "--geometry-check" {
+				if !native_darwin_titlebar_geometry_check() { os.exit(1) }
+				return
+			}
+		}
+	}
 	run_menu_fixture(true, false, .System)
 }
