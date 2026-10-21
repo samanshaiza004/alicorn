@@ -131,9 +131,17 @@ pump_events :: proc(
 		}
 		pointer, pointer_ok := pointer_from_sdl_with_modifiers(event, mod_state, pointer_button_state)
 		is_pointer_event := event.type == .MOUSE_MOTION || event.type == .MOUSE_BUTTON_DOWN || event.type == .MOUSE_BUTTON_UP
+		when ODIN_OS == .Darwin {
+			if pointer_ok && is_pointer_event {
+				pointer = native_darwin_titlebar_fixture_translate_pointer(native_menu, pointer, event)
+			}
+		}
 		pointer_window_x, pointer_window_y := pointer.x, pointer.y
 		pointer_in_application := true
 		wheel_in_application := true
+		when ODIN_OS == .Darwin {
+			if is_pointer_event { native_darwin_titlebar_fixture_note_sdl_pointer(native_menu, event) }
+		}
 		if native_menu != nil {
 			inset_top := native_menu.content_inset_top
 			if text_input_state != nil { text_input_state.content_inset_top = inset_top }
@@ -233,6 +241,9 @@ pump_events :: proc(
 			if close_result == .Allow { quit_requested^ = true }
 		}
 		if event.type == .WINDOW_FOCUS_LOST {
+			when ODIN_OS == .Darwin {
+				if native_menu != nil { native_darwin_titlebar_fixture_cancel_gesture(native_menu) }
+			}
 			native_accessibility_focus_changed(accessibility, false)
 			alicorn.context_menu_close(rt)
 			alicorn.tooltip_dismiss(rt)
@@ -620,6 +631,18 @@ pump_events :: proc(
 		}
 
 		#partial switch event.type {
+		case .WINDOW_HIT_TEST:
+			when ODIN_OS == .Darwin {
+				if native_menu != nil {
+					native_darwin_titlebar_fixture_note_consumed_event(native_menu)
+					if manual_log && native_menu.platform_data != nil {
+						fixture := cast(^Darwin_Menu_State)native_menu.platform_data
+						if fixture.titlebar_fixture.active {
+							fmt.println("macos_titlebar_input_consumed", "SDL_EVENT_WINDOW_HIT_TEST", "Cocoa owned the current mouse transition")
+						}
+					}
+				}
+			}
 		case .WINDOW_RESIZED:
 			host_cause := alicorn.cause_begin(rt, .Host_Event, "window resized")
 			if devtools_last_cause != nil { devtools_last_cause^ = host_cause.cause }
@@ -737,14 +760,40 @@ pump_events :: proc(
 			alicorn.cause_end(rt, composition_cause)
 		}
 
-		if event.type == .WINDOW_RESIZED ||
+		window_metrics_event := event.type == .WINDOW_RESIZED ||
 			event.type == .WINDOW_PIXEL_SIZE_CHANGED ||
 			event.type == .WINDOW_METAL_VIEW_RESIZED ||
-			event.type == .WINDOW_DISPLAY_SCALE_CHANGED {
+			event.type == .WINDOW_DISPLAY_SCALE_CHANGED
+		when ODIN_OS == .Darwin {
+			window_metrics_event = window_metrics_event ||
+				event.type == .WINDOW_DISPLAY_CHANGED ||
+				event.type == .WINDOW_SAFE_AREA_CHANGED ||
+				event.type == .WINDOW_ENTER_FULLSCREEN ||
+				event.type == .WINDOW_LEAVE_FULLSCREEN
+		}
+		if window_metrics_event {
 			inset_top := f32(0)
 			if native_menu != nil { inset_top = native_menu.content_inset_top }
 			if !read_window_metrics(window, metrics, inset_top) {
 				fail("window metrics became unavailable after a window event")
+			}
+			when ODIN_OS == .Darwin {
+				if native_menu != nil {
+					fullscreen_transition := event.type == .WINDOW_ENTER_FULLSCREEN || event.type == .WINDOW_LEAVE_FULLSCREEN
+					if fullscreen_transition && native_menu.application != nil && native_menu.application.state != nil {
+						app := cast(^Menu_Fixture_State)native_menu.application.state
+						if event.type == .WINDOW_ENTER_FULLSCREEN {
+							app.titlebar_fullscreen_enters += 1
+						} else {
+							app.titlebar_fullscreen_exits += 1
+						}
+						alicorn.invalidate_root(rt, "fullscreen transition observed by native fixture")
+					}
+					_ = native_darwin_titlebar_fixture_refresh(
+						native_menu,
+						allow_style_mask_change=!fullscreen_transition,
+					)
+				}
 			}
 			if rt.viewport.w != f32(metrics.logical_width) || rt.viewport.h != f32(metrics.logical_height) {
 				rt.viewport.w = f32(metrics.logical_width)

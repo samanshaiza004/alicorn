@@ -19,6 +19,7 @@ Darwin_Menu_State :: struct {
 	selector:              NS.SEL,
 	update_selector:       NS.SEL,
 	bindings:              [dynamic]Darwin_Menu_Binding,
+	titlebar_fixture:       Darwin_Titlebar_Fixture_State,
 }
 
 Darwin_Menu_Binding :: struct {
@@ -324,6 +325,7 @@ native_menu_prepare :: proc(menu: ^Native_Menu_Runtime) -> bool {
 native_menu_destroy :: proc(menu: ^Native_Menu_Runtime) {
 	if menu == nil || menu.platform_data == nil { return }
 	state := cast(^Darwin_Menu_State)menu.platform_data
+	native_darwin_titlebar_fixture_destroy(menu)
 	if darwin_active_menu == menu { darwin_active_menu = nil }
 	if state.application != nil {
 		NS.Application_setMainMenu(state.application, state.previous_main_menu)

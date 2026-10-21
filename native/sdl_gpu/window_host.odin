@@ -100,6 +100,9 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	inset_top := f32(0)
 	if state.native_menu != nil { inset_top = state.native_menu.content_inset_top }
 	if !read_window_metrics(state.window, &current_metrics, inset_top) { return }
+	when ODIN_OS == .Darwin {
+		if state.native_menu != nil { _ = native_darwin_titlebar_fixture_refresh(state.native_menu) }
+	}
 	cause_scope := alicorn.cause_begin(state.rt, .Host_Event, "SDL live resize expose")
 	defer alicorn.cause_end(state.rt, cause_scope)
 	cause := cause_scope.cause
