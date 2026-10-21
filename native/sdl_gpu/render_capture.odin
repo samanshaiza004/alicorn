@@ -46,7 +46,7 @@ native_capture_display_ppm :: proc(
 		return false
 	}
 	if !native_inspector_render(inspector, surface_renderer, command, texture, width, height, scale_x, scale_y,
-		scratch_allocator=scratch_allocator) {
+		content_inset_top=content_inset_top, scratch_allocator=scratch_allocator) {
 		_ = sdl3.CancelGPUCommandBuffer(command)
 		return false
 	}

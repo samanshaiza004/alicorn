@@ -466,7 +466,11 @@ boundary and virtualization limitations.
 Launch a native app with `--inspector` and press `F9` for the built-in visual
 inspector, or use `--inspector-open` to show it at startup. Its tree, focus,
 work, and causality tabs read retained runtime truth; Pick selects an app node
-without activating it. Close returns input to the application's existing
-focus. The native host also has diagnostic captures; see
+without activating it. While the inspector is open, clicks and scrolling
+outside its panel still reach the app. The app keeps keyboard and IME input
+until you click inside the inspector; clicking the app returns that input to
+it, except that Pick temporarily intercepts app clicks for selection. Close
+returns input to the application's existing focus. The native host also has
+diagnostic captures; see
 [Development](development.md#native-diagnostics). For the design boundaries,
 see [Architecture](architecture.md).

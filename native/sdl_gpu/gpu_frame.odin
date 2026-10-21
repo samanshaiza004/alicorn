@@ -83,11 +83,7 @@ draw_display_list :: proc(
 		owned := make([dynamic]alicorn.Paint_Command, 0, len(display)+len(chrome), allocator=scratch_allocator)
 		if owned == nil && len(display)+len(chrome) > 0 { return false }
 		for original in display {
-			draw := original
-			if content_inset_top > 0 {
-				draw.bounds.y += content_inset_top
-				draw.clip.y += content_inset_top
-			}
+			draw := native_paint_command_apply_content_inset(original, content_inset_top)
 			append(&owned, draw)
 		}
 		for overlay in chrome { append(&owned, overlay) }
@@ -116,8 +112,8 @@ draw_display_list :: proc(
 		if !native_solid_prepare_white_texture(solid_renderer, command) { return false }
 		if !native_solid_upload(solid_renderer, command) { return false }
 	}
-	// The retained display list remains in logical window units. Only this
-	// compositor boundary converts its geometry to the physical swapchain.
+	// Retained geometry stays in application-content logical units. Apply the
+	// native inset once here, then convert the result to physical swapchain pixels.
 	if clear_background {
 		background := make_color_target(swapchain, sdl3.FColor{0.035, 0.045, 0.065, 1}, false)
 		pass := sdl3.BeginGPURenderPass(command, &background, 1, nil)
@@ -147,7 +143,7 @@ draw_display_list :: proc(
 			continue
 		}
 		if run_kind == .Geometry {
-			if !native_surface_render_command(surface_renderer, command, draw, swapchain, swap_w, swap_h, logical_to_pixel_x, logical_to_pixel_y, content_inset_top=content_inset_top) {
+			if !native_surface_render_command(surface_renderer, command, draw, swapchain, swap_w, swap_h, logical_to_pixel_x, logical_to_pixel_y) {
 				return false
 			}
 			display_index = run_end
@@ -164,6 +160,18 @@ draw_display_list :: proc(
 		}
 	}
 	return true
+}
+
+// Display-list geometry and pointer coordinates both use application-content
+// logical units. Apply native chrome only at the compositor boundary, before
+// ordinary logical-to-pixel scaling is applied.
+native_paint_command_apply_content_inset :: proc(command: alicorn.Paint_Command, inset_top: f32) -> alicorn.Paint_Command {
+	result := command
+	if inset_top > 0 {
+		result.bounds.y += inset_top
+		result.clip.y += inset_top
+	}
+	return result
 }
 
 Native_Paint_Run_Kind :: enum { Surface, Text, Geometry, Icon, Image }

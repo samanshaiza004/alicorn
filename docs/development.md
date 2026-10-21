@@ -99,14 +99,18 @@ and submission revisions, and host timings. Causes shows bounded recent
 transactions with actions, invalidations, stage work, and submissions.
 
 The inspector is an Alicorn UI in its own retained runtime, composited above
-the application. Inspector interactions consume input while it is open; the
-application's focus and semantic focus stay intact. Async application work and
-window lifecycle events continue. It refreshes when inspected state changes
-or the developer interacts, and adds no periodic tick or idle polling. An
-application identity error remains visible in the inspector. With inspector
-opt-in, the host suspends further descriptions of the failed application for
-the remainder of that run, allowing the independent inspector to stay usable
-and return to idle.
+the application. Pointer and wheel input over its panel belongs to the
+inspector; input outside the panel continues to the application. A gesture
+stays with the runtime that received its press. The application retains
+keyboard and IME ownership until the inspector panel is clicked. Clicking the
+application returns that ownership, and Pick intercepts an application click
+to select a node without activating it. App focus and semantic focus are
+otherwise preserved. Async application work and window lifecycle events
+continue. It refreshes when inspected state changes or the developer interacts,
+and adds no periodic tick or idle polling. An application identity error
+remains visible in the inspector. With inspector opt-in, the host suspends
+further descriptions of the failed application for the remainder of that run,
+allowing the independent inspector to stay usable and return to idle.
 
 Run the inspector fixture for a bounded native check and screenshot:
 
@@ -120,9 +124,11 @@ Run the inspector fixture for a bounded native check and screenshot:
 
 The fixture has nested components, semantic focus, a virtual list, and actions.
 Its `--inspector-input-smoke` mode injects SDL input through the production host
-to check picking, text-input blocking, composition cancellation, focus, and
-settled application work. Add `--inspector-identity-error` to inspect an
-intentional duplicate-key error. These two switches belong to the fixture;
+to check that application composition and committed text still reach the
+focused editor while the inspector is visible and after it closes. Picking
+isolation and panel ownership are covered by deterministic native-host tests.
+Add `--inspector-identity-error` to inspect an intentional duplicate-key error.
+These two switches belong to the fixture;
 `--inspector` and `--inspector-open` work with any app using the reusable host,
 without application diagnostics code.
 

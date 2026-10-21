@@ -98,7 +98,7 @@ native_menu_sync_chrome_appearance :: proc(menu: ^Native_Menu_Runtime, request_r
 }
 
 native_menu_dispatch_command :: proc(menu: ^Native_Menu_Runtime, command: Application_Command_ID) {
-	if menu == nil || menu.application == nil || menu.application.on_menu_command == nil || native_inspector_visible(menu.inspector) { return }
+	if menu == nil || menu.application == nil || menu.application.on_menu_command == nil { return }
 	direct_command := false
 	for description in menu.application.menus {
 		if description.command == command && command != Application_Command_ID(0) {

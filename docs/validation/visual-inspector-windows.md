@@ -33,12 +33,20 @@ The native smoke commands below completed on Direct3D 12:
 ```
 
 The visible idle smoke produced two GPU submissions and returned to one event
-wait during its three-second run. Both input smokes reported zero application
-activations, unchanged application text, restored text-field focus, preserved
-semantic focus ownership, and no application text-change dispatch. The
+wait during its three-second run. The input smoke validated the earlier modal
+inspector policy: it reported zero application activations, unchanged
+application text, restored text-field focus, preserved semantic focus
+ownership, and no application text-change dispatch. That result predates the
+current nonmodal routing and must not be used as evidence for it. The
 identity-error variant remained inspectable and completed without retrying the
 failed application description. The startup screenshot included both the
 fixture and the inspector panel.
+
+The current deterministic native-host suite covers panel and app pointer/wheel
+routing, Pick isolation, gesture capture, text-input ownership transitions,
+and inset alignment at common Windows display scales. Re-run the commands above
+on Windows to verify the live SDL text/IME path and visible alignment after the
+nonmodal change.
 
 Run these commands again when changing host input ownership, inspector
 composition, window lifecycle, or GPU rendering.
