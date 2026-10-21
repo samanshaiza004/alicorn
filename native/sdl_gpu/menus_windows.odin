@@ -730,7 +730,7 @@ win32_menu_append_text :: proc(
 
 win32_menu_dispatch_native_id :: proc(state: ^Win32_Menu_State, native_id: u32) {
 	if state == nil { return }
-	if state.menu != nil && native_id != 0 && int(native_id) < len(state.commands) && !native_inspector_visible(state.menu.inspector) {
+	if state.menu != nil && native_id != 0 && int(native_id) < len(state.commands) {
 		state.menu.pending_command = state.commands[native_id]
 		state.menu.has_pending = true
 	}

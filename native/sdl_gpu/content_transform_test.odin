@@ -52,3 +52,29 @@ test_integrated_chrome_transform_clamps_invalid_insets :: proc(t: ^testing.T) {
 	testing.expect(t, zero_height.app_height == 0,
 		"a minimized or unavailable zero-height window should remain invalid")
 }
+
+@(test)
+test_native_content_inset_keeps_inspector_paint_aligned_at_fractional_dpi :: proc(t: ^testing.T) {
+	app_draw := alicorn.Paint_Command{
+		bounds=alicorn.Rect{24, 12, 80, 20},
+		clip=alicorn.Rect{16, 8, 96, 32},
+		payload=alicorn.Geometry_Paint{},
+	}
+	shifted := native_paint_command_apply_content_inset(app_draw, 32)
+	testing.expect(t, shifted.bounds == alicorn.Rect{24, 44, 80, 20} &&
+		shifted.clip == alicorn.Rect{16, 40, 96, 32},
+		"inspector display-list geometry is translated by the same logical menu inset as app content")
+	zero_inset := native_paint_command_apply_content_inset(app_draw, 0)
+	testing.expect(t, zero_inset.bounds == app_draw.bounds && zero_inset.clip == app_draw.clip,
+		"a system-decorated window keeps inspector geometry unchanged")
+
+	scales := [4]f32{1, 1.25, 1.5, 2}
+	for scale in scales {
+		transform := native_content_transform_make(800, 32)
+		_, pointer_y, inside := native_application_point_from_window(transform, 24, 44)
+		physical_paint_y := shifted.bounds.y*scale
+		physical_pointer_y := f32(pointer_y)*scale + transform.inset_top*scale
+		testing.expect(t, inside && pointer_y == 12 && physical_paint_y == physical_pointer_y,
+			"logical inspector paint and pointer coordinates align at 100%, 125%, 150%, and 200% presentation scales")
+	}
+}

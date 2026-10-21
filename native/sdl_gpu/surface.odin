@@ -349,7 +349,6 @@ native_surface_render_command :: proc(
 	target: ^sdl3.GPUTexture,
 	target_w, target_h: sdl3.Uint32,
 	scale_x, scale_y: f32,
-	content_inset_top: f32 = 0,
 ) -> bool {
 	if !native_surface_prepare_white_texture(renderer, command_buffer) { return false }
 	if !native_surface_rebuild_mesh(renderer, command, scale_x, scale_y) { return false }
@@ -362,7 +361,9 @@ native_surface_render_command :: proc(
 			{0, 0, 1, 0},
 			{-1, 1, 0, 1},
 		},
-		model = [4][4]f32{{1,0,0,0},{0,1,0,0},{0,0,1,0},{0,content_inset_top*scale_y,0,1}},
+		// The compositor already applied any native content inset to command
+		// geometry and clipping; applying it again here would double-shift surfaces.
+		model = [4][4]f32{{1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1}},
 	}
 	sdl3.PushGPUVertexUniformData(command_buffer, 0, &uniforms, sdl3.Uint32(size_of(Native_Text_Uniforms)))
 	target_info := sdl3.GPUColorTargetInfo{texture=target, clear_color=sdl3.FColor{}, load_op=.LOAD, store_op=.STORE}

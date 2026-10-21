@@ -18,6 +18,7 @@ Inspector_Fixture_State :: struct {
 	identity_error: bool,
 	smoke: bool,
 	input_smoke: bool,
+	input_changes: u64,
 	initially_open: bool,
 	input_step: int,
 	input_complete: bool,
@@ -109,6 +110,7 @@ inspector_fixture_build :: proc(
 inspector_fixture_text_change :: proc(state: rawptr, rt: ^alicorn.Runtime, change: alicorn.Text_Change) {
 	if !change.changed { return }
 	app := cast(^Inspector_Fixture_State)state
+	if app.input_smoke { app.input_changes += 1 }
 	copy, err := strings.clone(change.text)
 	if err != nil { return }
 	if app.text_owned { delete(app.text) }
@@ -130,29 +132,10 @@ inspector_fixture_push_key :: proc(key: sdl3.Keycode, scancode: sdl3.Scancode) {
 	inspector_fixture_push_event(event)
 }
 
-inspector_fixture_activation_bounds :: proc(rt: ^alicorn.Runtime) -> alicorn.Rect {
-	for id in rt.order {
-		node := rt.nodes[id]
-		if node.kind == .Button && node.label == "Activate fixture control" { return node.bounds }
-	}
-	fail("inspector fixture activation target was not retained")
-}
-
-inspector_fixture_push_button :: proc(rt: ^alicorn.Runtime, kind: sdl3.EventType) {
-	bounds := inspector_fixture_activation_bounds(rt)
-	event := sdl3.Event{type=kind}
-	event.button.button, event.button.clicks = 1, 1
-	event.button.down = kind == .MOUSE_BUTTON_DOWN
-	event.button.x, event.button.y = bounds.x+bounds.w/2, bounds.y+bounds.h/2
-	inspector_fixture_push_event(event)
-}
-
 inspector_fixture_services :: proc(state: rawptr, services: Application_Services) {
 	app := cast(^Inspector_Fixture_State)state
 	app.scheduler = services.scheduler
-	if app.input_smoke {
-		_ = application_schedule_after(app.scheduler, .Frequent, 150_000_000)
-	}
+	if app.input_smoke { _ = application_schedule_after(app.scheduler, .Frequent, 150_000_000) }
 }
 
 // These injected SDL events belong to this internal native fixture. Every
@@ -163,6 +146,10 @@ inspector_fixture_scheduled :: proc(state: rawptr, rt: ^alicorn.Runtime, class: 
 	switch app.input_step {
 	case 0:
 		if app.initially_open { inspector_fixture_push_key(sdl3.K_F9, .F9) }
+		// Some automated Windows runners create the native window without
+		// foreground focus. Seed the host's real focus event path so SDL text
+		// input can be started before the synthetic editing trace begins.
+		inspector_fixture_push_event(sdl3.Event{type=.WINDOW_FOCUS_GAINED})
 		_ = alicorn.focus(rt, app.field)
 	case 1:
 		event := sdl3.Event{type=.TEXT_EDITING}
@@ -171,24 +158,22 @@ inspector_fixture_scheduled :: proc(state: rawptr, rt: ^alicorn.Runtime, class: 
 	case 2:
 		inspector_fixture_push_key(sdl3.K_F9, .F9)
 		event := sdl3.Event{type=.TEXT_INPUT}
-		event.text.text = "must not enter app while inspecting"
+		event.text.text = " accepted while the inspector is visible"
 		inspector_fixture_push_event(event)
 	case 3:
-		inspector_fixture_push_key(sdl3.K_P, .P)
-	case 4:
-		inspector_fixture_push_button(rt, .MOUSE_BUTTON_DOWN)
-		inspector_fixture_push_button(rt, .MOUSE_BUTTON_UP)
-	case 5:
-		inspector_fixture_push_key(sdl3.K_ESCAPE, .ESCAPE)
-		// Closing must consume queued input from the old ownership epoch.
+		inspector_fixture_push_key(sdl3.K_F9, .F9)
+		// The app retains keyboard ownership when visibility changes alone, so
+		// a commit following Close still belongs to the focused application field.
 		event := sdl3.Event{type=.TEXT_INPUT}
-		event.text.text = "must not enter app after inspector closes"
+		event.text.text = " and after it closes"
 		inspector_fixture_push_event(event)
-		inspector_fixture_push_button(rt, .MOUSE_BUTTON_UP)
-	case 6:
+	case 4:
 		if rt.focused != app.field { fail("inspector input smoke did not restore application text focus") }
 		if node, ok := rt.nodes[app.field]; !ok || node.composition.active {
-			fail("inspector input smoke left stale application composition")
+			fail("inspector input smoke left an incomplete application composition")
+		}
+		if app.input_changes == 0 || app.text == INSPECTOR_FIXTURE_TEXT {
+			fail("application text input did not reach the editor while the inspector was visible")
 		}
 		app.input_complete = true
 		app.settled_builds, app.settled_submits = rt.stats.frames_built, rt.stats.gpu_submits
@@ -201,7 +186,7 @@ inspector_fixture_stop :: proc(state: rawptr) {
 	app := cast(^Inspector_Fixture_State)state
 	fmt.println("inspector_fixture", "activations", app.activations, "hard_error", app.runtime.hard_error,
 		"focus", app.runtime.focused, "semantic_owner", app.runtime.semantic_focus.owner,
-		"input_complete", app.input_complete, "text_unchanged", app.text == INSPECTOR_FIXTURE_TEXT)
+		"input_complete", app.input_complete, "text_changed", app.text != INSPECTOR_FIXTURE_TEXT)
 	if app.smoke {
 		if app.activations != 0 { fail("inspector fixture smoke accidentally activated application controls") }
 		if app.runtime.hard_error != app.identity_error { fail("inspector fixture identity error did not match requested mode") }
@@ -209,8 +194,8 @@ inspector_fixture_stop :: proc(state: rawptr) {
 			fail("inspector fixture lost durable semantic focus")
 		}
 		if app.input_smoke {
-			if !app.input_complete || app.text != INSPECTOR_FIXTURE_TEXT {
-				fail("inspector input smoke failed to consume overlay text input")
+			if !app.input_complete || app.input_changes == 0 || app.text == INSPECTOR_FIXTURE_TEXT {
+				fail("inspector input smoke failed to deliver text to the app while the inspector was visible")
 			}
 			if app.runtime.stats.frames_built != app.settled_builds || app.runtime.stats.gpu_submits != app.settled_submits {
 				fail("inspector input smoke performed application work after settling")

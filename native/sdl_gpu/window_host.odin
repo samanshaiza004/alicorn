@@ -130,7 +130,7 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 		alicorn.Rect{0, 0, f32(current_metrics.logical_width), f32(current_metrics.logical_height)}, &inspector_summary)
 	if state.text_input_state != nil {
 		state.text_input_state.content_inset_top = inset_top
-		state.text_input_state.suspended = native_inspector_visible(state.inspector) ||
+		state.text_input_state.suspended = native_inspector_keyboard_owns_input(state.inspector) ||
 			(state.inspector != nil && state.inspector.suppress_text_until_drain)
 		sync_text_input_focus(state.window, state.rt, state.text_input_state, state.application)
 	}
@@ -224,7 +224,7 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	}
 	inspector_start := time.now()
 	if !native_inspector_render(state.inspector, state.surface_renderer, command, swapchain, swap_w, swap_h,
-		scale_x, scale_y, scratch_allocator=state.host_scratch.allocator) {
+		scale_x, scale_y, content_inset_top=inset_top, scratch_allocator=state.host_scratch.allocator) {
 		_ = sdl3.CancelGPUCommandBuffer(command)
 		fail("Alicorn visual inspector live-resize draw failed")
 	}

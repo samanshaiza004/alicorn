@@ -127,7 +127,7 @@ run_application_loop :: proc(
 	window_flags := sdl3.GetWindowFlags(window)
 	text_input_state := Native_Text_Input_State{window_focused=(window_flags & sdl3.WindowFlags{.INPUT_FOCUS}) != sdl3.WindowFlags{}}
 	if native_menu != nil { text_input_state.content_inset_top = native_menu.content_inset_top }
-	text_input_state.suspended = native_inspector_visible(&inspector)
+	text_input_state.suspended = native_inspector_keyboard_owns_input(&inspector)
 	pointer_modifier_state := sdl3.GetModState()
 	pointer_button_state := Native_Pointer_Button_State{}
 	alicorn.invalidate_root(rt, "SDL application initial frame")
@@ -638,7 +638,8 @@ run_application_loop :: proc(
 			if devtools_hud.visible { timing.devtools_hud_encode_ns += hud_encode_elapsed }
 			inspector_encode_start := time.now()
 			if !native_inspector_render(&inspector, surface_renderer, command, swapchain, swap_w, swap_h,
-				logical_to_pixel_x, logical_to_pixel_y, scratch_allocator=host_scratch.allocator) {
+				logical_to_pixel_x, logical_to_pixel_y,
+				content_inset_top=content_inset_top, scratch_allocator=host_scratch.allocator) {
 				_ = sdl3.CancelGPUCommandBuffer(command)
 				fail("Alicorn visual inspector draw failed")
 			}

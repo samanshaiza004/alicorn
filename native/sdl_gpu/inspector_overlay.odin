@@ -35,6 +35,10 @@ Native_Inspector_Overlay :: struct {
 	// Track the complete gesture, including events received before opening.
 	buttons_down: u32,
 	swallowed_buttons: u32,
+	application_buttons: u32,
+	inspector_buttons: u32,
+	pick_buttons: u32,
+	keyboard_owned: bool,
 	keys_down: [512]bool,
 	swallowed_keys: [512]bool,
 	suppress_text_until_drain: bool,
@@ -124,6 +128,9 @@ native_inspector_update :: proc(overlay: ^Native_Inspector_Overlay, source: ^ali
 		overlay.builds += 1
 		if !overlay.state.visible {
 			_ = alicorn.cancel_pointer_capture(&overlay.runtime)
+			overlay.swallowed_buttons |= overlay.inspector_buttons | overlay.pick_buttons
+			overlay.inspector_buttons, overlay.pick_buttons = 0, 0
+			overlay.keyboard_owned = false
 			overlay.suppress_text_until_drain = true
 			overlay.redraw_pending = true
 			break
@@ -147,6 +154,7 @@ native_inspector_render :: proc(
 	target: ^sdl3.GPUTexture,
 	width, height: sdl3.Uint32,
 	scale_x, scale_y: f32,
+	content_inset_top: f32 = 0,
 	scratch_allocator := context.temp_allocator,
 ) -> bool {
 	if !native_inspector_visible(overlay) { return true }
@@ -154,6 +162,7 @@ native_inspector_render :: proc(
 		command, target, width, height, &overlay.text_renderer, surface_renderer,
 		&overlay.solid_renderer, overlay.runtime.display[:], scale_x, scale_y,
 		clear_background=false, scratch_allocator=scratch_allocator,
+		content_inset_top=content_inset_top,
 	)
 }
 
@@ -177,33 +186,60 @@ native_inspector_set_visible :: proc(
 ) {
 	if overlay == nil || !overlay.enabled || overlay.state.visible == visible { return }
 	if visible {
-		// Preserve app focus while canceling its native composition and any
-		// captured press/drag that will no longer receive matching input.
-		if text_input != nil {
-			native_cancel_current_text_composition(application, source, text_input, "visual inspector opened")
-			text_input.suspended = true
-		}
-		captured := source.captured_node
-		cancelled := alicorn.cancel_pointer_capture(source)
-		_ = native_dispatch_drag_event(application, source)
-		if cancelled && application != nil && application.on_pointer != nil {
-			application.on_pointer(application.state, source, alicorn.Pointer_Event{kind=.Cancel}, captured)
-		}
-		overlay.swallowed_buttons |= overlay.buttons_down
-		for down, index in overlay.keys_down { if down { overlay.swallowed_keys[index] = true } }
+		// Visibility is independent of input ownership. Preserve the application's
+		// current text composition and pointer capture until the user interacts
+		// with the inspector itself.
 		alicorn.inspector_overlay_open(&overlay.state)
 		alicorn.invalidate_root(&overlay.runtime, "visual inspector opened")
 	} else {
+		overlay.swallowed_buttons |= overlay.inspector_buttons | overlay.pick_buttons
+		overlay.inspector_buttons, overlay.pick_buttons = 0, 0
+		native_inspector_cancel_keyboard_ownership(overlay, text_input, window)
 		_ = alicorn.cancel_pointer_capture(&overlay.runtime)
 		alicorn.inspector_overlay_close(&overlay.state)
 	}
-	overlay.suppress_text_until_drain = true
 	overlay.redraw_pending = true
 	if window != nil {
 		if text_input != nil { sync_text_input_focus(window, source, text_input, application) }
+	}
+}
+
+native_inspector_keyboard_owns_input :: proc(overlay: ^Native_Inspector_Overlay) -> bool {
+	return native_inspector_visible(overlay) && overlay.keyboard_owned
+}
+
+native_inspector_cancel_keyboard_ownership :: proc(
+	overlay: ^Native_Inspector_Overlay,
+	text_input: ^Native_Text_Input_State,
+	window: ^sdl3.Window,
+) {
+	if overlay == nil || !overlay.keyboard_owned { return }
+	overlay.keyboard_owned = false
+	overlay.suppress_text_until_drain = true
+	if text_input != nil { text_input.suspended = false }
+	if window != nil {
 		_ = sdl3.ClearComposition(window)
-		// TEXT_INPUT/EDITING already queued for the previous owner must never
-		// enter either runtime after a toggle.
+		sdl3.FlushEvent(.TEXT_INPUT)
+		sdl3.FlushEvent(.TEXT_EDITING)
+	}
+}
+
+native_inspector_take_keyboard_ownership :: proc(
+	overlay: ^Native_Inspector_Overlay,
+	application: ^Application,
+	source: ^alicorn.Runtime,
+	text_input: ^Native_Text_Input_State,
+	window: ^sdl3.Window,
+) {
+	if overlay == nil || !native_inspector_visible(overlay) || overlay.keyboard_owned { return }
+	if text_input != nil {
+		native_cancel_current_text_composition(application, source, text_input, "inspector took keyboard input")
+		text_input.suspended = true
+	}
+	overlay.keyboard_owned = true
+	overlay.suppress_text_until_drain = true
+	if window != nil {
+		_ = sdl3.ClearComposition(window)
 		sdl3.FlushEvent(.TEXT_INPUT)
 		sdl3.FlushEvent(.TEXT_EDITING)
 	}
@@ -212,15 +248,16 @@ native_inspector_set_visible :: proc(
 native_inspector_finish_input_pump :: proc(overlay: ^Native_Inspector_Overlay, text_input: ^Native_Text_Input_State) {
 	if overlay == nil || !overlay.enabled { return }
 	overlay.suppress_text_until_drain = false
-	if text_input != nil { text_input.suspended = overlay.state.visible }
+	if text_input != nil { text_input.suspended = native_inspector_keyboard_owns_input(overlay) }
 }
 
 native_inspector_pointer_button_mask :: proc(button: int) -> u32 {
 	return u32(1) << u32(button-1) if button > 0 && button <= 32 else 0
 }
 
-// Called before application semantic routing. Consumed input never reaches
-// app process_pointer/process_scroll, shortcuts, or application callbacks.
+// Called before application semantic routing. Inspector-owned gestures stay
+// with the overlay through release; input outside its panel normally falls
+// through to the application. Pick mode is the only outside-panel exception.
 // Window, worker and close events continue through the ordinary host pump.
 native_inspector_route_event :: proc(
 	overlay: ^Native_Inspector_Overlay,
@@ -241,7 +278,6 @@ native_inspector_route_event :: proc(
 		was_swallowed := valid_index && overlay.swallowed_keys[index]
 		if valid_index {
 			overlay.keys_down[index] = event.type == .KEY_DOWN
-			if visible && event.type == .KEY_DOWN { overlay.swallowed_keys[index] = true }
 			if event.type == .KEY_UP { overlay.swallowed_keys[index] = false }
 		}
 		if event.type == .KEY_DOWN && event.key.down && !event.key.repeat && event.key.key == sdl3.K_F9 {
@@ -249,12 +285,15 @@ native_inspector_route_event :: proc(
 			native_inspector_set_visible(overlay, !visible, source, application, text_input, window)
 			return true
 		}
-		if visible && event.type == .KEY_DOWN && event.key.down && event.key.key == sdl3.K_ESCAPE {
+		if event.type == .KEY_UP { return was_swallowed }
+		if !visible || !overlay.keyboard_owned { return was_swallowed }
+		if event.type == .KEY_DOWN && event.key.down && event.key.key == sdl3.K_ESCAPE {
 			native_inspector_set_visible(overlay, false, source, application, text_input, window)
+			if valid_index { overlay.swallowed_keys[index] = true }
 			return true
 		}
-		if !visible { return was_swallowed }
 		if event.type == .KEY_DOWN && event.key.down {
+			if valid_index { overlay.swallowed_keys[index] = true }
 			if event.key.key == sdl3.K_P {
 				overlay.state.picking = !overlay.state.picking
 				alicorn.invalidate_root(&overlay.runtime, "inspector pick mode changed")
@@ -275,31 +314,66 @@ native_inspector_route_event :: proc(
 	}
 	if ok {
 		mask := native_inspector_pointer_button_mask(pointer.button)
-		was_swallowed := overlay.swallowed_buttons & mask != 0
+		was_swallowed := mask != 0 && overlay.swallowed_buttons & mask != 0
+		if pointer.kind == .Down { overlay.buttons_down |= mask }
+		if pointer.kind == .Up { overlay.buttons_down &= ~mask }
+		if overlay.swallowed_buttons != 0 {
+			if pointer.kind == .Down { overlay.swallowed_buttons |= mask }
+			if pointer.kind == .Up && was_swallowed { overlay.swallowed_buttons &= ~mask }
+			return true
+		}
+		if overlay.application_buttons != 0 {
+			if pointer.kind == .Down { overlay.application_buttons |= mask }
+			if pointer.kind == .Up { overlay.application_buttons &= ~mask }
+			return false
+		}
+		if overlay.inspector_buttons != 0 {
+			_ = alicorn.process_pointer(&overlay.runtime, pointer)
+			if pointer.kind == .Up { overlay.inspector_buttons &= ~mask }
+			return true
+		}
+		if overlay.pick_buttons != 0 {
+			if pointer.kind == .Up { overlay.pick_buttons &= ~mask }
+			return true
+		}
 		if pointer.kind == .Down {
-			overlay.buttons_down |= mask
-			if visible { overlay.swallowed_buttons |= mask }
-		} else if pointer.kind == .Up {
-			overlay.buttons_down &= ~mask
-			overlay.swallowed_buttons &= ~mask
-		}
-		if !visible {
-			return was_swallowed || (pointer.kind == .Move && overlay.swallowed_buttons != 0)
-		}
-		bounds := overlay.state.panel_bounds
-		in_panel := pointer.x >= bounds.x && pointer.y >= bounds.y && pointer.x < bounds.x+bounds.w && pointer.y < bounds.y+bounds.h
-		if overlay.state.picking && !in_panel {
-			if pointer.kind == .Down && pointer.button == 1 {
+			if !visible {
+				overlay.application_buttons |= mask
+				return false
+			}
+			bounds := overlay.state.panel_bounds
+			in_panel := pointer.x >= bounds.x && pointer.y >= bounds.y && pointer.x < bounds.x+bounds.w && pointer.y < bounds.y+bounds.h
+			if in_panel {
+				overlay.inspector_buttons |= mask
+				native_inspector_take_keyboard_ownership(overlay, application, source, text_input, window)
+				_ = alicorn.process_pointer(&overlay.runtime, pointer)
+				return true
+			}
+			if overlay.state.picking && pointer.button == 1 {
+				overlay.pick_buttons |= mask
 				_ = alicorn.inspector_overlay_pick(&overlay.state, source, pointer.x, pointer.y)
 				alicorn.invalidate_root(&overlay.runtime, "inspector picked application node")
+				return true
 			}
-		} else if in_panel || overlay.runtime.captured_node != 0 {
-			_ = alicorn.process_pointer(&overlay.runtime, pointer)
+			native_inspector_cancel_keyboard_ownership(overlay, text_input, window)
+			overlay.application_buttons |= mask
+			return false
 		}
-		return true
+		if !visible { return false }
+		bounds := overlay.state.panel_bounds
+		in_panel := pointer.x >= bounds.x && pointer.y >= bounds.y && pointer.x < bounds.x+bounds.w && pointer.y < bounds.y+bounds.h
+		if in_panel || overlay.runtime.captured_node != 0 {
+			_ = alicorn.process_pointer(&overlay.runtime, pointer)
+			return true
+		}
+		return false
 	}
 	if event.type == .MOUSE_WHEEL {
-		if !visible { return overlay.swallowed_buttons != 0 }
+		if !visible { return false }
+		bounds := overlay.state.panel_bounds
+		inside := event.wheel.mouse_x >= bounds.x && event.wheel.mouse_y >= bounds.y &&
+			event.wheel.mouse_x < bounds.x+bounds.w && event.wheel.mouse_y < bounds.y+bounds.h
+		if !inside { return false }
 		_ = alicorn.process_scroll(&overlay.runtime, alicorn.Scroll_Event{
 			delta_x=event.wheel.x, delta_y=event.wheel.y,
 			ticks_x=int(event.wheel.integer_x), ticks_y=int(event.wheel.integer_y),
@@ -309,11 +383,13 @@ native_inspector_route_event :: proc(
 		return true
 	}
 	if event.type == .TEXT_INPUT || event.type == .TEXT_EDITING {
-		return visible || overlay.suppress_text_until_drain
+		return overlay.suppress_text_until_drain || native_inspector_keyboard_owns_input(overlay)
 	}
 	if event.type == .WINDOW_FOCUS_LOST {
 		_ = alicorn.cancel_pointer_capture(&overlay.runtime)
 		overlay.buttons_down, overlay.swallowed_buttons = 0, 0
+		overlay.application_buttons, overlay.inspector_buttons, overlay.pick_buttons = 0, 0, 0
+		overlay.keyboard_owned = false
 		overlay.keys_down, overlay.swallowed_keys = {}, {}
 	}
 	return false
