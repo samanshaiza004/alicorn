@@ -121,7 +121,7 @@ layout_size_is_fit_content :: proc(value: f32) -> bool {
 layout_node_has_content_height :: proc(node: ^Node) -> bool {
 	if node == nil || node.adaptive_owner || !layout_size_is_fit_content(node.style.height) { return false }
 	if node.kind == .Scroll_Region { return true }
-	return node.kind == .Container && node.style.direction == .Column
+	return node.kind == .Container && (node.style.direction == .Column || node.style.direction == .Row)
 }
 
 // Content signatures cover only realized descendants whose sizes contribute
@@ -154,6 +154,9 @@ layout_measure_content_signature :: proc(rt: ^Runtime, node: ^Node) -> u64 {
 			h = hash_mix(h, u64(i64(state.cache_key.constraints.height.max)))
 			h = hash_mix(h, u64(state.cache_key.constraints.height.unbounded_max ? 1 : 0))
 			h = hash_mix(h, layout_measure_dependencies_hash(state.cache_key.dependencies))
+			for dependency in Axis_Dependency {
+				h = hash_mix(h, u64(dependency in state.result.input_axis_dependencies ? 1 : 0))
+			}
 		}
 		if layout_node_has_content_height(child) {
 			h = hash_mix(h, layout_measure_content_signature(rt, child))
@@ -190,6 +193,47 @@ layout_content_child_constraints :: proc(
 	return Layout_Constraints{width=width, height=height}
 }
 
+// A Row's natural main-axis widths must be known before its shared allocator
+// can assign constrained widths. Shape those children at their authored width
+// when present, otherwise at their intrinsic width; the second pass below
+// remeasures them at the allocator's exact width.
+layout_content_row_natural_child_constraints :: proc(child: ^Node) -> Layout_Constraints {
+	if child == nil { return {} }
+	width := layout_axis_constraint_normalize(child.style.min_width, child.style.max_width)
+	if child.style.width >= 0 {
+		assigned_width := clampf(child.style.width, child.style.min_width, child.style.max_width)
+		width = layout_axis_constraint_normalize(assigned_width, assigned_width)
+	}
+	height := layout_axis_constraint_normalize(child.style.min_height, child.style.max_height)
+	if child.style.height >= 0 {
+		assigned_height := clampf(child.style.height, child.style.min_height, child.style.max_height)
+		height = layout_axis_constraint_normalize(assigned_height, assigned_height)
+	}
+	return Layout_Constraints{width=width, height=height}
+}
+
+layout_content_row_assigned_child_constraints :: proc(
+	child: ^Node,
+	assigned_width: f32,
+	parent_constraints: Layout_Constraints,
+) -> Layout_Constraints {
+	if child == nil { return {} }
+	width := clampf(assigned_width, child.style.min_width, child.style.max_width)
+	height := layout_axis_constraint_normalize(child.style.min_height, child.style.max_height)
+	if child.style.height >= 0 {
+		assigned_height := clampf(child.style.height, child.style.min_height, child.style.max_height)
+		height = layout_axis_constraint_normalize(assigned_height, assigned_height)
+	} else if layout_node_has_content_height(child) && !parent_constraints.height.unbounded_max {
+		max_height := layout_unit_to_f32(parent_constraints.height.max)
+		if child.style.max_height >= 0 { max_height = minf(max_height, child.style.max_height) }
+		height = layout_axis_constraint_normalize(child.style.min_height, max_height)
+	}
+	return Layout_Constraints{
+		width=layout_axis_constraint_normalize(width, width),
+		height=height,
+	}
+}
+
 layout_content_add_units :: proc(total: i64, amount: Layout_Unit) -> i64 {
 	limit := i64(1 << 50)
 	value := i64(amount)
@@ -205,31 +249,105 @@ layout_measure_content_height :: proc(rt: ^Runtime, node: ^Node, constraints: La
 		style_constraint := layout_axis_constraint_normalize(node.style.min_height, node.style.max_height)
 		return layout_measure_constrain_axis(outer, style_constraint)
 	}
-	if node.style.direction != .Column {
-		record_trace(rt, .Measure, node.id, "fit-content height currently requires Column direction")
+	if node.kind != .Container || (node.style.direction != .Column && node.style.direction != .Row) {
+		record_trace(rt, .Measure, node.id, "fit-content height currently requires a Row or Column Container")
 		return 0
 	}
 	total: i64 = 0
 	realized_children := 0
-	for child_id in node.children {
-		child, ok := rt.nodes[child_id]
-		if !ok || child == nil || !child.active { continue }
-		realized_children += 1
-		child_constraints := layout_content_child_constraints(node, child, constraints)
-		measured := layout_measure_node(rt, child, child_constraints)
-		child_state := rt.measure_states[child_id]
-		child_state.parent_size_dependencies = {.Height_To_Height}
-		rt.measure_states[child_id] = child_state
-		total = layout_content_add_units(total, measured.size.height)
-	}
-	if realized_children > 1 {
-		gap := layout_unit_extent(maxf(node.style.gap, 0))
-		for _ in 1..<realized_children { total = layout_content_add_units(total, gap) }
+	if node.style.direction == .Column {
+		for child_id in node.children {
+			child, ok := rt.nodes[child_id]
+			if !ok || child == nil || !child.active { continue }
+			realized_children += 1
+			child_constraints := layout_content_child_constraints(node, child, constraints)
+			measured := layout_measure_node(rt, child, child_constraints)
+			child_state := rt.measure_states[child_id]
+			child_state.parent_size_dependencies = {.Height_To_Height}
+			rt.measure_states[child_id] = child_state
+			total = layout_content_add_units(total, measured.size.height)
+		}
+		if realized_children > 1 {
+			gap := layout_unit_extent(maxf(node.style.gap, 0))
+			for _ in 1..<realized_children { total = layout_content_add_units(total, gap) }
+		}
+	} else {
+		children := make([dynamic]Node_ID, 0, len(node.children), allocator=rt.scratch_allocator)
+		defer delete(children)
+		for child_id in node.children {
+			child, ok := rt.nodes[child_id]
+			if !ok || child == nil || !child.active { continue }
+			append(&children, child_id)
+			// Resolve an intrinsic main-axis ideal first. This pass deliberately
+			// leaves non-explicit widths unbounded so a wrapped label does not
+			// mistake the full Row proposal for its natural width.
+			_ = layout_measure_node(rt, child, layout_content_row_natural_child_constraints(child))
+		}
+		realized_children = len(children)
+		max_child_height: Layout_Unit = 0
+		row_width: f32 = -1
+		if !constraints.width.unbounded_max {
+			row_width = layout_unit_to_f32(constraints.width.max)
+		} else if node.style.width >= 0 {
+			row_width = clampf(node.style.width, node.style.min_width, node.style.max_width)
+		}
+		if row_width >= 0 && realized_children > 0 {
+			padding_units := layout_unit_extent(maxf(node.style.padding, 0))
+			outer_units := layout_unit_maximum(row_width)
+			inner_units := i64(outer_units)-2*i64(padding_units)
+			if inner_units < 0 { inner_units = 0 }
+			gap_units := layout_unit_extent(maxf(node.style.gap, 0))
+			gap_total := u128(i64(gap_units))*u128(realized_children-1)
+			available_units: Layout_Unit = 0
+			if gap_total < u128(inner_units) { available_units = Layout_Unit(inner_units-i64(gap_total)) }
+			main_sizes := make([]f32, realized_children, allocator=rt.scratch_allocator)
+			defer delete(main_sizes, rt.scratch_allocator)
+			resolve_main_sizes(rt, children[:], .Row, available_units, main_sizes)
+			for child_id, index in children {
+				child := rt.nodes[child_id]
+				child_constraints := layout_content_row_assigned_child_constraints(child, main_sizes[index], constraints)
+				measured := layout_measure_node(rt, child, child_constraints)
+				child_state := rt.measure_states[child_id]
+				child_state.parent_size_dependencies = {.Width_To_Height, .Height_To_Height}
+				rt.measure_states[child_id] = child_state
+				if measured.size.height > max_child_height { max_child_height = measured.size.height }
+			}
+		} else {
+			// No finite width was assigned. Keep width-dependent text at its
+			// intrinsic one-line measure until a parent supplies real width.
+			for child_id in children {
+				child_state := rt.measure_states[child_id]
+				child_state.parent_size_dependencies = {.Width_To_Height, .Height_To_Height}
+				rt.measure_states[child_id] = child_state
+				if child_state.result.size.height > max_child_height { max_child_height = child_state.result.size.height }
+			}
+		}
+		total = layout_content_add_units(total, max_child_height)
 	}
 	padding := layout_unit_extent(maxf(node.style.padding, 0))
 	total = layout_content_add_units(total, padding)
 	total = layout_content_add_units(total, padding)
 	return Layout_Unit(total)
+}
+
+layout_measure_content_dependencies :: proc(
+	rt: ^Runtime,
+	node: ^Node,
+	constraints: Layout_Constraints,
+) -> Measure_Constraint_Dependencies {
+	if rt == nil || node == nil || node.kind != .Container { return {} }
+	dependencies: Measure_Constraint_Dependencies
+	if !constraints.width.unbounded_max { dependencies += {.Width_To_Width} }
+	if !constraints.height.unbounded_max { dependencies += {.Height_To_Height} }
+	for child_id in node.children {
+		child, ok := rt.nodes[child_id]
+		if !ok || child == nil || !child.active { continue }
+		child_state := rt.measure_states[child_id]
+		if .Width_To_Height in child_state.result.input_axis_dependencies {
+			dependencies += {.Width_To_Height}
+		}
+	}
+	return dependencies
 }
 
 layout_measure_key_matches :: proc(state: Measure_State, key: Measure_Cache_Key) -> bool {
@@ -443,6 +561,7 @@ layout_measure_node :: proc(
 		content_height = layout_measure_content_height(rt, node, constraints)
 		style_constraint := layout_axis_constraint_normalize(node.style.min_height, node.style.max_height)
 		result.size.height = layout_measure_constrain_axis(content_height, style_constraint)
+		result.input_axis_dependencies += layout_measure_content_dependencies(rt, node, constraints)
 	}
 	// The parent's normalized constraints are part of the measure contract.
 	// In particular, a stretched cross axis is an exact measured output even
@@ -452,6 +571,7 @@ layout_measure_node :: proc(
 	if layout_node_has_content_height(node) {
 		kind := "Column children"
 		if node.kind == .Scroll_Region { kind = "scroll extent" }
+		else if node.style.direction == .Row { kind = "Row children; cross-axis maximum" }
 		record_trace(rt, .Measure, node.id, fmt.tprintf(
 			"fit-content height (%s): content %.3f, measured %.3f",
 			kind,

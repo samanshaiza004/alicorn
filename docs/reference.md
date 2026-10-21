@@ -124,7 +124,7 @@ checker verifies only the mutation scopes the application explicitly reports.
 | `grid_begin` / `grid_end` | Describe a bounded two-dimensional container with explicit row/column tracks; `layout_boundary=true` contains both axes or `layout_boundary_axes` selects stable axes. |
 | `grid_fixed` / `grid_auto` / `grid_fraction` / `grid_min_max` | Declare fixed, measured, weighted, or bounded-flexible Grid tracks. |
 | `grid_cell` | Assign an already-emitted direct Grid child to a row/column and optional spans/alignment. |
-| `LAYOUT_SIZE_FIT_CONTENT` | Opt a Column `Container` into measured height, or a `Scroll_Region` into a content-sized, max-capped viewport. |
+| `LAYOUT_SIZE_FIT_CONTENT` | Opt a Row or Column `Container` into measured height, or a `Scroll_Region` into a content-sized, max-capped viewport. |
 | `button_content_style` | Set label alignment and padding inside a button. |
 | `Text_Style` | Select weight, overflow behavior, and text presentation options. `font_size` is a logical-unit override; the active text scale still applies. |
 | `Style_Theme` / `style_theme_register` | Register an immutable typed color palette for one runtime. |
@@ -170,8 +170,8 @@ divider updates the preference. Pane min/max bounds constrain the resolved
 position. When pane minima exceed the available extent, Alicorn preserves
 them, clips their overflow to the Split, and reports it. Horizontal Split placement and drag
 direction follow inherited writing direction. These flow controls do not make
-arbitrary containers content-sized: the limited Column `FIT_CONTENT` behavior
-is described below, and Grid tracks are a separate facility.
+arbitrary containers content-sized: Row and Column `FIT_CONTENT` behavior is
+described below, and Grid tracks are a separate facility.
 Style scopes do not implicitly create layout boundaries. A layout boundary keeps
 its parent-assigned bounds stable and lets changed descendants relayout locally;
 use it when the application can preserve that geometry contract. This is a
@@ -179,13 +179,18 @@ full-containment boundary, not a per-axis promise.
 
 ### Content-sized height
 
-Set `height=LAYOUT_SIZE_FIT_CONTENT` on a Column `Container` to derive
-its height from its realized direct children, their measured heights, gaps, and
-padding. Width remains parent-provided or explicit. `min_height` and
-`max_height` clamp the measured result deterministically; explicit dimensions
-and ordinary `-1` externally allocated dimensions keep their existing policy.
-This first slice does not recursively compute preferred sizes for arbitrary
-nested containers, and it does not measure unrealized virtual items.
+Set `height=LAYOUT_SIZE_FIT_CONTENT` on a Column `Container` to derive its
+height from realized direct children, their measured heights, gaps, and
+padding. On a Row `Container`, children are first measured at natural main-axis
+widths, then the existing Row allocator assigns widths under the actual
+incoming constraint and width-dependent children are measured again at those
+exact widths. The Row height is the greatest resulting child height plus its
+vertical padding; horizontal gaps affect width allocation, not height. Width
+remains parent-provided or explicit. `min_height` and `max_height` clamp the
+measured result deterministically; explicit dimensions and ordinary `-1`
+externally allocated dimensions keep their existing policy. This bounded
+measurement does not recursively derive preferred sizes for arbitrary nested
+containers, and it does not measure unrealized virtual items.
 
 For a `Scroll_Region`, the same sentinel derives the viewport from its declared
 `content_height`, then applies `min_height`/`max_height` and parent constraints.
@@ -197,8 +202,10 @@ policy.
 Child measured-size changes use `Parent_Size_Dependencies` to decide whether a
 content-sized parent's measured height changes. A changed measurement with an
 identical output does not by itself trigger ancestor layout. Diagnostics record
-the content contribution and final measured height. This is opt-in; ordinary
-Row/Column sizing and growth remain unchanged.
+the content contribution and final measured height. The retained result
+preserves exact incoming constraints and reports the width-to-height dependency
+when wrapped descendants make a content Row depend on available width. This is
+opt-in; ordinary Row/Column sizing and growth remain unchanged.
 
 ### Constraint-driven adaptive regions
 
