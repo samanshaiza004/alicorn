@@ -5,26 +5,27 @@ import "core:math"
 import "core:strings"
 
 LAYOUT_MEASURE_TEST_FONT :: #load("../assets/fonts/AtkinsonHyperlegibleNext-Variable.ttf")
+LAYOUT_MEASURE_TEST_MONO_FONT :: #load("../assets/fonts/AtkinsonHyperlegibleMono-Variable.ttf")
 
-layout_measure_test_describe_text :: proc(rt: ^Runtime, value: string, color: Color) -> Node_ID {
+layout_measure_test_describe_text :: proc(rt: ^Runtime, value: string, color: Color, font := Font_Role.UI) -> Node_ID {
 	invalidate_root(rt, "layout measure test description")
 	ui, build := begin_frame(rt)
 	if !build { return 0 }
 	container_begin(&ui, .Root, key=key_string("layout-measure-test-root"), style=layout_style(.Column, width=240, height=120))
-	id := text(&ui, value, key=key_string("layout-measure-test-text"), style=layout_style(width=200, height=40))
+	id := text(&ui, value, key=key_string("layout-measure-test-text"), style=layout_style(width=200, height=40), font=font)
 	if len(rt.pending) > 0 { rt.pending[len(rt.pending)-1].description.color = color }
 	container_end(&ui)
 	end_frame(&ui)
 	return id
 }
 
-layout_measure_test_describe_scoped_text :: proc(rt: ^Runtime, scale: f32) -> (editor, sidebar: Node_ID) {
+layout_measure_test_describe_scoped_text :: proc(rt: ^Runtime, scale: f32, density: f32 = 1) -> (editor, sidebar: Node_ID) {
 	invalidate_root(rt, "layout boundary scale test description")
 	ui, build := begin_frame(rt)
 	if !build { return }
 	container_begin(&ui, .Root, key=key_string("measure-boundary-root"), style=layout_style(.Row, width=240, height=120))
 	container_begin(&ui, .Container, key=key_string("measure-boundary-editor"), style=layout_style(.Column, width=120, height=120), layout_boundary=true)
-	scope := style_environment_push(&ui, Style_Environment{text_scale=scale})
+	scope := style_environment_push(&ui, Style_Environment{text_scale=scale, density=density})
 	editor = text_field(&ui, "A short editor line", key=key_string("measure-boundary-editor-text"), style=layout_style(width=110))
 	style_environment_pop(&ui, scope)
 	container_end(&ui)
@@ -32,6 +33,26 @@ layout_measure_test_describe_scoped_text :: proc(rt: ^Runtime, scale: f32) -> (e
 	container_end(&ui)
 	end_frame(&ui)
 	return
+}
+
+layout_measure_test_describe_directional_row :: proc(rt: ^Runtime, direction: Writing_Direction) -> (first, second: Node_ID) {
+	invalidate_root(rt, "writing-direction measurement dependency fixture")
+	ui, build := begin_frame(rt)
+	if !build { return }
+	container_begin(&ui, .Root, key=key_string("measure-direction-root"), style=layout_style(.Row, width=240, height=120, writing_direction=direction))
+	first = text(&ui, "First", key=key_string("measure-direction-first"), style=layout_style(width=60, height=24))
+	second = text(&ui, "Second", key=key_string("measure-direction-second"), style=layout_style(width=80, height=24))
+	container_end(&ui)
+	end_frame(&ui)
+	return
+}
+
+layout_measure_test_trace_has_reason :: proc(rt: ^Runtime, node: Node_ID, fragment: string) -> bool {
+	if rt == nil { return false }
+	for event in rt.trace.events {
+		if event.kind == .Measure && event.node == node && strings.contains(event.reason, fragment) { return true }
+	}
+	return false
 }
 
 @(test)
@@ -133,6 +154,80 @@ test_scoped_text_measure_reflows_inside_explicit_layout_boundary :: proc(t: ^tes
 		"text scale should reshape and change the editor's measured height")
 	testing.expect(t, rt.layout_visit_probe[editor] > 0 && rt.layout_visit_probe[sidebar] == 0,
 		"the editor layout boundary should contain the reflow and leave its sibling unvisited")
+	testing.expect(t, layout_measure_test_trace_has_reason(&rt, editor, "metrics and typography dependency generations changed"),
+		"the inspector measurement trace should name both metric and typography dependencies changed by text scale")
+}
+
+@(test)
+test_density_change_invalidates_only_scoped_measurement_and_explains_metrics_dependency :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 120}, Runtime_Config{trace_capacity=64})
+	defer destroy_runtime(&rt)
+	testing.expect(t, text_engine_load_font(&rt.text_engine, LAYOUT_MEASURE_TEST_FONT), "density fixture font should load")
+	editor, sidebar := layout_measure_test_describe_scoped_text(&rt, 1, 1)
+	if editor == 0 || sidebar == 0 { testing.expect(t, false, "density fixture should retain its scoped editor and sibling"); return }
+	old_revision := rt.measure_states[editor].input_revision
+	old_width := rt.nodes[editor].text_run.max_width
+	misses_before := rt.stats.measure_cache_misses
+	shape_before := rt.stats.text_shape_requests
+	rt.layout_visit_probe[editor] = 0
+	rt.layout_visit_probe[sidebar] = 0
+
+	next_editor, next_sidebar := layout_measure_test_describe_scoped_text(&rt, 1, 1.5)
+	testing.expect(t, next_editor == editor && next_sidebar == sidebar, "density change should retain identities")
+	testing.expect(t, rt.measure_states[editor].input_revision == old_revision,
+		"density changes should use the typed metrics generation rather than masquerading as local text changes")
+	testing.expect(t, rt.stats.measure_cache_misses == misses_before+1 && rt.stats.text_shape_requests > shape_before &&
+		rt.nodes[editor].text_run.max_width != old_width,
+		"density should remeasure the text field using its updated logical content inset")
+	testing.expect(t, rt.layout_visit_probe[editor] > 0 && rt.layout_visit_probe[sidebar] == 0,
+		"density invalidation should remain scoped to the affected editor")
+	testing.expect(t, layout_measure_test_trace_has_reason(&rt, editor, "metrics dependency generation changed"),
+		"the inspector measurement trace should identify the metrics dependency")
+}
+
+@(test)
+test_font_generation_invalidates_retained_text_and_explains_font_dependency :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 120}, Runtime_Config{trace_capacity=64})
+	defer destroy_runtime(&rt)
+	testing.expect(t, text_engine_load_font_role(&rt.text_engine, .Monospace, LAYOUT_MEASURE_TEST_MONO_FONT),
+		"monospace fixture font should load")
+	black := Color{0.1, 0.1, 0.1, 1}
+	id := layout_measure_test_describe_text(&rt, "iii WWW", black, .Monospace)
+	if id == 0 { testing.expect(t, false, "font fixture text should be retained"); return }
+	old_revision := rt.measure_states[id].input_revision
+	misses_before := rt.stats.measure_cache_misses
+	shape_before := rt.stats.text_shape_requests
+	old_font_generation := rt.text_engine.font_generation
+
+	testing.expect(t, text_engine_load_font_role(&rt.text_engine, .Monospace, LAYOUT_MEASURE_TEST_FONT),
+		"replacement font fixture should load")
+	_ = layout_measure_test_describe_text(&rt, "iii WWW", black, .Monospace)
+	testing.expect(t, rt.text_engine.font_generation > old_font_generation && rt.measure_states[id].input_revision == old_revision,
+		"font resource changes should advance the Runtime dependency without changing application text input")
+	testing.expect(t, rt.stats.measure_cache_misses == misses_before+1 && rt.stats.text_shape_requests > shape_before,
+		"a font generation change should invalidate and reshape the retained text measurement")
+	testing.expect(t, layout_measure_test_trace_has_reason(&rt, id, "font dependency generation changed"),
+		"the inspector measurement trace should identify the font dependency")
+}
+
+@(test)
+test_writing_direction_changes_placement_without_invalidating_intrinsic_measurement :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 120}, Runtime_Config{trace_capacity=64})
+	defer destroy_runtime(&rt)
+	testing.expect(t, text_engine_load_font(&rt.text_engine, LAYOUT_MEASURE_TEST_FONT), "direction fixture font should load")
+	first, second := layout_measure_test_describe_directional_row(&rt, .Left_To_Right)
+	if first == 0 || second == 0 { testing.expect(t, false, "direction fixture should retain both text nodes"); return }
+	misses_before := rt.stats.measure_cache_misses
+	shapes_before := rt.stats.text_shape_requests
+	ltr_first := rt.nodes[first].bounds.x
+	ltr_second := rt.nodes[second].bounds.x
+
+	next_first, next_second := layout_measure_test_describe_directional_row(&rt, .Right_To_Left)
+	testing.expect(t, next_first == first && next_second == second, "direction change should preserve retained text identities")
+	testing.expect(t, rt.nodes[first].bounds.x > rt.nodes[second].bounds.x && ltr_first < ltr_second,
+		"writing direction should reverse physical placement while preserving logical child identity")
+	testing.expect(t, rt.stats.measure_cache_misses == misses_before && rt.stats.text_shape_requests == shapes_before,
+		"writing direction changes placement only and must not invalidate intrinsic text measurement")
 }
 
 layout_measure_test_describe_axis_scoped_text :: proc(rt: ^Runtime, scale: f32) -> (panel, sibling: Node_ID) {
