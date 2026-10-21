@@ -34,13 +34,13 @@ METADATA_PATH="$REPO_ROOT/$METADATA"
 APP_PACKAGE=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["odinPackage"])' "$METADATA_PATH")
 APP_NAME=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["executableName"])' "$METADATA_PATH")
 OUT_ROOT="$REPO_ROOT/out/native-package"
-SDL_ROOT="$OUT_ROOT/sdl-3.4.16"
-ARCHIVE="$SDL_ROOT/SDL3-3.4.16.tar.gz"
+SDL_ROOT="$OUT_ROOT/sdl-3.4.18"
+ARCHIVE="$SDL_ROOT/SDL3-3.4.18.tar.gz"
 SOURCE="$SDL_ROOT/source"
 BUILD="$SDL_ROOT/build"
 PREFIX="$SDL_ROOT/prefix"
-SDL_URL='https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-3.4.16.tar.gz'
-SDL_SHA='7322236cd12090c3eb40b9728be4d49c76f66ad17d04369584d4ecad5cf77c68'
+SDL_URL='https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz'
+SDL_SHA='9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3'
 mkdir -p "$SDL_ROOT"
 ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
 ACCESSKIT_ROOT="$REPO_ROOT/.deps/accesskit/accesskit-c-0.23.1"
@@ -60,7 +60,7 @@ SDL_LICENSE="$SOURCE/LICENSE.txt"
 
 SDL_LINK_FLAGS=
 SDL_RUNTIME=
-SDL_VERSION=3.4.16
+SDL_VERSION=3.4.18
 if [ "$SDL_LINKAGE" = static ]; then
 	if [ ! -f "$BUILD/CMakeCache.txt" ]; then
 		cmake -S "$SOURCE" -B "$BUILD" \
@@ -76,6 +76,10 @@ if [ "$SDL_LINKAGE" = static ]; then
 	command -v pkg-config >/dev/null 2>&1 || { echo 'Static SDL link flags require pkg-config (install pkgconf).'; exit 127; }
 	SDL_LINK_FLAGS="-L$PREFIX/lib"
 	SDL_LINK_FLAGS="$SDL_LINK_FLAGS $(PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig" pkg-config --static --libs-only-other sdl3)"
+	# Odin's built-in system:SDL3 import resolves the Homebrew dylib before
+	# extra linker search paths are considered. Force the verified archive into
+	# the executable, then remove the now-unneeded dylib load command.
+	SDL_LINK_FLAGS="$SDL_LINK_FLAGS -Wl,-force_load,$PREFIX/lib/libSDL3.a -Wl,-dead_strip_dylibs"
 else
 	command -v brew >/dev/null 2>&1 || { echo 'Shared SDL packaging requires Homebrew SDL3.' >&2; exit 1; }
 	SDL_PREFIX=$(brew --prefix sdl3)

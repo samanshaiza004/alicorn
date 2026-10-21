@@ -17,7 +17,7 @@ Also install the native platform tools:
   C++**, including MSVC and a Windows SDK. Use an Odin distribution with its
   `vendor/sdl3` package and `SDL3.dll`.
 - **macOS:** Xcode Command Line Tools (`xcode-select --install`) and SDL3
-  `3.4.16` (`brew install sdl3`). Keep the SDL3 version at `3.4.16`; the host
+  `3.4.18` (`brew install sdl3`). Keep the SDL3 version at `3.4.18`; the host
   checks it when it starts.
 
 The Windows/macOS build helpers also fetch the pinned AccessKit C `0.23.1`

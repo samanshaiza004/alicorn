@@ -39,8 +39,8 @@ Run :: proc(application: Application, smoke := false) {
 		sdl3.VERSIONNUM_MICRO(linked_sdl_version),
 	)
 	when ODIN_OS == .Darwin {
-		if linked_sdl_version != sdl3.VERSIONNUM(3, 4, 16) {
-			fail("macOS requires SDL3 3.4.16")
+		if linked_sdl_version != sdl3.VERSIONNUM(3, 4, 18) {
+			fail("macOS requires SDL3 3.4.18")
 		}
 	}
 	title := application.title

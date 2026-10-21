@@ -29,7 +29,7 @@ if ($SDLLinkage -eq 'Shared') {
 }
 if ([string]::IsNullOrWhiteSpace($SDLVersion)) {
     if ($SDLLinkage -eq 'Static') {
-        $SDLVersion = '3.4.16'
+        $SDLVersion = '3.4.18'
     } else {
         $VersionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($SDLRuntime)
         if ($VersionInfo.ProductMajorPart -lt 1) { throw "Cannot determine SDL version from '$SDLRuntime'; pass -SDLVersion." }
@@ -275,8 +275,8 @@ $Manifest = [ordered]@{
         alicornRevision = $AlicornRevision
         sdlVersion = $SDLVersion
         sdlLinkage = $SDLLinkage.ToLowerInvariant()
-        sdlSource = $(if ($SDLLinkage -eq 'Static') { 'https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-3.4.16.tar.gz' } else { $null })
-        sdlSourceSha256 = $(if ($SDLLinkage -eq 'Static') { '7322236cd12090c3eb40b9728be4d49c76f66ad17d04369584d4ecad5cf77c68' } else { $null })
+        sdlSource = $(if ($SDLLinkage -eq 'Static') { 'https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz' } else { $null })
+        sdlSourceSha256 = $(if ($SDLLinkage -eq 'Static') { '9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3' } else { $null })
         license = [ordered]@{ path='SDL-LICENSE.txt'; sha256=(Get-FileHash -LiteralPath (Join-Path $PackageRoot 'SDL-LICENSE.txt') -Algorithm SHA256).Hash.ToLowerInvariant() }
         reiconIcons = [ordered]@{
             weight='filled'
