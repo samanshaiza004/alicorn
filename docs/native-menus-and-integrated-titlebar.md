@@ -1,5 +1,10 @@
 # Native menus and integrated title bar
 
+For the proposed macOS tab/titlebar integration, see the
+[2026-10-20 research and implementation proposal](research/macos-integrated-titlebar.md)
+and its [macOS validation record](validation/macos-sync-2026-10-20.md).
+The proposal does not change the existing platform behavior described below.
+
 This experiment adds a small semantic menu description to the SDL host. Menu
 trees are borrowed for `Run`; labels and structure are copied into native
 controls at startup, while each item's `Action_State` is read from the
