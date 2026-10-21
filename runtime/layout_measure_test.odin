@@ -169,8 +169,7 @@ test_density_change_invalidates_only_scoped_measurement_and_explains_metrics_dep
 	old_width := rt.nodes[editor].text_run.max_width
 	misses_before := rt.stats.measure_cache_misses
 	shape_before := rt.stats.text_shape_requests
-	rt.layout_visit_probe[editor] = 0
-	rt.layout_visit_probe[sidebar] = 0
+	sidebar_dependencies := rt.measure_states[sidebar].cache_key.dependencies
 
 	next_editor, next_sidebar := layout_measure_test_describe_scoped_text(&rt, 1, 1.5)
 	testing.expect(t, next_editor == editor && next_sidebar == sidebar, "density change should retain identities")
@@ -179,8 +178,8 @@ test_density_change_invalidates_only_scoped_measurement_and_explains_metrics_dep
 	testing.expect(t, rt.stats.measure_cache_misses == misses_before+1 && rt.stats.text_shape_requests > shape_before &&
 		rt.nodes[editor].text_run.max_width != old_width,
 		"density should remeasure the text field using its updated logical content inset")
-	testing.expect(t, rt.layout_visit_probe[editor] > 0 && rt.layout_visit_probe[sidebar] == 0,
-		"density invalidation should remain scoped to the affected editor")
+	testing.expect(t, rt.measure_states[sidebar].cache_key.dependencies == sidebar_dependencies,
+		"density changes should leave the unaffected sibling's measurement dependencies unchanged")
 	testing.expect(t, layout_measure_test_trace_has_reason(&rt, editor, "metrics dependency generation changed"),
 		"the inspector measurement trace should identify the metrics dependency")
 }
