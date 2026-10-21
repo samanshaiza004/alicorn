@@ -314,12 +314,15 @@ Measure_Constraint_Dependencies :: distinct bit_set[Axis_Dependency; u8]
 // to a container's externally measured size.
 Parent_Size_Dependencies :: distinct bit_set[Axis_Dependency; u8]
 
+// Keep this key limited to Runtime state that the retained measurement and
+// shaping paths consume. Text scale and density flow through the style
+// generations below. Device presentation scale only snaps finalized geometry;
+// writing direction currently changes placement, and text shaping has no
+// locale input, so those values are deliberately not measurement dependencies.
 Measure_Dependencies :: struct {
 	metrics_generation:    u32,
 	typography_generation: u32,
 	font_generation:       u64,
-	locale_generation:     u64,
-	direction_generation:  u64,
 }
 
 Measure_Result :: struct {
