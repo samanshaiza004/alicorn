@@ -610,6 +610,146 @@ test_content_height_column_in_row_uses_measured_cross_axis_extent :: proc(t: ^te
 	}
 }
 
+layout_content_test_describe_empty_row :: proc(
+	rt: ^Runtime,
+	min_height: f32 = -1,
+	max_height: f32 = -1,
+) -> Node_ID {
+	rt.viewport = Rect{0, 0, 200, 120}
+	invalidate_root(rt, "empty content-sized Row fixture")
+	ui, build := begin_frame(rt)
+	if !build { return 0 }
+	container_begin(&ui, .Root, key=key_string("content-empty-row-root"), style=layout_style(.Column, height=120))
+	row := container_begin(&ui, .Container, key=key_string("content-empty-row"), style=layout_style(
+		.Row,
+		height=LAYOUT_SIZE_FIT_CONTENT,
+		min_height=min_height,
+		max_height=max_height,
+		padding=6,
+	))
+	container_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+	return row
+}
+
+@(test)
+test_content_height_measures_empty_row_and_keeps_ordinary_row_stretch :: proc(t: ^testing.T) {
+	for clamp_case in 0..<3 {
+		rt := new_runtime(Rect{0, 0, 200, 120})
+		row_id := Node_ID(0)
+		if clamp_case == 0 { row_id = layout_content_test_describe_empty_row(&rt) }
+		else if clamp_case == 1 { row_id = layout_content_test_describe_empty_row(&rt, min_height=20) }
+		else { row_id = layout_content_test_describe_empty_row(&rt, max_height=8) }
+		row, ok := rt.nodes[row_id]
+		want_height := f32(12)
+		if clamp_case == 1 { want_height = 20 }
+		if clamp_case == 2 { want_height = 8 }
+		testing.expect(t, ok && row.bounds.h == want_height,
+			"an empty content-sized Row should contain its vertical padding and obey min/max clamps")
+		if ok {
+			testing.expect(t, rt.measure_states[row_id].result.size.height == layout_unit_extent(want_height),
+				"the empty Row's retained result should match its final constrained height")
+		}
+		destroy_runtime(&rt)
+	}
+
+	rt := new_runtime(Rect{0, 0, 200, 120})
+	defer destroy_runtime(&rt)
+	ui, build := begin_frame(&rt)
+	if !build { testing.expect(t, false, "ordinary Row fixture should build"); return }
+	container_begin(&ui, .Root, key=key_string("ordinary-row-content-root"), style=layout_style(.Row, height=100))
+	child := container_begin(&ui, .Container, key=key_string("ordinary-row-content-child"), style=layout_style(.Column, width=48))
+	container_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+	testing.expect(t, rt.nodes[child].bounds.h == rt.viewport.h,
+		"an ordinary Row still stretches an unspecified child to the externally assigned cross axis")
+}
+
+layout_content_test_describe_wrapped_row :: proc(rt: ^Runtime, width: f32) -> (row, fixed, wrapped: Node_ID) {
+	rt.viewport = Rect{0, 0, width, 180}
+	invalidate_root(rt, "wrapped content-sized Row fixture")
+	ui, build := begin_frame(rt)
+	if !build { return }
+	container_begin(&ui, .Root, key=key_string("content-wrapped-row-root"), style=layout_style(.Column, height=180))
+	row = container_begin(&ui, .Container, key=key_string("content-wrapped-row"), style=layout_style(
+		.Row,
+		height=LAYOUT_SIZE_FIT_CONTENT,
+		padding=8,
+		gap=8,
+	))
+	fixed = container_begin(&ui, .Container, key=key_string("content-wrapped-row-fixed"), style=layout_style(.Column, width=64, height=52))
+	container_end(&ui)
+	wrapped = text(
+		&ui,
+		"A width dependent toolbar label should wrap when the available Row space becomes narrow and unwrap again when it expands.",
+		key=key_string("content-wrapped-row-text"),
+		style=layout_style(.Row, grow=1, min_width=48),
+		text_style=Text_Style{overflow=.Wrap},
+	)
+	container_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+	return
+}
+
+@(test)
+test_content_height_row_uses_allocated_width_for_wrapped_children_and_tracks_resize :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 220, 180})
+	defer destroy_runtime(&rt)
+	if !text_engine_load_font(&rt.text_engine, LAYOUT_MEASURE_TEST_FONT) {
+		testing.expect(t, false, "wrapped Row measurement fixture font should load")
+		return
+	}
+	row_id, fixed_id, wrapped_id := layout_content_test_describe_wrapped_row(&rt, 220)
+	row, row_ok := rt.nodes[row_id]
+	fixed, fixed_ok := rt.nodes[fixed_id]
+	wrapped, wrapped_ok := rt.nodes[wrapped_id]
+	row_measure, measure_ok := rt.measure_states[row_id]
+	wrapped_measure, wrapped_measure_ok := rt.measure_states[wrapped_id]
+	testing.expect(t, row_ok && fixed_ok && wrapped_ok && measure_ok && wrapped_measure_ok,
+		"the content Row, fixed child, wrapped label, and retained measures should exist")
+	if row_ok && fixed_ok && wrapped_ok && measure_ok && wrapped_measure_ok {
+		expected_height := max(fixed.bounds.h, layout_unit_to_f32(wrapped_measure.result.size.height))+16
+		testing.expect(t, row.bounds.h == expected_height,
+			"a content Row should use the greatest measured child height plus its vertical padding, not sum horizontal children or gaps")
+		testing.expect(t, len(wrapped.text_run.lines) > 1 && wrapped.bounds.w < 180,
+			"the wrapped label should be shaped at its allocated width inside the mixed fixed/content Row")
+		testing.expect(t, row_measure.cache_key.constraints.width.min == layout_unit_extent(220) &&
+			row_measure.cache_key.constraints.width.max == layout_unit_extent(220),
+			"the retained Row result should preserve the exact incoming assigned width")
+		testing.expect(t, row_measure.cache_key.constraints.height.min == 0 &&
+			row_measure.cache_key.constraints.height.max == layout_unit_extent(180),
+			"the retained Row result should also preserve the parent's bounded cross-axis constraint")
+		testing.expect(t, wrapped_measure.cache_key.constraints.width.min == layout_unit_extent(wrapped.bounds.w) &&
+			wrapped_measure.cache_key.constraints.width.max == layout_unit_extent(wrapped.bounds.w),
+			"width-dependent child measurement should retain the exact width assigned by the Row allocator")
+		testing.expect(t, .Width_To_Width in row_measure.result.input_axis_dependencies &&
+			.Height_To_Height in row_measure.result.input_axis_dependencies &&
+			.Width_To_Height in row_measure.result.input_axis_dependencies &&
+			.Width_To_Height in wrapped_measure.result.input_axis_dependencies,
+			"the Row should retain incoming-axis and wrapped-child cross-axis dependencies")
+	}
+	if !row_ok || !measure_ok { return }
+	narrow_height := row.bounds.h
+
+	row_id, _, _ = layout_content_test_describe_wrapped_row(&rt, 400)
+	row = rt.nodes[row_id]
+	wide_height := row.bounds.h
+	testing.expect(t, wide_height < narrow_height,
+		"resizing the assigned Row width should remeasure its wrapped child and reduce the content height")
+
+	fresh := new_runtime(Rect{0, 0, 400, 180})
+	defer destroy_runtime(&fresh)
+	_ = text_engine_load_font(&fresh.text_engine, LAYOUT_MEASURE_TEST_FONT)
+	fresh_row_id, _, _ := layout_content_test_describe_wrapped_row(&fresh, 400)
+	fresh_row := fresh.nodes[fresh_row_id]
+	testing.expect(t, row.bounds == fresh_row.bounds &&
+		layout_measure_result_equal(rt.measure_states[row_id].result, fresh.measure_states[fresh_row_id].result),
+		"a resized content Row should replay to the same geometry and retained measurement as a clean wide layout")
+}
+
 @(test)
 test_content_sized_scroll_region_caps_virtual_list_and_keeps_virtualization_bounded :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 400, 260})

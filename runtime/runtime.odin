@@ -269,8 +269,9 @@ Grid_Track :: struct {
 Grid_Item_Alignment :: enum u8 { Stretch, Start, Center, End, Baseline }
 
 // LAYOUT_SIZE_FIT_CONTENT is an opt-in Layout_Style width/height value.
-// The first retained-layout slice supports a Column's content-sized height;
-// ordinary -1 dimensions keep their existing externally allocated behavior.
+// Retained content-height measurement supports Row and Column Containers and
+// Scroll_Region viewports; ordinary -1 dimensions keep their existing
+// externally allocated behavior.
 LAYOUT_SIZE_FIT_CONTENT :: f32(-2)
 
 Rect :: struct {

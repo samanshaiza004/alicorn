@@ -102,14 +102,19 @@ each ancestor visited, and whether a boundary stopped or passed the
 invalidation onward. A full boundary is a caller promise that both
 parent-assigned outer dimensions stay stable while descendants relayout.
 `Parent_Size_Dependencies` records the child-output-to-parent-output mapping,
-and opt-in content sizing now consumes that contract for Column containers and
-Scroll_Region viewports. `LAYOUT_SIZE_FIT_CONTENT` requests a measured height
-from realized child results (or the declared virtual scroll extent), then
-applies min/max and parent constraints. It does not change ordinary `-1`
-allocation or recursively derive preferred sizes for arbitrary nested
-containers. A content-sized Scroll_Region caps its viewport and keeps its full
-logical extent for internal scrolling. Parent size propagation remains
-axis-mapped; boundaries stop only declared stable axes.
+and opt-in content sizing now consumes that contract for Row and Column
+containers and Scroll_Region viewports. `LAYOUT_SIZE_FIT_CONTENT` requests a
+measured height from realized child results (or the declared virtual scroll
+extent), then applies min/max and parent constraints. A Column sums child
+heights, gaps, and padding; a Row measures children after its normal main-axis
+width allocation and uses the greatest measured child height plus vertical
+padding. The Row measurement is bounded to an intrinsic-width pass and one
+exact-assigned-width pass, so wrapped content responds to real width without a
+stabilization loop. It does not change ordinary `-1` allocation or recursively
+derive preferred sizes for arbitrary nested containers. A content-sized
+Scroll_Region caps its viewport and keeps its full logical extent for internal
+scrolling. Parent size propagation remains axis-mapped; boundaries stop only
+declared stable axes.
 
 Grid (#26) is a bounded two-dimensional consumer of the same allocator. It
 uses explicit Fixed, Auto, Fraction, and MinMax tracks, direct-child cell
