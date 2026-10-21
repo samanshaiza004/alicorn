@@ -135,7 +135,7 @@ test_constraint_change_with_equal_result_stays_local_and_results_honor_exact_bou
 
 @(test)
 test_scoped_text_measure_reflows_inside_explicit_layout_boundary :: proc(t: ^testing.T) {
-	rt := new_runtime(Rect{0, 0, 240, 120})
+	rt := new_runtime(Rect{0, 0, 240, 120}, Runtime_Config{trace_capacity=64})
 	defer destroy_runtime(&rt)
 	testing.expect(t, text_engine_load_font(&rt.text_engine, LAYOUT_MEASURE_TEST_FONT), "measurement fixture font should load")
 	editor, sidebar := layout_measure_test_describe_scoped_text(&rt, 1)
