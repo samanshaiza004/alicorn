@@ -64,12 +64,33 @@ darwin_titlebar_pointer_sample_push :: proc(
 }
 
 darwin_titlebar_pointer_sample_pop :: proc(samples: ^Darwin_Titlebar_Pointer_Samples) -> (point: sdl3.Point, ok: bool) {
+	point, _, ok = darwin_titlebar_pointer_sample_pop_with_buttons(samples)
+	return
+}
+
+darwin_titlebar_pointer_sample_pop_with_buttons :: proc(
+	samples: ^Darwin_Titlebar_Pointer_Samples,
+) -> (point: sdl3.Point, buttons: sdl3.MouseButtonFlags, ok: bool) {
 	if samples == nil || samples.count <= 0 { return }
 	point = samples.points[samples.head]
+	buttons = samples.buttons[samples.head]
 	samples.head = (samples.head+1) % len(samples.points)
 	samples.count -= 1
 	ok = true
 	return
+}
+
+darwin_titlebar_consume_hit_test_sample :: proc(
+	samples: ^Darwin_Titlebar_Pointer_Samples,
+	owner: ^Darwin_Titlebar_Gesture_Owner,
+) -> bool {
+	_, buttons, ok := darwin_titlebar_pointer_sample_pop_with_buttons(samples)
+	if ok && !(sdl3.MouseButtonFlag.LEFT in buttons) {
+		// Cocoa can consume mouse-up while performing its window drag. The app
+		// must still release its latched gesture owner even without SDL's up event.
+		darwin_titlebar_gesture_cancel(owner)
+	}
+	return ok
 }
 
 // SDL queues the corresponding pointer event after invoking Cocoa's hit-test
@@ -129,6 +150,29 @@ darwin_titlebar_should_add_full_size_content_view :: proc(
 	// can cancel the transition. Skip it for transition callbacks even if the
 	// style-mask snapshot has not reported FullScreen yet.
 	return allow_style_mask_change && !has_full_size_content_view && !fullscreen
+}
+
+darwin_titlebar_set_window_style_mask :: proc(window: ^NS.Window, style_mask: NS.WindowStyleMask) {
+	if window == nil { return }
+	content_view := NS.Window_contentView(window)
+	if content_view == nil {
+		NS.Window_setStyleMask(window, style_mask)
+		return
+	}
+
+	// SDL's Cocoa backend installs its listener as the content view's next
+	// responder. NSWindow.setStyleMask can detach that link, so preserve and
+	// restore the existing responder without depending on SDL-private objects.
+	view_responder := cast(^NS.Responder)content_view
+	previous_responder := intrinsics.objc_send(^NS.Responder, view_responder, "nextResponder")
+	if previous_responder != nil {
+		intrinsics.objc_send(nil, view_responder, "setNextResponder:", cast(^NS.Responder)nil)
+	}
+	NS.Window_setStyleMask(window, style_mask)
+	current_responder := intrinsics.objc_send(^NS.Responder, view_responder, "nextResponder")
+	if previous_responder != nil && previous_responder != current_responder {
+		intrinsics.objc_send(nil, view_responder, "setNextResponder:", previous_responder)
+	}
 }
 
 // SDL's Cocoa backend asks on mouse-down, mouse-up, and pointer motion. Latch
@@ -309,7 +353,7 @@ native_darwin_titlebar_fixture_apply_style :: proc(
 	)
 	if style_changed {
 		style_mask += {.FullSizeContentView}
-		NS.Window_setStyleMask(window, style_mask)
+		darwin_titlebar_set_window_style_mask(window, style_mask)
 	}
 	if force || style_changed {
 		NS.Window_setTitlebarAppearsTransparent(window, true)
@@ -428,6 +472,11 @@ native_darwin_titlebar_fixture_note_consumed_event :: proc(menu: ^Native_Menu_Ru
 	state := cast(^Darwin_Menu_State)menu.platform_data
 	if state.titlebar_fixture.active {
 		state.titlebar_fixture.consumed_window_events += 1
+		darwin_titlebar_consume_hit_test_sample(
+			&state.titlebar_fixture.pointer_samples,
+			&state.titlebar_fixture.gesture_owner,
+		)
+		state.titlebar_fixture.last_sdl_pointer_valid = false
 		if menu.application != nil && menu.application.state != nil {
 			app := cast(^Menu_Fixture_State)menu.application.state
 			if state.window != nil {

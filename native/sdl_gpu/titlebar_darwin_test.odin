@@ -71,6 +71,29 @@ test_darwin_titlebar_pointer_samples_pair_native_points_with_sdl_events :: proc(
 }
 
 @(test)
+test_darwin_titlebar_consumed_hit_test_samples_are_drained_and_release_owner :: proc(t: ^testing.T) {
+	samples: Darwin_Titlebar_Pointer_Samples
+	owner := Darwin_Titlebar_Gesture_Owner.Window
+	darwin_titlebar_pointer_sample_push(&samples, sdl3.Point{620, 22}, sdl3.BUTTON_LMASK)
+	consumed_drag := darwin_titlebar_consume_hit_test_sample(&samples, &owner)
+	owner_retained := owner == .Window
+	darwin_titlebar_pointer_sample_push(&samples, sdl3.Point{180, 22}, {})
+	consumed_release := darwin_titlebar_consume_hit_test_sample(&samples, &owner)
+	_, _, empty := darwin_titlebar_pointer_sample_pop_with_buttons(&samples)
+	testing.expect(t,
+		consumed_drag && owner_retained && consumed_release && owner == .None && !empty,
+		"Cocoa-consumed pointer samples must be drained and a consumed release must clear gesture ownership")
+
+	// A later ordinary client event must not consume coordinates left behind by
+	// a mouse transition that Cocoa handled itself.
+	darwin_titlebar_pointer_sample_push(&samples, sdl3.Point{400, 19}, {})
+	point, found := darwin_titlebar_pointer_sample_pop_matching(&samples, false)
+	testing.expect(t,
+		found && point == sdl3.Point{400, 19} && samples.count == 0,
+		"client pointer events must see the next unconsumed sample, not Cocoa's stale point")
+}
+
+@(test)
 test_darwin_titlebar_hit_test_keeps_native_and_alicorn_gestures_in_the_client :: proc(t: ^testing.T) {
 	geometry := Darwin_Titlebar_Geometry{
 		header={0, 0, 900, 48},

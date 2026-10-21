@@ -49,29 +49,41 @@ window on the unlocked desktop.
   read `{x=270,y=155}` before and after that automation drag, so it did not
   demonstrate actual window movement. A physical held drag is still required
   to distinguish an automation limitation from an input-arbitration defect.
-- Fullscreen is **not a pass**. Attempts through the native View menu and green
-  traffic-light control produced inconsistent desktop captures and did not
-  leave a stable, independently observable fullscreen state. The diagnostic
-  sometimes showed an enter/leave pair on the earlier implementation; after
-  transition-time style mutations were deferred, the automation did not provide
-  a consistent fullscreen event/state reading. The fixture deliberately avoids
-  changing the window style mask during fullscreen callbacks, and unit-tests
-  that guard, but actual fullscreen persistence, control reveal, and restored
-  geometry still need hands-on confirmation.
+- Clicking the native green traffic-light control removed the native controls
+  and entered a full-display AppKit state. One immediate capture showed the
+  fixture body; the next stable capture showed only the tab strip. The fixture
+  diagnostic remained `fullscreen=false (0/0)` during that state, so it did not
+  observe an SDL fullscreen event or refresh its state. Selecting the View-menu
+  `Enter Full Screen` toggle returned the window to windowed mode, restored the
+  native controls, and reported `fullscreen=false (1/1)`. But its logical size
+  changed from 900×560 points before entry to 900×528 after exit (32 points
+  shorter). Treat the inconsistent fullscreen capture/event diagnostics and
+  changed restore geometry as a **failure to investigate**, not an acceptance
+  pass. Typing `input-after-exit` into the ordinary text field worked after
+  returning to windowed mode.
+- Style-mask reapplication is skipped in the fullscreen transition callbacks.
+  It preserves the existing SDL content-view responder link around any later
+  `setStyleMask` call, following SDL's AppKit responder-chain repair pattern.
+  Post-transition text entry exercises this path at a basic level; IME
+  composition remains untested.
 - Only the initial Retina scale was exercised. Live resize, moving between
   displays/scales, gesture cancellation after focus loss, and idle-work counts
   were not proven by this desktop run.
+- Cocoa-consumed hit-test samples are drained when SDL reports
+  `SDL_EVENT_WINDOW_HIT_TEST`; a consumed release also clears the latched owner.
+  This prevents a Cocoa-owned pointer coordinate from being paired with a later
+  ordinary client event. The bounded queue behavior is unit-tested.
 
 ## Verification
 
-- macOS `odin test native/sdl_gpu`: 87 tests passed, including measured-rect
+- macOS `odin test native/sdl_gpu`: 88 tests passed, including measured-rect
   conversion, native/Sdl point pairing, gesture ownership, and fullscreen style
-  mutation guards.
+  mutation guards, plus consumed-sample draining.
 - `odin check native/sdl_gpu -target:windows_amd64 -no-entry-point`: passed.
 - The macOS fixture app bundle built and passed ad-hoc code-sign verification
   against the pinned SDL dylib.
-- The native checks do not substitute for the unverified held-drag, fullscreen,
-  resize, and idle acceptance cases above.
+- The native checks do not substitute for the unverified held-drag/window-move,
+  fullscreen-rendering, resize, IME, and idle acceptance cases above.
 
 ## Current API recommendation
 
