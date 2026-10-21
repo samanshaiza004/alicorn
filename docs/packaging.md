@@ -20,7 +20,7 @@ launch the finished artifact from an empty working directory.
 - macOS packaging additionally uses Python 3, `pkg-config` (for SDL's exported
   static link flags), `otool`, `install_name_tool`, and `plutil` (provided by the
   Apple developer tools).
-- The release helper downloads SDL `3.4.16` from the official release asset and
+- The release helper downloads SDL `3.4.18` from the official release asset and
   verifies its pinned SHA-256 before using it. It does not modify the installed
   Odin SDK. Static SDL outputs and the SDK overlay live under ignored `out/`.
 

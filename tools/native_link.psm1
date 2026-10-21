@@ -2,9 +2,9 @@ Set-StrictMode -Version Latest
 
 $script:NativeLinkSchemaVersion = 1
 $script:PreparationVersion = 1
-$script:SDLVersion = '3.4.16'
-$script:SDLURL = 'https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-3.4.16.tar.gz'
-$script:SDLSHA256 = '7322236cd12090c3eb40b9728be4d49c76f66ad17d04369584d4ecad5cf77c68'
+$script:SDLVersion = '3.4.18'
+$script:SDLURL = 'https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz'
+$script:SDLSHA256 = '9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3'
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 

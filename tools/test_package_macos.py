@@ -6,8 +6,12 @@ import unittest
 from unittest.mock import patch
 
 from package_macos import (
+    SDL_SOURCE,
+    SDL_SOURCE_SHA256,
+    SDL_VERSION,
     is_sdl_runtime_install_name,
     resolve_bundle_dependency,
+    sdl_source_provenance,
     validate_bundle_rpath,
 )
 
@@ -17,6 +21,24 @@ class PackageDependencyAuditTests(unittest.TestCase):
     frameworks = contents / "Frameworks"
     macos = contents / "MacOS"
     image = macos / "App"
+
+    def test_sdl_source_pin_matches_release(self):
+        self.assertEqual(SDL_VERSION, "3.4.18")
+        self.assertEqual(
+            SDL_SOURCE,
+            "https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz",
+        )
+        self.assertEqual(
+            SDL_SOURCE_SHA256,
+            "9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3",
+        )
+        self.assertEqual(
+            sdl_source_provenance(),
+            {
+                "sdlSource": SDL_SOURCE,
+                "sdlSourceSha256": SDL_SOURCE_SHA256,
+            },
+        )
 
     def test_recognizes_versioned_sdl_dylib_names_only(self):
         self.assertTrue(is_sdl_runtime_install_name("@rpath/libSDL3.0.dylib"))

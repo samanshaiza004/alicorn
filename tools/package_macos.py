@@ -16,9 +16,9 @@ import subprocess
 import sys
 import tempfile
 
-SDL_VERSION = "3.4.16"
-SDL_SOURCE = "https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-3.4.16.tar.gz"
-SDL_SOURCE_SHA256 = "7322236cd12090c3eb40b9728be4d49c76f66ad17d04369584d4ecad5cf77c68"
+SDL_VERSION = "3.4.18"
+SDL_SOURCE = "https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz"
+SDL_SOURCE_SHA256 = "9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3"
 
 
 def run(*args: str, capture: bool = False) -> str:
@@ -32,6 +32,15 @@ def sha256(path: pathlib.Path) -> str:
         for block in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def sdl_source_provenance() -> dict[str, str]:
+    # macOS packaging always builds SDL from this pinned source archive, whether
+    # the resulting app links SDL dynamically or statically.
+    return {
+        "sdlSource": SDL_SOURCE,
+        "sdlSourceSha256": SDL_SOURCE_SHA256,
+    }
 
 
 def otool_dependencies(path: pathlib.Path) -> list[str]:
@@ -296,8 +305,7 @@ def package(args: argparse.Namespace) -> None:
             "alicornRevision": git_revision,
             "sdlVersion": sdl_version,
             "sdlLinkage": args.linkage,
-            "sdlSource": SDL_SOURCE if args.linkage == "static" else None,
-            "sdlSourceSha256": SDL_SOURCE_SHA256 if args.linkage == "static" else None,
+            **sdl_source_provenance(),
             "license": {
                 "path": "Contents/Resources/SDL-LICENSE.txt",
                 "sha256": sha256(resources / "SDL-LICENSE.txt"),
