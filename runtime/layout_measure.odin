@@ -107,6 +107,13 @@ layout_measure_dependencies :: proc(rt: ^Runtime, node: ^Node) -> Measure_Depend
 	}
 }
 
+layout_measure_dependencies_hash :: proc(dependencies: Measure_Dependencies) -> u64 {
+	h := hash_mix(1469598103934665603, u64(dependencies.metrics_generation))
+	h = hash_mix(h, u64(dependencies.typography_generation))
+	h = hash_mix(h, dependencies.font_generation)
+	return h
+}
+
 layout_size_is_fit_content :: proc(value: f32) -> bool {
 	return value == LAYOUT_SIZE_FIT_CONTENT
 }
@@ -146,9 +153,7 @@ layout_measure_content_signature :: proc(rt: ^Runtime, node: ^Node) -> u64 {
 			h = hash_mix(h, u64(i64(state.cache_key.constraints.height.min)))
 			h = hash_mix(h, u64(i64(state.cache_key.constraints.height.max)))
 			h = hash_mix(h, u64(state.cache_key.constraints.height.unbounded_max ? 1 : 0))
-			h = hash_mix(h, u64(state.cache_key.dependencies.metrics_generation))
-			h = hash_mix(h, u64(state.cache_key.dependencies.typography_generation))
-			h = hash_mix(h, state.cache_key.dependencies.font_generation)
+			h = hash_mix(h, layout_measure_dependencies_hash(state.cache_key.dependencies))
 		}
 		if layout_node_has_content_height(child) {
 			h = hash_mix(h, layout_measure_content_signature(rt, child))
@@ -297,9 +302,18 @@ measure_cache_reason :: proc(old, next: Measure_Cache_Key) -> string {
 	if !old.valid { return "no retained constraints; initial measure" }
 	if old.input_revision != next.input_revision { return "local measurement-input fingerprint changed" }
 	if old.content_signature != next.content_signature { return "realized content measurement signature changed" }
-	if old.dependencies.metrics_generation != next.dependencies.metrics_generation { return "metrics generation changed" }
-	if old.dependencies.typography_generation != next.dependencies.typography_generation { return "typography generation changed" }
-	if old.dependencies.font_generation != next.dependencies.font_generation { return "font generation changed" }
+	metrics_changed := old.dependencies.metrics_generation != next.dependencies.metrics_generation
+	typography_changed := old.dependencies.typography_generation != next.dependencies.typography_generation
+	font_changed := old.dependencies.font_generation != next.dependencies.font_generation
+	if metrics_changed && typography_changed && font_changed {
+		return "metrics, typography, and font dependency generations changed"
+	}
+	if metrics_changed && typography_changed { return "metrics and typography dependency generations changed" }
+	if metrics_changed && font_changed { return "metrics and font dependency generations changed" }
+	if typography_changed && font_changed { return "typography and font dependency generations changed" }
+	if metrics_changed { return "metrics dependency generation changed" }
+	if typography_changed { return "typography dependency generation changed" }
+	if font_changed { return "font dependency generation changed" }
 	if !layout_constraints_equal(old.constraints, next.constraints) {
 		old_width := "unbounded"
 		new_width := "unbounded"

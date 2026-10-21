@@ -334,3 +334,30 @@ inspector_test_lines_build :: proc(panel: ^Runtime,lines: []string) {
 	container_end(&ui)
 	end_frame(&ui)
 }
+
+@(test)
+test_inspector_causes_displays_measurement_dependency_reason :: proc(t: ^testing.T) {
+	app := new_runtime(Rect{0,0,800,600},Runtime_Config{trace_capacity=64})
+	panel := new_runtime(app.viewport)
+	defer destroy_runtime(&app)
+	defer destroy_runtime(&panel)
+	cause := cause_begin(&app,.Keyboard,"measurement dependency fixture")
+	record_trace(&app,.Measure,Node_ID(42),"measure cache miss: font dependency generation changed")
+	record_trace(&app,.Paint,0,"paint completed after remeasurement")
+	cause_end(&app,cause)
+
+	state := inspector_overlay_make()
+	defer inspector_overlay_destroy(&state)
+	inspector_overlay_open(&state)
+	state.tab = .Causes
+	inspector_test_build(&panel,&state,&app)
+	found := false
+	for id in panel.order {
+		if node,ok := panel.nodes[id]; ok && node != nil &&
+		   strings.contains(node.text,"Measure: node=42 measure cache miss: font dependency generation changed") {
+			found = true
+			break
+		}
+	}
+	testing.expect(t,found,"the inspector Causes tab should retain and show the specific dependency behind a measurement miss")
+}
