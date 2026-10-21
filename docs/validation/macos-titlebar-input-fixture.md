@@ -39,7 +39,8 @@ window on the unlocked desktop.
 - AppKit's standard close/minimize/fullscreen controls were present and their
   measured bounds were `{x=9,y=9,w=14,h=14}`, `{x=32,y=9,w=14,h=14}`, and
   `{x=55,y=9,w=14,h=14}` in logical points. The rendered tabs began after the
-  measured control cluster and shared the 44-point header row.
+  measured control cluster. The final compact preset uses a 32-point row;
+  the original correctness proof used 44 points independently of native controls.
 - A real pointer click selected the second tab. A real pointer click on its
   close affordance closed it without closing the window.
 - Clicking the Alicorn text field and typing `titlebar text probe` displayed
@@ -51,15 +52,19 @@ window on the unlocked desktop.
   pairs bounded native hit-test samples with SDL pointer events and uses the
   contemporaneous point. See the pinned
   [SDL Cocoa backend](https://github.com/libsdl-org/SDL/blob/release-3.4.16/src/video/cocoa/SDL_cocoawindow.m).
-- A drag initiated on a tab selected the tab but did not increment the fixture's
-  reorder count. The automation delivered a down/up pair and only an endpoint
-  motion, not a reliable held-motion sequence. Therefore tab reordering has not
-  been demonstrated with a physical gesture.
-- A drag attempt in the explicitly declared blank tail produced three Cocoa
-  `SDL_EVENT_WINDOW_HIT_TEST` callbacks. The fixture's AppKit frame diagnostic
-  read `{x=270,y=155}` before and after that automation drag, so it did not
-  demonstrate actual window movement. A physical held drag is still required
-  to distinguish an automation limitation from an input-arbitration defect.
+- Physical testing initially exposed a second native drag path: tab drags moved
+  the window even though SDL classified them as ordinary client input. Disabling
+  `movableByWindowBackground` did not disable native titlebar dragging. The
+  fixture now also gates AppKit's public `isMovable` property from the latched
+  hit-test decision, including hover before mouse-down. Only explicit blank drag
+  regions enable window movement. See [Apple's property contract](https://developer.apple.com/documentation/appkit/nswindow/ismovable).
+- After that fix, the user physically confirmed tab reordering and blank-header
+  window movement. Native logs recorded `Started → Target_Changed → Dropped`
+  for application tab drags, and `Cancelled` when releasing outside a valid tab
+  target. The final live counters showed four reorders, two cancellations and
+  two closes; the window moved from `{270,155}` to `{0,143}` and survived a
+  fullscreen round trip at 900×560 points. SDL consumed native window-drag
+  transitions as `SDL_EVENT_WINDOW_HIT_TEST`; they were not ordinary tab events.
 - Fullscreen now retains a normal-height header and a visible body. The native
   green control and menu action both enter fullscreen; an active text field
   accepts input there, and Escape returns to the original 900×560-point window
@@ -71,9 +76,9 @@ window on the unlocked desktop.
   `setStyleMask` call, following SDL's AppKit responder-chain repair pattern.
   Post-transition text entry exercises this path at a basic level; IME
   composition remains untested.
-- Only the initial Retina scale was exercised. Live resize, moving between
-  displays/scales, gesture cancellation after focus loss, and idle-work counts
-  were not proven by this desktop run.
+- The native geometry regression exercises resize. Retina scale 2 was exercised
+  live; moving between displays/scales and interrupted focus-loss gestures still
+  need a dedicated physical pass.
 - Cocoa-consumed hit-test samples are drained when SDL reports
   `SDL_EVENT_WINDOW_HIT_TEST`; a consumed release also clears the latched owner.
   This prevents a Cocoa-owned pointer coordinate from being paired with a later
@@ -93,11 +98,11 @@ the row height. Hidden/transitional button geometry cannot enlarge the row.
 
 | Native phase | Viewport | Header height | Body height |
 | --- | --- | --- | --- |
-| Windowed | 900×560 | 44 | 516 |
+| Windowed, final compact preset | 900×560 | 32 | 528 |
 | Fullscreen before fix | 1440×900 | 903 | 0 |
-| Fullscreen after fix | 1440×900 | 44 | 856 |
-| Restored after two cycles | 900×560 | 44 | 516 |
-| Resized | 720×480 | 44 | 436 |
+| Fullscreen after fix, compact preset | 1440×900 | 32 | 868 |
+| Restored after two cycles | 900×560 | 32 | 528 |
+| Resized | 720×480 | 32 | 448 |
 
 The restore defect was separate: AppKit changed the native frame from
 900×560 to 900×528 inside `setStyleMask` when re-adding `FullSizeContentView`.
@@ -114,15 +119,42 @@ application state, so ordinary apps with native menus are unaffected.
 
 ## Verification
 
-- macOS `odin test native/sdl_gpu`: 90 tests passed, including measured-rect
+- Full `tools/test.sh`: foundation suite, 224 runtime tests, 35 theme tests,
+  theme CLI/code-generation checks and generic text-input host contract passed.
+- macOS `odin test native/sdl_gpu`: 93 tests passed, including measured-rect
   conversion, native/Sdl point pairing, gesture ownership, and fullscreen style
   mutation guards, consumed-sample draining, safe-area/hidden-control geometry,
-  and isolation from ordinary application state.
+  isolation from ordinary application state, empty tab strips, and retained-only
+  splitter layout with fractional presentation scaling. The latter changes the
+  host drag region without emitting another application description. The
+  narrow-width check also covers 400- and 320-point windows, where the selected
+  tab remains visible and overflow controls appear at the minimum tab width.
 - `odin check native/sdl_gpu -target:windows_amd64 -no-entry-point`: passed.
 - The macOS fixture app bundle built and passed ad-hoc code-sign verification
   against the pinned SDL dylib.
 - `--geometry-check`: passed green-control/menu entry, two fullscreen restores,
-  and resize on the actual Apple Silicon desktop.
+  native `isMovable` gating, and resize on the actual Apple Silicon desktop.
+- The headless retained-work benchmarks passed: 10,000 idle attempts over a
+  10,001-node tree emitted nothing, allocated nothing and visited no stages;
+  a million-item virtual list retained 23 nodes. These are workload counts,
+  not universal wall-clock claims.
+- A six-second native idle run submitted exactly one startup frame, with one
+  text-mesh build/upload, no application/native-host wake events, and no app tick.
+  The validation deadline wakes the loop once to finish; normal mode adds none.
+
+## Compact presentation and geometry ownership
+
+The fixture opts into `Tab_Bar_Options.presentation = .Compact`, 150–180-point
+tabs, a scoped 13-point text scale, softer local colors, and selected/hover-only
+close glyphs. Labels use intrinsic text height and share the close target's
+vertical center; one-point top/bottom tracks balance the selection indicator.
+The default Standard tab appearance remains unchanged.
+
+The strip is capped at its actual tabs (including overflow controls when needed),
+and an explicit growing blank container receives the rest. The host copies both
+resolved rectangles after description, retained-only presentation, and live
+resize layout. It never estimates them in its hit-test callback. There is no
+fixed 160-point drag tail and no new public chrome API.
 
 ## Desktop test matrix
 
@@ -135,17 +167,18 @@ application state, so ordinary apps with native menus are unaffected.
 | Repeated fullscreen restore | Two native regression cycles passed without height loss |
 | Resize | Native 720×480 geometry regression passed |
 | Retina | Scale 2 passed; another display/scale remains untested |
-| Physical tab reorder / blank-header window move | Still requires a physical held-gesture pass |
-| Interrupted physical drag, IME, VoiceOver | Still requires desktop validation |
-| Idle after interaction | Pending explicit counter capture |
+| Physical tab reorder / blank-header window move | User confirmed; four reorders and native movement recorded |
+| Tab release outside valid target | Native logs/counters record cancellation |
+| Interrupted focus-loss drag, IME, VoiceOver | Still requires desktop validation |
+| Idle | Six-second unfocused-field run: one startup submission, zero worker/host wakes |
 
 ## Current API recommendation
 
 Keep Scratchpad's tabs as an ordinary Alicorn `tab_bar`; do not add an AppKit
 tab view or a second Runtime. The live click and text-field evidence supports
 keeping the tabs in Alicorn's content view. Do **not** freeze a public chrome
-API yet: tab-drag ownership, native window movement, Retina display changes,
-and cancellation still need a physical desktop pass.
+API yet: the basic tab/window drag boundary now works physically, but Retina
+display changes, focus-loss interruption and IME still need a dedicated pass.
 
 The likely minimum API remains an opt-in integrated-content window mode plus
 host-measured chrome metrics and explicit interactive/blank-drag regions, with

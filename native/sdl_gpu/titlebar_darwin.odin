@@ -295,6 +295,59 @@ darwin_titlebar_native_button_bounds :: proc(
 	return
 }
 
+darwin_titlebar_intersection :: proc(a, b: alicorn.Rect) -> alicorn.Rect {
+	x := max(a.x, b.x)
+	y := max(a.y, b.y)
+	return alicorn.Rect{x, y, max(min(a.x+a.w, b.x+b.w)-x, 0), max(min(a.y+a.h, b.y+b.h)-y, 0)}
+}
+
+// Copy finalized retained products after either a description or a retained
+// presentation/layout pass. The hit-test callback never reconstructs layout.
+native_darwin_titlebar_fixture_sync_layout :: proc(menu: ^Native_Menu_Runtime) {
+	if menu == nil || menu.platform_data == nil || menu.runtime == nil ||
+		menu.application == nil || menu.application.state == nil { return }
+	state := cast(^Darwin_Menu_State)menu.platform_data
+	if !state.titlebar_fixture.active { return }
+	app := cast(^Menu_Fixture_State)menu.application.state
+	header, header_ok := alicorn.node_info(menu.runtime, app.titlebar_header_node)
+	if !header_ok || !header.active { return }
+	geometry := &state.titlebar_fixture.geometry
+	geometry.header = header.bounds
+	geometry.interactive_count = 0
+	geometry.drag_region_count = 0
+	app.titlebar_tab_start_x, app.titlebar_tab_width = 0, 0
+	if tab_id, found := alicorn.node_by_key(menu.runtime, alicorn.key_string("macos-titlebar-tabs"), .Container); found {
+		if tab, ok := alicorn.node_info(menu.runtime, tab_id); ok && tab.active {
+			// The bounded strip contains interactive tabs/overflow controls, but
+			// the structural container itself deliberately has no hit target.
+			bounds := darwin_titlebar_intersection(tab.bounds, header.bounds)
+			if bounds.w > 0 && bounds.h > 0 {
+				geometry.interactive[0] = bounds
+				geometry.interactive_count = 1
+			}
+			app.titlebar_tab_start_x = bounds.x
+			app.titlebar_tab_width = bounds.w
+		}
+	}
+	app.titlebar_drag_region = {}
+	if blank, ok := alicorn.node_info(menu.runtime, app.titlebar_blank_node); ok && blank.active {
+		bounds := darwin_titlebar_intersection(blank.bounds, header.bounds)
+		if bounds.w > 0 && bounds.h > 0 {
+			geometry.drag_regions[0] = bounds
+			geometry.drag_region_count = 1
+			app.titlebar_drag_region = bounds
+		}
+	}
+}
+
+darwin_titlebar_apply_mobility :: proc(window: ^NS.Window, result: sdl3.HitTestResult) {
+	if window == nil { return }
+	desired := result == .DRAGGABLE
+	if intrinsics.objc_send(NS.BOOL, window, "isMovable") != desired {
+		NS.Window_setMovable(window, desired)
+	}
+}
+
 darwin_titlebar_sdl_hit_test :: proc "c" (
 	window: ^sdl3.Window,
 	area: ^sdl3.Point,
@@ -311,23 +364,21 @@ darwin_titlebar_sdl_hit_test :: proc "c" (
 	app: ^Menu_Fixture_State = nil
 	if menu.application != nil && menu.application.state != nil {
 		app = cast(^Menu_Fixture_State)menu.application.state
-		geometry.header.w = app.titlebar_window_width
-		geometry.header.h = app.titlebar_header_height
-		geometry.interactive[0] = alicorn.Rect{
-			app.titlebar_tab_start_x,
-			app.titlebar_safe_top,
-			app.titlebar_tab_width,
-			app.titlebar_header_height,
-		}
-		geometry.interactive_count = 1
-		geometry.drag_regions[0] = app.titlebar_drag_region
-		geometry.drag_region_count = 1 if app.titlebar_drag_region.w > 0 else 0
 	}
 	buttons := sdl3.GetGlobalMouseState(nil, nil)
 	state.titlebar_fixture.last_sdl_pointer_point = area^
 	state.titlebar_fixture.last_sdl_pointer_valid = true
 	darwin_titlebar_pointer_sample_push(&state.titlebar_fixture.pointer_samples, area^, buttons)
+	previous_owner := state.titlebar_fixture.gesture_owner
 	result := darwin_titlebar_hit_test(geometry, area^, buttons, &state.titlebar_fixture.gesture_owner)
+	// SDL toggles movableByWindowBackground for its drag regions, but that
+	// does not disable AppKit's ordinary titled-window drag path. Gate that
+	// path too, including on hover before AppKit sees the initial mouse-down.
+	darwin_titlebar_apply_mobility(state.window, result)
+	if previous_owner == .None && state.titlebar_fixture.gesture_owner != .None {
+		fmt.println("macos_titlebar_gesture", "point", area^,
+			"owner", state.titlebar_fixture.gesture_owner, "hit", result)
+	}
 	if app != nil {
 		app.titlebar_hit_test_count += 1
 		app.titlebar_hit_x = int(area[0])
@@ -474,16 +525,12 @@ native_darwin_titlebar_fixture_refresh :: proc(
 	old_app.titlebar_control_start_x = content_start_x
 	old_app.titlebar_window_width = f32(window_width)
 	old_app.titlebar_logical_height = f32(window_height)
-	old_app.titlebar_tab_start_x = old_app.titlebar_control_start_x
-	old_app.titlebar_tab_width = max(f32(window_width)-old_app.titlebar_tab_start_x-160, 0)
-	old_app.titlebar_drag_region = alicorn.Rect{
-		old_app.titlebar_tab_start_x+old_app.titlebar_tab_width,
-		next.header.y,
-		max(f32(window_width)-old_app.titlebar_tab_start_x-old_app.titlebar_tab_width, 0),
-		next.header.h,
-	}
-	next.drag_regions[0] = old_app.titlebar_drag_region
-	if next.drag_regions[0].w > 0 { next.drag_region_count = 1 }
+	// Keep the last resolved regions until the pending layout publishes new
+	// products. Native resize/style measurements are not a substitute for layout.
+	next.interactive = state.titlebar_fixture.geometry.interactive
+	next.interactive_count = state.titlebar_fixture.geometry.interactive_count
+	next.drag_regions = state.titlebar_fixture.geometry.drag_regions
+	next.drag_region_count = state.titlebar_fixture.geometry.drag_region_count
 	state.titlebar_fixture.geometry = next
 	if changed && menu.runtime != nil { alicorn.invalidate_root(menu.runtime, "measured macOS titlebar geometry changed") }
 	fmt.println(
@@ -501,6 +548,7 @@ native_darwin_titlebar_fixture_cancel_gesture :: proc(menu: ^Native_Menu_Runtime
 	state := cast(^Darwin_Menu_State)menu.platform_data
 	if state.titlebar_fixture.active {
 		darwin_titlebar_gesture_cancel(&state.titlebar_fixture.gesture_owner)
+		darwin_titlebar_apply_mobility(state.window, .NORMAL)
 	}
 }
 
@@ -572,7 +620,10 @@ native_darwin_titlebar_fixture_destroy :: proc(menu: ^Native_Menu_Runtime) {
 	state := cast(^Darwin_Menu_State)menu.platform_data
 	if !state.titlebar_fixture.active { return }
 	_ = sdl3.SetWindowHitTest(menu.window, nil, nil)
-	if state.window != nil { NS.Window_setMovableByWindowBackground(state.window, false) }
+	if state.window != nil {
+		NS.Window_setMovableByWindowBackground(state.window, false)
+		NS.Window_setMovable(state.window, true)
+	}
 	darwin_titlebar_gesture_cancel(&state.titlebar_fixture.gesture_owner)
 	fmt.println(
 		"macos_titlebar_input_summary",

@@ -141,6 +141,7 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 		presentation_ui, ready := alicorn.begin_presentation_frame(state.rt)
 		if ready { alicorn.end_presentation_frame(&presentation_ui) }
 	}
+	when ODIN_OS == .Darwin { native_darwin_titlebar_fixture_sync_layout(state.native_menu) }
 
 	application_submission_pending := alicorn.frame_needs_submission(state.rt)
 	inspector_submission_pending := native_inspector_submission_pending(state.inspector)

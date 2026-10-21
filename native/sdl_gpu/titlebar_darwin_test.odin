@@ -8,6 +8,118 @@ import alicorn "../../runtime"
 import "vendor:sdl3"
 
 @(test)
+test_darwin_titlebar_regions_follow_real_tabs_and_empty_space :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 900, 560})
+	defer alicorn.destroy_runtime(&rt)
+	app := Menu_Fixture_State{titlebar_fixture=true,
+		titlebar_header_height=TITLEBAR_FIXTURE_HEADER_HEIGHT,
+		titlebar_control_start_x=81, titlebar_tab_order={1, 2}, titlebar_selected_tab=1}
+	application := Application{state=rawptr(&app)}
+	native_state: Darwin_Menu_State
+	native_state.titlebar_fixture.active = true
+	menu := Native_Menu_Runtime{application=&application, runtime=&rt, platform_data=rawptr(&native_state)}
+	for remaining in 0..<3 {
+		if remaining > 0 { app.titlebar_closed_tabs[remaining-1] = true }
+		alicorn.invalidate_root(&rt, "fixture close test")
+		_ = menu_fixture_titlebar_build(&app, &rt, 900, 560)
+		_ = menu_fixture_titlebar_build(&app, &rt, 900, 560)
+		native_darwin_titlebar_fixture_sync_layout(&menu)
+		geometry := native_state.titlebar_fixture.geometry
+		expected_width := f32(2-remaining)*180
+		testing.expect(t, geometry.header.h == TITLEBAR_FIXTURE_HEADER_HEIGHT &&
+			geometry.interactive_count == (1 if expected_width > 0 else 0) && app.titlebar_tab_width == expected_width,
+			"only the actual bounded tab strip should be client-interactive, including after closing every tab")
+		testing.expect(t, geometry.drag_region_count == 1 &&
+			geometry.drag_regions[0] == alicorn.Rect{81+expected_width, 0, 819-expected_width, TITLEBAR_FIXTURE_HEADER_HEIGHT},
+			"the explicit blank drag region should consume the actual remainder, not a fixed tail")
+	}
+}
+
+@(test)
+test_darwin_titlebar_narrow_width_keeps_selected_tab_visible :: proc(t: ^testing.T) {
+	widths := [2]int{400, 320}
+	for width in widths {
+		rt := alicorn.new_runtime(alicorn.Rect{0, 0, f32(width), 560})
+		defer alicorn.destroy_runtime(&rt)
+		app := Menu_Fixture_State{titlebar_fixture=true,
+			titlebar_header_height=TITLEBAR_FIXTURE_HEADER_HEIGHT,
+			titlebar_control_start_x=81, titlebar_tab_order={1, 2}, titlebar_selected_tab=2}
+		application := Application{state=rawptr(&app)}
+		native_state: Darwin_Menu_State
+		native_state.titlebar_fixture.active = true
+		menu := Native_Menu_Runtime{application=&application, runtime=&rt, platform_data=rawptr(&native_state)}
+		for _ in 0..<4 { _ = menu_fixture_titlebar_build(&app, &rt, width, 560) }
+		native_darwin_titlebar_fixture_sync_layout(&menu)
+		geometry := native_state.titlebar_fixture.geometry
+		testing.expect(t, geometry.interactive_count == 1 &&
+			geometry.interactive[0] == alicorn.Rect{81, 0, f32(width-81), TITLEBAR_FIXTURE_HEADER_HEIGHT},
+			"narrow strips must report the width they actually give the tab component")
+		selected, found := alicorn.node_by_key(&rt, alicorn.key_string("macos-titlebar-tab-two"), .Button)
+		info, ok := alicorn.node_info(&rt, selected)
+		testing.expect(t, found && ok && info.bounds.x >= 81 && info.bounds.x+info.bounds.w <= f32(width) && !rt.invalidated,
+			"shrinking or overflowing tabs should keep the selected tab and close slot inside the window and settle")
+		left, overflow := alicorn.node_by_key(&rt, alicorn.key_u64(2), .Button)
+		_ = left
+		testing.expect(t, overflow == (width == 320), "overflow controls should appear only after tabs reach their minimum width")
+	}
+}
+
+@(test)
+test_darwin_titlebar_regions_refresh_after_retained_only_split_layout :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 900, 560})
+	defer alicorn.destroy_runtime(&rt)
+	app: Menu_Fixture_State
+	application := Application{state=rawptr(&app)}
+	native_state: Darwin_Menu_State
+	native_state.titlebar_fixture.active = true
+	menu := Native_Menu_Runtime{application=&application, runtime=&rt, platform_data=rawptr(&native_state)}
+	divider_id: alicorn.Node_ID
+	for _ in 0..<2 {
+		ui, ready := alicorn.begin_frame(&rt)
+		testing.expect(t, ready)
+		split := alicorn.split_begin(&ui, alicorn.key_string("titlebar-layout-split"), .Horizontal, 400, 200, 200)
+		_ = alicorn.split_first_begin(&ui, split)
+		app.titlebar_header_node = alicorn.container_begin(&ui, .Container,
+			style=alicorn.layout_style(.Row, height=32, gap=0, clip=true))
+		items := [1]alicorn.Tab_Bar_Item{{key=alicorn.key_u64(1), label="Tab", selected=true}}
+		options := alicorn.DEFAULT_TAB_BAR_OPTIONS
+		options.presentation = .Compact
+		options.height = 32
+		_ = alicorn.tab_bar(&ui, alicorn.key_string("macos-titlebar-tabs"), items[:], options,
+			alicorn.layout_style(.Row, width=180, height=32))
+		app.titlebar_blank_node = alicorn.container_begin(&ui, .Container, style=alicorn.layout_style(.Row, grow=1))
+		alicorn.container_end(&ui)
+		alicorn.container_end(&ui)
+		alicorn.split_first_end(&ui, split)
+		divider_id = alicorn.split_divider(&ui, split)
+		_ = alicorn.split_second_begin(&ui, split)
+		alicorn.split_second_end(&ui, split)
+		alicorn.split_end(&ui, split)
+		alicorn.end_frame(&ui)
+	}
+	native_darwin_titlebar_fixture_sync_layout(&menu)
+	before := native_state.titlebar_fixture.geometry
+	stats := rt.stats
+	divider, found := alicorn.node_info(&rt, divider_id)
+	testing.expect(t, found && before.header.w == 400 && before.drag_regions[0].w == 220)
+	x, y := divider.bounds.x+divider.bounds.w*0.5, divider.bounds.y+40
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Down, x=x, y=y, button=1})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Move, x=x+100, y=y})
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{kind=.Up, x=x+100, y=y, button=1})
+	_ = alicorn.set_presentation_scale(&rt, 1.25, 1.25)
+	presentation, pending := alicorn.begin_presentation_frame(&rt)
+	testing.expect(t, pending, "split resizing should request retained layout without an application build")
+	if pending { alicorn.end_presentation_frame(&presentation) }
+	native_darwin_titlebar_fixture_sync_layout(&menu)
+	after := native_state.titlebar_fixture.geometry
+	testing.expect(t, after.header.w == 500 && after.drag_regions[0].w == 320 &&
+		after.interactive[0] == before.interactive[0],
+		"retained split layout should move the blank drag boundary with the pointer stationary, including fractional scaling")
+	testing.expect(t, rt.stats.descriptions_emitted == stats.descriptions_emitted && rt.stats.frames_built == stats.frames_built,
+		"publishing host hit regions must not request or emit an application description")
+}
+
+@(test)
 test_darwin_titlebar_fixture_callbacks_ignore_ordinary_application_state :: proc(t: ^testing.T) {
 	sentinel := u64(42)
 	application := Application{state=rawptr(&sentinel)}

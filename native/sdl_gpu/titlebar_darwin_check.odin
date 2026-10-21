@@ -36,6 +36,15 @@ native_darwin_titlebar_geometry_check :: proc() -> bool {
 	native_darwin_titlebar_check_pump(&menu, 250)
 	initial := native_darwin_titlebar_check_snapshot(&menu, &rt, &app, "windowed-before")
 	passed := initial.header.h == TITLEBAR_FIXTURE_HEADER_HEIGHT && initial.body.h > 100
+	// SDL's background-drag toggle alone does not stop native titlebar drags.
+	// Check both directions against the actual NSWindow property as well as
+	// the separate physical tab/window gestures in the desktop matrix.
+	darwin_titlebar_apply_mobility(state.window, .NORMAL)
+	client_mobility_ok := !intrinsics.objc_send(NS.BOOL, state.window, "isMovable")
+	darwin_titlebar_apply_mobility(state.window, .DRAGGABLE)
+	drag_mobility_ok := intrinsics.objc_send(NS.BOOL, state.window, "isMovable")
+	passed = passed && client_mobility_ok && drag_mobility_ok
+	if !client_mobility_ok || !drag_mobility_ok { fmt.println("titlebar_geometry_check FAIL native drag gating") }
 
 	for cycle in 0..<2 {
 		if cycle == 0 {
@@ -97,6 +106,7 @@ native_darwin_titlebar_check_snapshot :: proc(
 	rt.viewport = alicorn.Rect{0, 0, f32(metrics.logical_width), f32(metrics.logical_height)}
 	alicorn.invalidate_root(rt, "native titlebar geometry check phase")
 	_ = menu_fixture_titlebar_build(app, rt, metrics.logical_width, metrics.logical_height)
+	native_darwin_titlebar_fixture_sync_layout(menu)
 	root, _ := alicorn.node_info(rt, app.titlebar_root_node)
 	header, _ := alicorn.node_info(rt, app.titlebar_header_node)
 	body, _ := alicorn.node_info(rt, app.titlebar_body_node)
@@ -110,6 +120,8 @@ native_darwin_titlebar_check_snapshot :: proc(
 		"content-bounds", NS.View_bounds(content_view), "content-frame", intrinsics.objc_send(NS.Rect, content_view, "frame"),
 		"SDL-logical", metrics.logical_width, metrics.logical_height, "SDL-pixels", metrics.pixel_width, metrics.pixel_height,
 		"safe-area", safe_area, "controls", app.titlebar_control_bounds, "header-height", app.titlebar_header_height,
-		"root", root.bounds, "header", header.bounds, "body", body.bounds)
+		"root", root.bounds, "header", header.bounds, "body", body.bounds,
+		"interactive", state.titlebar_fixture.geometry.interactive[:state.titlebar_fixture.geometry.interactive_count],
+		"blank-drag", app.titlebar_drag_region)
 	return Darwin_Titlebar_Check_Layout{root.bounds, header.bounds, body.bounds, NS.WindowStyleFlag.FullScreen in style_mask}
 }

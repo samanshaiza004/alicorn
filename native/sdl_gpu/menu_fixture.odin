@@ -13,6 +13,8 @@ Menu_Fixture_State :: struct {
 	titlebar_root_node:            alicorn.Node_ID,
 	titlebar_header_node:          alicorn.Node_ID,
 	titlebar_body_node:            alicorn.Node_ID,
+	titlebar_blank_node:           alicorn.Node_ID,
+	titlebar_theme:                alicorn.Style_Theme_ID,
 	titlebar_control_bounds:       [3]alicorn.Rect,
 	titlebar_header_height:        f32,
 	titlebar_safe_top:             f32,
@@ -64,7 +66,8 @@ Menu_Fixture_State :: struct {
 
 TITLEBAR_FIXTURE_NAMESPACE :: u64(0x616c69636f726e)
 TITLEBAR_FIXTURE_TAB_DRAG_TYPE :: alicorn.Drag_Type(0x746162)
-TITLEBAR_FIXTURE_HEADER_HEIGHT :: f32(44)
+TITLEBAR_FIXTURE_HEADER_HEIGHT :: f32(32)
+TITLEBAR_FIXTURE_BACKGROUND :: alicorn.Color{0.125, 0.137, 0.16, 1}
 
 menu_fixture_build :: proc(
 	state: rawptr,
@@ -99,18 +102,20 @@ menu_fixture_titlebar_build :: proc(
 	rt: ^alicorn.Runtime,
 	logical_width, logical_height: int,
 ) -> alicorn.Node_ID {
+	if app.titlebar_theme == 0 {
+		theme := alicorn.DEFAULT_STYLE_THEME
+		theme.colors[int(alicorn.Style_Color_Role.Subtle_Surface)] = TITLEBAR_FIXTURE_BACKGROUND
+		theme.colors[int(alicorn.Style_Color_Role.Surface)] = alicorn.Color{0.18, 0.195, 0.22, 1}
+		theme.colors[int(alicorn.Style_Color_Role.Text)] = alicorn.Color{0.88, 0.89, 0.91, 1}
+		theme.colors[int(alicorn.Style_Color_Role.Muted_Text)] = alicorn.Color{0.65, 0.68, 0.72, 1}
+		theme.colors[int(alicorn.Style_Color_Role.Accent)] = alicorn.Color{0.48, 0.60, 0.72, 1}
+		theme.button_recipes.recipes[int(alicorn.Button_Variant.Tab)].selected.surface_role = .Surface
+		app.titlebar_theme = alicorn.style_theme_register(rt, theme)
+	}
 	ui, should_build := alicorn.begin_frame(rt)
 	if !should_build { return 0 }
 	app.titlebar_window_width = f32(logical_width)
 	app.titlebar_logical_height = f32(logical_height)
-	app.titlebar_tab_start_x = app.titlebar_control_start_x
-	app.titlebar_tab_width = max(f32(logical_width)-app.titlebar_tab_start_x-160, 0)
-	app.titlebar_drag_region = alicorn.Rect{
-		app.titlebar_tab_start_x+app.titlebar_tab_width,
-		app.titlebar_safe_top,
-		max(f32(logical_width)-app.titlebar_tab_start_x-app.titlebar_tab_width, 0),
-		app.titlebar_header_height,
-	}
 	root := alicorn.container_begin(
 		&ui,
 		.Root,
@@ -128,7 +133,7 @@ menu_fixture_titlebar_build :: proc(
 		.Container,
 		label="macos-titlebar-fixture-header",
 		style=alicorn.layout_style(.Row, height=app.titlebar_header_height, gap=0, clip=true),
-		color=alicorn.Color{0.13, 0.15, 0.19, 1},
+		color=TITLEBAR_FIXTURE_BACKGROUND,
 	)
 	_ = alicorn.container_begin(
 		&ui,
@@ -156,15 +161,25 @@ menu_fixture_titlebar_build :: proc(
 	}
 	tab_options := alicorn.DEFAULT_TAB_BAR_OPTIONS
 	tab_options.height = app.titlebar_header_height
-	tab_options.close_policy = .Always
+	tab_options.min_tab_width = 150
+	tab_options.max_tab_width = 180
+	tab_options.gap = 0
+	tab_options.close_policy = .Selected_Or_Hover
+	tab_options.presentation = .Compact
 	tab_options.drag_type = TITLEBAR_FIXTURE_TAB_DRAG_TYPE
+	preferred_width := f32(item_count)*tab_options.max_tab_width
+	// This bounded fixture owns the whole row. Give the component its real
+	// available width so its overflow controls agree with the outer layout.
+	preferred_width = min(preferred_width, max(f32(logical_width)-app.titlebar_control_start_x, 0))
+	tab_scope := alicorn.style_environment_push(&ui, alicorn.Style_Environment{theme=app.titlebar_theme, text_scale=13.0/16.0})
 	tab_result := alicorn.tab_bar(
 		&ui,
 		alicorn.key_string("macos-titlebar-tabs"),
 		items[:item_count],
 		tab_options,
-		alicorn.layout_style(.Row, width=app.titlebar_tab_width, height=app.titlebar_header_height),
+		alicorn.layout_style(.Row, width=preferred_width, height=app.titlebar_header_height, compress_weight=1),
 	)
+	alicorn.style_environment_pop(&ui, tab_scope)
 	if tab_result.item_index >= 0 && tab_result.item_index < item_count {
 		tab_id := item_ids[tab_result.item_index]
 		switch tab_result.action {
@@ -189,7 +204,7 @@ menu_fixture_titlebar_build :: proc(
 		case .None:
 		}
 	}
-	_ = alicorn.container_begin(
+	blank := alicorn.container_begin(
 		&ui,
 		.Container,
 		label="blank-native-window-drag-region",
@@ -220,7 +235,7 @@ menu_fixture_titlebar_build :: proc(
 		),
 	)
 	alicorn.text(&ui, fmt.tprintf("Native control bounds (window points): %v", app.titlebar_control_bounds))
-	alicorn.text(&ui, fmt.tprintf("Header %0.1fpt · blank window-drag tail %0.1fpt", app.titlebar_header_height, f32(160)))
+	alicorn.text(&ui, fmt.tprintf("Header %0.1fpt · blank drag space follows retained layout", app.titlebar_header_height))
 	alicorn.text(
 		&ui,
 		fmt.tprintf(
@@ -270,6 +285,7 @@ menu_fixture_titlebar_build :: proc(
 	app.titlebar_root_node = root
 	app.titlebar_header_node = bar
 	app.titlebar_body_node = body
+	app.titlebar_blank_node = blank
 	return root
 }
 
