@@ -39,6 +39,7 @@ jobs:
       - name: Run secondary-window waker teardown under ThreadSanitizer
         shell: bash
         run: |
+          REPO_ROOT=$PWD
           . tools/common.sh
           . tools/accesskit.sh
           ODIN=$(alicorn_resolve_odin)
