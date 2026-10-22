@@ -373,7 +373,11 @@ RunFoundation :: proc() {
 	if app_text_err != nil { fail("native text state allocation failed") }
 	defer { if len(app_text) > 0 { delete(app_text) } }
 	window_flags := sdl3.GetWindowFlags(window)
-	text_input_state := Native_Text_Input_State{window_focused=(window_flags & sdl3.WindowFlags{.INPUT_FOCUS}) != sdl3.WindowFlags{}}
+	// Surface stress injects its own SDL_TEXT_EDITING/TEXT_INPUT events, so it
+	// marks the focused-field contract active without claiming OS focus.
+	text_input_state := Native_Text_Input_State{
+		window_focused=(window_flags & sdl3.WindowFlags{.INPUT_FOCUS}) != sdl3.WindowFlags{} || surface_stress,
+	}
 	sync_text_input_focus(window, &rt, &text_input_state)
 	if !text_input_state.active {
 		fmt.println("Waiting up to 5 seconds for window focus before text-input validation; click the Alicorn SDL_GPU validation window if needed")
@@ -396,18 +400,25 @@ RunFoundation :: proc() {
 		if !text_input_state.active { sdl3.Delay(16) }
 	}
 	if !text_input_state.active || !sdl3.TextInputActive(window) {
-		when ODIN_OS == .Darwin {
-			focus := darwin_focus_state(window)
-			fmt.println(
-				"native_text_input_focus",
-				"app_active", focus.app_active,
-				"key_window", focus.key_window,
-				"sdl_input_focus", focus.input_focus,
-				"runtime_focus", rt.focused,
-				"field", field,
-			)
+		if surface_stress {
+			// This mode validates retained geometry, submission, and fence
+			// retirement. Its injected SDL text events below do not require an OS
+			// input-focus grant, which is unavailable to headless CI launches.
+			fmt.println("native_text_input_focus", "SKIP", "surface stress is non-interactive")
+		} else {
+			when ODIN_OS == .Darwin {
+				focus := darwin_focus_state(window)
+				fmt.println(
+					"native_text_input_focus",
+					"app_active", focus.app_active,
+					"key_window", focus.key_window,
+					"sdl_input_focus", focus.input_focus,
+					"runtime_focus", rt.focused,
+					"field", field,
+				)
+			}
+			fail("focused text field did not activate SDL text input after waiting for window focus")
 		}
-		fail("focused text field did not activate SDL text input after waiting for window focus")
 	}
 	// Feed one deterministic pair through SDL's own event queue. This is not
 	// a substitute for manual OS-IME validation, but it proves the native

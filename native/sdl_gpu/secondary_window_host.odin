@@ -366,6 +366,14 @@ native_secondary_window_deactivate_wakers :: proc(child: ^Native_Secondary_Windo
 	child.host_wake_state.active = false
 }
 
+native_secondary_window_gpu_release_safe :: proc(
+	wait_requested: bool,
+	device_available: bool,
+	idle_wait_succeeded: bool,
+) -> bool {
+	return !wait_requested || !device_available || idle_wait_succeeded
+}
+
 native_secondary_window_destroy :: proc(manager: ^Native_Secondary_Window_Manager, wait_for_gpu := true) {
 	if manager == nil || manager.child == nil { return }
 	child := manager.child
@@ -385,7 +393,13 @@ native_secondary_window_destroy :: proc(manager: ^Native_Secondary_Window_Manage
 	// stops its notifications. Keep the host waker alive until both producers
 	// have been retired.
 	native_secondary_window_deactivate_wakers(child)
-	if wait_for_gpu && manager.device != nil { _ = sdl3.WaitForGPUIdle(manager.device) }
+	idle_wait_succeeded := true
+	if wait_for_gpu && manager.device != nil {
+		idle_wait_succeeded = sdl3.WaitForGPUIdle(manager.device)
+	}
+	if !native_secondary_window_gpu_release_safe(wait_for_gpu, manager.device != nil, idle_wait_succeeded) {
+		fail("secondary window GPU idle wait failed before resource release")
+	}
 	native_solid_destroy(&child.solid_renderer)
 	native_surface_destroy(&child.surface_renderer)
 	native_text_destroy(&child.text_renderer)

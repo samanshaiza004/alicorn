@@ -1,0 +1,11 @@
+{
+  "name": "Alicorn Secondary Window Acceptance",
+  "version": "0.1.0",
+  "bundleIdentifier": "org.alicorn.secondary-window-acceptance",
+  "executableName": "AlicornSecondaryWindowAcceptance",
+  "odinPackage": "examples/06_secondary_windows",
+  "minimumMacOSVersion": "13.0",
+  "icon": null,
+  "resources": [],
+  "privateLibraries": []
+}

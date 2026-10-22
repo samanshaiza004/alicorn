@@ -21,6 +21,17 @@ test_secondary_unavailable_swapchain_does_not_force_idle_spin :: proc(t: ^testin
 	testing.expect(t, native_secondary_window_has_work(&manager), "closing a suspended child must still be processed immediately")
 }
 
+@(test)
+test_secondary_window_does_not_release_gpu_resources_after_failed_idle_wait :: proc(t: ^testing.T) {
+	testing.expect(t, native_secondary_window_gpu_release_safe(true, true, true),
+		"child GPU resources may be released after a successful shared-device idle wait")
+	testing.expect(t, !native_secondary_window_gpu_release_safe(true, true, false),
+		"a failed idle wait must stop teardown before child GPU resources are released")
+	testing.expect(t, native_secondary_window_gpu_release_safe(false, true, false) &&
+		native_secondary_window_gpu_release_safe(true, false, false),
+		"setup failures without submitted child work need not wait for a device")
+}
+
 secondary_window_test_build :: proc(
 	state: rawptr,
 	rt: ^alicorn.Runtime,
@@ -114,24 +125,27 @@ test_secondary_window_request_is_deferred_single_slot_and_closable :: proc(t: ^t
 		height=360,
 	}
 
-	testing.expect(t, native_secondary_window_lifecycle(&manager) == .Vacant, "a new host should start without a secondary window")
-	testing.expect(t, application_open_window(service, description), "the host should accept one valid deferred window request")
-	testing.expect(t, manager.pending && manager.child == nil && native_secondary_window_lifecycle(&manager) == .Requested,
-		"open requests should defer SDL/GPU creation to the host's safe point")
-	testing.expect(t, !application_open_window(service, description), "the v1 host should reject a second live or pending secondary window")
+	for _ in 0..<5 {
+		testing.expect(t, native_secondary_window_lifecycle(&manager) == .Vacant, "the one child slot should return to Vacant after each close")
+		testing.expect(t, application_open_window(service, description), "the host should accept a deferred child request after each prior close")
+		testing.expect(t, manager.pending && manager.child == nil && native_secondary_window_lifecycle(&manager) == .Requested,
+			"open requests should defer SDL/GPU creation to the host's safe point")
+		testing.expect(t, !application_open_window(service, description), "the v1 host should reject a second live or pending secondary window")
 
-	child := Native_Secondary_Window{active=true}
-	manager.child = &child
-	manager.pending = false
-	manager.pending_close = false
-	testing.expect(t, native_secondary_window_lifecycle(&manager) == .Live, "an active child context should report Live")
-	application_close_window(service)
-	testing.expect(t, manager.pending_close && native_secondary_window_lifecycle(&manager) == .Closing,
-		"closing requests should transition the active child through Closing")
-	manager.child = nil
-	manager.pending_close = false
-	native_secondary_window_request_storage_clear(&manager)
-	testing.expect(t, native_secondary_window_lifecycle(&manager) == .Vacant, "closing should return the slot to Vacant for a later reopen")
+		child := Native_Secondary_Window{active=true}
+		manager.child = &child
+		manager.pending = false
+		manager.pending_close = false
+		testing.expect(t, native_secondary_window_lifecycle(&manager) == .Live, "an active child context should report Live")
+		application_close_window(service)
+		testing.expect(t, manager.pending_close && native_secondary_window_lifecycle(&manager) == .Closing,
+			"closing requests should transition the active child through Closing")
+		manager.child = nil
+		manager.pending_close = false
+		native_secondary_window_request_storage_clear(&manager)
+		testing.expect(t, native_secondary_window_lifecycle(&manager) == .Vacant,
+			"every completed close should release the one child slot for reuse")
+	}
 }
 
 @(test)

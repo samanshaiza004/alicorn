@@ -53,13 +53,73 @@ destroys its renderers and Runtime, releases the child swapchain claim, and then
 destroys its SDL window. This happens before primary application state and the
 shared GPU device are torn down.
 
-## Native validation still required
+## Native validation limits
 
 The automated tests cover independent Runtime geometry/scales and focus,
 window-ID/wake routing, deferred one-slot lifecycle, and bounded event ordering.
-Before shipping, a native fixture should still be exercised on Windows and
-macOS for moving the child across displays with different scales, resizing,
-focus transfer, close/reopen, worker wakeups, and clean process shutdown.
+The Windows D3D12 lifecycle and packaging results are recorded below. Physical
+focus transfer, OS text composition, native menu interaction, and movement
+between displays still require interactive verification. macOS has a separate
+native platform-validation requirement.
+
+## Windows acceptance fixture
+
+`examples/06_secondary_windows` is a small application that uses only the
+public `Application` and `Application_Window_Service` contracts. Its primary
+window opens one integrated-title-bar tool window. Each window owns a separate
+text field, scheduler, worker, and animated GPU surface; a small shared model
+reports lifecycle, text, composition, and menu events. The tool menu exercises
+native menu dispatch, title updates, topmost changes, and close requests.
+
+Build and launch the interactive fixture from the repository root:
+
+```powershell
+.\tools\secondary_windows_acceptance.ps1 -Odin odin
+```
+
+Open the tool window, resize it, move it to another display, transfer focus
+between both text fields, enter text (including an IME composition when
+available), invoke its File and View menus, close it, and reopen it. The
+window status reports its assigned logical size and scale. Stop the worker and
+animation controls to return the application to idle. The primary window's
+“Quit while tool and GPU are active” button exercises process shutdown while
+the child is live.
+
+The native lifecycle smoke opens, closes, and reopens a real child window,
+keeps worker wakeups and GPU geometry updates active, then requests process
+shutdown with the second child live:
+
+```powershell
+.\tools\secondary_windows_acceptance.ps1 -Odin odin -LifecycleSmoke
+```
+
+Add `-GpuStress` to fill most of Alicorn's bounded geometry payload for each
+animated frame. The smoke exits nonzero unless two child instances start and
+stop, at least one child worker wake is delivered, geometry updates run, and
+there are no open failures. The recorded run had the child live and two
+unretired primary GPU fences at shutdown; the host then waited for the shared
+device to become idle before releasing child resources. Child rendering waits
+on each child's submission fence, so the test does not claim an in-flight
+child command at the exact shutdown boundary.
+
+### Windows validation record
+
+| Check | Result | Notes |
+| --- | --- | --- |
+| Headless runtime and native SDL GPU tests | PASS | 234 runtime, 35 theme, 104 native tests; text-input host contract passed. |
+| Every example builds | PASS | All 14 examples compiled. |
+| Caption DPI capture matrix | PASS | 144 D3D12 captures at 96, 120, 144, and 192 DPI. |
+| Icon and image validation | PASS | D3D12 pixel, blending, atlas, and scale checks passed. |
+| GPU geometry unit validation | PASS | `--surface-geometry-test`. |
+| D3D12 surface stress | PASS | 1,200 frames/updates; zero ordinary description, reconcile, layout, paint, or composition visits. Synthetic SDL text composition passed; physical focus is not covered by this run. |
+| Secondary-window lifecycle and GPU-drain smoke | PASS | Direct3D 12; two child starts/stops, zero open failures, 3 child worker wakes, 60 geometry updates; child live and 2 primary fences unretired at shutdown. |
+| Integrated native-menu D3D12 smoke | PASS | Host startup, presentation, and idle smoke passed; this did not invoke a menu item. |
+| Shared-SDL native package and clean-directory smoke | PASS | Acceptance fixture package launched from an empty working directory. |
+| Static-SDL package build | BLOCKED | CMake is not installed in this Windows environment; the shared-SDL package smoke passed. |
+| Focus transfer and separate physical text input | BLOCKED | Native desktop automation is unavailable in this session. |
+| Child native menu commands | BLOCKED | The automated smoke did not select menu items. |
+| Resize and cross-display DPI movement | BLOCKED | Two displays are attached, but interactive movement and scale transition were not exercised. |
+| Physical IME candidate/composition behavior | BLOCKED | Synthetic SDL composition passed; no physical IME session was available. |
 
 ## Diagnostic captures
 
