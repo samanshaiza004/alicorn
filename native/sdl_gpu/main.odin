@@ -13,13 +13,11 @@ import "vendor:sdl3"
 // Run owns the complete SDL3/SDL_GPU application shell.
 // Applications supply their state and callbacks.
 Run :: proc(application: Application, smoke := false) {
-	native_run_application(application, smoke, macos_titlebar_fixture=false)
+	native_run_application(application, smoke)
 }
 
-// native_run_application has one additional private switch for platform
-// fixtures. It is intentionally absent from the public Application contract.
-native_run_application :: proc(application: Application, smoke := false, macos_titlebar_fixture := false) {
-	input_debug := macos_titlebar_fixture
+native_run_application :: proc(application: Application, smoke := false) {
+	input_debug := false
 	validation_timeout_seconds := 0
 	for argument in os.args {
 		if argument == "--input-debug" { input_debug = true }
@@ -76,16 +74,21 @@ native_run_application :: proc(application: Application, smoke := false, macos_t
 	metrics: Window_Metrics
 	if !read_window_metrics(window, &metrics, native_menu.content_inset_top) { fail("initial application window metrics unavailable") }
 	when ODIN_OS == .Darwin {
-		if macos_titlebar_fixture {
-			if !native_darwin_titlebar_fixture_prepare(&native_menu) {
-				fail("macOS integrated titlebar fixture could not configure the native window")
+		if application.window_decorations == .Content_Title_Bar {
+			if application.window_chrome_height <= 0 || application.window_chrome_metrics == nil || application.window_chrome_layout == nil {
+				fail("Content_Title_Bar requires a positive window_chrome_height and both chrome callbacks")
+			}
+			if !native_darwin_titlebar_prepare(&native_menu, application.window_chrome_height) {
+				fail("macOS content title bar could not configure the native window")
 			}
 			if !read_window_metrics(window, &metrics, native_menu.content_inset_top) {
 				fail("window metrics unavailable after enabling full-size macOS content")
 			}
 		}
 	} else {
-		if macos_titlebar_fixture { fail("the native titlebar input fixture is macOS-only") }
+		if application.window_decorations == .Content_Title_Bar {
+			fail("Content_Title_Bar is currently supported only on macOS")
+		}
 	}
 	formats := sdl3.GPUShaderFormat{.SPIRV, .DXIL, .MSL}
 	gpu_driver_name: cstring = nil

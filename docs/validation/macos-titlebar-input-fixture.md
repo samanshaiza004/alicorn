@@ -1,16 +1,16 @@
 # macOS integrated-titlebar input fixture
 
-This is a bounded native proof for Alicorn's proposed macOS integrated titlebar.
+This record covers the bounded native proof for Alicorn's macOS content titlebar.
 It uses one SDL window, Alicorn's ordinary retained tab bar and text field, and
-AppKit's standard window controls. It adds no public chrome API and no second
-Runtime.
+AppKit's standard window controls. The fixture and Scratchpad use the public
+Content_Title_Bar contract; there is no second Runtime or native tab view.
 
 ## Rebuild and run
 
-Use SDL 3.4.16 and run:
+Use SDL 3.4.18, the version required by Alicorn's macOS host, and run:
 
 ```sh
-SDL3_PREFIX=/path/to/SDL-3.4.16 tools/build_macos_titlebar_fixture.sh
+SDL3_PREFIX=/path/to/SDL-3.4.18 tools/build_macos_titlebar_fixture.sh
 open out/native-titlebar-fixture/AlicornTitlebarFixture.app
 ```
 
@@ -32,9 +32,9 @@ explicitly.
 
 ## Observed on Apple Silicon
 
-Test environment: macOS 27, Retina scale 2, bundled SDL 3.4.16 (`current
-version 401.16.0`). Native observations below were made against the fixture
-window on the unlocked desktop.
+Original interactive validation: macOS 27, Retina scale 2, bundled SDL 3.4.16
+(`current version 401.16.0`). The observations below record that validation;
+the fixture build now requires the host's SDL 3.4.18.
 
 - AppKit's standard close/minimize/fullscreen controls were present and their
   measured bounds were `{x=9,y=9,w=14,h=14}`, `{x=32,y=9,w=14,h=14}`, and
@@ -153,8 +153,22 @@ The default Standard tab appearance remains unchanged.
 The strip is capped at its actual tabs (including overflow controls when needed),
 and an explicit growing blank container receives the rest. The host copies both
 resolved rectangles after description, retained-only presentation, and live
-resize layout. It never estimates them in its hit-test callback. There is no
-fixed 160-point drag tail and no new public chrome API.
+resize layout. It never estimates them in its hit-test callback. The public
+content-titlebar API now exposes this host-owned geometry contract, and
+Scratchpad uses it to publish its real tab and blank-drag nodes.
+
+## Current checkout retest (2026-10-22)
+
+The fixture bundle rebuilt and passed ad-hoc code-sign verification against the
+installed SDL 3.4.18. It launched through the desktop app path. On the unlocked
+Apple Silicon desktop, entering fullscreen with the native green control showed
+the 32-point tab row and fixture body at 1440×900 logical points; the app
+reported `fullscreen=true (1/0)`. Restoring returned to the windowed fixture.
+The automated `--geometry-check` invocation could not be repeated from the
+current shell: macOS aborted in `_RegisterApplication` while `NSApplication`
+was initializing, before the native check or window setup ran. That launch-path
+limitation did not affect the desktop-launched fixture or the earlier recorded
+automated fullscreen regression result.
 
 ## Desktop test matrix
 
@@ -172,18 +186,20 @@ fixed 160-point drag tail and no new public chrome API.
 | Interrupted focus-loss drag, IME, VoiceOver | Still requires desktop validation |
 | Idle | Six-second unfocused-field run: one startup submission, zero worker/host wakes |
 
-## Current API recommendation
+## API conclusion
 
 Keep Scratchpad's tabs as an ordinary Alicorn `tab_bar`; do not add an AppKit
-tab view or a second Runtime. The live click and text-field evidence supports
-keeping the tabs in Alicorn's content view. Do **not** freeze a public chrome
-API yet: the basic tab/window drag boundary now works physically, but Retina
-display changes, focus-loss interruption and IME still need a dedicated pass.
+tab view or a second Runtime. The live click, close, reorder, blank-window-drag,
+fullscreen, and text-field evidence supports keeping tabs in Alicorn's content
+view. The minimum public contract is now implemented: Application opts into
+`.Content_Title_Bar`, sets `window_chrome_height`, receives measured
+`Window_Chrome_Metrics`, and returns a `Window_Chrome_Layout` with one header
+node and explicit `.Interactive` / `.Window_Drag` retained-node regions. The
+host copies finalized geometry and preserves the existing native gesture
+arbitration. Scratchpad now dogfoods that contract while retaining ownership of
+document tabs and their actions.
 
-The likely minimum API remains an opt-in integrated-content window mode plus
-host-measured chrome metrics and explicit interactive/blank-drag regions, with
-layout-resolved geometry copied into the host. The fixture supports that
-direction but does not yet establish its full contract. If a physical drag or
-fullscreen event is consumed without the expected SDL event, record the exact
-AppKit behavior before considering a titlebar accessory view or another
-supported integration path.
+Retina scale 2 is verified; moving between displays/scales, focus-loss
+interruption, IME composition, and VoiceOver remain dedicated follow-up checks.
+Those gaps do not invalidate the user-confirmed click/close/reorder/window-drag
+contract or the fullscreen geometry result.

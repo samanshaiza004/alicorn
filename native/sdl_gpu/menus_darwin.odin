@@ -19,7 +19,7 @@ Darwin_Menu_State :: struct {
 	selector:              NS.SEL,
 	update_selector:       NS.SEL,
 	bindings:              [dynamic]Darwin_Menu_Binding,
-	titlebar_fixture:       Darwin_Titlebar_Fixture_State,
+	titlebar:               Darwin_Titlebar_State,
 }
 
 Darwin_Menu_Binding :: struct {
@@ -238,7 +238,9 @@ darwin_menu_build_window_menu :: proc(state: ^Darwin_Menu_State) -> ^NS.Menu {
 
 native_menu_prepare :: proc(menu: ^Native_Menu_Runtime) -> bool {
 	if menu == nil || menu.window == nil || menu.application == nil { return false }
-	if len(menu.application.menus) == 0 { return menu.application.window_decorations == .System }
+	if len(menu.application.menus) == 0 && menu.application.window_decorations != .Content_Title_Bar {
+		return menu.application.window_decorations == .System
+	}
 	props := sdl3.GetWindowProperties(menu.window)
 	window := cast(^NS.Window)sdl3.GetPointerProperty(props, "SDL.window.cocoa.window", nil)
 	if window == nil { return false }
@@ -325,7 +327,7 @@ native_menu_prepare :: proc(menu: ^Native_Menu_Runtime) -> bool {
 native_menu_destroy :: proc(menu: ^Native_Menu_Runtime) {
 	if menu == nil || menu.platform_data == nil { return }
 	state := cast(^Darwin_Menu_State)menu.platform_data
-	native_darwin_titlebar_fixture_destroy(menu)
+	native_darwin_titlebar_destroy(menu)
 	if darwin_active_menu == menu { darwin_active_menu = nil }
 	if state.application != nil {
 		NS.Application_setMainMenu(state.application, state.previous_main_menu)

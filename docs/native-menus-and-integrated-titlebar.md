@@ -1,9 +1,8 @@
 # Native menus and integrated title bar
 
-For the proposed macOS tab/titlebar integration, see the
-[2026-10-20 research and implementation proposal](research/macos-integrated-titlebar.md)
+For the macOS tab/titlebar integration, see the
+[research and implementation record](research/macos-integrated-titlebar.md)
 and its [macOS validation record](validation/macos-sync-2026-10-20.md).
-The proposal does not change the existing platform behavior described below.
 
 This experiment adds a small semantic menu description to the SDL host. Menu
 trees are borrowed for `Run`; labels and structure are copied into native
@@ -107,9 +106,23 @@ and Command on macOS. Shift and Alt retain their names; `Super` means the
 Windows key on Windows and Control on macOS. Applications handle selected items with
 `Application.on_menu_command`.
 
+macOS applications that want content beside the native traffic lights can
+separately opt into `Content_Title_Bar`. The application supplies a fixed
+header height, receives measured `Window_Chrome_Metrics`, and declares an
+ordinary retained header node plus up to `WINDOW_CHROME_REGION_CAPACITY`
+interactive/window-drag nodes in `Window_Chrome_Layout`. The host copies each
+node's resolved geometry after layout, including retained-only layout changes;
+callbacks and application-owned slices are not retained. AppKit controls win
+hit-test priority, followed by interactive content and explicit blank drag
+regions. The mode is macOS-only; `System` and Windows' `Integrated_Title_Bar`
+remain unchanged. The `--macos-titlebar-fixture` entry point exercises this
+same public contract.
+
 `Application.window_decorations` defaults to `System`. Set it to
 `Integrated_Title_Bar` to opt into the Windows caption-label proof. Other
-platforms preserve system decorations. No native handle appears in this API.
+platforms preserve system decorations. On macOS only, `Content_Title_Bar`
+extends Alicorn-rendered content under the native titlebar. No native handle
+appears in this API.
 
 ## Validation
 

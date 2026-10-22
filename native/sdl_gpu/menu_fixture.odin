@@ -13,7 +13,10 @@ Menu_Fixture_State :: struct {
 	titlebar_root_node:            alicorn.Node_ID,
 	titlebar_header_node:          alicorn.Node_ID,
 	titlebar_body_node:            alicorn.Node_ID,
+	titlebar_tabs_region_node:     alicorn.Node_ID,
 	titlebar_blank_node:           alicorn.Node_ID,
+	titlebar_chrome_regions:       [2]Window_Chrome_Region,
+	titlebar_chrome_region_count:  int,
 	titlebar_theme:                alicorn.Style_Theme_ID,
 	titlebar_control_bounds:       [3]alicorn.Rect,
 	titlebar_header_height:        f32,
@@ -21,11 +24,8 @@ Menu_Fixture_State :: struct {
 	titlebar_control_start_x:      f32,
 	titlebar_window_width:         f32,
 	titlebar_logical_height:       f32,
-	titlebar_window_origin_x:     f32,
-	titlebar_window_origin_y:     f32,
-	titlebar_tab_start_x:          f32,
+	titlebar_display_scale:        f32,
 	titlebar_tab_width:            f32,
-	titlebar_drag_region:          alicorn.Rect,
 	titlebar_tab_order:            [2]u64,
 	titlebar_selected_tab:         u64,
 	titlebar_closed_tabs:          [2]bool,
@@ -38,7 +38,6 @@ Menu_Fixture_State :: struct {
 	titlebar_fullscreen_enters:   u64,
 	titlebar_fullscreen_exits:    u64,
 	titlebar_fullscreen_active:   bool,
-	titlebar_style_resets:        u64,
 	titlebar_pointer_event_count:  u64,
 	titlebar_pointer_x:           f32,
 	titlebar_pointer_y:           f32,
@@ -46,22 +45,8 @@ Menu_Fixture_State :: struct {
 	titlebar_pointer_down_y:      f32,
 	titlebar_pointer_up_x:        f32,
 	titlebar_pointer_up_y:        f32,
-	titlebar_raw_pointer_count:   u64,
-	titlebar_raw_down_x:          f32,
-	titlebar_raw_down_y:          f32,
-	titlebar_raw_up_x:            f32,
-	titlebar_raw_up_y:            f32,
-	titlebar_raw_motion_x:        f32,
-	titlebar_raw_motion_y:        f32,
-	titlebar_callback_motion_x:    f32,
-	titlebar_callback_motion_y:    f32,
 	titlebar_pointer_target:      alicorn.Node_ID,
 	titlebar_pointer_kind:        alicorn.Pointer_Kind,
-	titlebar_hit_test_count:      u64,
-	titlebar_hit_x:               int,
-	titlebar_hit_y:               int,
-	titlebar_hit_result:          sdl3.HitTestResult,
-	titlebar_consumed_count:      u64,
 }
 
 TITLEBAR_FIXTURE_NAMESPACE :: u64(0x616c69636f726e)
@@ -172,6 +157,12 @@ menu_fixture_titlebar_build :: proc(
 	// available width so its overflow controls agree with the outer layout.
 	preferred_width = min(preferred_width, max(f32(logical_width)-app.titlebar_control_start_x, 0))
 	tab_scope := alicorn.style_environment_push(&ui, alicorn.Style_Environment{theme=app.titlebar_theme, text_scale=13.0/16.0})
+	tab_region := alicorn.container_begin(
+		&ui,
+		.Container,
+		label="macos-titlebar-interactive-tabs-region",
+		style=alicorn.layout_style(.Row, width=preferred_width, height=app.titlebar_header_height, clip=true),
+	)
 	tab_result := alicorn.tab_bar(
 		&ui,
 		alicorn.key_string("macos-titlebar-tabs"),
@@ -179,7 +170,10 @@ menu_fixture_titlebar_build :: proc(
 		tab_options,
 		alicorn.layout_style(.Row, width=preferred_width, height=app.titlebar_header_height, compress_weight=1),
 	)
+	alicorn.container_end(&ui)
 	alicorn.style_environment_pop(&ui, tab_scope)
+	app.titlebar_tabs_region_node = tab_region
+	app.titlebar_tab_width = preferred_width
 	if tab_result.item_index >= 0 && tab_result.item_index < item_count {
 		tab_id := item_ids[tab_result.item_index]
 		switch tab_result.action {
@@ -234,51 +228,31 @@ menu_fixture_titlebar_build :: proc(
 			app.titlebar_text_change_count,
 		),
 	)
-	alicorn.text(&ui, fmt.tprintf("Native control bounds (window points): %v", app.titlebar_control_bounds))
-	alicorn.text(&ui, fmt.tprintf("Header %0.1fpt · blank drag space follows retained layout", app.titlebar_header_height))
+	alicorn.text(&ui, fmt.tprintf("Native controls (window points): %v", app.titlebar_control_bounds))
+	alicorn.text(&ui, fmt.tprintf("Header %0.1fpt · tab width %0.1fpt · display scale %0.2f", app.titlebar_header_height, app.titlebar_tab_width, app.titlebar_display_scale))
 	alicorn.text(
 		&ui,
 		fmt.tprintf(
-			"Window %0.0f×%0.0fpt @ %0.0f,%0.0f · fullscreen=%v (%d/%d) · titlebar style resets %d",
+			"Window %0.0f×%0.0fpt · fullscreen=%v (%d/%d)",
 			app.titlebar_window_width,
 			app.titlebar_logical_height,
-			app.titlebar_window_origin_x,
-			app.titlebar_window_origin_y,
 			app.titlebar_fullscreen_active,
 			app.titlebar_fullscreen_enters,
 			app.titlebar_fullscreen_exits,
-			app.titlebar_style_resets,
 		),
 	)
-	alicorn.text(
-		&ui,
-		fmt.tprintf(
-			"input hits=%d (%d,%d → %d), SDL raw=%d (move %0.0f,%0.0f down %0.0f,%0.0f up %0.0f,%0.0f), callbacks=%d (move %0.0f,%0.0f down %0.0f,%0.0f up %0.0f,%0.0f; last %0.0f,%0.0f → node %d, kind %d), Cocoa-consumed=%d",
-			app.titlebar_hit_test_count,
-			app.titlebar_hit_x,
-			app.titlebar_hit_y,
-			u32(app.titlebar_hit_result),
-			app.titlebar_raw_pointer_count,
-			app.titlebar_raw_motion_x,
-			app.titlebar_raw_motion_y,
-			app.titlebar_raw_down_x,
-			app.titlebar_raw_down_y,
-			app.titlebar_raw_up_x,
-			app.titlebar_raw_up_y,
-			app.titlebar_pointer_event_count,
-			app.titlebar_callback_motion_x,
-			app.titlebar_callback_motion_y,
-			app.titlebar_pointer_down_x,
-			app.titlebar_pointer_down_y,
-			app.titlebar_pointer_up_x,
-			app.titlebar_pointer_up_y,
-			app.titlebar_pointer_x,
-			app.titlebar_pointer_y,
-			u64(app.titlebar_pointer_target),
-			u32(app.titlebar_pointer_kind),
-			app.titlebar_consumed_count,
-		),
-	)
+	alicorn.text(&ui, fmt.tprintf(
+		"Alicorn pointer callbacks=%d (last %0.0f,%0.0f → node %d, kind %d; down %0.0f,%0.0f up %0.0f,%0.0f)",
+		app.titlebar_pointer_event_count,
+		app.titlebar_pointer_x,
+		app.titlebar_pointer_y,
+		u64(app.titlebar_pointer_target),
+		u32(app.titlebar_pointer_kind),
+		app.titlebar_pointer_down_x,
+		app.titlebar_pointer_down_y,
+		app.titlebar_pointer_up_x,
+		app.titlebar_pointer_up_y,
+	))
 	alicorn.container_end(&ui)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
@@ -294,6 +268,45 @@ menu_fixture_command :: proc(state: rawptr, rt: ^alicorn.Runtime, command: Appli
 	app.command_count += 1
 	app.last_command = command
 	fmt.println("menu_command", u32(command), "count", app.command_count)
+}
+
+menu_fixture_window_chrome_metrics :: proc(state: rawptr, rt: ^alicorn.Runtime, metrics: Window_Chrome_Metrics) {
+	app := cast(^Menu_Fixture_State)state
+	if !app.titlebar_fixture { return }
+	if metrics.fullscreen != app.titlebar_fullscreen_active {
+		if metrics.fullscreen { app.titlebar_fullscreen_enters += 1 }
+		else { app.titlebar_fullscreen_exits += 1 }
+	}
+	app.titlebar_fullscreen_active = metrics.fullscreen
+	app.titlebar_control_bounds = metrics.native_controls
+	app.titlebar_safe_top = metrics.header.y
+	app.titlebar_control_start_x = metrics.content_start_x
+	app.titlebar_window_width = metrics.header.w
+	app.titlebar_header_height = TITLEBAR_FIXTURE_HEADER_HEIGHT
+	app.titlebar_logical_height = rt.viewport.h
+	app.titlebar_display_scale = metrics.display_scale
+}
+
+menu_fixture_window_chrome_layout :: proc(state: rawptr, rt: ^alicorn.Runtime) -> Window_Chrome_Layout {
+	app := cast(^Menu_Fixture_State)state
+	if !app.titlebar_fixture { return {} }
+	app.titlebar_chrome_region_count = 0
+	if app.titlebar_tabs_region_node != 0 {
+		app.titlebar_chrome_regions[app.titlebar_chrome_region_count] = Window_Chrome_Region{
+			node=app.titlebar_tabs_region_node, kind=.Interactive,
+		}
+		app.titlebar_chrome_region_count += 1
+	}
+	if app.titlebar_blank_node != 0 {
+		app.titlebar_chrome_regions[app.titlebar_chrome_region_count] = Window_Chrome_Region{
+			node=app.titlebar_blank_node, kind=.Window_Drag,
+		}
+		app.titlebar_chrome_region_count += 1
+	}
+	return Window_Chrome_Layout{
+		header=app.titlebar_header_node,
+		regions=app.titlebar_chrome_regions[:app.titlebar_chrome_region_count],
+	}
 }
 
 menu_fixture_text_change :: proc(state: rawptr, rt: ^alicorn.Runtime, change: alicorn.Text_Change) {
@@ -330,9 +343,6 @@ menu_fixture_pointer :: proc(
 	} else if event.kind == .Up {
 		app.titlebar_pointer_up_x = event.x
 		app.titlebar_pointer_up_y = event.y
-	} else if event.kind == .Move {
-		app.titlebar_callback_motion_x = event.x
-		app.titlebar_callback_motion_y = event.y
 	}
 	fmt.println(
 		"macos_titlebar_sdl_pointer",
@@ -370,8 +380,8 @@ menu_fixture_drag_event :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alic
 }
 
 // run_menu_fixture backs both the native menu smoke fixture and the macOS
-// titlebar interaction fixture. The optional mode is deliberately host-test
-// only; it does not add a public titlebar option to Application.
+// titlebar interaction fixture. The latter exercises Application's public
+// content-titlebar contract.
 run_menu_fixture :: proc(titlebar_fixture, smoke: bool, decoration_mode: Window_Decoration_Mode) {
 	recent_items := [?]Application_Menu_Item{
 		{kind=.Command, command=Application_Command_ID(4), label="Trace A", state=alicorn.Action_State{enabled=true}},
@@ -412,18 +422,17 @@ run_menu_fixture :: proc(titlebar_fixture, smoke: bool, decoration_mode: Window_
 		width=900,
 		height=560,
 		menus=menus[:],
-		window_decorations=decoration_mode,
+		window_decorations=.Content_Title_Bar if titlebar_fixture else decoration_mode,
+		window_chrome_height=TITLEBAR_FIXTURE_HEADER_HEIGHT if titlebar_fixture else 0,
+		window_chrome_metrics=menu_fixture_window_chrome_metrics if titlebar_fixture else nil,
+		window_chrome_layout=menu_fixture_window_chrome_layout if titlebar_fixture else nil,
 		build=menu_fixture_build,
 		on_text_change=menu_fixture_text_change,
 		on_pointer=menu_fixture_pointer,
 		on_drag=menu_fixture_drag_event,
 		on_menu_command=menu_fixture_command,
 	}
-	if titlebar_fixture {
-		native_run_application(fixture_application, smoke=smoke, macos_titlebar_fixture=true)
-	} else {
-		Run(fixture_application, smoke=smoke)
-	}
+	Run(fixture_application, smoke=smoke)
 }
 
 // RunMenuFixture is a small end-to-end host fixture for menu rendering,

@@ -27,7 +27,7 @@ ODIN=$(alicorn_resolve_odin "$ODIN_ARG")
 
 SDL3_PREFIX=${SDL3_PREFIX:-}
 if [ -z "$SDL3_PREFIX" ]; then
-	echo 'Set SDL3_PREFIX to an SDL 3.4.16 installation (the Homebrew version may be newer).' >&2
+	echo 'Set SDL3_PREFIX to an SDL 3.4.18 installation.' >&2
 	exit 2
 fi
 SDL3_LIBRARY=${SDL3_LIBRARY:-}
@@ -48,8 +48,8 @@ if [ -z "$SDL3_LIBRARY" ] || [ ! -f "$SDL3_LIBRARY" ]; then
 fi
 if command -v pkg-config >/dev/null 2>&1 && [ -f "$SDL3_PREFIX/lib/pkgconfig/sdl3.pc" ]; then
 	SDL3_VERSION=$(PKG_CONFIG_PATH="$SDL3_PREFIX/lib/pkgconfig" pkg-config --modversion sdl3)
-	if [ "$SDL3_VERSION" != '3.4.16' ]; then
-		echo "The fixture requires SDL 3.4.16; SDL3_PREFIX provides $SDL3_VERSION." >&2
+	if [ "$SDL3_VERSION" != '3.4.18' ]; then
+		echo "The fixture requires SDL 3.4.18; SDL3_PREFIX provides $SDL3_VERSION." >&2
 		exit 2
 	fi
 fi

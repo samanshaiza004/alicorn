@@ -109,7 +109,42 @@ Application_Menu :: struct {
 Window_Decoration_Mode :: enum {
 	System,
 	Integrated_Title_Bar,
+	Content_Title_Bar,
 }
+
+// Window_Chrome_Metrics reports measured native geometry for an opted-in
+// content title bar. Rectangles use top-left window-logical points. The host
+// keeps native-control hit testing; applications use content_start_x to place
+// ordinary controls beside the measured traffic-light cluster.
+Window_Chrome_Metrics :: struct {
+	header: alicorn.Rect,
+	native_controls: [3]alicorn.Rect,
+	native_control_count: int,
+	content_start_x: f32,
+	display_scale: f32,
+	fullscreen: bool,
+}
+
+Window_Chrome_Metrics_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, metrics: Window_Chrome_Metrics)
+
+Window_Chrome_Region_Kind :: enum { Interactive, Window_Drag }
+
+WINDOW_CHROME_REGION_CAPACITY :: 16
+
+// A chrome region references an ordinary retained node. The host resolves its
+// finalized bounds after layout and retains only those geometry products. At
+// most WINDOW_CHROME_REGION_CAPACITY regions are consumed per layout callback.
+Window_Chrome_Region :: struct {
+	node: alicorn.Node_ID,
+	kind: Window_Chrome_Region_Kind,
+}
+
+Window_Chrome_Layout :: struct {
+	header: alicorn.Node_ID,
+	regions: []Window_Chrome_Region,
+}
+
+Window_Chrome_Layout_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime) -> Window_Chrome_Layout
 
 Application_Build_Proc :: proc(
 	state: rawptr,
@@ -278,6 +313,14 @@ Application :: struct {
 	height:             int,
 	menus:              []Application_Menu,
 	window_decorations: Window_Decoration_Mode,
+	// Content_Title_Bar is currently a macOS mode. The application lays out its
+	// header in ordinary UI and declares node IDs through window_chrome_layout.
+	// Metrics are delivered before the first build and when native geometry
+	// changes; the layout callback is sampled after description and retained
+	// layout passes. Its returned slice is borrowed only for that call.
+	window_chrome_height: f32,
+	window_chrome_metrics: Window_Chrome_Metrics_Proc,
+	window_chrome_layout: Window_Chrome_Layout_Proc,
 	// Optional theme-resolved appearance for host-owned integrated chrome.
 	window_chrome_appearance: Application_Chrome_Appearance_Proc,
 	on_initialize:      Application_Initialize_Proc,

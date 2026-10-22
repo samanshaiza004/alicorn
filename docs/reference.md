@@ -78,6 +78,34 @@ host error. `ClipboardSetText(service, text)` copies UTF-8 text synchronously
 and rejects embedded NUL bytes. Clipboard and dialog operations belong in the
 native host boundary; application code decides selection and edit semantics.
 
+On macOS, `window_decorations=.Content_Title_Bar` opts into full-size content
+under the native titlebar while preserving AppKit's traffic lights. Set
+`window_chrome_height` and provide `window_chrome_metrics` and
+`window_chrome_layout`. Metrics report measured native-control exclusions and
+the safe header rectangle before the first build and when native geometry
+changes. The application still emits the header with ordinary Alicorn nodes.
+After layout, `window_chrome_layout` identifies that header and up to
+`WINDOW_CHROME_REGION_CAPACITY` ordinary retained nodes as `.Interactive` or
+`.Window_Drag`. The host copies their resolved rectangles; it does not retain
+the callback's slice or application state. Native controls take priority,
+then an interactive region, then an explicit drag region. Gesture ownership is
+latched at pointer-down until release or cancellation. Other platforms reject
+this decoration mode; their existing window behavior is unchanged.
+
+```odin
+host.Run(host.Application{
+    state=rawptr(&app),
+    window_decorations=.Content_Title_Bar,
+    window_chrome_height=42,
+    window_chrome_metrics=app_chrome_metrics,
+    window_chrome_layout=app_chrome_layout,
+    build=app_build,
+})
+```
+
+See [native menus and integrated titlebar](native-menus-and-integrated-titlebar.md)
+for the callback contract and native fixture.
+
 ## Frame and invalidation
 
 | API | Use |
