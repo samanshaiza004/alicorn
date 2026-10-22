@@ -59,7 +59,7 @@ $WindowsInboxDlls = [Collections.Generic.HashSet[string]]::new([StringComparer]:
     'netapi32.dll', 'ntdll.dll', 'ole32.dll', 'oleaut32.dll', 'opengl32.dll',
     'powrprof.dll', 'propsys.dll', 'rpcrt4.dll', 'sechost.dll', 'secur32.dll',
     'setupapi.dll', 'shell32.dll', 'shcore.dll', 'shlwapi.dll', 'user32.dll',
-    'userenv.dll', 'uxtheme.dll', 'version.dll', 'windowscodecs.dll', 'winhttp.dll',
+    'uiautomationcore.dll', 'userenv.dll', 'uxtheme.dll', 'version.dll', 'windowscodecs.dll', 'winhttp.dll',
     'wininet.dll', 'winmm.dll', 'winspool.drv', 'wintrust.dll', 'ws2_32.dll',
     'wtsapi32.dll', 'xinput1_4.dll', 'xinput9_1_0.dll'
 ) | ForEach-Object { [void]$WindowsInboxDlls.Add($_) }

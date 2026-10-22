@@ -127,6 +127,24 @@ try {
             throw 'The package auditor treated VCRUNTIME140.dll as OS-owned because it existed in synthetic System32.'
         }
 
+        $UIAutomationExecutable = Join-Path $TestRoot 'imports-uiautomationcore.exe'
+        New-TestPeWithImports $UIAutomationExecutable @('uiautomationcore.dll')
+        $UIAutomationMetadata = Get-Content -LiteralPath (Join-Path $RepoRoot 'examples\01_hello\package.json') -Raw | ConvertFrom-Json
+        $UIAutomationMetadata.privateLibraries = @()
+        $UIAutomationMetadataPath = Join-Path $TestRoot 'uiautomation-package.json'
+        $UIAutomationMetadata | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $UIAutomationMetadataPath -Encoding utf8
+        $UIAutomationOutput = Join-Path $TestRoot 'uiautomation-package'
+        & (Join-Path $PSScriptRoot 'package_app.ps1') `
+            -Executable $UIAutomationExecutable `
+            -Metadata $UIAutomationMetadataPath `
+            -SDLLinkage Static `
+            -OutputDirectory $UIAutomationOutput `
+            -SDLLicense $SDLLicense
+        $UIAutomationManifest = Get-Content -LiteralPath (Join-Path $UIAutomationOutput 'alicorn-package.json') -Raw | ConvertFrom-Json
+        if (@($UIAutomationManifest.dependencies.system) -notcontains 'uiautomationcore.dll') {
+            throw 'The package manifest did not classify UIAutomationCore.dll as a Windows inbox dependency.'
+        }
+
         $DeclaredRuntimeExecutable = Join-Path $TestRoot 'imports-declared-vcruntime.exe'
         New-TestPeWithImports $DeclaredRuntimeExecutable @('VCRUNTIME140.dll')
         $RuntimeMetadata.executableName = 'VCRuntimeDeclaredFixture'
@@ -134,13 +152,14 @@ try {
         $RuntimeMetadataPath = Join-Path $TestRoot 'declared-vcruntime-package.json'
         $RuntimeMetadata | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $RuntimeMetadataPath -Encoding utf8
         $DeclaredRuntimeOutput = Join-Path $TestRoot 'declared-vcruntime-package'
-        & (Join-Path $PSScriptRoot 'package_app.ps1') @{
+        $DeclaredRuntimeArguments = @{
             Executable = $DeclaredRuntimeExecutable
             Metadata = $RuntimeMetadataPath
             SDLLinkage = 'Static'
             OutputDirectory = $DeclaredRuntimeOutput
             SDLLicense = $SDLLicense
         }
+        & (Join-Path $PSScriptRoot 'package_app.ps1') @DeclaredRuntimeArguments
         $Manifest = Get-Content -LiteralPath (Join-Path $DeclaredRuntimeOutput 'alicorn-package.json') -Raw | ConvertFrom-Json
         if (@($Manifest.dependencies.runtimePrerequisites) -notcontains 'VCRUNTIME140.dll') {
             throw 'The package manifest omitted its explicitly declared VCRUNTIME140.dll prerequisite.'
