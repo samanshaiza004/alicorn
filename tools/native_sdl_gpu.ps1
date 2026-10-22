@@ -8,6 +8,7 @@ param(
     [switch]$Inspector,
     [switch]$InspectorOpen,
     [switch]$MillionRowAccessibility,
+	[switch]$WindowsTitlebarFixture,
     [switch]$Smoke,
     [int]$CaptureAfter = 2,
     [string]$CaptureDir = 'out\diagnostics'
@@ -69,6 +70,7 @@ if ($Diagnostics) {
 if ($DebugBounds) { $arguments += '--debug-bounds' }
 if ($Inspector) { $arguments += '--inspector' }
 if ($InspectorOpen) { $arguments += '--inspector-open' }
+if ($WindowsTitlebarFixture) { $arguments += @('--menu-fixture', '--windows-titlebar-fixture') }
 if ($Smoke) { $arguments += '--smoke' }
 & $Executable @arguments
 exit $LASTEXITCODE

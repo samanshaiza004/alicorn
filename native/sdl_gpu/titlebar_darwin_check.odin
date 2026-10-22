@@ -20,11 +20,18 @@ native_darwin_titlebar_geometry_check :: proc() -> bool {
 	defer sdl3.DestroyWindow(window)
 	app := Menu_Fixture_State{titlebar_fixture=true, titlebar_header_height=TITLEBAR_FIXTURE_HEADER_HEIGHT, titlebar_tab_order={1, 2}, titlebar_selected_tab=1}
 	menus := [1]Application_Menu{{label="View"}}
-	application := Application{state=rawptr(&app), menus=menus[:]}
+	application := Application{
+		state=rawptr(&app),
+		menus=menus[:],
+		window_decorations=.Content_Title_Bar,
+		window_chrome_height=TITLEBAR_FIXTURE_HEADER_HEIGHT,
+		window_chrome_metrics=menu_fixture_window_chrome_metrics,
+		window_chrome_layout=menu_fixture_window_chrome_layout,
+	}
 	menu := Native_Menu_Runtime{window=window, application=&application}
 	if !native_menu_prepare(&menu) { fail("titlebar check native setup failed") }
 	defer native_menu_destroy(&menu)
-	if !native_darwin_titlebar_fixture_prepare(&menu) { fail("titlebar check style setup failed") }
+	if !native_darwin_titlebar_prepare(&menu, application.window_chrome_height) { fail("titlebar check style setup failed") }
 	metrics: Window_Metrics
 	if !read_window_metrics(window, &metrics) { fail("titlebar check window metrics unavailable") }
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, f32(metrics.logical_width), f32(metrics.logical_height)})
@@ -32,6 +39,7 @@ native_darwin_titlebar_geometry_check :: proc() -> bool {
 	if !native_load_default_fonts(&rt) { fail("titlebar check fonts unavailable") }
 	menu.runtime = &rt
 	state := cast(^Darwin_Menu_State)menu.platform_data
+	native_darwin_titlebar_deliver_metrics(&menu)
 	_ = sdl3.ShowWindow(window)
 	native_darwin_titlebar_check_pump(&menu, 250)
 	initial := native_darwin_titlebar_check_snapshot(&menu, &rt, &app, "windowed-before")
@@ -61,7 +69,7 @@ native_darwin_titlebar_geometry_check :: proc() -> bool {
 		if !fullscreen_ok { fmt.println("titlebar_geometry_check FAIL fullscreen header/body", fullscreen) }
 		passed = passed && fullscreen_ok
 
-		_ = native_darwin_titlebar_fixture_exit_fullscreen(&menu)
+		_ = native_darwin_titlebar_exit_fullscreen(&menu)
 		native_darwin_titlebar_check_pump(&menu, 1800)
 		restored := native_darwin_titlebar_check_snapshot(&menu, &rt, &app, "windowed-after")
 		restore_ok := !restored.fullscreen && restored.root.w == initial.root.w && restored.root.h == initial.root.h
@@ -86,7 +94,7 @@ native_darwin_titlebar_check_pump :: proc(menu: ^Native_Menu_Runtime, duration_m
 		for sdl3.PollEvent(&event) {
 			#partial switch event.type {
 			case .WINDOW_ENTER_FULLSCREEN, .WINDOW_LEAVE_FULLSCREEN:
-				native_darwin_titlebar_fixture_note_fullscreen(menu, event.type)
+				_ = native_darwin_titlebar_refresh(menu, allow_style_mask_change=false)
 				fmt.println("titlebar_geometry_check event", event.type)
 			case:
 			}
@@ -100,13 +108,13 @@ Darwin_Titlebar_Check_Layout :: struct {root, header, body: alicorn.Rect, fullsc
 native_darwin_titlebar_check_snapshot :: proc(
 	menu: ^Native_Menu_Runtime, rt: ^alicorn.Runtime, app: ^Menu_Fixture_State, phase: string,
 ) -> Darwin_Titlebar_Check_Layout {
-	_ = native_darwin_titlebar_fixture_refresh(menu)
+	_ = native_darwin_titlebar_refresh(menu)
 	metrics: Window_Metrics
 	if !read_window_metrics(menu.window, &metrics) { fail("titlebar check snapshot metrics unavailable") }
 	rt.viewport = alicorn.Rect{0, 0, f32(metrics.logical_width), f32(metrics.logical_height)}
 	alicorn.invalidate_root(rt, "native titlebar geometry check phase")
 	_ = menu_fixture_titlebar_build(app, rt, metrics.logical_width, metrics.logical_height)
-	native_darwin_titlebar_fixture_sync_layout(menu)
+	native_darwin_titlebar_sync_layout(menu)
 	root, _ := alicorn.node_info(rt, app.titlebar_root_node)
 	header, _ := alicorn.node_info(rt, app.titlebar_header_node)
 	body, _ := alicorn.node_info(rt, app.titlebar_body_node)
@@ -121,7 +129,7 @@ native_darwin_titlebar_check_snapshot :: proc(
 		"SDL-logical", metrics.logical_width, metrics.logical_height, "SDL-pixels", metrics.pixel_width, metrics.pixel_height,
 		"safe-area", safe_area, "controls", app.titlebar_control_bounds, "header-height", app.titlebar_header_height,
 		"root", root.bounds, "header", header.bounds, "body", body.bounds,
-		"interactive", state.titlebar_fixture.geometry.interactive[:state.titlebar_fixture.geometry.interactive_count],
-		"blank-drag", app.titlebar_drag_region)
+		"interactive", state.titlebar.geometry.interactive[:state.titlebar.geometry.interactive_count],
+		"drag-regions", state.titlebar.geometry.drag_regions[:state.titlebar.geometry.drag_region_count])
 	return Darwin_Titlebar_Check_Layout{root.bounds, header.bounds, body.bounds, NS.WindowStyleFlag.FullScreen in style_mask}
 }

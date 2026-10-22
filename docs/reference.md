@@ -78,6 +78,35 @@ host error. `ClipboardSetText(service, text)` copies UTF-8 text synchronously
 and rejects embedded NUL bytes. Clipboard and dialog operations belong in the
 native host boundary; application code decides selection and edit semantics.
 
+On macOS, `window_decorations=.Content_Title_Bar` opts into full-size content
+under the native titlebar. On Windows, keep `.Integrated_Title_Bar` and supply
+both `window_chrome_metrics` and `window_chrome_layout` to put retained nodes
+in the native menu/titlebar band. Windows metrics report measured native-menu
+and caption-control reservations through `content_start_x` and `content_end_x`.
+macOS applications also set `window_chrome_height`; their metrics report the
+traffic-light reservation and safe header rectangle. In both modes, the
+application emits the header with ordinary Alicorn nodes. After layout,
+`window_chrome_layout` identifies that header and up to
+`WINDOW_CHROME_REGION_CAPACITY` ordinary retained nodes as `.Interactive` or
+`.Window_Drag`. The host copies their resolved rectangles; it does not retain
+the callback's slice or application state. Native controls and menus take
+priority, followed by interactive regions and explicit drag regions. Gesture
+ownership is latched at pointer-down until release or cancellation.
+
+```odin
+host.Run(host.Application{
+    state=rawptr(&app),
+    window_decorations=.Content_Title_Bar,
+    window_chrome_height=42,
+    window_chrome_metrics=app_chrome_metrics,
+    window_chrome_layout=app_chrome_layout,
+    build=app_build,
+})
+```
+
+See [native menus and integrated titlebar](native-menus-and-integrated-titlebar.md)
+for the callback contract and native fixture.
+
 ## Frame and invalidation
 
 | API | Use |
