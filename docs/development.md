@@ -75,7 +75,7 @@ python3 tools/test_package_macos.py
 ```
 
 The destination must not already exist; the bootstrap never reuses an installed
-SDK. Other native prerequisites, including SDL3 `3.4.16`, still apply.
+SDK. Other native prerequisites, including SDL3 `3.4.18`, still apply.
 
 The pin avoids two failures observed with October compilers: Homebrew's
 `84bc3fc` asserts on missing `objc_lookUpClass` during `odin test native/sdl_gpu`,

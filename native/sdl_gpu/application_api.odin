@@ -238,9 +238,11 @@ application_scheduler_stats :: proc(scheduler: Application_Scheduler) -> Applica
 	return {}
 }
 
-// Application_Waker is an opaque, thread-safe request to wake the native
-// application loop. The application can retain and call it from a worker
-// thread; the SDL host owns the actual event transport.
+// Application_Waker is a borrowed, thread-safe request to wake the native
+// application loop. Applications may copy and call it from worker threads
+// while Run is active. on_stop must stop and join every worker that can call
+// the waker before returning; no copy may be used after on_stop returns. The
+// host keeps its backing state alive through on_stop and retires it afterward.
 Application_Wake_Callback :: proc(data: rawptr)
 
 Application_Waker :: struct {

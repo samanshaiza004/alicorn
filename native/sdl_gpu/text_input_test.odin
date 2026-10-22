@@ -260,10 +260,28 @@ native_generic_text_navigation_contract_test :: proc() -> Native_Validation_Resu
 	)
 	if !alicorn.text_input_target(&ui, owner) { return native_validation_failed() }
 	alicorn.container_end(&ui)
-	field := alicorn.text_field(&ui, "", key=alicorn.key_string("text-field"))
+	field := alicorn.text_field(&ui, "abcdef", key=alicorn.key_string("text-field"))
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	if !alicorn.text_input_target_is_active(&rt, owner) { return native_validation_failed() }
+	when ODIN_OS == .Darwin {
+		if !alicorn.set_text_selection(&rt, field, 3, 3) ||
+			!native_text_apply_key_navigation(&rt, field, sdl3.K_LEFT, sdl3.KMOD_GUI|sdl3.KMOD_SHIFT) {
+			return native_validation_failed()
+		}
+		left_field := rt.nodes[field]
+		if left_field.selection_anchor.byte != 3 || left_field.selection_focus.byte != 0 {
+			return native_validation_failed()
+		}
+		if !alicorn.set_text_selection(&rt, field, 3, 3) ||
+			!native_text_apply_key_navigation(&rt, field, sdl3.K_RIGHT, sdl3.KMOD_GUI|sdl3.KMOD_SHIFT) {
+			return native_validation_failed()
+		}
+		right_field := rt.nodes[field]
+		if right_field.selection_anchor.byte != 3 || right_field.selection_focus.byte != 6 {
+			return native_validation_failed()
+		}
+	}
 
 	probe := Native_Text_Key_Probe{handled=true}
 	application := Application{

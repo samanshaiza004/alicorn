@@ -2,6 +2,7 @@ package alicorn_sdl_gpu
 
 import "core:c"
 import "core:fmt"
+import "core:mem"
 import "core:strings"
 import alicorn "../../runtime"
 import "vendor:sdl3"
@@ -12,6 +13,12 @@ import "vendor:sdl3"
 // Application domain state remains owned by the application and is shared only
 // when its window callback state explicitly points at the same owner.
 NATIVE_SECONDARY_EVENT_CAPACITY :: 4096
+Native_Secondary_Window_Queued_Event :: struct {
+	event: sdl3.Event,
+	allocator: mem.Allocator,
+	owned_text: cstring,
+	owned_candidates: []cstring,
+}
 
 Native_Secondary_Window :: struct {
 	active: bool,
@@ -42,8 +49,9 @@ Native_Secondary_Window :: struct {
 	accessibility_host: Native_Accessibility_Host,
 	accessibility_ready: bool,
 	quit_requested: bool,
-	event_queue: [dynamic]sdl3.Event,
+	event_queue: [dynamic]Native_Secondary_Window_Queued_Event,
 	event_queue_read: int,
+	replay_event: Native_Secondary_Window_Queued_Event,
 	logical_resize_events: int,
 	pixel_resize_events: int,
 	scale_events: int,
@@ -211,7 +219,7 @@ native_secondary_window_create :: proc(manager: ^Native_Secondary_Window_Manager
 		child.application.menus = nil
 		child.application.window_decorations = .System
 	}
-	child.event_queue = make([dynamic]sdl3.Event, 0, allocator=context.allocator)
+	child.event_queue = make([dynamic]Native_Secondary_Window_Queued_Event, 0, allocator=context.allocator)
 	child.host_scratch = native_host_scratch_make()
 	child.last_tick_ns = u64(sdl3.GetTicksNS())
 	child.scheduler_state = Native_Scheduled_Wake_State{active=true}
@@ -344,15 +352,27 @@ native_secondary_window_request_storage_clear :: proc(manager: ^Native_Secondary
 	manager.pending_description = {}
 }
 
+native_secondary_window_stop_application :: proc(child: ^Native_Secondary_Window) {
+	if child == nil { return }
+	if child.callbacks_started && child.application.on_stop != nil {
+		// Application workers may still use the borrowed waker while on_stop joins them.
+		child.application.on_stop(child.application.state)
+	}
+}
+
+native_secondary_window_deactivate_wakers :: proc(child: ^Native_Secondary_Window) {
+	if child == nil { return }
+	child.wake_state.active = false
+	child.host_wake_state.active = false
+}
+
 native_secondary_window_destroy :: proc(manager: ^Native_Secondary_Window_Manager, wait_for_gpu := true) {
 	if manager == nil || manager.child == nil { return }
 	child := manager.child
 	child.active = false
-	child.wake_state.active = false
-	child.host_wake_state.active = false
 	child.scheduler_state.active = false
 	for &pending in child.scheduler_state.pending { pending = false }
-	if child.callbacks_started && child.application.on_stop != nil { child.application.on_stop(child.application.state) }
+	native_secondary_window_stop_application(child)
 	native_appearance_monitor_destroy(&child.appearance_monitor)
 	native_accessibility_host_destroy(&child.accessibility_host)
 	native_menu_destroy(&child.native_menu)
@@ -361,6 +381,10 @@ native_secondary_window_destroy :: proc(manager: ^Native_Secondary_Window_Manage
 		native_dialog_bridge_release(child.dialog_bridge)
 		child.dialog_bridge = nil
 	}
+	// Accessibility shutdown waits for its callbacks; appearance shutdown above
+	// stops its notifications. Keep the host waker alive until both producers
+	// have been retired.
+	native_secondary_window_deactivate_wakers(child)
 	if wait_for_gpu && manager.device != nil { _ = sdl3.WaitForGPUIdle(manager.device) }
 	native_solid_destroy(&child.solid_renderer)
 	native_surface_destroy(&child.surface_renderer)
@@ -376,6 +400,7 @@ native_secondary_window_destroy :: proc(manager: ^Native_Secondary_Window_Manage
 		sdl3.DestroyWindow(child.window)
 		child.window = nil
 	}
+	native_secondary_window_event_queue_clear(child)
 	delete(child.event_queue)
 	if len(child.owned_title) > 0 { delete(child.owned_title, context.allocator) }
 	free(child, allocator=context.allocator)
@@ -389,6 +414,78 @@ native_secondary_window_manager_destroy :: proc(manager: ^Native_Secondary_Windo
 	native_secondary_window_request_storage_clear(manager)
 }
 
+native_secondary_window_queued_event_destroy :: proc(queued: ^Native_Secondary_Window_Queued_Event) {
+	if queued == nil { return }
+	if queued.owned_text != nil { delete(queued.owned_text, queued.allocator) }
+	for candidate in queued.owned_candidates {
+		if candidate != nil { _ = mem.delete_cstring(candidate, queued.allocator) }
+	}
+	if len(queued.owned_candidates) > 0 { delete(queued.owned_candidates, queued.allocator) }
+	queued^ = {}
+}
+
+native_secondary_window_queued_event_copy :: proc(event: sdl3.Event) -> (queued: Native_Secondary_Window_Queued_Event, ok: bool) {
+	queued.event = event
+	queued.allocator = context.allocator
+	#partial switch event.type {
+	case .TEXT_INPUT:
+		if event.text.text != nil {
+			owned_text, err := strings.clone_to_cstring(string(event.text.text), context.allocator)
+			if err != nil { return {}, false }
+			queued.owned_text = owned_text
+			queued.event.text.text = owned_text
+		}
+	case .TEXT_EDITING:
+		if event.edit.text != nil {
+			owned_text, err := strings.clone_to_cstring(string(event.edit.text), context.allocator)
+			if err != nil { return {}, false }
+			queued.owned_text = owned_text
+			queued.event.edit.text = owned_text
+		}
+	case .TEXT_EDITING_CANDIDATES:
+		count := int(event.edit_candidates.num_candidates)
+		if count < 0 { return {}, false }
+		if count == 0 {
+			queued.event.edit_candidates.candidates = nil
+			return queued, true
+		}
+		if event.edit_candidates.candidates == nil { return {}, false }
+		owned_candidates, err := make([]cstring, count, context.allocator)
+		if err != nil { return {}, false }
+		queued.owned_candidates = owned_candidates
+		for index in 0..<count {
+			candidate := event.edit_candidates.candidates[index]
+			if candidate == nil {
+				native_secondary_window_queued_event_destroy(&queued)
+				return {}, false
+			}
+			owned_candidate, err := strings.clone_to_cstring(string(candidate), context.allocator)
+			if err != nil {
+				native_secondary_window_queued_event_destroy(&queued)
+				return {}, false
+			}
+			queued.owned_candidates[index] = owned_candidate
+		}
+		queued.event.edit_candidates.candidates = raw_data(queued.owned_candidates)
+	}
+	return queued, true
+}
+
+native_secondary_window_replay_event_clear :: proc(child: ^Native_Secondary_Window) {
+	if child == nil { return }
+	native_secondary_window_queued_event_destroy(&child.replay_event)
+}
+
+native_secondary_window_event_queue_clear :: proc(child: ^Native_Secondary_Window) {
+	if child == nil { return }
+	native_secondary_window_replay_event_clear(child)
+	for index in child.event_queue_read..<len(child.event_queue) {
+		native_secondary_window_queued_event_destroy(&child.event_queue[index])
+	}
+	clear(&child.event_queue)
+	child.event_queue_read = 0
+}
+
 native_secondary_window_enqueue_event :: proc(manager: ^Native_Secondary_Window_Manager, event: sdl3.Event) -> bool {
 	if manager == nil || manager.child == nil || !manager.child.active { return false }
 	child := manager.child
@@ -396,7 +493,9 @@ native_secondary_window_enqueue_event :: proc(manager: ^Native_Secondary_Window_
 		manager.event_overflows += 1
 		return false
 	}
-	append(&child.event_queue, event)
+	queued, ok := native_secondary_window_queued_event_copy(event)
+	if !ok { return false }
+	append(&child.event_queue, queued)
 	return true
 }
 
@@ -408,13 +507,20 @@ native_secondary_window_routes_event :: proc(manager: ^Native_Secondary_Window_M
 }
 
 native_secondary_window_pop_event :: proc(child: ^Native_Secondary_Window, event: ^sdl3.Event) -> bool {
-	if child == nil || event == nil || child.event_queue_read >= len(child.event_queue) { return false }
-	event^ = child.event_queue[child.event_queue_read]
-	child.event_queue_read += 1
-	if child.event_queue_read == len(child.event_queue) {
+	if child == nil || event == nil { return false }
+	// The returned union may point at owned text in replay_event. Retain it
+	// through dispatch and retire it on the next pop or at the end of the pump.
+	native_secondary_window_replay_event_clear(child)
+	if child.event_queue_read >= len(child.event_queue) {
 		clear(&child.event_queue)
 		child.event_queue_read = 0
+		return false
 	}
+	queued := child.event_queue[child.event_queue_read]
+	child.event_queue[child.event_queue_read] = {}
+	child.replay_event = queued
+	event^ = queued.event
+	child.event_queue_read += 1
 	return true
 }
 

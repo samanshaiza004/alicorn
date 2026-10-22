@@ -29,7 +29,7 @@ if ($SDLLinkage -eq 'Shared') {
 }
 if ([string]::IsNullOrWhiteSpace($SDLVersion)) {
     if ($SDLLinkage -eq 'Static') {
-        $SDLVersion = '3.4.16'
+        $SDLVersion = '3.4.18'
     } else {
         $VersionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($SDLRuntime)
         if ($VersionInfo.ProductMajorPart -lt 1) { throw "Cannot determine SDL version from '$SDLRuntime'; pass -SDLVersion." }
@@ -43,6 +43,43 @@ foreach ($Field in @('name', 'version', 'bundleIdentifier', 'executableName')) {
     if ([string]::IsNullOrWhiteSpace([string]$App.$Field)) { throw "Package metadata is missing '$Field'." }
 }
 if ($App.executableName -match '[\\/:<>"|?*]') { throw 'executableName must be a filename, not a path.' }
+
+# This is a conservative Windows 10+ inbox DLL list for the native host's
+# supported OS dependencies. Builder filesystem contents are not evidence that
+# an imported DLL is available on a target machine. Add non-inbox imports to
+# metadata.runtimePrerequisites only when the installer explicitly requires
+# the user to install them; otherwise bundle them in privateLibraries.
+$WindowsInboxDlls = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+@(
+    'advapi32.dll', 'avrt.dll', 'bcrypt.dll', 'bcryptprimitives.dll', 'cfgmgr32.dll',
+    'combase.dll', 'comctl32.dll', 'comdlg32.dll', 'crypt32.dll', 'd2d1.dll',
+    'd3d12.dll', 'd3dcompiler_47.dll', 'dwmapi.dll', 'dwrite.dll', 'dxgi.dll',
+    'dxguid.dll', 'gdi32.dll', 'gdi32full.dll', 'hid.dll', 'imm32.dll',
+    'iphlpapi.dll', 'kernel32.dll', 'kernelbase.dll', 'msvcrt.dll', 'mswsock.dll',
+    'netapi32.dll', 'ntdll.dll', 'ole32.dll', 'oleaut32.dll', 'opengl32.dll',
+    'powrprof.dll', 'propsys.dll', 'rpcrt4.dll', 'sechost.dll', 'secur32.dll',
+    'setupapi.dll', 'shell32.dll', 'shcore.dll', 'shlwapi.dll', 'user32.dll',
+    'uiautomationcore.dll', 'userenv.dll', 'uxtheme.dll', 'version.dll', 'windowscodecs.dll', 'winhttp.dll',
+    'wininet.dll', 'winmm.dll', 'winspool.drv', 'wintrust.dll', 'ws2_32.dll',
+    'wtsapi32.dll', 'xinput1_4.dll', 'xinput9_1_0.dll'
+) | ForEach-Object { [void]$WindowsInboxDlls.Add($_) }
+
+function Test-IsSystemDll([string]$Name) {
+    if ($Name -match '^(api-ms-win-|ext-ms-win-)') { return $true }
+    return $WindowsInboxDlls.Contains($Name)
+}
+
+$DeclaredRuntimePrerequisites = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($Prerequisite in @($App.runtimePrerequisites)) {
+    if ($null -eq $Prerequisite) { continue }
+    $Name = [string]$Prerequisite
+    if ([string]::IsNullOrWhiteSpace($Name) -or $Name -match '[\\/:]' -or $Name -match '[<>"|?*]') {
+        throw "runtimePrerequisites entries must be DLL basenames, got '$Name'."
+    }
+    if (Test-IsSystemDll $Name) { throw "Windows inbox dependency '$Name' must not be listed in runtimePrerequisites." }
+    if (-not $DeclaredRuntimePrerequisites.Add($Name)) { throw "Duplicate runtimePrerequisites entry '$Name'." }
+}
+
 $FinalPackageRoot = [IO.Path]::GetFullPath($OutputDirectory)
 $CreatedFinalPackageRoot = $false
 if (Test-Path -LiteralPath $FinalPackageRoot) {
@@ -208,17 +245,8 @@ function Get-PeArchitecture([string]$Path) {
     }
 }
 
-function Test-IsSystemDll([string]$Name, [string]$Architecture) {
-    if ($Name -match '^(api-ms-win-|ext-ms-win-)') { return $true }
-    $SystemDirectories = @((Join-Path $env:SystemRoot 'System32'))
-    if ($Architecture -eq 'x86') { $SystemDirectories += (Join-Path $env:SystemRoot 'SysWOW64') }
-    foreach ($Directory in $SystemDirectories) {
-        if (Test-Path -LiteralPath (Join-Path $Directory $Name) -PathType Leaf) { return $true }
-    }
-    return $false
-}
-
 $SystemImports = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+$RuntimePrerequisiteImports = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $PrivateImports = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $SeenImages = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $Pending = [Collections.Generic.Queue[string]]::new()
@@ -237,16 +265,25 @@ while ($Pending.Count -gt 0) {
         if ($SDLLinkage -eq 'Static' -and ($Import -ieq 'SDL3.dll' -or $Import -match '^(?i:alicorn).*\.dll$')) {
             throw "Static package unexpectedly imports '$Import' (from '$([IO.Path]::GetFileName($Image))')."
         }
-        if (Test-IsSystemDll $Import $PackageArchitecture) {
+        if (Test-IsSystemDll $Import) {
             $SystemImports.Add($Import) | Out-Null
             continue
         }
         $BundledPath = Join-Path $PackageRoot $Import
         if (-not (Test-Path -LiteralPath $BundledPath -PathType Leaf)) {
-            throw "Unresolved non-system import '$Import' required by '$([IO.Path]::GetFileName($Image))'. Bundle the private DLL or link it statically."
+            if ($DeclaredRuntimePrerequisites.Contains($Import)) {
+                $RuntimePrerequisiteImports.Add($Import) | Out-Null
+                continue
+            }
+            throw "Unresolved non-system import '$Import' required by '$([IO.Path]::GetFileName($Image))'. Bundle it in privateLibraries, declare it in runtimePrerequisites, or link it statically."
         }
         $PrivateImports.Add($Import) | Out-Null
         $Pending.Enqueue($BundledPath)
+    }
+}
+foreach ($Prerequisite in $DeclaredRuntimePrerequisites) {
+    if (-not $RuntimePrerequisiteImports.Contains($Prerequisite)) {
+        throw "Declared runtime prerequisite '$Prerequisite' is not imported by the application or its bundled DLLs."
     }
 }
 if ($SDLLinkage -eq 'Shared' -and -not $PrivateImports.Contains('SDL3.dll')) {
@@ -275,8 +312,8 @@ $Manifest = [ordered]@{
         alicornRevision = $AlicornRevision
         sdlVersion = $SDLVersion
         sdlLinkage = $SDLLinkage.ToLowerInvariant()
-        sdlSource = $(if ($SDLLinkage -eq 'Static') { 'https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-3.4.16.tar.gz' } else { $null })
-        sdlSourceSha256 = $(if ($SDLLinkage -eq 'Static') { '7322236cd12090c3eb40b9728be4d49c76f66ad17d04369584d4ecad5cf77c68' } else { $null })
+        sdlSource = $(if ($SDLLinkage -eq 'Static') { 'https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz' } else { $null })
+        sdlSourceSha256 = $(if ($SDLLinkage -eq 'Static') { '9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3' } else { $null })
         license = [ordered]@{ path='SDL-LICENSE.txt'; sha256=(Get-FileHash -LiteralPath (Join-Path $PackageRoot 'SDL-LICENSE.txt') -Algorithm SHA256).Hash.ToLowerInvariant() }
         reiconIcons = [ordered]@{
             weight='filled'
@@ -295,6 +332,7 @@ $Manifest = [ordered]@{
     }
     dependencies = [ordered]@{
         system = @($SystemImports | Sort-Object)
+        runtimePrerequisites = @($RuntimePrerequisiteImports | Sort-Object)
         bundled = @($PrivateDependencyManifest)
     }
 }

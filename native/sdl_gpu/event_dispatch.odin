@@ -62,6 +62,9 @@ pump_events :: proc(
 	secondary_child: ^Native_Secondary_Window = nil,
 	replay_secondary_events := false,
 ) {
+	if replay_secondary_events {
+		defer native_secondary_window_replay_event_clear(secondary_child)
+	}
 	if telemetry != nil { telemetry.events_this_pump = 0 }
 	mod_state := sdl3.GetModState()
 	if pointer_modifier_state != nil { mod_state = pointer_modifier_state^ }

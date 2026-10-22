@@ -20,7 +20,7 @@ launch the finished artifact from an empty working directory.
 - macOS packaging additionally uses Python 3, `pkg-config` (for SDL's exported
   static link flags), `otool`, `install_name_tool`, and `plutil` (provided by the
   Apple developer tools).
-- The release helper downloads SDL `3.4.16` from the official release asset and
+- The release helper downloads SDL `3.4.18` from the official release asset and
   verifies its pinned SHA-256 before using it. It does not modify the installed
   Odin SDK. Static SDL outputs and the SDK overlay live under ignored `out/`.
 
@@ -109,11 +109,24 @@ the exact runtime version rather than the statically pinned release.
 ## What verification checks
 
 The Windows packager reads PE import tables for the executable and recursively
-for every bundled DLL. Windows system DLLs/API-set imports are listed separately;
-every other dependency must be bundled. Static mode rejects an SDL3 or Alicorn
-host DLL dependency (and stray host DLL files). Shared mode requires `SDL3.dll`
-to resolve from the package. The optional smoke test launches the package with
-an empty current working directory and a bounded idle-validation timeout.
+for every bundled DLL. Windows 10+ inbox DLLs and API-set imports are listed
+separately; the packager uses an explicit inbox DLL list rather than treating
+any DLL installed on the build machine as an OS dependency. Other imports must
+be bundled or declared as an installer-provided runtime prerequisite. For
+example, metadata can declare a dynamic Microsoft runtime only when the
+installer guarantees that prerequisite on target machines:
+
+```json
+{
+  "runtimePrerequisites": ["VCRUNTIME140.dll"]
+}
+```
+
+Declared prerequisites must be imported, cannot be inbox DLLs, and are recorded
+in the package manifest. Static mode rejects an SDL3 or Alicorn host DLL
+dependency (and stray host DLL files). Shared mode requires `SDL3.dll` to
+resolve from the package. The optional smoke test launches the package with an
+empty current working directory and a bounded idle-validation timeout.
 
 The macOS packager validates the `.app` structure and `Info.plist`, audits
 `otool -L` dependencies and `LC_RPATH` entries for the executable and bundled
@@ -128,7 +141,9 @@ manifest and verification. Add every private Windows DLL to `privateLibraries`
 and every private macOS dylib likewise; do not rely on a developer machine's
 search path.
 
-The macOS helper emits an unsigned `App.app/Contents/{Info.plist,MacOS,Resources,Frameworks}`
-bundle. Application CI remains responsible for code signing, notarization,
-stapling, DMG creation, and release publication. Caliber and language-specific
-linkage remain application concerns.
+The macOS helper ad-hoc signs relocated Mach-O images and the completed app
+bundle so the local artifact passes macOS signature verification and its launch
+smoke test. This local signature is not a distribution identity. Application CI
+remains responsible for Developer ID signing, notarization, stapling, DMG
+creation, and release publication. Caliber and language-specific linkage remain
+application concerns.

@@ -16,9 +16,9 @@ import subprocess
 import sys
 import tempfile
 
-SDL_VERSION = "3.4.16"
-SDL_SOURCE = "https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-3.4.16.tar.gz"
-SDL_SOURCE_SHA256 = "7322236cd12090c3eb40b9728be4d49c76f66ad17d04369584d4ecad5cf77c68"
+SDL_VERSION = "3.4.18"
+SDL_SOURCE = "https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz"
+SDL_SOURCE_SHA256 = "9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3"
 
 
 def run(*args: str, capture: bool = False) -> str:
@@ -34,6 +34,15 @@ def sha256(path: pathlib.Path) -> str:
     return digest.hexdigest()
 
 
+def sdl_source_provenance() -> dict[str, str]:
+    # macOS packaging always builds SDL from this pinned source archive, whether
+    # the resulting app links SDL dynamically or statically.
+    return {
+        "sdlSource": SDL_SOURCE,
+        "sdlSourceSha256": SDL_SOURCE_SHA256,
+    }
+
+
 def otool_dependencies(path: pathlib.Path) -> list[str]:
     lines = run("otool", "-L", str(path), capture=True).splitlines()[1:]
     return [line.strip().split(" (compatibility version", 1)[0] for line in lines if line.strip()]
@@ -47,6 +56,14 @@ def add_framework_rpath(path: pathlib.Path) -> None:
     load_commands = run("otool", "-l", str(path), capture=True)
     if "@executable_path/../Frameworks" not in load_commands:
         run("install_name_tool", "-add_rpath", "@executable_path/../Frameworks", str(path))
+
+
+def sign_local_bundle(app: pathlib.Path, images: list[pathlib.Path]) -> None:
+    """Re-sign relocated Mach-O images and the enclosing unsigned bundle."""
+    for image in images:
+        run("codesign", "--force", "--sign", "-", "--timestamp=none", str(image))
+    run("codesign", "--force", "--sign", "-", "--timestamp=none", str(app))
+    run("codesign", "--verify", "--strict", "--deep", str(app))
 
 
 def resolve_bundle_dependency(
@@ -244,6 +261,11 @@ def package(args: argparse.Namespace) -> None:
         plistlib.dump(info, plist, fmt=plistlib.FMT_XML, sort_keys=False)
     run("plutil", "-lint", str(contents / "Info.plist"))
 
+    # install_name_tool invalidates existing Mach-O signatures. These bundles
+    # are local development artifacts, so use an ad-hoc signature after all
+    # relocation and resource changes, signing nested images before the bundle.
+    sign_local_bundle(app, [*private_libraries.values(), app_executable])
+
     system_dependencies: set[str] = set()
     bundled_dependencies: set[str] = set()
 
@@ -296,8 +318,7 @@ def package(args: argparse.Namespace) -> None:
             "alicornRevision": git_revision,
             "sdlVersion": sdl_version,
             "sdlLinkage": args.linkage,
-            "sdlSource": SDL_SOURCE if args.linkage == "static" else None,
-            "sdlSourceSha256": SDL_SOURCE_SHA256 if args.linkage == "static" else None,
+            **sdl_source_provenance(),
             "license": {
                 "path": "Contents/Resources/SDL-LICENSE.txt",
                 "sha256": sha256(resources / "SDL-LICENSE.txt"),

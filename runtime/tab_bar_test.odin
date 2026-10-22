@@ -73,6 +73,57 @@ tab_bar_test_build :: proc(
 	return result
 }
 
+tab_bar_test_build_scoped_component :: proc(
+	ui: ^UI,
+	component_key: UI_Key,
+	selected_index: int,
+	width: f32,
+	options: Tab_Bar_Options,
+) {
+	items := tab_bar_test_items(selected_index)
+	if !component_begin(ui, component_key) { return }
+	_ = tab_bar(
+		ui,
+		key_string("shared-local-tab-bar"),
+		items[:],
+		options,
+		layout_style(.Row, width=width, height=options.height, gap=options.gap, clip=true),
+	)
+	component_end(ui)
+}
+
+tab_bar_test_build_scoped_pair :: proc(
+	rt: ^Runtime,
+	first_selected_index, second_selected_index: int,
+	width: f32,
+	options: Tab_Bar_Options,
+) {
+	ui, should_build := begin_frame(rt)
+	if !should_build { return }
+	container_begin_simple(
+		&ui,
+		.Root,
+		label="tab-bar-scoped-pair-root",
+		key=key_string("tab-bar-scoped-pair-root"),
+		style=layout_style(.Row, width=width*2, height=48),
+	)
+	tab_bar_test_build_scoped_component(&ui, key_string("first-tab-bar-scope"), first_selected_index, width, options)
+	tab_bar_test_build_scoped_component(&ui, key_string("second-tab-bar-scope"), second_selected_index, width, options)
+	container_end(&ui)
+	end_frame(&ui)
+}
+
+tab_bar_test_scoped_bars :: proc(rt: ^Runtime) -> (ids: [2]Node_ID, count: int) {
+	if rt == nil { return }
+	for candidate in rt.order {
+		node, found := rt.nodes[candidate]
+		if !found || !node.active || node.kind != .Scroll_Region || node.label != "tab-bar" { continue }
+		if count < len(ids) { ids[count] = candidate }
+		count += 1
+	}
+	return
+}
+
 tab_bar_test_bar_node :: proc(rt: ^Runtime) -> (id: Node_ID, count: int) {
 	for candidate in rt.order {
 		node, found := rt.nodes[candidate]
@@ -426,6 +477,35 @@ test_tab_bar_reveals_initially_selected_and_newly_selected_tab :: proc(t: ^testi
 	testing.expect(t, selected.bounds.x >= bar.bounds.x &&
 		selected.bounds.x+selected.bounds.w <= bar.bounds.x+bar.bounds.w,
 		"the newly selected last tab should be fully visible after automatic reveal")
+}
+
+@(test)
+test_tab_bar_scoped_instances_preserve_independent_scroll_offsets :: proc(t: ^testing.T) {
+	options := tab_bar_test_options_always_close()
+	rt := new_runtime(Rect{0, 0, 420, 120})
+	defer destroy_runtime(&rt)
+	width := f32(180)
+
+	// Both calls share the same tab_bar call site and local bar key. Only their
+	// component invocation scopes distinguish the retained instances.
+	tab_bar_test_build_scoped_pair(&rt, 0, 2, width, options)
+	bars, bar_count := tab_bar_test_scoped_bars(&rt)
+	testing.expect(t, bar_count == 2, "both component-scoped tab bars should be retained")
+	if bar_count != 2 { return }
+
+	first_offset, second_offset := f32(12), f32(24)
+	testing.expect(t, scroll_region_set_offset_x(&rt, bars[0], first_offset, "test first scoped tab bar"),
+		"the first tab bar should accept an independent horizontal offset")
+	testing.expect(t, scroll_region_set_offset_x(&rt, bars[1], second_offset, "test second scoped tab bar"),
+		"the second tab bar should accept a different horizontal offset")
+	tab_bar_test_build_scoped_pair(&rt, 0, 2, width, options)
+
+	first_after := scroll_region_state(&rt, bars[0]).offset_x
+	second_after := scroll_region_state(&rt, bars[1]).offset_x
+	testing.expect(t, abs(first_after-first_offset) < 0.01,
+		"rebuilding the first component should preserve its own tab-bar offset")
+	testing.expect(t, abs(second_after-second_offset) < 0.01,
+		"rebuilding the second component should not restore selection state from the first tab bar")
 }
 
 @(test)

@@ -19,6 +19,11 @@ to do. Optional callbacks handle text changes, keys, pointer/scroll input,
 drag/drop transitions, scheduled wakes, dialogs, worker wakeups, and lifecycle
 events.
 
+`Application_Waker` is borrowed host state. You may copy it to worker threads
+while `Run` is active, but `on_stop` must stop and join every worker that can
+call it before returning. Do not call a copied waker after `on_stop` returns;
+the host retires its backing state after that callback.
+
 `Application.on_initialize` is called after Runtime creation and before the
 host's default font faces and GPU renderers initialize. Use it for
 `font_load_bytes`, `font_load_italic_bytes`, and `font_load_fallback_bytes`.
