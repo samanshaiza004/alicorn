@@ -613,6 +613,15 @@ request token with `restore_token_next(runtime)` when applying those values to
 a new Runtime. Tokens and retained `Node_ID` values are transient; do not write
 them to a session file.
 
+`split_state(runtime, id) -> (Split_State, bool)` is passive readback for a
+currently active split. `preferred_position` is the application's logical-unit
+preference; `position` is the allocated first-pane extent and may be clamped.
+`bounds` describes the current split box. Persist the preference, rather than a
+temporarily clamped allocation. Applications choosing a ratio schema perform
+that conversion themselves using their declared split geometry. Scroll offsets
+from `scroll_region_state` are logical content coordinates, bounded by the final
+content extent minus viewport extent; they are not physical pixels.
+
 Pass `Split_Restore_Request{token, preferred_position}` to `split_begin`, or
 `Scroll_Restore_Request{token, offset_x, offset_y}` to `scroll_region_begin`,
 `virtual_list_begin`, or `virtual_list_begin_variable`. A split keeps the
@@ -634,6 +643,9 @@ direct scroll input cancels pending scroll restoration. When geometry clamps a
 value, the report retains both the application preference and resolved value.
 `inspect(runtime)` and the bounded restore trace show the request values,
 outcome, reason, and layout generation.
+
+See [durable restoration](durable-ui-restoration.md) for a process-restart
+fixture, lifecycle guidance, and the Scratchpad consumer contract.
 
 ### Semantic model and collections
 

@@ -175,7 +175,9 @@ test_application_values_restore_into_a_fresh_runtime :: proc(t: ^testing.T) {
 	_ = scroll_region_set_offset(&first_runtime, first_scroll, 7000, "save app-owned scroll preference")
 	first_split, updated_scroll, _, _ := restore_test_workspace_describe(&first_runtime, 260)
 	first_scroll = updated_scroll
-	saved_split := first_runtime.nodes[first_split].split_preferred_position
+	split_snapshot, split_ok := split_state(&first_runtime, first_split)
+	testing.expect(t, split_ok, "the public split snapshot should expose app-owned presentation values")
+	saved_split := split_snapshot.preferred_position
 	saved_scroll := scroll_region_state(&first_runtime, first_scroll).offset_y
 	testing.expect(t, saved_split == 260 && saved_scroll == 7000,
 		"the first Runtime should expose only logical split and scroll values for the application to save")
@@ -212,6 +214,22 @@ test_application_values_restore_into_a_fresh_runtime :: proc(t: ^testing.T) {
 	testing.expect(t, first == 350, "the fresh virtual list should begin at the saved logical offset")
 	testing.expect(t, scroll_region_state(&second_runtime, scroll_id).offset_y == saved_scroll,
 		"the fresh Runtime should retain the saved scroll offset")
+}
+
+@(test)
+test_split_snapshot_is_passive_and_rejects_other_nodes :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 302, 100})
+	defer destroy_runtime(&rt)
+	id := restore_test_split_describe(&rt, 302, {})
+	before := rt.stats
+	state, ok := split_state(&rt, id)
+	testing.expect(t, ok && state.id == id && state.preferred_position == 80 && state.position == 80 && state.bounds.w == 302,
+		"a split snapshot exposes preferred and final logical geometry")
+	_, missing := split_state(&rt, 0)
+	_, wrong_kind := split_state(&rt, rt.nodes[id].children[0])
+	_, nil_runtime := split_state(nil, id)
+	testing.expect(t, !missing && !wrong_kind && !nil_runtime && rt.stats == before,
+		"snapshot queries must safely reject missing targets without retained work")
 }
 
 @(test)

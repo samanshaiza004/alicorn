@@ -46,3 +46,4 @@ if "$OUT_DIR/alicorn_theme" check theme/testdata/invalid.json; then
 fi
 "$ODIN" test native/sdl_gpu "-extra-linker-flags:$ACCESSKIT_LINK_FLAGS" "-out:$OUT_DIR/alicorn_native_tests"
 "$OUT_DIR/alicorn_sdl_gpu" --text-input-contract-test
+sh "$SCRIPT_DIR/test_restoration.sh" "$ODIN"

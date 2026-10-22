@@ -48,5 +48,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & .\out\alicorn_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& "$PSScriptRoot\test_restoration.ps1" -Odin $Odin
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & .\out\alicorn_sdl_gpu.exe --text-input-contract-test
 exit $LASTEXITCODE
