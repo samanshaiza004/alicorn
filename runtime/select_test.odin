@@ -166,6 +166,51 @@ test_select_semantic_expand_before_first_open_and_collapse :: proc(t: ^testing.T
 	testing.expect(t, !context_menu_is_open(&rt), "semantic Collapse should dismiss the popup")
 }
 
+select_modal_expand_test_build :: proc(rt: ^Runtime) -> Node_ID {
+	if !rt.invalidated { invalidate_root(rt, "Select modal semantic-action test rebuild") }
+	ui, build := begin_frame(rt)
+	if !build { return 0 }
+	options := SELECT_TEST_OPTIONS
+	container_begin_simple(&ui, .Root, label="select-modal-semantic-root", key=key_string("root"), style=layout_style(.Column, width=300, height=240, padding=10))
+	_ = select_control(&ui, key_string("appearance-theme"), "Theme", options[:], 20)
+	trigger := rt.select.trigger_node
+	container_end(&ui)
+	modal_overlay_begin(&ui, key_string("select-semantic-modal"), style=layout_style(.Column))
+	button(&ui, "Modal owner", key=key_string("select-semantic-modal-owner"), style=layout_style(width=160, height=32))
+	modal_overlay_end(&ui)
+	end_frame(&ui)
+	return trigger
+}
+
+@(test)
+test_select_semantic_expand_is_rejected_while_trigger_is_behind_modal :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 360, 240})
+	defer destroy_runtime(&rt)
+	trigger := select_modal_expand_test_build(&rt)
+	if trigger == 0 { testing.expect(t, false, "the background Select trigger should be realized"); return }
+	trigger_id := semantic_visual_id(trigger)
+	semantic, found := semantic_node_lookup(&rt, trigger_id)
+	testing.expect(t, found && semantic.role == .Combo_Box && semantic_actions_has(semantic.actions, .Expand),
+		"the covered Select should publish its ordinary semantic Expand action")
+	if !found { return }
+	testing.expect(t, !node_is_in_modal_overlay(&rt, trigger, modal_overlay_root(&rt)),
+		"the Select trigger should be outside the active modal overlay")
+
+	select_before := rt.select
+	wakes_before := rt.stats.accessibility_action_wakes
+	invalidated_before := rt.invalidated
+	requests_before := len(rt.semantic_requests)
+	testing.expect(t, !semantic_action_request(&rt, trigger_id, .Expand),
+		"semantic Expand must reject a Select covered by a modal overlay")
+	testing.expect(t, !rt.select.open && !rt.context_menu.open && !rt.select.expand_pending &&
+		rt.select.pending_expand_id == select_before.pending_expand_id &&
+		rt.select.trigger_node == select_before.trigger_node && rt.select.selected_key == select_before.selected_key,
+		"a rejected Expand must leave Select and popup state unchanged")
+	testing.expect(t, len(rt.semantic_requests) == requests_before &&
+		rt.stats.accessibility_action_wakes == wakes_before && rt.invalidated == invalidated_before,
+		"a rejected Expand must not queue semantic work, wake the host, or schedule a rebuild")
+}
+
 @(test)
 test_select_escape_and_outside_pointer_dismiss_restore_trigger_focus :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 360, 240})

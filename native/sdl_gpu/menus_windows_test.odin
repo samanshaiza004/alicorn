@@ -51,25 +51,24 @@ test_win32_chrome_uses_theme_colors_and_respects_high_contrast :: proc(t: ^testi
 test_win32_menu_capture_cancel_delivers_active_drag_cancellation :: proc(t: ^testing.T) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 160})
 	defer alicorn.destroy_runtime(&rt)
+	source_id: alicorn.Node_ID
 	ui, should_build := alicorn.begin_frame(&rt)
 	if should_build {
 		alicorn.container_begin_simple(&ui, .Root, key="menu-drag-root",
 			style=alicorn.layout_style(.Column, width=320, height=160))
-		source, _ := alicorn.button_ex(&ui, "Drag", key="menu-drag-source",
-			style=alicorn.layout_style(width=100, height=40))
+		source_id, _ = alicorn.button_ex(&ui, "Drag", style=alicorn.layout_style(width=100, height=40))
 		_ = alicorn.semantic_bind(&ui, WIN32_MENU_TEST_DRAG_SOURCE)
 		_ = alicorn.drag_source(&ui, WIN32_MENU_TEST_DRAG_TYPE, WIN32_MENU_TEST_DRAG_SOURCE)
 		alicorn.container_end(&ui)
 		alicorn.end_frame(&ui)
-		if source == 0 {
+		if source_id == 0 {
 			testing.expect(t, false, "the drag source should be retained")
 			return
 		}
 	}
 
-	source_id, found := alicorn.node_by_key(&rt, "menu-drag-source", .Button)
-	if !found {
-		testing.expect(t, false, "the drag source should be available by its key")
+	if source_id == 0 {
+		testing.expect(t, false, "the drag source should be retained")
 		return
 	}
 	source := rt.nodes[source_id]

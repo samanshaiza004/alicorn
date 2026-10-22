@@ -1251,13 +1251,24 @@ semantic_action_request :: proc(
 	entity, found := rt.semantic_entities[id]
 	if !found || !semantic_actions_has(entity.node.actions, action) { return false }
 	if action == .None { return false }
+	visual: ^Node
+	if entity.node.visual_node != 0 {
+		visual_found: bool
+		visual, visual_found = rt.nodes[entity.node.visual_node]
+		if !visual_found || visual == nil || !node_is_presentation_active(rt, visual.id) || visual.disabled { return false }
+		overlay_root := modal_overlay_root(rt)
+		inside_modal := node_is_in_modal_overlay(rt, visual.id, overlay_root)
+		select_owns_popup_action := entity.node.role == .Combo_Box &&
+			id == rt.select.trigger_semantic_id && select_open_owned(rt, &rt.select) &&
+			overlay_root == rt.context_menu.overlay && (action == .Expand || action == .Collapse)
+		if !inside_modal && !select_owns_popup_action { return false }
+	}
+	// Validate realized controls before specialized handlers mutate transient
+	// state. Select Expand/Collapse otherwise bypass the modal-scope guard below.
 	if select_semantic_action(rt, id, action) { return true }
 	// Selection carries two text-run positions and must use the typed API above.
 	if action == .Set_Text_Selection { return false }
-	if entity.node.visual_node != 0 {
-		visual, visual_found := rt.nodes[entity.node.visual_node]
-		if !visual_found || !node_is_presentation_active(rt, visual.id) || visual.disabled ||
-		   !node_is_in_modal_overlay(rt, visual.id, modal_overlay_root(rt)) { return false }
+	if visual != nil {
 		#partial switch action {
 		case .Press:
 			if entity.node.role != .Button && entity.node.role != .Checkbox { break }
