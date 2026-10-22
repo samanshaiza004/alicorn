@@ -1,6 +1,7 @@
 package alicorn
 
 import "core:testing"
+import "core:mem"
 
 IMAGE_ASSET_TEST_FONT :: #load("../assets/fonts/AtkinsonHyperlegibleNext-Variable.ttf")
 
@@ -160,4 +161,17 @@ test_failed_image_adoption_preserves_worker_ownership :: proc(t: ^testing.T) {
     _, adopt_error := image_adopt_decoded(nil, &decoded)
     testing.expect(t, adopt_error != .None && len(decoded.rgba8) == 4,
         "failure must leave the buffer available for its worker to destroy")
+}
+
+@(test)
+test_failed_image_decode_releases_partial_scratch_image :: proc(t: ^testing.T) {
+	tracking: mem.Tracking_Allocator
+	mem.tracking_allocator_init(&tracking, context.allocator)
+	defer mem.tracking_allocator_destroy(&tracking)
+
+	encoded := image_asset_test_qoi()
+	_, err := image_decode_bytes(encoded[:len(encoded)-1], context.allocator, mem.tracking_allocator(&tracking))
+	testing.expect(t, err == .Decode_Failed, "truncated QOI data should report a decode failure")
+	testing.expect(t, tracking.current_memory_allocated == 0,
+		"a failed decoder result must release any partially allocated image and pixels")
 }

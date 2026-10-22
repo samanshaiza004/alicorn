@@ -58,6 +58,14 @@ def add_framework_rpath(path: pathlib.Path) -> None:
         run("install_name_tool", "-add_rpath", "@executable_path/../Frameworks", str(path))
 
 
+def sign_local_bundle(app: pathlib.Path, images: list[pathlib.Path]) -> None:
+    """Re-sign relocated Mach-O images and the enclosing unsigned bundle."""
+    for image in images:
+        run("codesign", "--force", "--sign", "-", "--timestamp=none", str(image))
+    run("codesign", "--force", "--sign", "-", "--timestamp=none", str(app))
+    run("codesign", "--verify", "--strict", "--deep", str(app))
+
+
 def resolve_bundle_dependency(
     dependency: str,
     image: pathlib.Path,
@@ -252,6 +260,11 @@ def package(args: argparse.Namespace) -> None:
     with (contents / "Info.plist").open("wb") as plist:
         plistlib.dump(info, plist, fmt=plistlib.FMT_XML, sort_keys=False)
     run("plutil", "-lint", str(contents / "Info.plist"))
+
+    # install_name_tool invalidates existing Mach-O signatures. These bundles
+    # are local development artifacts, so use an ad-hoc signature after all
+    # relocation and resource changes, signing nested images before the bundle.
+    sign_local_bundle(app, [*private_libraries.values(), app_executable])
 
     system_dependencies: set[str] = set()
     bundled_dependencies: set[str] = set()

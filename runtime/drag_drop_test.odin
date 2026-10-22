@@ -9,14 +9,15 @@ DRAG_SCROLL_SOURCE :: Semantic_ID{namespace=702, value=1}
 DRAG_SCROLL_TARGET :: Semantic_ID{namespace=702, value=2}
 DRAG_TEST_UI_FONT_DATA :: #load("../assets/fonts/AtkinsonHyperlegibleNext-Variable.ttf")
 
-drag_test_build :: proc(rt: ^Runtime, include_source := true, target_width: f32 = 180) -> (source: Node_ID, target_container: Node_ID, target_button: Node_ID) {
+drag_test_build :: proc(rt: ^Runtime, include_source := true, target_width: f32 = 180, source_disabled := false) -> (source: Node_ID, target_container: Node_ID, target_button: Node_ID) {
 	ui, should_build := begin_frame(rt)
 	if !should_build { return }
 	container_begin_simple(&ui, .Root, label="drag-test-root", key=key_string("drag-test-root"), style=layout_style(.Row, width=400, height=100, gap=20, padding=10))
 	if include_source {
-		source, _ = button_ex(&ui, "source", key="drag-test-source", style=layout_style(width=80, height=50))
+		source, _ = button_begin(&ui, "source", key=key_string("drag-test-source"), style=layout_style(width=80, height=50), state=Button_State{disabled=source_disabled})
 		_ = semantic_bind(&ui, DRAG_TEST_SOURCE)
 		_ = drag_source(&ui, DRAG_TEST_TYPE, DRAG_TEST_SOURCE)
+		button_end(&ui)
 	}
 	target_container = container_begin_simple(&ui, .Container, label="drop-group", key=key_string("drag-test-target-container"), style=layout_style(.Row, width=target_width, height=50))
 	_ = drop_target(&ui, DRAG_TEST_TYPE, DRAG_TEST_TARGET, .Between_Horizontal)
@@ -25,6 +26,32 @@ drag_test_build :: proc(rt: ^Runtime, include_source := true, target_width: f32 
 	container_end(&ui)
 	end_frame(&ui)
 	return
+}
+
+@(test)
+test_disabling_pending_drag_source_prevents_start_and_drop :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 400, 100})
+	defer destroy_runtime(&rt)
+	source, _, target_button := drag_test_build(&rt)
+	if source == 0 || target_button == 0 { testing.expect(t, false, "drag source and target should be retained"); return }
+	source_node := rt.nodes[source]
+	target_node := rt.nodes[target_button]
+	sx := source_node.bounds.x+source_node.bounds.w*0.5
+	sy := source_node.bounds.y+source_node.bounds.h*0.5
+	tx := target_node.bounds.x+target_node.bounds.w*0.5
+	ty := target_node.bounds.y+target_node.bounds.h*0.5
+	_ = process_pointer(&rt, Pointer_Event{kind=.Down, x=sx, y=sy, button=POINTER_BUTTON_PRIMARY})
+	testing.expect(t, rt.drag.phase == .Candidate, "pressing an enabled drag source should create a pending candidate")
+
+	invalidate_root(&rt, "disable pending drag source")
+	_, _, _ = drag_test_build(&rt, source_disabled=true)
+	testing.expect(t, rt.nodes[source].disabled, "the rebuilt source should be disabled")
+	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=tx, y=ty})
+	_, started := drag_event_take(&rt)
+	_ = process_pointer(&rt, Pointer_Event{kind=.Up, x=tx, y=ty, button=POINTER_BUTTON_PRIMARY})
+	_, dropped := drag_event_take(&rt)
+	testing.expect(t, !started && !dropped && rt.drag.phase == .Idle,
+		"disabling a pending source should prevent both drag start and drop")
 }
 
 @(test)

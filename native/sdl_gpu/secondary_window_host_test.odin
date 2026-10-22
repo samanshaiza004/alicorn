@@ -1,6 +1,8 @@
 package alicorn_sdl_gpu
 
+import "core:sync"
 import "core:testing"
+import "core:thread"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
@@ -135,7 +137,7 @@ test_secondary_window_request_is_deferred_single_slot_and_closable :: proc(t: ^t
 @(test)
 test_secondary_window_event_queue_is_bounded_and_preserves_order :: proc(t: ^testing.T) {
 	child := Native_Secondary_Window{active=true}
-	child.event_queue = make([dynamic]sdl3.Event, 0, allocator=context.allocator)
+	child.event_queue = make([dynamic]Native_Secondary_Window_Queued_Event, 0, allocator=context.allocator)
 	defer delete(child.event_queue)
 	manager := Native_Secondary_Window_Manager{child=&child}
 	first := sdl3.Event{type=.WINDOW_FOCUS_GAINED}
@@ -147,4 +149,123 @@ test_secondary_window_event_queue_is_bounded_and_preserves_order :: proc(t: ^tes
 	testing.expect(t, native_secondary_window_pop_event(&child, &got) && got.type == first.type, "child events should retain FIFO order")
 	testing.expect(t, native_secondary_window_pop_event(&child, &got) && got.type == second.type, "the second child event should follow the first")
 	testing.expect(t, !native_secondary_window_pop_event(&child, &got), "draining the child queue should leave no stale input")
+}
+
+@(test)
+test_secondary_window_event_queue_owns_variable_text_payloads :: proc(t: ^testing.T) {
+	child := Native_Secondary_Window{active=true}
+	child.event_queue = make([dynamic]Native_Secondary_Window_Queued_Event, 0, allocator=context.allocator)
+	defer delete(child.event_queue)
+	manager := Native_Secondary_Window_Manager{child=&child}
+
+	committed := [6]u8{'h', 'e', 'l', 'l', 'o', 0}
+	commit := sdl3.Event{type=.TEXT_INPUT}
+	commit.text.text = cast(cstring)raw_data(committed[:])
+	testing.expect(t, native_secondary_window_enqueue_event(&manager, commit), "the child should accept committed text")
+	committed[0] = 'x'
+	got: sdl3.Event
+	testing.expect(t, native_secondary_window_pop_event(&child, &got), "the committed text event should dequeue")
+	testing.expect(t, string(got.text.text) == "hello", "queued committed text must not borrow SDL's temporary event payload")
+
+	preedit_bytes := [5]u8{'i', 'm', 'e', 0, 0}
+	preedit := sdl3.Event{type=.TEXT_EDITING}
+	preedit.edit.text = cast(cstring)raw_data(preedit_bytes[:])
+	preedit.edit.start = 1
+	preedit.edit.length = 1
+	testing.expect(t, native_secondary_window_enqueue_event(&manager, preedit), "the child should accept composition text")
+	preedit_bytes[0] = 'x'
+	testing.expect(t, native_secondary_window_pop_event(&child, &got), "the composition event should dequeue")
+	testing.expect(t, string(got.edit.text) == "ime" && got.edit.start == 1 && got.edit.length == 1,
+		"queued composition text must retain its bytes and selection range")
+
+	first_candidate := [4]u8{'o', 'n', 'e', 0}
+	second_candidate := [4]u8{'t', 'w', 'o', 0}
+	candidate_pointers := [2]cstring{
+		cast(cstring)raw_data(first_candidate[:]),
+		cast(cstring)raw_data(second_candidate[:]),
+	}
+	candidates := sdl3.Event{type=.TEXT_EDITING_CANDIDATES}
+	candidates.edit_candidates.candidates = raw_data(candidate_pointers[:])
+	candidates.edit_candidates.num_candidates = 2
+	candidates.edit_candidates.selected_candidate = 1
+	testing.expect(t, native_secondary_window_enqueue_event(&manager, candidates), "the child should accept composition candidates")
+	first_candidate[0] = 'x'
+	second_candidate[0] = 'x'
+	candidate_pointers[0] = cast(cstring)raw_data(second_candidate[:])
+	testing.expect(t, native_secondary_window_pop_event(&child, &got), "the candidates event should dequeue")
+	testing.expect(t, got.edit_candidates.num_candidates == 2 &&
+		string(got.edit_candidates.candidates[0]) == "one" &&
+		string(got.edit_candidates.candidates[1]) == "two" &&
+		got.edit_candidates.selected_candidate == 1,
+		"queued candidate strings and their pointer array must be independently owned")
+	testing.expect(t, !native_secondary_window_pop_event(&child, &got), "draining owned text events should release the replay payload")
+
+	pending := sdl3.Event{type=.TEXT_INPUT}
+	pending.text.text = cast(cstring)raw_data(committed[:])
+	testing.expect(t, native_secondary_window_enqueue_event(&manager, pending), "the child should accept text before queue teardown")
+	native_secondary_window_event_queue_clear(&child)
+	testing.expect(t, len(child.event_queue) == 0 && child.event_queue_read == 0 && child.replay_event.owned_text == nil,
+		"destroying an undrained child queue should release its owned event payloads")
+}
+
+Secondary_Window_Stop_Probe :: struct {
+	child: ^Native_Secondary_Window,
+	application_waker_active: bool,
+	host_waker_active: bool,
+	stop_worker: u32,
+	waker_reads: u64,
+	worker: ^thread.Thread,
+	worker_joined: bool,
+}
+
+secondary_window_waker_probe_thread :: proc(t: ^thread.Thread) {
+	probe := cast(^Secondary_Window_Stop_Probe)t.data
+	for sync.atomic_load(&probe.stop_worker) == 0 {
+		_ = probe.child.wake_state.active
+		sync.atomic_add(&probe.waker_reads, 1)
+	}
+}
+
+secondary_window_stop_probe :: proc(state: rawptr) {
+	probe := cast(^Secondary_Window_Stop_Probe)state
+	probe.application_waker_active = probe.child.wake_state.active
+	probe.host_waker_active = probe.child.host_wake_state.active
+	sync.atomic_store(&probe.stop_worker, 1)
+	thread.join(probe.worker)
+	probe.worker_joined = true
+}
+
+@(test)
+test_secondary_window_wakers_remain_live_until_application_stop :: proc(t: ^testing.T) {
+	child := new(Native_Secondary_Window, allocator=context.allocator)
+	child^ = Native_Secondary_Window{
+		active=true,
+		callbacks_started=true,
+		wake_state=Native_Application_Waker{event_type=sdl3.EventType(0x8001), active=true},
+		host_wake_state=Native_Host_Event_Waker{event_type=sdl3.EventType(0x8002), active=true},
+	}
+	probe := Secondary_Window_Stop_Probe{child=child}
+	probe.worker = thread.create(secondary_window_waker_probe_thread)
+	if probe.worker == nil {
+		testing.expect(t, false, "the secondary wake regression worker should start")
+		free(child, allocator=context.allocator)
+		return
+	}
+	defer thread.destroy(probe.worker)
+	probe.worker.data = rawptr(&probe)
+	thread.start(probe.worker)
+	for sync.atomic_load(&probe.waker_reads) == 0 {}
+	child.application = Application{state=rawptr(&probe), on_stop=secondary_window_stop_probe}
+	manager := Native_Secondary_Window_Manager{child=child}
+
+	native_secondary_window_destroy(&manager, wait_for_gpu=false)
+
+	testing.expect(t, probe.application_waker_active,
+		"on_stop must be able to join producers while the application waker remains valid")
+	testing.expect(t, probe.host_waker_active,
+		"on_stop must complete before host wake state begins teardown")
+	testing.expect(t, probe.worker_joined && sync.atomic_load(&probe.stop_worker) != 0,
+		"on_stop must join the worker before secondary destruction continues")
+	testing.expect(t, manager.child == nil,
+		"secondary destruction should release the child after on_stop completes")
 }

@@ -51,7 +51,10 @@ image_decode_bytes :: proc(data: []u8, allocator := context.allocator, scratch_a
 		return {}, .Dimensions_Too_Large
 	}
 	decoded, decode_error := odin_image.load_from_bytes(data, options={.alpha_add_if_missing}, allocator=scratch_allocator)
-	if decode_error != nil || decoded == nil { return {}, .Decode_Failed }
+	if decode_error != nil || decoded == nil {
+		if decoded != nil { odin_image.destroy(decoded, scratch_allocator) }
+		return {}, .Decode_Failed
+	}
 	defer odin_image.destroy(decoded, scratch_allocator)
 	if decoded.width != int(width) || decoded.height != int(height) || decoded.depth != 8 && decoded.depth != 16 || decoded.channels < 1 || decoded.channels > 4 {
 		return {}, .Unsupported_Pixel_Format

@@ -124,40 +124,6 @@ tab_bar :: proc(
 	}
 	selected_state_hash := hash_mix(selected_key_hash, u64(selected_index+1))
 
-	previous_selection_hash: u64 = 0
-	previous_state_valid := false
-	previous_scroll_width: f32 = 0
-	previous_content_width: f32 = 0
-	if previous_bar_id, found := node_by_key(rt, key, .Container); found {
-		previous_bar := rt.nodes[previous_bar_id]
-		previous_selection_hash = previous_bar.paint_value
-		previous_state_valid = true
-		for child_id in previous_bar.children {
-			if child, child_found := rt.nodes[child_id]; child_found && child.kind == .Scroll_Region {
-				previous_scroll_width = child.scroll_viewport_width
-				previous_content_width = child.scroll_content_width
-				break
-			}
-		}
-	} else if previous_scroll_id, found := node_by_key(rt, key, .Scroll_Region); found {
-		// One-time compatibility with a tab bar retained by the pre-composite
-		// structure. Its current selected state will be initialized below.
-		previous_scroll := rt.nodes[previous_scroll_id]
-		previous_scroll_width = previous_scroll.scroll_viewport_width
-		previous_content_width = previous_scroll.scroll_content_width
-	}
-	previous_offset_x: f32 = 0
-	if previous_bar_id, found := node_by_key(rt, key, .Container); found {
-		previous_bar := rt.nodes[previous_bar_id]
-		for child_id in previous_bar.children {
-			if child, child_found := rt.nodes[child_id]; child_found && child.kind == .Scroll_Region {
-				previous_offset_x = child.scroll_offset_x
-				break
-			}
-		}
-	} else if previous_scroll_id, found := node_by_key(rt, key, .Scroll_Region); found {
-		previous_offset_x = rt.nodes[previous_scroll_id].scroll_offset_x
-	}
 	outer_id := container_begin_simple(
 		ui,
 		.Container,
@@ -167,6 +133,31 @@ tab_bar :: proc(
 		loc=loc,
 	)
 	if outer_id == 0 { return result }
+	previous_selection_hash: u64 = 0
+	previous_state_valid := false
+	previous_scroll_width: f32 = 0
+	previous_content_width: f32 = 0
+	previous_offset_x: f32 = 0
+	if previous_bar, found := rt.nodes[outer_id]; found && previous_bar.active {
+		if previous_bar.kind == .Container {
+			previous_selection_hash = previous_bar.paint_value
+			previous_state_valid = true
+			for child_id in previous_bar.children {
+				if child, child_found := rt.nodes[child_id]; child_found && child.kind == .Scroll_Region {
+					previous_scroll_width = child.scroll_viewport_width
+					previous_content_width = child.scroll_content_width
+					previous_offset_x = child.scroll_offset_x
+					break
+				}
+			}
+		} else if previous_bar.kind == .Scroll_Region {
+			// One-time compatibility with a tab bar retained by the pre-composite
+			// structure. Its current selected state will be initialized below.
+			previous_scroll_width = previous_bar.scroll_viewport_width
+			previous_content_width = previous_bar.scroll_content_width
+			previous_offset_x = previous_bar.scroll_offset_x
+		}
+	}
 	outer_pending := &rt.pending[len(rt.pending)-1].description
 	outer_pending.paint_value = selected_state_hash
 	selected_semantic_id := Semantic_ID{}

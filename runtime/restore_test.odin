@@ -149,6 +149,26 @@ test_split_restore_keeps_preferred_extent_after_clamp_and_resize :: proc(t: ^tes
 }
 
 @(test)
+test_split_restore_updates_an_existing_splitter_without_geometry_changes :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 302, 100})
+	defer destroy_runtime(&rt)
+	id := restore_test_split_describe(&rt, 302, {})
+	initial := rt.nodes[id]
+	testing.expect(t, initial.split_position == 80, "the existing splitter should begin at its declared position")
+
+	token := restore_token_next(&rt)
+	_ = restore_test_split_describe(&rt, 302, Split_Restore_Request{token=token, preferred_position=120})
+
+	node := rt.nodes[id]
+	first_pane := rt.nodes[node.children[0]]
+	state, found := restore_state_query(&rt, .Split, id, token)
+	testing.expect(t, node.split_position == 120 && first_pane.bounds.w == 120,
+		"a restore request should relayout an existing splitter even when its description geometry is unchanged")
+	testing.expect(t, found && state.outcome == .Applied && state.resolved.x == 120,
+		fmt.tprintf("existing split restore should be Applied: found=%t outcome=%v resolved=%.1f position=%.1f", found, state.outcome, state.resolved.x, node.split_position))
+}
+
+@(test)
 test_application_values_restore_into_a_fresh_runtime :: proc(t: ^testing.T) {
 	first_runtime := new_runtime(Rect{0, 0, 302, 180})
 	_, first_scroll, _, _ := restore_test_workspace_describe(&first_runtime, 260)
