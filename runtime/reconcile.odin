@@ -309,12 +309,13 @@ same_rect :: proc(a, b: Rect) -> bool {
 
 mark_dirty :: proc(node: ^Node, reason: string, description, layout, paint, composite: bool, allocator := context.allocator) {
 	previous_measure := dirty_has(node.dirty, .Measure)
+	previous_layout := dirty_has(node.dirty, .Layout)
 	previous_paint := dirty_has(node.dirty, .Paint)
 	previous_composite := dirty_has(node.dirty, .Composite)
 	node.dirty = {}
 	dirty_set(&node.dirty, .Description, description)
 	dirty_set(&node.dirty, .Measure, previous_measure)
-	dirty_set(&node.dirty, .Layout, layout)
+	dirty_set(&node.dirty, .Layout, layout || previous_layout)
 	dirty_set(&node.dirty, .Paint, paint || previous_paint)
 	dirty_set(&node.dirty, .Composite, composite || previous_composite)
 	if !previous_paint {
@@ -463,6 +464,9 @@ copy_node_description :: proc(
 		}
 	}
 	node.parent = d.parent
+	if kind_changed && node.kind == .Custom_Surface {
+		gpu_surface_image_layers_destroy(rt, node.id)
+	}
 	node.kind = d.kind
 	node.icon_id = d.icon_id
 	if d.kind == .Custom_Surface {
@@ -617,6 +621,7 @@ copy_node_description :: proc(
 		node.hovered = false
 		node.pressed = false
 		node.control_pending = false
+		if rt.drag.phase == .Candidate && rt.drag.source_node == node.id { rt.drag = {} }
 		if rt.focused == node.id { rt.focused = 0 }
 		if rt.captured_node == node.id { rt.captured_node = 0 }
 		if rt.text_field_selection_owner == node.id { text_field_pointer_selection_cancel(rt) }

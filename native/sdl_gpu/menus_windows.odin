@@ -877,11 +877,17 @@ win32_menu_cancel_app_pointer :: proc(state: ^Win32_Menu_State) {
 	menu := state.menu
 	rt := menu.runtime
 	captured := rt.captured_node
-	if captured == 0 && !alicorn.drag_is_active(rt) { return }
+	drag_was_active := alicorn.drag_is_active(rt)
+	if captured == 0 && !drag_was_active { return }
 	cancel_cause := alicorn.pointer_cause_begin(rt, .Cancel)
 	_ = alicorn.cancel_pointer_capture(rt)
-	if alicorn.drag_is_active(rt) {
-		_ = alicorn.drag_cancel(rt)
+	if drag_was_active {
+		// cancel_pointer_capture may already reset the drag phase while queuing
+		// its terminal event. Only cancel explicitly if capture cancellation
+		// left the drag active, but always deliver the terminal event below.
+		if alicorn.drag_is_active(rt) {
+			_ = alicorn.drag_cancel(rt)
+		}
 		_ = native_dispatch_drag_event(menu.application, rt)
 	}
 	if menu.application != nil && menu.application.on_pointer != nil {

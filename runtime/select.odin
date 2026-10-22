@@ -166,6 +166,8 @@ select_refresh_options :: proc(
 	state.option_count = len(options)
 	state.selected_key = selected_key
 	previous_active := state.active_key
+	previous_active_index := state.active_index
+	reveal_typeahead_match := state.typeahead_pending
 	for option, index in options {
 		state.option_keys[index] = option.key
 		state.option_disabled[index] = option.disabled
@@ -179,13 +181,16 @@ select_refresh_options :: proc(
 	}
 	if state.typeahead_pending {
 		state.active_index = select_typeahead_match(state, state.frame_options[:], string(state.typeahead[:state.typeahead_length]))
-		state.typeahead_pending = false
 	} else if active := select_find_key(state, previous_active); active >= 0 && !state.option_disabled[active] {
 		state.active_index = active
 	} else {
 		state.active_index = select_first_active(state, selected_key)
 	}
 	if state.active_index >= 0 { state.active_key = state.option_keys[state.active_index] }
+	active_changed := previous_active != state.active_key || previous_active_index != state.active_index
+	if state.scroll_node != 0 && active_changed && !reveal_typeahead_match {
+		select_ensure_active_visible(rt)
+	}
 	return true
 }
 
@@ -267,6 +272,7 @@ select_control :: proc(
 		if !disabled && !rt.context_menu.open &&
 			context_menu_open(rt, anchor, trigger, maxf(style.width, SELECT_DEFAULT_WIDTH), SELECT_OPTION_HEIGHT) {
 			state.open = true
+			state.scroll_node = 0
 			selected_option := select_option_index(options, selected_key)
 			state.active_index = selected_option if selected_option >= 0 && !options[selected_option].disabled else select_first_enabled(state)
 			state.active_key = state.option_keys[state.active_index] if state.active_index >= 0 else 0
@@ -287,6 +293,7 @@ select_control :: proc(
 		} else if !rt.context_menu.open {
 			if context_menu_open(rt, anchor, trigger, maxf(style.width, SELECT_DEFAULT_WIDTH), SELECT_OPTION_HEIGHT) {
 				state.open = true
+				state.scroll_node = 0
 				state.list_semantic_id = select_list_semantic_id(trigger)
 				state.active_index = selected_index if selected_index >= 0 && !options[selected_index].disabled else select_first_enabled(state)
 				state.active_key = state.option_keys[state.active_index] if state.active_index >= 0 else 0
@@ -329,6 +336,7 @@ select_control :: proc(
 		context_menu_close_internal(rt, true)
 		owned_open = false
 	}
+	if !owned_open { state.typeahead_pending = false }
 
 	result := Select_Result{selected_key=selected_key, open=owned_open, valid=valid}
 	if state.changed_pending && state.changed_trigger == trigger {
@@ -669,6 +677,7 @@ select_overlay_describe :: proc(ui: ^UI) {
 		rt.style_environment = previous_environment
 		return
 	}
+	reveal_active := state.scroll_node == 0 || state.typeahead_pending
 	state.scroll_node = list.scroll.id
 	rt.context_menu.content_height = 2*rt.context_menu.padding+visible_height
 	for option, index in state.frame_options {
@@ -715,7 +724,7 @@ select_overlay_describe :: proc(ui: ^UI) {
 	virtual_list_end(ui, list)
 	if state.active_index >= 0 && state.active_index < state.option_count {
 		if id := state.option_nodes[state.active_index]; id != 0 { _ = context_menu_set_focus(rt, id) }
-		if state.scroll_node != 0 {
+		if reveal_active {
 			region := list.scroll
 			item_top := f32(state.active_index)*item_height
 			item_bottom := item_top+item_height
@@ -734,6 +743,7 @@ select_overlay_describe :: proc(ui: ^UI) {
 		}
 	}
 	_ = context_menu_end(ui)
+	state.typeahead_pending = false
 	if !state.open && rt.context_menu.open { context_menu_close_internal(rt, false) }
 	rt.style_environment = previous_environment
 }

@@ -1256,7 +1256,8 @@ semantic_action_request :: proc(
 	if action == .Set_Text_Selection { return false }
 	if entity.node.visual_node != 0 {
 		visual, visual_found := rt.nodes[entity.node.visual_node]
-		if !visual_found || !node_is_presentation_active(rt, visual.id) || visual.disabled { return false }
+		if !visual_found || !node_is_presentation_active(rt, visual.id) || visual.disabled ||
+		   !node_is_in_modal_overlay(rt, visual.id, modal_overlay_root(rt)) { return false }
 		#partial switch action {
 		case .Press:
 			if entity.node.role != .Button && entity.node.role != .Checkbox { break }

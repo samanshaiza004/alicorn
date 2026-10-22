@@ -32,6 +32,89 @@ modal_focus_test_describe :: proc(ui: ^UI, omit_first_modal_action, show_modal: 
 	}
 }
 
+modal_semantic_activation_describe :: proc(ui: ^UI, show_modal: bool) {
+	container_begin_simple(ui, .Root, label="modal-semantic-root", key=key_string("modal-semantic-root"), style=layout_style())
+	button(ui, "Background press", key=key_string("modal-semantic-background-press"), style=layout_style())
+	_ = semantic_description(ui, .Button, "Background press", actions=semantic_actions_add({}, .Press))
+	button(ui, "Background select", key=key_string("modal-semantic-background-select"), style=layout_style())
+	_ = semantic_description(ui, .Tab, "Background select", actions=semantic_actions_add({}, .Select))
+	container_end(ui)
+	if show_modal {
+		modal_overlay_begin(ui, key_string("modal-semantic-overlay"), style=layout_style(.Column))
+		button(ui, "Modal press", key=key_string("modal-semantic-modal-press"), style=layout_style())
+		_ = semantic_description(ui, .Button, "Modal press", actions=semantic_actions_add({}, .Press))
+		button(ui, "Modal select", key=key_string("modal-semantic-modal-select"), style=layout_style())
+		_ = semantic_description(ui, .Tab, "Modal select", actions=semantic_actions_add({}, .Select))
+		modal_overlay_end(ui)
+	}
+}
+
+@(test)
+test_semantic_activation_obeys_modal_scope_and_recovers_after_dismissal :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 640, 480})
+	defer destroy_runtime(&rt)
+
+	ui, should_build := begin_frame(&rt)
+	if !should_build { testing.expect(t, false, "new runtime should request its first description"); return }
+	modal_semantic_activation_describe(&ui, true)
+	end_frame(&ui)
+
+	background_press_node := modal_overlay_test_button(&rt, "Background press")
+	background_select_node := modal_overlay_test_button(&rt, "Background select")
+	modal_press_node := modal_overlay_test_button(&rt, "Modal press")
+	modal_select_node := modal_overlay_test_button(&rt, "Modal select")
+	testing.expect(t, background_press_node != 0 && background_select_node != 0 &&
+		modal_press_node != 0 && modal_select_node != 0,
+		"the workspace and modal activation controls should all be realized")
+	if background_press_node == 0 || background_select_node == 0 || modal_press_node == 0 || modal_select_node == 0 {
+		return
+	}
+	background_press := semantic_visual_id(background_press_node)
+	background_select := semantic_visual_id(background_select_node)
+	modal_press := semantic_visual_id(modal_press_node)
+	modal_select := semantic_visual_id(modal_select_node)
+	background_press_entity, background_press_found := semantic_node_lookup(&rt, background_press)
+	background_select_entity, background_select_found := semantic_node_lookup(&rt, background_select)
+	modal_press_entity, modal_press_found := semantic_node_lookup(&rt, modal_press)
+	modal_select_entity, modal_select_found := semantic_node_lookup(&rt, modal_select)
+	testing.expect(t, background_press_found && background_press_entity.visual_node == background_press_node &&
+		semantic_actions_has(background_press_entity.actions, .Press) &&
+		background_select_found && background_select_entity.visual_node == background_select_node &&
+		semantic_actions_has(background_select_entity.actions, .Select) &&
+		modal_press_found && modal_press_entity.visual_node == modal_press_node &&
+		semantic_actions_has(modal_press_entity.actions, .Press) &&
+		modal_select_found && modal_select_entity.visual_node == modal_select_node &&
+		semantic_actions_has(modal_select_entity.actions, .Select),
+		"each test control should publish the expected realized semantic action")
+	sequence_before_blocked_actions := rt.activation_sequence
+	testing.expect(t, !semantic_action_request(&rt, background_press, .Press),
+		"semantic Press must not activate a covered workspace button")
+	testing.expect(t, !semantic_action_request(&rt, background_select, .Select),
+		"semantic Select must not activate a covered workspace tab")
+	testing.expect(t, rt.activation_sequence == sequence_before_blocked_actions,
+		"blocked semantic actions must not advance the activation sequence")
+
+	sequence_before_modal_actions := rt.activation_sequence
+	testing.expect(t, semantic_action_request(&rt, modal_press, .Press) && rt.activation_node == modal_press_node,
+		"semantic Press must activate a button inside the modal")
+	testing.expect(t, semantic_action_request(&rt, modal_select, .Select) && rt.activation_node == modal_select_node,
+		"semantic Select must activate a tab inside the modal")
+	testing.expect(t, rt.activation_sequence == sequence_before_modal_actions+2,
+		"both modal semantic actions should advance the activation sequence")
+
+	ui, should_build = begin_frame(&rt)
+	if !should_build { testing.expect(t, false, "dismissing the modal should rebuild"); return }
+	modal_semantic_activation_describe(&ui, false)
+	end_frame(&ui)
+	sequence_after_dismissal := rt.activation_sequence
+	testing.expect(t, semantic_action_request(&rt, background_press, .Press),
+		"the workspace button should accept semantic Press after modal dismissal")
+	testing.expect(t, semantic_action_request(&rt, background_select, .Select),
+		"the workspace tab should accept semantic Select after modal dismissal")
+	testing.expect(t, rt.activation_sequence == sequence_after_dismissal+2,
+		"workspace activation should resume after the modal is removed")
+}
+
 @(test)
 test_modal_overlay_blocks_workspace_and_limits_focus :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 800, 600})

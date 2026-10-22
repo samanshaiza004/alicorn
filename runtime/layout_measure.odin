@@ -639,7 +639,11 @@ layout_parent_placement_axes :: proc(rt: ^Runtime, node: ^Node) -> Layout_Axes {
 	parent, ok := rt.nodes[node.parent]
 	if !ok || parent == nil { return {} }
 	if parent.kind == .Split || parent.kind == .Context_Menu_Overlay { return {} }
-	if parent.style.direction == .Row { return {.Width} }
+	if parent.style.direction == .Row {
+		// Row placement consumes child width for following columns and child
+		// height for cross-axis bounds/alignment.
+		return {.Width, .Height}
+	}
 	// Column placement consumes child height for following rows and child
 	// width for the child's cross-axis bounds/alignment. A width-only change
 	// still requires refreshing that parent even though its external size is

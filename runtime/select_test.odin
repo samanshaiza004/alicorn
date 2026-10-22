@@ -355,6 +355,75 @@ test_select_large_list_scrolls_selected_option_into_view_and_typeahead_skips_dis
 	testing.expect(t, select_typeahead(&rt, "target"), "type-ahead should accept a full committed string")
 	_, _ = build(&rt, options[:])
 	testing.expect(t, rt.select.active_key == 12, "type-ahead should find the enabled matching item after a disabled item")
+	target := select_test_row(&rt, "Target")
+	region = scroll_region_state(&rt, rt.select.scroll_node)
+	if target != 0 {
+		row := rt.nodes[target]
+		testing.expect(t, row.bounds.y >= region.viewport_bounds.y && row.bounds.y+row.bounds.h <= region.viewport_bounds.y+region.viewport_bounds.h,
+			"type-ahead should reveal the newly active option in the popup viewport")
+	}
+}
+
+select_test_build_options :: proc(rt: ^Runtime, options: []Select_Option) -> (result: Select_Result, trigger: Node_ID) {
+	if !rt.invalidated { invalidate_root(rt, "Select scroll retention test rebuild") }
+	ui, ready := begin_frame(rt)
+	if !ready { return }
+	container_begin(&ui, .Root, key=key_string("select-scroll-root"), style=layout_style(.Column))
+	result = select_control(&ui, key_string("select-scroll-choice"), "Choice", options, 1)
+	trigger = rt.pending[len(rt.pending)-1].description.id
+	container_end(&ui)
+	end_frame(&ui)
+	return
+}
+
+select_test_settle_options :: proc(rt: ^Runtime, options: []Select_Option) {
+	for _ in 0..<16 {
+		if rt.invalidated {
+			_, _ = select_test_build_options(rt, options)
+			continue
+		}
+		ui, ready := begin_presentation_frame(rt)
+		if ready {
+			end_presentation_frame(&ui)
+			continue
+		}
+		return
+	}
+}
+
+@(test)
+test_select_preserves_manual_wheel_offset_across_description_rebuilds :: proc(t: ^testing.T) {
+	options: [16]Select_Option
+	for &option, index in options {
+		option = Select_Option{u64(index+1), fmt.tprintf("Option %02d", index+1), false}
+	}
+	rt := new_runtime(Rect{0, 0, 300, 220})
+	defer destroy_runtime(&rt)
+	_, trigger := select_test_build_options(&rt, options[:])
+	if trigger == 0 { testing.expect(t, false, "scroll retention Select trigger should be retained"); return }
+	trigger_node := rt.nodes[trigger]
+	x, y := trigger_node.bounds.x+trigger_node.bounds.w/2, trigger_node.bounds.y+trigger_node.bounds.h/2
+	_ = process_pointer(&rt, Pointer_Event{kind=.Down, x=x, y=y, button=POINTER_BUTTON_PRIMARY})
+	_ = process_pointer(&rt, Pointer_Event{kind=.Up, x=x, y=y, button=POINTER_BUTTON_PRIMARY})
+	select_test_settle_options(&rt, options[:])
+	if !context_menu_is_open(&rt) { testing.expect(t, false, "long-list Select popup should open"); return }
+	scroll_id := rt.select.scroll_node
+	before := scroll_region_state(&rt, scroll_id)
+	if before.max_scroll_y <= 0 { testing.expect(t, false, "long option list should have a scrollable viewport"); return }
+	consumed := process_scroll(&rt, Scroll_Event{
+		x=before.viewport_bounds.x+before.viewport_bounds.w/2,
+		y=before.viewport_bounds.y+before.viewport_bounds.h/2,
+		delta_y=-4,
+	})
+	queued_offset := scroll_region_state(&rt, scroll_id).offset_y
+	select_test_settle_options(&rt, options[:])
+	settled_offset := scroll_region_state(&rt, scroll_id).offset_y
+	invalidate_root(&rt, "unrelated application description while Select is scrolled")
+	select_test_settle_options(&rt, options[:])
+	final_offset := scroll_region_state(&rt, scroll_id).offset_y
+	testing.expect(t, consumed && queued_offset > 0, "wheel input over the popup should advance its retained scroll offset")
+	testing.expect(t, settled_offset == queued_offset && final_offset == queued_offset,
+		"passive description rebuilds should preserve manual scrolling while the active option is unchanged")
 }
 
 @(test)

@@ -12,6 +12,7 @@ from package_macos import (
     is_sdl_runtime_install_name,
     resolve_bundle_dependency,
     sdl_source_provenance,
+    sign_local_bundle,
     validate_bundle_rpath,
 )
 
@@ -21,6 +22,23 @@ class PackageDependencyAuditTests(unittest.TestCase):
     frameworks = contents / "Frameworks"
     macos = contents / "MacOS"
     image = macos / "App"
+
+    def test_local_bundle_signing_covers_nested_images_before_the_bundle(self):
+        images = [self.image, self.frameworks / "SDL3.dylib"]
+        with patch("package_macos.run") as run:
+            sign_local_bundle(self.contents.parent, images)
+
+        self.assertEqual(
+            run.call_args_list,
+            [
+                unittest.mock.call("codesign", "--force", "--sign", "-", "--timestamp=none", str(image))
+                for image in images
+            ]
+            + [
+                unittest.mock.call("codesign", "--force", "--sign", "-", "--timestamp=none", str(self.contents.parent)),
+                unittest.mock.call("codesign", "--verify", "--strict", "--deep", str(self.contents.parent)),
+            ],
+        )
 
     def test_sdl_source_pin_matches_release(self):
         self.assertEqual(SDL_VERSION, "3.4.18")

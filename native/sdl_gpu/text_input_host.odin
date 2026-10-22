@@ -402,7 +402,7 @@ native_text_apply_key_navigation :: proc(
 			if field.selection_anchor.byte > field.selection_focus.byte {
 				target = field.selection_focus.byte if direction < 0 else field.selection_anchor.byte
 			}
-		} else if line {
+		} else if line && !shift {
 			target = 0 if direction < 0 else len(field.text)
 			_ = alicorn.set_text_caret(rt, node, target)
 			if telemetry != nil { telemetry.text_navigation_key_events += 1 }

@@ -2,6 +2,7 @@ package alicorn
 
 import "core:fmt"
 import "core:math"
+import "core:mem"
 
 // utf8_character_index_to_byte_offset converts SDL's TEXT_EDITING character
 // indexes to Alicorn's byte-addressed text positions. The conversion is kept
@@ -98,9 +99,9 @@ cancel_text_composition :: proc(rt: ^Runtime, id: Node_ID, reason := "text compo
 // text_composition_visual_value creates the temporary display projection. The
 // committed selection is replaced only for this projection; node.text remains
 // the retained copy of application state until TEXT_INPUT commits it.
-text_composition_visual_value :: proc(node: ^Node) -> string {
+text_composition_visual_value :: proc(node: ^Node, allocator: mem.Allocator) -> string {
 	start, end := text_composition_range(node.composition, len(node.text))
-	return fmt.aprintf("%s%s%s", node.text[:start], node.composition.text, node.text[end:])
+	return fmt.aprintf("%s%s%s", node.text[:start], node.composition.text, node.text[end:], allocator=allocator)
 }
 
 text_composition_visual_start :: proc(node: ^Node) -> int {
@@ -127,7 +128,7 @@ prepare_text_composition_node :: proc(rt: ^Runtime, node: ^Node) -> bool {
 		max_width = maxf(max_width-2*style_text_field_horizontal_inset(rt, node.style_environment), 0)
 	}
 	requested_size := text_style_requested_size(node.text_style, node.style_environment)
-	value := text_composition_visual_value(node)
+	value := text_composition_visual_value(node, rt.persistent_allocator)
 	defer { if len(value) > 0 { delete(value, rt.persistent_allocator) } }
 	if node.composition_run_valid &&
 		node.composition_run.size == requested_size &&

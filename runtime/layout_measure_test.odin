@@ -218,6 +218,52 @@ test_fit_content_boundary_axis_is_not_claimed_stable :: proc(t: ^testing.T) {
 	testing.expect(t, found_unstable_trace, "trace should explain that FIT_CONTENT makes the boundary height unstable")
 }
 
+layout_measure_test_describe_centered_row :: proc(rt: ^Runtime, child_height: f32) -> (row, child: Node_ID) {
+	invalidate_root(rt, "centered Row child height fixture")
+	ui, build := begin_frame(rt)
+	if !build { return }
+	row = container_begin(&ui, .Root, key=key_string("centered-row-root"), style=layout_style(.Row, align=.Center))
+	child = text(&ui, "label", key=key_string("centered-row-child"), style=layout_style(width=80, height=child_height))
+	container_end(&ui)
+	end_frame(&ui)
+	return
+}
+
+@(test)
+test_row_height_only_child_change_recomputes_cross_axis_placement :: proc(t: ^testing.T) {
+	incremental := new_runtime(Rect{0, 0, 240, 100})
+	defer destroy_runtime(&incremental)
+	if !text_engine_load_font(&incremental.text_engine, LAYOUT_MEASURE_TEST_FONT) {
+		testing.expect(t, false, "centered Row fixture font should load")
+		return
+	}
+	row, child := layout_measure_test_describe_centered_row(&incremental, 20)
+	if row == 0 || child == 0 { testing.expect(t, false, "initial centered Row fixture should be retained"); return }
+	initial_bounds := incremental.nodes[child].bounds
+	_, updated_child := layout_measure_test_describe_centered_row(&incremental, 40)
+	if updated_child != child { testing.expect(t, false, "height-only update should preserve child identity"); return }
+	for _ in 0..<8 {
+		if !incremental.invalidated { break }
+		_, updated_child = layout_measure_test_describe_centered_row(&incremental, 40)
+	}
+	updated_bounds := incremental.nodes[child].bounds
+
+	fresh := new_runtime(Rect{0, 0, 240, 100})
+	defer destroy_runtime(&fresh)
+	if !text_engine_load_font(&fresh.text_engine, LAYOUT_MEASURE_TEST_FONT) {
+		testing.expect(t, false, "fresh centered Row fixture font should load")
+		return
+	}
+	_, fresh_child := layout_measure_test_describe_centered_row(&fresh, 40)
+	if fresh_child == 0 { testing.expect(t, false, "fresh centered Row fixture should be retained"); return }
+	fresh_bounds := fresh.nodes[fresh_child].bounds
+
+	testing.expect(t, initial_bounds.h == 20 && initial_bounds.y == 40,
+		"the initial Row child should be centered using its 20-pixel height")
+	testing.expect(t, updated_bounds.h == 40 && updated_bounds.y == 30 && updated_bounds == fresh_bounds,
+		"incremental Row placement should match a fresh centered layout after the child height changes")
+}
+
 @(test)
 test_measure_dirty_without_parent_constraints_defers_measurement :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 100, 40})
