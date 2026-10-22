@@ -8,6 +8,7 @@ import "core:testing"
 
 TAB_BAR_TEST_DRAG_TYPE :: Drag_Type(901)
 TAB_BAR_TEST_NAMESPACE :: u64(901)
+TAB_BAR_TEST_FONT :: #load("../assets/fonts/AtkinsonHyperlegibleNext-Variable.ttf")
 
 tab_bar_test_semantic :: proc(value: u64) -> Semantic_ID {
 	return Semantic_ID{namespace=TAB_BAR_TEST_NAMESPACE, value=value}
@@ -51,6 +52,7 @@ tab_bar_test_build :: proc(
 	items: []Tab_Bar_Item,
 	width: f32,
 	options: Tab_Bar_Options,
+	environment := Style_Environment{},
 ) -> Tab_Bar_Result {
 	ui, should_build := begin_frame(rt)
 	if !should_build { return Tab_Bar_Result{item_index=-1} }
@@ -61,6 +63,7 @@ tab_bar_test_build :: proc(
 		key=key_string("tab-bar-test-root"),
 		style=layout_style(.Row, width=width, height=48),
 	)
+	scope := style_environment_push(&ui, environment)
 	result := tab_bar(
 		&ui,
 		key_string("tab-bar-test"),
@@ -68,6 +71,7 @@ tab_bar_test_build :: proc(
 		options,
 		layout_style(.Row, width=width, height=options.height, gap=options.gap, clip=true),
 	)
+	style_environment_pop(&ui, scope)
 	container_end(&ui)
 	end_frame(&ui)
 	return result
@@ -274,6 +278,198 @@ tab_bar_test_display_has_surface :: proc(rt: ^Runtime, owner: Node_ID) -> bool {
 		}
 	}
 	return false
+}
+
+@(test)
+test_tab_bar_compact_centers_intrinsic_text_run_and_close_control :: proc(t: ^testing.T) {
+	heights := [2]f32{32, 44}
+	widths := [2]f32{150, 180}
+	scales := [2]f32{13.0/16.0, 1}
+	for height in heights {
+		for width in widths {
+			for scale in scales {
+				rt := new_runtime(Rect{0, 0, 720, 120})
+				defer destroy_runtime(&rt)
+				if !text_engine_load_font(&rt.text_engine, TAB_BAR_TEST_FONT) {
+					testing.expect(t, false, "the compact tab fixture should load its UI font")
+					continue
+				}
+				theme := DEFAULT_STYLE_THEME
+				theme.colors[int(Style_Color_Role.Text)] = Color{0.7, 0.8, 0.6, 1}
+				theme.colors[int(Style_Color_Role.Muted_Text)] = Color{0.3, 0.4, 0.2, 1}
+				environment := Style_Environment{theme=style_theme_register(&rt, theme), text_scale=scale}
+				items := tab_bar_test_items()
+				options := tab_bar_test_options()
+				options.min_tab_width, options.max_tab_width = 150, 180
+				options.height = height
+				options.close_policy = .Selected_Or_Hover
+				options.presentation = .Compact
+				_ = tab_bar_test_build(&rt, items[:], 3*width+2*options.gap, options, environment)
+
+				for item in items {
+					tab_id, tab_count := tab_bar_test_item_node(&rt, item.semantic_id)
+					label_id, label_count := tab_bar_test_visual_part(&rt, tab_id, .Label)
+					content_id, content_count := tab_bar_test_part(&rt, tab_id, "tab-content")
+					close_id, close_count := tab_bar_test_close_node(&rt, tab_id)
+					indicator_id, indicator_count := tab_bar_test_visual_part(&rt, tab_id, .Selected_Indicator)
+					testing.expect(t, tab_count == 1 && label_count == 1 && content_count == 1 && close_count == 1 && indicator_count == 1,
+						"compact tabs should retain their label, content row, close control and selected indicator")
+					if tab_count != 1 || label_count != 1 || content_count != 1 || close_count != 1 || indicator_count != 1 { continue }
+					tab, label, content, close := rt.nodes[tab_id], rt.nodes[label_id], rt.nodes[content_id], rt.nodes[close_id]
+					center_y := tab.bounds.y+height*0.5
+					testing.expect(t, tab.bounds.w == width && tab.bounds.h == height &&
+						content.bounds.x == tab.bounds.x+8 && content.bounds.w == width-16 && content.style.padding == 0,
+						"compact content should use eight-unit horizontal insets without uniform vertical padding")
+					top_height: f32 = -1
+					for child_id in tab.children {
+						if child := rt.nodes[child_id]; child.label == "tab-content-top-inset" { top_height = child.bounds.h }
+					}
+					testing.expect(t, top_height == 1 && content.bounds.y == tab.bounds.y+1 && content.bounds.h == height-2 &&
+						rt.nodes[indicator_id].bounds.h == f32(1 if item.selected else 0),
+						"compact content should balance one-unit top and bottom indicator tracks")
+					testing.expect(t, abs(content.bounds.y+content.bounds.h*0.5-center_y) < 0.01 &&
+						abs(close.bounds.y+close.bounds.h*0.5-center_y) < 0.01 && close.bounds.h == TAB_CLOSE_CONTROL_SIZE &&
+						close.bounds.x+close.bounds.w == tab.bounds.x+width-8,
+						"the existing close target should share the compact row center and trailing inset at either height")
+					testing.expect(t, label.style.height < 0 && label.style.grow == 0 && label.text_run_valid &&
+						abs(label.bounds.h-label.text_run.height) < 0.01 && label.style_environment.text_scale == scale,
+						"the compact label should retain intrinsic text height and inherit the scoped text scale")
+					paint_found := false
+					for command in label.paint {
+						if paint, ok := command.payload.(Text_Paint); ok {
+							paint_found = true
+							run, run_ok := paint_text_run_resolve(&rt, paint.run)
+							testing.expect(t, run_ok, "compact text paint should reference a live retained text run")
+							if !run_ok { continue }
+							testing.expect(t, len(run.glyphs) > 0 && len(run.lines) == 1 && run.font == .UI &&
+								run.size == DEFAULT_TEXT_SIZE*scale && run.overflow == .Ellipsis && run.width <= label.bounds.w+0.01,
+								"compact labels should paint a shaped single line within their reserved width using inherited typography")
+							testing.expect(t, command.bounds == label.bounds && abs(command.bounds.y+run.height*0.5-center_y) < 0.01 &&
+								abs(command.bounds.y+command.bounds.h*0.5-center_y) < 0.01 && command.clip.h >= run.height-0.01,
+								"both compact text paint bounds and the actual text run should share the close control center without clipping")
+							expected_color := style_button_resolve_retained(&rt, tab, Button_Visual_State{selected=item.selected}).text
+							testing.expect(t, paint.color == expected_color && label.style_environment.theme == environment.theme,
+								"compact labels should inherit their owner's local theme recipe")
+						}
+					}
+					testing.expect(t, paint_found && tab_bar_test_display_has_text(&rt, label_id),
+						"compact label text should reach the composed display list")
+				}
+			}
+		}
+	}
+}
+
+@(test)
+test_tab_bar_compact_close_hover_preserves_layout_and_text_run :: proc(t: ^testing.T) {
+	heights := [2]f32{32, 44}
+	for height in heights {
+		rt := new_runtime(Rect{0, 0, 720, 120})
+		defer destroy_runtime(&rt)
+		if !text_engine_load_font(&rt.text_engine, TAB_BAR_TEST_FONT) {
+			testing.expect(t, false, "the compact hover fixture should load its UI font")
+			continue
+		}
+		items := tab_bar_test_items()
+		options := tab_bar_test_options()
+		options.min_tab_width, options.max_tab_width = 150, 180
+		options.height = height
+		options.close_policy = .Selected_Or_Hover
+		options.presentation = .Compact
+		environment := Style_Environment{text_scale=13.0/16.0}
+		_ = tab_bar_test_build(&rt, items[:], 500, options, environment)
+		_ = tab_bar_test_build(&rt, items[:], 500, options, environment)
+		selected, selected_count := tab_bar_test_item_node(&rt, items[0].semantic_id)
+		selected_close, selected_close_count := tab_bar_test_close_node(&rt, selected)
+		tab_id, tab_count := tab_bar_test_item_node(&rt, items[2].semantic_id)
+		close_id, close_count := tab_bar_test_close_node(&rt, tab_id)
+		label_id, label_count := tab_bar_test_visual_part(&rt, tab_id, .Label)
+		testing.expect(t, selected_count == 1 && selected_close_count == 1 && tab_count == 1 && close_count == 1 && label_count == 1,
+			"the compact hover fixture should retain selected and idle tabs with their controls")
+		if selected_count != 1 || selected_close_count != 1 || tab_count != 1 || close_count != 1 || label_count != 1 { continue }
+		testing.expect(t, visual_part_is_visible(&rt, selected_close) && tab_bar_test_display_has_text(&rt, selected_close) &&
+			!visual_part_is_visible(&rt, close_id) && !tab_bar_test_display_has_text(&rt, close_id),
+			"Selected_Or_Hover should show the selected close control and reserve the idle close slot")
+		bounds := make(map[Node_ID]Rect)
+		defer delete(bounds)
+		for id in rt.order { if node := rt.nodes[id]; node.active { bounds[id] = node.bounds } }
+		label_handle := paint_text_handle_for_node(rt.nodes[label_id])
+		run_height := rt.nodes[label_id].text_run.height
+		run_width := rt.nodes[label_id].text_run.width
+		tab, close := bounds[tab_id], bounds[close_id]
+		testing.expect(t, hit_test(&rt, close.x+close.w*0.5, close.y+close.h*0.5) == tab_id,
+			"the hidden compact close slot should hit its tab owner")
+		positions := [3][2]f32{
+			{tab.x+tab.w*0.35, tab.y+tab.h*0.5},
+			{close.x+close.w*0.5, close.y+close.h*0.5},
+			{600, 90},
+		}
+		for position, index in positions {
+			target := process_pointer(&rt, Pointer_Event{kind=.Move, x=position[0], y=position[1]})
+			if index == 0 { testing.expect(t, target == tab_id, "compact tab-body hover should target the tab owner") }
+			if index == 1 { testing.expect(t, target == close_id, "the revealed compact close control should receive independent hits") }
+			ui, ready := begin_presentation_frame(&rt)
+			testing.expect(t, ready, "compact hover changes should request retained presentation work")
+			if ready { end_presentation_frame(&ui) }
+			testing.expect(t, visual_part_is_visible(&rt, close_id) == (index < 2) &&
+				tab_bar_test_display_has_text(&rt, close_id) == (index < 2) && visual_part_is_visible(&rt, selected_close),
+				"compact close visibility should follow owner hover while the selected close remains visible")
+			for id, saved in bounds {
+				testing.expect(t, rt.nodes[id].bounds == saved,
+					"revealing, hovering and hiding a compact close control should preserve all retained layout bounds")
+			}
+			testing.expect(t, paint_text_handle_for_node(rt.nodes[label_id]) == label_handle &&
+				rt.nodes[label_id].text_run.height == run_height && rt.nodes[label_id].text_run.width == run_width,
+				"compact close hover should preserve the title's shaped run without reflow")
+			text_bounds, text_found := tab_bar_test_text_bounds(&rt, tab_id)
+			testing.expect(t, text_found && text_bounds == bounds[label_id],
+				"compact close hover should preserve the title's text paint bounds")
+		}
+	}
+}
+
+@(test)
+test_tab_bar_default_presentation_preserves_standard_layout :: proc(t: ^testing.T) {
+	testing.expect_value(t, int(Tab_Bar_Presentation.Standard), 0)
+	zero_options := Tab_Bar_Options{}
+	testing.expect_value(t, zero_options.presentation, Tab_Bar_Presentation.Standard)
+	testing.expect_value(t, DEFAULT_TAB_BAR_OPTIONS.presentation, Tab_Bar_Presentation.Standard)
+	heights := [3]f32{32, 44, DEFAULT_TAB_BAR_OPTIONS.height}
+	for height in heights {
+		rt := new_runtime(Rect{0, 0, 720, 120})
+		defer destroy_runtime(&rt)
+		items := tab_bar_test_items()
+		options := DEFAULT_TAB_BAR_OPTIONS
+		options.height = height
+		_ = tab_bar_test_build(&rt, items[:], 500, options)
+		bounds := make(map[Node_ID]Rect)
+		defer delete(bounds)
+		for id in rt.order { if node := rt.nodes[id]; node.active { bounds[id] = node.bounds } }
+		for item in items {
+			tab_id, tab_count := tab_bar_test_item_node(&rt, item.semantic_id)
+			label_id, label_count := tab_bar_test_visual_part(&rt, tab_id, .Label)
+			content_id, content_count := tab_bar_test_part(&rt, tab_id, "tab-content")
+			indicator_id, indicator_count := tab_bar_test_visual_part(&rt, tab_id, .Selected_Indicator)
+			testing.expect(t, tab_count == 1 && label_count == 1 && content_count == 1 && indicator_count == 1,
+				"the default should retain the existing standard tab parts")
+			if tab_count != 1 || label_count != 1 || content_count != 1 || indicator_count != 1 { continue }
+			tab, label, content := rt.nodes[tab_id], rt.nodes[label_id], rt.nodes[content_id]
+			testing.expect(t, tab.style.align == .Stretch && label.parent == content_id && label.style.height == height-4 && label.style.grow == 1 &&
+				content.bounds.x == tab.bounds.x && content.bounds.w == tab.bounds.w && content.bounds.y == tab.bounds.y+2 &&
+				content.bounds.h == height-4 && content.style.padding == 8 &&
+				rt.nodes[indicator_id].bounds.h == f32(2 if item.selected else 0),
+				"Standard should preserve the full-height label, uniform padding and two-unit tracks")
+		}
+		options.presentation = .Standard
+		invalidate_root(&rt, "explicit Standard presentation")
+		_ = tab_bar_test_build(&rt, items[:], 500, options)
+		testing.expect(t, len(rt.order) == len(bounds), "explicit Standard should retain the default node hierarchy")
+		for id, saved in bounds {
+			node, found := rt.nodes[id]
+			testing.expect(t, found && node.active && node.bounds == saved,
+				"explicit Standard should preserve every default node identity and layout bound")
+		}
+	}
 }
 
 @(test)

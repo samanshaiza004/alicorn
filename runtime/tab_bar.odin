@@ -16,6 +16,8 @@ Tab_Bar_Item :: struct {
 	semantic_id: Semantic_ID,
 }
 
+Tab_Bar_Presentation :: enum { Standard = 0, Compact }
+
 Tab_Bar_Options :: struct {
 	min_tab_width: f32,
 	max_tab_width: f32,
@@ -23,6 +25,7 @@ Tab_Bar_Options :: struct {
 	gap:           f32,
 	close_policy:  Tab_Close_Policy,
 	drag_type:     Drag_Type,
+	presentation:  Tab_Bar_Presentation,
 }
 
 DEFAULT_TAB_BAR_OPTIONS :: Tab_Bar_Options{
@@ -102,6 +105,7 @@ tab_bar :: proc(
 	// for that target rather than silently shrinking it below the intended size.
 	opts.height = clampf(opts.height, 26, 256)
 	opts.gap = clampf(opts.gap, 0, 64)
+	compact := opts.presentation == .Compact
 	bar_style.direction = .Row
 	bar_style.clip = true
 	viewport_guess := tab_bar_viewport_guess(ui, bar_style)
@@ -249,7 +253,8 @@ tab_bar :: proc(
 			ui,
 			"",
 			key=item.key,
-			style=layout_style(.Column, width=tab_width, height=opts.height, gap=0, clip=true),
+			style=layout_style(.Column, width=tab_width, height=opts.height, gap=0,
+				align=.Center if compact else .Stretch, clip=true),
 			state=Button_State{selected=item.selected},
 			loc=loc,
 			text_style=DEFAULT_BUTTON_TEXT_STYLE,
@@ -284,29 +289,38 @@ tab_bar :: proc(
 		}
 		if tab_activated && result.action == .None { result = Tab_Bar_Result{.Select, index} }
 
-		// Keep the selected underline in its own bottom track while centering
-		// the tab content in the full control bounds. Reserving only the bottom
-		// two units made labels and close controls sit one unit too high.
+		// Equal top and selected-indicator tracks center the content in the tab.
+		track_height := f32(1 if compact else 2)
 		_ = container_begin_simple(
 			ui,
 			.Container,
 			label="tab-content-top-inset",
 			key=key_u64(7),
-			style=layout_style(.Row, height=2),
+			style=layout_style(.Row, height=track_height),
 		)
 		container_end(ui)
-		content_height := maxf(opts.height-4, 0)
+		content_height := maxf(opts.height-2*track_height, 0)
 		content_id := container_begin_simple(
 			ui,
 			.Container,
 			label="tab-content",
 			key=key_u64(1),
-			style=layout_style(.Row, width=tab_width, height=content_height, gap=0, align=.Center, clip=true, padding=8),
+			style=layout_style(.Row, width=tab_width-16 if compact else tab_width,
+				height=content_height, gap=0, align=.Center, clip=true, padding=0 if compact else 8),
 		)
 		_ = visual_part_attach(ui, content_id, tab_id, visual_part_core(.Content))
 		label_style := DEFAULT_BUTTON_TEXT_STYLE
-		label_id := text(ui, item.label, key=key_u64(2), style=layout_style(.Row, height=content_height, grow=1), font=Font_Role.UI, text_style=label_style)
+		label_layout := layout_style(.Row, height=content_height, grow=1)
+		if compact {
+			// A Column measures the label's intrinsic height; main-axis centering
+			// then aligns the actual text run with the existing 24-unit close target.
+			_ = container_begin_simple(ui, .Container, label="tab-label-slot", key=key_u64(8),
+				style=layout_style(.Column, height=content_height, grow=1, justify=.Center))
+			label_layout = layout_style(.Row)
+		}
+		label_id := text(ui, item.label, key=key_u64(2), style=label_layout, font=Font_Role.UI, text_style=label_style)
 		_ = visual_part_attach(ui, label_id, tab_id, visual_part_core(.Label))
+		if compact { container_end(ui) }
 
 		trailing_width := f32(0)
 		close_width := TAB_CLOSE_CONTROL_SIZE
@@ -397,7 +411,7 @@ tab_bar :: proc(
 			ui,
 			surface_core_color_role(.Accent),
 			key=key_u64(6),
-			style=layout_style(.Row, height=2 if item.selected else 0),
+			style=layout_style(.Row, height=track_height if item.selected else 0),
 			label="tab-selected-indicator",
 		)
 		_ = visual_part_attach(ui, indicator_id, tab_id, visual_part_core(.Selected_Indicator))

@@ -495,7 +495,7 @@ Each `Tab_Bar_Item` contains:
 | `semantic_id: Semantic_ID` | Stable logical identity used by the existing semantic drag/drop events. |
 
 `Tab_Bar_Options` supplies `min_tab_width`, `max_tab_width`, `height`, `gap`,
-`close_policy`, and `drag_type`. Width, height, and gap are in logical window
+`close_policy`, `drag_type`, and optional `presentation`. Width, height, and gap are in logical window
 units. Tabs shrink by equal amounts from the maximum width toward the minimum
 width as space becomes constrained. If the bar is still too narrow when tabs
 reach their minimum width, it uses horizontal overflow; the selected tab is
@@ -512,6 +512,22 @@ Moving into a hidden close slot reveals it, but clicking the invisible slot
 without first hovering does not activate Close. `Always` explicitly shows the
 close glyph even for dirty tabs. Selection remains visible independently of
 the keyboard-focus ring; pointer focus does not add a second focus outline.
+
+`presentation = .Compact` opts into horizontally inset, vertically centered
+intrinsic labels and a one-unit selection indicator. It keeps the same 24×24
+close target and reserved trailing slot. The default `.Standard` presentation
+is unchanged. Typography and colors still come from the ordinary scoped style
+environment; the compact variant does not select a platform font or theme.
+For example, a compact document header can use:
+
+```odin
+options := alicorn.DEFAULT_TAB_BAR_OPTIONS
+options.presentation = .Compact
+options.height = 32
+options.min_tab_width, options.max_tab_width = 150, 180
+options.close_policy = .Selected_Or_Hover
+result := alicorn.tab_bar(ui, alicorn.key_string("documents"), tabs, options)
+```
 
 The close policies are `Always`, `Hover`, `Selected_Or_Hover`, and `Auto`.
 `Auto` delegates close-affordance visibility to the component's responsive

@@ -1,6 +1,8 @@
 # macOS integrated titlebar proposal
 
-Research date: 2026-10-20. Status: proposal; no titlebar implementation changes.
+Research date: 2026-10-20. Status: proposal; a bounded native input fixture is
+implemented, but its drag and fullscreen acceptance remains incomplete. See the
+[fixture validation record](../validation/macos-titlebar-input-fixture.md).
 Repository evidence: Alicorn `d0cf8f5`, Scratchpad `eae8c9b`. See the separate
 [macOS validation record](../validation/macos-sync-2026-10-20.md) for tests,
 native launches, packaging, and the two development setup problems reproduced.
