@@ -34,10 +34,15 @@ native_application_build_until_stable :: proc(
 ) -> Native_Description_Stabilization {
 	result := Native_Description_Stabilization{}
 	for rt.invalidated && (!stop_on_hard_error || !rt.hard_error) && result.passes < NATIVE_DESCRIPTION_STABILIZATION_LIMIT {
+		interaction_sequence := rt.interaction_consumption_sequence
 		build_start := time.now()
 		_ = application.build(application.state, rt, metrics.logical_width, metrics.logical_height, metrics.display_scale)
 		native_timing_accumulate(&timing.application_build_ns, &timing.application_build_max_ns, u64(time.duration_nanoseconds(time.since(build_start))))
 		result.passes += 1
+		if application.interaction_update_policy == .Correct_After_Interaction &&
+		   rt.interaction_consumption_sequence != interaction_sequence && !rt.invalidated {
+			alicorn.invalidate_root(rt, "corrective description after consumed interaction")
+		}
 	}
 	result.stable = !rt.invalidated || (stop_on_hard_error && rt.hard_error)
 	if result.passes > 1 { timing.application_stabilization_rebuilds += u64(result.passes-1) }
