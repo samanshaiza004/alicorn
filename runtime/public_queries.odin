@@ -196,6 +196,13 @@ text_field_interaction :: proc(rt: ^Runtime, id: Node_ID) -> (state: Text_Field_
 	return
 }
 
+// text_change_destroy releases the owned result returned by text input APIs.
+text_change_destroy :: proc(rt: ^Runtime, change: ^Text_Change) {
+	if change == nil { return }
+	if rt != nil && len(change.text) > 0 { delete(change.text, rt.persistent_allocator) }
+	change^ = {}
+}
+
 // text_node_line_count returns the number of visual lines in an active shaped
 // Text or Text_Field node, or zero when its run is unavailable.
 text_node_line_count :: proc(rt: ^Runtime, id: Node_ID) -> int {
