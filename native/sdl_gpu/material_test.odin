@@ -4,6 +4,50 @@ import "core:testing"
 import alicorn "../../runtime"
 
 @(test)
+test_surface_shadow_visible_without_its_surface :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime({0, 0, 100, 60})
+	defer alicorn.destroy_runtime(&rt)
+	material := alicorn.style_material_register(&rt, alicorn.Style_Material{
+		kind=.Analytic_Relief, outer_shadow_radius=8, outer_shadow_strength=0.6,
+	})
+	renderer := Native_Solid_Renderer{runtime=&rt,
+		vertices=make([dynamic]Native_Text_Vertex, 0, 2048, allocator=context.temp_allocator),
+		draws=make([dynamic]Native_Solid_Draw, 0, 1, allocator=context.temp_allocator),
+		vertex_capacity=2048,
+	}
+	defer delete(renderer.vertices)
+	defer delete(renderer.draws)
+	for shape in ([2]alicorn.Surface_Shape{{}, {kind=.Rounded_Rectangle, corner_radius=6}}) {
+		for clipped in ([2]bool{false, true}) {
+			bounds, clip := alicorn.Rect{-34, 10, 30, 24}, alicorn.Rect{0, 0, 100, 60}
+			if clipped { bounds = {14, 10, 30, 24}; clip = {48, 0, 52, 60} }
+			for scale in ([3][2]f32{{1, 1}, {1.25, 1.5}, {2, 2}}) {
+				display := [1]alicorn.Paint_Command{
+					alicorn.paint_surface_command(1, bounds, clip, {0.5, 0.4, 0.3, 1},
+						material=material, physical_height=1, shape=shape),
+				}
+				testing.expect(t, native_solid_build(&renderer, display[:], scale[0], scale[1], u32(100*scale[0]), u32(60*scale[1])),
+					"an offscreen surface with a visible shadow should build")
+				testing.expect(t, renderer.draws[0].vertex_count > 0 && renderer.draws[0].has_scissor,
+					"a shadow intersecting the viewport or parent clip must survive culling even when its surface is outside")
+				visible_shadow := false
+				scissor := renderer.draws[0].scissor
+				for vertex in renderer.vertices {
+					if vertex.color[3] > 0 && vertex.position[0] >= f32(scissor.x) && vertex.position[0] < f32(scissor.x+scissor.w) &&
+					   vertex.position[1] >= f32(scissor.y) && vertex.position[1] < f32(scissor.y+scissor.h) {
+						visible_shadow = true
+					}
+				}
+				testing.expect(t, visible_shadow, "the emitted shadow must have nonzero coverage inside its resolved scissor")
+				display[0].translation = {-64, 0}
+				testing.expect(t, native_solid_build(&renderer, display[:], scale[0], scale[1], u32(100*scale[0]), u32(60*scale[1])) && renderer.draws[0].vertex_count == 0,
+					"a translated surface whose entire paint footprint is outside must still be culled")
+			}
+		}
+	}
+}
+
+@(test)
 test_flat_material_stays_one_quad :: proc(t: ^testing.T) {
 	vertices := make([dynamic]Native_Text_Vertex, 0, 128, allocator=context.temp_allocator)
 	defer delete(vertices)

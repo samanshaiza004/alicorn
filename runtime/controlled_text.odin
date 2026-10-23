@@ -4,7 +4,8 @@ import "core:mem"
 import "core:strings"
 
 // Text_Field_Buffer is app-owned committed text with an explicit allocator.
-// Keep one owner for each buffer; copying the struct copies its ownership.
+// Initialize once, destroy when done, and do not copy an initialized owning
+// struct. Its allocator must outlive it; text borrows the buffer's storage.
 Text_Field_Buffer :: struct {
 	text: string,
 	allocator: mem.Allocator,
@@ -72,9 +73,14 @@ Text_Field_Response :: struct {
 }
 
 // text_field_controlled binds a retained Text_Field to an app-owned buffer.
-// The pointer is used only during this call. Committed native edits are copied
-// into the buffer on its next description; IME preedit remains runtime-owned
-// transient state. The caller may use changed to update dependent app state.
+// The pointer is used only during this call; keep the described text valid
+// through end_frame so reconciliation can copy it. Committed native edits are
+// copied into the buffer on its next description; IME preedit remains runtime-owned
+// transient state. A buffer value differing from its last description wins
+// over an unadopted native edit; setting the same value does not signal a reset.
+// Reconciliation of a different value cancels active IME composition. The
+// caller must invalidate after programmatic updates and may use changed to
+// update dependent app state. No application pointer is retained.
 text_field_controlled :: proc(
 	ui: ^UI,
 	buffer: ^Text_Field_Buffer,

@@ -4,6 +4,8 @@ This is an initial candidate audit, not a release certification. The starting
 framework revision is `d7e5441` (merged #99 and #100). #24 is complete; #27 remains
 the deferred architecture roadmap. #98 is an opt-in experiment with the
 [implementation and measured evidence](workbench-relief-v0.2.md) recorded separately.
+The focused adversarial checks against `2063b03` and their remaining release
+gates are recorded in the [adversarial follow-up](adversarial-followup-2026-10-23.md).
 
 ## Accessibility acceptance
 

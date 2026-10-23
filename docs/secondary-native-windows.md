@@ -39,6 +39,34 @@ normal semantic event dispatcher. Keyboard focus and text input are managed
 against the child window, not inferred from the primary window. A display-scale
 or drawable-size change refreshes that window's own metrics and Runtime scale.
 
+The deferred queue retains at most 4096 events. Before waiting or polling SDL,
+the primary pump returns if the child queue is full. It also stops immediately
+after an enqueue fills the queue, leaving the next SDL event pending. The
+existing application-loop safe point replays child input before the primary
+pump resumes. Queue capacity therefore delays input rather than losing key-up,
+focus loss, committed text, or close requests, and never forces a child close
+or bypasses `on_close_requested`.
+
+For direct enqueue callers that exceed capacity without replaying, incoming
+mouse motion is discarded; other events evict the oldest queued mouse-motion
+sample and append in FIFO order. No other queued event is replaceable, so a
+full queue without motion rejects direct enqueue. This fallback can lose
+intermediate pointer/drag positions; the production pump uses backpressure
+before reaching it. Consumed slots are reused so interleaved enqueue and replay
+cannot grow queue storage with the read cursor.
+
+Payload-copy or queue-allocation failure is logged explicitly by routing and
+does not close the window. The affected event cannot be delivered; lossless
+input and input-state recovery under allocation failure are not guaranteed.
+Any partial copies are freed, and subsequent events continue through the normal
+dispatcher. This allocation-failure limit is separate from queue capacity.
+
+Deferred committed/composition text and IME candidates are deep copies; SDL's
+event payload pointers are borrowed only while enqueue runs. Replay retains
+each copy through dispatch and releases it on the next pop or pump completion.
+Queue teardown also releases every undelivered copy. The 4096 limit bounds event
+count, not the total byte size of variable-length text payloads.
+
 The host submits child frames on the shared device and waits for the child
 submission fence before recycling that window's renderer buffers. This first
 implementation favors clear resource lifetime over overlapping submissions;
@@ -47,8 +75,9 @@ per-window retirement contract.
 
 ## Shutdown
 
-The host stops the child scheduler and wake sources, calls its application
-`on_stop`, shuts down accessibility/dialog resources, waits for device work,
+The host stops the child scheduler, calls its application `on_stop` while the
+borrowed wakers remain valid so it can join producers, shuts down
+accessibility/dialog resources and wake sources, waits for device work,
 destroys its renderers and Runtime, releases the child swapchain claim, and then
 destroys its SDL window. This happens before primary application state and the
 shared GPU device are torn down.
@@ -56,7 +85,9 @@ shared GPU device are torn down.
 ## Native validation limits
 
 The automated tests cover independent Runtime geometry/scales and focus,
-window-ID/wake routing, deferred one-slot lifecycle, and bounded event ordering.
+window-ID/wake routing, deferred one-slot lifecycle, bounded event ordering,
+motion-overload delivery of critical transitions and owned text, production
+pump backpressure at capacity, and payload cleanup after allocation failure.
 The Windows D3D12 lifecycle and packaging results are recorded below. Physical
 focus transfer, OS text composition, native menu interaction, and movement
 between displays still require interactive verification. macOS has a separate

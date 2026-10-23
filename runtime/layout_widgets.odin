@@ -735,6 +735,8 @@ region_begin :: proc(ui: ^UI, key: string, revision: u64, source := Source_Site{
 	if id == 0 {
 		return 0, false
 	}
+	// Expose the explicit string key to queries while preserving the legacy ID encoding.
+	rt.pending[len(rt.pending)-1].description.identity_key_kind = 1
 	effective_revision := revision
 	if old, ok := rt.nodes[id]; ok && old.region && revision < old.region_revision {
 		append_diagnostic(rt, fmt.tprintf("region revision regressed for %q.\n  retained region: %s:%d:%d component=%q key=%q scope=%q revision=%d\n  new description: %s:%d:%d component=%q key=%q scope-depth=%d revision=%d\nSuggestion: keep the region revision monotonic; increment it when the region's logical output changes.", key, old.site.file, old.site.line, old.site.column, old.site.component, old.key, old.identity_key, old.region_revision, resolved_source.file, resolved_source.line, resolved_source.column, resolved_source.component, key, len(rt.identity_stack), revision))

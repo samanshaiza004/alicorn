@@ -33,6 +33,19 @@ arbitrary application memory. When a logical change needs a new description,
 invalidate the root or the affected region. The native host handles ordinary
 pointer and window input and schedules the next build.
 
+Descriptions can repeat, including corrective descriptions before presentation.
+Keep them repeatable: perform side effects such as starting jobs, saving data,
+or advancing domain state only after consuming an action or handling an explicit
+state transition. Merely entering a description is not an event. After a change,
+advance the affected revisions and request the required work.
+
+A region revision must cover its real output dependencies: content, typography,
+material inputs, and child membership or order. Cached ancestors must also
+advance when their dependencies change so the description reaches the affected
+children; rebuilding a parent does not automatically rebuild unchanged-revision
+child regions. Root invalidation and the simple `.Correct_After_Interaction`
+policy schedule descriptions but do not bypass region revisions.
+
 For a form or search field, `Text_Field_Buffer` gives committed text explicit
 application ownership without retaining a pointer into app state. Initialize
 it once with an allocator and destroy it with the app; describe it with
@@ -292,7 +305,8 @@ model or change the explicit invalidation contract for advanced applications.
 
 During development, [application mutation diagnostics](application-mutation-diagnostics.md)
 can check that selected app-owned revisions schedule the corresponding
-description or presentation work.
+description or presentation work. They check reported scopes and scheduling;
+they cannot prove that the chosen region or its revisions cover the mutation.
 
 For aligned label/value layouts, use the small retained Grid rather than
 nesting Rows to reproduce the same columns:

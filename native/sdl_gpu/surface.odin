@@ -200,13 +200,7 @@ native_surface_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUT
 		{location=1, buffer_slot=0, format=.FLOAT4, offset=sdl3.Uint32(size_of([3]f32))},
 		{location=2, buffer_slot=0, format=.FLOAT2, offset=sdl3.Uint32(size_of([3]f32) + size_of([4]f32))},
 	}
-	blend := sdl3.GPUColorTargetBlendState{
-		src_color_blendfactor=.SRC_ALPHA, dst_color_blendfactor=.ONE_MINUS_SRC_ALPHA,
-		color_blend_op=.ADD, src_alpha_blendfactor=.SRC_ALPHA,
-		dst_alpha_blendfactor=.ONE_MINUS_SRC_ALPHA, alpha_blend_op=.ADD,
-		enable_blend=true,
-	}
-	targets := [1]sdl3.GPUColorTargetDescription{{format=swapchain_format, blend_state=blend}}
+	targets := [1]sdl3.GPUColorTargetDescription{{format=swapchain_format, blend_state=NATIVE_SOURCE_OVER_BLEND}}
 	pipeline_info := sdl3.GPUGraphicsPipelineCreateInfo{
 		vertex_shader=vertex_shader, fragment_shader=fragment_shader,
 		vertex_input_state=sdl3.GPUVertexInputState{

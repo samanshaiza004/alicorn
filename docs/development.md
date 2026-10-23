@@ -200,6 +200,12 @@ and repeats at 100%, 125%, 150%, and 200% scale. This checks the platform's
 selected GPU backend; it does not launch a window or validate app-specific
 resource paths.
 
+`tools/validate_blending.ps1` on Windows or `sh tools/validate_blending.sh` on
+macOS reads back all five production primitive pipelines, overlapping layers,
+and a mixed scene against expected straight-alpha source-over results. Run it
+on a machine with the platform GPU backend available; a missing backend or
+failed readback is a validation failure, not a skipped test.
+
 ## Change boundaries
 
 - Keep app state in the app; do not make retained nodes own arbitrary pointers.

@@ -2,6 +2,7 @@ package alicorn
 
 import "core:mem"
 import "core:testing"
+import odin "base:runtime"
 
 text_input_target_suspension_test_render :: proc(rt: ^Runtime, include_target: bool) -> Node_ID {
 	invalidate_root(rt, "text-input target suspension test")
@@ -66,20 +67,35 @@ Controlled_Text_Field_Test_State :: struct {
 	result: Text_Field_Response,
 }
 
-controlled_text_field_test_render :: proc(rt: ^Runtime, state: ^Controlled_Text_Field_Test_State) -> Node_ID {
+Controlled_Text_Field_Test_Mode :: enum { Controlled, Omitted, Text, Uncontrolled }
+
+controlled_text_field_test_render :: proc(rt: ^Runtime, state: ^Controlled_Text_Field_Test_State, mode: Controlled_Text_Field_Test_Mode = .Controlled) -> Node_ID {
 	ui, build := begin_frame(rt)
 	if !build { return 0 }
 	container_begin(&ui, .Root, key=key_string("controlled-text-field-root"), style=layout_style(.Column, grow=1, gap=8))
+	field_loc := odin.Source_Code_Location{"runtime/text_input_test.odin", 1, 1, "controlled_text_field_test_render"}
+	field_key := key_string("controlled-text-field-input")
+	field_style := layout_style(width=240, height=40)
+	state.result = {}
+	field: Node_ID
+	switch mode {
+	case .Controlled:
+		state.result = text_field_controlled(&ui, &state.value, key=field_key, style=field_style, loc=field_loc)
+		field = state.result.node
+	case .Omitted:
+	case .Text:
+		// Use the same source and key to exercise a real kind change, rather
+		// than retirement followed by an unrelated text node.
+		field = emit_key(&ui, .Text,
+			Source_Site{field_loc.file_path, int(field_loc.line), int(field_loc.column), "text_field"},
+			text="replacement label", key=field_key, style=field_style)
+	case .Uncontrolled:
+		field = text_field(&ui, "uncontrolled", key=field_key, style=field_style, loc=field_loc)
+	}
 	text(&ui, state.value.text, key=key_string("controlled-text-field-echo"))
-	state.result = text_field_controlled(
-		&ui,
-		&state.value,
-		key=key_string("controlled-text-field-input"),
-		style=layout_style(width=240, height=40),
-	)
 	container_end(&ui)
 	end_frame(&ui)
-	return state.result.node
+	return field
 }
 
 @(test)
@@ -134,6 +150,246 @@ test_controlled_text_field_adopts_commits_but_not_ime_preedit :: proc(t: ^testin
 	invalidate_root(&rt, "controlled text field submit consumed")
 	_ = controlled_text_field_test_render(&rt, &state)
 	testing.expect(t, !state.result.submitted, "a consumed submit must not replay on later descriptions")
+}
+
+@(test)
+test_controlled_text_field_programmatic_value_wins_over_unadopted_commit :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 120})
+	defer destroy_runtime(&rt)
+	state: Controlled_Text_Field_Test_State
+	buffer_ok: bool
+	state.value, buffer_ok = text_field_buffer_init("seed", context.allocator)
+	testing.expect(t, buffer_ok, "the application buffer should initialize")
+	if !buffer_ok { return }
+	defer text_field_buffer_destroy(&state.value)
+
+	field := controlled_text_field_test_render(&rt, &state)
+	testing.expect(t, field != 0 && set_text_caret(&rt, field, 4), "the field should accept input after its initial value")
+	change := process_text_input(&rt, field, "!")
+	testing.expect(t, change.changed && change.text == "seed!" && state.value.text == "seed",
+		"committed input should remain unadopted until the next controlled description")
+	text_change_destroy(&rt, &change)
+
+	testing.expect(t, text_field_buffer_set(&state.value, "reset"), "the application should replace its value before adoption")
+	invalidate_root(&rt, "programmatic value before commit adoption")
+	testing.expect(t, controlled_text_field_test_render(&rt, &state) == field, "a programmatic replacement should preserve field identity")
+	retained, found := text_field_value(&rt, field)
+	testing.expect(t, found && retained == "reset" && state.value.text == "reset" && !state.result.changed,
+		"an application value differing from its last description should override the unadopted native edit")
+
+	invalidate_root(&rt, "unadopted commit must not replay")
+	_ = controlled_text_field_test_render(&rt, &state)
+	testing.expect(t, state.value.text == "reset" && !state.result.changed, "the overridden commit should not replay")
+	_ = set_text_caret(&rt, field, 5)
+	change = process_text_input(&rt, field, "?")
+	text_change_destroy(&rt, &change)
+	_ = controlled_text_field_test_render(&rt, &state)
+	testing.expect(t, state.value.text == "reset?" && state.result.changed,
+		"a subsequent native edit should still be adopted after the programmatic replacement")
+}
+
+@(test)
+test_controlled_text_field_equal_programmatic_value_adopts_unadopted_commit :: proc(t: ^testing.T) {
+	cases := []bool{false, true}
+	for round_trip in cases {
+		rt := new_runtime(Rect{0, 0, 320, 120})
+		defer destroy_runtime(&rt)
+		state: Controlled_Text_Field_Test_State
+		buffer_ok: bool
+		state.value, buffer_ok = text_field_buffer_init("seed", context.allocator)
+		testing.expect(t, buffer_ok, "the application buffer should initialize")
+		if !buffer_ok { return }
+		defer text_field_buffer_destroy(&state.value)
+		field := controlled_text_field_test_render(&rt, &state)
+		_ = set_text_caret(&rt, field, 4)
+		change := process_text_input(&rt, field, "!")
+		testing.expect(t, change.changed && change.text == "seed!", "the field should have an unadopted native edit")
+		text_change_destroy(&rt, &change)
+		if round_trip {
+			testing.expect(t, text_field_buffer_set(&state.value, "temporary"), "the application should be able to replace its value")
+		}
+		testing.expect(t, text_field_buffer_set(&state.value, "seed"), "the application should set the last described value")
+		invalidate_root(&rt, "same value before native edit adoption")
+		_ = controlled_text_field_test_render(&rt, &state)
+		retained, found := text_field_value(&rt, field)
+		testing.expect(t, found && retained == "seed!" && state.value.text == "seed!" && state.result.changed,
+			"an equal app value should adopt the pending edit even after an undescribed round trip through a different value")
+	}
+}
+
+@(test)
+test_controlled_text_field_programmatic_reset_cancels_active_ime :: proc(t: ^testing.T) {
+	tracking: mem.Tracking_Allocator
+	mem.tracking_allocator_init(&tracking, context.allocator)
+	defer mem.tracking_allocator_destroy(&tracking)
+	rt := new_runtime(Rect{0, 0, 320, 120}, Runtime_Config{persistent_allocator=mem.tracking_allocator(&tracking)})
+	defer {
+		destroy_runtime(&rt)
+		testing.expect(t, len(tracking.allocation_map) == 0 && len(tracking.bad_free_array) == 0,
+			"reset and destruction should release the IME projection and runtime snapshots through their allocator")
+	}
+	font_ok := font_load_bytes(&rt, .UI, TEXT_INPUT_ALLOCATOR_TEST_FONT)
+	testing.expect(t, font_ok, "the fixture should load a font to exercise retained IME presentation")
+	if !font_ok { return }
+	state: Controlled_Text_Field_Test_State
+	buffer_ok: bool
+	state.value, buffer_ok = text_field_buffer_init("seed", context.allocator)
+	testing.expect(t, buffer_ok, "the application buffer should initialize")
+	if !buffer_ok { return }
+	defer text_field_buffer_destroy(&state.value)
+
+	field := controlled_text_field_test_render(&rt, &state)
+	testing.expect(t, field != 0 && set_text_selection(&rt, field, 1, 3), "IME should replace the selected committed text")
+	testing.expect(t, process_text_editing(&rt, field, "preedit", 2, 1), "the field should begin composition")
+	_ = controlled_text_field_test_render(&rt, &state)
+	interaction, found := text_field_interaction(&rt, field)
+	testing.expect(t, found && interaction.composition_active && state.value.text == "seed" && !state.result.changed,
+		"the application should keep committed text while IME owns the preedit")
+	testing.expect(t, !text_field_request_submit(&rt, field), "Return during IME should not submit the field")
+
+	testing.expect(t, text_field_buffer_set(&state.value, ""), "the application should reset committed text during composition")
+	invalidate_root(&rt, "programmatic reset during IME")
+	testing.expect(t, controlled_text_field_test_render(&rt, &state) == field, "reset should preserve field identity")
+	retained, value_found := text_field_value(&rt, field)
+	interaction, found = text_field_interaction(&rt, field)
+	testing.expect(t, value_found && retained == "" && !state.result.changed && !state.result.submitted,
+		"a reset should replace the retained value without reporting a native edit or submit")
+	testing.expect(t, found && interaction.focused && !interaction.composition_active &&
+		interaction.caret == 0 && !interaction.has_selection,
+		"reset should cancel IME and clamp the selection to the new empty value while preserving focus")
+	testing.expect(t, !cancel_text_composition(&rt, field), "the reset should have already released the active composition")
+
+	change := process_text_input(&rt, field, "new")
+	testing.expect(t, change.changed && change.text == "new", "input after reset should use the new value and selection")
+	text_change_destroy(&rt, &change)
+	testing.expect(t, text_field_request_submit(&rt, field), "reset should release IME's ownership of Return")
+	_ = controlled_text_field_test_render(&rt, &state)
+	testing.expect(t, state.value.text == "new" && state.result.changed && state.result.submitted,
+		"subsequent committed input and submit should reach the application normally")
+}
+
+@(test)
+test_controlled_text_field_removal_discards_pending_commit_and_submit :: proc(t: ^testing.T) {
+	controlled_text_field_test_pending_lifecycle(t, .Omitted)
+}
+
+@(test)
+test_controlled_text_field_retyping_discards_pending_commit_and_submit :: proc(t: ^testing.T) {
+	controlled_text_field_test_pending_lifecycle(t, .Text)
+}
+
+@(test)
+test_controlled_text_field_uncontrolled_description_discards_pending_commit_and_submit :: proc(t: ^testing.T) {
+	controlled_text_field_test_pending_lifecycle(t, .Uncontrolled)
+}
+
+controlled_text_field_test_pending_lifecycle :: proc(t: ^testing.T, mode: Controlled_Text_Field_Test_Mode) {
+	runtime_tracking, app_tracking: mem.Tracking_Allocator
+	mem.tracking_allocator_init(&runtime_tracking, context.allocator)
+	defer mem.tracking_allocator_destroy(&runtime_tracking)
+	mem.tracking_allocator_init(&app_tracking, context.allocator)
+	defer mem.tracking_allocator_destroy(&app_tracking)
+	rt := new_runtime(Rect{0, 0, 320, 120}, Runtime_Config{persistent_allocator=mem.tracking_allocator(&runtime_tracking)})
+	defer {
+		destroy_runtime(&rt)
+		testing.expect(t, len(runtime_tracking.allocation_map) == 0 && len(runtime_tracking.bad_free_array) == 0,
+			"field lifecycle changes and destruction should release all runtime-owned text and snapshots")
+	}
+	state: Controlled_Text_Field_Test_State
+	buffer_ok: bool
+	state.value, buffer_ok = text_field_buffer_init("seed", mem.tracking_allocator(&app_tracking))
+	testing.expect(t, buffer_ok, "the application buffer should initialize with its own allocator")
+	if !buffer_ok { return }
+	defer {
+		text_field_buffer_destroy(&state.value)
+		testing.expect(t, len(app_tracking.allocation_map) == 0 && len(app_tracking.bad_free_array) == 0,
+			"the application should release its buffer independently of the runtime")
+	}
+
+	field := controlled_text_field_test_render(&rt, &state)
+	testing.expect(t, field != 0 && set_text_caret(&rt, field, 4), "the field should be ready for native input")
+	change := process_text_input(&rt, field, "!")
+	testing.expect(t, change.changed && change.text == "seed!", "the field should have a committed edit awaiting adoption")
+	text_change_destroy(&rt, &change)
+	testing.expect(t, text_field_request_submit(&rt, field), "the edited field should also have a pending submit")
+	testing.expect(t, !text_field_request_submit(&rt, field), "a pending submit should not queue twice")
+	testing.expect(t, state.value.text == "seed", "the application should not yet have adopted the native edit")
+
+	replacement := controlled_text_field_test_render(&rt, &state, mode)
+	if mode == .Omitted {
+		_, found := node_info(&rt, field)
+		testing.expect(t, replacement == 0 && !found, "omission should retire the field before pending events are consumed")
+	} else {
+		testing.expect(t, replacement == field, "replacement should reuse the actual retained field identity")
+	}
+	if mode == .Uncontrolled {
+		value, found := text_field_value(&rt, field)
+		testing.expect(t, found && value == "uncontrolled", "the low-level field should use its explicitly described value")
+	} else {
+		_, found := text_field_value(&rt, field)
+		testing.expect(t, !found, "the old identity should no longer expose a text field")
+		change = process_text_input(&rt, field, "stale")
+		testing.expect(t, !change.changed, "a removed or retyped field should reject stale committed input")
+		text_change_destroy(&rt, &change)
+		testing.expect(t, !process_text_editing(&rt, field, "stale preedit", 0, 0), "a removed or retyped field should reject stale IME input")
+	}
+	testing.expect(t, !text_field_request_submit(&rt, field), "the old field should no longer accept a controlled submit")
+	testing.expect(t, state.value.text == "seed", "retiring the controlled binding must not mutate app-owned text")
+
+	invalidate_root(&rt, "restore controlled description after pending events were discarded")
+	testing.expect(t, controlled_text_field_test_render(&rt, &state) == field, "the same source and key should restore the field identity")
+	value, found := text_field_value(&rt, field)
+	testing.expect(t, found && value == "seed" && state.value.text == "seed" && !state.result.changed && !state.result.submitted,
+		"restoring a controlled field must use app text without replaying the old edit or submit")
+	_ = set_text_caret(&rt, field, 4)
+	change = process_text_input(&rt, field, "?")
+	text_change_destroy(&rt, &change)
+	testing.expect(t, text_field_request_submit(&rt, field), "the restored controlled field should accept a fresh submit")
+	_ = controlled_text_field_test_render(&rt, &state)
+	testing.expect(t, state.value.text == "seed?" && state.result.changed && state.result.submitted,
+		"fresh native edits and submits should work after restoring the controlled field")
+	invalidate_root(&rt, "fresh controlled events consumed")
+	_ = controlled_text_field_test_render(&rt, &state)
+	testing.expect(t, !state.result.changed && !state.result.submitted, "fresh events should also be consumed only once")
+}
+
+@(test)
+test_controlled_text_field_buffer_is_borrowed_only_during_description :: proc(t: ^testing.T) {
+	tracking: mem.Tracking_Allocator
+	mem.tracking_allocator_init(&tracking, context.allocator)
+	defer mem.tracking_allocator_destroy(&tracking)
+	rt := new_runtime(Rect{0, 0, 320, 120})
+	defer destroy_runtime(&rt)
+	state: Controlled_Text_Field_Test_State
+	buffer_ok: bool
+	state.value, buffer_ok = text_field_buffer_init("seed", mem.tracking_allocator(&tracking))
+	testing.expect(t, buffer_ok, "the application should initialize the owning buffer")
+	if !buffer_ok { return }
+	defer text_field_buffer_destroy(&state.value)
+	field := controlled_text_field_test_render(&rt, &state)
+	testing.expect(t, field != 0, "the runtime should copy the described value")
+
+	text_field_buffer_destroy(&state.value)
+	testing.expect(t, len(tracking.allocation_map) == 0 && len(tracking.bad_free_array) == 0,
+		"the application may release its buffer after description")
+	retained, found := text_field_value(&rt, field)
+	testing.expect(t, found && retained == "seed", "retained text must remain valid independently of the application allocation")
+	_ = set_text_caret(&rt, field, 4)
+	change := process_text_input(&rt, field, "!")
+	testing.expect(t, change.changed && change.text == "seed!", "native input should operate on the runtime's copy")
+	text_change_destroy(&rt, &change)
+	testing.expect(t, !state.value.initialized && len(tracking.allocation_map) == 0,
+		"native input between descriptions must not access or allocate through the former buffer")
+
+	state.value, buffer_ok = text_field_buffer_init("seed", mem.tracking_allocator(&tracking))
+	testing.expect(t, buffer_ok, "the application may supply a freshly initialized owner on the next description")
+	if !buffer_ok { return }
+	_ = controlled_text_field_test_render(&rt, &state)
+	testing.expect(t, state.value.text == "seed!" && state.result.changed,
+		"a new buffer with the last described value should adopt the pending commit")
+	text_field_buffer_destroy(&state.value)
+	testing.expect(t, len(tracking.allocation_map) == 0 && len(tracking.bad_free_array) == 0,
+		"destroying the new owner should release both its initial and adopted text allocations")
 }
 
 @(test)

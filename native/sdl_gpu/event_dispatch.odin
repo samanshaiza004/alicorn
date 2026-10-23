@@ -66,6 +66,9 @@ pump_events :: proc(
 		defer native_secondary_window_replay_event_clear(secondary_child)
 	}
 	if telemetry != nil { telemetry.events_this_pump = 0 }
+	// Leave the next SDL event pending until the application loop replays the
+	// bounded child queue at its existing safe point. Do not wait while full.
+	if !replay_secondary_events && native_secondary_window_event_queue_full(secondary_manager) { return }
 	mod_state := sdl3.GetModState()
 	if pointer_modifier_state != nil { mod_state = pointer_modifier_state^ }
 	event: sdl3.Event
@@ -88,7 +91,11 @@ pump_events :: proc(
 		if secondary_manager != nil && !replay_secondary_events && secondary_manager.child != nil {
 			event_window := native_event_window_id(event)
 			if native_secondary_window_routes_event(secondary_manager, event) {
-				_ = native_secondary_window_enqueue_event(secondary_manager, event)
+				if !native_secondary_window_enqueue_event(secondary_manager, event) {
+					fmt.println("secondary_window", "event_delivery_failed", "window", secondary_manager.child.window_id,
+						"event", event.type, "payload copy or queue allocation failed")
+				}
+				if native_secondary_window_event_queue_full(secondary_manager) { break }
 				has_event = native_event_next(&event, secondary_child, replay_secondary_events)
 				continue
 			}

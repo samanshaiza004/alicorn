@@ -132,6 +132,87 @@ For optional debug-time checks around app-owned state updates, see
 [application mutation diagnostics](application-mutation-diagnostics.md). The
 checker verifies only the mutation scopes the application explicitly reports.
 
+## Controlled text fields and ownership
+
+Keep each initialized `Text_Field_Buffer` in one application owner. Initialize
+it once with an allocator that outlives it, replace its contents with
+`text_field_buffer_set`, and destroy it when that owner is finished. Do not copy
+an initialized buffer struct or free/overwrite its `text` directly; that string
+borrows the buffer's allocation. Use an allocator suitable for repeated edits,
+not a frame scratch allocator.
+
+This native-app example uses `alicorn` for the runtime import and `host` for
+`native/sdl_gpu`. The application owns and releases the query:
+
+```odin
+Search_App :: struct {
+    query: alicorn.Text_Field_Buffer,
+    query_revision: u64,
+    submissions: int,
+}
+
+main :: proc() {
+    app: Search_App
+    ok: bool
+    app.query, ok = alicorn.text_field_buffer_init("", context.allocator)
+    if !ok { return }
+    defer alicorn.text_field_buffer_destroy(&app.query)
+
+    host.Run(host.Application{state=rawptr(&app), build=search_build})
+}
+
+search_build :: proc(
+    state: rawptr, rt: ^alicorn.Runtime,
+    logical_width, logical_height: int, dpi_scale: f32,
+) -> alicorn.Node_ID {
+    app := cast(^Search_App)state
+    ui, build := alicorn.begin_frame(rt)
+    if !build { return 0 }
+    root := alicorn.container_begin(&ui, .Root,
+        style=alicorn.layout_style(.Column, grow=1))
+    result := alicorn.text_field_controlled(&ui, &app.query,
+        key=alicorn.key_string("search"),
+        style=alicorn.layout_style(width=240, height=40))
+    if result.changed { app.query_revision += 1 }
+    if result.submitted { app.submissions += 1 }
+    alicorn.text(&ui, app.query.text)
+    alicorn.container_end(&ui)
+    alicorn.end_frame(&ui)
+    return root
+}
+
+reset_query :: proc(app: ^Search_App, rt: ^alicorn.Runtime) {
+    if alicorn.text_field_buffer_set(&app.query, "") {
+        alicorn.invalidate_root(rt, "query reset")
+    }
+}
+```
+
+`text_field_controlled` borrows the buffer pointer **only during that call**.
+Keep the described text valid through `end_frame`, when reconciliation copies
+it into runtime-owned storage; the buffer can then be released independently.
+The runtime never retains the application pointer. Native edits between
+descriptions update runtime-owned text; the next controlled call
+copies committed input into the supplied buffer and reports `changed=true`.
+IME preedit never enters the app buffer. `submitted` is a one-shot response to
+a queued submit; active IME composition keeps ownership of Return.
+
+Precedence is value-based: if the app buffer still equals its last described
+value, a pending native commit is adopted. If the app replaces it with a
+different value before adoption, the app value wins, the pending edit is
+discarded, and `changed` stays false. Setting the same value, including changing
+away and back before the next description, does not signal a reset. After a
+programmatic change, invalidate the root or the containing region through the
+normal application path. Reconciliation of a different value cancels active
+IME composition and clamps selection to the replacement text.
+
+Removing the field, retyping its retained identity to another node kind, or
+describing it through the lower-level `text_field` discards its pending
+controlled commit/submit delivery. Describing a controlled field there again
+starts from the app buffer without replaying those events. The lower-level
+`text_field` and host `on_text_change` callback remain available for applications
+that manage their own edit adoption.
+
 ## Content and layout
 
 | API | Use |

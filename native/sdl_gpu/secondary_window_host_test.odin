@@ -1,5 +1,6 @@
 package alicorn_sdl_gpu
 
+import "core:mem"
 import "core:sync"
 import "core:testing"
 import "core:thread"
@@ -163,6 +164,193 @@ test_secondary_window_event_queue_is_bounded_and_preserves_order :: proc(t: ^tes
 	testing.expect(t, native_secondary_window_pop_event(&child, &got) && got.type == first.type, "child events should retain FIFO order")
 	testing.expect(t, native_secondary_window_pop_event(&child, &got) && got.type == second.type, "the second child event should follow the first")
 	testing.expect(t, !native_secondary_window_pop_event(&child, &got), "draining the child queue should leave no stale input")
+}
+
+@(test)
+test_secondary_window_full_motion_queue_delivers_critical_events :: proc(t: ^testing.T) {
+	child := Native_Secondary_Window{active=true, window_id=sdl3.WindowID(22)}
+	child.event_queue = make([dynamic]Native_Secondary_Window_Queued_Event, 0, allocator=context.allocator)
+	defer delete(child.event_queue)
+	defer native_secondary_window_event_queue_clear(&child)
+	manager := Native_Secondary_Window_Manager{child=&child}
+	motion := sdl3.Event{type=.MOUSE_MOTION}
+	motion.motion.windowID = child.window_id
+	for index in 0..<NATIVE_SECONDARY_EVENT_CAPACITY {
+		motion.motion.x = f32(index)
+		if !native_secondary_window_enqueue_event(&manager, motion) {
+			testing.expect(t, false, "the initial motion burst should fit the bounded queue")
+			return
+		}
+	}
+	testing.expect_value(t, len(child.event_queue)-child.event_queue_read, 4096)
+	testing.expect(t, native_secondary_window_enqueue_event(&manager, motion), "excess motion may be discarded without rejecting the input stream")
+
+	key_up := sdl3.Event{type=.KEY_UP}
+	key_up.key.windowID = child.window_id
+	key_up.key.key = sdl3.K_LSHIFT
+	focus_lost := sdl3.Event{type=.WINDOW_FOCUS_LOST}
+	focus_lost.window.windowID = child.window_id
+	committed := [5]u8{'k', 'e', 'p', 't', 0}
+	text := sdl3.Event{type=.TEXT_INPUT}
+	text.text.windowID = child.window_id
+	text.text.text = cast(cstring)raw_data(committed[:])
+	close := sdl3.Event{type=.WINDOW_CLOSE_REQUESTED}
+	close.window.windowID = child.window_id
+	for event in ([4]sdl3.Event{key_up, focus_lost, text, close}) {
+		testing.expect(t, native_secondary_window_routes_event(&manager, event), "critical input should route to this child")
+		testing.expect(t, native_secondary_window_enqueue_event(&manager, event),
+			"a full motion queue must make room for key-up, focus loss, committed text, and close")
+	}
+	committed[0] = 'x'
+
+	expected := [4]sdl3.EventType{.KEY_UP, .WINDOW_FOCUS_LOST, .TEXT_INPUT, .WINDOW_CLOSE_REQUESTED}
+	delivered := 0
+	got: sdl3.Event
+	for native_event_next(&got, &child, true) {
+		if got.type == .MOUSE_MOTION { continue }
+		if delivered < len(expected) {
+			testing.expect_value(t, got.type, expected[delivered])
+			if got.type == .TEXT_INPUT {
+				testing.expect_value(t, string(got.text.text), "kept")
+			}
+		}
+		delivered += 1
+	}
+	testing.expect(t, delivered == 4, "all critical transitions must reach the child's production replay seam in order")
+}
+
+@(test)
+test_secondary_window_full_queue_backpressures_sdl_pump :: proc(t: ^testing.T) {
+	if !sdl3.Init(sdl3.INIT_EVENTS) {
+		testing.expect(t, false, "SDL event subsystem should initialize for routed overflow")
+		return
+	}
+	defer sdl3.Quit()
+	child := new(Native_Secondary_Window, allocator=context.allocator)
+	child^ = Native_Secondary_Window{active=true, window_id=sdl3.WindowID(22)}
+	child.event_queue = make([dynamic]Native_Secondary_Window_Queued_Event, 0, allocator=context.allocator)
+	manager := Native_Secondary_Window_Manager{child=child}
+	defer native_secondary_window_destroy(&manager, wait_for_gpu=false)
+	queued_text := sdl3.Event{type=.TEXT_INPUT}
+	queued_text.text.windowID = child.window_id
+	queued_text.text.text = cstring("pending commit")
+	for _ in 0..<NATIVE_SECONDARY_EVENT_CAPACITY {
+		if !native_secondary_window_enqueue_event(&manager, queued_text) {
+			testing.expect(t, false, "the initial nonreplaceable text burst should fit")
+			return
+		}
+	}
+	key_up := sdl3.Event{type=.KEY_UP}
+	key_up.key.windowID = child.window_id
+	focus_lost := sdl3.Event{type=.WINDOW_FOCUS_LOST}
+	focus_lost.window.windowID = child.window_id
+	text := sdl3.Event{type=.TEXT_INPUT}
+	text.text.windowID = child.window_id
+	text.text.text = cstring("kept")
+	close := sdl3.Event{type=.WINDOW_CLOSE_REQUESTED}
+	close.window.windowID = child.window_id
+	for event in ([4]sdl3.Event{key_up, focus_lost, text, close}) {
+		pending := event
+		if !sdl3.PushEvent(&pending) {
+			testing.expect(t, false, "critical input must enter the production SDL routing path")
+			return
+		}
+	}
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 200})
+	defer alicorn.destroy_runtime(&rt)
+	metrics: Window_Metrics
+	quit := false
+	logical, pixel, scale, text_events, composition_events: int
+	app_text := ""
+	waits: u64
+	pump_events(
+		nil, &rt, &metrics, &quit, &logical, &pixel, &scale,
+		&text_events, &composition_events, &app_text,
+		secondary_manager=&manager, wait_for_event=true, wait_timeout_ms=0, event_waits=&waits,
+	)
+	testing.expect(t, waits == 0 && sdl3.HasEvent(.KEY_UP),
+		"a full child queue must return before waiting or polling the next SDL event")
+
+	got: sdl3.Event
+	testing.expect(t, native_event_next(&got, child, true), "child replay should make a slot available")
+	pump_events(
+		nil, &rt, &metrics, &quit, &logical, &pixel, &scale,
+		&text_events, &composition_events, &app_text, secondary_manager=&manager,
+	)
+	testing.expect(t, sdl3.HasEvent(.WINDOW_FOCUS_LOST) && sdl3.HasEvent(.TEXT_INPUT) && sdl3.HasEvent(.WINDOW_CLOSE_REQUESTED),
+		"enqueue that fills the child queue must stop before polling subsequent critical SDL events")
+	key_delivered := false
+	for native_event_next(&got, child, true) {
+		if got.type == .KEY_UP { key_delivered = true }
+	}
+	testing.expect(t, key_delivered, "the pending key-up should be delivered after child replay makes room")
+	pump_events(
+		nil, &rt, &metrics, &quit, &logical, &pixel, &scale,
+		&text_events, &composition_events, &app_text, secondary_manager=&manager,
+	)
+	for expected in ([3]sdl3.EventType{.WINDOW_FOCUS_LOST, .TEXT_INPUT, .WINDOW_CLOSE_REQUESTED}) {
+		testing.expect(t, native_event_next(&got, child, true) && got.type == expected,
+			"critical events left in SDL must replay in order after backpressure is released")
+		if got.type == .TEXT_INPUT { testing.expect_value(t, string(got.text.text), "kept") }
+	}
+	testing.expect(t, !native_event_next(&got, child, true), "the child stream should drain without duplicates")
+	testing.expect(t, child.active && !manager.pending_close && !quit && manager.event_overflows == 0,
+		"capacity backpressure must not drop input or force either window to close")
+}
+
+@(test)
+test_secondary_window_interleaved_replay_stays_bounded :: proc(t: ^testing.T) {
+	child := Native_Secondary_Window{active=true}
+	child.event_queue = make([dynamic]Native_Secondary_Window_Queued_Event, 0, allocator=context.allocator)
+	defer delete(child.event_queue)
+	defer native_secondary_window_event_queue_clear(&child)
+	manager := Native_Secondary_Window_Manager{child=&child}
+	text := sdl3.Event{type=.TEXT_INPUT}
+	text.text.text = cstring("owned")
+	for index in 0..<NATIVE_SECONDARY_EVENT_CAPACITY {
+		text.text.timestamp = u64(index)
+		testing.expect(t, native_secondary_window_enqueue_event(&manager, text), "the text burst should fit")
+	}
+	got: sdl3.Event
+	bounded := true
+	for index in 0..<64 {
+		testing.expect(t, native_event_next(&got, &child, true) && got.text.timestamp == u64(index),
+			"interleaved replay must retain FIFO order")
+		text.text.timestamp = u64(NATIVE_SECONDARY_EVENT_CAPACITY+index)
+		testing.expect(t, native_secondary_window_enqueue_event(&manager, text), "replay must make room for another commit")
+		testing.expect_value(t, string(got.text.text), "owned")
+		bounded = bounded && len(child.event_queue) <= 4096 && cap(child.event_queue) <= 4096
+	}
+	testing.expect(t, bounded, "consumed slots must be reused instead of growing storage beyond 4096 events")
+	for index in 64..<NATIVE_SECONDARY_EVENT_CAPACITY+64 {
+		testing.expect(t, native_event_next(&got, &child, true) && got.text.timestamp == u64(index),
+			"slot reuse must not lose or duplicate committed text")
+	}
+	testing.expect(t, !native_event_next(&got, &child, true), "all owned payloads should retire after replay")
+}
+
+@(test)
+test_secondary_window_failed_enqueue_releases_owned_payloads :: proc(t: ^testing.T) {
+	child := Native_Secondary_Window{active=true}
+	// Reject queue storage after payload copies succeed, at the allocation
+	// boundary; the copied SDL pointers must not escape or leak on failure.
+	child.event_queue = make([dynamic]Native_Secondary_Window_Queued_Event, 0, allocator=mem.nil_allocator())
+	defer delete(child.event_queue)
+	defer native_secondary_window_event_queue_clear(&child)
+	manager := Native_Secondary_Window_Manager{child=&child}
+	text := sdl3.Event{type=.TEXT_INPUT}
+	text.text.text = cstring("commit")
+	preedit := sdl3.Event{type=.TEXT_EDITING}
+	preedit.edit.text = cstring("preedit")
+	candidate_pointers := [2]cstring{cstring("one"), cstring("two")}
+	candidates := sdl3.Event{type=.TEXT_EDITING_CANDIDATES}
+	candidates.edit_candidates.candidates = raw_data(candidate_pointers[:])
+	candidates.edit_candidates.num_candidates = 2
+	for event in ([3]sdl3.Event{text, preedit, candidates}) {
+		testing.expect(t, !native_secondary_window_enqueue_event(&manager, event),
+			"enqueue must report storage failure and release every copied SDL payload")
+	}
+	testing.expect_value(t, len(child.event_queue), 0)
 }
 
 @(test)

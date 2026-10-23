@@ -8,7 +8,8 @@ import "vendor:sdl3"
 // Solid rectangles use the same simple sampled-white shader contract as the
 // geometry renderer, but own their vertex storage so surface batches cannot
 // overwrite a geometry mesh that is still needed later in the display list.
-// Geometry is clipped on the CPU; text and geometry remain ordering barriers.
+// Flat rectangles are clipped on the CPU; material meshes use the resolved
+// scissor. Text and geometry remain ordering barriers.
 NATIVE_SOLID_INITIAL_VERTICES :: 65536
 
 Native_Solid_Draw :: struct {
@@ -58,13 +59,7 @@ native_solid_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTex
 		{location=1, buffer_slot=0, format=.FLOAT4, offset=sdl3.Uint32(size_of([3]f32))},
 		{location=2, buffer_slot=0, format=.FLOAT2, offset=sdl3.Uint32(size_of([3]f32) + size_of([4]f32))},
 	}
-	blend := sdl3.GPUColorTargetBlendState{
-		src_color_blendfactor=.SRC_ALPHA, dst_color_blendfactor=.ONE_MINUS_SRC_ALPHA,
-		color_blend_op=.ADD, src_alpha_blendfactor=.SRC_ALPHA,
-		dst_alpha_blendfactor=.ONE_MINUS_SRC_ALPHA, alpha_blend_op=.ADD,
-		enable_blend=true,
-	}
-	targets := [1]sdl3.GPUColorTargetDescription{{format=swapchain_format, blend_state=blend}}
+	targets := [1]sdl3.GPUColorTargetDescription{{format=swapchain_format, blend_state=NATIVE_SOURCE_OVER_BLEND}}
 	pipeline_info := sdl3.GPUGraphicsPipelineCreateInfo{
 		vertex_shader=vertex_shader, fragment_shader=fragment_shader,
 		vertex_input_state=sdl3.GPUVertexInputState{
@@ -230,6 +225,35 @@ native_solid_material_for_command :: proc(rt: ^alicorn.Runtime, command: alicorn
 	return material, surface, valid
 }
 
+// Culling uses the same pixel-space footprint as mesh emission, including
+// optical shadows, centered strokes, and the rounded antialias fringe.
+native_solid_paint_visible :: proc(
+	draw: alicorn.Paint_Command, material: alicorn.Style_Material, surface: alicorn.Surface_Paint,
+	scale_x, scale_y: f32, target_w, target_h: sdl3.Uint32,
+) -> bool {
+	rounded := native_solid_shape_is_rounded(surface.shape)
+	if !rounded && (material.kind != .Analytic_Relief || surface.physical_height == 0) {
+		_, _, _, _, visible := native_solid_pixel_bounds(draw, scale_x, scale_y, target_w, target_h)
+		return visible
+	}
+	base := native_solid_unclipped_pixel_bounds(draw, scale_x, scale_y)
+	if base.w <= 0 || base.h <= 0 { return false }
+	fringe := f32(0)
+	if rounded { fringe = NATIVE_ROUNDED_ANTIALIAS_FRINGE }
+	outset := fringe
+	if rounded && surface.stroke.width > 0 {
+		outset = max(outset, surface.stroke.width*max(scale_x, scale_y)*0.5+fringe)
+	}
+	if material.kind == .Analytic_Relief && surface.physical_height > 0 &&
+	   material.outer_shadow_radius > 0 && material.outer_shadow_strength > 0 {
+		outset = max(outset, material.outer_shadow_radius*max(scale_x, scale_y)+fringe)
+	}
+	clip := native_solid_pixel_scissor(draw, scale_x, scale_y, target_w, target_h)
+	return clip.w > 0 && clip.h > 0 &&
+		base.x-outset < f32(clip.x+clip.w) && base.x+base.w+outset > f32(clip.x) &&
+		base.y-outset < f32(clip.y+clip.h) && base.y+base.h+outset > f32(clip.y)
+}
+
 native_solid_build :: proc(
 	renderer: ^Native_Solid_Renderer,
 	display: []alicorn.Paint_Command,
@@ -243,16 +267,7 @@ native_solid_build :: proc(
 		if !alicorn.paint_command_is_surface(draw) { continue }
 		material, surface, valid := native_solid_material_for_command(renderer.runtime, draw)
 		if !valid { continue }
-		visible_command := draw
-		if native_solid_shape_is_rounded(surface.shape) && material.kind == .Analytic_Relief &&
-			 surface.physical_height > 0 && material.outer_shadow_radius > 0 && material.outer_shadow_strength > 0 {
-			visible_command.bounds.x -= material.outer_shadow_radius
-			visible_command.bounds.y -= material.outer_shadow_radius
-			visible_command.bounds.w += material.outer_shadow_radius*2
-			visible_command.bounds.h += material.outer_shadow_radius*2
-		}
-		_, _, _, _, visible := native_solid_pixel_bounds(visible_command, scale_x, scale_y, target_w, target_h)
-		if visible {
+		if native_solid_paint_visible(draw, material, surface, scale_x, scale_y, target_w, target_h) {
 			required_vertices += native_solid_material_vertex_count(material, surface.physical_height, surface.shape, surface.stroke)
 		}
 	}
@@ -264,17 +279,16 @@ native_solid_build :: proc(
 	}
 	for draw, i in display {
 		if !alicorn.paint_command_is_surface(draw) { continue }
-		x0, y0, x1, y1, visible := native_solid_pixel_bounds(draw, scale_x, scale_y, target_w, target_h)
-		if !visible { continue }
 		material, surface, valid := native_solid_material_for_command(renderer.runtime, draw)
 		if !valid { continue }
+		if !native_solid_paint_visible(draw, material, surface, scale_x, scale_y, target_w, target_h) { continue }
 		needed := native_solid_material_vertex_count(material, surface.physical_height, surface.shape, surface.stroke)
 		if len(renderer.vertices) + needed > renderer.vertex_capacity && !native_solid_ensure_vertex_capacity(renderer, len(renderer.vertices) + needed) {
 			return false
 		}
 		first := sdl3.Uint32(len(renderer.vertices))
 		rounded := native_solid_shape_is_rounded(surface.shape)
-		if rounded {
+		if rounded || (material.kind == .Analytic_Relief && surface.physical_height != 0) {
 			base := native_solid_unclipped_pixel_bounds(draw, scale_x, scale_y)
 			shape := surface.shape
 			shape.corner_radius *= max(scale_x, scale_y)
@@ -288,10 +302,14 @@ native_solid_build :: proc(
 			}
 			stroke := surface.stroke
 			stroke.width *= max(scale_x, scale_y)
-			native_solid_append_rounded_material_surface(
-				&renderer.vertices, base, shadow, surface.fill, pixel_material,
-				surface.physical_height, draw.opacity, shape, stroke,
-			)
+			if rounded {
+				native_solid_append_rounded_material_surface(
+					&renderer.vertices, base, shadow, surface.fill, pixel_material,
+					surface.physical_height, draw.opacity, shape, stroke,
+				)
+			} else {
+				native_solid_append_material_surface(&renderer.vertices, base, shadow, surface.fill, pixel_material, surface.physical_height, draw.opacity)
+			}
 			renderer.draws[i] = Native_Solid_Draw{
 				first_vertex=first,
 				vertex_count=sdl3.Uint32(len(renderer.vertices)-int(first)),
@@ -299,21 +317,9 @@ native_solid_build :: proc(
 				has_scissor=true,
 			}
 		} else {
+			x0, y0, x1, y1, _ := native_solid_pixel_bounds(draw, scale_x, scale_y, target_w, target_h)
 			base := alicorn.Rect{f32(x0), f32(y0), f32(x1-x0), f32(y1-y0)}
-			shadow := base
-			if material.kind == .Analytic_Relief && surface.physical_height > 0 && material.outer_shadow_radius > 0 && material.outer_shadow_strength > 0 {
-				expand := material.outer_shadow_radius * max(scale_x, scale_y)
-				shadow_command := draw
-				shadow_command.bounds = alicorn.Rect{
-					draw.bounds.x-expand,
-					draw.bounds.y-expand,
-					draw.bounds.w+expand*2,
-					draw.bounds.h+expand*2,
-				}
-				sx0, sy0, sx1, sy1, shadow_visible := native_solid_pixel_bounds(shadow_command, scale_x, scale_y, target_w, target_h)
-				if shadow_visible { shadow = alicorn.Rect{f32(sx0), f32(sy0), f32(sx1-sx0), f32(sy1-sy0)} }
-			}
-			native_solid_append_material_surface(&renderer.vertices, base, shadow, surface.fill, material, surface.physical_height, draw.opacity)
+			native_solid_append_material_surface(&renderer.vertices, base, base, surface.fill, material, surface.physical_height, draw.opacity)
 			renderer.draws[i] = Native_Solid_Draw{first_vertex=first, vertex_count=sdl3.Uint32(len(renderer.vertices)-int(first))}
 		}
 	}
