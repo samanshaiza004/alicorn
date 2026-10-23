@@ -115,6 +115,7 @@ for the callback contract and native fixture.
 | `invalidate_root` | Request a new description after application state changes. |
 | `invalidate_region` | Mark a revisioned region as changed. |
 | `region_begin` / `region_end` | Reuse an unchanged described subtree using an application-owned revision. |
+| `Application.interaction_update_policy` | Opt a native app into a corrective description after a consumed widget activation or controlled-value change. `.Explicit` is the default; `.Correct_After_Interaction` uses the existing bounded stabilization loop and does not bypass region revisions. |
 
 The runtime does not watch Odin memory. A revision is a promise from the
 application: update it when the region's logical output changes. Revisions are

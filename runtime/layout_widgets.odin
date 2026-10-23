@@ -517,6 +517,10 @@ text_field_ex :: proc(ui: ^UI, value: string, source := Source_Site{}, key := ""
 	return emit(ui, .Text_Field, resolved_source, text=value, key=key, explicit_key=explicit_key, style=style, focusable=true, font=font, text_style=text_style)
 }
 
+interaction_consumption_note :: proc(rt: ^Runtime) {
+	if rt != nil { rt.interaction_consumption_sequence += 1 }
+}
+
 consume_activation :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 	if id == 0 || rt.activation_node != id || rt.activation_sequence == 0 { return false }
 	if node, ok := rt.nodes[id]; ok && node.last_consumed_activation < rt.activation_sequence {
@@ -524,6 +528,7 @@ consume_activation :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 		// Activation is an event, not retained state. Clear it globally so a
 		// later incarnation of this keyed node cannot replay the same click.
 		rt.activation_node = 0
+		interaction_consumption_note(rt)
 		return true
 	}
 	return false
@@ -605,6 +610,7 @@ slider_f32 :: proc(
 		result.value = slider_normalize(node.control_pending_value, minimum, maximum, step)
 		result.changed = result.value != value
 		node.control_pending = false
+		if result.changed { interaction_consumption_note(ui.runtime) }
 	}
 	description := &ui.runtime.pending[len(ui.runtime.pending)-1].description
 	description.control_value = result.value
