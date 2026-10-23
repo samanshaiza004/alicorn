@@ -57,6 +57,20 @@ Surface_Shape :: struct {
 	corner_radius: f32,
 }
 
+SURFACE_CORNER_RADIUS_MAX :: 1_000_000.0
+
+surface_shape_is_valid :: proc(shape: Surface_Shape) -> bool {
+	switch shape.kind {
+	case .Rectangle:
+		return shape.corner_radius == 0
+	case .Rounded_Rectangle:
+		return shape.corner_radius == shape.corner_radius && shape.corner_radius >= 0 && shape.corner_radius <= SURFACE_CORNER_RADIUS_MAX
+	case .Line:
+		return false
+	}
+	return false
+}
+
 Paint_Stroke :: struct {
 	color: Color,
 	width: f32,
@@ -135,6 +149,7 @@ paint_surface_command :: proc(
 	material: Material_ID = MATERIAL_FLAT,
 	physical_height: f32 = 0,
 	material_group: Material_Group_ID = MATERIAL_GROUP_NONE,
+	stroke: Paint_Stroke = {},
 ) -> Paint_Command {
 	return Paint_Command{
 		owner=owner,
@@ -148,6 +163,7 @@ paint_surface_command :: proc(
 			material=material,
 			physical_height=physical_height,
 			material_group=material_group,
+			stroke=stroke,
 		},
 	}
 }

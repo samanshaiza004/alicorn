@@ -151,6 +151,7 @@ style_transform_is_valid :: proc(transform: Style_Transform) -> bool {
 
 style_button_recipe_is_valid :: proc(recipe: Button_Recipe) -> bool {
 	if !recipe.defined { return true }
+	if !surface_shape_is_valid(recipe.shape) { return false }
 	for treatment in ([?]Button_Surface_Treatment{recipe.rest_surface, recipe.pressed_surface}) {
 		if treatment.defined && !(treatment.physical_height >= -SURFACE_PHYSICAL_HEIGHT_LIMIT && treatment.physical_height <= SURFACE_PHYSICAL_HEIGHT_LIMIT) { return false }
 	}
@@ -516,6 +517,7 @@ style_button_resolve :: proc(
 ) -> Button_Resolved_Style {
 	recipe := style_button_recipe(rt, environment, variant)
 	style := Button_Resolved_Style{
+		shape=recipe.shape,
 		surface=style_environment_color(rt, environment, recipe.surface_role),
 		text=style_environment_color(rt, environment, recipe.text_role),
 		focus=style_environment_color(rt, environment, recipe.focus_role),

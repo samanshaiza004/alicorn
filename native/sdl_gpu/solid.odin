@@ -14,6 +14,8 @@ NATIVE_SOLID_INITIAL_VERTICES :: 65536
 Native_Solid_Draw :: struct {
 	first_vertex:  sdl3.Uint32,
 	vertex_count:  sdl3.Uint32,
+	scissor:      sdl3.Rect,
+	has_scissor:   bool,
 }
 
 Native_Solid_Renderer :: struct {
@@ -193,6 +195,25 @@ native_solid_pixel_bounds :: proc(
 	return
 }
 
+native_solid_pixel_scissor :: proc(draw: alicorn.Paint_Command, scale_x, scale_y: f32, target_w, target_h: sdl3.Uint32) -> sdl3.Rect {
+	x0, y0, x1, y1 := logical_to_pixel_bounds(draw.clip, scale_x, scale_y)
+	if x0 < 0 { x0 = 0 }
+	if y0 < 0 { y0 = 0 }
+	if x1 > int(target_w) { x1 = int(target_w) }
+	if y1 > int(target_h) { y1 = int(target_h) }
+	if x1 < x0 { x1 = x0 }
+	if y1 < y0 { y1 = y0 }
+	return sdl3.Rect{x=c.int(x0), y=c.int(y0), w=c.int(x1-x0), h=c.int(y1-y0)}
+}
+
+native_solid_unclipped_pixel_bounds :: proc(draw: alicorn.Paint_Command, scale_x, scale_y: f32) -> alicorn.Rect {
+	bounds := draw.bounds
+	bounds.x += draw.translation[0]
+	bounds.y += draw.translation[1]
+	x0, y0, x1, y1 := logical_to_pixel_bounds(bounds, scale_x, scale_y)
+	return alicorn.Rect{f32(x0), f32(y0), f32(x1-x0), f32(y1-y0)}
+}
+
 native_solid_material_for_command :: proc(rt: ^alicorn.Runtime, command: alicorn.Paint_Command) -> (material: alicorn.Style_Material, surface: alicorn.Surface_Paint, valid: bool) {
 	surface, valid = command.payload.(alicorn.Surface_Paint)
 	if !valid { return }
@@ -222,9 +243,17 @@ native_solid_build :: proc(
 		if !alicorn.paint_command_is_surface(draw) { continue }
 		material, surface, valid := native_solid_material_for_command(renderer.runtime, draw)
 		if !valid { continue }
-		_, _, _, _, visible := native_solid_pixel_bounds(draw, scale_x, scale_y, target_w, target_h)
+		visible_command := draw
+		if native_solid_shape_is_rounded(surface.shape) && material.kind == .Analytic_Relief &&
+			 surface.physical_height > 0 && material.outer_shadow_radius > 0 && material.outer_shadow_strength > 0 {
+			visible_command.bounds.x -= material.outer_shadow_radius
+			visible_command.bounds.y -= material.outer_shadow_radius
+			visible_command.bounds.w += material.outer_shadow_radius*2
+			visible_command.bounds.h += material.outer_shadow_radius*2
+		}
+		_, _, _, _, visible := native_solid_pixel_bounds(visible_command, scale_x, scale_y, target_w, target_h)
 		if visible {
-			required_vertices += native_solid_material_vertex_count(material, surface.physical_height)
+			required_vertices += native_solid_material_vertex_count(material, surface.physical_height, surface.shape, surface.stroke)
 		}
 	}
 	if required_vertices > cap(renderer.vertices) {
@@ -239,27 +268,54 @@ native_solid_build :: proc(
 		if !visible { continue }
 		material, surface, valid := native_solid_material_for_command(renderer.runtime, draw)
 		if !valid { continue }
-		needed := native_solid_material_vertex_count(material, surface.physical_height)
+		needed := native_solid_material_vertex_count(material, surface.physical_height, surface.shape, surface.stroke)
 		if len(renderer.vertices) + needed > renderer.vertex_capacity && !native_solid_ensure_vertex_capacity(renderer, len(renderer.vertices) + needed) {
 			return false
 		}
 		first := sdl3.Uint32(len(renderer.vertices))
-		base := alicorn.Rect{f32(x0), f32(y0), f32(x1-x0), f32(y1-y0)}
-		shadow := base
-		if material.kind == .Analytic_Relief && surface.physical_height > 0 && material.outer_shadow_radius > 0 && material.outer_shadow_strength > 0 {
-			expand := material.outer_shadow_radius * max(scale_x, scale_y)
-			shadow_command := draw
-			shadow_command.bounds = alicorn.Rect{
-				draw.bounds.x-expand,
-				draw.bounds.y-expand,
-				draw.bounds.w+expand*2,
-				draw.bounds.h+expand*2,
+		rounded := native_solid_shape_is_rounded(surface.shape)
+		if rounded {
+			base := native_solid_unclipped_pixel_bounds(draw, scale_x, scale_y)
+			shape := surface.shape
+			shape.corner_radius *= max(scale_x, scale_y)
+			pixel_material := material
+			pixel_material.bevel_width *= max(scale_x, scale_y)
+			pixel_material.outer_shadow_radius *= max(scale_x, scale_y)
+			shadow := base
+			if material.kind == .Analytic_Relief && surface.physical_height > 0 && material.outer_shadow_radius > 0 && material.outer_shadow_strength > 0 {
+				expand := material.outer_shadow_radius*max(scale_x, scale_y)
+				shadow = alicorn.Rect{base.x-expand, base.y-expand, base.w+expand*2, base.h+expand*2}
 			}
-			sx0, sy0, sx1, sy1, shadow_visible := native_solid_pixel_bounds(shadow_command, scale_x, scale_y, target_w, target_h)
-			if shadow_visible { shadow = alicorn.Rect{f32(sx0), f32(sy0), f32(sx1-sx0), f32(sy1-sy0)} }
+			stroke := surface.stroke
+			stroke.width *= max(scale_x, scale_y)
+			native_solid_append_rounded_material_surface(
+				&renderer.vertices, base, shadow, surface.fill, pixel_material,
+				surface.physical_height, draw.opacity, shape, stroke,
+			)
+			renderer.draws[i] = Native_Solid_Draw{
+				first_vertex=first,
+				vertex_count=sdl3.Uint32(len(renderer.vertices)-int(first)),
+				scissor=native_solid_pixel_scissor(draw, scale_x, scale_y, target_w, target_h),
+				has_scissor=true,
+			}
+		} else {
+			base := alicorn.Rect{f32(x0), f32(y0), f32(x1-x0), f32(y1-y0)}
+			shadow := base
+			if material.kind == .Analytic_Relief && surface.physical_height > 0 && material.outer_shadow_radius > 0 && material.outer_shadow_strength > 0 {
+				expand := material.outer_shadow_radius * max(scale_x, scale_y)
+				shadow_command := draw
+				shadow_command.bounds = alicorn.Rect{
+					draw.bounds.x-expand,
+					draw.bounds.y-expand,
+					draw.bounds.w+expand*2,
+					draw.bounds.h+expand*2,
+				}
+				sx0, sy0, sx1, sy1, shadow_visible := native_solid_pixel_bounds(shadow_command, scale_x, scale_y, target_w, target_h)
+				if shadow_visible { shadow = alicorn.Rect{f32(sx0), f32(sy0), f32(sx1-sx0), f32(sy1-sy0)} }
+			}
+			native_solid_append_material_surface(&renderer.vertices, base, shadow, surface.fill, material, surface.physical_height, draw.opacity)
+			renderer.draws[i] = Native_Solid_Draw{first_vertex=first, vertex_count=sdl3.Uint32(len(renderer.vertices)-int(first))}
 		}
-		native_solid_append_material_surface(&renderer.vertices, base, shadow, surface.fill, material, surface.physical_height, draw.opacity)
-		renderer.draws[i] = Native_Solid_Draw{first, sdl3.Uint32(len(renderer.vertices)-int(first))}
 	}
 	renderer.upload_pending = len(renderer.vertices) > 0
 	return true
@@ -316,7 +372,7 @@ native_solid_append_debug_bounds :: proc(
 		native_solid_append_quad(&renderer.vertices, left, max(bottom-thickness, top), right, bottom, color)
 		native_solid_append_quad(&renderer.vertices, left, top, min(left+thickness, right), bottom, color)
 		native_solid_append_quad(&renderer.vertices, max(right-thickness, left), top, right, bottom, color)
-		append(&renderer.draws, Native_Solid_Draw{first, 24})
+		append(&renderer.draws, Native_Solid_Draw{first_vertex=first, vertex_count=24})
 	}
 	renderer.upload_pending = len(renderer.vertices) > 0
 }
@@ -389,6 +445,8 @@ native_solid_render_batch :: proc(
 	sdl3.BindGPUFragmentSamplers(pass, 0, &texture_binding, 1)
 	for draw in draws {
 		if draw.vertex_count > 0 {
+			if draw.has_scissor { sdl3.SetGPUScissor(pass, draw.scissor) }
+			else { sdl3.SetGPUScissor(pass, sdl3.Rect{0, 0, c.int(target_w), c.int(target_h)}) }
 			sdl3.DrawGPUPrimitives(pass, draw.vertex_count, 1, draw.first_vertex, 0)
 		}
 	}

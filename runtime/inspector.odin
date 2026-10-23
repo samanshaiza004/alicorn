@@ -410,8 +410,10 @@ inspect :: proc(rt: ^Runtime) -> string {
 			}
 			fmt.sbprintf(&sb, " | focus-mode=%s\n", focus_indicator_mode_name(recipe.focus_indicator_mode))
 			fmt.sbprintf(&sb, " | focus overlay=%v semantic-active overlay=%v\n", recipe.focus_role, recipe.semantic_active_role)
-			if recipe.rest_surface.defined || recipe.pressed_surface.defined {
-				fmt.sbprintf(&sb, "  optical surface: material=%d height=%.3f (paint only)\n", u32(resolved.material), resolved.physical_height)
+			if recipe.rest_surface.defined || recipe.pressed_surface.defined || resolved.shape.kind != .Rectangle {
+				fmt.sbprintf(&sb, "  optical surface: shape=%s radius=%.2f material=%d height=%.3f (paint only)\n",
+					style_inspector_surface_shape_name(resolved.shape.kind), resolved.shape.corner_radius,
+					u32(resolved.material), resolved.physical_height)
 			}
 			fmt.sbprintf(&sb, "  computed style: dependencies=")
 			first_domain := true

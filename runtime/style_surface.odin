@@ -48,9 +48,7 @@ semantic_surface_style_is_valid :: proc(rt: ^Runtime, environment: Style_Environ
 	if !style.defined { return false }
 	if _, role_ok := semantic_surface_role_resolve(rt, environment, style.role); !role_ok { return false }
 	if style.physical_height != style.physical_height || abs(style.physical_height) > SURFACE_PHYSICAL_HEIGHT_LIMIT { return false }
-	// The current SDL_GPU surface path paints rectangles. Keep richer shapes in
-	// the lower-level paint contract, but don't claim a treatment it can't draw.
-	if style.shape.kind != .Rectangle || style.shape.corner_radius != 0 { return false }
+	if !surface_shape_is_valid(style.shape) { return false }
 	_, material_ok := style_material_resolve(rt, style.material)
 	return material_ok
 }
@@ -100,7 +98,7 @@ surface_begin :: proc(
 		material_group=material_group,
 	}
 	if !rt.frame_open || !semantic_surface_style_is_valid(rt, rt.style_environment, semantic_style) {
-		append_diagnostic(rt, "surface_begin requires an open frame, resolvable theme role, rectangular shape, bounded optical height, and registered material")
+		append_diagnostic(rt, "surface_begin requires an open frame, resolvable theme role, supported shape, bounded optical height, and registered material")
 		return 0
 	}
 	semantic_style.material = style_material_accessibility_variant(rt, rt.style_environment, semantic_style.material)

@@ -708,6 +708,7 @@ Button_Surface_Treatment :: struct {
 
 Button_Recipe :: struct {
 	defined:                bool,
+	shape:                  Surface_Shape,
 	surface_role:           Style_Color_Role,
 	text_role:              Style_Color_Role,
 	surface_visible:        bool,
@@ -749,6 +750,7 @@ Button_Visual_State :: struct {
 
 // Resolved outputs are small renderer-facing values, not widget state.
 Button_Resolved_Style :: struct {
+	shape:                  Surface_Shape,
 	material:                Material_ID,
 	physical_height:         f32,
 	surface:                 Color,

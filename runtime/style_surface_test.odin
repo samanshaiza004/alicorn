@@ -120,8 +120,14 @@ test_semantic_surface_rejects_invalid_recipes_before_opening_container :: proc(t
 	invalid_shape := invalid_material
 	invalid_shape.material = MATERIAL_FLAT
 	invalid_shape.shape = Surface_Shape{kind=.Rounded_Rectangle, corner_radius=8}
+	testing.expect(t, semantic_surface_style_is_valid(&rt, valid_environment, invalid_shape),
+		"uniform rounded surfaces with a finite nonnegative radius should be accepted")
+	invalid_shape.shape.corner_radius = -1
 	testing.expect(t, !semantic_surface_style_is_valid(&rt, valid_environment, invalid_shape),
-		"the semantic helper must reject rounded surfaces until the renderer supports their shape")
+		"negative corner radii must be rejected before paint")
+	invalid_shape.shape = Surface_Shape{kind=.Line}
+	testing.expect(t, !semantic_surface_style_is_valid(&rt, valid_environment, invalid_shape),
+		"line geometry is not a filled semantic surface")
 	missing_role := invalid_material
 	missing_role.material = MATERIAL_FLAT
 	missing_role.role = surface_extension_color_role(style_extension_color_role_id("app.missing", "surface"))
@@ -133,11 +139,15 @@ test_semantic_surface_rejects_invalid_recipes_before_opening_container :: proc(t
 	id = surface_begin(
 		&ui,
 		surface_core_color_role(.Surface),
-		key=key_string("unsupported-rounded-surface"),
+		key=key_string("supported-rounded-surface"),
 		shape=Surface_Shape{kind=.Rounded_Rectangle, corner_radius=8},
 	)
+	testing.expect(t, id != 0 && len(rt.stack) == stack_depth+1,
+		"a rounded shape should open its ordinary semantic surface container")
+	surface_end(&ui)
+	id = surface_begin(&ui, surface_core_color_role(.Surface), key=key_string("negative-rounded-surface"), shape=Surface_Shape{kind=.Rounded_Rectangle, corner_radius=-1})
 	testing.expect(t, id == 0 && len(rt.stack) == stack_depth,
-		"an unsupported shape must fail without opening a layout container")
+		"an invalid rounded shape must fail without opening a layout scope")
 	container_end(&ui)
 	end_frame(&ui)
 }

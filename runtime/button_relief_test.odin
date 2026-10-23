@@ -23,6 +23,7 @@ test_button_relief_preserves_geometry_focus_and_retained_work :: proc(t: ^testin
 	flat := style_theme_register(&rt, DEFAULT_STYLE_THEME)
 	material := style_material_register(&rt, Style_Material{kind=.Analytic_Relief, bevel_width=1, bevel_strength=0.35, inner_shadow_strength=0.1, outer_shadow_strength=0.15, outer_shadow_radius=2})
 	theme := DEFAULT_STYLE_THEME
+	theme.button_recipes.recipes[int(Button_Variant.Default)].shape = Surface_Shape{kind=.Rounded_Rectangle, corner_radius=4}
 	theme.button_recipes.recipes[int(Button_Variant.Default)].rest_surface = {defined=true, material=material, physical_height=0.5}
 	theme.button_recipes.recipes[int(Button_Variant.Default)].pressed_surface = {defined=true, material=material, physical_height=-0.25}
 	relief := style_theme_register(&rt, theme)
@@ -42,7 +43,16 @@ test_button_relief_preserves_geometry_focus_and_retained_work :: proc(t: ^testin
 	testing.expect(t, rt.stats.measure_requests == measurements && rt.stats.text_shape_requests == shapes && rt.semantic_revision == semantic_revision,
 		"optical changes preserve measurement, shaping and semantic truth")
 	paint, found := node.paint[0].payload.(Surface_Paint)
-	testing.expect(t, found && paint.material == material && paint.physical_height == 0.5, "rest paint uses the generic material surface")
+	testing.expect(t, found && paint.shape == Surface_Shape{kind=.Rounded_Rectangle, corner_radius=4} &&
+		paint.material == material && paint.physical_height == 0.5,
+		"rest paint carries the recipe shape through the generic material surface")
+	rounded_focus_found := false
+	for command in node.paint {
+		if focus_paint, ok := command.payload.(Surface_Paint); ok && focus_paint.stroke.width > 0 {
+			rounded_focus_found = focus_paint.shape == Surface_Shape{kind=.Rounded_Rectangle, corner_radius=4}
+		}
+	}
+	testing.expect(t, rounded_focus_found, "the independent keyboard focus outline should follow the Button's rounded contour")
 	x, y := node.bounds.x+20, node.bounds.y+20
 	_ = process_pointer(&rt, Pointer_Event{kind=.Down, x=x, y=y})
 	_ = button_relief_fixture(&rt, relief)

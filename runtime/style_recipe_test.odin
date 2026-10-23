@@ -93,6 +93,7 @@ test_button_recipe_transforms_have_deterministic_order_and_separate_focus :: pro
 	theme := DEFAULT_STYLE_THEME
 	theme.button_recipes.recipes[int(Button_Variant.Toolbar)] = Button_Recipe{
 		defined=true,
+		shape=Surface_Shape{kind=.Rounded_Rectangle, corner_radius=4},
 		surface_role=.Surface,
 		text_role=.Text,
 		surface_visible=true,
@@ -108,6 +109,8 @@ test_button_recipe_transforms_have_deterministic_order_and_separate_focus :: pro
 	environment := Style_Environment{theme=theme_id}
 
 	selected := style_button_resolve(&rt, environment, .Toolbar, Button_Visual_State{selected=true})
+	testing.expect(t, selected.shape == Surface_Shape{kind=.Rounded_Rectangle, corner_radius=4},
+		"a button recipe should carry its shape into the resolved paint style")
 	hovered := style_button_resolve(&rt, environment, .Toolbar, Button_Visual_State{selected=true, hovered=true})
 	pressed := style_button_resolve(&rt, environment, .Toolbar, Button_Visual_State{selected=true, hovered=true, pressed=true})
 	all_states := style_button_resolve(&rt, environment, .Toolbar, Button_Visual_State{selected=true, hovered=true, pressed=true, disabled=true})
@@ -136,6 +139,9 @@ test_button_recipe_transforms_have_deterministic_order_and_separate_focus :: pro
 		semantic_active_role=.Semantic_Focus,
 	}
 	testing.expect(t, style_theme_register(&rt, invalid) == 0, "invalid transform amounts should be rejected")
+	invalid.button_recipes.recipes[int(Button_Variant.Quiet)].hovered.surface_mix = 0
+	invalid.button_recipes.recipes[int(Button_Variant.Quiet)].shape = Surface_Shape{kind=.Rounded_Rectangle, corner_radius=-1}
+	testing.expect(t, style_theme_register(&rt, invalid) == 0, "invalid surface shapes should be rejected in button recipes")
 }
 
 @(test)

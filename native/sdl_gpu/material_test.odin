@@ -22,6 +22,88 @@ test_flat_material_stays_one_quad :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_rounded_material_uses_bounded_contours_and_scaled_tangents :: proc(t: ^testing.T) {
+	shape := alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=6}
+	fill := alicorn.Color{0.7, 0.6, 0.5, 1}
+	flat_vertices := make([dynamic]Native_Text_Vertex, 0, 512, allocator=context.temp_allocator)
+	defer delete(flat_vertices)
+	native_solid_append_rounded_material_surface(
+		&flat_vertices, {10, 20, 60, 32}, {10, 20, 60, 32}, fill,
+		alicorn.STYLE_MATERIAL_FLAT, 0, 1, shape,
+	)
+	testing.expect(t, len(flat_vertices) == NATIVE_ROUNDED_FILL_VERTICES && len(flat_vertices) == 315,
+		"flat rounded surfaces should use a fixed 35-point contour and a one-pixel antialias fringe")
+	if len(flat_vertices) == NATIVE_ROUNDED_FILL_VERTICES {
+		min_x := flat_vertices[0].position[0]
+		max_x := min_x
+		for vertex in flat_vertices {
+			min_x = min(min_x, vertex.position[0])
+			max_x = max(max_x, vertex.position[0])
+		}
+		testing.expect(t, min_x == 9.25 && max_x == 70.75,
+			"the antialias fringe should extend a bounded 0.75 physical pixels around the rounded contour")
+	}
+
+	material := alicorn.Style_Material{
+		kind=.Analytic_Relief, bevel_width=2, bevel_strength=0.8,
+		inner_shadow_strength=0.5, outer_shadow_strength=0.6, outer_shadow_radius=4,
+	}
+	material_vertices := make([dynamic]Native_Text_Vertex, 0, 2048, allocator=context.temp_allocator)
+	defer delete(material_vertices)
+	expected := native_solid_material_vertex_count(material, 1, shape)
+	native_solid_append_rounded_material_surface(
+		&material_vertices, {10, 20, 60, 32}, {6, 16, 68, 40}, fill,
+		material, 1, 1, shape,
+	)
+	testing.expect(t, expected == 1365 && len(material_vertices) == expected && expected <= 1400,
+		"rounded analytic relief should use a deterministic bounded mesh for fill, two shadows, bevel, and inner contour")
+	if len(material_vertices) == expected {
+		testing.expect(t, material_vertices[expected-1].position[2] == 0,
+			"curved relief remains optical paint and never changes compositor depth")
+	}
+	for scale in ([4]f32{1, 1.25, 1.5, 2}) {
+		scaled := shape
+		scaled.corner_radius *= scale
+		testing.expect(t, native_solid_material_vertex_count(material, 1, scaled) == expected,
+			"DPI changes contour coordinates without changing the published vertex bound")
+	}
+}
+
+@(test)
+test_rounded_surface_clips_by_scissor_without_rounding_the_clip_edge :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime({0, 0, 100, 60})
+	defer alicorn.destroy_runtime(&rt)
+	shape := alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=6}
+	display := [1]alicorn.Paint_Command{
+		alicorn.paint_surface_command(1, {10, 10, 40, 24}, {0, 0, 20, 40}, {0.5, 0.4, 0.3, 1}, shape=shape),
+	}
+	renderer := Native_Solid_Renderer{
+		runtime=&rt,
+		vertices=make([dynamic]Native_Text_Vertex, 0, 512, allocator=context.temp_allocator),
+		draws=make([dynamic]Native_Solid_Draw, 0, 2, allocator=context.temp_allocator),
+		vertex_capacity=512,
+	}
+	defer delete(renderer.vertices)
+	defer delete(renderer.draws)
+	testing.expect(t, native_solid_build(&renderer, display[:], 1, 1, 100, 60),
+		"rounded surface expansion should build under a partial parent clip")
+	if len(renderer.draws) != 1 { testing.expect(t, false, "the rounded surface should retain one ordered draw slot"); return }
+	draw := renderer.draws[0]
+	testing.expect(t, draw.has_scissor && draw.scissor.x == 0 && draw.scissor.y == 0 && draw.scissor.w == 20 && draw.scissor.h == 40,
+		"the parent clip should become a rectangular GPU scissor independent of the rounded contour")
+	max_x := f32(0)
+	for vertex in renderer.vertices { max_x = max(max_x, vertex.position[0]) }
+	testing.expect(t, max_x > 20 && draw.vertex_count == NATIVE_ROUNDED_FILL_VERTICES,
+		"the original shape mesh must extend beyond the clip so clipping cannot introduce a false curved edge")
+
+	clear(&renderer.vertices)
+	clear(&renderer.draws)
+	display[0] = alicorn.paint_surface_command(1, {10, 10, 40, 24}, {0, 0, 100, 60}, {0.5, 0.4, 0.3, 1}, shape=alicorn.Surface_Shape{kind=.Rounded_Rectangle})
+	testing.expect(t, native_solid_build(&renderer, display[:], 1, 1, 100, 60) && len(renderer.vertices) == 6,
+		"a rounded shape with radius zero should use the exact rectangular fast path")
+}
+
+@(test)
 test_analytic_relief_emits_only_bounded_local_geometry :: proc(t: ^testing.T) {
 	material := alicorn.Style_Material{
 		kind=.Analytic_Relief,

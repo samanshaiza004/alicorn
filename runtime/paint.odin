@@ -177,7 +177,18 @@ append_rect_outline_bounds :: proc(node: ^Node, bounds: Rect, color: Color, thic
 	append(&node.paint, paint_surface_command(node.id, Rect{bounds.x+bounds.w-width, bounds.y+height, width, interior_height}, node.clip, color))
 }
 
-append_focus_outline :: proc(node: ^Node, color: Color, thickness: f32) {
+append_focus_outline :: proc(node: ^Node, color: Color, thickness: f32, shape := Surface_Shape{kind=.Rectangle}) {
+	if shape.kind == .Rounded_Rectangle && shape.corner_radius > 0 {
+		append(&node.paint, paint_surface_command(
+			node.id,
+			node.bounds,
+			node.clip,
+			Color{0, 0, 0, 0},
+			shape=shape,
+			stroke=Paint_Stroke{color=color, width=thickness},
+		))
+		return
+	}
 	append_rect_outline(node, color, thickness)
 }
 
@@ -428,7 +439,7 @@ update_paint :: proc(rt: ^Runtime) {
 					})
 					text_color = resolved_style.text
 					if resolved_style.surface.a > 0 {
-						append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, resolved_style.surface, material=resolved_style.material, physical_height=resolved_style.physical_height))
+						append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, resolved_style.surface, shape=resolved_style.shape, material=resolved_style.material, physical_height=resolved_style.physical_height))
 					}
 				} else {
 					hovered := visual_part_owner_hovered(rt, node.id)
@@ -440,19 +451,19 @@ update_paint :: proc(rt: ^Runtime) {
 					}, node.drop_position == .On)
 					text_color = resolved_style.text
 					if resolved_style.surface.a > 0 {
-						append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, resolved_style.surface, material=resolved_style.material, physical_height=resolved_style.physical_height))
+						append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, resolved_style.surface, shape=resolved_style.shape, material=resolved_style.material, physical_height=resolved_style.physical_height))
 					}
 					if resolved_style.selected_indicator == .Underline && !visual_part_owner_has_role(rt, node.id, .Selected_Indicator) {
 						indicator_height := minf(2, node.bounds.h)
 						indicator := Rect{node.bounds.x, node.bounds.y+node.bounds.h-indicator_height, node.bounds.w, indicator_height}
 						append(&node.paint, paint_surface_command(node.id, indicator, node.clip, resolved_style.selected_indicator_color))
 					}
-					if node.semantic_active { append_focus_outline(node, resolved_style.semantic_active, style_structural_border_thickness(node.style_environment)) }
+					if node.semantic_active { append_focus_outline(node, resolved_style.semantic_active, style_structural_border_thickness(node.style_environment), resolved_style.shape) }
 					show_focus := resolved_style.focus_indicator_mode == .Always || rt.focus_visible
 					if show_focus && rt.focused == node.id && !node.disabled {
 						// Focus is an independent outline so it remains visible without
 						// replacing the selected, hover, or pressed fill.
-						append_focus_outline(node, resolved_style.focus, style_focus_indicator_thickness(node.style_environment))
+						append_focus_outline(node, resolved_style.focus, style_focus_indicator_thickness(node.style_environment), resolved_style.shape)
 					}
 				}
 				if len(node.label) > 0 {
