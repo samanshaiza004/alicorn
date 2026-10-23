@@ -6,6 +6,16 @@ import "core:strings"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
+// PPM is always RGB, while desktop swapchains may store BGRA. Reject pixel
+// formats requiring a different transfer-buffer size or color conversion.
+native_capture_rgb_offsets :: proc(format: sdl3.GPUTextureFormat) -> (offsets: [3]int, ok: bool) {
+	#partial switch format {
+	case .R8G8B8A8_UNORM, .R8G8B8A8_UNORM_SRGB: return {0, 1, 2}, true
+	case .B8G8R8A8_UNORM, .B8G8R8A8_UNORM_SRGB: return {2, 1, 0}, true
+	case: return {}, false
+	}
+}
+
 // Write a dependency-free screenshot artifact for diagnostics captures. PPM
 // is intentionally used instead of pulling an image encoder into the host;
 // it is trivial for humans, scripts, and agents to inspect or convert.
@@ -25,6 +35,8 @@ native_capture_display_ppm :: proc(
 	scratch_allocator := context.temp_allocator,
 ) -> bool {
 	if width == 0 || height == 0 { return false }
+	rgb_offsets, supported := native_capture_rgb_offsets(text_renderer.swapchain_format)
+	if !supported { return false }
 	if !sdl3.GPUTextureSupportsFormat(device, text_renderer.swapchain_format, .D2, sdl3.GPUTextureUsageFlags{.COLOR_TARGET}) {
 		return false
 	}
@@ -74,9 +86,7 @@ native_capture_display_ppm :: proc(
 	fmt.sbprintf(&builder, "P6\n%d %d\n255\n", width, height)
 	for i := u64(0); i < u64(width)*u64(height); i += 1 {
 		src := i * 4
-		strings.write_byte(&builder, pixels[src+0])
-		strings.write_byte(&builder, pixels[src+1])
-		strings.write_byte(&builder, pixels[src+2])
+		for offset in rgb_offsets { strings.write_byte(&builder, pixels[src+u64(offset)]) }
 	}
 	image := strings.to_string(builder)
 	if err := os.write_entire_file(path, image); err != nil { return false }
