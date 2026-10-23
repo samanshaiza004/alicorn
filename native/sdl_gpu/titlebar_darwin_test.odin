@@ -13,7 +13,8 @@ test_darwin_titlebar_regions_follow_real_tabs_and_empty_space :: proc(t: ^testin
 	defer alicorn.destroy_runtime(&rt)
 	app := Menu_Fixture_State{titlebar_fixture=true,
 		titlebar_header_height=TITLEBAR_FIXTURE_HEADER_HEIGHT,
-		titlebar_control_start_x=81, titlebar_tab_order={1, 2}, titlebar_selected_tab=1}
+		titlebar_control_start_x=81, titlebar_control_end_x=900,
+		titlebar_tab_order={1, 2}, titlebar_selected_tab=1}
 	application := Application{state=rawptr(&app), window_chrome_layout=menu_fixture_window_chrome_layout}
 	native_state: Darwin_Menu_State
 	native_state.titlebar.active = true
@@ -44,7 +45,8 @@ test_darwin_titlebar_narrow_width_keeps_selected_tab_visible :: proc(t: ^testing
 		defer alicorn.destroy_runtime(&rt)
 		app := Menu_Fixture_State{titlebar_fixture=true,
 			titlebar_header_height=TITLEBAR_FIXTURE_HEADER_HEIGHT,
-			titlebar_control_start_x=81, titlebar_tab_order={1, 2}, titlebar_selected_tab=2}
+			titlebar_control_start_x=81, titlebar_control_end_x=f32(width),
+			titlebar_tab_order={1, 2}, titlebar_selected_tab=2}
 		application := Application{state=rawptr(&app), window_chrome_layout=menu_fixture_window_chrome_layout}
 		native_state: Darwin_Menu_State
 		native_state.titlebar.active = true
