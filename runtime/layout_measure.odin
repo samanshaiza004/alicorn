@@ -416,6 +416,12 @@ layout_map_child_size_change :: proc(dependencies: Parent_Size_Dependencies, chi
 	return changed
 }
 
+measure_constraint_change_reason :: proc(axis: string, old, next: Layout_Axis_Constraint) -> string {
+	return fmt.tprintf("normalized %s constraint min=%.3f max=%.3f unbounded=%t → min=%.3f max=%.3f unbounded=%t",
+		axis, layout_unit_to_f32(old.min), layout_unit_to_f32(old.max), old.unbounded_max,
+		layout_unit_to_f32(next.min), layout_unit_to_f32(next.max), next.unbounded_max)
+}
+
 measure_cache_reason :: proc(old, next: Measure_Cache_Key) -> string {
 	if !old.valid { return "no retained constraints; initial measure" }
 	if old.input_revision != next.input_revision { return "local measurement-input fingerprint changed" }
@@ -433,11 +439,14 @@ measure_cache_reason :: proc(old, next: Measure_Cache_Key) -> string {
 	if typography_changed { return "typography dependency generation changed" }
 	if font_changed { return "font dependency generation changed" }
 	if !layout_constraints_equal(old.constraints, next.constraints) {
-		old_width := "unbounded"
-		new_width := "unbounded"
-		if !old.constraints.width.unbounded_max { old_width = fmt.tprintf("%.3f", layout_unit_to_f32(old.constraints.width.max)) }
-		if !next.constraints.width.unbounded_max { new_width = fmt.tprintf("%.3f", layout_unit_to_f32(next.constraints.width.max)) }
-		return fmt.tprintf("normalized width constraint %s → %s", old_width, new_width)
+		width_changed := old.constraints.width != next.constraints.width
+		height_changed := old.constraints.height != next.constraints.height
+		if width_changed && height_changed {
+			return fmt.tprintf("%s; %s", measure_constraint_change_reason("width", old.constraints.width, next.constraints.width),
+				measure_constraint_change_reason("height", old.constraints.height, next.constraints.height))
+		}
+		if width_changed { return measure_constraint_change_reason("width", old.constraints.width, next.constraints.width) }
+		return measure_constraint_change_reason("height", old.constraints.height, next.constraints.height)
 	}
 	return "declared measurement dependency changed"
 }
@@ -624,6 +633,8 @@ layout_measure_propagate_parent_size_change :: proc(rt: ^Runtime, child_id: Node
 	if parent_axes == {} { return }
 	parent, parent_ok := rt.nodes[child.parent]
 	if !parent_ok || parent == nil || !layout_node_has_content_height(parent) { return }
+	record_trace(rt, .Measure, parent.id, fmt.tprintf("parent size depends on child %d: child axes %v map to parent axes %v",
+		child_id, child_axes, parent_axes))
 	parent_state := rt.measure_states[parent.id]
 	if !parent_state.cache_key.valid {
 		dirty_set(&parent.dirty, .Measure, true)

@@ -1,0 +1,38 @@
+Alicorn retained-work benchmark suite (headless; raw wall-clock nanoseconds)
+columns: emit reuse region_skip subtree_reuse alloc alloc_bytes frees reconcile layout paint_visit compose_visit adjacency created retired paint composite retained
+true_idle_10k_tree_10000_frames wall_ns 25900 emit 0 reuse 0 region_skip 0 subtree_reuse 0 alloc 0 alloc_bytes 0 frees 0 reconcile 0 layout 0 paint_visit 0 compose_visit 0 adjacency 0 created 0 retired 0 paint 0 composite 0 retained 10001
+  idle_frames 10000 gpu_submits 0
+tree 100
+  initial wall_ns 1996400 emit 101 reuse 0 region_skip 0 subtree_reuse 0 alloc 1388 alloc_bytes 1170054 frees 759 reconcile 101 layout 201 paint_visit 101 compose_visit 101 adjacency 1 created 101 retired 0 paint 101 composite 1 retained 101
+  root_invalidated_unchanged wall_ns 483400 emit 101 reuse 101 region_skip 0 subtree_reuse 0 alloc 106 alloc_bytes 1960 frees 105 reconcile 101 layout 0 paint_visit 0 compose_visit 0 adjacency 0 created 0 retired 0 paint 0 composite 0 retained 101
+  root_invalidated_one_value wall_ns 477800 emit 101 reuse 100 region_skip 0 subtree_reuse 0 alloc 108 alloc_bytes 1967 frees 108 reconcile 101 layout 0 paint_visit 1 compose_visit 1 adjacency 0 created 0 retired 0 paint 1 composite 1 retained 101
+  full_keyed_reorder wall_ns 813800 emit 101 reuse 100 region_skip 0 subtree_reuse 0 alloc 310 alloc_bytes 7649 frees 310 reconcile 101 layout 201 paint_visit 100 compose_visit 101 adjacency 1 created 0 retired 0 paint 100 composite 1 retained 101
+tree 1000
+  initial wall_ns 12122400 emit 1001 reuse 0 region_skip 0 subtree_reuse 0 alloc 13132 alloc_bytes 9807798 frees 7093 reconcile 1001 layout 2001 paint_visit 1001 compose_visit 1001 adjacency 1 created 1001 retired 0 paint 1001 composite 1 retained 1001
+  root_invalidated_unchanged wall_ns 2656000 emit 1001 reuse 1001 region_skip 0 subtree_reuse 0 alloc 1013 alloc_bytes 148976 frees 1014 reconcile 1001 layout 0 paint_visit 0 compose_visit 0 adjacency 0 created 0 retired 0 paint 0 composite 0 retained 1001
+  root_invalidated_one_value wall_ns 2904200 emit 1001 reuse 1000 region_skip 0 subtree_reuse 0 alloc 1015 alloc_bytes 148983 frees 1015 reconcile 1001 layout 0 paint_visit 1 compose_visit 1 adjacency 0 created 0 retired 0 paint 1 composite 1 retained 1001
+  full_keyed_reorder wall_ns 5011900 emit 1001 reuse 1000 region_skip 0 subtree_reuse 0 alloc 3019 alloc_bytes 251266 frees 3017 reconcile 1001 layout 2001 paint_visit 1000 compose_visit 1001 adjacency 1 created 0 retired 0 paint 1000 composite 1 retained 1001
+tree 10000
+  initial wall_ns 133053400 emit 10001 reuse 0 region_skip 0 subtree_reuse 0 alloc 130183 alloc_bytes 110178882 frees 70133 reconcile 10001 layout 20001 paint_visit 10001 compose_visit 10001 adjacency 1 created 10001 retired 0 paint 10001 composite 1 retained 10001
+  root_invalidated_unchanged wall_ns 39115600 emit 10001 reuse 10001 region_skip 0 subtree_reuse 0 alloc 10023 alloc_bytes 1532352 frees 10025 reconcile 10001 layout 0 paint_visit 0 compose_visit 0 adjacency 0 created 0 retired 0 paint 0 composite 0 retained 10001
+  root_invalidated_one_value wall_ns 38689600 emit 10001 reuse 10000 region_skip 0 subtree_reuse 0 alloc 10025 alloc_bytes 1532359 frees 10025 reconcile 10001 layout 0 paint_visit 1 compose_visit 1 adjacency 0 created 0 retired 0 paint 1 composite 1 retained 10001
+  full_keyed_reorder wall_ns 65840300 emit 10001 reuse 10000 region_skip 0 subtree_reuse 0 alloc 30030 alloc_bytes 2592643 frees 30027 reconcile 10001 layout 20001 paint_visit 10000 compose_visit 10001 adjacency 1 created 0 retired 0 paint 10000 composite 1 retained 10001
+regional_application logical_nodes 10102 body_calls 101
+  first wall_ns 153812700 emit 10102 reuse 0 region_skip 0 subtree_reuse 0 alloc 142394 alloc_bytes 111607780 frees 81533 reconcile 10102 layout 20203 paint_visit 10102 compose_visit 10102 adjacency 1 created 10102 retired 0 paint 10102 composite 1 retained 10102
+  one_100_node_region_unchanged_root_wake wall_ns 5099200 emit 102 reuse 102 region_skip 100 subtree_reuse 100 alloc 208 alloc_bytes 7618 frees 219 reconcile 102 layout 0 paint_visit 0 compose_visit 0 adjacency 0 created 0 retired 0 paint 0 composite 0 retained 10102
+  one_100_node_region_changed wall_ns 6642100 emit 202 reuse 101 region_skip 99 subtree_reuse 99 alloc 609 alloc_bytes 25174 frees 608 reconcile 202 layout 0 paint_visit 101 compose_visit 101 adjacency 0 created 0 retired 0 paint 101 composite 101 retained 10102
+large_retained_region logical_descendants 10000 body_calls 1
+  initial wall_ns 145841300 emit 10003 reuse 0 region_skip 0 subtree_reuse 0 alloc 140214 alloc_bytes 111270340 frees 80150 reconcile 10003 layout 20005 paint_visit 10003 compose_visit 10003 adjacency 1 created 10003 retired 0 paint 10003 composite 1 retained 10003
+  reused_for_unrelated_sibling wall_ns 6429100 emit 3 reuse 2 region_skip 1 subtree_reuse 1 alloc 12 alloc_bytes 346 frees 31 reconcile 3 layout 0 paint_visit 1 compose_visit 1 adjacency 0 created 0 retired 0 paint 1 composite 1 retained 10003
+key_path formatted_string_10k wall_ns 134886700 alloc 150183 alloc_bytes 110297881 retained 10001
+key_path typed_u64_10k wall_ns 127959100 alloc 130183 alloc_bytes 110178882 retained 10001 formatted_minus_numeric_ns 6927600 formatted_minus_numeric_alloc 20000 formatted_minus_numeric_bytes 118999
+churn_swap_two wall_ns 56341200 emit 10001 reuse 10001 region_skip 0 subtree_reuse 0 alloc 10034 alloc_bytes 2052812 frees 10033 reconcile 10001 layout 20001 paint_visit 2 compose_visit 10001 adjacency 1 created 0 retired 0 paint 2 composite 1 retained 10001
+churn_move_last_first wall_ns 64592900 emit 10001 reuse 10001 region_skip 0 subtree_reuse 0 alloc 30029 alloc_bytes 2592640 frees 30029 reconcile 10001 layout 20001 paint_visit 10000 compose_visit 10001 adjacency 1 created 0 retired 0 paint 10000 composite 1 retained 10001
+churn_reverse wall_ns 68536600 emit 10001 reuse 10001 region_skip 0 subtree_reuse 0 alloc 30029 alloc_bytes 2592640 frees 30029 reconcile 10001 layout 20001 paint_visit 10000 compose_visit 10001 adjacency 1 created 0 retired 0 paint 10000 composite 1 retained 10001
+churn_replace_one_percent wall_ns 57770400 emit 10001 reuse 9901 region_skip 0 subtree_reuse 0 alloc 11329 alloc_bytes 2401963 frees 11329 reconcile 10001 layout 20001 paint_visit 100 compose_visit 10001 adjacency 1 created 100 retired 100 paint 100 composite 1 retained 10001
+churn_reorder_every_frame frames 1000 adjacency 1000 created 0 retired 0 reconcile 10001000 alloc 10033000 alloc_bytes 2052749908 retained 10001
+container_rich_frame_parent_buckets 250 logical_nodes 751 wall_ns 9585300 ns_per_node 12763 reconcile_nodes 751 alloc 10109
+container_rich_frame_parent_buckets 1000 logical_nodes 3001 wall_ns 38834600 ns_per_node 12940 reconcile_nodes 3001 alloc 40141
+container_rich_frame_parent_buckets 4000 logical_nodes 12001 wall_ns 161390900 ns_per_node 13448 reconcile_nodes 12001 alloc 160179
+surface_locality_1200_updates wall_ns 4805800 surface_updates 1200 surface_frames_consumed 1200 ordinary_emit 0 ordinary_reconcile 0 ordinary_layout 0 ordinary_paint 0 ordinary_compose 0 alloc 0 alloc_bytes 0 retained 2
+virtual logical_items 1000000 frames 100 elapsed_ns 26999400 retained_nodes 23
