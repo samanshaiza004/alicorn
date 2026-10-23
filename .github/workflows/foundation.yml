@@ -28,3 +28,6 @@ jobs:
       - name: Build and run retained-work benchmark
         shell: pwsh
         run: ./tools/bench.ps1 -Odin odin
+      - name: Measure flat material and bounded relief geometry
+        shell: pwsh
+        run: ./tools/bench_material.ps1 -Odin odin

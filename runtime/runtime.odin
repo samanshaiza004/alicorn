@@ -697,6 +697,15 @@ Style_Transform :: struct {
 	text_mix:     f32,
 }
 
+// Omitted treatments inherit the ordinary flat surface (or the rest treatment
+// for pressed). defined=true with MATERIAL_FLAT explicitly selects flat paint.
+// Material handles belong to the Runtime registering the containing theme.
+Button_Surface_Treatment :: struct {
+	defined: bool,
+	material: Material_ID,
+	physical_height: f32,
+}
+
 Button_Recipe :: struct {
 	defined:                bool,
 	surface_role:           Style_Color_Role,
@@ -711,6 +720,8 @@ Button_Recipe :: struct {
 	focus_indicator_mode:   Focus_Indicator_Mode,
 	focus_role:             Style_Color_Role,
 	semantic_active_role:   Style_Color_Role,
+	rest_surface:           Button_Surface_Treatment,
+	pressed_surface:        Button_Surface_Treatment,
 }
 
 Button_Recipe_Set :: struct {
@@ -738,6 +749,8 @@ Button_Visual_State :: struct {
 
 // Resolved outputs are small renderer-facing values, not widget state.
 Button_Resolved_Style :: struct {
+	material:                Material_ID,
+	physical_height:         f32,
 	surface:                 Color,
 	text:                    Color,
 	focus:                   Color,

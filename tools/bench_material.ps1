@@ -18,4 +18,8 @@ if (Test-Path -LiteralPath $SDL3 -PathType Leaf) {
     Copy-Item -LiteralPath $SDL3 -Destination 'out\SDL3.dll' -Force
 }
 & .\out\alicorn_material_benchmark.exe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Odin build benchmarks/native_material_budget -o:speed -out:out\alicorn_material_budget.exe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& .\out\alicorn_material_budget.exe
 exit $LASTEXITCODE

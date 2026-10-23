@@ -1,0 +1,21 @@
+Alicorn native material flat-path benchmark; CPU vertex expansion only
+surfaces_per_sample 4096 iterations 80 vertices_per_batch 24576
+sample 1 direct_quad_ns 2834000 flat_material_ns 2885600 direct_ns_per_surface 8.648681640625 flat_ns_per_surface 8.80615234375 vertices 24576 capacity 24576 same_output true
+sample 2 direct_quad_ns 2904400 flat_material_ns 2844300 direct_ns_per_surface 8.863525390625 flat_ns_per_surface 8.68011474609375 vertices 24576 capacity 24576 same_output true
+sample 3 direct_quad_ns 2820100 flat_material_ns 2882200 direct_ns_per_surface 8.60626220703125 flat_ns_per_surface 8.7957763671875 vertices 24576 capacity 24576 same_output true
+material_budget scale 1 height 0 ok true surface_draw_slots 1 vertices 6
+material_budget scale 1 height 0.5 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1 height -0.25 ok true surface_draw_slots 1 vertices 54
+material_budget scale 1 height 1 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1.25 height 0 ok true surface_draw_slots 1 vertices 6
+material_budget scale 1.25 height 0.5 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1.25 height -0.25 ok true surface_draw_slots 1 vertices 54
+material_budget scale 1.25 height 1 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1.5 height 0 ok true surface_draw_slots 1 vertices 6
+material_budget scale 1.5 height 0.5 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1.5 height -0.25 ok true surface_draw_slots 1 vertices 54
+material_budget scale 1.5 height 1 ok true surface_draw_slots 1 vertices 66
+material_budget scale 2 height 0 ok true surface_draw_slots 1 vertices 6
+material_budget scale 2 height 0.5 ok true surface_draw_slots 1 vertices 66
+material_budget scale 2 height -0.25 ok true surface_draw_slots 1 vertices 54
+material_budget scale 2 height 1 ok true surface_draw_slots 1 vertices 66

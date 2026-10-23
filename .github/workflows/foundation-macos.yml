@@ -52,3 +52,6 @@ jobs:
       - name: Build and run retained-work benchmark
         shell: sh
         run: ./tools/bench.sh
+      - name: Measure flat material and bounded relief geometry
+        shell: bash
+        run: ./tools/bench_material.sh

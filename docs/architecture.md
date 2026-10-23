@@ -145,7 +145,8 @@ Button, Checkbox, Slider, Text Field, Scrollbar, and Semantic Surface
 keeping the retained `Node` under its byte budget. Each entry records its
 recipe family, semantic inputs, dependency domains, and only the matching
 generation snapshots. Buttons, Checkboxes, Sliders, Text Fields, and
-Scrollbars depend on Paint; Semantic Surfaces depend on Paint
+Scrollbars depend on Paint; opt-in Button surface treatments additionally
+depend on Material; Semantic Surfaces depend on Paint
 for role color and Material for shape/material/height/group. Inspector
 provenance reports these retained results, including optional compiled token
 names and alias chains. Node retirement and runtime destruction release

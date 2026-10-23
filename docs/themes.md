@@ -26,13 +26,15 @@ describing a frame.
   payload and its provenance. Retirement and runtime destruction release the
   corresponding sidecar storage.
 - Button, Checkbox, Slider, Text Field, and Scrollbar recipes depend on Paint.
+  An opt-in Button surface treatment also depends on Material.
   Semantic Surface resolution depends on Paint for its role color and Material for its shape,
   material, optical height, and group. Theme registrations and material
   registrations are immutable; recipe/state/theme identity is part of the
   computed-style signature, and semantic-surface description changes are
   hashed into its signature and advance their respective domains.
-- Theme and accent changes are Paint-only today because built-in recipes consume
-  color roles only. Built-in widgets do not implicitly consume theme lengths
+- Theme and accent changes schedule Paint only; immutable opt-in Button
+  treatments are selected with the recipe and never invalidate measurement.
+  Built-in widgets do not implicitly consume theme lengths
   as geometry, but applications can pass an explicitly resolved logical length
   through `style_metric`; the #28 fixture and Scratchpad's editor-padding
   dimension exercise that Metrics → Layout seam. Theme lengths do not implicitly
@@ -151,6 +153,33 @@ Checkbox, Slider, Text Field, and Scrollbar recipe authoring remains a typed
 Odin setup API.
 
 ## Semantic surface composition
+
+### Optional Button relief (typed setup API)
+
+`Button_Recipe.rest_surface` and `pressed_surface` optionally carry a
+`Button_Surface_Treatment{defined, material, physical_height}`. Register the
+immutable material in the same Runtime before registering its theme. Optical
+height is bounded to -2 through 2 and never changes layout, hits, focus,
+semantics, or compositor ordering. Omitted rest is flat; omitted pressed
+inherits rest. An explicitly defined flat pressed treatment overrides relief.
+Disabled controls use rest. Selected/hovered color transforms retain their
+existing order, and focus remains an independent outline.
+
+```odin
+theme := alicorn.DEFAULT_STYLE_THEME
+recipe := &theme.button_recipes.recipes[int(alicorn.Button_Variant.Default)]
+recipe.rest_surface = {defined=true, material=mounted, physical_height=0.5}
+recipe.pressed_surface = {defined=true, material=mounted, physical_height=-0.25}
+theme_id := alicorn.style_theme_register(rt, theme)
+```
+
+This is a setup-only typed recipe extension. JSON contract 0.2 still authors
+colors, lengths, analytic material definitions, and the documented sparse
+Button color/state recipes; it does **not** author these Runtime-local material
+handles. Existing generated themes and default Buttons remain flat. Contrast
+and reduced-transparency preferences adapt relief through the same immutable
+material variants used by semantic surfaces. No style animation or polling is
+introduced.
 
 Applications can wrap ordinary layout content in a semantic surface without
 calculating paint bounds or constructing renderer commands. A surface resolves

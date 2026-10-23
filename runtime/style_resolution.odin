@@ -185,7 +185,10 @@ style_button_resolve_retained :: proc(
 		return style_button_resolve(rt, DEFAULT_STYLE_ENVIRONMENT, .Default, state, drop_target_on)
 	}
 	provenance := style_button_provenance(node.style_environment, node.button_variant, state, drop_target_on)
-	if style_computed_cache_matches(rt, node, .Button, provenance, BUTTON_STYLE_DEPENDENCIES) {
+	dependencies := BUTTON_STYLE_DEPENDENCIES
+	recipe := style_button_recipe(rt, node.style_environment, node.button_variant)
+	if recipe.rest_surface.defined || recipe.pressed_surface.defined { dependencies += {.Material} }
+	if style_computed_cache_matches(rt, node, .Button, provenance, dependencies) {
 		style_computed_cache_record_hit(rt)
 		computed := rt.computed_styles[node.id]
 		return computed.payload.(Button_Resolved_Style)
@@ -195,7 +198,7 @@ style_button_resolve_retained :: proc(
 	style_computed_cache_store(rt, node, Computed_Style{
 		family=.Button,
 		payload=resolved,
-		dependencies=BUTTON_STYLE_DEPENDENCIES,
+		dependencies=dependencies,
 		provenance=provenance,
 	})
 	return resolved

@@ -428,7 +428,7 @@ update_paint :: proc(rt: ^Runtime) {
 					})
 					text_color = resolved_style.text
 					if resolved_style.surface.a > 0 {
-						append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, resolved_style.surface))
+						append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, resolved_style.surface, material=resolved_style.material, physical_height=resolved_style.physical_height))
 					}
 				} else {
 					hovered := visual_part_owner_hovered(rt, node.id)
@@ -440,7 +440,7 @@ update_paint :: proc(rt: ^Runtime) {
 					}, node.drop_position == .On)
 					text_color = resolved_style.text
 					if resolved_style.surface.a > 0 {
-						append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, resolved_style.surface))
+						append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, resolved_style.surface, material=resolved_style.material, physical_height=resolved_style.physical_height))
 					}
 					if resolved_style.selected_indicator == .Underline && !visual_part_owner_has_role(rt, node.id, .Selected_Indicator) {
 						indicator_height := minf(2, node.bounds.h)

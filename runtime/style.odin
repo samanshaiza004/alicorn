@@ -151,6 +151,9 @@ style_transform_is_valid :: proc(transform: Style_Transform) -> bool {
 
 style_button_recipe_is_valid :: proc(recipe: Button_Recipe) -> bool {
 	if !recipe.defined { return true }
+	for treatment in ([?]Button_Surface_Treatment{recipe.rest_surface, recipe.pressed_surface}) {
+		if treatment.defined && !(treatment.physical_height >= -SURFACE_PHYSICAL_HEIGHT_LIMIT && treatment.physical_height <= SURFACE_PHYSICAL_HEIGHT_LIMIT) { return false }
+	}
 	return style_color_role_is_valid(recipe.surface_role) &&
 	       style_color_role_is_valid(recipe.text_role) &&
 	       style_color_role_is_valid(recipe.selected_indicator_role) &&
@@ -247,6 +250,16 @@ style_theme_register :: proc(rt: ^Runtime, theme: Style_Theme) -> Style_Theme_ID
 	if rt == nil || !style_theme_is_valid(theme) {
 		if rt != nil { append_diagnostic(rt, "style theme contains invalid colors, token bindings, logical lengths, or control recipes") }
 		return 0
+	}
+	for recipe in theme.button_recipes.recipes {
+		if !recipe.defined { continue }
+		for treatment in ([?]Button_Surface_Treatment{recipe.rest_surface, recipe.pressed_surface}) {
+			if !treatment.defined { continue }
+			if _, ok := style_material_resolve(rt, treatment.material); !ok {
+				append_diagnostic(rt, "button surface treatment requires a material registered in this Runtime")
+				return 0
+			}
+		}
 	}
 	// Registered themes are immutable snapshots. Copy variable-sized token and
 	// binding data so callers may release or reuse their source buffers.
@@ -512,6 +525,12 @@ style_button_resolve :: proc(
 		focus_indicator_mode=recipe.focus_indicator_mode,
 	}
 	if !recipe.surface_visible { style.surface.a = 0 }
+	treatment := recipe.rest_surface
+	if state.pressed && !state.disabled && recipe.pressed_surface.defined { treatment = recipe.pressed_surface }
+	if treatment.defined {
+		style.material = style_material_accessibility_variant(rt, environment, treatment.material)
+		style.physical_height = treatment.physical_height
+	}
 	if state.selected {
 		style.applied_transforms += {.Selected}
 		style_button_apply_transform(&style, recipe.selected, rt, environment)
