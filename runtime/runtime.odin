@@ -1727,6 +1727,13 @@ Frame_Stats :: struct {
 }
 
 // Runtime's fields remain exported because Odin does not support private
+Controlled_Text_Field_State :: struct {
+	model_text: string,
+	edit_revision: u64,
+	seen_edit_revision: u64,
+	submit_pending: bool,
+}
+
 // struct fields. Applications should treat them as implementation details and
 // use the query and mutation procedures in this package instead. The fields
 // can change between releases without preserving application compatibility.
@@ -1741,6 +1748,7 @@ Runtime :: struct {
 	persistent_allocator_state: ^Runtime_Allocator_State,
 	scratch_allocator_state:    ^Runtime_Allocator_State,
 	nodes:       map[Node_ID]^Node,
+	controlled_text_fields: map[Node_ID]Controlled_Text_Field_State,
 	measure_states: map[Node_ID]Measure_State,
 	finalized_geometry: map[Node_ID]Finalized_Geometry,
 	computed_styles: map[Node_ID]Computed_Style,

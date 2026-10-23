@@ -816,6 +816,7 @@ process_text_edit :: proc(rt: ^Runtime, id: Node_ID, edit: Text_Edit) -> Text_Ch
 	} else if start != end || edit.kind == .Insert {
 		old_text := node.text
 		node.text = text_replace_owned(old_text, edit.text, start, end, rt.persistent_allocator)
+		if old_text != node.text { controlled_text_field_note_edit(rt, id) }
 		if len(old_text) > 0 { delete(old_text, rt.persistent_allocator) }
 		caret := grapheme_ceil_boundary(node.text, start+len(edit.text))
 		node.caret = Text_Position{caret, .Leading}

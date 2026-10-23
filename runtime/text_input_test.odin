@@ -61,6 +61,116 @@ test_text_input_target_suspend_resume_after_target_omitted :: proc(t: ^testing.T
 
 TEXT_INPUT_ALLOCATOR_TEST_FONT :: #load("../assets/fonts/AtkinsonHyperlegibleNext-Variable.ttf")
 
+Controlled_Text_Field_Test_State :: struct {
+	value: Text_Field_Buffer,
+	result: Text_Field_Response,
+}
+
+controlled_text_field_test_render :: proc(rt: ^Runtime, state: ^Controlled_Text_Field_Test_State) -> Node_ID {
+	ui, build := begin_frame(rt)
+	if !build { return 0 }
+	container_begin(&ui, .Root, key=key_string("controlled-text-field-root"), style=layout_style(.Column, grow=1, gap=8))
+	text(&ui, state.value.text, key=key_string("controlled-text-field-echo"))
+	state.result = text_field_controlled(
+		&ui,
+		&state.value,
+		key=key_string("controlled-text-field-input"),
+		style=layout_style(width=240, height=40),
+	)
+	container_end(&ui)
+	end_frame(&ui)
+	return state.result.node
+}
+
+@(test)
+test_controlled_text_field_adopts_commits_but_not_ime_preedit :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 120})
+	defer destroy_runtime(&rt)
+	state: Controlled_Text_Field_Test_State
+	value, value_ok := text_field_buffer_init("seed", context.allocator)
+	if !value_ok {
+		testing.expect(t, false, "the app-owned field buffer should initialize")
+		return
+	}
+	state.value = value
+	defer text_field_buffer_destroy(&state.value)
+
+	invalidate_root(&rt, "controlled text field initial description")
+	field := controlled_text_field_test_render(&rt, &state)
+	testing.expect(t, field != 0 && state.value.text == "seed", "the controlled field should start from the application value")
+	if field == 0 { return }
+	_ = focus(&rt, field)
+	_ = set_text_caret(&rt, field, len(state.value.text))
+	testing.expect(t, process_text_editing(&rt, field, "preedit", 0, 0), "the field should accept an IME preedit")
+	_ = controlled_text_field_test_render(&rt, &state)
+	testing.expect(t, state.value.text == "seed" && !state.result.changed,
+		"IME preedit must remain transient and must not mutate application-owned committed text")
+	change := process_text_input(&rt, field, "!")
+	if len(change.text) > 0 { delete(change.text, rt.persistent_allocator) }
+	_ = controlled_text_field_test_render(&rt, &state)
+	testing.expect(t, state.value.text == "seed!" && state.result.changed,
+		"a committed input event should be copied into the app-owned buffer on the next description")
+	testing.expect(t, state.result.node == field, "controlled adoption must preserve the retained field identity")
+	testing.expect(t, text_field_buffer_set(&state.value, "programmatic"), "the app should be able to replace controlled text explicitly")
+	invalidate_root(&rt, "controlled text field programmatic replacement")
+	_ = controlled_text_field_test_render(&rt, &state)
+	retained, retained_found := rt.nodes[field]
+	testing.expect(t, retained_found, "the controlled field should remain retained after a programmatic update")
+	if retained_found {
+		testing.expect(t, retained.text == "programmatic", "the retained field should adopt the new app-owned text")
+	}
+	testing.expect(t, !state.result.changed, "programmatic text replacement should not be reported as a user edit")
+	text_field_buffer_destroy(&state.value)
+
+	value, value_ok = text_field_buffer_init("submit", context.allocator)
+	if !value_ok { return }
+	state.value = value
+	invalidate_root(&rt, "controlled text field programmatic update")
+	field = controlled_text_field_test_render(&rt, &state)
+	_ = focus(&rt, field)
+	testing.expect(t, text_field_request_submit(&rt, field), "a focused controlled field should accept one submit request")
+	_ = controlled_text_field_test_render(&rt, &state)
+	testing.expect(t, state.result.submitted, "the next controlled description should consume the submit result once")
+	invalidate_root(&rt, "controlled text field submit consumed")
+	_ = controlled_text_field_test_render(&rt, &state)
+	testing.expect(t, !state.result.submitted, "a consumed submit must not replay on later descriptions")
+}
+
+@(test)
+test_controlled_text_field_runtime_snapshot_released_on_destroy :: proc(t: ^testing.T) {
+	tracking: mem.Tracking_Allocator
+	mem.tracking_allocator_init(&tracking, context.allocator)
+	defer mem.tracking_allocator_destroy(&tracking)
+
+	rt := new_runtime(
+		Rect{0, 0, 320, 120},
+		Runtime_Config{persistent_allocator=mem.tracking_allocator(&tracking)},
+	)
+	runtime_alive := true
+	defer { if runtime_alive { destroy_runtime(&rt) } }
+	state: Controlled_Text_Field_Test_State
+	value, value_ok := text_field_buffer_init("owned", context.allocator)
+	if !value_ok {
+		testing.expect(t, false, "the app-owned field buffer should initialize")
+		return
+	}
+	state.value = value
+	defer text_field_buffer_destroy(&state.value)
+
+	invalidate_root(&rt, "controlled field allocator lifecycle test")
+	_ = controlled_text_field_test_render(&rt, &state)
+	testing.expect(t, len(rt.controlled_text_fields) == 1,
+		"the runtime should retain only its own committed-value snapshot for the active controlled field")
+	if len(tracking.allocation_map) == 0 {
+		testing.expect(t, false, "the runtime fixture should have tracked retained allocations before destruction")
+		return
+	}
+	destroy_runtime(&rt)
+	runtime_alive = false
+	testing.expect(t, len(tracking.allocation_map) == 0,
+		"runtime destruction should release the controlled-field snapshot and its sidecar storage")
+}
+
 text_input_allocator_test_render :: proc(rt: ^Runtime) -> Node_ID {
 	ui, build := begin_frame(rt)
 	if !build { return 0 }
