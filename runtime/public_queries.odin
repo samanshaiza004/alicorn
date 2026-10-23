@@ -197,9 +197,11 @@ text_field_interaction :: proc(rt: ^Runtime, id: Node_ID) -> (state: Text_Field_
 }
 
 // text_change_destroy releases the owned result returned by text input APIs.
+// Pass the Runtime that produced the result. A nil Runtime leaves the result
+// untouched so its ownership is not silently discarded.
 text_change_destroy :: proc(rt: ^Runtime, change: ^Text_Change) {
-	if change == nil { return }
-	if rt != nil && len(change.text) > 0 { delete(change.text, rt.persistent_allocator) }
+	if change == nil || rt == nil { return }
+	if len(change.text) > 0 { delete(change.text, rt.persistent_allocator) }
 	change^ = {}
 }
 

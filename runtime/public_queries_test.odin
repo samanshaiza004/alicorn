@@ -27,6 +27,26 @@ test_text_field_interaction_is_a_normalized_public_snapshot :: proc(t: ^testing.
 }
 
 @(test)
+test_text_change_destroy_preserves_ownership_when_runtime_is_nil :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 160})
+	defer destroy_runtime(&rt)
+	ui, build := begin_frame(&rt)
+	if !build { testing.expect(t, false, "the initial frame should build"); return }
+	container_begin(&ui, .Root, key=key_string("text-change-destroy-root"), style=layout_style())
+	field := text_field(&ui, "seed", key=key_string("text-change-destroy-field"))
+	container_end(&ui)
+	end_frame(&ui)
+	change := process_text_input(&rt, field, "!")
+	testing.expect(t, len(change.text) > 0, "committed text input should return an owned result")
+	text_change_destroy(nil, &change)
+	testing.expect(t, len(change.text) > 0 && change.node == field,
+		"a nil Runtime must leave an owned text result intact so its owner can still release it")
+	text_change_destroy(&rt, &change)
+	testing.expect(t, len(change.text) == 0 && change.node == 0 && !change.changed,
+		"a valid Runtime should release and clear the owned result")
+}
+
+@(test)
 test_node_identity_key_returns_local_string_key_inside_scope :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 320, 160})
 	defer destroy_runtime(&rt)
