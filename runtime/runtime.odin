@@ -1833,6 +1833,7 @@ Runtime :: struct {
 	scrollbar_drag_offset_origin: f32,
 	activation_node: Node_ID,
 	activation_sequence: u64,
+	interaction_consumption_sequence: u64,
 	paint_queue: [dynamic]Node_ID,
 	composition_rebuild: bool,
 	invalidated: bool,

@@ -266,7 +266,17 @@ need:
   fields also own normal mouse selection: click-drag selects graphemes,
   double-click selects a word, triple-click selects a logical line, and
   Shift-click extends the current selection;
+- `.Correct_After_Interaction` on a native `Application` for a small app whose
+  controls update ordinary app state during the UI description. A consumed
+  activation or controlled-value result requests a corrective description
+  before presentation, so labels can appear before or after their controls.
+  The default `.Explicit` policy is unchanged; regions still require their
+  own revision updates, and no application memory is observed or polled;
 - a custom GPU surface for a bounded, high-frequency visualization.
+
+This policy is opt-in. State remains application-owned, and the policy uses
+the existing bounded host stabilization loop; it does not create a reactive
+model or change the explicit invalidation contract for advanced applications.
 
 During development, [application mutation diagnostics](application-mutation-diagnostics.md)
 can check that selected app-owned revisions schedule the corresponding

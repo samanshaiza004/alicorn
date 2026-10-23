@@ -155,6 +155,15 @@ Application_Build_Proc :: proc(
 	dpi_scale: f32,
 ) -> alicorn.Node_ID
 
+// Application_Interaction_Update_Policy controls whether a consumed widget
+// interaction during a description requests a corrective description.
+// Stabilization remains bounded by the native host pass limit. Explicit is
+// the default for applications that manage invalidation themselves.
+Application_Interaction_Update_Policy :: enum {
+	Explicit,
+	Correct_After_Interaction,
+}
+
 // Application_Initialize_Proc runs on the application thread after Runtime
 // creation and before host-default fonts and renderer resources initialize.
 // It is the intended place to install embedded or disk-loaded font roles.
@@ -328,6 +337,7 @@ Application :: struct {
 	window_chrome_layout: Window_Chrome_Layout_Proc,
 	// Optional theme-resolved appearance for host-owned integrated chrome.
 	window_chrome_appearance: Application_Chrome_Appearance_Proc,
+	interaction_update_policy: Application_Interaction_Update_Policy,
 	on_initialize:      Application_Initialize_Proc,
 	build:              Application_Build_Proc,
 	on_text_change:     Application_Text_Change_Proc,
