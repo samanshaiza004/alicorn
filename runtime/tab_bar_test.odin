@@ -195,11 +195,13 @@ tab_bar_test_visual_part :: proc(rt: ^Runtime, owner: Node_ID, role: Visual_Part
 }
 
 tab_bar_test_button :: proc(rt: ^Runtime, label: string) -> (id: Node_ID, count: int) {
-	for candidate in rt.order {
-		node, found := rt.nodes[candidate]
-		if found && node.active && node.kind == .Button && node.label == label {
-			id = candidate
-			count += 1
+	for _, entity in rt.semantic_entities {
+		if entity.node.role == .Button && entity.node.label == label && entity.node.visual_node != 0 {
+			node, found := rt.nodes[entity.node.visual_node]
+			if found && node.active {
+				id = entity.node.visual_node
+				count += 1
+			}
 		}
 	}
 	return
@@ -619,8 +621,31 @@ test_tab_bar_shrinks_tabs_then_overflows_at_minimum_width :: proc(t: ^testing.T)
 	testing.expect(t, left_count == 1 && right_count == 1,
 		"overflow should expose accessible previous/next controls so hidden tabs are discoverable")
 	if left_count != 1 || right_count != 1 { return }
+	left_glyph_id, left_glyph_count := tab_bar_test_visual_part(&rt, left_id, .Label)
+	right_glyph_id, right_glyph_count := tab_bar_test_visual_part(&rt, right_id, .Label)
+	left_glyph_painted, right_glyph_painted := false, false
+	if left_glyph_count == 1 {
+		for command in rt.nodes[left_glyph_id].paint {
+			if _, ok := command.payload.(Text_Paint); ok { left_glyph_painted = true }
+		}
+	}
+	if right_glyph_count == 1 {
+		for command in rt.nodes[right_glyph_id].paint {
+			if _, ok := command.payload.(Text_Paint); ok { right_glyph_painted = true }
+		}
+	}
+	testing.expect(t, left_glyph_count == 1 && right_glyph_count == 1 && left_glyph_painted && right_glyph_painted &&
+		rt.nodes[left_glyph_id].kind == .Text && rt.nodes[left_glyph_id].text == "‹" &&
+		rt.nodes[right_glyph_id].kind == .Text && rt.nodes[right_glyph_id].text == "›",
+		"the accessible overflow buttons should render visible chevrons as retained label children")
 	testing.expect(t, rt.nodes[left_id].disabled && !rt.nodes[right_id].disabled,
 		"the left control should be disabled at the leading edge while the right control remains actionable")
+	left_semantic := rt.semantic_entities[rt.nodes[left_id].semantic_id].node
+	right_semantic := rt.semantic_entities[rt.nodes[right_id].semantic_id].node
+	testing.expect(t, semantic_states_has(left_semantic.states, .Disabled) &&
+		!semantic_actions_has(left_semantic.actions, .Press) &&
+		!semantic_states_has(right_semantic.states, .Disabled) && semantic_actions_has(right_semantic.actions, .Press),
+		"overflow scroll controls should expose disabled state and available actions to accessibility clients")
 	tab_bar_test_click(&rt, right_id)
 	_ = tab_bar_test_build(&rt, items[:], 180, options)
 	right_offset := scroll_region_state(&rt, bar_id).offset_x
@@ -1070,6 +1095,45 @@ test_tab_bar_dirty_marker_only_yields_to_close_hover :: proc(t: ^testing.T) {
 	direct_result := tab_bar_test_build(&direct_rt, items[:], 320, options)
 	testing.expect(t, direct_result.action != .Close,
 		"a hidden close action must not produce a close request from a direct click")
+}
+
+@(test)
+test_tab_bar_supports_muted_italic_labels_and_full_filename_tooltips :: proc(t: ^testing.T) {
+	items := [1]Tab_Bar_Item{{
+		key=key_string("preview-document"),
+		label="README.md",
+		label_italic=true,
+		label_muted=true,
+		tooltip="C:/workspace/docs/README.md",
+		selected=true,
+		closable=true,
+		semantic_id=tab_bar_test_semantic(21),
+	}}
+	rt := new_runtime(Rect{0, 0, 360, 120})
+	defer destroy_runtime(&rt)
+	_ = tab_bar_test_build(&rt, items[:], 320, tab_bar_test_options())
+
+	tab_id, tab_count := tab_bar_test_item_node(&rt, items[0].semantic_id)
+	label_id, label_count := tab_bar_test_visual_part(&rt, tab_id, .Label)
+	testing.expect(t, tab_count == 1 && label_count == 1,
+		"a preview label should remain an ordinary retained tab label")
+	if tab_count != 1 || label_count != 1 { return }
+
+	tab := rt.nodes[tab_id]
+	label := rt.nodes[label_id]
+	muted := style_environment_color(&rt, DEFAULT_STYLE_ENVIRONMENT, .Muted_Text)
+	testing.expect(t, tab.tooltip_text == items[0].tooltip,
+		"the tab should expose the complete filename through its hover tooltip")
+	testing.expect_value(t, len(label.text_style_spans), 1)
+	testing.expect_value(t, len(label.text_paint_spans), 1)
+	testing.expect(t, len(label.text_style_spans) == 1 && label.text_style_spans[0].start == 0 &&
+		label.text_style_spans[0].end == len(items[0].label) && label.text_style_spans[0].italic &&
+		label.text_style_spans[0].italic_set,
+		"a preview tab label should use the requested italic face across its complete visible name")
+	testing.expect(t, len(label.text_paint_spans) == 1 && label.text_paint_spans[0].start == 0 &&
+		label.text_paint_spans[0].end == len(items[0].label) && label.text_paint_spans[0].color_set &&
+		label.text_paint_spans[0].color == muted,
+		"a preview tab label should use the theme's subdued text color without changing its filename")
 }
 
 @(test)
