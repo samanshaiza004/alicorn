@@ -10,6 +10,9 @@ TAB_BAR_SCROLL_CONTROL_WIDTH :: f32(22)
 Tab_Bar_Item :: struct {
 	key:         UI_Key,
 	label:       string,
+	label_italic: bool,
+	label_muted:  bool,
+	tooltip:     string,
 	selected:    bool,
 	closable:    bool,
 	dirty:       bool,
@@ -262,6 +265,7 @@ tab_bar :: proc(
 			variant=.Tab,
 		)
 		if tab_id == 0 { continue }
+		if len(item.tooltip) > 0 { _ = tooltip(ui, item.tooltip) }
 		_ = visual_part_attach(ui, tab_id, tab_id, visual_part_core(.Surface))
 		pending := &rt.pending[len(rt.pending)-1].description
 		// Keep the fixed-size description contract compact by encoding the
@@ -319,6 +323,21 @@ tab_bar :: proc(
 			label_layout = layout_style(.Row)
 		}
 		label_id := text(ui, item.label, key=key_u64(2), style=label_layout, font=Font_Role.UI, text_style=label_style)
+		if item.label_italic && len(item.label) > 0 {
+			italic_span := make([dynamic]Text_Style_Span, 0, 1, allocator=context.temp_allocator)
+			append(&italic_span, Text_Style_Span{start=0, end=len(item.label), italic=true, italic_set=true})
+			_ = text_style_spans(ui, label_id, italic_span[:])
+		}
+		if item.label_muted && len(item.label) > 0 {
+			muted_span := make([dynamic]Text_Paint_Span, 0, 1, allocator=context.temp_allocator)
+			append(&muted_span, Text_Paint_Span{
+				start=0,
+				end=len(item.label),
+				color=style_color(ui, .Muted_Text),
+				color_set=true,
+			})
+			_ = text_paint_spans(ui, label_id, muted_span[:])
+		}
 		_ = visual_part_attach(ui, label_id, tab_id, visual_part_core(.Label))
 		if compact { container_end(ui) }
 
@@ -456,19 +475,33 @@ tab_bar_scroll_button :: proc(
 	loc := #caller_location,
 ) -> (id: Node_ID, clicked: bool) {
 	if ui == nil || ui.runtime == nil { return }
-	id = emit_key(
+	id, clicked = button_begin(
 		ui,
-		.Button,
-		resolve_source(Source_Site{}, "tab_bar_scroll_button", loc),
-		label=accessible_label,
-		text=glyph,
+		"",
 		key=key,
 		style=layout_style(.Row, width=width, height=height, align=.Center),
-		focusable=true,
-		disabled=disabled,
-		button_variant=.Toolbar,
+		state=Button_State{disabled=disabled},
+		loc=loc,
+		content_style=button_content_style(padding_x=0, padding_y=0),
+		variant=.Toolbar,
 	)
-	return id, id != 0 && !disabled && consume_activation(ui.runtime, id)
+	if id == 0 { return }
+	actions := Semantic_Actions{}
+	states := Semantic_States{}
+	if !disabled { actions = semantic_actions_add(actions, .Press) }
+	if disabled { states = semantic_states_add(states, .Disabled) }
+	_ = semantic_description(ui, .Button, accessible_label, states=states, actions=actions)
+	glyph_id := text(
+		ui,
+		glyph,
+		key=key_u64(1),
+		style=layout_style(.Row, grow=1, height=height, align=.Center),
+		font=Font_Role.UI,
+		text_style=DEFAULT_BUTTON_TEXT_STYLE,
+	)
+	_ = visual_part_attach(ui, glyph_id, id, visual_part_core(.Label))
+	button_end(ui)
+	return
 }
 
 tab_bar_pending_button_disabled_set :: proc(rt: ^Runtime, id: Node_ID, disabled: bool) {
@@ -477,6 +510,13 @@ tab_bar_pending_button_disabled_set :: proc(rt: ^Runtime, id: Node_ID, disabled:
 		pending := &rt.pending[index]
 		if pending.kind == .Description && pending.description.id == id {
 			pending.description.disabled = disabled
+			if disabled {
+				pending.semantic.states = semantic_states_add(pending.semantic.states, .Disabled)
+				pending.semantic.actions -= {.Press}
+			} else {
+				pending.semantic.states = semantic_states_remove(pending.semantic.states, .Disabled)
+				pending.semantic.actions = semantic_actions_add(pending.semantic.actions, .Press)
+			}
 			return
 		}
 	}
