@@ -1,0 +1,8 @@
+Alicorn focused text-layout benchmark (headless; raw wall-clock nanoseconds)
+workload logical_rows 20000 viewport 1180 x 860 estimated_row_height 84 text_bytes_first_row 358 typography_spans 2 paint_spans 3
+initial_frame visible_rows 11 measured_heights 11 shape_calls_total 11 retained_nodes 14
+warmup_geometry measured_height_rows 12 height_min 62.40039 height_max 104.00098
+variable_height_scroll frames 120 elapsed_ns 361727000 ns_per_frame 3014391 shape_calls 246 shape_cache_hits 0 layout_node_visits 3460 retained_nodes 15
+wrapped_width_reflow frames 40 elapsed_ns 134038100 ns_per_frame 3350952 shape_calls 362 shape_cache_hits 0 layout_node_visits 924 retained_nodes 13
+final_geometry measured_height_rows 317 height_min 62.40039 height_max 187.2002
+text_cache_entries 317
