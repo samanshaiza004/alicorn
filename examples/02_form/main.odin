@@ -7,7 +7,6 @@ package main
 
 import "core:fmt"
 import "core:os"
-import "core:strings"
 import alicorn "../../runtime"
 import host "../../native/sdl_gpu"
 import sdl3 "vendor:sdl3"
@@ -28,8 +27,7 @@ App :: struct {
 	notice_action_count: int,
 	notice_handles: [alicorn.NOTICE_QUEUE_CAPACITY]alicorn.Notice_Handle,
 	notice_handle_write: int,
-	name: string,
-	name_owned: bool,
+	name: alicorn.Text_Field_Buffer,
 }
 
 GALLERY_TAB_SEMANTIC_NAMESPACE :: u64(0x5749444745544741)
@@ -154,19 +152,9 @@ reset_values :: proc(app: ^App) {
 	app.offset = -1.5
 }
 
-form_text_change :: proc(state: rawptr, rt: ^alicorn.Runtime, change: alicorn.Text_Change) {
-	if !change.changed { return }
-	app := cast(^App)state
-	value, err := strings.clone(change.text)
-	if err != nil { return }
-	if app.name_owned { delete(app.name) }
-	app.name, app.name_owned = value, true
-	alicorn.invalidate_root(rt, "form text field changed")
-}
-
 form_stop :: proc(state: rawptr) {
 	app := cast(^App)state
-	if app.name_owned { delete(app.name) }
+	alicorn.text_field_buffer_destroy(&app.name)
 }
 
 build_app :: proc(
@@ -328,9 +316,9 @@ build_app :: proc(
 	alicorn.text(&ui, "Checkboxes", style=alicorn.layout_style(height=28), text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_SEMIBOLD})
 	_ = alicorn.semantic_static_text(&ui)
 	alicorn.text(&ui, "Name", style=alicorn.layout_style(height=22))
-	alicorn.text_field(&ui, app.name, key=alicorn.key_string("name"), style=alicorn.layout_style(height=36))
+	alicorn.text(&ui, fmt.tprintf("Preview: Hello, %s", app.name.text), style=alicorn.layout_style(height=24))
+	_ = alicorn.text_field_controlled(&ui, &app.name, key=alicorn.key_string("name"), style=alicorn.layout_style(height=36))
 	_ = alicorn.semantic_description(&ui, .Text_Field, "Name")
-	alicorn.text(&ui, fmt.tprintf("Hello, %s", app.name), style=alicorn.layout_style(height=24))
 	alicorn.text(&ui, "Click or focus a checkbox and press Space to toggle it. Enter is reserved for buttons.")
 	alicorn.container_begin(&ui, .Container, label="gallery-actions", style=alicorn.layout_style(.Row, gap=8))
 	if alicorn.button(&ui, "Reset values", key=alicorn.key_string("reset"), style=alicorn.layout_style(.Row, width=140, height=36)) {
@@ -472,6 +460,8 @@ build_app :: proc(
 }
 
 main :: proc() {
+	name, name_ok := alicorn.text_field_buffer_init("Alicorn", context.allocator)
+	if !name_ok { return }
 	app := App{
 		show_grid=true,
 		gain=0.65,
@@ -481,7 +471,7 @@ main :: proc() {
 		last_closed_tab=-1,
 		selected_choice=1,
 		notice_feedback="Post examples to inspect transient, persistent, and actionable presentation.",
-		name="Alicorn",
+		name=name,
 	}
 	smoke := false
 	for argument in os.args {
@@ -497,7 +487,7 @@ main :: proc() {
 		width=1000,
 		height=760,
 		build=build_app,
-		on_text_change=form_text_change,
+		interaction_update_policy=.Correct_After_Interaction,
 		on_stop=form_stop,
 	}, smoke=smoke)
 }

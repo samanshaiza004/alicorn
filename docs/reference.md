@@ -146,6 +146,11 @@ checker verifies only the mutation scopes the application explicitly reports.
 | `checkbox` | Emit a controlled checkbox; returns `{value, changed}`. |
 | `slider_f32` | Emit a controlled horizontal `f32` slider; returns `{value, changed}`. |
 | `text_field` | Emit an editable text field. It supports caret placement, Shift-click, grapheme drag selection, double-click word selection, triple-click logical-line selection, and word/line-granularity dragging. The host reports committed edits through `on_text_change`. |
+| `Text_Field_Buffer` | App-owned committed text with an explicit allocator. Initialize and destroy it with the matching helpers; keep one owner and do not copy the owning struct. |
+| `text_field_buffer_init` / `text_field_buffer_destroy` | Copy initial text into the chosen allocator and release the owned text when the application is done with the buffer. The allocator must outlive the buffer. |
+| `text_field_controlled` | Bind a retained text field to a `Text_Field_Buffer`. The buffer pointer is borrowed only during the call; committed input is adopted on the next description, while IME preedit remains transient. Returns `changed` and one-shot `submitted` flags. |
+| `text_field_buffer_set` | Replace a controlled buffer's value using its stored allocator. Call the normal application invalidation path after programmatic changes. |
+| `Text_Field_Response` | Return the retained node ID and one-description `changed` / `submitted` events from a controlled text field. |
 | `text_field_value` | Read the borrowed current value of an active retained text field. |
 | `alicorn:text_interaction` | Import `Text_Selection_Range` and `text_selection_*` for Unicode word/line selection ranges and drag-extension rules in application-owned editors. |
 | `node_info` / `node_identity_key` / `node_by_key` | Read a node's geometry, interaction state, scroll metrics, and explicit identity. |

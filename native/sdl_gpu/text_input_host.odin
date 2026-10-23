@@ -26,6 +26,22 @@ native_text_input_owner_is_valid :: proc(rt: ^alicorn.Runtime, id: alicorn.Node_
 		(alicorn.select_wants_text_input(rt) && id == rt.focused)
 }
 
+// A controlled field submits on an unmodified, non-repeating Return after
+// application key handling declines it. AppKit/SDL composition keeps Enter
+// when IME preedit is active.
+native_text_field_submit_on_key :: proc(
+	rt: ^alicorn.Runtime,
+	key: sdl3.Keycode,
+	repeat, modified, composition_active: bool,
+) -> bool {
+	if rt == nil || repeat || modified || composition_active ||
+	   (key != sdl3.K_RETURN && key != sdl3.K_KP_ENTER) {
+		return false
+	}
+	if node, found := rt.nodes[rt.focused]; found && node.composition.active { return false }
+	return alicorn.text_field_request_submit(rt, rt.focused)
+}
+
 native_current_text_input_owner :: proc(rt: ^alicorn.Runtime, state: ^Native_Text_Input_State = nil) -> alicorn.Node_ID {
 	if state != nil {
 		if state.suspended || !state.active || !state.window_focused || state.owner == 0 || state.owner != rt.focused { return 0 }

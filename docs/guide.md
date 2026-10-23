@@ -33,6 +33,15 @@ arbitrary application memory. When a logical change needs a new description,
 invalidate the root or the affected region. The native host handles ordinary
 pointer and window input and schedules the next build.
 
+For a form or search field, `Text_Field_Buffer` gives committed text explicit
+application ownership without retaining a pointer into app state. Initialize
+it once with an allocator and destroy it with the app; describe it with
+`text_field_controlled` and use the returned `changed` flag to update dependent
+state. IME preedit remains transient runtime state. Programmatic replacements
+use `text_field_buffer_set` and the application's normal invalidation path.
+The lower-level `text_field` and host edit callback remain available when that
+fits the application better.
+
 ## Load application fonts and images
 
 Load app-owned fonts in `Application.on_initialize`. It runs after Alicorn
@@ -266,6 +275,9 @@ need:
   fields also own normal mouse selection: click-drag selects graphemes,
   double-click selects a word, triple-click selects a logical line, and
   Shift-click extends the current selection;
+- `Text_Field_Buffer` and `text_field_controlled` when an app-owned form or
+  search string should adopt committed input through one explicit allocator
+  contract. The host never retains the application's buffer pointer;
 - `.Correct_After_Interaction` on a native `Application` for a small app whose
   controls update ordinary app state during the UI description. A consumed
   activation or controlled-value result requests a corrective description

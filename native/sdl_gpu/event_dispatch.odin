@@ -523,6 +523,18 @@ pump_events :: proc(
 					event.key.mod,
 				)
 			}
+			composition_active := false
+			if node, found := rt.nodes[rt.focused]; found { composition_active = node.composition.active }
+			if text_input_state != nil && text_input_state.composition_owner == rt.focused { composition_active = true }
+			if !runtime_key_handled && native_text_field_submit_on_key(
+				rt,
+				event.key.key,
+				event.key.repeat,
+				native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT|sdl3.KMOD_CTRL|sdl3.KMOD_ALT|sdl3.KMOD_GUI),
+				composition_active,
+			) {
+				runtime_key_handled = true
+			}
 			if event.key.key == sdl3.K_F12 && diagnostics_capture_requested != nil {
 				diagnostics_capture_requested^ = true
 				fmt.println("alicorn_diagnostics", "capture_requested", "F12")

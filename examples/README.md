@@ -16,7 +16,7 @@ processes and persists only a split ratio, logical scroll offset, and record key
 | Step | Example | What it teaches | Run |
 |---|---|---|---|
 | 1 | [01 · Hello](01_hello/main.odin) | Native window/event loop, text, a button, app-owned counter state, and opt-in corrective interaction updates | `odin run examples/01_hello` |
-| 2 | [02 · Form](02_form/main.odin) | Text field, checkbox, sliders, controlled state, Select, and retained notices | `odin run examples/02_form` |
+| 2 | [02 · Form](02_form/main.odin) | Allocator-owned controlled text field, checkbox, sliders, Select, and retained notices | `odin run examples/02_form` |
 | 3 | [03 · Async List](03_async_list/main.odin) | Worker completion through `Application_Waker`, a 10,000-item fixed-row virtual list, stable keys, and event-driven idle | `odin run examples/03_async_list` |
 | 4 | [04 · Custom Surface](04_custom_surface/main.odin) | Bounded retained GPU geometry in clipped layout, resize and DPI-aware updates | `odin run examples/04_custom_surface` |
 | 5 | [05 · Inspector](05_inspector/main.odin) | Retained tree, focus, semantic action and causal work inspection | `odin run examples/05_inspector -- --inspector` |
