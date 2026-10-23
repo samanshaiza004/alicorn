@@ -35,6 +35,7 @@ run_application_loop :: proc(
 	if native_menu != nil {
 		native_menu.runtime = rt
 	}
+	when ODIN_OS == .Darwin { native_darwin_titlebar_deliver_metrics(native_menu) }
 	quit_requested := false
 	logical_resize_events := 0
 	pixel_resize_events := 0
@@ -132,9 +133,12 @@ run_application_loop :: proc(
 	pointer_button_state := Native_Pointer_Button_State{}
 	alicorn.invalidate_root(rt, "SDL application initial frame")
 	_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing, stop_on_hard_error=inspector.enabled)
-	when ODIN_OS == .Darwin { native_darwin_titlebar_fixture_sync_layout(native_menu) }
+	when ODIN_OS == .Darwin { native_darwin_titlebar_sync_layout(native_menu) }
 	when ODIN_OS == .Windows {
-		if native_menu != nil { _ = native_menu_sync_chrome_appearance(native_menu, request_redraw=false) }
+		if native_menu != nil {
+			native_menu_sync_chrome_layout(native_menu)
+			_ = native_menu_sync_chrome_appearance(native_menu, request_redraw=false)
+		}
 	}
 	initial_summary := native_inspector_host_summary(&timing, rt, 0)
 	native_inspector_update(&inspector, rt, rt.viewport, &initial_summary)
@@ -495,10 +499,11 @@ run_application_loop :: proc(
 				alicorn.end_presentation_frame(&presentation_ui)
 			}
 		}
-		when ODIN_OS == .Darwin { native_darwin_titlebar_fixture_sync_layout(native_menu) }
+		when ODIN_OS == .Darwin { native_darwin_titlebar_sync_layout(native_menu) }
 		when ODIN_OS == .Windows {
 			if native_menu != nil {
 				application_frame_pending := alicorn.frame_needs_submission(rt)
+				if application_frame_pending { native_menu_sync_chrome_layout(native_menu) }
 				if !native_menu.chrome_appearance_resolved || application_frame_pending {
 					_ = native_menu_sync_chrome_appearance(
 						native_menu,

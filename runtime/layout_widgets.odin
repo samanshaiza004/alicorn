@@ -10,6 +10,23 @@ Split_Handle :: struct {
 	position: f32,
 }
 
+// A passive snapshot in logical units. Save preferred_position, rather than
+// position, when a narrow viewport has temporarily constrained the panes.
+Split_State :: struct {
+	id: Node_ID,
+	axis: Split_Axis,
+	preferred_position, position: f32,
+	bounds: Rect,
+}
+
+split_state :: proc(rt: ^Runtime, id: Node_ID) -> (state: Split_State, ok: bool) {
+	if rt == nil { return }
+	if node, found := rt.nodes[id]; found && node.active && node.kind == .Split {
+		return Split_State{id, node.split_axis, node.split_preferred_position, node.split_position, node.bounds}, true
+	}
+	return
+}
+
 DEFAULT_SPLIT_STYLE :: Layout_Style{
 	direction=.Column,
 	width=-1,

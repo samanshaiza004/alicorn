@@ -75,6 +75,20 @@ states. Readback checks every caption pixel against the expected coverage and
 colors; unwanted title/menu pixels inside caption controls fail this check.
 PPM screenshots are retained under `out/caption-fixtures/` for inspection.
 
+For the application-authored titlebar path, run
+`./tools/native_sdl_gpu.ps1 -WindowsTitlebarFixture -Odin <odin.exe>`. The
+fixture keeps native File/Edit/View/Help menus and all three caption buttons,
+with two retained tabs and a blank drag region between them. Verify tab select,
+close, reorder, and drag-out detachment; native menu mouse and Alt navigation;
+Snap Layout hover; blank-space double-click maximize/restore; resize edges;
+maximized drag-to-restore; and moving between 100/125/150/200% displays. The
+detached tab opens a real secondary native window. A tab drag must stay client-
+owned while it crosses menu, blank, or caption-control bounds.
+
+Scratchpad uses the same host mode with its own menus and document tabs. Its
+application-rendered band replaces the host's redundant window-title label,
+while Win32/DWM retain menu and caption-button ownership.
+
 A live SDL-created HWND additionally passes restored → maximized → restored,
 caption-center `WM_NCHITTEST` calls through the installed subclass, and
 maximized client bounds equal to the current monitor's work area. On this

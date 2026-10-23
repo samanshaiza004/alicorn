@@ -1,9 +1,8 @@
 # Native menus and integrated title bar
 
-For the proposed macOS tab/titlebar integration, see the
-[2026-10-20 research and implementation proposal](research/macos-integrated-titlebar.md)
+For the macOS tab/titlebar integration, see the
+[research and implementation record](research/macos-integrated-titlebar.md)
 and its [macOS validation record](validation/macos-sync-2026-10-20.md).
-The proposal does not change the existing platform behavior described below.
 
 This experiment adds a small semantic menu description to the SDL host. Menu
 trees are borrowed for `Run`; labels and structure are copied into native
@@ -33,13 +32,18 @@ native HMENU popups. Menu-label and caption-control rectangles belong to the
 SDL host; they are not application-retained nodes, and hover only schedules
 host presentation work.
 
-The host owns two explicit logical coordinate spaces. The window space includes
-the integrated chrome. The application space begins below that chrome, keeps an
-origin of `(0, 0)`, and has a viewport shortened by the chrome height. Rendering
-translates application display geometry down by that height; pointer and wheel
-input is translated back into application coordinates; native text-input
-candidate geometry is translated into window coordinates. Applications do not
-need to know that an integrated title/menu band exists.
+The default integrated mode owns two logical coordinate spaces: the window
+space includes the chrome, while the application viewport begins below it.
+Applications that supply both `window_chrome_metrics` and
+`window_chrome_layout` instead opt into ordinary retained content at the top of
+the Windows client area. In that mode the host removes the content inset,
+keeps Win32 menu labels and caption controls above application hit regions, and
+draws the application header below those host-owned elements. Metrics report
+the usable horizontal span between menu labels and caption controls. Explicit
+blank drag regions become `HTCAPTION`; all other unregistered header pixels
+remain normal client input. Rendering and pointer transforms therefore still
+share the same window-logical coordinate space without application-side DPI
+adjustments.
 
 Win32 non-client handling asks `DwmDefWindowProc` first for caption-button
 behavior. Caption-control bounds come from `DWMWA_CAPTION_BUTTON_BOUNDS` in
@@ -107,9 +111,28 @@ and Command on macOS. Shift and Alt retain their names; `Super` means the
 Windows key on Windows and Control on macOS. Applications handle selected items with
 `Application.on_menu_command`.
 
+macOS applications that want content beside native traffic lights opt into
+`Content_Title_Bar`; Windows applications keep `Integrated_Title_Bar` and may
+provide both chrome callbacks to place retained content in its menu/titlebar
+band. The application receives `Window_Chrome_Metrics` and declares an ordinary
+retained header node plus up to `WINDOW_CHROME_REGION_CAPACITY`
+interactive/window-drag nodes in `Window_Chrome_Layout`. Metrics use
+window-logical coordinates and include the available `content_start_x` and
+`content_end_x`; on Windows these fall between native menu labels and caption
+controls. The host copies finalized retained geometry after layout, including
+retained-only layout changes; callbacks and application-owned slices are not
+retained. Native controls and menus keep hit-test priority, followed by
+interactive app regions and explicit blank drag regions. A captured tab drag
+stays client-owned through release even when it crosses blank space. Windows
+without callbacks keep the original inset and host title label. The
+`--macos-titlebar-fixture` and `--windows-titlebar-fixture` modes exercise the
+shared contract on their native platforms.
+
 `Application.window_decorations` defaults to `System`. Set it to
-`Integrated_Title_Bar` to opt into the Windows caption-label proof. Other
-platforms preserve system decorations. No native handle appears in this API.
+`Integrated_Title_Bar` to use the Windows native menu and caption band; the
+chrome callbacks are optional and opt the application into retained content in
+that band. On macOS, `Content_Title_Bar` extends Alicorn-rendered content under
+the native titlebar. No native handle appears in this API.
 
 ## Validation
 
@@ -120,6 +143,7 @@ odin build native/sdl_gpu_entry -out:out/menu_fixture.exe
 Copy-Item <odin-root>\vendor\sdl3\SDL3.dll out\SDL3.dll
 out\menu_fixture.exe --menu-fixture
 out\menu_fixture.exe --menu-fixture --integrated-title-bar
+out\menu_fixture.exe --menu-fixture --windows-titlebar-fixture
 ```
 
 The fixture includes File, Edit, View, and Help; a nested recent-items menu; a

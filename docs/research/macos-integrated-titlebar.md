@@ -1,9 +1,11 @@
-# macOS integrated titlebar proposal
+# macOS integrated titlebar
 
-Research date: 2026-10-20. Status: proposal; a bounded native input fixture is
-implemented, but its drag and fullscreen acceptance remains incomplete. See the
+Research date: 2026-10-20; implementation status updated 2026-10-22. The bounded
+native fixture passed fullscreen geometry checks, the user confirmed tab
+selection/closing/reordering and blank-header window dragging work physically,
+and Scratchpad now dogfoods the public API. See the
 [fixture validation record](../validation/macos-titlebar-input-fixture.md).
-Repository evidence: Alicorn `d0cf8f5`, Scratchpad `eae8c9b`. See the separate
+The initial research used Alicorn `d0cf8f5`, Scratchpad `eae8c9b`. See the separate
 [macOS validation record](../validation/macos-sync-2026-10-20.md) for tests,
 native launches, packaging, and the two development setup problems reproduced.
 
@@ -14,12 +16,12 @@ the SDL content view into the titlebar and let Scratchpad render its ordinary
 tabs there. The native host owns control geometry, window dragging, and lifecycle;
 Scratchpad owns documents, tab selection/reordering/detachment, and layout.
 
-These are two separate macOS surfaces:
+These remain two separate macOS surfaces:
 
 - The **system menu bar** is at the top of the display. Alicorn already has an
   AppKit `NSMenu` adapter and semantic command dispatch.
 - The **window titlebar/tab row** is the surface shown in the user's reference
-  screenshots. This is the missing integration.
+  screenshots. It is now implemented as an opt-in native-host capability.
 
 The green control remains AppKit's zoom/fullscreen control, including its native
 modifier and hover behavior. Scratchpad should not draw three colored circles
@@ -48,25 +50,25 @@ width rather than keep another sidebar-width calculation. The requirement is
 that the header occupies the extended top area and sits outside scrolling
 content; moving tabs to another native view or Runtime is unnecessary.
 
-## Current implementation and the missing seam
+## Current implementation
 
-`native/sdl_gpu/menus_darwin.odin` installs the native menu through AppKit.
-The existing [menu/titlebar documentation](../native-menus-and-integrated-titlebar.md)
-explicitly describes `Integrated_Title_Bar` as preserving standard macOS chrome.
-Scratchpad selects `System` on Darwin in `frontends/alicorn/main.odin:2889`.
-Its document tabs are inside the editor pane in `app_layout.odin:140`.
+`native/sdl_gpu/menus_darwin.odin` installs the native menu through AppKit;
+`native/sdl_gpu/titlebar_darwin.odin` owns native titlebar lifecycle, measured
+control exclusions, retained hit regions, and window-drag arbitration. The
+public `Application` contract opts into `.Content_Title_Bar`, sets a fixed
+`window_chrome_height`, receives `Window_Chrome_Metrics`, and supplies a
+`Window_Chrome_Layout` containing the header and bounded `.Interactive` /
+`.Window_Drag` regions. Alicorn copies finalized node geometry into host-owned
+rectangles; it does not retain application closures or tab models.
 
-Windows now has a different contract: the host renders a fixed title/menu/caption
-band and translates application content below `content_inset_top`. That is
-appropriate to that existing host-owned band, but it does not provide a place
-for Scratchpad's interactive document tabs. Extending that inset to macOS would
-keep the very second row this proposal is intended to remove.
+The feature is opt-in and Darwin-only. Windows keeps its existing host-owned
+title/menu/caption band and content inset. Scratchpad sets its 42-point macOS
+header independently of measured traffic-light geometry, keeps native
+AppKit controls, and places its ordinary document tab bar in the same row. Its
+document state and tab actions remain application-owned.
 
-The secondary-window path also needs explicit attention: on Darwin,
-`secondary_window_host.odin` clears child menus and forces `System` decorations.
-The system menu is application-global; titlebar geometry is per window. Prepare
-per-window chrome independently of installing the global NSMenu, including for
-a window with no menu descriptions.
+The system menu remains application-global; titlebar geometry is per window.
+Content-titlebar setup therefore does not depend on installing menu descriptions.
 
 ## Prior art and what to take from it
 
@@ -89,47 +91,44 @@ view/layout boundary, so they are not the starting recommendation. [Toolbar
 style](https://developer.apple.com/documentation/appkit/nswindow/toolbarstyle-swift.enum/unifiedcompact),
 [titlebar accessories](https://developer.apple.com/documentation/appkit/nstitlebaraccessoryviewcontroller).
 
-## First milestone: prove real titlebar input
+## Native fixture result
 
-The first native fixture should contain a real Alicorn tab/close button inside
-the actual titlebar band, a text input below it, and adjacent blank drag space.
-Verify selection, close, tab drag, and window drag before finalizing the public
-API or migrating the workbench.
+The native fixture contains actual Alicorn tabs and a text field in one SDL
+window, native AppKit traffic lights, and explicitly classified drag space.
+Automated checks cover geometry, fullscreen entry/exit, restore cycles, and
+layout bounds. The user physically confirmed tab selection, close, reorder,
+blank-header window dragging, and native control behavior on the Apple Silicon
+desktop. The fixture also confirmed text entry and Retina-scale coordinate
+alignment.
 
-There is a concrete reason for this order. Firefox's `NonDraggableView`
-implementation says ordinary `mouseDownCanMoveWindow = NO` does not prevent
-all forced titlebar dragging in a full-size content window; it uses an
-undocumented override. That is a source observation about Firefox's integration,
-not proof that Alicorn necessarily needs it. An SDL `NORMAL` hit-test result alone
-does not establish that the OS will deliver an interactive tab gesture.
-[Firefox source, `NonDraggableView` and frame handling](https://github.com/mozilla-firefox/firefox/blob/main/widget/cocoa/nsCocoaWindow.mm).
+Firefox's `NonDraggableView` implementation warned that ordinary hit-test
+classification might not prevent all native titlebar dragging. The fixture
+confirmed this concern: tabs initially moved the window even though SDL treated
+them as client input. Alicorn now latches the hit-test decision and gates
+AppKit's public `isMovable` property for the gesture. Physical testing then
+confirmed tab drag and blank-area window drag have distinct owners. No private
+selectors, browser swizzling, accessory view, or second AppKit tab surface was
+needed. [Firefox source, `NonDraggableView` and frame handling](https://github.com/mozilla-firefox/firefox/blob/main/widget/cocoa/nsCocoaWindow.mm).
 
-Use public AppKit/SDL mechanisms in the fixture first. If they cannot meet the
-input contract, evaluate a documented native control/accessory integration and
-record the tradeoff before choosing a different backend technique. Do not
-silently copy browser swizzling or private selectors.
+## Public contract and ownership
 
-## Proposed public contract
+The API is implemented in `native/sdl_gpu/application_api.odin` and documented
+in the [reference](../reference.md):
 
-Keep the final API small. These names are sketches, not existing APIs:
+1. `.Content_Title_Bar` opts a Darwin window into the extended content area;
+   `System` remains the default and Windows behavior is unchanged.
+2. `window_chrome_height` specifies app layout height; the host delivers measured
+   `Window_Chrome_Metrics`, including header bounds, native control rectangles,
+   content start, display scale, and fullscreen state.
+3. `window_chrome_layout` returns one retained header node and a bounded list of
+   `.Interactive` / `.Window_Drag` retained nodes. The host resolves them after
+   layout/presentation and refreshes on retained-only geometry changes.
 
-1. An opt-in **content titlebar** decoration mode. `System` remains the default.
-   A separate enum value such as `Content_Title_Bar` would distinguish app-owned
-   content from the existing Windows host-owned integrated menu band.
-2. A read-only **window chrome metrics** snapshot, bound to the current window:
-   full logical bounds, top-band bounds, native control exclusions, unobscured
-   body bounds, fullscreen/transition state, validity, and a revision.
-3. Declarative **drag / interactive regions** tied to resolved retained layout.
-   A convenience helper should cover ordinary containers and tab bars; applications
-   should not duplicate caption pixel arithmetic.
-
-The native host can resolve node-based declarations into copied rectangles
-after layout and presentation. Their meaning must survive region reuse and
-retained-only geometry changes, such as a splitter drag that does not call the
-application builder. Retired nodes must stop contributing regions. The final
-primitive should be chosen after the native fixture establishes what the
-backend needs; this proposal does not prescribe a callback registry or another
-widget tree.
+The native host copies only bounded node IDs and rectangles. It retains no
+application closures, pointers to documents, or tab models. Scratchpad continues
+to own document selection, close/reorder/detach actions, and content layout.
+The low-level regions remain explicit; there is no second native tab view or
+second runtime.
 
 Avoid adding these queries to the existing `Application_Window_Service` without
 clarifying its target: that service currently controls the secondary-window
@@ -236,17 +235,14 @@ commands or prevent duplicate accelerator dispatch. Application-global menu
 ownership must remain separate from each window's chrome lifecycle.
 [AppKit main menu](https://developer.apple.com/documentation/appkit/nsapplication/mainmenu).
 
-## Implementation sequence and acceptance
+## Remaining validation and decision
 
-1. Add a bounded native fixture for full-size drawing, actual titlebar input,
-   native controls, and blank dragging. Resolve the forced-drag and header-height
-   questions before expanding the public API.
-2. Add the smallest public metrics/region contract proved necessary by that
-   fixture, support primary and floating windows, and migrate Scratchpad's
-   existing tab layout. Keep the default `System` path and current Windows mode.
-3. Lock down geometry transforms, exclusion priority, retired/retained regions,
-   splitter-only layout changes, and zero recurring idle work in deterministic
-   tests. Complete the native matrix before making the mode a product default.
+The first fixture and Scratchpad integration are complete. Keep the feature
+opt-in. Before broad product use, validate mixed-scale monitor transitions,
+focus-loss interruption, IME composition/candidate placement, VoiceOver,
+floating-window behavior, and titlebar double-click preferences. These are
+remaining platform-coverage items, not blockers for the verified primary-window
+tab and drag interaction.
 
 Native acceptance must cover click/close/reorder/detach across the entire top
 row; capture and drag-boundary transitions; narrow windows and RTL; every native
@@ -258,6 +254,7 @@ focus and shutdown. Automated startup is insufficient for those interactions.
 Core full-size/titlebar APIs predate Scratchpad's macOS 13 deployment floor;
 newer AppKit additions still need availability guards. Qt's expanded-area APIs
 begin at 6.9; Electron's current docs and pinned source describe their own
-versions. The Firefox `main` links are moving references inspected for this
-proposal, not a claim about every shipped Firefox version. The proposal does
-not require an SDL upgrade or promise the first direct-SDL proof will pass.
+versions. The Firefox `main` links are moving references inspected during the
+research, not a claim about every shipped Firefox version. The current host
+requires SDL 3.4.18, and the titlebar remains an explicit opt-in rather than a
+new default for every application.

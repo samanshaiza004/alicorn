@@ -8,6 +8,11 @@ Terminal.
 
 ## Learning progression
 
+For application-owned session state, see the headless
+[durable restoration fixture](durable_restoration/main.odin) and its
+[restart checks](../docs/durable-ui-restoration.md). It runs in separate
+processes and persists only a split ratio, logical scroll offset, and record key.
+
 | Step | Example | What it teaches | Run |
 |---|---|---|---|
 | 1 | [01 · Hello](01_hello/main.odin) | Native window/event loop, text, a button, app-owned counter state, row/column layout | `odin run examples/01_hello` |

@@ -109,7 +109,44 @@ Application_Menu :: struct {
 Window_Decoration_Mode :: enum {
 	System,
 	Integrated_Title_Bar,
+	Content_Title_Bar,
 }
+
+// Window_Chrome_Metrics reports measured native geometry for an application-
+// authored titlebar header. Rectangles use top-left window-logical points. On
+// macOS, content_start_x follows the native traffic lights. On Windows,
+// content_start_x follows the native menu labels and content_end_x precedes
+// the native caption buttons. The host keeps native-control hit testing.
+Window_Chrome_Metrics :: struct {
+	header: alicorn.Rect,
+	native_controls: [3]alicorn.Rect,
+	native_control_count: int,
+	content_start_x: f32,
+	content_end_x: f32,
+	display_scale: f32,
+	fullscreen: bool,
+}
+
+Window_Chrome_Metrics_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, metrics: Window_Chrome_Metrics)
+
+Window_Chrome_Region_Kind :: enum { Interactive, Window_Drag }
+
+WINDOW_CHROME_REGION_CAPACITY :: 16
+
+// A chrome region references an ordinary retained node. The host resolves its
+// finalized bounds after layout and retains only those geometry products. At
+// most WINDOW_CHROME_REGION_CAPACITY regions are consumed per layout callback.
+Window_Chrome_Region :: struct {
+	node: alicorn.Node_ID,
+	kind: Window_Chrome_Region_Kind,
+}
+
+Window_Chrome_Layout :: struct {
+	header: alicorn.Node_ID,
+	regions: []Window_Chrome_Region,
+}
+
+Window_Chrome_Layout_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime) -> Window_Chrome_Layout
 
 Application_Build_Proc :: proc(
 	state: rawptr,
@@ -278,6 +315,17 @@ Application :: struct {
 	height:             int,
 	menus:              []Application_Menu,
 	window_decorations: Window_Decoration_Mode,
+	// Content_Title_Bar is the macOS full-size-content mode. Integrated_Title_Bar
+	// may also opt in to application-authored controls in the Windows native
+	// titlebar band while the host retains its menu and caption buttons. In both
+	// modes, the application describes ordinary retained nodes and declares
+	// their node IDs through window_chrome_layout. Metrics are delivered before
+	// the first build and when native geometry changes; the layout callback is
+	// sampled after description and retained layout passes. Its returned slice
+	// is borrowed only for that call.
+	window_chrome_height: f32,
+	window_chrome_metrics: Window_Chrome_Metrics_Proc,
+	window_chrome_layout: Window_Chrome_Layout_Proc,
 	// Optional theme-resolved appearance for host-owned integrated chrome.
 	window_chrome_appearance: Application_Chrome_Appearance_Proc,
 	on_initialize:      Application_Initialize_Proc,

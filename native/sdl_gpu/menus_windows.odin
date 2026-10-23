@@ -68,6 +68,25 @@ Win32_Caption_Control :: struct {
 	hit_test: win.LRESULT,
 }
 
+Win32_Chrome_Hit_Region :: struct {
+	bounds: win.RECT,
+	kind: Window_Chrome_Region_Kind,
+}
+
+Win32_Chrome_Gesture_Owner :: enum u8 {
+	None,
+	Alicorn,
+	Window,
+	Native_Menu,
+}
+
+Win32_Chrome_Geometry :: struct {
+	header: win.RECT,
+	regions: [WINDOW_CHROME_REGION_CAPACITY]Win32_Chrome_Hit_Region,
+	region_count: int,
+	application_owned: bool,
+}
+
 Win32_Menu_Item_Binding :: struct {
 	menu:       win.HMENU,
 	position:   win.UINT,
@@ -112,6 +131,10 @@ Win32_Menu_State :: struct {
 	menu_attached: bool,
 	frame_extended: bool,
 	frame_enabled: bool,
+	chrome_geometry: Win32_Chrome_Geometry,
+	chrome_metrics: Window_Chrome_Metrics,
+	chrome_metrics_valid: bool,
+	gesture_owner: Win32_Chrome_Gesture_Owner,
 	text_renderer: ^Native_Text_Renderer,
 	window_geometry: Win32_Window_Geometry_Recorder,
 }
@@ -246,16 +269,30 @@ win32_menu_client_point_to_window :: proc(state: ^Win32_Menu_State, point: ^win.
 	return true
 }
 
+win32_rect_contains :: proc(bounds: win.RECT, x, y: i32) -> bool {
+	return x >= i32(bounds.left) && x < i32(bounds.right) &&
+		y >= i32(bounds.top) && y < i32(bounds.bottom)
+}
+
 win32_integrated_frame_hit_test :: proc(
 	x, y, width, height: i32,
 	chrome_height, resize_x, resize_y: i32,
 	maximized: bool,
 	caption_controls: []Win32_Caption_Control,
 	labels: []win.RECT,
+	chrome_regions: []Win32_Chrome_Hit_Region = nil,
+	application_owned_header := false,
+	gesture_owner: Win32_Chrome_Gesture_Owner = .None,
 ) -> win.LRESULT {
+	// The owner is fixed by the initial pointer-down. In particular, a tab drag
+	// stays client input when it crosses blank titlebar space, and a window move
+	// stays a caption gesture until release/cancellation.
+	if gesture_owner == .Alicorn || gesture_owner == .Native_Menu {
+		return win.LRESULT(win.HTCLIENT)
+	}
+	if gesture_owner == .Window { return win.LRESULT(win.HTCAPTION) }
 	for control in caption_controls {
-		if x >= i32(control.bounds.left) && x < i32(control.bounds.right) &&
-			y >= i32(control.bounds.top) && y < i32(control.bounds.bottom) {
+		if win32_rect_contains(control.bounds, x, y) {
 			return control.hit_test
 		}
 	}
@@ -274,11 +311,18 @@ win32_integrated_frame_hit_test :: proc(
 		if bottom { return win.LRESULT(win.HTBOTTOM) }
 	}
 	for label in labels {
-		if x >= i32(label.left) && x < i32(label.right) && y >= i32(label.top) && y < i32(label.bottom) {
+		if win32_rect_contains(label, x, y) {
 			return win.LRESULT(win.HTCLIENT)
 		}
 	}
-	if y >= 0 && y < chrome_height { return win.LRESULT(win.HTCAPTION) }
+	for region in chrome_regions {
+		if !win32_rect_contains(region.bounds, x, y) { continue }
+		if region.kind == .Interactive { return win.LRESULT(win.HTCLIENT) }
+		return win.LRESULT(win.HTCAPTION)
+	}
+	if y >= 0 && y < chrome_height {
+		return win.LRESULT(win.HTCLIENT) if application_owned_header else win.LRESULT(win.HTCAPTION)
+	}
 	return win.LRESULT(win.HTCLIENT)
 }
 
@@ -300,6 +344,16 @@ win32_integrated_frame_resolve_hit_test :: proc(
 		return dwm_result
 	}
 	return frame_result
+}
+
+win32_integrated_frame_resolve_gesture_hit_test :: proc(
+	frame_result: win.LRESULT,
+	gesture_owner: Win32_Chrome_Gesture_Owner,
+	dwm_handled: bool,
+	dwm_result: win.LRESULT,
+) -> win.LRESULT {
+	if gesture_owner != .None { return frame_result }
+	return win32_integrated_frame_resolve_hit_test(frame_result, dwm_handled, dwm_result)
 }
 
 win32_caption_control_rects :: proc(bounds: win.RECT, valid: bool) -> [3]win.RECT {
@@ -367,7 +421,10 @@ win32_menu_frame_hit_test :: proc(state: ^Win32_Menu_State, screen_x, screen_y: 
 	for label, i in state.labels { labels[i] = label.bounds }
 	defer delete(labels, context.temp_allocator)
 	return win32_integrated_frame_hit_test(x, y, width, height, state.chrome_height_pixels, resize_x, resize_y,
-		state.maximized, state.caption_controls[:], labels)
+		state.maximized, state.caption_controls[:], labels,
+		state.chrome_geometry.regions[:state.chrome_geometry.region_count],
+		state.chrome_geometry.application_owned,
+		state.gesture_owner)
 }
 
 win32_menu_caption_control_at_screen :: proc(state: ^Win32_Menu_State, screen_x, screen_y: i32) -> int {
@@ -429,7 +486,7 @@ win32_menu_layout_labels :: proc(state: ^Win32_Menu_State) {
 	frame_y := i32(win.GetSystemMetricsForDpi(win.SM_CYSIZEFRAME, state.dpi)+win.GetSystemMetricsForDpi(win.SM_CXPADDEDBORDER, state.dpi))
 	state.chrome_height_pixels = max(caption_h+frame_y, i32(native_pixel_edge(32, scale)))
 	state.chrome_height = f32(state.chrome_height_pixels)/state.pixels_per_unit
-	state.menu.content_inset_top = state.chrome_height
+	state.menu.content_inset_top = state.chrome_height if !win32_menu_application_owns_chrome(state) else 0
 	_ = win32_menu_update_caption_button_bounds(state, client_width)
 	state.caption_controls = win32_caption_layout_controls(state.caption_button_bounds, state.caption_button_bounds_valid,
 		client_width, state.chrome_height_pixels, state.dpi, state.maximized)
@@ -440,14 +497,14 @@ win32_menu_layout_label_bounds :: proc(state: ^Win32_Menu_State) {
 	scale := f32(state.dpi if state.dpi != 0 else 96)/96
 	usable_right := max(i32(state.caption_controls[0].bounds.left)-i32(native_pixel_edge(8, scale)), 0)
 	left := i32(native_pixel_edge(8, scale))
-	if title_run := native_text_host_run(state.text_renderer, state.title.host_node); title_run != nil {
+	if title_run := native_text_host_run(state.text_renderer, state.title.host_node);
+	   title_run != nil && state.title_text != "" {
 		title_width := i32(native_pixel_edge(title_run.width, state.pixels_per_unit)+native_pixel_edge(16, scale))
 		state.title.bounds = win.RECT{left=win.LONG(min(left, usable_right)), top=0, right=win.LONG(min(left+title_width, usable_right)), bottom=win.LONG(state.chrome_height_pixels)}
-		left += title_width
+		left += title_width+i32(native_pixel_edge(8, scale))
 	} else {
 		state.title.bounds = win.RECT{}
 	}
-	left += i32(native_pixel_edge(8, scale))
 	for i in 0..<len(state.labels) {
 		label := &state.labels[i]
 		label.bounds = win.RECT{}
@@ -458,6 +515,116 @@ win32_menu_layout_label_bounds :: proc(state: ^Win32_Menu_State) {
 		label.bounds = win.RECT{left=win.LONG(left), top=0, right=win.LONG(min(left+width, usable_right)), bottom=win.LONG(state.chrome_height_pixels)}
 		left += width
 	}
+}
+
+win32_menu_application_owns_chrome :: proc(state: ^Win32_Menu_State) -> bool {
+	return state != nil && state.menu != nil && state.menu.application != nil &&
+		state.menu.application.window_chrome_layout != nil
+}
+
+win32_rect_intersection :: proc(a, b: win.RECT) -> win.RECT {
+	left := max(a.left, b.left)
+	top := max(a.top, b.top)
+	right := min(a.right, b.right)
+	bottom := min(a.bottom, b.bottom)
+	return win.RECT{left, top, max(right, left), max(bottom, top)}
+}
+
+win32_window_chrome_metrics_equal :: proc(a, b: Window_Chrome_Metrics) -> bool {
+	if a.header != b.header || a.native_control_count != b.native_control_count ||
+		a.content_start_x != b.content_start_x || a.content_end_x != b.content_end_x ||
+		a.display_scale != b.display_scale || a.fullscreen != b.fullscreen { return false }
+	for i in 0..<min(max(a.native_control_count, 0), len(a.native_controls)) {
+		if a.native_controls[i] != b.native_controls[i] { return false }
+	}
+	return true
+}
+
+// Publish the native menu/caption geometry in the same logical coordinate
+// space as the retained tree. Native menu labels and caption buttons remain
+// host-owned exclusions; the application may place tabs only between them.
+win32_menu_sync_window_chrome_metrics :: proc(
+	state: ^Win32_Menu_State,
+	rt: ^alicorn.Runtime,
+	request_invalidation := true,
+) -> bool {
+	if state == nil || state.menu == nil || state.menu.application == nil || rt == nil ||
+		!win32_menu_application_owns_chrome(state) || state.menu.application.window_chrome_metrics == nil { return false }
+	client: win.RECT
+	if !win.GetClientRect(state.hwnd, &client) { return false }
+	client_width := i32(client.right-client.left)
+	client_height := i32(client.bottom-client.top)
+	density := state.pixels_per_unit if state.pixels_per_unit > 0 else 1
+	content_start_pixels := i32(native_pixel_edge(8, f32(state.dpi if state.dpi != 0 else 96)/96))
+	for label in state.labels {
+		if label.bounds.right > label.bounds.left {
+			content_start_pixels = max(content_start_pixels, i32(label.bounds.right)+
+				i32(native_pixel_edge(8, f32(state.dpi if state.dpi != 0 else 96)/96)))
+		}
+	}
+	content_end_pixels := max(i32(state.caption_controls[0].bounds.left)-
+		i32(native_pixel_edge(8, f32(state.dpi if state.dpi != 0 else 96)/96)), 0)
+	content_start_pixels = min(content_start_pixels, content_end_pixels)
+	next := Window_Chrome_Metrics{
+		header=alicorn.Rect{0, 0, f32(client_width)/density, min(f32(state.chrome_height_pixels)/density, f32(client_height)/density)},
+		content_start_x=f32(content_start_pixels)/density,
+		content_end_x=f32(content_end_pixels)/density,
+		display_scale=sdl3.GetWindowDisplayScale(state.menu.window),
+		fullscreen=(sdl3.GetWindowFlags(state.menu.window) & sdl3.WindowFlags{.FULLSCREEN}) != sdl3.WindowFlags{},
+	}
+	for control in state.caption_controls {
+		if control.bounds.right <= control.bounds.left || control.bounds.bottom <= control.bounds.top { continue }
+		if next.native_control_count >= len(next.native_controls) { break }
+		next.native_controls[next.native_control_count] = win32_chrome_rect_to_window(control.bounds, density)
+		next.native_control_count += 1
+	}
+	changed := !state.chrome_metrics_valid || !win32_window_chrome_metrics_equal(state.chrome_metrics, next)
+	state.chrome_metrics = next
+	state.chrome_metrics_valid = true
+	if !changed { return true }
+	state.menu.application.window_chrome_metrics(state.menu.application.state, rt, next)
+	if request_invalidation { alicorn.invalidate_root(rt, "measured Windows titlebar geometry changed") }
+	return true
+}
+
+// The native hit-test adapter consumes only finalized retained bounds, copied
+// into physical client pixels once. This runs after app descriptions/layout,
+// not during hit testing, so pointer callbacks do no tree traversal.
+native_menu_sync_chrome_layout :: proc(menu: ^Native_Menu_Runtime) {
+	if menu == nil || menu.platform_data == nil || menu.runtime == nil || menu.application == nil { return }
+	state := cast(^Win32_Menu_State)menu.platform_data
+	if !state.frame_enabled || !win32_menu_application_owns_chrome(state) { return }
+	geometry := Win32_Chrome_Geometry{application_owned=true}
+	layout := menu.application.window_chrome_layout(menu.application.state, menu.runtime)
+	header, header_ok := alicorn.node_info(menu.runtime, layout.header)
+	client: win.RECT
+	if !win.GetClientRect(state.hwnd, &client) { return }
+	native_header := win.RECT{left=0, top=0,
+		right=client.right,
+		bottom=win.LONG(min(state.chrome_height_pixels, i32(client.bottom)))}
+	if header_ok && header.active {
+		x0, y0, x1, y1 := logical_to_pixel_bounds(header.bounds, state.pixels_per_unit, state.pixels_per_unit)
+		retained_header := win.RECT{win.LONG(x0), win.LONG(y0), win.LONG(x1), win.LONG(y1)}
+		geometry.header = win32_rect_intersection(retained_header, native_header)
+	}
+	if geometry.header.right <= geometry.header.left || geometry.header.bottom <= geometry.header.top {
+		state.chrome_geometry = geometry
+		return
+	}
+	for region in layout.regions {
+		if region.node == 0 || geometry.region_count >= len(geometry.regions) { continue }
+		node, ok := alicorn.node_info(menu.runtime, region.node)
+		if !ok || !node.active { continue }
+		x0, y0, x1, y1 := logical_to_pixel_bounds(node.bounds, state.pixels_per_unit, state.pixels_per_unit)
+		bounds := win32_rect_intersection(
+			win.RECT{win.LONG(x0), win.LONG(y0), win.LONG(x1), win.LONG(y1)},
+			geometry.header,
+		)
+		if bounds.right <= bounds.left || bounds.bottom <= bounds.top { continue }
+		geometry.regions[geometry.region_count] = Win32_Chrome_Hit_Region{bounds, region.kind}
+		geometry.region_count += 1
+	}
+	state.chrome_geometry = geometry
 }
 
 win32_menu_extend_frame :: proc(state: ^Win32_Menu_State) -> bool {
@@ -515,6 +682,7 @@ native_menu_prepare_gpu :: proc(menu: ^Native_Menu_Runtime, rt: ^alicorn.Runtime
 	state.text_renderer = renderer
 	title := menu.application.title
 	if title == "" { title = "Alicorn application" }
+	if menu.application.window_chrome_layout != nil { title = "" }
 	state.title_text = title
 	state.title.host_node = NATIVE_MENU_HOST_NODE_BASE
 	for &label, i in state.labels {
@@ -523,6 +691,9 @@ native_menu_prepare_gpu :: proc(menu: ^Native_Menu_Runtime, rt: ^alicorn.Runtime
 	state.ellipsis_host_node = NATIVE_MENU_HOST_NODE_BASE+alicorn.Node_ID(len(state.labels)+2)
 	if !win32_menu_refresh_text(state, rt) || !win32_caption_sync_masks(state) { return false }
 	win32_menu_layout_labels(state)
+	if win32_menu_application_owns_chrome(state) {
+		if !win32_menu_sync_window_chrome_metrics(state, rt, request_invalidation=false) { return false }
+	}
 	native_menu_request_chrome_redraw(menu)
 	return true
 }
@@ -625,7 +796,10 @@ native_menu_overlay_commands :: proc(menu: ^Native_Menu_Runtime, width, height: 
 	background, foreground := win32_menu_chrome_colors(state)
 	hover_background, open_background, pressed_background := win32_menu_feedback_colors(background, foreground)
 	full := alicorn.Rect{0, 0, width, min(state.chrome_height, height)}
-	append(&commands, alicorn.paint_surface_command(NATIVE_MENU_HOST_SOLID_NODE, full, full, background))
+	application_chrome := win32_menu_application_owns_chrome(state)
+	if !application_chrome {
+		append(&commands, alicorn.paint_surface_command(NATIVE_MENU_HOST_SOLID_NODE, full, full, background))
+	}
 	active_index := state.hovered
 	if state.menu_mode && state.active_menu >= 0 { active_index = state.active_menu }
 	selection_background, selection_foreground := alicorn.Color{}, alicorn.Color{}
@@ -681,7 +855,7 @@ native_menu_overlay_commands :: proc(menu: ^Native_Menu_Runtime, width, height: 
 		}
 		win32_caption_append_glyph(&commands, state, index, button_foreground, full, maximized)
 	}
-	win32_menu_append_text(&commands, state, state.title, 8, foreground, ellipsis=true)
+	if !application_chrome { win32_menu_append_text(&commands, state, state.title, 8, foreground, ellipsis=true) }
 	for label, i in state.labels {
 		run := native_text_host_run(state.text_renderer, label.host_node)
 		if run == nil || label.bounds.right <= label.bounds.left { continue }
@@ -942,6 +1116,17 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 	if state == nil { return win.DefSubclassProc(hwnd, message, wparam, lparam) }
 	state.hwnd = hwnd
 	integrated := state.frame_enabled
+	if message == win.WM_CANCELMODE || message == win.WM_CAPTURECHANGED || message == win.WM_KILLFOCUS {
+		state.gesture_owner = .None
+	} else if message == win.WM_LBUTTONUP &&
+		(state.gesture_owner == .Alicorn || state.gesture_owner == .Native_Menu) {
+		state.gesture_owner = .None
+	} else if message == win.WM_NCLBUTTONUP && state.gesture_owner == .Window {
+		state.gesture_owner = .None
+	} else if (message == win.WM_NCLBUTTONDOWN || message == win.WM_NCLBUTTONDBLCLK) &&
+		wparam == win.WPARAM(win.HTCAPTION) {
+		state.gesture_owner = .Window
+	}
 	if integrated && message == win.WM_WINDOWPOSCHANGING {
 		position := cast(^win.WINDOWPOS)uintptr(lparam)
 		requested_flags := position.flags if position != nil else win.UINT(0)
@@ -990,7 +1175,7 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 	if integrated && message == win.WM_NCHITTEST {
 		point := win32_menu_point_from_lparam(lparam)
 		result := win32_menu_frame_hit_test(state, i32(point.x), i32(point.y))
-		return win32_integrated_frame_resolve_hit_test(result, dwm_handled, dwm_result)
+		return win32_integrated_frame_resolve_gesture_hit_test(result, state.gesture_owner, dwm_handled, dwm_result)
 	}
 	if dwm_handled { return dwm_result }
 
@@ -1008,9 +1193,11 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 			state.caption_pressed = -1
 			native_menu_request_chrome_redraw(state.menu)
 		} else if message == win.WM_LBUTTONDOWN {
+			state.gesture_owner = .Alicorn
 			point := win32_menu_point_from_lparam(lparam)
 			if win32_menu_client_point_to_window(state, &point) {
 				if index := win32_menu_label_at_window_point(state, i32(point.x), i32(point.y)); index >= 0 {
+					state.gesture_owner = .Native_Menu
 					win32_menu_cancel_app_pointer(state)
 					if state.labels[index].direct_menu != nil {
 						win32_menu_label_activate(state, index)
@@ -1019,6 +1206,7 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 						state.active_menu = index
 						win32_menu_open_popup(state, index)
 					}
+					state.gesture_owner = .None
 					return 0
 				}
 			}
@@ -1033,7 +1221,7 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 			point := win32_menu_point_from_lparam(lparam)
 			if win32_menu_client_point_to_window(state, &point) {
 				index := win32_menu_label_at_window_point(state, i32(point.x), i32(point.y))
-				if index >= 0 { win32_menu_cancel_app_pointer(state) }
+				if index >= 0 && state.gesture_owner != .Alicorn { win32_menu_cancel_app_pointer(state) }
 				if index != state.hovered {
 					state.hovered = index
 					native_menu_request_chrome_redraw(state.menu)
@@ -1093,8 +1281,14 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 		// SDL owns the HWND and processes the suggested RECT through the chained
 		// procedure above. Observe the resulting DPI/size; do not SetWindowPos here.
 		state.dpi = win.GetDpiForWindow(hwnd)
+		if state.text_renderer != nil && state.menu.runtime != nil {
+			_ = win32_menu_refresh_text(state, state.menu.runtime)
+		}
 		if !win32_menu_extend_frame(state) { win32_menu_disable_frame(state) }
 		else { win32_menu_layout_labels(state) }
+		if state.menu.runtime != nil {
+			_ = win32_menu_sync_window_chrome_metrics(state, state.menu.runtime)
+		}
 		native_menu_request_chrome_redraw(state.menu)
 	} else if (message == win.WM_WINDOWPOSCHANGED || message == win.WM_SIZE) && integrated {
 		position := cast(^win.WINDOWPOS)uintptr(lparam)
@@ -1103,6 +1297,9 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 		if message == win.WM_SIZE || (position != nil &&
 			((position.flags & win.SWP_NOSIZE) == 0 || (position.flags & win.SWP_SHOWWINDOW) != 0)) {
 			win32_menu_layout_labels(state)
+			if state.menu.runtime != nil {
+				_ = win32_menu_sync_window_chrome_metrics(state, state.menu.runtime)
+			}
 		}
 		native_menu_request_chrome_redraw(state.menu)
 	} else if (message == win.WM_THEMECHANGED || message == win.WM_SETTINGCHANGE || message == win.WM_SYSCOLORCHANGE) && integrated {

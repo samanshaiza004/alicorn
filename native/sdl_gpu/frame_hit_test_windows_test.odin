@@ -266,6 +266,60 @@ test_integrated_frame_hit_test_resizing_and_menu_regions :: proc(t: ^testing.T) 
 }
 
 @(test)
+test_integrated_frame_hit_test_routes_windows_app_tabs_and_drag_gaps :: proc(t: ^testing.T) {
+	labels := [?]win.RECT{{left=8, top=0, right=230, bottom=48}}
+	regions := [?]Win32_Chrome_Hit_Region{
+		{bounds=win.RECT{left=250, top=0, right=650, bottom=48}, kind=.Interactive},
+		{bounds=win.RECT{left=650, top=0, right=960, bottom=48}, kind=.Window_Drag},
+	}
+	caption := [1]Win32_Caption_Control{{
+		bounds=win.RECT{left=960, top=0, right=1000, bottom=48},
+		hit_test=win.LRESULT(win.HTCLOSE),
+	}}
+	testing.expect_value(t, win32_integrated_frame_hit_test(80, 20, 1000, 700, 48, 8, 8, false, caption[:], labels[:], regions[:], true), win.LRESULT(win.HTCLIENT))
+	testing.expect_value(t, win32_integrated_frame_hit_test(400, 20, 1000, 700, 48, 8, 8, false, caption[:], labels[:], regions[:], true), win.LRESULT(win.HTCLIENT))
+	testing.expect_value(t, win32_integrated_frame_hit_test(800, 20, 1000, 700, 48, 8, 8, false, caption[:], labels[:], regions[:], true), win.LRESULT(win.HTCAPTION))
+	testing.expect_value(t, win32_integrated_frame_hit_test(980, 20, 1000, 700, 48, 8, 8, false, caption[:], labels[:], regions[:], true), win.LRESULT(win.HTCLOSE))
+	testing.expect(t,
+		win32_integrated_frame_hit_test(240, 20, 1000, 700, 48, 8, 8, false, caption[:], labels[:], regions[:], true) == win.LRESULT(win.HTCLIENT),
+		"unregistered pixels in an app-owned header must remain ordinary client input")
+	testing.expect(t,
+		win32_integrated_frame_hit_test(500, 80, 1000, 700, 48, 8, 8, false, caption[:], labels[:], regions[:], true) == win.LRESULT(win.HTCLIENT),
+		"the editor below the integrated band must remain client input")
+}
+
+@(test)
+test_integrated_frame_gesture_owner_survives_titlebar_boundary_crossing :: proc(t: ^testing.T) {
+	labels := [?]win.RECT{{left=8, top=0, right=230, bottom=48}}
+	regions := [?]Win32_Chrome_Hit_Region{
+		{bounds=win.RECT{left=250, top=0, right=650, bottom=48}, kind=.Interactive},
+		{bounds=win.RECT{left=650, top=0, right=960, bottom=48}, kind=.Window_Drag},
+	}
+	controls := [1]Win32_Caption_Control{{bounds=win.RECT{left=960, top=0, right=1000, bottom=48}, hit_test=win.LRESULT(win.HTMAXBUTTON)}}
+	app_owner := win32_integrated_frame_hit_test(
+		800, 20, 1000, 700, 48, 8, 8, false, controls[:], labels[:], regions[:], true, .Alicorn)
+	window_owner := win32_integrated_frame_hit_test(
+		400, 20, 1000, 700, 48, 8, 8, false, controls[:], labels[:], regions[:], true, .Window)
+	menu_owner := win32_integrated_frame_hit_test(
+		800, 20, 1000, 700, 48, 8, 8, false, controls[:], labels[:], regions[:], true, .Native_Menu)
+	testing.expect(t, app_owner == win.LRESULT(win.HTCLIENT),
+		"a tab gesture must never turn into a window drag when it crosses blank header space")
+	testing.expect(t, window_owner == win.LRESULT(win.HTCAPTION),
+		"a window drag remains caption-owned while crossing interactive tab geometry")
+	testing.expect(t, menu_owner == win.LRESULT(win.HTCLIENT),
+		"native-menu routing must keep the pointer in the client until the popup finishes")
+	testing.expect(t,
+		win32_integrated_frame_resolve_gesture_hit_test(app_owner, .Alicorn, true, win.LRESULT(win.HTCLOSE)) == win.LRESULT(win.HTCLIENT),
+		"DWM must not steal a latched tab drag when it crosses the caption controls")
+	testing.expect(t,
+		win32_integrated_frame_resolve_gesture_hit_test(window_owner, .Window, true, win.LRESULT(win.HTMAXBUTTON)) == win.LRESULT(win.HTCAPTION),
+		"the window manager must retain the initial blank-header drag owner")
+	testing.expect(t,
+		win32_integrated_frame_resolve_gesture_hit_test(win.LRESULT(win.HTCLIENT), .None, true, win.LRESULT(win.HTMAXBUTTON)) == win.LRESULT(win.HTMAXBUTTON),
+		"Windows Snap Layout hover must retain DWM's native maximize classification")
+}
+
+@(test)
 test_integrated_frame_hit_test_keeps_editor_client_owned_when_dwm_handles :: proc(t: ^testing.T) {
 	client := win.LRESULT(win.HTCLIENT)
 	caption := win.LRESULT(win.HTCAPTION)

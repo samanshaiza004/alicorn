@@ -78,6 +78,35 @@ host error. `ClipboardSetText(service, text)` copies UTF-8 text synchronously
 and rejects embedded NUL bytes. Clipboard and dialog operations belong in the
 native host boundary; application code decides selection and edit semantics.
 
+On macOS, `window_decorations=.Content_Title_Bar` opts into full-size content
+under the native titlebar. On Windows, keep `.Integrated_Title_Bar` and supply
+both `window_chrome_metrics` and `window_chrome_layout` to put retained nodes
+in the native menu/titlebar band. Windows metrics report measured native-menu
+and caption-control reservations through `content_start_x` and `content_end_x`.
+macOS applications also set `window_chrome_height`; their metrics report the
+traffic-light reservation and safe header rectangle. In both modes, the
+application emits the header with ordinary Alicorn nodes. After layout,
+`window_chrome_layout` identifies that header and up to
+`WINDOW_CHROME_REGION_CAPACITY` ordinary retained nodes as `.Interactive` or
+`.Window_Drag`. The host copies their resolved rectangles; it does not retain
+the callback's slice or application state. Native controls and menus take
+priority, followed by interactive regions and explicit drag regions. Gesture
+ownership is latched at pointer-down until release or cancellation.
+
+```odin
+host.Run(host.Application{
+    state=rawptr(&app),
+    window_decorations=.Content_Title_Bar,
+    window_chrome_height=42,
+    window_chrome_metrics=app_chrome_metrics,
+    window_chrome_layout=app_chrome_layout,
+    build=app_build,
+})
+```
+
+See [native menus and integrated titlebar](native-menus-and-integrated-titlebar.md)
+for the callback contract and native fixture.
+
 ## Frame and invalidation
 
 | API | Use |
@@ -613,6 +642,15 @@ request token with `restore_token_next(runtime)` when applying those values to
 a new Runtime. Tokens and retained `Node_ID` values are transient; do not write
 them to a session file.
 
+`split_state(runtime, id) -> (Split_State, bool)` is passive readback for a
+currently active split. `preferred_position` is the application's logical-unit
+preference; `position` is the allocated first-pane extent and may be clamped.
+`bounds` describes the current split box. Persist the preference, rather than a
+temporarily clamped allocation. Applications choosing a ratio schema perform
+that conversion themselves using their declared split geometry. Scroll offsets
+from `scroll_region_state` are logical content coordinates, bounded by the final
+content extent minus viewport extent; they are not physical pixels.
+
 Pass `Split_Restore_Request{token, preferred_position}` to `split_begin`, or
 `Scroll_Restore_Request{token, offset_x, offset_y}` to `scroll_region_begin`,
 `virtual_list_begin`, or `virtual_list_begin_variable`. A split keeps the
@@ -634,6 +672,9 @@ direct scroll input cancels pending scroll restoration. When geometry clamps a
 value, the report retains both the application preference and resolved value.
 `inspect(runtime)` and the bounded restore trace show the request values,
 outcome, reason, and layout generation.
+
+See [durable restoration](durable-ui-restoration.md) for a process-restart
+fixture, lifecycle guidance, and the Scratchpad consumer contract.
 
 ### Semantic model and collections
 

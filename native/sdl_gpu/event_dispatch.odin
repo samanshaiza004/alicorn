@@ -136,14 +136,13 @@ pump_events :: proc(
 		is_pointer_event := event.type == .MOUSE_MOTION || event.type == .MOUSE_BUTTON_DOWN || event.type == .MOUSE_BUTTON_UP
 		when ODIN_OS == .Darwin {
 			if pointer_ok && is_pointer_event {
-				pointer = native_darwin_titlebar_fixture_translate_pointer(native_menu, pointer, event)
+				pointer = native_darwin_titlebar_translate_pointer(native_menu, pointer, event)
 			}
 		}
 		pointer_window_x, pointer_window_y := pointer.x, pointer.y
 		pointer_in_application := true
 		wheel_in_application := true
 		when ODIN_OS == .Darwin {
-			if is_pointer_event { native_darwin_titlebar_fixture_note_sdl_pointer(native_menu, event) }
 		}
 		if native_menu != nil {
 			inset_top := native_menu.content_inset_top
@@ -245,7 +244,7 @@ pump_events :: proc(
 		}
 		if event.type == .WINDOW_FOCUS_LOST {
 			when ODIN_OS == .Darwin {
-				if native_menu != nil { native_darwin_titlebar_fixture_cancel_gesture(native_menu) }
+				if native_menu != nil { native_darwin_titlebar_cancel_gesture(native_menu) }
 			}
 			native_accessibility_focus_changed(accessibility, false)
 			alicorn.context_menu_close(rt)
@@ -577,7 +576,7 @@ pump_events :: proc(
 			}
 			when ODIN_OS == .Darwin {
 				if !runtime_key_handled && event.key.key == sdl3.K_ESCAPE && !event.key.repeat {
-					runtime_key_handled = native_darwin_titlebar_fixture_exit_fullscreen(native_menu)
+					runtime_key_handled = native_darwin_titlebar_exit_fullscreen(native_menu)
 				}
 			}
 			if application != nil && !runtime_key_handled {
@@ -642,10 +641,10 @@ pump_events :: proc(
 		case .WINDOW_HIT_TEST:
 			when ODIN_OS == .Darwin {
 				if native_menu != nil {
-					native_darwin_titlebar_fixture_note_consumed_event(native_menu)
+					native_darwin_titlebar_note_consumed_event(native_menu)
 					if manual_log && native_menu.platform_data != nil {
 						fixture := cast(^Darwin_Menu_State)native_menu.platform_data
-						if fixture.titlebar_fixture.active {
+						if fixture.titlebar.active {
 							fmt.println("macos_titlebar_input_consumed", "SDL_EVENT_WINDOW_HIT_TEST", "Cocoa owned the current mouse transition")
 						}
 					}
@@ -785,8 +784,7 @@ pump_events :: proc(
 			when ODIN_OS == .Darwin {
 				if native_menu != nil {
 					fullscreen_transition := event.type == .WINDOW_ENTER_FULLSCREEN || event.type == .WINDOW_LEAVE_FULLSCREEN
-					if fullscreen_transition { native_darwin_titlebar_fixture_note_fullscreen(native_menu, event.type) }
-					_ = native_darwin_titlebar_fixture_refresh(
+					_ = native_darwin_titlebar_refresh(
 						native_menu,
 						allow_style_mask_change=!fullscreen_transition,
 					)
