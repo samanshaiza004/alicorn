@@ -751,6 +751,14 @@ run_application_loop :: proc(
 	sdl3.RemoveEventWatch(native_live_resize_event_watch, rawptr(&live_resize_state))
 	// Secondary workers and Runtime resources are retired before application-owned
 	// shared state and the host-owned GPU device begin shutdown.
+	if child := secondary_windows.child; child != nil {
+		fmt.println(
+			"secondary_window_shutdown_gpu_drain",
+			"child_active", child.active,
+			"primary_unretired_fences", len(in_flight),
+			"device_wait", "SDL_WaitForGPUIdle",
+		)
+	}
 	native_secondary_window_manager_destroy(&secondary_windows)
 	native_accessibility_host_shutdown(&accessibility_host)
 	if native_menu != nil { native_menu.inspector = nil }
