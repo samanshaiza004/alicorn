@@ -43,6 +43,18 @@ Text_Line_Geometry :: struct {
 	bounds: Rect,
 }
 
+// Text_Field_Interaction is a read-only snapshot of editing state for one
+// active retained text field. Selection and caret offsets are UTF-8 byte
+// offsets normalized to grapheme boundaries in the field's current value.
+Text_Field_Interaction :: struct {
+	selection_start, selection_end: int,
+	caret: int,
+	has_selection: bool,
+	composition_active: bool,
+	can_edit: bool,
+	focused: bool,
+}
+
 focused_node :: proc(rt: ^Runtime) -> Node_ID {
 	if rt == nil { return 0 }
 	return rt.focused
@@ -160,6 +172,37 @@ text_field_value :: proc(rt: ^Runtime, id: Node_ID) -> (value: string, ok: bool)
 	node, found := rt.nodes[id]
 	if !found || node == nil || !node.active || node.kind != .Text_Field { return }
 	return node.text, true
+}
+
+// text_field_interaction returns normalized selection, caret, composition,
+// and editability state without exposing the retained node. The result is a
+// snapshot; query it again after input or a runtime update.
+text_field_interaction :: proc(rt: ^Runtime, id: Node_ID) -> (state: Text_Field_Interaction, ok: bool) {
+	if rt == nil || id == 0 { return }
+	node, found := rt.nodes[id]
+	if !found || node == nil || !node.active || node.kind != .Text_Field { return }
+	start := min(node.selection_anchor.byte, node.selection_focus.byte)
+	end := max(node.selection_anchor.byte, node.selection_focus.byte)
+	state = Text_Field_Interaction{
+		selection_start=start,
+		selection_end=end,
+		caret=node.caret.byte,
+		has_selection=start != end,
+		composition_active=node.composition.active,
+		can_edit=node.focusable && !node.disabled,
+		focused=rt.focused == id,
+	}
+	ok = true
+	return
+}
+
+// text_change_destroy releases the owned result returned by text input APIs.
+// Pass the Runtime that produced the result. A nil Runtime leaves the result
+// untouched so its ownership is not silently discarded.
+text_change_destroy :: proc(rt: ^Runtime, change: ^Text_Change) {
+	if change == nil || rt == nil { return }
+	if len(change.text) > 0 { delete(change.text, rt.persistent_allocator) }
+	change^ = {}
 }
 
 // text_node_line_count returns the number of visual lines in an active shaped
