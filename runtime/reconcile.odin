@@ -422,6 +422,9 @@ copy_node_description :: proc(
 	style_spans_changed := hash_text_style_spans(node.text_style_spans[:]) != hash_text_style_spans(d.text_style_spans)
 	overflow_changed := node.text_style.overflow != d.text_style.overflow
 	kind_changed := node.kind != d.kind
+	if kind_changed && node.kind == .Text_Field {
+		controlled_text_field_state_clear(rt, node.id)
+	}
 	if node.text_run_valid && (text_changed || typography_changed || font_changed || weight_changed || font_size_changed || overflow_changed || style_spans_changed || kind_changed || !node_has_text_product(d.kind)) {
 		text_run_destroy(&node.text_run)
 		node.text_run_valid = false
@@ -720,6 +723,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 		_ = restore_cancel_pending(rt, .Semantic_Focus, id, .Target_Retired)
 	}
 	if rt.tooltip.target == id { tooltip_dismiss(rt) }
+	controlled_text_field_state_clear(rt, id)
 	delete_key(&rt.computed_styles, id)
 	gpu_surface_image_layers_destroy(rt, id)
 	delete_key(&rt.semantic_surfaces, id)
@@ -1071,6 +1075,10 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		free(node, allocator=rt.persistent_allocator)
 	}
 	delete(rt.nodes)
+	for _, state in rt.controlled_text_fields {
+		if len(state.model_text) > 0 { delete(state.model_text, rt.persistent_allocator) }
+	}
+	delete(rt.controlled_text_fields)
 	for _, state in rt.restore_controls { free(state, allocator=rt.persistent_allocator) }
 	delete(rt.restore_controls)
 	delete(rt.measure_states)
@@ -1236,6 +1244,13 @@ end_frame :: proc(ui: ^UI) {
 		context_menu_close_internal(ui.runtime, false)
 	}
 	reconcile(ui.runtime)
+	// A controlled-field submit belongs to the next application description.
+	// If its node was omitted or reused without being called, expire it here.
+	for id, &state in ui.runtime.controlled_text_fields {
+		if state.submit_pending {
+			state.submit_pending = false
+		}
+	}
 	// An unconsumed activation expires with this application description. This
 	// also covers controls that disappeared before their event could be read.
 	ui.runtime.activation_node = 0

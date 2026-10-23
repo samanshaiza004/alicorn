@@ -514,7 +514,9 @@ text_style_spans :: proc(ui: ^UI, id: Node_ID, spans: []Text_Style_Span) -> bool
 
 text_field_ex :: proc(ui: ^UI, value: string, source := Source_Site{}, key := "", explicit_key := false, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE) -> Node_ID {
 	resolved_source := resolve_source(source, "text_field", loc)
-	return emit(ui, .Text_Field, resolved_source, text=value, key=key, explicit_key=explicit_key, style=style, focusable=true, font=font, text_style=text_style)
+	id := emit(ui, .Text_Field, resolved_source, text=value, key=key, explicit_key=explicit_key, style=style, focusable=true, font=font, text_style=text_style)
+	controlled_text_field_state_clear(ui.runtime, id)
+	return id
 }
 
 interaction_consumption_note :: proc(rt: ^Runtime) {
@@ -643,7 +645,9 @@ text_simple :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style :=
 }
 
 text_field_simple :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE) -> Node_ID {
-	return emit_key(ui, .Text_Field, resolve_source(Source_Site{}, "text_field", loc), text=value, key=key, style=style, focusable=true, font=font, text_style=text_style)
+	id := emit_key(ui, .Text_Field, resolve_source(Source_Site{}, "text_field", loc), text=value, key=key, style=style, focusable=true, font=font, text_style=text_style)
+	controlled_text_field_state_clear(ui.runtime, id)
+	return id
 }
 
 button :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, state := Button_State{}, loc := #caller_location, text_style := DEFAULT_BUTTON_TEXT_STYLE, content_style := DEFAULT_BUTTON_CONTENT_STYLE, variant := Button_Variant.Default) -> bool {
