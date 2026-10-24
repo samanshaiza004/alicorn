@@ -31,6 +31,8 @@ ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	build native/sdl_gpu_entry "-out:$OUT_DIR/alicorn_sdl_gpu"
 "$ODIN" test runtime
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	test ui "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_ui_tests"
 "$ODIN" test theme
 "$ODIN" build tools/theme "-out:$OUT_DIR/alicorn_theme"
 "$OUT_DIR/alicorn_theme" check theme/testdata/minimal.json

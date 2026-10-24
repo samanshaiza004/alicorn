@@ -5,6 +5,7 @@ param(
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\common.ps1"
 $Odin = Resolve-AlicornOdin -Requested $Odin
+$RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 New-Item -ItemType Directory -Force -Path 'out' | Out-Null
 $AccessKit = Get-AlicornAccessKit
 & $Odin build tests -out:out\alicorn_tests.exe
@@ -25,6 +26,8 @@ if ((Get-Item -LiteralPath $SDL3).Length -lt 100000) {
 Copy-Item -LiteralPath $SDL3 -Destination 'out\SDL3.dll' -Force
 
 & $Odin test runtime
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Odin test ui "-collection:alicorn=$RepoRoot" "-extra-linker-flags:$($AccessKit.LinkerFlags)" -out:out\alicorn_ui_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test theme
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

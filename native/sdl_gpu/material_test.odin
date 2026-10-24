@@ -22,6 +22,101 @@ test_flat_material_stays_one_quad :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_rectangular_surface_stroke_respects_placement :: proc(t: ^testing.T) {
+	base := alicorn.Rect{10, 20, 100, 40}
+	fill := alicorn.Color{0.4, 0.5, 0.6, 1}
+	border := alicorn.Color{0.1, 0.8, 0.9, 1}
+	for placement in [3]alicorn.Paint_Stroke_Placement{.Centered, .Inside, .Outside} {
+		vertices := make([dynamic]Native_Text_Vertex, 0, 40, allocator=context.temp_allocator)
+		defer delete(vertices)
+		stroke := alicorn.Paint_Stroke{color=border, width=2, placement=placement}
+		native_solid_append_material_surface(
+			&vertices, base, base, fill, alicorn.STYLE_MATERIAL_FLAT, 0, 1, stroke,
+		)
+		testing.expect(t, len(vertices) == 30 && native_solid_material_vertex_count(alicorn.STYLE_MATERIAL_FLAT, 0, stroke=stroke) == 30,
+			"a rectangular border should emit four bounded quads in addition to the surface fill")
+		if len(vertices) != 30 { continue }
+		expected_left, expected_top, expected_right, expected_bottom := f32(10), f32(20), f32(110), f32(22)
+		if placement == .Centered {
+			expected_left, expected_top, expected_right, expected_bottom = 9, 19, 111, 21
+		} else if placement == .Outside {
+			expected_left, expected_top, expected_right, expected_bottom = 8, 18, 112, 20
+		}
+		testing.expect(t, vertices[6].position[0] == expected_left && vertices[6].position[1] == expected_top &&
+			vertices[8].position[0] == expected_right && vertices[8].position[1] == expected_bottom &&
+			vertices[6].color == [4]f32{border.r, border.g, border.b, border.a},
+			"the outer edge should follow the selected inside, centered, or outside placement")
+	}
+}
+
+@(test)
+test_outside_rectangle_stroke_keeps_paint_visible_when_surface_is_offscreen :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime({0, 0, 100, 60})
+	defer alicorn.destroy_runtime(&rt)
+	stroke := alicorn.Paint_Stroke{color=alicorn.Color{0.9, 0.2, 0.1, 1}, width=2, placement=.Outside}
+	display := [1]alicorn.Paint_Command{
+		alicorn.paint_surface_command(1, {-3, 10, 2, 20}, {0, 0, 100, 60}, {0, 0, 0, 0}, stroke=stroke),
+	}
+	renderer := Native_Solid_Renderer{
+		runtime=&rt,
+		vertices=make([dynamic]Native_Text_Vertex, 0, 40, allocator=context.temp_allocator),
+		draws=make([dynamic]Native_Solid_Draw, 0, 2, allocator=context.temp_allocator),
+		vertex_capacity=40,
+	}
+	defer delete(renderer.vertices)
+	defer delete(renderer.draws)
+	testing.expect(t, native_solid_build(&renderer, display[:], 1, 1, 100, 60) && len(renderer.draws) == 1 && renderer.draws[0].vertex_count == 30,
+		"a border extending into the viewport must still be submitted when its surface bounds are outside")
+	if len(renderer.draws) == 1 {
+		testing.expect(t, renderer.draws[0].has_scissor,
+			"outside placement should be clipped to the command's resolved clip rectangle")
+	}
+	max_x: f32 = -100
+	for vertex in renderer.vertices { max_x = max(max_x, vertex.position[0]) }
+	testing.expect(t, max_x == 1,
+		"outside border geometry should retain its extent beyond the offscreen surface bounds")
+}
+
+@(test)
+test_stroke_culling_accounts_for_nonuniform_dpi_scale :: proc(t: ^testing.T) {
+	draw := alicorn.Paint_Command{bounds={-2.5, 10, 1, 20}, clip={0, 0, 100, 60}}
+	surface := alicorn.Surface_Paint{
+		fill={0.3, 0.4, 0.5, 1},
+		stroke=alicorn.Paint_Stroke{color={1, 0, 0, 1}, width=1, placement=.Outside},
+	}
+	visible := native_solid_visible_command(draw, surface, alicorn.STYLE_MATERIAL_FLAT, 1, 2)
+	_, _, _, _, intersects := native_solid_pixel_bounds(visible, 1, 2, 100, 120)
+	testing.expect(t, intersects,
+		"a stroke scaled uniformly to the larger pixel scale should not be culled at the lower-scaled axis")
+}
+
+@(test)
+test_rounded_surface_antialias_fringe_participates_in_culling :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime({0, 0, 100, 60})
+	defer alicorn.destroy_runtime(&rt)
+	display := [1]alicorn.Paint_Command{
+		alicorn.paint_surface_command(
+			1,
+			{-0.5, 10, 0.4, 24},
+			{0, 0, 100, 60},
+			{0.3, 0.4, 0.5, 1},
+			shape=alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=4},
+		),
+	}
+	renderer := Native_Solid_Renderer{
+		runtime=&rt,
+		vertices=make([dynamic]Native_Text_Vertex, 0, 512, allocator=context.temp_allocator),
+		draws=make([dynamic]Native_Solid_Draw, 0, 2, allocator=context.temp_allocator),
+		vertex_capacity=512,
+	}
+	defer delete(renderer.vertices)
+	defer delete(renderer.draws)
+	testing.expect(t, native_solid_build(&renderer, display[:], 1, 1, 100, 60) &&
+		len(renderer.draws) == 1 && renderer.draws[0].vertex_count == NATIVE_ROUNDED_FILL_VERTICES,
+		"a rounded surface just outside the viewport should remain visible when its antialias fringe crosses the clip")
+}
+
+@(test)
 test_rounded_material_uses_bounded_contours_and_scaled_tangents :: proc(t: ^testing.T) {
 	shape := alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=6}
 	fill := alicorn.Color{0.7, 0.6, 0.5, 1}

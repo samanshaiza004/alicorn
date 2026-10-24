@@ -101,6 +101,52 @@ test_semantic_surface_composes_children_and_resolves_extension_role :: proc(t: ^
 }
 
 @(test)
+test_semantic_surface_accepts_direct_fill_and_stroke :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 160, 100})
+	defer destroy_runtime(&rt)
+	fill := Color{0.20, 0.30, 0.40, 1}
+	border := Color{0.10, 0.70, 0.90, 1}
+	ui, should_build := begin_frame(&rt)
+	if !should_build { testing.expect(t, false, "direct surface fixture should describe its first frame"); return }
+	container_begin(&ui, .Root, key=key_string("direct-surface-root"), style=layout_style(width=160, height=100))
+	id := surface_begin(
+		&ui,
+		surface_core_color_role(.Surface),
+		key=key_string("direct-surface-card"),
+		style=layout_style(width=120, height=72, padding=8),
+		shape=Surface_Shape{kind=.Rounded_Rectangle, corner_radius=6},
+		fill=fill,
+		stroke=Paint_Stroke{color=border, width=1},
+	)
+	text(&ui, "content", key=key_string("direct-surface-content"))
+	surface_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+
+	node, found := rt.nodes[id]
+	testing.expect(t, found && len(node.paint) == 1,
+		"a direct fill and border should remain one ordinary retained surface node")
+	if found && len(node.paint) == 1 {
+		paint, ok := node.paint[0].payload.(Surface_Paint)
+		testing.expect(t, ok && paint.fill == fill && paint.stroke == Paint_Stroke{color=border, width=1} &&
+			paint.shape == Surface_Shape{kind=.Rounded_Rectangle, corner_radius=6},
+			"resolved direct appearance should preserve fill, stroke, and rounded geometry")
+	}
+	style := rt.semantic_surfaces[id]
+	testing.expect(t, style.fill_override_set && style.fill_override == fill && style.stroke.color == border,
+		"direct appearance inputs should be retained in the existing semantic-surface sidecar")
+
+	changed := style
+	changed.fill_override = Color{0.3, 0.3, 0.4, 1}
+	testing.expect(t, semantic_surface_style_hash(changed) != semantic_surface_style_hash(style),
+		"changing direct fill must invalidate the retained surface paint description")
+	changed = style
+	changed.stroke.placement = .Outside
+	testing.expect(t, semantic_surface_style_hash(changed) != semantic_surface_style_hash(style),
+		"changing border placement must invalidate retained surface paint")
+}
+
+@(test)
 test_semantic_surface_rejects_invalid_recipes_before_opening_container :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 120, 80})
 	defer destroy_runtime(&rt)

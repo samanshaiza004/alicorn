@@ -85,9 +85,10 @@ Open [`examples/01_hello/main.odin`](../examples/01_hello/main.odin).
 Try changing `"Hello, Alicorn"` or the button label, save, and rerun the same
 native command. The runner rebuilds before launching.
 
-The app keeps its count in an ordinary Odin struct. Its build procedure emits
-text and a button; when the button activates, the app updates that struct and
-emits the new count. That is enough to start building your own UI.
+The app keeps its count in an ordinary Odin struct. Its render procedure
+describes text and a button; when the button activates, the app updates that
+struct. `ui.run` supplies the routine single-window host and frame lifecycle.
+That is enough to start building your own UI.
 
 ## Explore the widget gallery
 

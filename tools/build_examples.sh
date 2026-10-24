@@ -30,5 +30,5 @@ for example in examples/*; do
 	name=${example##*/}
 	echo "Building example $name"
 	alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
-		build "$example" "-out:$OUT_DIR/$name"
+		build "$example" "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/$name"
 done

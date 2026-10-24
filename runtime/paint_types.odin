@@ -71,9 +71,17 @@ surface_shape_is_valid :: proc(shape: Surface_Shape) -> bool {
 	return false
 }
 
+Paint_Stroke_Placement :: enum {
+	Centered,
+	Inside,
+	Outside,
+	Count,
+}
+
 Paint_Stroke :: struct {
 	color: Color,
 	width: f32,
+	placement: Paint_Stroke_Placement,
 }
 
 Material_ID :: distinct u32

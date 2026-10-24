@@ -640,8 +640,8 @@ button_simple :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style 
 	return consume_activation(ui.runtime, id)
 }
 
-text_simple :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE) -> Node_ID {
-	return emit_key(ui, .Text, resolve_source(Source_Site{}, "text", loc), text=value, key=key, style=style, font=font, text_style=text_style)
+text_simple :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE, color := DEFAULT_COLOR) -> Node_ID {
+	return emit_key(ui, .Text, resolve_source(Source_Site{}, "text", loc), text=value, key=key, style=style, color=color, font=font, text_style=text_style)
 }
 
 text_field_simple :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE) -> Node_ID {
@@ -720,8 +720,8 @@ semantic_bind :: proc(ui: ^UI, id: Semantic_ID) -> bool {
 	return true
 }
 
-text :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE) -> Node_ID {
-	return text_simple(ui, value, key, style, loc, font, text_style)
+text :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE, color := DEFAULT_COLOR) -> Node_ID {
+	return text_simple(ui, value, key, style, loc, font, text_style, color)
 }
 
 text_field :: proc(ui: ^UI, value: string, key: UI_Key = UI_Unkeyed{}, style := DEFAULT_STYLE, loc := #caller_location, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE) -> Node_ID {

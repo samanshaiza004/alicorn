@@ -1,8 +1,78 @@
 # Building Alicorn applications
 
 An Alicorn application owns its data and describes its UI with ordinary Odin
-control flow. The [native starter](../examples/01_hello/main.odin) is a
-small complete example; this guide explains the patterns to grow it.
+control flow. The [native starter](../examples/01_hello/main.odin) uses the
+typed `alicorn:ui` entry point; this guide shows how to grow from that path to
+the lower-level runtime.
+
+## Learn Alicorn progressively
+
+Start with the `ui` package. It writes ordinary retained Alicorn nodes and
+uses the same Runtime as the detailed API below.
+
+1. **Text, buttons, and application state:** `ui.text`, `ui.button`, and
+   `ui.run`; state remains in your struct.
+2. **Containers and layout:** `ui.row`, `ui.column`, and `ui.panel` provide
+   scoped layout, while `ui.box` describes a leaf surface.
+3. **Repeated data:** pass stable keys for items that can move or be inserted.
+4. **Scrolling and virtual collections:** use retained scroll regions and
+   virtual-list APIs when a collection is larger than its viewport.
+5. **Regions and reuse:** add explicit revisions when a subtree can be reused
+   independently from the rest of the description.
+6. **Async host wake:** use ordinary app-owned workers and the native host's
+   waker service when background results need to wake an idle window.
+7. **GPU and custom surfaces:** update retained geometry or versioned image
+   surfaces for specialized visualizations.
+8. **Runtime, allocator, and diagnostics:** use explicit invalidation,
+   allocation configuration, tracing, and inspection when the application
+   needs those controls.
+
+The simple package does not own application state or retain a second widget
+tree. `ui.run` is the routine single-window host path; applications that need
+native callbacks such as custom wake handling can use `host.Run` and pass the
+same `^alicorn.UI` description context to both convenience helpers and direct
+runtime calls.
+
+`ui.run` uses Alicorn's existing bounded correction policy after consumed UI
+actions. The description can therefore run again after a click: keep file I/O,
+worker submissions, and other external side effects behind consumed actions
+or explicit application transitions. For custom async wake, initialization,
+or native event callbacks, use `host.Run` instead. That path keeps explicit
+invalidation and host-service ownership available.
+
+Convenience sizing is local to `ui`: the application root fills the viewport;
+rows and columns use their allocated width and fit their children's height;
+text uses normal text measurement; buttons keep their existing intrinsic
+control size; and a `ui.box` defaults to 24 by 24 logical units. Pass `grow=1`
+when a row, column, or panel should take a share of its parent's remaining
+main-axis space. Explicit box width or height overrides its square `size`;
+explicit row or column dimensions and `grow` are passed to the existing layout
+rules. The lower-level `Layout_Style` contract is unchanged.
+
+`ui.panel` is a column layout with a retained surface. An omitted fill uses
+the active theme's Surface role; `fill`, `radius`, and `stroke` provide direct
+appearance options. `ui.border(width, color)` places the stroke inside the
+resolved bounds by default; pass `.Centered` or `.Outside` as its third
+argument to change placement. Use `ui.row` and `ui.column` for arranging content,
+`ui.box` for a colored leaf, and `ui.panel` when children need a surface.
+Advanced materials and GPU surfaces remain in the runtime API.
+
+Scoped layout calls are intended to appear directly in an `if` condition:
+
+```odin
+if ui.column(ctx, padding=12, gap=8) {
+	ui.text(ctx, "Settings")
+	if ui.row(ctx, gap=8) {
+		// children
+	}
+}
+```
+
+Odin's [deferred procedure attributes](https://odin-lang.org/docs/attributes/)
+close the scope at the end of the surrounding lexical scope. An early `return`,
+`break`, or `continue` still closes it. Keep a scoped call as the direct
+condition: assigning its result defers cleanup to the containing scope, and
+short-circuit expressions can prevent a deferred call from being registered.
 
 ## Keep state in your application
 
@@ -10,16 +80,22 @@ Use normal structs, slices, maps, and procedures for domain state. A button
 returns `true` when activated, so ordinary control flow updates that state:
 
 ```odin
-if alicorn.button(&ui, "Pause") {
+if ui.button(ctx, "Pause") {
 	app.paused = !app.paused
 }
+```
 
-enabled := alicorn.checkbox(&ui, "Show grid", app.show_grid)
+The broader runtime API exposes controls that are not duplicated in the small
+facade. Import `alicorn:runtime` alongside `alicorn:ui` to use those controls
+with the same context:
+
+```odin
+enabled := alicorn.checkbox(ctx, "Show grid", app.show_grid)
 if enabled.changed {
 	app.show_grid = enabled.value
 }
 
-gain := alicorn.slider_f32(&ui, "Gain", app.gain, 0, 1, 0.05)
+gain := alicorn.slider_f32(ctx, "Gain", app.gain, 0, 1, 0.05)
 if gain.changed {
 	app.gain = gain.value
 }

@@ -4,12 +4,23 @@ Alicorn is an experimental native GUI runtime for [Odin](https://odin-lang.org/)
 Describe a UI with ordinary Odin code; Alicorn retains identity, interaction,
 layout, text, and rendering products between updates.
 
-The programming model is deliberately direct:
+The beginner path is deliberately direct:
 
 ```odin
-alicorn.text(&ui, "Hello, Alicorn")
-if alicorn.button(&ui, "Save") {
-	app.saved = true
+import ui "alicorn:ui"
+
+App :: struct { saved: bool }
+
+render :: proc(app: ^App, ctx: ^ui.UI) {
+	if ui.column(ctx, padding=24, gap=12) {
+		ui.text(ctx, "Hello, Alicorn")
+		if ui.button(ctx, "Save") { app.saved = true }
+	}
+}
+
+main :: proc() {
+	app := App{}
+	ui.run(&app, render, title="Alicorn", width=720, height=480)
 }
 ```
 
@@ -19,8 +30,9 @@ if alicorn.button(&ui, "Save") {
 
 <p align="center"><sub>Scratchpad running on Alicorn.</sub></p>
 
-Application state stays in your code. Updates are explicit, and the API is
-still evolving; Alicorn is not production-ready yet.
+Application state stays in your code. `ui` lowers into the same retained
+Runtime as the lower-level API; it adds no application state store or second
+widget tree. The API is still evolving, and Alicorn is not production-ready.
 
 **New to Alicorn?** Follow [Getting Started](docs/getting-started.md) to install
 the prerequisites, build the project, and run an editable native example.
@@ -30,7 +42,7 @@ For this release's scope and limitations, see the
 For the reusable native distribution path, see
 [Native application packaging](docs/packaging.md).
 
-Then explore the [application guide](docs/guide.md), [API reference](docs/reference.md),
+Then explore the [progressive application guide](docs/guide.md), [API reference](docs/reference.md),
 [Choosing Alicorn](docs/choosing-alicorn.md), [examples](examples/README.md),
 [typed themes](docs/themes.md),
 [performance evidence](docs/performance.md), [architecture](docs/architecture.md),

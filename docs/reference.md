@@ -4,6 +4,50 @@ This is a map of Alicorn's public programming surface. The compiler's package
 definitions in [`runtime/runtime.odin`](../runtime/runtime.odin) are the source
 of truth for exact parameter types and defaults.
 
+## Small native applications
+
+Import `alicorn:ui` for the short path. `ui.run` owns the routine single-window
+host and frame lifecycle; render receives typed, app-owned state and the same
+`UI` description context used by the lower-level runtime:
+
+```odin
+import "core:fmt"
+import ui "alicorn:ui"
+
+App :: struct { count: int }
+
+render :: proc(app: ^App, ctx: ^ui.UI) {
+	if ui.column(ctx, padding=24, gap=12) {
+		ui.text(ctx, "Hello, Alicorn", size=24)
+		ui.text(ctx, fmt.tprintf("Count: %d", app.count))
+		if ui.button(ctx, "Increment") { app.count += 1 }
+	}
+}
+
+main :: proc() {
+	app := App{}
+	ui.run(&app, render, title="Alicorn", width=720, height=480)
+}
+```
+
+`ui.row`, `ui.column`, and `ui.panel` are lexical scopes. Use each directly in
+an `if` condition so Odin closes the scope at the end of that block. Stable
+keys are optional for one-off controls and should be supplied for repeated
+items that can reorder. `ui.run` selects the native host's bounded corrective
+description policy for consumed UI actions; render may run again after an
+interaction, so keep unrelated side effects out of the description.
+
+The convenience package includes `text`, `button`, `row`, `column`, `panel`,
+`box`, `border`, basic colors, `rgb`, and root invalidation. It writes ordinary
+retained nodes and surface paint through the same Runtime; it does not add an
+application state store or a second tree. Use `host.Run` when custom host
+callbacks, worker wakes, initialization, or native lifecycle control are
+needed. Both paths can call the lower-level runtime API with the same `UI`.
+
+See [Getting Started](getting-started.md) for the first window and the
+[application guide](guide.md) for sizing defaults and the progressive path to
+identity, virtual collections, regions, async wakes, surfaces, and diagnostics.
+
 ## Native application host
 
 Import `native/sdl_gpu` as a host package and pass an `Application` to `Run`.
