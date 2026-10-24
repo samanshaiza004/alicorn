@@ -10,5 +10,6 @@ ODIN=$(alicorn_resolve_odin "$ODIN_ARG")
 cd "$REPO_ROOT"
 mkdir -p out
 ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
-"$ODIN" build native/image_validation_entry "-extra-linker-flags:$ACCESSKIT_LINK_FLAGS" -out:out/alicorn_image_validation
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	build native/image_validation_entry -out:out/alicorn_image_validation
 exec ./out/alicorn_image_validation

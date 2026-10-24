@@ -40,6 +40,7 @@ native_run_application :: proc(
 	configure_platform_activation()
 	if !sdl3.Init(sdl3.INIT_VIDEO) { fail("SDL_Init failed") }
 	defer sdl3.Quit()
+	fmt.println("sdl_video_driver", sdl3.GetCurrentVideoDriver())
 	linked_sdl_version := sdl3.GetVersion()
 	fmt.println(
 		"sdl3_version",

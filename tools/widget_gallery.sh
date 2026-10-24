@@ -25,5 +25,6 @@ ODIN=$(alicorn_resolve_odin "$ODIN_ARG")
 cd "$REPO_ROOT"
 mkdir -p "$OUT_DIR"
 ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
-"$ODIN" build examples/02_form "-extra-linker-flags:$ACCESSKIT_LINK_FLAGS" "-out:$OUT_DIR/alicorn_widget_gallery"
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	build examples/02_form "-out:$OUT_DIR/alicorn_widget_gallery"
 exec "$OUT_DIR/alicorn_widget_gallery"

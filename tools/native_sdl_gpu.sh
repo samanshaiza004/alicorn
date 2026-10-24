@@ -22,5 +22,6 @@ cd "$REPO_ROOT"
 mkdir -p "$OUT_DIR"
 
 ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
-"$ODIN" build native/sdl_gpu_entry "-extra-linker-flags:$ACCESSKIT_LINK_FLAGS" "-out:$OUT_DIR/alicorn_sdl_gpu"
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	build native/sdl_gpu_entry "-out:$OUT_DIR/alicorn_sdl_gpu"
 "$OUT_DIR/alicorn_sdl_gpu" "$@"

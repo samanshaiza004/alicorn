@@ -47,4 +47,17 @@ EOF
 	printf '%s\n' "$resolved"
 }
 
+# Odin rejects an empty -extra-linker-flags argument. Linux has no AccessKit
+# linker flags, so keep the optional argument out of the process argv entirely.
+alicorn_odin_with_linker_flags() {
+	alicorn_odin_executable=$1
+	alicorn_linker_flags=$2
+	shift 2
+	if [ -n "$alicorn_linker_flags" ]; then
+		"$alicorn_odin_executable" "$@" "-extra-linker-flags:$alicorn_linker_flags"
+	else
+		"$alicorn_odin_executable" "$@"
+	fi
+}
+
 . "$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE:-$0}")" && pwd -P)/accesskit.sh"

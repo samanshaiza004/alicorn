@@ -261,6 +261,7 @@ RunFoundation :: proc() {
 		fail("SDL_Init failed")
 	}
 	defer sdl3.Quit()
+	fmt.println("sdl_video_driver", sdl3.GetCurrentVideoDriver())
 
 	window := sdl3.CreateWindow(
 		"Alicorn SDL_GPU validation",

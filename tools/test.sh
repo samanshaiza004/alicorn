@@ -28,7 +28,8 @@ ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
 
 "$ODIN" build tests "-out:$OUT_DIR/alicorn_tests"
 "$OUT_DIR/alicorn_tests"
-"$ODIN" build native/sdl_gpu_entry "-extra-linker-flags:$ACCESSKIT_LINK_FLAGS" "-out:$OUT_DIR/alicorn_sdl_gpu"
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	build native/sdl_gpu_entry "-out:$OUT_DIR/alicorn_sdl_gpu"
 "$ODIN" test runtime
 "$ODIN" test theme
 "$ODIN" build tools/theme "-out:$OUT_DIR/alicorn_theme"
@@ -44,6 +45,7 @@ if "$OUT_DIR/alicorn_theme" check theme/testdata/invalid.json; then
     echo 'theme CLI accepted an unsupported length unit' >&2
     exit 1
 fi
-"$ODIN" test native/sdl_gpu "-extra-linker-flags:$ACCESSKIT_LINK_FLAGS" "-out:$OUT_DIR/alicorn_native_tests"
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	test native/sdl_gpu "-out:$OUT_DIR/alicorn_native_tests"
 "$OUT_DIR/alicorn_sdl_gpu" --text-input-contract-test
 sh "$SCRIPT_DIR/test_restoration.sh" "$ODIN"

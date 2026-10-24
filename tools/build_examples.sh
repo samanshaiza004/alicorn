@@ -29,5 +29,6 @@ for example in examples/*; do
 	[ -f "$example/main.odin" ] || continue
 	name=${example##*/}
 	echo "Building example $name"
-	"$ODIN" build "$example" "-extra-linker-flags:$ACCESSKIT_LINK_FLAGS" "-out:$OUT_DIR/$name"
+	alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+		build "$example" "-out:$OUT_DIR/$name"
 done

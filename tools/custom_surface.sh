@@ -21,7 +21,8 @@ ODIN=$(alicorn_resolve_odin "$ODIN_ARG")
 cd "$REPO_ROOT"
 mkdir -p "$OUT_DIR"
 ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
-"$ODIN" build examples/04_custom_surface "-extra-linker-flags:$ACCESSKIT_LINK_FLAGS" "-out:$OUT_DIR/alicorn_custom_surface"
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	build examples/04_custom_surface "-out:$OUT_DIR/alicorn_custom_surface"
 if [ "$SMOKE" = yes ]; then
 	exec "$OUT_DIR/alicorn_custom_surface" --smoke
 fi

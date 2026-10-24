@@ -92,10 +92,12 @@ fi
 BUILT="$OUT_ROOT/$APP_NAME"
 cd "$REPO_ROOT"
 if [ -n "$SDL_LINK_FLAGS" ]; then
-	"$ODIN" build "$APP_PACKAGE" "-out:$BUILT" -o:speed "-extra-linker-flags:$ACCESSKIT_LINK_FLAGS $SDL_LINK_FLAGS"
+	LINK_FLAGS="$ACCESSKIT_LINK_FLAGS $SDL_LINK_FLAGS"
 else
-	"$ODIN" build "$APP_PACKAGE" "-out:$BUILT" -o:speed "-extra-linker-flags:$ACCESSKIT_LINK_FLAGS"
+	LINK_FLAGS="$ACCESSKIT_LINK_FLAGS"
 fi
+alicorn_odin_with_linker_flags "$ODIN" "$LINK_FLAGS" \
+	build "$APP_PACKAGE" "-out:$BUILT" -o:speed
 
 PACKAGE_ARGS=(
 	"$SCRIPT_DIR/package_macos.py"
