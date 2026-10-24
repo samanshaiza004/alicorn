@@ -119,9 +119,10 @@ distribution before using a custom compiler path.
 
 ## Platform status
 
-The native path is exercised on Windows and macOS. Linux support is not yet
-validated by this project; the headless checks can still be useful there, but
-the native app should be considered experimental.
+The native path is exercised on Windows and macOS. Linux has a conditional
+validation record from one NixOS 26.11/Mango 0.16.2 machine, but this is not
+broad Linux support; the native app remains experimental. See the
+[Linux validation record](validation/linux-nixos-mangowc-2026-10-23.md).
 
 If a build fails, check `odin version`, the platform prerequisites above, and
 the compiler's complete `base`, `core`, and `vendor` installation. The

@@ -77,7 +77,9 @@ text shaping and paint so retained content is rebuilt with the new font.
 When an application does not supply a fallback, the Linux native host resolves
 an optional symbol fallback through Fontconfig and verifies its glyph coverage
 before loading it. It does not assume a distribution-specific path such as
-`/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`.
+`/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`. If Fontconfig, `fc-match`,
+or the selected font is unavailable or unusable, the fallback remains optional
+and the host continues with the bundled primary face.
 
 `image_load_bytes` currently decodes PNG and QOI into Runtime-owned RGBA8
 pixels. It copies decoded pixels, so a disk buffer can be released as soon as

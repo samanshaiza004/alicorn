@@ -24,10 +24,10 @@ Start with [Getting Started](docs/getting-started.md), then see the
 ## Platform validation
 
 The native path has been exercised on Windows and macOS. Checked-in validation
-records include Windows 10 22H2 and macOS 27.0 on Apple silicon. This is focused
-project testing, not certification across all OS versions, hardware, or GPU
-drivers. Linux native support has not been validated; the headless checks may
-still be useful there, but native use remains experimental.
+records include Windows 10 22H2 and macOS 27.0 on Apple silicon. Linux has a
+conditional validation record for one NixOS 26.11/Mango 0.16.2 machine; it is
+not broad Linux support or certification across OS versions, hardware, or GPU
+drivers. See the [Linux validation record](docs/validation/linux-nixos-mangowc-2026-10-23.md).
 
 ## Experimental status and limitations
 

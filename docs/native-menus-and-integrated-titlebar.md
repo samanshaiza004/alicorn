@@ -3,6 +3,8 @@
 For the macOS tab/titlebar integration, see the
 [research and implementation record](research/macos-integrated-titlebar.md)
 and its [macOS validation record](validation/macos-sync-2026-10-20.md).
+The Linux host evidence is recorded in the
+[NixOS/Mango validation record](validation/linux-nixos-mangowc-2026-10-23.md).
 
 This experiment adds a small semantic menu description to the SDL host. Menu
 trees are borrowed for `Run`; labels and structure are copied into native

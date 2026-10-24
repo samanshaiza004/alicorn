@@ -251,8 +251,9 @@ retained interaction and presentation state described by its public API.
 ## Maturity and evidence
 
 Alicorn is experimental; public APIs may change and the widget set is
-intentionally small. Windows and macOS native paths are exercised, while
-Linux native support is not validated. Accessibility limitations are
+intentionally small. Windows and macOS native paths are exercised. Linux has
+a conditional validation record from one NixOS/Mango machine, not broad native
+support. Accessibility limitations are
 documented in the [guide](guide.md#accessibility-status). The opt-in visual
 inspector is available to native apps launched with `--inspector`; follow
 [example 05](../examples/05_inspector/main.odin) and the

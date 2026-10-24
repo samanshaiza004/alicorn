@@ -34,7 +34,8 @@ Then explore the [application guide](docs/guide.md), [API reference](docs/refere
 [Choosing Alicorn](docs/choosing-alicorn.md), [examples](examples/README.md),
 [typed themes](docs/themes.md),
 [performance evidence](docs/performance.md), [architecture](docs/architecture.md),
-or [contributor guide](docs/development.md).
+or [contributor guide](docs/development.md). The current Linux evidence is
+recorded in the [NixOS/Mango validation report](docs/validation/linux-nixos-mangowc-2026-10-23.md).
 
 **Accessibility status:** Alicorn now has an experimental AccessKit bridge for
 Windows UI Automation and macOS accessibility, with initial control, tab, and

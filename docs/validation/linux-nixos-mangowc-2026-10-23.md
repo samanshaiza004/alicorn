@@ -19,10 +19,10 @@ accelerator metadata, but no native application menu is created.
 
 ## Checkouts
 
-| Repository | Branch | HEAD | Lock/candidate |
+| Repository | Branch | Validation revision | Lock/candidate |
 | --- | --- | --- | --- |
-| `/home/saman/dev/alicorn` | `validation/linux-nixos-mangowc-2026-10-23` | Base `2063b03e612ef172a66eabb2127fd6a304c808de` | Validation changes committed on this branch; local candidate tested |
-| `/home/saman/dev/scratchpad` | `validation/linux-nixos-mangowc-2026-10-23` | Base `990b200c46643d27c936da609ddc01e35151be3f` | Locked Alicorn `af21f3862b2d3cd959a62373bf5e147a04a2ee77`; Caliber `197cd964cc7265bc60df599a6b8562eac7c75f3a` |
+| `/home/saman/dev/alicorn` | `validation/linux-nixos-mangowc-2026-10-23` | `c27f09d705cd4012506e37ead38e836697453e23` | Pushed validation branch |
+| `/home/saman/dev/scratchpad` | `validation/linux-nixos-mangowc-2026-10-23` | `b40978767c0942199cc156877e702136ba4622ad` | Locked Alicorn `c27f09d705cd4012506e37ead38e836697453e23`; Caliber `197cd964cc7265bc60df599a6b8562eac7c75f3a` |
 
 The adversarial Alicorn commit `1690aaa9c961b318d817e2ebeb75ded9b6d66598`
 exists locally but is not in the current HEAD ancestry. It is contained by
