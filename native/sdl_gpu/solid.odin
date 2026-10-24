@@ -195,10 +195,10 @@ native_solid_pixel_bounds :: proc(
 	return
 }
 
-native_solid_stroke_outside :: proc(stroke: alicorn.Paint_Stroke) -> f32 {
+native_solid_stroke_outside :: proc(stroke: alicorn.Paint_Stroke, placement: alicorn.Paint_Stroke_Placement) -> f32 {
 	if stroke.width <= 0 { return 0 }
-	if stroke.placement == .Inside { return 0 }
-	if stroke.placement == .Outside { return stroke.width }
+	if placement == .Inside { return 0 }
+	if placement == .Outside { return stroke.width }
 	return stroke.width*0.5
 }
 
@@ -210,7 +210,7 @@ native_solid_visible_command :: proc(
 ) -> alicorn.Paint_Command {
 	visible := draw
 	maximum_scale := max(scale_x, scale_y)
-	outset_pixels := native_solid_stroke_outside(surface.stroke) * maximum_scale
+	outset_pixels := native_solid_stroke_outside(surface.stroke, draw.stroke_placement) * maximum_scale
 	if material.kind == .Analytic_Relief && surface.physical_height > 0 &&
 	   material.outer_shadow_radius > 0 && material.outer_shadow_strength > 0 {
 		outset_pixels = max(outset_pixels, material.outer_shadow_radius*maximum_scale)
@@ -319,7 +319,7 @@ native_solid_build :: proc(
 			stroke.width *= max(scale_x, scale_y)
 			native_solid_append_rounded_material_surface(
 				&renderer.vertices, base, shadow, surface.fill, pixel_material,
-				surface.physical_height, draw.opacity, shape, stroke,
+				surface.physical_height, draw.opacity, shape, stroke, draw.stroke_placement,
 			)
 			renderer.draws[i] = Native_Solid_Draw{
 				first_vertex=first,
@@ -350,7 +350,7 @@ native_solid_build :: proc(
 			}
 			stroke := surface.stroke
 			stroke.width *= max(scale_x, scale_y)
-			native_solid_append_material_surface(&renderer.vertices, base, shadow, surface.fill, material, surface.physical_height, draw.opacity, stroke)
+			native_solid_append_material_surface(&renderer.vertices, base, shadow, surface.fill, material, surface.physical_height, draw.opacity, stroke, draw.stroke_placement)
 			renderer.draws[i] = Native_Solid_Draw{
 				first_vertex=first,
 				vertex_count=sdl3.Uint32(len(renderer.vertices)-int(first)),

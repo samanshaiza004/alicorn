@@ -24,6 +24,7 @@ Semantic_Surface_Style :: struct {
 	fill_override: Color,
 	fill_override_set: bool,
 	stroke: Paint_Stroke,
+	stroke_placement: Paint_Stroke_Placement,
 	shape: Surface_Shape,
 	material: Material_ID,
 	physical_height: f32,
@@ -33,6 +34,7 @@ Semantic_Surface_Style :: struct {
 Semantic_Surface_Resolved_Style :: struct {
 	fill: Color,
 	stroke: Paint_Stroke,
+	stroke_placement: Paint_Stroke_Placement,
 }
 
 SURFACE_PHYSICAL_HEIGHT_LIMIT :: 2.0
@@ -54,7 +56,7 @@ semantic_surface_style_is_valid :: proc(rt: ^Runtime, environment: Style_Environ
 		if !semantic_surface_color_is_valid(style.fill_override) { return false }
 	} else if _, role_ok := semantic_surface_role_resolve(rt, environment, style.role); !role_ok { return false }
 	if style.stroke.width != style.stroke.width || style.stroke.width < 0 || style.stroke.width > 4096 { return false }
-	if style.stroke.placement < .Centered || style.stroke.placement >= .Count { return false }
+	if style.stroke_placement < .Centered || style.stroke_placement >= .Count { return false }
 	if style.stroke.width > 0 && !style_color_is_valid(style.stroke.color) { return false }
 	if style.physical_height != style.physical_height || abs(style.physical_height) > SURFACE_PHYSICAL_HEIGHT_LIMIT { return false }
 	if !surface_shape_is_valid(style.shape) { return false }
@@ -91,7 +93,7 @@ semantic_surface_style_hash :: proc(style: Semantic_Surface_Style) -> u64 {
 	h = hash_mix(h, u64(transmute(u32)style.stroke.color.b))
 	h = hash_mix(h, u64(transmute(u32)style.stroke.color.a))
 	h = hash_mix(h, u64(transmute(u32)style.stroke.width))
-	h = hash_mix(h, u64(style.stroke.placement))
+	h = hash_mix(h, u64(style.stroke_placement))
 	h = hash_mix(h, u64(style.shape.kind))
 	h = hash_mix(h, u64(transmute(u32)style.shape.corner_radius))
 	h = hash_mix(h, u64(u32(style.material)))
@@ -116,6 +118,7 @@ surface_begin :: proc(
 	loc := #caller_location,
 	fill := NO_BACKGROUND_COLOR,
 	stroke := Paint_Stroke{},
+	stroke_placement := Paint_Stroke_Placement.Centered,
 ) -> Node_ID {
 	if ui == nil || ui.runtime == nil { return 0 }
 	rt := ui.runtime
@@ -125,6 +128,7 @@ surface_begin :: proc(
 		fill_override=fill,
 		fill_override_set=!color_equal(fill, NO_BACKGROUND_COLOR),
 		stroke=stroke,
+		stroke_placement=stroke_placement,
 		shape=shape,
 		material=material,
 		physical_height=physical_height,

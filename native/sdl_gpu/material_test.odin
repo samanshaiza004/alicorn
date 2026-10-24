@@ -30,9 +30,9 @@ test_rectangular_surface_stroke_respects_placement :: proc(t: ^testing.T) {
 	for placement in placements {
 		vertices := make([dynamic]Native_Text_Vertex, 0, 40, allocator=context.temp_allocator)
 		defer delete(vertices)
-		stroke := alicorn.Paint_Stroke{color=border, width=2, placement=placement}
+		stroke := alicorn.Paint_Stroke{color=border, width=2}
 		native_solid_append_material_surface(
-			&vertices, base, base, fill, alicorn.STYLE_MATERIAL_FLAT, 0, 1, stroke,
+			&vertices, base, base, fill, alicorn.STYLE_MATERIAL_FLAT, 0, 1, stroke, placement,
 		)
 		testing.expect(t, len(vertices) == 30 && native_solid_material_vertex_count(alicorn.STYLE_MATERIAL_FLAT, 0, stroke=stroke) == 30,
 			"a rectangular border should emit four bounded quads in addition to the surface fill")
@@ -54,9 +54,9 @@ test_rectangular_surface_stroke_respects_placement :: proc(t: ^testing.T) {
 test_outside_rectangle_stroke_keeps_paint_visible_when_surface_is_offscreen :: proc(t: ^testing.T) {
 	rt := alicorn.new_runtime({0, 0, 100, 60})
 	defer alicorn.destroy_runtime(&rt)
-	stroke := alicorn.Paint_Stroke{color=alicorn.Color{0.9, 0.2, 0.1, 1}, width=2, placement=.Outside}
+	stroke := alicorn.Paint_Stroke{color=alicorn.Color{0.9, 0.2, 0.1, 1}, width=2}
 	display := [1]alicorn.Paint_Command{
-		alicorn.paint_surface_command(1, {-3, 10, 2, 20}, {0, 0, 100, 60}, {0, 0, 0, 0}, stroke=stroke),
+		alicorn.paint_surface_command(1, {-3, 10, 2, 20}, {0, 0, 100, 60}, {0, 0, 0, 0}, stroke=stroke, stroke_placement=.Outside),
 	}
 	renderer := Native_Solid_Renderer{
 		runtime=&rt,
@@ -83,8 +83,9 @@ test_stroke_culling_accounts_for_nonuniform_dpi_scale :: proc(t: ^testing.T) {
 	draw := alicorn.Paint_Command{bounds={-2.5, 10, 1, 20}, clip={0, 0, 100, 60}}
 	surface := alicorn.Surface_Paint{
 		fill={0.3, 0.4, 0.5, 1},
-		stroke=alicorn.Paint_Stroke{color={1, 0, 0, 1}, width=1, placement=.Outside},
+		stroke=alicorn.Paint_Stroke{color={1, 0, 0, 1}, width=1},
 	}
+	draw.stroke_placement = .Outside
 	visible := native_solid_visible_command(draw, surface, alicorn.STYLE_MATERIAL_FLAT, 1, 2)
 	_, _, _, _, intersects := native_solid_pixel_bounds(visible, 1, 2, 100, 120)
 	testing.expect(t, intersects,

@@ -373,7 +373,7 @@ semantic_surface_role_changed :: proc(previous, next: Semantic_Surface_Style) ->
 	   !color_equal(previous.fill_override, next.fill_override) ||
 	   !color_equal(previous.stroke.color, next.stroke.color) ||
 	   previous.stroke.width != next.stroke.width ||
-	   previous.stroke.placement != next.stroke.placement {
+	   previous.stroke_placement != next.stroke_placement {
 		return true
 	}
 	switch previous_role in previous.role {

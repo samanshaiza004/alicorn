@@ -268,7 +268,7 @@ style_inspector_semantic_surface :: proc(sb: ^strings.Builder, rt: ^Runtime, nod
 		style_inspector_surface_shape_name(style.shape.kind), style.shape.corner_radius,
 		u32(style.material), material_kind, style.physical_height, u32(style.material_group),
 		resolved.fill.r, resolved.fill.g, resolved.fill.b, resolved.fill.a,
-		resolved.stroke.color.r, resolved.stroke.color.g, resolved.stroke.color.b, resolved.stroke.color.a, resolved.stroke.width, resolved.stroke.placement,
+		resolved.stroke.color.r, resolved.stroke.color.g, resolved.stroke.color.b, resolved.stroke.color.a, resolved.stroke.width, resolved.stroke_placement,
 		computed.generations.paint, computed.generations.material)
 }
 

@@ -141,7 +141,7 @@ test_semantic_surface_accepts_direct_fill_and_stroke :: proc(t: ^testing.T) {
 	testing.expect(t, semantic_surface_style_hash(changed) != semantic_surface_style_hash(style),
 		"changing direct fill must invalidate the retained surface paint description")
 	changed = style
-	changed.stroke.placement = .Outside
+	changed.stroke_placement = .Outside
 	testing.expect(t, semantic_surface_style_hash(changed) != semantic_surface_style_hash(style),
 		"changing border placement must invalidate retained surface paint")
 }

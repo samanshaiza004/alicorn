@@ -327,7 +327,11 @@ style_semantic_surface_resolve_retained :: proc(
 		if !fill_ok { return {} }
 		fill = resolved_fill
 	}
-	resolved := Semantic_Surface_Resolved_Style{fill=fill, stroke=style.stroke}
+	resolved := Semantic_Surface_Resolved_Style{
+		fill=fill,
+		stroke=style.stroke,
+		stroke_placement=style.stroke_placement,
+	}
 	style_computed_cache_store(rt, node, Computed_Style{
 		family=.Semantic_Surface,
 		payload=resolved,

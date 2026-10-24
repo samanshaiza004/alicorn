@@ -2,6 +2,7 @@ package ui
 
 import alicorn "alicorn:runtime"
 import host "alicorn:native/sdl_gpu"
+import odin_runtime "base:runtime"
 
 // UI is the ordinary authoring context. It is the same context used by the
 // lower-level runtime API; these helpers do not create another UI tree.
@@ -13,6 +14,15 @@ Stroke_Placement :: alicorn.Paint_Stroke_Placement
 Align :: alicorn.Align
 Main_Axis_Distribution :: alicorn.Main_Axis_Distribution
 UI_Key :: alicorn.UI_Key
+
+// Border combines the retained stroke paint with its geometry-only placement.
+// Placement lives in Alicorn's semantic-surface sidecar, keeping it out of
+// the bounded Paint_Command payload.
+Border :: struct {
+	color: Color,
+	width: f32,
+	placement: Stroke_Placement,
+}
 
 DEFAULT_COLOR :: alicorn.DEFAULT_COLOR
 
@@ -35,8 +45,13 @@ rgb :: proc(hex: u32) -> Color {
 	}
 }
 
-border :: proc(width: f32, color: Color, placement: Stroke_Placement = .Inside) -> Paint_Stroke {
-	return Paint_Stroke{color=color, width=width, placement=placement}
+border :: proc(width: f32, color: Color, placement: Stroke_Placement = .Inside) -> Border {
+	return Border{color=color, width=width, placement=placement}
+}
+
+@(private)
+paint_stroke :: proc(value: Border) -> Paint_Stroke {
+	return Paint_Stroke{color=value.color, width=value.width}
 }
 
 @(private)
@@ -47,6 +62,7 @@ scope_end :: proc(
 	_align: Align,
 	_justify: Main_Axis_Distribution,
 	_clip: bool,
+	_loc: odin_runtime.Source_Code_Location,
 	opened: bool,
 ) {
 	if opened { alicorn.container_end(ui) }
@@ -67,9 +83,10 @@ row :: proc(
 	align: Align = .Stretch,
 	justify: Main_Axis_Distribution = .Start,
 	clip: bool = false,
+	loc := #caller_location,
 ) -> bool {
 	style := alicorn.layout_style(.Row, width=width, height=height, grow=grow, padding=padding, gap=gap, align=align, justify=justify, clip=clip)
-	return alicorn.container_begin(ui, .Container, label="row", key=key, style=style, loc=#caller_location) != 0
+	return alicorn.container_begin(ui, .Container, label="row", key=key, style=style, loc=loc) != 0
 }
 
 @(deferred_in_out=scope_end)
@@ -84,9 +101,10 @@ column :: proc(
 	align: Align = .Stretch,
 	justify: Main_Axis_Distribution = .Start,
 	clip: bool = false,
+	loc := #caller_location,
 ) -> bool {
 	style := alicorn.layout_style(.Column, width=width, height=height, grow=grow, padding=padding, gap=gap, align=align, justify=justify, clip=clip)
-	return alicorn.container_begin(ui, .Container, label="column", key=key, style=style, loc=#caller_location) != 0
+	return alicorn.container_begin(ui, .Container, label="column", key=key, style=style, loc=loc) != 0
 }
 
 @(private)
@@ -99,7 +117,8 @@ panel_end :: proc(
 	_clip: bool,
 	_fill: Color,
 	_radius: f32,
-	_stroke: Paint_Stroke,
+	_stroke: Border,
+	_loc: odin_runtime.Source_Code_Location,
 	opened: bool,
 ) {
 	if opened { alicorn.surface_end(ui) }
@@ -122,7 +141,8 @@ panel :: proc(
 	clip: bool = false,
 	fill: Color = PANEL_THEME_FILL,
 	radius: f32 = 0,
-	stroke: Paint_Stroke = {},
+	stroke: Border = {},
+	loc := #caller_location,
 ) -> bool {
 	shape := alicorn.Surface_Shape{kind=.Rectangle}
 	if radius != 0 { shape = alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=radius} }
@@ -134,9 +154,10 @@ panel :: proc(
 		style=style,
 		shape=shape,
 		fill=fill,
-		stroke=stroke,
+		stroke=paint_stroke(stroke),
+		stroke_placement=stroke.placement,
 		label="panel",
-		loc=#caller_location,
+		loc=loc,
 	)
 	return id != 0
 }
@@ -151,7 +172,8 @@ box :: proc(
 	height: f32 = -1,
 	fill: Color = DEFAULT_COLOR,
 	radius: f32 = 0,
-	stroke: Paint_Stroke = {},
+	stroke: Border = {},
+	loc := #caller_location,
 ) -> alicorn.Node_ID {
 	resolved_width := size if width < 0 else width
 	resolved_height := size if height < 0 else height
@@ -164,9 +186,10 @@ box :: proc(
 		style=alicorn.layout_style(.Column, width=resolved_width, height=resolved_height),
 		shape=shape,
 		fill=fill,
-		stroke=stroke,
+		stroke=paint_stroke(stroke),
+		stroke_placement=stroke.placement,
 		label="box",
-		loc=#caller_location,
+		loc=loc,
 	)
 	if id != 0 { alicorn.surface_end(ui) }
 	return id
@@ -178,18 +201,20 @@ text :: proc(
 	key: UI_Key = alicorn.UI_Unkeyed{},
 	size: f32 = 0,
 	color: Color = DEFAULT_COLOR,
+	loc := #caller_location,
 ) -> alicorn.Node_ID {
 	effective_text_style := alicorn.DEFAULT_TEXT_STYLE
 	if size > 0 { effective_text_style.font_size = size }
-	return alicorn.text(ui, value, key, loc=#caller_location, text_style=effective_text_style, color=color)
+	return alicorn.text(ui, value, key, loc=loc, text_style=effective_text_style, color=color)
 }
 
 button :: proc(
 	ui: ^UI,
 	label: string,
 	key: UI_Key = alicorn.UI_Unkeyed{},
+	loc := #caller_location,
 ) -> bool {
-	return alicorn.button(ui, label, key=key, loc=#caller_location)
+	return alicorn.button(ui, label, key=key, loc=loc)
 }
 
 invalidate :: proc(ui: ^UI, reason := "simple UI explicitly invalidated") {

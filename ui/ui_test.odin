@@ -142,9 +142,12 @@ test_panel_is_one_container_surface_and_box_is_a_leaf :: proc(t: ^testing.T) {
 	panel_paint_ok := false
 	if panel_found && len(panel_node.paint) == 1 {
 		paint, ok := panel_node.paint[0].payload.(alicorn.Surface_Paint)
-		panel_paint_ok = ok && paint.fill == rgb(0x505050) && paint.stroke == border(1, blue) && paint.stroke.placement == .Inside &&
+		panel_paint_ok = ok && paint.fill == rgb(0x505050) && paint.stroke == alicorn.Paint_Stroke{color=blue, width=1} &&
+			panel_node.paint[0].stroke_placement == .Inside &&
 			paint.shape == alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=6}
 	}
+	panel_style, panel_style_found := rt.semantic_surfaces[panel_id]
+	panel_paint_ok = panel_paint_ok && panel_style_found && panel_style.stroke_placement == .Inside
 	testing.expect(t, panel_found && panel_node.kind == .Container && panel_paint_ok,
 		"panel should lower to one ordinary container with a fill, border, and rounded corners")
 	testing.expect(t, box_found && box_node.parent == root_id && box_node.bounds.w == 32 && box_node.bounds.h == 32,
