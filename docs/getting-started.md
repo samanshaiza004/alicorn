@@ -19,6 +19,11 @@ Also install the native platform tools:
 - **macOS:** Xcode Command Line Tools (`xcode-select --install`) and SDL3
   `3.4.18` (`brew install sdl3`). Keep the SDL3 version at `3.4.18`; the host
   checks it when it starts.
+- **Linux:** a Wayland session, Vulkan-capable SDL3 development and library
+  outputs, Fontconfig, `pkg-config`, and a C compiler. `vulkan-tools` and
+  `wayland-utils` are recommended for host inventory. On NixOS, the
+  [Linux acceptance matrix](validation/linux-native-acceptance.md) uses a
+  temporary shell so the system profile is not changed.
 
 The Windows/macOS build helpers also fetch the pinned AccessKit C `0.23.1`
 static library on first use into the ignored `.deps/accesskit/` cache. They
@@ -122,7 +127,8 @@ distribution before using a custom compiler path.
 The native path is exercised on Windows and macOS. Linux has a conditional
 validation record from one NixOS 26.11/Mango 0.16.2 machine, but this is not
 broad Linux support; the native app remains experimental. See the
-[Linux validation record](validation/linux-nixos-mangowc-2026-10-23.md).
+[Linux validation record](validation/linux-nixos-mangowc-2026-10-23.md) and the
+[repeatable acceptance matrix](validation/linux-native-acceptance.md).
 
 If a build fails, check `odin version`, the platform prerequisites above, and
 the compiler's complete `base`, `core`, and `vendor` installation. The
