@@ -213,7 +213,7 @@ Odin SDK and the Nix shell described below:
 
 ```sh
 sh tools/linux_native_acceptance.sh \
-  --odin /tmp/opencode/odin-dev-2026-09/odin \
+  --odin /path/to/odin \
   --report-dir out/linux-native-acceptance
 ```
 
