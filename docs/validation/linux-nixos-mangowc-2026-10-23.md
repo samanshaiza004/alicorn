@@ -103,6 +103,8 @@ The Linux run therefore validates SDL3 3.4.14, not the macOS-pinned SDL3
   repeat suppression, and IME-composition protection. SDL key diagnostics now
   include keycode, scancode, modifiers, repeat state, and window ID when input
   debugging is enabled.
+- Replaced the Linux hardcoded DejaVu path with Fontconfig discovery, including
+  an `fc-match` fallback for NixOS loader paths and Runa glyph-coverage checks.
 
 The original Linux failure was:
 
@@ -121,6 +123,8 @@ It came from an empty Linux AccessKit linker flag, not from SDL or Vulkan.
 - Linux continues to use system decorations and does not render a native menu,
   but its host now routes the menu-defined Save, Save As, Open, and command
   palette accelerators through the normal application command callback.
+- Scratchpad leaves optional system fallback ownership to the native host rather
+  than duplicating a distribution-specific Linux font path.
 
 ## Validation Results
 
@@ -138,7 +142,9 @@ It came from an empty Linux AccessKit linker flag, not from SDL or Vulkan.
 
 - Foundation suite: 245 tests PASS.
 - Theme suite: 35 tests PASS.
-- Native host suite: 93 tests PASS.
+- Native host suite: 97 tests PASS.
+- Linux fallback fixture: Fontconfig-resolved DejaVu Sans covers the UI arrows
+  and the verified text run selects the fallback face.
 - Generic text-input/navigation/paint-span contract: PASS.
 - Native shortcut matcher: PASS for nested items, Ctrl+S, Ctrl+Shift+S, Ctrl+O,
   Ctrl+Shift+P, exact modifiers, disabled commands, and repeat suppression.
@@ -162,7 +168,7 @@ with `diagnostics.json`, `inspector.txt`, `timeline.json`, `windows.json`, and
 ### Scratchpad
 
 - `go test -tags treesitter_release ./...` with `CC=clang`: PASS.
-- Pinned `./tools/alicorn.sh test`: PASS, including 13 bridge tests and 162
+- Pinned `./tools/alicorn.sh test`: PASS, including 13 bridge tests and 163
   frontend tests.
 - Pinned `./tools/alicorn.sh build`: PASS.
 - Pinned forced-Wayland `./tools/alicorn.sh smoke`: PASS; SDL3 3.4.14,

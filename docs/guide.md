@@ -74,6 +74,11 @@ can be installed with `font_load_italic_bytes` and
 rights. Call these APIs on the application thread; loading a face invalidates
 text shaping and paint so retained content is rebuilt with the new font.
 
+When an application does not supply a fallback, the Linux native host resolves
+an optional symbol fallback through Fontconfig and verifies its glyph coverage
+before loading it. It does not assume a distribution-specific path such as
+`/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`.
+
 `image_load_bytes` currently decodes PNG and QOI into Runtime-owned RGBA8
 pixels. It copies decoded pixels, so a disk buffer can be released as soon as
 the call returns. The image widget is a regular retained paint node, with

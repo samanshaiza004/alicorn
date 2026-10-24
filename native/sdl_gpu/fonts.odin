@@ -3,6 +3,7 @@ package alicorn_sdl_gpu
 import alicorn "../../runtime"
 
 import "core:os"
+import runa "../../third_party/Runa"
 
 // Alicorn's native host embeds its default faces so apps do not depend on
 // system-installed fonts or the process working directory.
@@ -10,6 +11,8 @@ NATIVE_UI_FONT_DATA :: #load("../../assets/fonts/AtkinsonHyperlegibleNext-Variab
 NATIVE_UI_ITALIC_FONT_DATA :: #load("../../assets/fonts/AtkinsonHyperlegibleNext-Italic-Variable.ttf")
 NATIVE_MONO_FONT_DATA :: #load("../../assets/fonts/AtkinsonHyperlegibleMono-Variable.ttf")
 NATIVE_MONO_ITALIC_FONT_DATA :: #load("../../assets/fonts/AtkinsonHyperlegibleMono-Italic-Variable.ttf")
+
+NATIVE_FALLBACK_CODEPOINTS := [?]rune{'↑', '↓', '→', '←', '×', '—'}
 
 native_ui_fallback_font_path :: proc() -> string {
 	when ODIN_OS == .Windows {
@@ -21,7 +24,7 @@ native_ui_fallback_font_path :: proc() -> string {
 	} else when ODIN_OS == .Darwin {
 		return "/System/Library/Fonts/SFNS.ttf"
 	} else {
-		return "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+		return native_fontconfig_find_font("sans-serif", NATIVE_FALLBACK_CODEPOINTS[:])
 	}
 }
 
@@ -31,15 +34,32 @@ native_monospace_fallback_font_path :: proc() -> string {
 	} else when ODIN_OS == .Darwin {
 		return "/System/Library/Fonts/SFNSMono.ttf"
 	} else {
-		return "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
+		return native_fontconfig_find_font("monospace", NATIVE_FALLBACK_CODEPOINTS[:])
 	}
 }
 
-native_load_optional_fallback_font :: proc(rt: ^alicorn.Runtime, role: alicorn.Font_Role, path: string) -> bool {
+native_font_data_covers :: proc(data: []u8, codepoints: []rune) -> bool {
+	if len(data) == 0 || len(codepoints) == 0 { return false }
+	font, err := runa.font_load(data, context.temp_allocator)
+	if err != .None { return false }
+	defer runa.font_destroy(&font)
+	for codepoint in codepoints {
+		if runa.font_lookup_glyph(&font, codepoint) == 0 { return false }
+	}
+	return true
+}
+
+native_load_optional_fallback_font :: proc(
+	rt: ^alicorn.Runtime,
+	role: alicorn.Font_Role,
+	path: string,
+	required_codepoints: []rune = nil,
+) -> bool {
 	if !os.exists(path) { return false }
 	data, err := os.read_entire_file_from_path(path, context.allocator)
 	if err != nil { return false }
 	defer delete(data)
+	if len(required_codepoints) > 0 && !native_font_data_covers(data, required_codepoints) { return false }
 	return alicorn.text_engine_load_fallback_font_role(&rt.text_engine, role, data)
 }
 
@@ -51,10 +71,10 @@ native_load_default_fonts :: proc(rt: ^alicorn.Runtime) -> bool {
 	// System faces are optional, script-oriented fallbacks; they do not alter
 	// the bundled primary typography for text the default face can render.
 	if !rt.text_engine.fallback_font_loaded && !rt.text_engine.application_fallback_font[.UI] {
-		_ = native_load_optional_fallback_font(rt, .UI, native_ui_fallback_font_path())
+		_ = native_load_optional_fallback_font(rt, .UI, native_ui_fallback_font_path(), NATIVE_FALLBACK_CODEPOINTS[:])
 	}
 	if !rt.text_engine.monospace_fallback_font_loaded && !rt.text_engine.application_fallback_font[.Monospace] {
-		_ = native_load_optional_fallback_font(rt, .Monospace, native_monospace_fallback_font_path())
+		_ = native_load_optional_fallback_font(rt, .Monospace, native_monospace_fallback_font_path(), NATIVE_FALLBACK_CODEPOINTS[:])
 	}
 	return true
 }
