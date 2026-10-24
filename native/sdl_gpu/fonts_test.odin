@@ -37,7 +37,14 @@ test_linux_fontconfig_fallback_covers_ui_symbols :: proc(t: ^testing.T) {
 			"the resolved Fontconfig face should load through the native fallback path")
 		run, ok := alicorn.text_run_build(&rt.text_engine, "ABC ↑ ↓ → ← × —", 16, allocator=context.allocator)
 		defer if ok { alicorn.text_run_destroy(&run) }
-		testing.expect(t, ok && run.font_source == .Fallback && len(run.glyphs) == 15,
-			"a run containing missing arrows should select the verified fallback face")
+		primary_glyphs, fallback_glyphs := 0, 0
+		if ok {
+			for glyph in run.glyphs {
+				if glyph.font_source == .Fallback { fallback_glyphs += 1 }
+				else { primary_glyphs += 1 }
+			}
+		}
+		testing.expect(t, ok && run.font_source == .Fallback && len(run.glyphs) == 15 && primary_glyphs > 0 && fallback_glyphs > 0,
+			"mixed text should retain primary glyphs while selecting the verified fallback only for missing symbols")
 	}
 }

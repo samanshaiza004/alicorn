@@ -100,6 +100,7 @@ Glyph_Resource_Key :: struct {
 
 Text_Glyph :: struct {
 	glyph_id:       runa.Glyph_ID,
+	font_source:    Text_Font_Source,
 	cluster_start:  int,
 	cluster_end:    int,
 	x, y:           f32,
@@ -305,6 +306,12 @@ text_engine_font_for_glyph :: proc(engine: ^Text_Engine, role: Font_Role, source
 	return text_engine_font_for_source(engine, role, source)
 }
 
+text_engine_font_source_for_font :: proc(engine: ^Text_Engine, role: Font_Role, font: ^runa.Font) -> Text_Font_Source {
+	fallback, loaded := text_engine_fallback_font(engine, role)
+	if loaded && font == fallback { return .Fallback }
+	return .Primary
+}
+
 text_engine_weight_axis_for_glyph :: proc(engine: ^Text_Engine, role: Font_Role, source: Text_Font_Source, italic: bool) -> Font_Weight_Axis {
 	if italic && source == .Primary {
 		if role == .Monospace { return engine.monospace_italic_font_weight_axis }
@@ -320,22 +327,6 @@ text_engine_resolve_font_weight :: proc(engine: ^Text_Engine, role: Font_Role, s
 	if resolved < axis.min_value { resolved = axis.min_value }
 	if resolved > axis.max_value { resolved = axis.max_value }
 	return resolved
-}
-
-// Use a platform/application fallback face for a run if the primary face is
-// missing any codepoint that the fallback can render. Keeping each run on one
-// face avoids losing face identity in retained glyph geometry; mixed-face
-// shaping remains a future text-engine improvement.
-text_engine_choose_font_source :: proc(engine: ^Text_Engine, role: Font_Role, value: string) -> Text_Font_Source {
-	primary, primary_loaded := text_engine_font(engine, role)
-	fallback, fallback_loaded := text_engine_fallback_font(engine, role)
-	if !primary_loaded || !fallback_loaded { return .Primary }
-	for r in value {
-		if runa.font_lookup_glyph(primary, r) == 0 && runa.font_lookup_glyph(fallback, r) != 0 {
-			return .Fallback
-		}
-	}
-	return .Primary
 }
 
 text_engine_reset_font_resources :: proc(engine: ^Text_Engine) {
@@ -833,13 +824,21 @@ text_tab_advance :: proc(line_x, space_advance: f32) -> f32 {
 // renderer so a window can move between DPI scales without changing logical
 // layout.
 text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, editable: bool = false, allocator := context.allocator, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI, font_weight: f32 = FONT_WEIGHT_REGULAR, overflow := Text_Overflow.Wrap, text_style_spans: []Text_Style_Span = nil) -> (run: Text_Run, ok: bool) {
-	font_source := text_engine_choose_font_source(engine, font_role, value)
-	font, font_loaded := text_engine_font_for_source(engine, font_role, font_source)
+	font_source := Text_Font_Source.Primary
+	font, font_loaded := text_engine_font(engine, font_role)
 	if !font_loaded || size <= 0 { return }
 	resolved_font_weight := text_engine_resolve_font_weight(engine, font_role, font_source, false, font_weight)
 	_ = text_engine_apply_font_weight(font, text_engine_weight_axis(engine, font_role, font_source), resolved_font_weight)
 	defer { runa.font_reset_variations(font) }
-	stack := runa.Font_Stack{font}
+	fallback_font, fallback_loaded := text_engine_fallback_font(engine, font_role)
+	if fallback_loaded {
+		fallback_weight := text_engine_resolve_font_weight(engine, font_role, .Fallback, false, font_weight)
+		_ = text_engine_apply_font_weight(fallback_font, text_engine_weight_axis(engine, font_role, .Fallback), fallback_weight)
+		defer { runa.font_reset_variations(fallback_font) }
+	}
+	font_stack_storage := [2]^runa.Font{font, fallback_font}
+	stack := runa.Font_Stack(font_stack_storage[:1])
+	if fallback_loaded { stack = runa.Font_Stack(font_stack_storage[:2]) }
 	disable_features: bit_set[runa.Feature] = {}
 	if editable {
 		// Runa documents a known cluster bookkeeping defect after GSUB
@@ -914,13 +913,19 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 					glyph_weight = effective_font_weight(glyph_style.variation_value)
 				}
 			}
-			glyph_italic := text_engine_font_is_italic(engine, font_role, font_source, glyph.font)
+			glyph_font_source := text_engine_font_source_for_font(engine, font_role, glyph.font)
+			glyph_italic := text_engine_font_is_italic(engine, font_role, glyph_font_source, glyph.font)
+			glyph_weight = text_engine_resolve_font_weight(engine, font_role, glyph_font_source, glyph_italic, glyph_weight)
+			// Keep the run-level field compatible as a fallback-participation
+			// summary; rasterization uses the source stored on each glyph.
+			if glyph_font_source == .Fallback { run.font_source = .Fallback }
 			if cluster_start < line_byte_start { line_byte_start = cluster_start }
 			if cluster_end > line_byte_end { line_byte_end = cluster_end }
 			advance := glyph.x_advance
 			if tab { advance = text_tab_advance(pen_x, glyph.x_advance) }
 			append(&run.glyphs, Text_Glyph{
 				glyph_id=glyph.glyph_id,
+				font_source=glyph_font_source,
 				cluster_start=cluster_start,
 				cluster_end=cluster_end,
 				x=pen_x + glyph.x_offset,
@@ -1592,12 +1597,21 @@ text_run_move_visual :: proc(run: ^Text_Run, position: Text_Position, direction:
 }
 
 text_layout :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI, font_weight: f32 = FONT_WEIGHT_REGULAR) -> (width, height: f32, glyphs: int, ok: bool) {
-	font_source := text_engine_choose_font_source(engine, font_role, value)
-	font, font_loaded := text_engine_font_for_source(engine, font_role, font_source)
+	font_source := Text_Font_Source.Primary
+	font, font_loaded := text_engine_font(engine, font_role)
 	if !font_loaded || size <= 0 { return }
-	_ = text_engine_apply_font_weight(font, text_engine_weight_axis(engine, font_role, font_source), font_weight)
+	resolved_font_weight := text_engine_resolve_font_weight(engine, font_role, font_source, false, font_weight)
+	_ = text_engine_apply_font_weight(font, text_engine_weight_axis(engine, font_role, font_source), resolved_font_weight)
 	defer { runa.font_reset_variations(font) }
-	stack := runa.Font_Stack{font}
+	fallback_font, fallback_loaded := text_engine_fallback_font(engine, font_role)
+	if fallback_loaded {
+		fallback_weight := text_engine_resolve_font_weight(engine, font_role, .Fallback, false, font_weight)
+		_ = text_engine_apply_font_weight(fallback_font, text_engine_weight_axis(engine, font_role, .Fallback), fallback_weight)
+		defer { runa.font_reset_variations(fallback_font) }
+	}
+	font_stack_storage := [2]^runa.Font{font, fallback_font}
+	stack := runa.Font_Stack(font_stack_storage[:1])
+	if fallback_loaded { stack = runa.Font_Stack(font_stack_storage[:2]) }
 	opts := runa.Paragraph_Opts{fonts=stack, size=size, direction=.Auto, align=.Start, max_width=max_width}
 	normalized_value, source_spans := text_normalize_controls(value, scratch_allocator)
 	defer { delete(source_spans) }

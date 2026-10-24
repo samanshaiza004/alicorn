@@ -32,7 +32,8 @@ license file with its font if distributing the font separately.
 These families cover many Latin-based languages but not every writing system.
 The SDL/GPU host may load an optional platform fallback face (for example,
 Noto Sans JP on Windows). If any character in a shaped run is absent from its
-bundled primary face and present in that fallback, Alicorn shapes the entire
-run with the fallback face. This preserves face-correct glyph metrics, but is
-not per-character mixed-font fallback; applications needing broader or
-deterministic script coverage should provide their own font strategy.
+bundled primary face and present in that fallback, Runa selects the fallback
+per codepoint before shaping and retains the owning face on each output glyph.
+Mixed text therefore keeps the bundled face for covered characters instead of
+replacing the entire run. Applications needing broader or deterministic script
+coverage should still provide their own font strategy.
