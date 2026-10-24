@@ -69,6 +69,71 @@ Native_Menu_Runtime :: struct {
 	has_pending:     bool,
 }
 
+native_menu_shortcut_key_equal :: proc(shortcut_key, key: rune) -> bool {
+	if shortcut_key == 0 { return false }
+	upper_key := key
+	if upper_key >= 'a' && upper_key <= 'z' { upper_key -= ('a' - 'A') }
+	upper_shortcut_key := shortcut_key
+	if upper_shortcut_key >= 'a' && upper_shortcut_key <= 'z' { upper_shortcut_key -= ('a' - 'A') }
+	return upper_key == upper_shortcut_key
+}
+
+native_menu_shortcut_modifiers_match :: proc(
+	expected: Application_Menu_Modifiers,
+	actual: sdl3.Keymod,
+) -> bool {
+	primary_down := native_text_primary_modifier(actual)
+	shift_down := native_text_modifier(actual, sdl3.KMOD_SHIFT)
+	alt_down := native_text_modifier(actual, sdl3.KMOD_ALT)
+	super_down := native_text_modifier(actual, sdl3.KMOD_GUI)
+	when ODIN_OS == .Darwin {
+		super_down = native_text_modifier(actual, sdl3.KMOD_CTRL)
+	}
+	return (Application_Menu_Modifier.Primary in expected) == primary_down &&
+		(Application_Menu_Modifier.Shift in expected) == shift_down &&
+		(Application_Menu_Modifier.Alt in expected) == alt_down &&
+		(Application_Menu_Modifier.Super in expected) == super_down
+}
+
+native_menu_match_shortcut_items :: proc(
+	items: []Application_Menu_Item,
+	key: rune,
+	modifiers: sdl3.Keymod,
+) -> (Application_Command_ID, bool) {
+	for item in items {
+		if item.kind == .Submenu {
+			if command, found := native_menu_match_shortcut_items(item.items, key, modifiers); found {
+				return command, true
+			}
+		} else if item.kind == .Command && item.state.enabled && item.command != Application_Command_ID(0) &&
+			item.shortcut.key != 0 && native_menu_shortcut_modifiers_match(item.shortcut.modifiers, modifiers) &&
+			native_menu_shortcut_key_equal(item.shortcut.key, key) {
+			return item.command, true
+		}
+	}
+	return {}, false
+}
+
+native_menu_match_shortcut :: proc(
+	application: ^Application,
+	keycode: int,
+	modifiers: sdl3.Keymod,
+) -> (Application_Command_ID, bool) {
+	if application == nil { return {}, false }
+	key := rune(keycode)
+	for description in application.menus {
+		if description.command != Application_Command_ID(0) && description.state.enabled &&
+			description.shortcut.key != 0 && native_menu_shortcut_modifiers_match(description.shortcut.modifiers, modifiers) &&
+			native_menu_shortcut_key_equal(description.shortcut.key, key) {
+			return description.command, true
+		}
+		if command, found := native_menu_match_shortcut_items(description.items, key, modifiers); found {
+			return command, true
+		}
+	}
+	return {}, false
+}
+
 // A native chrome transition must wake the SDL loop when it is waiting for
 // events. Coalesce repeated pointer messages until the requested frame lands.
 native_menu_request_chrome_redraw :: proc(menu: ^Native_Menu_Runtime) {

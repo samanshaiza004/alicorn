@@ -1440,58 +1440,15 @@ native_menu_take_pending :: proc(menu: ^Native_Menu_Runtime) -> (Application_Com
 	return command, true
 }
 
-win32_menu_match_shortcut :: proc(items: []Application_Menu_Item, key: rune, actual: sdl3.Keymod) -> (Application_Command_ID, bool) {
-	for item in items {
-		if item.kind == .Submenu {
-			if command, found := win32_menu_match_shortcut(item.items, key, actual); found { return command, true }
-		} else if item.kind == .Command && item.state.enabled && item.shortcut.key != 0 {
-			expected := item.shortcut.modifiers
-			primary_down := native_text_modifier(actual, sdl3.KMOD_CTRL)
-			shift_down := native_text_modifier(actual, sdl3.KMOD_SHIFT)
-			alt_down := native_text_modifier(actual, sdl3.KMOD_ALT)
-			super_down := native_text_modifier(actual, sdl3.KMOD_GUI)
-			if (Application_Menu_Modifier.Primary in expected) != primary_down { continue }
-			if (Application_Menu_Modifier.Shift in expected) != shift_down { continue }
-			if (Application_Menu_Modifier.Alt in expected) != alt_down { continue }
-			if (Application_Menu_Modifier.Super in expected) != super_down { continue }
-			upper_key := key
-			if upper_key >= 'a' && upper_key <= 'z' { upper_key -= ('a' - 'A') }
-			item_key := item.shortcut.key
-			if item_key >= 'a' && item_key <= 'z' { item_key -= ('a' - 'A') }
-			if upper_key == item_key { return item.command, true }
-		}
-	}
-	return {}, false
-}
-
-native_menu_try_shortcut :: proc(menu: ^Native_Menu_Runtime, keycode: int, modifiers: sdl3.Keymod) -> bool {
+native_menu_try_shortcut :: proc(
+	menu: ^Native_Menu_Runtime,
+	keycode: int,
+	modifiers: sdl3.Keymod,
+	repeat: bool,
+) -> bool {
 	if menu == nil || menu.application == nil || menu.application.on_menu_command == nil { return false }
-	command: Application_Command_ID
-	found := false
-	for description in menu.application.menus {
-		if description.command != Application_Command_ID(0) && description.state.enabled && description.shortcut.key != 0 {
-			expected := description.shortcut.modifiers
-			if (Application_Menu_Modifier.Primary in expected) == native_text_modifier(modifiers, sdl3.KMOD_CTRL) &&
-			   (Application_Menu_Modifier.Shift in expected) == native_text_modifier(modifiers, sdl3.KMOD_SHIFT) &&
-			   (Application_Menu_Modifier.Alt in expected) == native_text_modifier(modifiers, sdl3.KMOD_ALT) &&
-			   (Application_Menu_Modifier.Super in expected) == native_text_modifier(modifiers, sdl3.KMOD_GUI) {
-				key := rune(keycode)
-				if key >= 'a' && key <= 'z' { key -= ('a'-'A') }
-				expected_key := description.shortcut.key
-				if expected_key >= 'a' && expected_key <= 'z' { expected_key -= ('a'-'A') }
-				if key == expected_key {
-					native_menu_dispatch_command(menu, description.command)
-					return true
-				}
-			}
-		}
-		if candidate, matched := win32_menu_match_shortcut(description.items, rune(keycode), modifiers); matched {
-			command = candidate
-			found = true
-			break
-		}
-	}
+	command, found := native_menu_match_shortcut(menu.application, keycode, modifiers)
 	if !found { return false }
-	native_menu_dispatch_command(menu, command)
+	if !repeat { native_menu_dispatch_command(menu, command) }
 	return true
 }

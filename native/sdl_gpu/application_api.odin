@@ -76,8 +76,8 @@ Application_Menu_Modifier :: enum {
 Application_Menu_Modifiers :: distinct bit_set[Application_Menu_Modifier; u8]
 
 // A shortcut uses one printable key plus platform-neutral modifiers.
-// Primary means Ctrl on Windows and Command on macOS; Super maps to the
-// Windows key on Windows and Control on macOS.
+// Primary means Ctrl on Windows/Linux and Command on macOS; Super maps to the
+// Windows key on Windows/Linux and Control on macOS.
 Application_Menu_Shortcut :: struct {
 	key:       rune,
 	modifiers: Application_Menu_Modifiers,
@@ -85,8 +85,9 @@ Application_Menu_Shortcut :: struct {
 
 // Menu descriptions are borrowed for the duration of Run. Labels and menu
 // structure are snapshotted at startup; Action_State is read from
-// the borrowed item storage whenever a native menu opens. Keep that storage
-// stable and update its state on the application thread.
+// the borrowed item storage whenever a native menu opens or a host processes
+// an accelerator. Keep that storage stable and update its state on the
+// application thread.
 Application_Menu_Item :: struct {
 	kind:     Application_Menu_Item_Kind,
 	command:  Application_Command_ID,

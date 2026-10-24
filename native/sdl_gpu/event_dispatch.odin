@@ -437,7 +437,9 @@ pump_events :: proc(
 				_ = native_dispatch_drag_event(application, rt)
 				drag_cancelled = true
 			}
-			menu_shortcut_handled := !context_menu_handled && !drag_cancelled && native_menu_try_shortcut(native_menu, int(event.key.key), event.key.mod)
+			menu_shortcut_handled := !context_menu_handled && !drag_cancelled &&
+				!native_text_composition_active(rt, text_input_state) &&
+				native_menu_try_shortcut(native_menu, int(event.key.key), event.key.mod, event.key.repeat)
 			devtools_hotkey_handled := false
 			if !menu_shortcut_handled && event.key.key == sdl3.K_F10 &&
 				!native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) && !event.key.repeat && devtools_hud != nil {
@@ -555,7 +557,11 @@ pump_events :: proc(
 				if node, ok := rt.nodes[rt.focused]; ok {
 					composition_active = node.composition.active
 				}
-				fmt.println("sdl_event", "KEY_DOWN", "key", event.key.key, "repeat", event.key.repeat, "composition_active", composition_active)
+				fmt.println(
+					"sdl_event", "KEY_DOWN", "key", event.key.key, "scancode", event.key.scancode,
+					"mod", event.key.mod, "repeat", event.key.repeat, "window_id", event.key.windowID,
+					"composition_active", composition_active,
+				)
 			}
 			if !runtime_key_handled {
 				runtime_key_handled = native_route_focused_control_key(rt, event.key.key)

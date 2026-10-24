@@ -24,6 +24,61 @@ test_direct_caption_command_uses_its_window_state :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_menu_shortcut_matching_supports_nested_items_and_exact_modifiers :: proc(t: ^testing.T) {
+	recent_items := [?]Application_Menu_Item{
+		{kind=.Command, command=Application_Command_ID(4), label="Open", state=alicorn.Action_State{enabled=true}, shortcut=Application_Menu_Shortcut{'O', {.Primary}}},
+	}
+	file_items := [?]Application_Menu_Item{
+		{kind=.Submenu, label="Recent", state=alicorn.Action_State{enabled=true}, items=recent_items[:]},
+		{kind=.Command, command=Application_Command_ID(2), label="Save", state=alicorn.Action_State{enabled=true}, shortcut=Application_Menu_Shortcut{'S', {.Primary}}},
+		{kind=.Command, command=Application_Command_ID(3), label="Save As", state=alicorn.Action_State{enabled=true}, shortcut=Application_Menu_Shortcut{'S', {.Primary, .Shift}}},
+		{kind=.Command, command=Application_Command_ID(5), label="Palette", state=alicorn.Action_State{enabled=true}, shortcut=Application_Menu_Shortcut{'P', {.Primary, .Shift}}},
+	}
+	menus := [?]Application_Menu{{label="File", items=file_items[:]}}
+	application := Application{menus=menus[:]}
+	primary := sdl3.KMOD_CTRL
+	when ODIN_OS == .Darwin { primary = sdl3.KMOD_GUI }
+
+	command, found := native_menu_match_shortcut(&application, int(sdl3.K_S), primary)
+	testing.expect(t, found && command == Application_Command_ID(2), "Primary+S should match Save")
+	command, found = native_menu_match_shortcut(&application, int(sdl3.K_S), primary|sdl3.KMOD_SHIFT)
+	testing.expect(t, found && command == Application_Command_ID(3), "Primary+Shift+S should match Save As")
+	command, found = native_menu_match_shortcut(&application, int(sdl3.K_O), primary)
+	testing.expect(t, found && command == Application_Command_ID(4), "nested Primary+O should match Open")
+	command, found = native_menu_match_shortcut(&application, int(sdl3.K_P), primary|sdl3.KMOD_SHIFT)
+	testing.expect(t, found && command == Application_Command_ID(5), "Primary+Shift+P should match the command palette")
+	_, found = native_menu_match_shortcut(&application, int(sdl3.K_S), primary|sdl3.KMOD_ALT)
+	testing.expect(t, !found, "an unexpected modifier must not match a shortcut")
+	file_items[1].state.enabled = false
+	_, found = native_menu_match_shortcut(&application, int(sdl3.K_S), primary)
+	testing.expect(t, !found, "a disabled command must not match a shortcut")
+}
+
+@(test)
+test_linux_menu_shortcut_dispatch_ignores_repeats :: proc(t: ^testing.T) {
+	when ODIN_OS == .Linux {
+		state := Menu_Dispatch_Test_State{}
+		items := [?]Application_Menu_Item{
+			{kind=.Command, command=Application_Command_ID(1), label="Save", state=alicorn.Action_State{enabled=true}, shortcut=Application_Menu_Shortcut{'S', {.Primary}}},
+		}
+		menus := [?]Application_Menu{{label="File", items=items[:]}}
+		application := Application{state=rawptr(&state), menus=menus[:], on_menu_command=menu_dispatch_test_callback}
+		menu := Native_Menu_Runtime{application=&application}
+		primary := sdl3.KMOD_CTRL
+		testing.expect(t, native_menu_prepare(&menu), "Linux should accept semantic menu metadata with system decorations")
+		testing.expect(t, native_menu_try_shortcut(&menu, int(sdl3.K_S), primary, false), "Linux should handle a matching menu accelerator")
+		testing.expect(t, state.calls == 1, "a non-repeating shortcut should dispatch exactly once")
+		testing.expect(t, native_menu_try_shortcut(&menu, int(sdl3.K_S), primary, true), "a repeated matching accelerator should remain consumed")
+		testing.expect(t, state.calls == 1, "a repeated shortcut must not dispatch a second command")
+		rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 200})
+		defer alicorn.destroy_runtime(&rt)
+		rt.focused = 1
+		composition := Native_Text_Input_State{composition_owner=1}
+		testing.expect(t, native_text_composition_active(&rt, &composition), "an active IME composition should be visible to shortcut routing")
+	}
+}
+
+@(test)
 test_direct_caption_click_defers_application_callback :: proc(t: ^testing.T) {
 	when ODIN_OS == .Windows {
 		calls := Menu_Dispatch_Test_State{}

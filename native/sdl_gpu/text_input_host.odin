@@ -50,6 +50,12 @@ native_current_text_input_owner :: proc(rt: ^alicorn.Runtime, state: ^Native_Tex
 	return rt.focused if native_text_input_owner_is_valid(rt, rt.focused) else 0
 }
 
+native_text_composition_active :: proc(rt: ^alicorn.Runtime, state: ^Native_Text_Input_State = nil) -> bool {
+	if rt == nil { return false }
+	if node, found := rt.nodes[rt.focused]; found && node.composition.active { return true }
+	return state != nil && state.composition_owner != 0 && state.composition_owner == rt.focused
+}
+
 native_text_input_area_update_required :: proc(
 	state: ^Native_Text_Input_State,
 	area: alicorn.Text_Input_Area,

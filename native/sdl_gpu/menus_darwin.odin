@@ -351,7 +351,7 @@ native_menu_take_pending :: proc(menu: ^Native_Menu_Runtime) -> (Application_Com
 	return command, true
 }
 
-native_menu_try_shortcut :: proc(menu: ^Native_Menu_Runtime, keycode: int, modifiers: sdl3.Keymod) -> bool {
+native_menu_try_shortcut :: proc(menu: ^Native_Menu_Runtime, keycode: int, modifiers: sdl3.Keymod, repeat: bool) -> bool {
 	return false
 }
 

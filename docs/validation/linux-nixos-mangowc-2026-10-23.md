@@ -14,8 +14,8 @@ This is a conditional validation result, not a release sign-off. Physical
 interaction, visual review, dialogs/portals, clipboard, IME behavior, Linux
 accessibility clients, DPI transitions, and multi-monitor movement remain
 unverified. Linux has system decorations but no native application-menu
-adapter; the Scratchpad menu model is retained for application state and
-command-palette use, but is not passed to the Linux native host.
+adapter; the Scratchpad menu model is passed to the Linux host as semantic
+accelerator metadata, but no native application menu is created.
 
 ## Checkouts
 
@@ -97,6 +97,12 @@ The Linux run therefore validates SDL3 3.4.14, not the macOS-pinned SDL3
   validation shell scripts to use that helper.
 - Added SDL backend/version diagnostics to `native/sdl_gpu/main.odin` and
   `native/sdl_gpu/validation.odin`.
+- Moved menu accelerator matching into the shared native host layer so Linux
+  and Windows use the same direct/nested command matching and modifier rules.
+- Added Linux accelerator routing with exact modifiers, enabled-state checks,
+  repeat suppression, and IME-composition protection. SDL key diagnostics now
+  include keycode, scancode, modifiers, repeat state, and window ID when input
+  debugging is enabled.
 
 The original Linux failure was:
 
@@ -110,11 +116,11 @@ It came from an empty Linux AccessKit linker flag, not from SDL or Vulkan.
 
 - Added `scratchpad_native_menus` in
   `frontends/alicorn/app_actions.odin`.
-- The primary application and floating secondary windows now expose menu
-  descriptors to the host only on Windows and macOS.
-- Linux continues to keep and synchronize the menu model, but uses system
-  decorations and the generic host shortcut path instead of requesting an
-  unavailable native menu adapter.
+- The primary application and floating secondary windows expose the borrowed
+  menu model on every platform.
+- Linux continues to use system decorations and does not render a native menu,
+  but its host now routes the menu-defined Save, Save As, Open, and command
+  palette accelerators through the normal application command callback.
 
 ## Validation Results
 
@@ -134,6 +140,8 @@ It came from an empty Linux AccessKit linker flag, not from SDL or Vulkan.
 - Theme suite: 35 tests PASS.
 - Native host suite: 93 tests PASS.
 - Generic text-input/navigation/paint-span contract: PASS.
+- Native shortcut matcher: PASS for nested items, Ctrl+S, Ctrl+Shift+S, Ctrl+O,
+  Ctrl+Shift+P, exact modifiers, disabled commands, and repeat suppression.
 - Retained-work, text-layout, and material benchmarks: PASS.
 - Surface geometry, text-input, surface stress, widget-gallery, custom-surface,
   inspector, and secondary-window smoke fixtures: PASS.
@@ -175,7 +183,7 @@ with `diagnostics.json`, `inspector.txt`, `timeline.json`, `windows.json`, and
 | Physical keyboard, pointer, resize, focus, drag/drop | Not manually exercised |
 | IME composition and candidate-window behavior | Automated contract only; no physical IME client tested |
 | Clipboard and file/folder dialogs | Not manually exercised; portal behavior unknown |
-| Native Linux application menus | Not implemented by Alicorn; intentionally omitted by Scratchpad on Linux |
+| Native Linux application menus | Not implemented by Alicorn; semantic keyboard accelerators are automated, physical shortcut use remains pending |
 | Linux AccessKit/screen readers | Unsupported by the current native adapter |
 | DPI change and monitor movement | Not manually exercised; current outputs are scale 1 |
 | Mango tiled/floating decoration review | Not manually reviewed |

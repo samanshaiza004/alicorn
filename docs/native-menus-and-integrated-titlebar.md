@@ -96,6 +96,16 @@ presentation; command items route through the same semantic IDs as Windows.
 The adapter supplies conventional application and Window menus around the
 application's File/Edit/View/Help menus.
 
+On Linux, SDL keeps the normal system-decorated window and Alicorn does not
+create an application menu. `Application.menus` is still borrowed by the host
+as semantic accelerator metadata. The shared accelerator matcher walks direct
+and nested command items, requires the command to be enabled, requires an exact
+modifier set, maps `Primary` to Ctrl and `Super` to the window-system key, and
+dispatches the same `Application.on_menu_command` callback used by native
+menus. Repeated matching key-down events are consumed without dispatch, and
+the event loop does not run menu accelerators while an IME composition is
+active. Inspector/context-menu ownership remains earlier in event routing.
+
 ## Public API
 
 `Application.menus` is a slice of `Application_Menu`. Each menu has a label and
