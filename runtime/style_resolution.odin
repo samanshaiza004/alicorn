@@ -323,9 +323,9 @@ style_semantic_surface_resolve_retained :: proc(
 	style_computed_cache_record_resolution(rt)
 	fill := style.fill_override
 	if !style.fill_override_set {
-		var fill_ok: bool
-		fill, fill_ok = semantic_surface_role_resolve(rt, node.style_environment, style.role)
+		resolved_fill, fill_ok := semantic_surface_role_resolve(rt, node.style_environment, style.role)
 		if !fill_ok { return {} }
+		fill = resolved_fill
 	}
 	resolved := Semantic_Surface_Resolved_Style{fill=fill, stroke=style.stroke}
 	style_computed_cache_store(rt, node, Computed_Style{

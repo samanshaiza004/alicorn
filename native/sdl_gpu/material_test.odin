@@ -26,7 +26,8 @@ test_rectangular_surface_stroke_respects_placement :: proc(t: ^testing.T) {
 	base := alicorn.Rect{10, 20, 100, 40}
 	fill := alicorn.Color{0.4, 0.5, 0.6, 1}
 	border := alicorn.Color{0.1, 0.8, 0.9, 1}
-	for placement in [3]alicorn.Paint_Stroke_Placement{.Centered, .Inside, .Outside} {
+	placements := [3]alicorn.Paint_Stroke_Placement{.Centered, .Inside, .Outside}
+	for placement in placements {
 		vertices := make([dynamic]Native_Text_Vertex, 0, 40, allocator=context.temp_allocator)
 		defer delete(vertices)
 		stroke := alicorn.Paint_Stroke{color=border, width=2, placement=placement}

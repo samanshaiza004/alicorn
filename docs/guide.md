@@ -49,6 +49,13 @@ main-axis space. Explicit box width or height overrides its square `size`;
 explicit row or column dimensions and `grow` are passed to the existing layout
 rules. The lower-level `Layout_Style` contract is unchanged.
 
+`ui.text` currently uses Alicorn's existing `DEFAULT_COLOR` unless a color is
+passed explicitly; it does not yet resolve the active theme's semantic Text
+role. The typed `ui.run` path also does not yet expose initialization, shutdown,
+or native event callbacks. Use `host.Run` for runtime-specific setup/cleanup or
+custom host services; theme-aware default text color and typed lifecycle hooks
+are follow-up API work.
+
 `ui.panel` is a column layout with a retained surface. An omitted fill uses
 the active theme's Surface role; `fill`, `radius`, and `stroke` provide direct
 appearance options. `ui.border(width, color)` places the stroke inside the
