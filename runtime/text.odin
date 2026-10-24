@@ -27,53 +27,49 @@ Font_Weight_Axis :: struct {
 	max_value: f32,
 }
 
-// Text_Engine is intentionally a narrow seam. The runtime owns GUI concerns
-// while a provider owns shaping, bidi, segmentation, line breaking and glyph
-// rasterization. Runa is the foundation provider; its atlas remains behind
-// this GUI-facing abstraction.
 Text_Engine :: struct {
-	allocator:             mem.Allocator,
-	name:                  string,
-	available:             bool,
-	shaped_runs:           u64,
-	cache_hits:            u64,
-	shape_calls:           u64,
-	glyph_cache_hits: u64,
-	glyph_cache_misses: u64,
-	glyph_rasterizations: u64,
-	font_data:            []u8,
-	font:                 runa.Font,
-	font_weight_axis:     Font_Weight_Axis,
-	italic_font_data:     []u8,
-	italic_font:          runa.Font,
-	italic_font_weight_axis: Font_Weight_Axis,
-	fallback_font_data:   []u8,
-	fallback_font:        runa.Font,
-	fallback_font_weight_axis: Font_Weight_Axis,
-	monospace_font_data: []u8,
-	monospace_font:       runa.Font,
-	monospace_font_weight_axis: Font_Weight_Axis,
-	monospace_italic_font_data: []u8,
-	monospace_italic_font: runa.Font,
-	monospace_italic_font_weight_axis: Font_Weight_Axis,
-	monospace_fallback_font_data: []u8,
-	monospace_fallback_font:      runa.Font,
+	allocator:             						   mem.Allocator,
+	name:                  						   string,
+	available:             						   bool,
+	shaped_runs:           						   u64,
+	cache_hits:            						   u64,
+	shape_calls:           						   u64,
+	glyph_cache_hits:        					   u64,
+	glyph_cache_misses:      					   u64,
+	glyph_rasterizations:    					   u64,
+	font_data:               					   []u8,
+	font:                    					   runa.Font,
+	font_weight_axis:        					   Font_Weight_Axis,
+	italic_font_data:        					   []u8,
+	italic_font:             					   runa.Font,
+	italic_font_weight_axis: 					   Font_Weight_Axis,
+	fallback_font_data:   	    			   []u8,
+	fallback_font:        	    			   runa.Font,
+	fallback_font_weight_axis:  			   Font_Weight_Axis,
+	monospace_font_data:        			   []u8,
+	monospace_font:             			   runa.Font,
+	monospace_font_weight_axis: 			   Font_Weight_Axis,
+	monospace_italic_font_data: 			   []u8,
+	monospace_italic_font: 						   runa.Font,
+	monospace_italic_font_weight_axis:   Font_Weight_Axis,
+	monospace_fallback_font_data: 		   []u8,
+	monospace_fallback_font:      		   runa.Font,
 	monospace_fallback_font_weight_axis: Font_Weight_Axis,
-	cache:                runa.Cache,
-	font_loaded:          bool,
-	fallback_font_loaded: bool,
-	monospace_font_loaded: bool,
-	monospace_fallback_font_loaded: bool,
-	application_primary_font: [Font_Role]bool,
-	application_italic_font: [Font_Role]bool,
-	application_fallback_font: [Font_Role]bool,
-	italic_font_loaded:    bool,
-	monospace_italic_font_loaded: bool,
-	cache_initialized:    bool,
-	font_generation:      u64,
-	atlas:                 runa.Atlas,
-	atlas_initialized:    bool,
-	glyphs:                map[Glyph_Resource_Key]runa.Atlas_Slot,
+	cache:                						 	 runa.Cache,
+	font_loaded:          						 	 bool,
+	fallback_font_loaded: 						 	 bool,
+	monospace_font_loaded: 						 	 bool,
+	monospace_fallback_font_loaded: 	   bool,
+	application_primary_font: 					 [Font_Role]bool,
+	application_italic_font: 						 [Font_Role]bool,
+	application_fallback_font: 					 [Font_Role]bool,
+	italic_font_loaded:    							 bool,
+	monospace_italic_font_loaded: 			 bool,
+	cache_initialized:    			bool,
+	font_generation:      			u64,
+	atlas:                 			runa.Atlas,
+	atlas_initialized:    			bool,
+	glyphs:                			map[Glyph_Resource_Key]runa.Atlas_Slot,
 }
 
 Text_Font_Source :: enum u8 {
@@ -87,10 +83,10 @@ Text_Font_Source :: enum u8 {
 // logical glyph resource identity.
 Glyph_Resource_Key :: struct {
 	font_generation: u64,
-	font:           Font_Role,
-	font_source:    Text_Font_Source,
+	font:            Font_Role,
+	font_source:     Text_Font_Source,
 	font_weight_bits: u32,
-	italic:         bool,
+	italic:          bool,
 	glyph_id:        runa.Glyph_ID,
 	size_bits:       u32,
 	subpixel_bucket: u8,
@@ -322,10 +318,6 @@ text_engine_resolve_font_weight :: proc(engine: ^Text_Engine, role: Font_Role, s
 	return resolved
 }
 
-// Use a platform/application fallback face for a run if the primary face is
-// missing any codepoint that the fallback can render. Keeping each run on one
-// face avoids losing face identity in retained glyph geometry; mixed-face
-// shaping remains a future text-engine improvement.
 text_engine_choose_font_source :: proc(engine: ^Text_Engine, role: Font_Role, value: string) -> Text_Font_Source {
 	primary, primary_loaded := text_engine_font(engine, role)
 	fallback, fallback_loaded := text_engine_fallback_font(engine, role)

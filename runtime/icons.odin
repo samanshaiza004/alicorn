@@ -6,8 +6,6 @@ icon_id_is_valid :: proc(id: Icon_ID) -> bool {
     return id > .None && id < .Count
 }
 
-// icon inserts a decorative, font-independent icon into ordinary layout.
-// The surrounding component remains responsible for its accessible name.
 icon :: proc(
 	ui: ^UI,
 	id: Icon_ID,
@@ -34,7 +32,7 @@ icon :: proc(
 	pending := &rt.pending[len(rt.pending)-1]
 	if pending.kind == .Description && pending.description.id == node {
 		pending.description.icon_id = id
-		pending.description.color = style_color(ui, color_role)
+		pending.description.color   = style_color(ui, color_role)
 	}
 	container_end(ui)
 	return node
