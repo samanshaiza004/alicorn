@@ -49,6 +49,23 @@ For focused work:
 The scripts accept `-Odin PATH` on PowerShell and `--odin PATH` on Unix-like
 shells. They otherwise use `ALICORN_ODIN`, then `odin` on `PATH`.
 
+### Linux NixOS/Mango validation
+
+The Linux-specific runner separates deterministic contracts from evidence that
+requires a real Wayland session:
+
+```sh
+sh tools/linux_native_acceptance.sh --odin /path/to/odin
+```
+
+It forces the Wayland/Vulkan SDL path, records selected host/toolchain probes,
+runs the existing headless and native contracts, and writes logs plus a
+diagnostic bundle under `out/linux-native-acceptance/`. Use `--headless` only
+for compile and contract checks; it cannot validate a compositor, GPU session,
+physical input, IME, portals, accessibility clients, monitors, or Mango
+behavior. Complete the [Linux native acceptance matrix](validation/linux-native-acceptance.md)
+for those boundaries.
+
 ### macOS CI toolchain
 
 Both macOS workflows install the complete official

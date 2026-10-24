@@ -17,6 +17,11 @@ unverified. Linux has system decorations but no native application-menu
 adapter; the Scratchpad menu model is passed to the Linux host as semantic
 accelerator metadata, but no native application menu is created.
 
+The reusable automated runner and the user-performed acceptance matrix are in
+the [Linux native acceptance matrix](linux-native-acceptance.md). The runner
+records deterministic contracts and Wayland/Vulkan host evidence without
+claiming the physical or unsupported items listed above.
+
 ## Checkouts
 
 | Repository | Branch | Validation revision | Lock/candidate |
@@ -200,6 +205,22 @@ with `diagnostics.json`, `inspector.txt`, `timeline.json`, `windows.json`, and
 directly gives `Permission denied`, while invoking it through `sh` passes.
 
 ## Reproduction
+
+### Alicorn automated matrix
+
+From an Alicorn checkout inside the target Wayland session, use the official
+Odin SDK and the Nix shell described below:
+
+```sh
+sh tools/linux_native_acceptance.sh \
+  --odin /path/to/odin \
+  --report-dir out/linux-native-acceptance
+```
+
+Use `--headless` when no Wayland session is available. That mode runs only
+compile and deterministic contract gates and must not be recorded as Mango
+validation. The output includes `summary.tsv`, per-gate logs, selected host
+variables, and any native diagnostic bundle.
 
 Use the official Odin SDK and a Nix shell containing clang, Rust/Cargo,
 pkg-config, and the SDL3 development/library outputs. For native smoke, set:
