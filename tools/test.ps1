@@ -12,8 +12,8 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin build native\sdl_gpu_entry "-extra-linker-flags:$($AccessKit.LinkerFlags)" -out:out\alicorn_sdl_gpu.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-# The text-input contract executable links SDL3 even though this mode does not
-# create a window. Stage the runtime DLL just as the native smoke runners do.
+# Native tests and the text-input contract executable link SDL3 even when they
+# do not create a window. Stage the runtime DLL as the native smoke runners do.
 $OdinRoot = Split-Path -Parent $Odin
 $SDL3 = Join-Path $OdinRoot 'vendor\sdl3\SDL3.dll'
 if (-not (Test-Path -LiteralPath $SDL3 -PathType Leaf)) {
@@ -44,6 +44,8 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & .\out\alicorn_theme.exe check theme\testdata\invalid.json
 if ($LASTEXITCODE -eq 0) { throw "Theme CLI accepted an unsupported length unit." }
 & $Odin test native\sdl_gpu "-extra-linker-flags:$($AccessKit.LinkerFlags)" -out:out\alicorn_native_tests.exe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Odin test native\scroll_capture_tests "-extra-linker-flags:$($AccessKit.LinkerFlags)" -out:out\alicorn_scroll_capture_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & .\out\alicorn_tests.exe

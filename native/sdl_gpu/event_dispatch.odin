@@ -397,7 +397,7 @@ pump_events :: proc(
 			// SDL already reports the platform's chosen scroll direction. Keep
 			// precise deltas and the native natural-scroll preference intact;
 			// retained regions apply their own logical offset convention.
-			dispatched_to_scroll_region := alicorn.process_scroll(rt, alicorn.Scroll_Event{
+			scroll_event := alicorn.Scroll_Event{
 				delta_x=delta_x,
 				delta_y=delta_y,
 				ticks_x=ticks_x,
@@ -405,17 +405,16 @@ pump_events :: proc(
 				x=event.wheel.mouse_x,
 				y=event.wheel.mouse_y,
 				modifiers=modifiers,
-			})
-			if !dispatched_to_scroll_region && application.on_scroll != nil {
-				application.on_scroll(application.state, rt, alicorn.Scroll_Event{
-					delta_x=delta_x,
-					delta_y=delta_y,
-					ticks_x=ticks_x,
-					ticks_y=ticks_y,
-					x=event.wheel.mouse_x,
-					y=event.wheel.mouse_y,
-					modifiers=modifiers,
-				})
+			}
+			scroll_captured := false
+			if application.on_scroll_capture != nil {
+				target := alicorn.scroll_region_hit_test(rt, scroll_event.x, scroll_event.y)
+				if target != 0 {
+					scroll_captured = application.on_scroll_capture(application.state, rt, scroll_event, target)
+				}
+			}
+			if !scroll_captured && !alicorn.process_scroll(rt, scroll_event) && application.on_scroll != nil {
+				application.on_scroll(application.state, rt, scroll_event)
 			}
 			alicorn.cause_end(rt, scroll_cause)
 		}
