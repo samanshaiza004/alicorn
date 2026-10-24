@@ -412,6 +412,9 @@ run_application_loop :: proc(
 				_ = native_application_build_until_stable(&child.application, child.runtime, &child.metrics, &child.timing)
 			}
 			if child.native_menu.application != nil {
+				when ODIN_OS == .Windows {
+					_ = win32_menu_refresh_text_if_needed(&child.native_menu, child.runtime)
+				}
 				application_frame_pending := alicorn.frame_needs_submission(child.runtime)
 				_ = native_menu_sync_chrome_appearance(&child.native_menu, request_redraw=!application_frame_pending)
 			}
@@ -502,6 +505,7 @@ run_application_loop :: proc(
 		when ODIN_OS == .Darwin { native_darwin_titlebar_sync_layout(native_menu) }
 		when ODIN_OS == .Windows {
 			if native_menu != nil {
+				_ = win32_menu_refresh_text_if_needed(native_menu, rt)
 				application_frame_pending := alicorn.frame_needs_submission(rt)
 				if application_frame_pending { native_menu_sync_chrome_layout(native_menu) }
 				if !native_menu.chrome_appearance_resolved || application_frame_pending {

@@ -86,7 +86,7 @@ test_caption_masks_reuse_storage_until_dpi_changes_and_release_it :: proc(t: ^te
 }
 
 @(test)
-test_caption_text_clips_to_label_allocations_and_refreshes_only_for_scale :: proc(t: ^testing.T) {
+test_caption_text_clips_to_label_allocations_and_refreshes_for_scale_or_font_generation :: proc(t: ^testing.T) {
 	rt := alicorn.new_runtime(alicorn.Rect{0,0,900,600})
 	defer alicorn.destroy_runtime(&rt)
 	testing.expect(t,alicorn.text_engine_load_font(&rt.text_engine,NATIVE_UI_FONT_DATA))
@@ -105,6 +105,11 @@ test_caption_text_clips_to_label_allocations_and_refreshes_only_for_scale :: pro
 	generation := renderer.host_run_generation
 	for _ in 0..<100 { testing.expect(t,win32_menu_refresh_text(&state,&rt)) }
 	testing.expect(t,shape_calls == rt.text_engine.shape_calls && generation == renderer.host_run_generation)
+	font_generation := rt.text_engine.font_generation
+	testing.expect(t,alicorn.font_load_fallback_bytes(&rt,.UI,NATIVE_UI_FONT_DATA),"fallback font loading should succeed")
+	testing.expect(t,rt.text_engine.font_generation > font_generation,"fallback loading must advance the runtime font generation")
+	testing.expect(t,win32_menu_refresh_text(&state,&rt),"font generation changes must refresh native caption runs")
+	testing.expect(t,renderer.host_run_generation > generation,"font generation refresh must replace native caption handles")
 	state.dpi = 144
 	testing.expect(t,win32_menu_refresh_text(&state,&rt))
 	testing.expect(t,native_text_host_resolve(&renderer,old_handle) == nil,"old text handles must not resolve after DPI replacement")

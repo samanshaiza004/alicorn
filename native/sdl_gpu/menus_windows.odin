@@ -124,6 +124,7 @@ Win32_Menu_State :: struct {
 	caption_mask_windows_11: bool,
 	caption_mask_builds: u64,
 	text_scale: f32,
+	font_generation: u64,
 	ellipsis_host_node: alicorn.Node_ID,
 	high_contrast: bool,
 	dpi:        u32,
@@ -703,7 +704,9 @@ win32_menu_refresh_text :: proc(state: ^Win32_Menu_State, rt: ^alicorn.Runtime) 
 		state.title.host_node == 0 || state.ellipsis_host_node == 0 || len(state.labels) != len(state.menu.application.menus) { return false }
 	for label in state.labels { if label.host_node == 0 { return false } }
 	scale := (f32(state.dpi if state.dpi != 0 else 96)/96)/(state.pixels_per_unit if state.pixels_per_unit > 0 else 1)
-	if state.text_scale == scale { return true }
+	font_generation := rt.text_engine.font_generation
+	if state.text_scale == scale && state.font_generation == font_generation { return true }
+	font_generation_changed := state.font_generation != font_generation
 	count := len(state.labels)+2
 	runs := make([]alicorn.Text_Run, count, allocator=rt.scratch_allocator)
 	defer delete(runs, rt.scratch_allocator)
@@ -729,7 +732,18 @@ win32_menu_refresh_text :: proc(state: ^Win32_Menu_State, rt: ^alicorn.Runtime) 
 		}
 	}
 	state.text_scale = scale
+	state.font_generation = font_generation
+	if font_generation_changed {
+		win32_menu_layout_labels(state)
+		native_menu_request_chrome_redraw(state.menu)
+	}
 	return true
+}
+
+win32_menu_refresh_text_if_needed :: proc(menu: ^Native_Menu_Runtime, rt: ^alicorn.Runtime) -> bool {
+	if menu == nil || rt == nil || menu.platform_data == nil { return false }
+	state := cast(^Win32_Menu_State)menu.platform_data
+	return win32_menu_refresh_text(state, rt)
 }
 
 win32_color_ref :: proc(value: win.COLORREF) -> alicorn.Color {
