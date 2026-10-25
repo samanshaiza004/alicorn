@@ -2649,6 +2649,26 @@ test_monospace_font_role :: proc(state: ^Test_State) {
 	expect(state, engine.font_generation > fallback_generation, "loading a fallback face must invalidate retained font resources")
 }
 
+test_runa_feature_tags :: proc(state: ^Test_State) {
+	engine := alicorn.new_text_engine("runa-feature-tags-test", allocator=context.allocator)
+	defer alicorn.text_engine_destroy(&engine)
+	expect(state, alicorn.text_engine_load_font_role(&engine, .Monospace, TEST_MONO_FONT_DATA), "bundled monospace font must load for feature-tag integration")
+	if !engine.monospace_font_loaded { return }
+
+	expect(state, runa.font_has_feature(&engine.monospace_font, "zero"), "Runa should report the bundled monospace face's OpenType zero feature")
+	plain := make([dynamic]runa.Shaped_Glyph, 0, context.temp_allocator)
+	zeroed := make([dynamic]runa.Shaped_Glyph, 0, context.temp_allocator)
+	ligatures_off := make([dynamic]runa.Shaped_Glyph, 0, context.temp_allocator)
+	runa.shape_text(&engine.monospace_font, "0", 16, &plain)
+	runa.shape_text(&engine.monospace_font, "0", 16, &zeroed, features=[]runa.Feature_Setting{runa.feature("zero")})
+	// This public convenience is intentionally a sliceable @(rodata) array.
+	runa.shape_text(&engine.monospace_font, "0", 16, &ligatures_off, features=runa.NO_LIGATURES[:])
+	expect(state, len(plain) == 1 && len(zeroed) == 1 && len(ligatures_off) == 1, "feature-tag shaping and the NO_LIGATURES slice should produce ordinary glyph runs")
+	if len(plain) == 1 && len(zeroed) == 1 {
+		expect(state, plain[0].glyph_id != zeroed[0].glyph_id, "the zero feature should select the bundled face's slashed-zero glyph")
+	}
+}
+
 render_style_spanned_text :: proc(rt: ^alicorn.Runtime, spans: []alicorn.Text_Style_Span) -> alicorn.Node_ID {
 	alicorn.invalidate_root(rt, "text style span regression")
 	ui, build := alicorn.begin_frame(rt)
@@ -4119,6 +4139,7 @@ main :: proc() {
 	test_multiline_text_controls(&state)
 	test_text_ellipsis(&state)
 	test_monospace_font_role(&state)
+	test_runa_feature_tags(&state)
 	test_text_typography_spans(&state)
 	test_public_monospace_font_role(&state)
 	test_retained_text_weight(&state)
