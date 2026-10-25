@@ -109,7 +109,7 @@ From a fresh Alicorn checkout, build and run the current native hello app:
 
 ```powershell
 New-Item -ItemType Directory -Force out | Out-Null
-odin build examples/01_hello -o:speed -out:out/alicorn_native_hello_perf.exe
+odin build examples/01_hello -collection:alicorn=. -o:speed -out:out/alicorn_native_hello_perf.exe
 Copy-Item (Join-Path (Split-Path -Parent (Get-Command odin).Source) 'vendor\sdl3\SDL3.dll') out\SDL3.dll -Force
 .\out\alicorn_native_hello_perf.exe --idle-validation-seconds=25
 ```

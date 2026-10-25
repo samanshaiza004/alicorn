@@ -14,6 +14,7 @@ import "core:thread"
 import "core:time"
 import alicorn "../../runtime"
 import host "../../native/sdl_gpu"
+import ui "alicorn:ui"
 
 SURFACE_PERIOD_NS :: u64(33_000_000)
 WORKER_PERIOD     :: 250 * time.Millisecond
@@ -72,114 +73,101 @@ acceptance_build :: proc(
 	dpi_scale: f32,
 ) -> alicorn.Node_ID {
 	app := cast(^Window_State)state
-	ui, should_build := alicorn.begin_frame(rt)
+	ctx, should_build := alicorn.begin_frame(rt)
 	if !should_build { return 0 }
 	app.build_count += 1
 	app.surface = 0
 
-	root := alicorn.container_begin(
-		&ui,
-		.Root,
-		label="secondary-window-acceptance-root",
-		style=alicorn.layout_style(.Column, grow=1, padding=20, gap=8, clip=true),
-		color=alicorn.Color{0.045, 0.055, 0.075, 1},
-	)
-	role := "Primary window" if !app.is_tool else fmt.tprintf("Tool window · cycle %d", app.cycle)
-	alicorn.text(&ui, role, style=alicorn.layout_style(height=30), text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_BOLD})
-	alicorn.text(
-		&ui,
-		fmt.tprintf("Assigned client: %d × %d logical · scale %.2f · focus %v", logical_width, logical_height, dpi_scale, alicorn.focused_node(rt) != 0),
-		style=alicorn.layout_style(height=24),
-	)
+	root := alicorn.container_begin(&ctx, .Root, label="secondary-window-acceptance-root", style=alicorn.layout_style(grow=1))
+	if ui.column(&ctx, grow=1, padding=20, gap=8, clip=true, label="secondary-window-content") {
+		role := "Primary window" if !app.is_tool else fmt.tprintf("Tool window · cycle %d", app.cycle)
+		ui.text(&ctx, role, size=22)
+		ui.text(&ctx,
+			fmt.tprintf("Assigned client: %d × %d logical · scale %.2f · focus %v", logical_width, logical_height, dpi_scale, alicorn.focused_node(rt) != 0),
+		)
 
-	if app.is_tool {
-		if alicorn.button(&ui, "Close tool window", key=alicorn.key_string("secondary-close"), style=alicorn.layout_style(.Row, width=190, height=36)) {
-			host.application_close_window(app.services.windows)
-		}
-	} else {
-		if alicorn.button(
-			&ui,
-			"Open tool window",
-			key=alicorn.key_string("secondary-open"),
-			style=alicorn.layout_style(.Row, width=190, height=36),
-			state=alicorn.Button_State{disabled=app.shared.tool_live_or_pending},
-		) {
-			acceptance_open_tool(app)
-		}
-		if alicorn.button(
-			&ui,
-			"Quit while tool and GPU are active",
-			key=alicorn.key_string("secondary-quit-active"),
-			style=alicorn.layout_style(.Row, width=300, height=36),
-			state=alicorn.Button_State{disabled=!app.shared.tool_live_or_pending},
-		) {
-			host.application_request_quit(app.services.quit)
-		}
-	}
-
-	worker_is_enabled := sync.atomic_load(&app.worker_enabled) != 0
-	worker_label := "Start worker wakeups" if !worker_is_enabled else "Stop worker wakeups"
-	if alicorn.button(&ui, worker_label, key=alicorn.key_string("secondary-worker-toggle"), style=alicorn.layout_style(.Row, width=220, height=34)) {
-		if worker_is_enabled {
-			acceptance_worker_stop(app)
-		} else if !acceptance_worker_start(app) {
-			fmt.eprintln("secondary-window worker could not be started")
-		}
-	}
-	animation_label := "Start GPU animation" if !app.animation_enabled else "Stop GPU animation"
-	if alicorn.button(&ui, animation_label, key=alicorn.key_string("secondary-animation-toggle"), style=alicorn.layout_style(.Row, width=220, height=34)) {
-		app.animation_enabled = !app.animation_enabled
-		if app.animation_enabled {
-			_ = host.application_schedule_after(app.services.scheduler, .Frequent, SURFACE_PERIOD_NS)
+		if app.is_tool {
+			if ui.button(&ctx, "Close tool window", key=alicorn.key_string("secondary-close"), width=190, height=36) {
+				host.application_close_window(app.services.windows)
+			}
 		} else {
-			_ = host.application_cancel_scheduled_wake(app.services.scheduler, .Frequent)
+			if ui.button(
+				&ctx,
+				"Open tool window",
+				key=alicorn.key_string("secondary-open"),
+				width=190,
+				height=36,
+				state=alicorn.Button_State{disabled=app.shared.tool_live_or_pending},
+			) {
+				acceptance_open_tool(app)
+			}
+			if ui.button(
+				&ctx,
+				"Quit while tool and GPU are active",
+				key=alicorn.key_string("secondary-quit-active"),
+				width=300,
+				height=36,
+				state=alicorn.Button_State{disabled=!app.shared.tool_live_or_pending},
+			) {
+				host.application_request_quit(app.services.quit)
+			}
 		}
+
+		worker_is_enabled := sync.atomic_load(&app.worker_enabled) != 0
+		worker_label := "Start worker wakeups" if !worker_is_enabled else "Stop worker wakeups"
+		if ui.button(&ctx, worker_label, key=alicorn.key_string("secondary-worker-toggle"), width=220, height=34) {
+			if worker_is_enabled {
+				acceptance_worker_stop(app)
+			} else if !acceptance_worker_start(app) {
+				fmt.eprintln("secondary-window worker could not be started")
+			}
+		}
+		animation_label := "Start GPU animation" if !app.animation_enabled else "Stop GPU animation"
+		if ui.button(&ctx, animation_label, key=alicorn.key_string("secondary-animation-toggle"), width=220, height=34) {
+			app.animation_enabled = !app.animation_enabled
+			if app.animation_enabled {
+				_ = host.application_schedule_after(app.services.scheduler, .Frequent, SURFACE_PERIOD_NS)
+			} else {
+				_ = host.application_cancel_scheduled_wake(app.services.scheduler, .Frequent)
+			}
+		}
+
+		ui.text(&ctx, "Independent text input (IME composition is counted below)")
+		field_key := alicorn.key_string("secondary-tool-text") if app.is_tool else alicorn.key_string("secondary-primary-text")
+		field := alicorn.text_field(&ctx, app.text, key=field_key, style=alicorn.layout_style(.Row, height=40))
+		field_focused := alicorn.focused_node(rt) == field
+		ui.text(&ctx, fmt.tprintf("This window's field focus: %v · text bytes: %d · composition: %q", field_focused, len(app.text), app.preedit))
+
+		ui.text(
+			&ctx,
+			fmt.tprintf(
+				"Shared: open requests %d · starts/stops %d/%d · failures %d · text changes %d · IME events %d · menu commands %d",
+				app.shared.open_requests,
+				app.shared.tool_starts,
+				app.shared.tool_stops,
+				app.shared.open_failures,
+				app.shared.text_changes,
+				app.shared.composition_events,
+				app.shared.menu_commands,
+			),
+		)
+		ui.text(
+			&ctx,
+			fmt.tprintf("Local: builds %d · worker wakes %d · shared GPU geometry updates %d", app.build_count, app.worker_wake_count, app.shared.geometry_updates),
+		)
+
+		if ui.panel(&ctx, grow=1, padding=8, clip=true, fill=ui.rgb(0x131822), label="secondary-window-animated-surface-panel") {
+			app.surface = alicorn.gpu_geometry_surface(
+				&ctx,
+				"secondary-window-animated-surface",
+				alicorn.layout_style(.Row, grow=1, width=-1, height=-1),
+				dpi_scale,
+			)
+		}
+		ui.text(&ctx, "Move/resize this window, transfer focus, type into both fields, and inspect each window's independent scale and state.")
 	}
-
-	field_label := "Independent text input (IME composition is counted below)"
-	alicorn.text(&ui, field_label, style=alicorn.layout_style(height=24))
-	field_key := alicorn.key_string("secondary-tool-text") if app.is_tool else alicorn.key_string("secondary-primary-text")
-	field := alicorn.text_field(&ui, app.text, key=field_key, style=alicorn.layout_style(.Row, height=40))
-	field_focused := alicorn.focused_node(rt) == field
-	alicorn.text(&ui, fmt.tprintf("This window's field focus: %v · text bytes: %d · composition: %q", field_focused, len(app.text), app.preedit), style=alicorn.layout_style(height=24))
-
-	alicorn.text(
-		&ui,
-		fmt.tprintf(
-			"Shared: open requests %d · starts/stops %d/%d · failures %d · text changes %d · IME events %d · menu commands %d",
-			app.shared.open_requests,
-			app.shared.tool_starts,
-			app.shared.tool_stops,
-			app.shared.open_failures,
-			app.shared.text_changes,
-			app.shared.composition_events,
-			app.shared.menu_commands,
-		),
-		style=alicorn.layout_style(height=40),
-	)
-	alicorn.text(
-		&ui,
-		fmt.tprintf("Local: builds %d · worker wakes %d · shared GPU geometry updates %d", app.build_count, app.worker_wake_count, app.shared.geometry_updates),
-		style=alicorn.layout_style(height=24),
-	)
-
-	_ = alicorn.container_begin(
-		&ui,
-		.Container,
-		label="secondary-window-animated-surface-panel",
-		style=alicorn.layout_style(.Column, grow=1, padding=8, clip=true),
-		color=alicorn.Color{0.075, 0.095, 0.135, 1},
-	)
-	app.surface = alicorn.gpu_geometry_surface(
-		&ui,
-		"secondary-window-animated-surface",
-		alicorn.layout_style(.Row, grow=1, width=-1, height=-1),
-		dpi_scale,
-	)
-	alicorn.container_end(&ui)
-	alicorn.text(&ui, "Move/resize this window, transfer focus, type into both fields, and inspect each window's independent scale and state.", style=alicorn.layout_style(height=40))
-	alicorn.container_end(&ui)
-	alicorn.end_frame(&ui)
+	alicorn.container_end(&ctx)
+	alicorn.end_frame(&ctx)
 	return root
 }
 

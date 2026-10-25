@@ -2,7 +2,7 @@ package main
 
 import "core:fmt"
 import "core:os"
-import alicorn "../../runtime"
+import alicorn "../../../runtime"
 
 render :: proc(rt: ^alicorn.Runtime, keys: []string) -> map[string]alicorn.Node_ID {
 	ids := make(map[string]alicorn.Node_ID)

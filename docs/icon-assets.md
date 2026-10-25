@@ -104,8 +104,7 @@ sh ./tools/validate_icons.sh --odin /path/to/odin
 ```
 
 The validation command must report `driver metal`, `atlas_uploads 2`, and
-`transparent_source_over true` twice. In the gallery, inspect Checkboxes and
-Select + Notices; open Select, stack/dismiss notices, and inspect the filled
-folder and Search icons. Check standard and Retina scale, a different display
-if available, and disabled indicators. The gallery's `--icon-fixture` option
-opens Select + Notices with a persistent warning for repeatable captures.
+`transparent_source_over true` twice. In the form, inspect the Files, Open, and
+Search icons beside the controls. Check standard and Retina scale, a different
+display if available, and disabled indicators. The icon row is present on every
+launch, so no fixture argument is required for repeatable captures.

@@ -1,7 +1,7 @@
 package main
 
 import "core:fmt"
-import alicorn "../../runtime"
+import alicorn "../../../runtime"
 
 Track :: struct {
 	id:       int,

@@ -1,29 +1,56 @@
 # Alicorn examples
 
-Follow the numbered examples in order. Each one is a small native application
-and uses the same public runtime/host APIs available to an application.
-Install the Odin and SDL3 prerequisites from [Getting Started](../docs/getting-started.md)
-first. The same `odin run` commands work in Windows PowerShell and macOS
-Terminal.
+Follow the numbered native applications in order. Every UI lesson imports
+`alicorn:ui` for ordinary text, layout, and buttons. Lessons that demonstrate a
+runtime capability use the runtime API beside it for that specific job; the
+simple and advanced paths share the same UI context and retained Runtime.
 
-## Learning progression
-
-For application-owned session state, see the headless
-[durable restoration fixture](durable_restoration/main.odin) and its
-[restart checks](../docs/durable-ui-restoration.md). It runs in separate
-processes and persists only a split ratio, logical scroll offset, and record key.
+Install Odin and the native prerequisites from
+[Getting Started](../docs/getting-started.md) first.
 
 | Step | Example | What it teaches | Run |
 |---|---|---|---|
-| 1 | [01 · Hello](01_hello/main.odin) | Typed `ui.run`, scoped layout, text, a button, app-owned counter state, and bounded corrective interaction by default | `odin run examples/01_hello -collection:alicorn=.` |
-| 2 | [02 · Form](02_form/main.odin) | Allocator-owned controlled text field, checkbox, sliders, Select, retained notices, and a convenience panel mixed with direct runtime controls | `odin run examples/02_form -collection:alicorn=.` |
-| 3 | [03 · Async List](03_async_list/main.odin) | Worker completion through `Application_Waker`, a 10,000-item fixed-row virtual list, stable keys, and event-driven idle | `odin run examples/03_async_list` |
-| 4 | [04 · Custom Surface](04_custom_surface/main.odin) | Bounded retained GPU geometry in clipped layout, resize and DPI-aware updates | `odin run examples/04_custom_surface` |
-| 5 | [05 · Inspector](05_inspector/main.odin) | Retained tree, focus, semantic action and causal work inspection | `odin run examples/05_inspector -- --inspector` |
-| 6 | [06 · Secondary Windows](06_secondary_windows/main.odin) | Explicit per-window state, Runtime, lifecycle, focus, and rendering ownership | `odin run examples/06_secondary_windows` |
-| 7 | [07 · Simple Appearance](07_simple_appearance/main.odin) | Direct text color and size, one-node panels, borders, rounded surfaces, and fixed-size boxes | `odin run examples/07_simple_appearance -collection:alicorn=.` |
+| 1 | [Hello](01_hello/main.odin) | Typed `ui.run`, app-owned state, text, and a button | `odin run examples/01_hello -collection:alicorn=.` |
+| 2 | [Form](02_form/main.odin) | Scoped panels and rows, controlled text, checkbox and slider values | `odin run examples/02_form -collection:alicorn=.` |
+| 3 | [Async List](03_async_list/main.odin) | Worker completion, stable keyed rows, fixed-height virtualization, and true idle | `odin run examples/03_async_list -collection:alicorn=.` |
+| 4 | [Custom Surface](04_custom_surface/main.odin) | Retained GPU geometry inside a clipped UI panel; resize and DPI-aware updates | `odin run examples/04_custom_surface -collection:alicorn=.` |
+| 5 | [Inspector](05_inspector/main.odin) | Retained tree, focus, semantic actions, and invalidation causes | `odin run examples/05_inspector -collection:alicorn=. -- --inspector` |
+| 6 | [Secondary Windows](06_secondary_windows/main.odin) | Per-window Runtime ownership, lifecycle, focus, and rendering | `odin run examples/06_secondary_windows -collection:alicorn=.` |
+| 7 | [Appearance](07_simple_appearance/main.odin) | Direct colors, panels, borders, rounded surfaces, and fixed-size boxes | `odin run examples/07_simple_appearance -collection:alicorn=.` |
 
-The native starter and form also have convenience runners:
+## Try each lesson
+
+1. In `01_hello`, change the greeting or button label, then click **Increment**.
+2. In `02_form`, edit the name, toggle the checkbox, adjust the slider, and
+   compare the application-owned values shown at the bottom.
+3. In `03_async_list`, wait for the worker result, scroll, and select rows. The
+   list describes only visible records; after its completion wake, the host
+   returns to event wait. Add `-- --smoke` to run the bounded idle check.
+4. In `04_custom_surface`, change the waveform function or segment count. The
+   application description stays idle while scheduled callbacks update the
+   retained surface geometry.
+5. In `05_inspector`, press **F9**, choose Tree, Focus, Work, and Causes, then
+   press **P** and click an app control to pick it without activating it.
+   **Escape** closes the inspector. To keep it open while triggering the
+   intentional duplicate-key diagnostic, run:
+
+   ```text
+   odin run examples/05_inspector -collection:alicorn=. -- --inspector-open --identity-error
+   ```
+
+6. In `06_secondary_windows`, open and close a child window to inspect its
+   independent lifecycle and Runtime state.
+7. In `07_simple_appearance`, change panel fill, border, or swatch colors.
+
+## Build and validation
+
+`tools/build_examples.ps1` (Windows) and `tools/build_examples.sh` (macOS and
+other Unix-like shells) compile the numbered application lessons. Both
+foundation CI jobs run this check. `tools/check.ps1` and `tools/check.sh` also
+compile internal validation fixtures, which live under `tests/fixtures` rather
+than in the beginner-facing example list.
+
+The starter and form also have convenience runners:
 
 ```powershell
 .\tools\native_hello.ps1
@@ -36,63 +63,11 @@ The native starter and form also have convenience runners:
 ```
 
 The `widget_gallery` runner name is retained for compatibility; it launches
-the numbered form lesson. Examples using the `alicorn:ui` collection package
-need `-collection:alicorn=.` when run directly from the repository root.
+the focused form lesson. The UI examples use the `alicorn:ui` collection, so
+direct `odin run` commands need `-collection:alicorn=.` from the repository
+root.
 
-## Try each lesson
-
-1. In `01_hello`, change the greeting or button label, then click **Increment**.
-2. In `02_form`, edit the name, toggle a checkbox, and adjust a slider. Select
-   **Select + Notices** in the tab strip to try the controlled Select with
-   keyboard/type-ahead navigation, and post transient, persistent, and
-   actionable notices. The Details and Retry actions return to app code.
-3. In `03_async_list`, scroll and select rows. Only visible rows are described;
-   after the worker's single completion wake, the host returns to event wait.
-   Add `-- --smoke` to run its bounded startup/idle check where a native window
-   can be opened.
-4. In `04_custom_surface`, change the waveform function or segment count. The
-   application description remains idle while scheduled callbacks update only
-   the retained surface geometry.
-5. In `05_inspector`, press **F9** to open/close the inspector, choose Tree,
-   Focus, Work, and Causes, then press **P** and click an app control to pick it
-   without activating it. **Escape** closes the overlay. To intentionally
-   produce a duplicate-key diagnostic while keeping the inspector open, run:
-
-   ```text
-   odin run examples/05_inspector -- --inspector-open --identity-error
-   ```
-
-   The negative mode is opt-in; ordinary startup has valid identities.
-   The inspector and diagnostic name the `first declaration` and
-   `duplicate declaration` plus the repeated key and suggested correction.
-6. In `06_secondary_windows`, open and close a child window to inspect its
-   independent lifecycle and runtime state.
-7. In `07_simple_appearance`, change panel fill, border, or swatch colors. Its
-   containers and surfaces are regular retained runtime nodes.
-
-## Build and validation
-
-`tools/build_examples.ps1` (Windows) and `tools/build_examples.sh` (macOS and
-other Unix-like shells) compile every immediate `examples/*/main.odin`
-package. Both foundation CI jobs run this check. The Windows/macOS runners use
-the platform's Odin/SDL3 installation described in Getting Started. Native
-manual-run instructions and the Windows inspector smoke evidence are in
-[`docs/validation/visual-inspector-windows.md`](../docs/validation/visual-inspector-windows.md)
-and the native starter's platform notes.
-
-## Focused examples and validation fixtures
-
-These are subsystem references and headless tests, not extra steps in the
-beginner progression:
-
-- [`hello`](hello/main.odin), [`counter`](counter/main.odin),
-  [`text_input`](text_input/main.odin): compact headless runtime examples.
-- [`keyed_list`](keyed_list/main.odin): minimal keyed virtual-list API sample.
-- [`runa_text`](runa_text/main.odin): text shaping and geometry proof.
-- [`advanced_identity`](advanced_identity/main.odin),
-  [`identity_torture`](identity_torture/main.odin): identity diagnostics and
-  stress coverage.
-- [`crucible`](crucible/main.odin): retained-runtime fixture for keyed state,
-  regions, compact presentation, and custom-surface payloads.
-
-For design trade-offs, see [Choosing Alicorn](../docs/choosing-alicorn.md).
+For application-owned session files, see the headless
+[durable restoration fixture](../tests/fixtures/durable_restoration/main.odin)
+and its [restart checks](../docs/durable-ui-restoration.md). For the Runa text
+integration probe, see [`tools/runa_text/main.odin`](../tools/runa_text/main.odin).
