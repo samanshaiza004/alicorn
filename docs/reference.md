@@ -30,14 +30,31 @@ main :: proc() {
 }
 ```
 
-`ui.row`, `ui.column`, and `ui.panel` are lexical scopes. Use each directly in
+`ui.row`, `ui.column`, `ui.panel`, and `ui.layout` are lexical scopes. Use each directly in
 an `if` condition so Odin closes the scope at the end of that block. Stable
 keys are optional for one-off controls and should be supplied for repeated
 items that can reorder. `ui.run` selects the native host's bounded corrective
 description policy for consumed UI actions; render may run again after an
 interaction, so keep unrelated side effects out of the description.
 
-The convenience package includes `text`, `button`, `row`, `column`, `panel`,
+Rows, columns, and panels accept a diagnostic `label`, defaulting to their
+helper name. `ui.layout(ctx, style, key=..., label="layout")` scopes an exact
+`alicorn.Layout_Style` on one plain `.Container`; it adds no paint, node-kind
+choice, hierarchy, sizing defaults, or style normalization. All scoped helpers
+close on ordinary block exit, `return`, `break`, and `continue`, and preserve
+the caller's source location.
+
+| Helper | Additional options |
+| --- | --- |
+| `ui.text` | `style: Layout_Style`, `font: Font_Role`, `text_style: Text_Style`. A positive `size` overrides only `text_style.font_size`; otherwise the supplied typography is preserved. |
+| `ui.button` | `style: Layout_Style`, `state: Button_State`, `text_style: Text_Style`, `content_style: Button_Content_Style`, `variant: Button_Variant`. Nonnegative `width`, `height`, and `grow` override those style fields; their `-1` defaults leave the style unchanged. |
+
+These types and defaults come from `alicorn:runtime`. Existing positional
+arguments, including `key` and `loc`, retain their positions; use named
+arguments for the added options. Arguments are borrowed for the description,
+and buttons retain their existing one-shot activation behavior.
+
+The convenience package includes `text`, `button`, `row`, `column`, `panel`, `layout`,
 `box`, `border`, basic colors, `rgb`, and root invalidation. It writes ordinary
 retained nodes and surface paint through the same Runtime; it does not add an
 application state store or a second tree. Use `host.Run` when custom host
