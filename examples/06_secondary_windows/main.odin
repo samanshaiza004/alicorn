@@ -9,9 +9,10 @@ import host "../../native/sdl_gpu"
 import ui "alicorn:ui"
 
 Window_State :: struct {
-	is_tool:  bool,
-	count:    int,
-	services: host.Application_Services,
+	is_tool:     bool,
+	count:       int,
+	open_failed: bool,
+	services:    host.Application_Services,
 }
 
 build_window :: proc(
@@ -47,7 +48,10 @@ build_window :: proc(
 			}
 			ui.text(&ctx, fmt.tprintf("Main counter: %d", app.count))
 			if ui.button(&ctx, "Open tool window", key=alicorn.key_string("open-tool")) {
-				_ = open_tool_window(app)
+				app.open_failed = !open_tool_window(app)
+			}
+			if app.open_failed {
+				ui.text(&ctx, "The host couldn't open a tool window; one may already be open.")
 			}
 			ui.text(&ctx, "Only one tool window can be open at a time; close it before opening another.")
 		}
