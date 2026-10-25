@@ -259,14 +259,16 @@ style_inspector_semantic_surface :: proc(sb: ^strings.Builder, rt: ^Runtime, nod
 	computed, cached := rt.computed_styles[node.id]
 	if !cached { return }
 	fmt.sbprintf(sb, "  semantic surface: ")
-	style_inspector_surface_role(sb, rt, node.style_environment.theme, style.role)
+	if style.fill_override_set { fmt.sbprintf(sb, "direct fill") }
+	else { style_inspector_surface_role(sb, rt, node.style_environment.theme, style.role) }
 	material, material_found := style_material_resolve(rt, style.material)
 	material_kind := "unavailable"
 	if material_found { material_kind = style_inspector_material_kind_name(material.kind) }
-	fmt.sbprintf(sb, " shape=%s radius=%.2f material=%d(%s) height=%.2f group=%d fill=(%.3f,%.3f,%.3f,%.3f) resolution=retained-cache dependencies=paint,material generations=(paint=%d material=%d)\n",
+	fmt.sbprintf(sb, " shape=%s radius=%.2f material=%d(%s) height=%.2f group=%d fill=(%.3f,%.3f,%.3f,%.3f) stroke=(%.3f,%.3f,%.3f,%.3f;%.2f;%v) resolution=retained-cache dependencies=paint,material generations=(paint=%d material=%d)\n",
 		style_inspector_surface_shape_name(style.shape.kind), style.shape.corner_radius,
 		u32(style.material), material_kind, style.physical_height, u32(style.material_group),
 		resolved.fill.r, resolved.fill.g, resolved.fill.b, resolved.fill.a,
+		resolved.stroke.color.r, resolved.stroke.color.g, resolved.stroke.color.b, resolved.stroke.color.a, resolved.stroke.width, resolved.stroke_placement,
 		computed.generations.paint, computed.generations.material)
 }
 

@@ -15,11 +15,13 @@ processes and persists only a split ratio, logical scroll offset, and record key
 
 | Step | Example | What it teaches | Run |
 |---|---|---|---|
-| 1 | [01 · Hello](01_hello/main.odin) | Native window/event loop, text, a button, app-owned counter state, and opt-in corrective interaction updates | `odin run examples/01_hello` |
-| 2 | [02 · Form](02_form/main.odin) | Allocator-owned controlled text field, checkbox, sliders, Select, and retained notices | `odin run examples/02_form` |
+| 1 | [01 · Hello](01_hello/main.odin) | Typed `ui.run`, scoped layout, text, a button, app-owned counter state, and bounded corrective interaction by default | `odin run examples/01_hello -collection:alicorn=.` |
+| 2 | [02 · Form](02_form/main.odin) | Allocator-owned controlled text field, checkbox, sliders, Select, retained notices, and a convenience panel mixed with direct runtime controls | `odin run examples/02_form -collection:alicorn=.` |
 | 3 | [03 · Async List](03_async_list/main.odin) | Worker completion through `Application_Waker`, a 10,000-item fixed-row virtual list, stable keys, and event-driven idle | `odin run examples/03_async_list` |
 | 4 | [04 · Custom Surface](04_custom_surface/main.odin) | Bounded retained GPU geometry in clipped layout, resize and DPI-aware updates | `odin run examples/04_custom_surface` |
 | 5 | [05 · Inspector](05_inspector/main.odin) | Retained tree, focus, semantic action and causal work inspection | `odin run examples/05_inspector -- --inspector` |
+| 6 | [06 · Secondary Windows](06_secondary_windows/main.odin) | Explicit per-window state, Runtime, lifecycle, focus, and rendering ownership | `odin run examples/06_secondary_windows` |
+| 7 | [07 · Simple Appearance](07_simple_appearance/main.odin) | Direct text color and size, one-node panels, borders, rounded surfaces, and fixed-size boxes | `odin run examples/07_simple_appearance -collection:alicorn=.` |
 
 The native starter and form also have convenience runners:
 
@@ -34,7 +36,8 @@ The native starter and form also have convenience runners:
 ```
 
 The `widget_gallery` runner name is retained for compatibility; it launches
-the numbered form lesson.
+the numbered form lesson. Examples using the `alicorn:ui` collection package
+need `-collection:alicorn=.` when run directly from the repository root.
 
 ## Try each lesson
 
@@ -62,6 +65,10 @@ the numbered form lesson.
    The negative mode is opt-in; ordinary startup has valid identities.
    The inspector and diagnostic name the `first declaration` and
    `duplicate declaration` plus the repeated key and suggested correction.
+6. In `06_secondary_windows`, open and close a child window to inspect its
+   independent lifecycle and runtime state.
+7. In `07_simple_appearance`, change panel fill, border, or swatch colors. Its
+   containers and surfaces are regular retained runtime nodes.
 
 ## Build and validation
 

@@ -22,5 +22,5 @@ cd "$REPO_ROOT"
 mkdir -p "$OUT_DIR"
 ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
-	build examples/01_hello "-out:$OUT_DIR/alicorn_native_hello"
+	build examples/01_hello "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_native_hello"
 exec "$OUT_DIR/alicorn_native_hello" "$@"

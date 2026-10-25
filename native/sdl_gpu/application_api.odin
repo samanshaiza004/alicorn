@@ -220,6 +220,14 @@ Application_Pointer_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: ali
 
 Application_Drag_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Drag_Event)
 
+// Optional interception after host input blocking and before retained scrolling.
+// target is the modal-aware scroll region under the pointer, including nested
+// regions; the callback is never called with target=0. Return true to claim the
+// event and skip both retained scrolling and the on_scroll fallback. Return
+// false to preserve normal routing. Application changes require explicit
+// invalidation; installing this callback does not schedule ticks or polling.
+Application_Scroll_Capture_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Scroll_Event, target: alicorn.Node_ID) -> bool
+
 Application_Scroll_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Scroll_Event)
 
 Application_Tick_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
@@ -347,6 +355,7 @@ Application :: struct {
 	on_key:             Application_Key_Proc,
 	on_pointer:         Application_Pointer_Proc,
 	on_drag:            Application_Drag_Proc,
+	on_scroll_capture:  Application_Scroll_Capture_Proc,
 	on_scroll:          Application_Scroll_Proc,
 	on_tick:            Application_Tick_Proc,
 	on_services:        Application_Services_Proc,

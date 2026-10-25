@@ -36,6 +36,7 @@ native_solid_material_vertex_count :: proc(
 		return count
 	}
 	count := 6 // the filled surface itself
+	if stroke.width > 0 { count += 24 }
 	if material.kind != .Analytic_Relief || physical_height == 0 { return count }
 	if physical_height > 0 && material.outer_shadow_strength > 0 && material.outer_shadow_radius > 0 { count += 12 }
 	if material.bevel_strength > 0 && material.bevel_width > 0 { count += 24 }
@@ -146,6 +147,7 @@ native_solid_append_rounded_material_surface :: proc(
 	physical_height, opacity: f32,
 	shape: alicorn.Surface_Shape,
 	stroke := alicorn.Paint_Stroke{},
+	stroke_placement := alicorn.Paint_Stroke_Placement.Centered,
 ) {
 	if base.w <= 0 || base.h <= 0 { return }
 	radius := clamp(shape.corner_radius, 0, min(base.w, base.h)*0.5)
@@ -183,10 +185,17 @@ native_solid_append_rounded_material_surface :: proc(
 		stroke_color := [4]f32{stroke.color.r, stroke.color.g, stroke.color.b, stroke.color.a*opacity}
 		transparent_stroke := stroke_color
 		transparent_stroke[3] = 0
-		half_width := stroke.width*0.5
-		native_solid_append_rounded_ring(vertices, base, radius, -half_width-NATIVE_ROUNDED_ANTIALIAS_FRINGE, -half_width, transparent_stroke, stroke_color)
-		native_solid_append_rounded_ring(vertices, base, radius, -half_width, half_width, stroke_color, stroke_color)
-		native_solid_append_rounded_ring(vertices, base, radius, half_width, half_width+NATIVE_ROUNDED_ANTIALIAS_FRINGE, stroke_color, transparent_stroke)
+		inside := stroke.width*0.5
+		outside := stroke.width*0.5
+		if stroke_placement == .Inside {
+			inside, outside = stroke.width, 0
+		} else if stroke_placement == .Outside {
+			inside, outside = 0, stroke.width
+		}
+		inside = min(inside, min(base.w, base.h)*0.5)
+		native_solid_append_rounded_ring(vertices, base, radius, -outside-NATIVE_ROUNDED_ANTIALIAS_FRINGE, -outside, transparent_stroke, stroke_color)
+		native_solid_append_rounded_ring(vertices, base, radius, -outside, inside, stroke_color, stroke_color)
+		native_solid_append_rounded_ring(vertices, base, radius, inside, inside+NATIVE_ROUNDED_ANTIALIAS_FRINGE, stroke_color, transparent_stroke)
 	}
 
 }
@@ -232,6 +241,33 @@ native_solid_append_material_edge :: proc(
 	native_solid_append_quad(vertices, x0, y0, x1, y1, color)
 }
 
+native_solid_append_rect_stroke :: proc(
+	vertices: ^[dynamic]Native_Text_Vertex,
+	base: alicorn.Rect,
+	stroke: alicorn.Paint_Stroke,
+	opacity: f32,
+	stroke_placement := alicorn.Paint_Stroke_Placement.Centered,
+) {
+	if stroke.width <= 0 || base.w <= 0 || base.h <= 0 { return }
+	inside := stroke.width*0.5
+	outside := stroke.width*0.5
+	if stroke_placement == .Inside {
+		inside, outside = stroke.width, 0
+	} else if stroke_placement == .Outside {
+		inside, outside = 0, stroke.width
+	}
+	inside = min(inside, min(base.w, base.h)*0.5)
+	color := [4]f32{stroke.color.r, stroke.color.g, stroke.color.b, stroke.color.a*opacity}
+	left := base.x-outside
+	top := base.y-outside
+	right := base.x+base.w+outside
+	bottom := base.y+base.h+outside
+	native_solid_append_material_edge(vertices, left, top, right, base.y+inside, color)
+	native_solid_append_material_edge(vertices, left, base.y+base.h-inside, right, bottom, color)
+	native_solid_append_material_edge(vertices, left, base.y+inside, base.x+inside, base.y+base.h-inside, color)
+	native_solid_append_material_edge(vertices, base.x+base.w-inside, base.y+inside, right, base.y+base.h-inside, color)
+}
+
 native_solid_append_material_surface :: proc(
 	vertices: ^[dynamic]Native_Text_Vertex,
 	base, shadow: alicorn.Rect,
@@ -239,6 +275,8 @@ native_solid_append_material_surface :: proc(
 	material: alicorn.Style_Material,
 	physical_height: f32,
 	opacity: f32,
+	stroke := alicorn.Paint_Stroke{},
+	stroke_placement := alicorn.Paint_Stroke_Placement.Centered,
 ) {
 	if base.w <= 0 || base.h <= 0 { return }
 	if material.kind != .Analytic_Relief || physical_height == 0 {
@@ -246,6 +284,7 @@ native_solid_append_material_surface :: proc(
 		// path: no shadow/bevel geometry and no intermediate material work.
 		native_solid_append_quad(vertices, base.x, base.y, base.x+base.w, base.y+base.h,
 			[4]f32{fill.r, fill.g, fill.b, fill.a*opacity})
+		native_solid_append_rect_stroke(vertices, base, stroke, opacity, stroke_placement)
 		return
 	}
 	height_factor := native_solid_material_height_factor(physical_height)
@@ -297,4 +336,5 @@ native_solid_append_material_surface :: proc(
 		native_solid_append_material_edge(vertices, base.x+bevel_width, base.y+base.h-bevel_width-inner_width, base.x+base.w-bevel_width, base.y+base.h-bevel_width, inner_bottom)
 		native_solid_append_material_edge(vertices, base.x+base.w-bevel_width-inner_width, base.y+bevel_width+inner_width, base.x+base.w-bevel_width, base.y+base.h-bevel_width-inner_width, inner_right)
 	}
+	native_solid_append_rect_stroke(vertices, base, stroke, opacity, stroke_placement)
 }

@@ -1,5 +1,12 @@
 package alicorn
 
+Paint_Stroke_Placement :: enum u8 {
+	Centered,
+	Inside,
+	Outside,
+	Count,
+}
+
 // Paint_Command is the renderer-facing output of every paint producer:
 // retained widgets, runtime overlays, and host chrome. The owner is diagnostic
 // and transient-maintenance metadata; renderers dispatch only on the payload.
@@ -9,6 +16,9 @@ Paint_Command :: struct {
 	clip:        Rect,
 	opacity:     f32,
 	translation: [2]f32,
+	// Kept outside the payload union so this geometry hint occupies existing
+	// alignment padding instead of increasing the retained command size.
+	stroke_placement: Paint_Stroke_Placement,
 	payload:     Paint_Payload,
 }
 
@@ -150,6 +160,7 @@ paint_surface_command :: proc(
 	physical_height: f32 = 0,
 	material_group: Material_Group_ID = MATERIAL_GROUP_NONE,
 	stroke: Paint_Stroke = {},
+	stroke_placement: Paint_Stroke_Placement = .Centered,
 ) -> Paint_Command {
 	return Paint_Command{
 		owner=owner,
@@ -157,6 +168,7 @@ paint_surface_command :: proc(
 		clip=clip,
 		opacity=opacity,
 		translation=translation,
+		stroke_placement=stroke_placement,
 		payload=Surface_Paint{
 			shape=shape,
 			fill=color,

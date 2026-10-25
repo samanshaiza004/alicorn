@@ -51,7 +51,7 @@ try {
     Push-Location $RepoRoot
     try {
         $BuiltExecutable = Join-Path $OutRoot ($App.executableName + '.exe')
-        $BuildArgs = @('build', $AppPackage, "-out:$BuiltExecutable", '-o:speed')
+        $BuildArgs = @('build', $AppPackage, "-collection:alicorn=$RepoRoot", "-out:$BuiltExecutable", '-o:speed')
         if ($SDLLinkage -eq 'Static') {
             $BuildArgs += @($NativeRecipe.odin.compilerArguments)
         } elseif ($AccessKit.LinkerFlags) {

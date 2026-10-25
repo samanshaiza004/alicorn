@@ -369,6 +369,13 @@ semantic_surface_material_inputs_changed :: proc(previous, next: Semantic_Surfac
 semantic_surface_role_changed :: proc(previous, next: Semantic_Surface_Style) -> bool {
 	if previous.defined != next.defined { return true }
 	if !previous.defined { return false }
+	if previous.fill_override_set != next.fill_override_set ||
+	   !color_equal(previous.fill_override, next.fill_override) ||
+	   !color_equal(previous.stroke.color, next.stroke.color) ||
+	   previous.stroke.width != next.stroke.width ||
+	   previous.stroke_placement != next.stroke_placement {
+		return true
+	}
 	switch previous_role in previous.role {
 	case Style_Color_Role:
 		switch next_role in next.role {

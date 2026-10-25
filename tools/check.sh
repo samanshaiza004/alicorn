@@ -21,6 +21,7 @@ if [ "$#" -ne 0 ]; then
     exit 2
 fi
 ODIN=$(alicorn_resolve_odin "$ODIN_ARG")
+ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
 
 cd "$REPO_ROOT"
 mkdir -p "$OUT_DIR"
@@ -33,6 +34,8 @@ git diff --check
 
 "$OUT_DIR/alicorn_tests"
 "$ODIN" test runtime
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	test ui "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_ui_tests"
 "$ODIN" test theme
 "$ODIN" build tools/theme "-out:$OUT_DIR/alicorn_theme"
 "$OUT_DIR/alicorn_theme" check theme/testdata/minimal.json

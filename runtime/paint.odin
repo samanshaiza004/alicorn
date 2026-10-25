@@ -371,7 +371,7 @@ update_paint :: proc(rt: ^Runtime) {
 				// producing accidental rectangles in the compositor.
 				if semantic_surface_style, found := rt.semantic_surfaces[node.id]; found {
 					resolved_surface := style_semantic_surface_resolve_retained(rt, node, semantic_surface_style)
-					if resolved_surface.fill.a > 0 {
+					if resolved_surface.fill.a > 0 || resolved_surface.stroke.width > 0 {
 						append(&node.paint, paint_surface_command(
 							node.id,
 							node.bounds,
@@ -381,6 +381,8 @@ update_paint :: proc(rt: ^Runtime) {
 							material=semantic_surface_style.material,
 							physical_height=semantic_surface_style.physical_height,
 							material_group=semantic_surface_style.material_group,
+							stroke=resolved_surface.stroke,
+							stroke_placement=resolved_surface.stroke_placement,
 						))
 					}
 				} else if node.paint_background {

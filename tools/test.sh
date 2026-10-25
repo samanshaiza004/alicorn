@@ -31,6 +31,8 @@ ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	build native/sdl_gpu_entry "-out:$OUT_DIR/alicorn_sdl_gpu"
 "$ODIN" test runtime
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	test ui "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_ui_tests"
 "$ODIN" test theme
 "$ODIN" build tools/theme "-out:$OUT_DIR/alicorn_theme"
 "$OUT_DIR/alicorn_theme" check theme/testdata/minimal.json
@@ -47,5 +49,7 @@ if "$OUT_DIR/alicorn_theme" check theme/testdata/invalid.json; then
 fi
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	test native/sdl_gpu "-out:$OUT_DIR/alicorn_native_tests"
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	test native/scroll_capture_tests "-out:$OUT_DIR/alicorn_scroll_capture_tests"
 "$OUT_DIR/alicorn_sdl_gpu" --text-input-contract-test
 sh "$SCRIPT_DIR/test_restoration.sh" "$ODIN"

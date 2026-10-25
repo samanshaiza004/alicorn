@@ -3,12 +3,13 @@ package main
 // 02 · Widget Gallery exercises accessible static text, composite tabs,
 // controlled selection and notices, app-owned values, controlled text input,
 // and per-widget style/color overrides.
-// Run with `odin run examples/02_form` and interact with the controls.
+// Run with `odin run examples/02_form -collection:alicorn=.` and interact with the controls.
 
 import "core:fmt"
 import "core:os"
 import alicorn "../../runtime"
 import host "../../native/sdl_gpu"
+import simple_ui "alicorn:ui"
 import sdl3 "vendor:sdl3"
 
 App :: struct {
@@ -223,48 +224,52 @@ build_app :: proc(
 		style=alicorn.layout_style(.Row, grow=1, gap=16, clip=true),
 	)
 	if app.selected_gallery_tab == 3 {
-		alicorn.container_begin(
+		if simple_ui.panel(
 			&ui,
-			.Container,
-			label="select-panel",
-			style=alicorn.layout_style(.Column, grow=1, padding=20, gap=12, clip=true),
-			color=alicorn.Color{0.075, 0.09, 0.125, 1},
-		)
-		alicorn.text(&ui, "Select", style=alicorn.layout_style(height=28), text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_SEMIBOLD})
-		_ = alicorn.semantic_static_text(&ui)
-		alicorn.text(&ui, "Choose one value from a fixed set. The selection remains app-owned.")
-		_ = alicorn.semantic_static_text(&ui)
-		alicorn.text(&ui, "Theme")
-		select_options := GALLERY_SELECT_OPTIONS
-		choice := alicorn.select_control(
-			&ui,
-			alicorn.key_string("gallery-theme-select"),
-			"Theme",
-			select_options[:],
-			app.selected_choice,
-			style=alicorn.layout_style(.Row, width=300, height=36),
-		)
-		if choice.changed {
-			app.selected_choice = choice.selected_key
+			key=alicorn.key_string("select-panel"),
+			width=-1,
+			height=-1,
+			grow=1,
+			padding=20,
+			gap=12,
+			clip=true,
+			fill=alicorn.Color{0.075, 0.09, 0.125, 1},
+		) {
+			alicorn.text(&ui, "Select", style=alicorn.layout_style(height=28), text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_SEMIBOLD})
+			_ = alicorn.semantic_static_text(&ui)
+			alicorn.text(&ui, "Choose one value from a fixed set. The selection remains app-owned.")
+			_ = alicorn.semantic_static_text(&ui)
+			alicorn.text(&ui, "Theme")
+			select_options := GALLERY_SELECT_OPTIONS
+			choice := alicorn.select_control(
+				&ui,
+				alicorn.key_string("gallery-theme-select"),
+				"Theme",
+				select_options[:],
+				app.selected_choice,
+				style=alicorn.layout_style(.Row, width=300, height=36),
+			)
+			if choice.changed {
+				app.selected_choice = choice.selected_key
+			}
+			alicorn.text(&ui, "Filled Reicon icons", style=alicorn.layout_style(height=22))
+			alicorn.container_begin(&ui, .Container, label="gallery-icon-samples", style=alicorn.layout_style(.Row, height=24, gap=8, align=.Center))
+			_ = alicorn.icon(&ui, .Folder_Closed, key=alicorn.key_string("gallery-folder-closed"), size=18)
+			alicorn.text(&ui, "Closed")
+			_ = alicorn.icon(&ui, .Folder_Open, key=alicorn.key_string("gallery-folder-open"), size=18)
+			alicorn.text(&ui, "Open")
+			_ = alicorn.icon(&ui, .Search, key=alicorn.key_string("gallery-search-icon"), size=18)
+			alicorn.text(&ui, "Search")
+			alicorn.container_end(&ui)
+			alicorn.text(&ui, fmt.tprintf("Application value: %s", gallery_select_label(app.selected_choice)))
+			_ = alicorn.semantic_static_text(&ui)
+			alicorn.text(&ui, "Keyboard: Up/Down, Home/End, type to jump, Enter to choose, Escape to close.")
+			_ = alicorn.semantic_static_text(&ui)
+			alicorn.text(&ui, "Open the list, switch focus away with Tab, then return to inspect focus restoration.")
+			_ = alicorn.semantic_static_text(&ui)
+			alicorn.container_begin(&ui, .Container, label="select-panel-spacer", style=alicorn.layout_style(grow=1))
+			alicorn.container_end(&ui)
 		}
-		alicorn.text(&ui, "Filled Reicon icons", style=alicorn.layout_style(height=22))
-		alicorn.container_begin(&ui, .Container, label="gallery-icon-samples", style=alicorn.layout_style(.Row, height=24, gap=8, align=.Center))
-		_ = alicorn.icon(&ui, .Folder_Closed, key=alicorn.key_string("gallery-folder-closed"), size=18)
-		alicorn.text(&ui, "Closed")
-		_ = alicorn.icon(&ui, .Folder_Open, key=alicorn.key_string("gallery-folder-open"), size=18)
-		alicorn.text(&ui, "Open")
-		_ = alicorn.icon(&ui, .Search, key=alicorn.key_string("gallery-search-icon"), size=18)
-		alicorn.text(&ui, "Search")
-		alicorn.container_end(&ui)
-		alicorn.text(&ui, fmt.tprintf("Application value: %s", gallery_select_label(app.selected_choice)))
-		_ = alicorn.semantic_static_text(&ui)
-		alicorn.text(&ui, "Keyboard: Up/Down, Home/End, type to jump, Enter to choose, Escape to close.")
-		_ = alicorn.semantic_static_text(&ui)
-		alicorn.text(&ui, "Open the list, switch focus away with Tab, then return to inspect focus restoration.")
-		_ = alicorn.semantic_static_text(&ui)
-		alicorn.container_begin(&ui, .Container, label="select-panel-spacer", style=alicorn.layout_style(grow=1))
-		alicorn.container_end(&ui)
-		alicorn.container_end(&ui)
 
 		alicorn.container_begin(
 			&ui,
