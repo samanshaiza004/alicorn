@@ -49,6 +49,17 @@ main-axis space. Explicit box width or height overrides its square `size`;
 explicit row or column dimensions and `grow` are passed to the existing layout
 rules. The lower-level `Layout_Style` contract is unchanged.
 
+For an exact layout escape route, import `alicorn:runtime` alongside `ui` and
+use `if ui.layout(ctx, existing_style, label="Inspector") { ... }`. It scopes
+one plain container with the supplied style, including constraints, without
+changing defaults. Rows, columns, and panels also accept diagnostic labels.
+`ui.text` forwards typed `style`, `font`, and `text_style`; a positive `size`
+overrides only the font size. `ui.button` forwards typed styling, state, content
+alignment, and variants; `width=96, height=28` can replace a layout constructor,
+and nonnegative `grow` overrides that style field. Omitted sizing overrides
+leave the supplied style intact. These helpers share the same context and
+one-shot control behavior as direct runtime calls.
+
 `ui.text` currently uses Alicorn's existing `DEFAULT_COLOR` unless a color is
 passed explicitly; it does not yet resolve the active theme's semantic Text
 role. The typed `ui.run` path also does not yet expose initialization, shutdown,

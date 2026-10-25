@@ -63,6 +63,7 @@ scope_end :: proc(
 	_justify: Main_Axis_Distribution,
 	_clip: bool,
 	_loc: odin_runtime.Source_Code_Location,
+	_label: string,
 	opened: bool,
 ) {
 	if opened { alicorn.container_end(ui) }
@@ -84,9 +85,10 @@ row :: proc(
 	justify: Main_Axis_Distribution = .Start,
 	clip: bool = false,
 	loc := #caller_location,
+	label: string = "row",
 ) -> bool {
 	style := alicorn.layout_style(.Row, width=width, height=height, grow=grow, padding=padding, gap=gap, align=align, justify=justify, clip=clip)
-	return alicorn.container_begin(ui, .Container, label="row", key=key, style=style, loc=loc) != 0
+	return alicorn.container_begin(ui, .Container, label=label, key=key, style=style, loc=loc) != 0
 }
 
 @(deferred_in_out=scope_end)
@@ -102,9 +104,35 @@ column :: proc(
 	justify: Main_Axis_Distribution = .Start,
 	clip: bool = false,
 	loc := #caller_location,
+	label: string = "column",
 ) -> bool {
 	style := alicorn.layout_style(.Column, width=width, height=height, grow=grow, padding=padding, gap=gap, align=align, justify=justify, clip=clip)
-	return alicorn.container_begin(ui, .Container, label="column", key=key, style=style, loc=loc) != 0
+	return alicorn.container_begin(ui, .Container, label=label, key=key, style=style, loc=loc) != 0
+}
+
+@(private)
+layout_end :: proc(
+	ui: ^UI,
+	_style: alicorn.Layout_Style,
+	_key: UI_Key,
+	_label: string,
+	_loc: odin_runtime.Source_Code_Location,
+	opened: bool,
+) {
+	if opened { alicorn.container_end(ui) }
+}
+
+// layout scopes an exact runtime style on one plain, non-painting container.
+// Unlike row/column, it supplies no convenience sizing defaults.
+@(deferred_in_out=layout_end)
+layout :: proc(
+	ui: ^UI,
+	style: alicorn.Layout_Style,
+	key: UI_Key = alicorn.UI_Unkeyed{},
+	label: string = "layout",
+	loc := #caller_location,
+) -> bool {
+	return alicorn.container_begin(ui, .Container, label=label, key=key, style=style, loc=loc) != 0
 }
 
 @(private)
@@ -119,6 +147,7 @@ panel_end :: proc(
 	_radius: f32,
 	_stroke: Border,
 	_loc: odin_runtime.Source_Code_Location,
+	_label: string,
 	opened: bool,
 ) {
 	if opened { alicorn.surface_end(ui) }
@@ -143,6 +172,7 @@ panel :: proc(
 	radius: f32 = 0,
 	stroke: Border = {},
 	loc := #caller_location,
+	label: string = "panel",
 ) -> bool {
 	shape := alicorn.Surface_Shape{kind=.Rectangle}
 	if radius != 0 { shape = alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=radius} }
@@ -156,7 +186,7 @@ panel :: proc(
 		fill=fill,
 		stroke=paint_stroke(stroke),
 		stroke_placement=stroke.placement,
-		label="panel",
+		label=label,
 		loc=loc,
 	)
 	return id != 0
@@ -202,10 +232,13 @@ text :: proc(
 	size: f32 = 0,
 	color: Color = DEFAULT_COLOR,
 	loc := #caller_location,
+	style: alicorn.Layout_Style = alicorn.DEFAULT_STYLE,
+	font: alicorn.Font_Role = .UI,
+	text_style: alicorn.Text_Style = alicorn.DEFAULT_TEXT_STYLE,
 ) -> alicorn.Node_ID {
-	effective_text_style := alicorn.DEFAULT_TEXT_STYLE
+	effective_text_style := text_style
 	if size > 0 { effective_text_style.font_size = size }
-	return alicorn.text(ui, value, key, loc=loc, text_style=effective_text_style, color=color)
+	return alicorn.text(ui, value, key, style=style, loc=loc, font=font, text_style=effective_text_style, color=color)
 }
 
 button :: proc(
@@ -213,8 +246,21 @@ button :: proc(
 	label: string,
 	key: UI_Key = alicorn.UI_Unkeyed{},
 	loc := #caller_location,
+	style: alicorn.Layout_Style = alicorn.DEFAULT_STYLE,
+	state: alicorn.Button_State = {},
+	text_style: alicorn.Text_Style = alicorn.DEFAULT_BUTTON_TEXT_STYLE,
+	content_style: alicorn.Button_Content_Style = alicorn.DEFAULT_BUTTON_CONTENT_STYLE,
+	variant: alicorn.Button_Variant = .Default,
+	width: f32 = -1,
+	height: f32 = -1,
+	grow: f32 = -1,
 ) -> bool {
-	return alicorn.button(ui, label, key=key, loc=loc)
+	effective_style := style
+	if width >= 0 { effective_style.width = width }
+	if height >= 0 { effective_style.height = height }
+	if grow >= 0 { effective_style.grow = grow }
+	return alicorn.button(ui, label, key=key, style=effective_style, state=state, loc=loc,
+		text_style=text_style, content_style=content_style, variant=variant)
 }
 
 invalidate :: proc(ui: ^UI, reason := "simple UI explicitly invalidated") {
