@@ -9,7 +9,9 @@ must be flagged in a `### Breaking changes` section per release.
 Source-compatible additions (new procs, new defaulted parameters,
 new optional features) live under `### Added` / `### Changed`.
 
-## Unreleased
+## Unreleased — Alicorn integration patches
+
+Based on upstream v1.5.1 (`348fbe0caa2c691cf0e305258605342f45c547f5`).
 
 ### Added
 
@@ -17,6 +19,141 @@ new optional features) live under `### Added` / `### Changed`.
   variation axis over sorted, non-overlapping UTF-8 ranges. These ranges
   participate in shaping and may affect metrics. Invalid or non-codepoint
   boundaries return `Error.Invalid_Table`.
+- Read-only atlas page/slot views and generation-checked dirty snapshots let
+  retained GPU uploaders acknowledge only the exact atlas writes they submit.
+
+### Fixed
+
+- Hard line-break controls stay in paragraph layout but do not become visible
+  `.notdef` glyphs in fonts that lack control glyphs.
+
+## 1.5.1 — 2026-10-20
+
+### Fixed
+
+- **`NO_LIGATURES` can now be sliced.** It was a constant array, so the
+  documented `features = runa.NO_LIGATURES[:]` didn't compile (a constant has no
+  address). It's now `@(rodata)`.
+
+### Changed
+
+- **`final_hyphen_demerits` defaults to `1e6`** (was 5000). Against runa's
+  demerit scale a loose line's own demerits dwarf 5000, so the old default let a
+  last-full-line hyphen through. It's a strong nudge, not a prohibition — a
+  catastrophically loose alternative can still outweigh it. Also documented the
+  demerit-field convention (0 → default, negative disables).
+- **API.md documents the 1.5.0 line-breaking + features-by-tag API** and drops
+  Knuth–Plass from "Known gaps" (it shipped in 1.5.0).
+
+## 1.5.0 — 2026-10-15
+
+### Added
+
+- **Total-fit line breaking (Knuth–Plass).** `break_lines` chooses every break
+  in a paragraph together to even the lines, over a box/glue/penalty item stream
+  the caller measures (each word shaped once, its advances summed). Handles
+  per-line widths (first-line indent, drop-cap lines, hanging markers), a
+  tolerance and line/flagged/fitness demerits, caps on consecutive and last-line
+  hyphens, a ragged-right mode, and soft-hyphen breaks drawn only where broken.
+  Falls back to a greedy fit (`break_greedy`) when no total-fit solution exists.
+  A chapter (~500 paragraphs) reflows in single-digit ms. `break_text` is the
+  single-font convenience (break opportunities from runa's UAX #14 engine, so it
+  wraps every script incl. CJK/Thai); multi-style callers call `break_lines`.
+- **Turn OpenType features on (and off) by tag.** `Paragraph_Opts.features` (and
+  a `features` argument on `shape_text` / `shape_text_cached`) take a HarfBuzz-
+  style `[]Feature_Setting` — a tag plus an on/off value — so a caller can enable
+  `smcp`, `c2sc`, `onum`, `dlig`, `case`, a stylistic set, or turn `kern` off for
+  letter-spaced runs. Build one with `feature("smcp")` / `feature("kern", false)`;
+  `NO_LIGATURES` is the ready-made ligatures-off set. Known tags apply in canonical
+  order, any other after. An unknown tag is a silent no-op, as in HarfBuzz.
+- **`font_has_feature(font, "smcp", …)`** reports whether a font actually carries a
+  GSUB feature, so a caller can fake small capitals where it doesn't.
+
+### Fixed
+
+- **Extension lookups (GSUB type 7, GPOS type 9) now execute.** A font wraps its
+  lookups this way once the layout tables outgrow 16-bit offsets, which is common
+  — so most real kerning and many features were silently skipped. Inter keeps its
+  main kerning behind an extension lookup, for one: `AVA`, `To`, `Yo` now kern.
+  Each extension subtable is resolved to its real type and dispatched through the
+  normal path.
+
+### Deprecated
+
+- **`disable_features`** (the `bit_set[Feature]`) in favour of `features`, which
+  reaches any tag, not just the three ligature ones. It still works and is folded
+  into the same resolution (a `features` entry for the same tag wins); prefer
+  `features` with `NO_LIGATURES`.
+
+## 1.4.0 — 2026-10-12
+
+### Added
+
+- **CID-keyed CFF1 fonts now render.** A CID font (Top DICT with ROS) takes each
+  glyph's local subrs from an FDArray chosen per-glyph by FDSelect, not from one
+  top-level Private DICT — so every glyph that called a local subr previously
+  came out blank. This is most of Noto Sans CJK / Source Han: CJK rendered with
+  holes. The FDArray/FDSelect path CFF2 already had is now shared with CFF1.
+- **`font_load_face(data, index)`** loads one face from a TTC (TrueType
+  Collection); `font_num_faces` reports the count. `font_load` still rejects a
+  `.ttc`. CJK commonly ships as collections, which this unblocks.
+
+## 1.3.5 — 2026-09-26
+
+### Fixed
+
+- **A default-ignorable no longer becomes a `.notdef` box on a font with no
+  space glyph.** Ignorables (variation selectors, ZWJ, soft hyphen, …) were
+  blanked by substituting the font's space glyph at zero advance — but an emoji
+  font typically ships no space glyph, so `❤️` (U+2764 U+FE0F) drew the emoji
+  followed by a box (the VS16 routes to the emoji fallback). When the run's font
+  has no space glyph the ignorable is now dropped outright (HarfBuzz's
+  `REMOVE_DEFAULT_IGNORABLES`); fonts that have one are unchanged. Regressions:
+  `test_default_ignorable_dropped_when_no_space_glyph`,
+  `test_emoji_variation_selector_no_notdef_box`.
+
+## 1.3.4 — 2026-09-23
+
+### Fixed
+
+- **A ligature no longer shifts every later glyph's cluster by one.** After a
+  ligature substitution the parallel cluster / ignorable arrays were re-synced
+  by truncating from the right, but the deletion happens in the *middle* of the
+  buffer — so every glyph past a ligature named the previous codepoint. Line
+  breaking landed mid-word, and control-byte detection mislabelled (a `\n` drawn
+  as a box, the next character dropped). GSUB now records each deletion and the
+  shaper replays it, keeping clusters exact — nested (type-6 → type-4) routes
+  included. Also realigns the `ignorable` array (default-ignorable zero-advance).
+  Regression: `test_ligature_keeps_later_clusters`.
+
+## 1.3.3 — 2026-09-22
+
+### Fixed
+
+- **Varied glyphs no longer keep the default instance's bounding box.**
+  `glyf_outline_var` copied the glyph header's box (the default instance) and
+  never recomputed it after applying gvar deltas — so a heavier variable-weight
+  glyph (Inter grows rightward with weight) was clipped on the right at raster
+  time, and fed stale x-height / cap-height to the hinter. The box is now
+  recomputed from the varied points. Regression:
+  `test_varied_glyph_bbox_tracks_points`.
+
+## 1.3.2 — 2026-09-18
+
+### Fixed
+
+- **Variable CFF2 fonts no longer drop whole glyphs.** The charstring operand
+  stack was 48 (Type 2's limit); CFF2 allows 513, because one `blend` carries a
+  glyph's coordinates *and* their per-region deltas at once, so a font with a
+  couple of regions exceeds 48 on ordinary letters. Past 48 the stack silently
+  dropped operands and the glyph came back `.Invalid_Table` — missing, no error
+  (Cantarell's `i j o O Q 0 6 9`; ~20 glyphs in Source Code VF). The stack is now
+  513 and an overflow refuses the glyph rather than drawing it short. Resolves
+  the CFF2 gap noted under 1.2.4. Regression:
+  `test_cff2_no_missing_glyphs_from_operand_stack`.
+- **CFF flex operators are drawn.** `flex` / `hflex` / `hflex1` / `flex1`
+  (two-byte `12 34`–`37`) were skipped, silently dropping the shallow stem
+  curves; they now emit their cubics.
 
 ## 1.3.1 — 2026-09-13
 

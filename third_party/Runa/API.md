@@ -1,9 +1,10 @@
-# runa API reference (v1.3.1)
+# runa API reference (v1.5.1)
 
 Pure-Odin text engine — parse, shape, line-break, raster, atlas.
-Public API lives in three layers: the **facade** in `runa.odin`,
-the **packages** (`parse`, `shape`, `itemize`, `bidi`, `linebreak`,
-`raster`), and the **examples**. Most callers only need the facade.
+Public API lives in the **facade** in `runa.odin` and the packages
+(`parse`, `shape`, `itemize`, `bidi`, `linebreak`, `raster`). Most callers
+only need the facade. The Alicorn vendor copy omits upstream examples, tests,
+and tools; see the [upstream v1.5.1 tree](https://github.com/BuLEEto/Runa/tree/348fbe0caa2c691cf0e305258605342f45c547f5).
 
 ## Stability
 
@@ -55,17 +56,28 @@ automatically inside `raster_glyph`.
 ### Layout
 
 ```odin
-// Discretionary GSUB features a caller may switch off per call. Mandatory
-// features (ccmp, locl, rlig) are always applied and not representable here.
+// Per-call OpenType feature overrides, HarfBuzz-style: a tag + an on/off value.
+Feature_Setting :: struct { tag: parse.Tag, value: u32 }   // value 0 = off, else on
+feature :: proc(name: string, on := true) -> Feature_Setting      // feature("smcp")
+@(rodata) NO_LIGATURES := [3]Feature_Setting{ … }   // ligatures-off set; pass NO_LIGATURES[:]
+
+// The deprecated `disable_features` names only the three ligature features.
 Feature :: enum u8 { Ligatures, Contextual_Ligatures, Contextual_Alternates }
 
+// Alicorn integration extension: selects a face and optional variation over a
+// half-open, codepoint-aligned UTF-8 byte range.
 Font_Style_Span :: struct {
-    start, end: int,             // half-open UTF-8 byte range, codepoint aligned
-    font: ^Font,                  // nil keeps the normal font fallback choice
+    start, end: int,
+    font: ^Font,
     variation_tag: Axis_Tag,
     variation_value: f32,
     variation_set: bool,
 }
+
+// Does the font actually carry a GSUB feature (e.g. "smcp"), so a caller can
+// fall back — faking small caps from scaled capitals where it doesn't.
+font_has_feature :: proc(font: ^Font, name: string,
+                         script_tag := parse.LATN_SCRIPT, language_tag := parse.DFLT_LANG) -> bool
 
 Paragraph_Opts :: struct {
     fonts:     Font_Stack,
@@ -74,9 +86,10 @@ Paragraph_Opts :: struct {
     max_width: f32,
     align:     Align,
     language:  parse.Tag,
-    disable_features: bit_set[Feature],   // {} = all applied; feeds layout AND
-                                          // measurement so widths stay consistent
-    font_style_spans: []Font_Style_Span,  // sorted, non-overlapping; may change metrics
+    features:  []Feature_Setting,         // e.g. {feature("smcp"), feature("onum")};
+                                          // feeds layout AND measurement
+    disable_features: bit_set[Feature],   // DEPRECATED — prefer `features`/NO_LIGATURES
+    font_style_spans: []Font_Style_Span,  // Alicorn integration extension
 }
 
 layout_paragraph :: proc(text: string, opts: Paragraph_Opts,
@@ -88,7 +101,8 @@ line_destroy     :: proc(l: ^Line, allocator := context.allocator)
 
 `layout_paragraph` runs the full pipeline:
 1. itemize into (font, script, style) runs (UAX #24 script segmentation);
-   span byte ranges must begin/end on UTF-8 codepoint boundaries
+   `font_style_spans` must be sorted, non-overlapping, and codepoint-aligned
+   (Alicorn integration extension)
 2. UAX #9 bidi resolve when the text contains any RTL codepoints
 3. shape each run via `shape_text` (GSUB + GPOS, with the Indic /
    Arabic / SEA shaper paths dispatched by script tag)
@@ -100,6 +114,58 @@ line_destroy     :: proc(l: ^Line, allocator := context.allocator)
 `cache: ^Cache` is optional — pass one to amortize shape work
 across calls; zero-allocation cache hits are verified by the
 test suite.
+
+### Line breaking (Knuth–Plass)
+
+Total-fit line breaking — every break in a paragraph chosen together
+to even the lines, in the Knuth–Plass style. The core runs over an
+abstract box/glue/penalty item stream the caller measures (each word
+shaped once, its advances summed into a box width), so it is
+font-agnostic and a multi-style caller (per-run styles, drop caps)
+builds the items itself.
+
+```odin
+Break_Item   :: linebreak.Item   // Box | Glue | Penalty
+Break_Params :: linebreak.Break_Params
+Break_Point  :: linebreak.Break  // { item: int, ratio: f32, flagged: bool }
+
+break_box     :: proc(width: f32) -> Break_Item
+break_glue    :: proc(width, stretch, shrink: f32) -> Break_Item
+break_penalty :: proc(p: f32, width: f32 = 0, flagged := false) -> Break_Item
+
+// line_widths is one width per line; the last repeats (first-line indent,
+// drop-cap lines, hanging markers). Returns one Break per line.
+break_lines  :: proc(items: []Break_Item, line_widths: []f32, params: Break_Params,
+                     allocator := context.allocator) -> (breaks: []Break_Point, ok: bool)
+break_greedy :: proc(items: []Break_Item, line_widths: []f32,
+                     allocator := context.allocator) -> []Break_Point
+
+// Single-font convenience: shapes `text`, builds the items (words→boxes,
+// spaces→glue, soft hyphens→flagged penalties), breaks to `line_widths`.
+// Break opportunities come from runa's UAX #14 engine, so it wraps every
+// script (CJK/Thai included), not just space-separated text.
+Text_Line  :: struct { start, end: int, ratio: f32, hyphenated: bool }
+break_text :: proc(font: ^Font, text: string, size: f32, line_widths: []f32,
+                   params: Break_Params = {}, hyphen_penalty: f32 = 50,
+                   cache: ^Cache = nil, allocator := context.allocator) -> ([]Text_Line, bool)
+```
+
+`Break_Params` tunes the optimisation: `tolerance`, `line_penalty`,
+`flagged_demerits` (two hyphenated lines in a row), `fitness_demerits`
+(adjacent lines of very different tightness), `final_hyphen_demerits`
+(hyphenating the last full line), `max_consecutive_hyphens` (a hard
+cap), and `ragged` (even the lines by cost without spreading them).
+The four demerit fields take `0` to mean "use the default" and a
+negative to disable; they are strong **nudges, not absolute rules** —
+e.g. `final_hyphen_demerits` defaults to `1e6`, enough to avoid a
+last-line hyphen in normal text but still yielding when the only
+alternative is a catastrophically loose line. A soft hyphen is a
+flagged penalty whose width is the font's hyphen, drawn only where a
+line actually breaks there. Hyphenation itself stays with the caller
+(feed U+00AD soft hyphens — runa optimises over them, it doesn't ship
+Liang patterns). When no total-fit solution exists the breaker widens
+tolerance and finally falls back to `break_greedy`, so a result always
+comes back. A chapter (~500 paragraphs) reflows in single-digit ms.
 
 ### Cache
 
@@ -261,5 +327,7 @@ BaseGlyphList.
   on the output glyph.
 - **TrueType hinting** — modern displays don't need it; only
   added if real demand emerges.
-- **Hyphenation / Knuth–Plass justification** — post-v1.0
-  separate release.
+- **Hyphenation dictionaries (Liang)** — the caller supplies soft
+  hyphens (U+00AD); runa's Knuth–Plass breaker optimises over them
+  but doesn't ship language patterns. (Total-fit breaking itself
+  landed in 1.5.0 — see **Line breaking** above.)

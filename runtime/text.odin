@@ -839,15 +839,16 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 	font_stack_storage := [2]^runa.Font{font, fallback_font}
 	stack := runa.Font_Stack(font_stack_storage[:1])
 	if fallback_loaded { stack = runa.Font_Stack(font_stack_storage[:2]) }
-	disable_features: bit_set[runa.Feature] = {}
+	features: []runa.Feature_Setting
 	if editable {
-		// Runa documents a known cluster bookkeeping defect after GSUB
-		// ligation. Editable text keeps mandatory shaping but disables the
-		// discretionary features that commonly collapse Latin source spans.
-		disable_features = {.Ligatures, .Contextual_Ligatures, .Contextual_Alternates}
+		// Follow the code-editor convention: keep discretionary ligatures off
+		// while editing so character boundaries stay visually explicit. This is
+		// a presentation choice; current Runa versions preserve clusters after
+		// ligature substitution for non-editable text.
+		features = runa.NO_LIGATURES[:]
 	}
 	wrap_width := max_width if overflow == .Wrap else 0
-	opts := runa.Paragraph_Opts{fonts=stack, size=size, direction=.Auto, align=.Start, max_width=wrap_width, disable_features=disable_features}
+	opts := runa.Paragraph_Opts{fonts=stack, size=size, direction=.Auto, align=.Start, max_width=wrap_width, features=features}
 	normalized_value, source_spans := text_normalize_controls(value, scratch_allocator)
 	defer { delete(source_spans) }
 	resolved_style_spans := text_style_spans_for_run(
