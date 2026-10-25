@@ -12,8 +12,7 @@ a Scratchpad benchmark, a resource soak, or a general latency guarantee.
 ## Build and run
 
 ```sh
-odin build examples/01_hello -collection:alicorn=. -o:speed -out:out/alicorn_native_hello_perf
-./out/alicorn_native_hello_perf --idle-validation-seconds=25
+./tools/run_example.sh --speed 01_hello --idle-validation-seconds=25
 ```
 
 The 25-second limit is the existing host validation deadline and exits through
@@ -34,7 +33,7 @@ the idle result. It remains in the raw log only for traceability.
 A second run requested existing diagnostics no earlier than 20 host-loop seconds:
 
 ```sh
-./out/alicorn_native_hello_perf --idle-validation-seconds=25 \
+./tools/run_example.sh --speed 01_hello --idle-validation-seconds=25 \
     --capture-after=20 --capture-dir=out/native-hello-idle-perf
 ```
 
@@ -52,7 +51,7 @@ The final 25-second run was made with the window left untouched and without
 diagnostic capture:
 
 ```sh
-./out/alicorn_native_hello_perf --idle-validation-seconds=25
+./tools/run_example.sh --speed 01_hello --idle-validation-seconds=25
 ```
 
 `ps -p <pid> -o rss=,time=` sampled resident size and aggregate process CPU

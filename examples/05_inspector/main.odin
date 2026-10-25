@@ -1,7 +1,7 @@
 package main
 
 // 05 · Inspector teaches retained identity, focus, semantic actions, and
-// causality. Run with `odin run examples/05_inspector -collection:alicorn=. -- --inspector`, then
+// causality. Run with `tools/run_example.sh 05_inspector --inspector`, then
 // press F9 to open/close the built-in inspector. For the intentional identity
 // diagnostic, also pass `--identity-error`; normal startup never triggers it.
 

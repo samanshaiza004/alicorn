@@ -35,7 +35,8 @@ mkdir -p "$OUT_DIR/fixtures"
 for fixture in tests/fixtures/* tools/runa_text; do
 	[ -f "$fixture/main.odin" ] || continue
 	name=${fixture##*/}
-	"$ODIN" build "$fixture" "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/fixtures/$name"
+	alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+		build "$fixture" "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/fixtures/$name"
 done
 
 "$OUT_DIR/alicorn_tests"

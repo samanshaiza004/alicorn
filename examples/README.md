@@ -8,15 +8,33 @@ simple and advanced paths share the same UI context and retained Runtime.
 Install Odin and the native prerequisites from
 [Getting Started](../docs/getting-started.md) first.
 
-| Step | Example | What it teaches | Run |
-|---|---|---|---|
-| 1 | [Hello](01_hello/main.odin) | Typed `ui.run`, app-owned state, text, and a button | `odin run examples/01_hello -collection:alicorn=.` |
-| 2 | [Form](02_form/main.odin) | Scoped panels and rows, controlled text, checkbox and slider values | `odin run examples/02_form -collection:alicorn=.` |
-| 3 | [Async List](03_async_list/main.odin) | Worker completion, stable keyed rows, fixed-height virtualization, and true idle | `odin run examples/03_async_list -collection:alicorn=.` |
-| 4 | [Custom Surface](04_custom_surface/main.odin) | Retained GPU geometry inside a clipped UI panel; resize and DPI-aware updates | `odin run examples/04_custom_surface -collection:alicorn=.` |
-| 5 | [Inspector](05_inspector/main.odin) | Retained tree, focus, semantic actions, and invalidation causes | `odin run examples/05_inspector -collection:alicorn=. -- --inspector` |
-| 6 | [Secondary Windows](06_secondary_windows/main.odin) | Per-window Runtime ownership, lifecycle, focus, and rendering | `odin run examples/06_secondary_windows -collection:alicorn=.` |
-| 7 | [Appearance](07_simple_appearance/main.odin) | Direct colors, panels, borders, rounded surfaces, and fixed-size boxes | `odin run examples/07_simple_appearance -collection:alicorn=.` |
+| Step | Example | What it teaches |
+|---|---|---|
+| 1 | [Hello](01_hello/main.odin) | Typed `ui.run`, app-owned state, text, and a button |
+| 2 | [Form](02_form/main.odin) | Scoped panels and rows, controlled text, checkbox and slider values |
+| 3 | [Async List](03_async_list/main.odin) | Worker completion, stable keyed rows, fixed-height virtualization, and true idle |
+| 4 | [Custom Surface](04_custom_surface/main.odin) | Retained GPU geometry inside a clipped UI panel; resize and DPI-aware updates |
+| 5 | [Inspector](05_inspector/main.odin) | Retained tree, focus, semantic actions, and invalidation causes |
+| 6 | [Secondary Windows](06_secondary_windows/main.odin) | Opening and closing a tool window with independent application state |
+| 7 | [Appearance](07_simple_appearance/main.odin) | Direct colors, panels, borders, rounded surfaces, and fixed-size boxes |
+
+Run a lesson from the repository root. The runner resolves Odin and native
+linker dependencies, builds the selected program, and launches it:
+
+```sh
+./tools/run_example.sh 01_hello
+./tools/run_example.sh 05_inspector --inspector
+```
+
+```powershell
+.\tools\run_example.ps1 -Example 01_hello
+.\tools\run_example.ps1 -Example 05_inspector -AppArgs @('--inspector')
+```
+
+Use `--odin PATH` on the shell runner or `-Odin PATH` on PowerShell to select
+an Odin executable explicitly. Add `--speed` or `-Speed` for an optimized
+build. Program arguments follow the example name on the shell runner and use
+`-AppArgs` on PowerShell.
 
 ## Try each lesson
 
@@ -25,7 +43,8 @@ Install Odin and the native prerequisites from
    compare the application-owned values shown at the bottom.
 3. In `03_async_list`, wait for the worker result, scroll, and select rows. The
    list describes only visible records; after its completion wake, the host
-   returns to event wait. Add `-- --smoke` to run the bounded idle check.
+   returns to event wait. Pass `--smoke` to the runner to run the bounded idle
+   check (`./tools/run_example.sh 03_async_list --smoke`).
 4. In `04_custom_surface`, change the waveform function or segment count. The
    application description stays idle while scheduled callbacks update the
    retained surface geometry.
@@ -34,12 +53,12 @@ Install Odin and the native prerequisites from
    **Escape** closes the inspector. To keep it open while triggering the
    intentional duplicate-key diagnostic, run:
 
-   ```text
-   odin run examples/05_inspector -collection:alicorn=. -- --inspector-open --identity-error
+   ```sh
+   ./tools/run_example.sh 05_inspector --inspector-open --identity-error
    ```
 
-6. In `06_secondary_windows`, open and close a child window to inspect its
-   independent lifecycle and Runtime state.
+6. In `06_secondary_windows`, open and close a child window, then compare its
+   counter and lifecycle with the main window.
 7. In `07_simple_appearance`, change panel fill, border, or swatch colors.
 
 ## Build and validation
@@ -50,7 +69,7 @@ foundation CI jobs run this check. `tools/check.ps1` and `tools/check.sh` also
 compile internal validation fixtures, which live under `tests/fixtures` rather
 than in the beginner-facing example list.
 
-The starter and form also have convenience runners:
+The starter and form also have older dedicated runners:
 
 ```powershell
 .\tools\native_hello.ps1
@@ -63,9 +82,9 @@ The starter and form also have convenience runners:
 ```
 
 The `widget_gallery` runner name is retained for compatibility; it launches
-the focused form lesson. The UI examples use the `alicorn:ui` collection, so
-direct `odin run` commands need `-collection:alicorn=.` from the repository
-root.
+the focused form lesson. `tools/run_example` is the recommended path for any
+numbered lesson because it supplies the `alicorn:ui` collection and platform
+linker settings automatically.
 
 For application-owned session files, see the headless
 [durable restoration fixture](../tests/fixtures/durable_restoration/main.odin)
