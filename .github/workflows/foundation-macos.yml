@@ -36,6 +36,12 @@ jobs:
         shell: sh
         run: ./tools/test.sh
 
+      - name: Smoke-test example runners
+        shell: sh
+        run: |
+          ./tools/run_example.sh 01_hello --idle-validation-seconds=2
+          ./tools/run_example.sh 03_async_list --smoke
+
       - name: Run secondary-window waker teardown under ThreadSanitizer
         shell: bash
         run: |

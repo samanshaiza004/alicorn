@@ -64,12 +64,12 @@ native platform-validation requirement.
 
 ## Windows acceptance fixture
 
-`examples/06_secondary_windows` is a small application that uses only the
-public `Application` and `Application_Window_Service` contracts. Its primary
-window opens one integrated-title-bar tool window. Each window owns a separate
-text field, scheduler, worker, and animated GPU surface; a small shared model
-reports lifecycle, text, composition, and menu events. The tool menu exercises
-native menu dispatch, title updates, topmost changes, and close requests.
+The [numbered secondary-window lesson](../examples/06_secondary_windows/main.odin)
+demonstrates opening and closing a small tool window with independent state.
+The larger
+[acceptance fixture](../tests/fixtures/secondary_windows/main.odin) exercises
+integrated title bars, text input, workers, animation, native menus, and
+shutdown under load.
 
 Build and launch the interactive fixture from the repository root:
 
@@ -107,7 +107,7 @@ child command at the exact shutdown boundary.
 | Check | Result | Notes |
 | --- | --- | --- |
 | Headless runtime and native SDL GPU tests | PASS | 234 runtime, 35 theme, 104 native tests; text-input host contract passed. |
-| Every example builds | PASS | All 14 examples compiled. |
+| Every example builds | PASS | At the captured revision, all 14 examples compiled. |
 | Caption DPI capture matrix | PASS | 144 D3D12 captures at 96, 120, 144, and 192 DPI. |
 | Icon and image validation | PASS | D3D12 pixel, blending, atlas, and scale checks passed. |
 | GPU geometry unit validation | PASS | `--surface-geometry-test`. |

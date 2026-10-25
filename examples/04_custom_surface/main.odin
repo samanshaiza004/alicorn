@@ -2,14 +2,15 @@ package main
 
 // 04 · Custom Surface teaches bounded retained GPU geometry inside ordinary
 // clipped layout, including resize/DPI updates. Run with
-// `odin run examples/04_custom_surface`; change the waveform geometry.
+// `tools/run_example.sh 04_custom_surface`; change the waveform geometry.
 
 // Scheduled main-thread callbacks update only retained GPU geometry; they do
 // not invalidate or rebuild the ordinary UI description.
 import "core:math"
 import "core:os"
-import alicorn "../../runtime"
+import alicorn "alicorn:runtime"
 import host "../../native/sdl_gpu"
+import ui "alicorn:ui"
 
 SURFACE_PERIOD :: 33 * 1_000_000
 WAVE_SEGMENTS  :: 64
@@ -29,35 +30,25 @@ build_app :: proc(
 	_ = logical_width
 	_ = logical_height
 	app := cast(^App)state
-	ui, should_build := alicorn.begin_frame(rt)
+	ctx, should_build := alicorn.begin_frame(rt)
 	if !should_build { return 0 }
 
-	root := alicorn.container_begin(
-		&ui,
-		.Root,
-		label="custom-surface-root",
-		style=alicorn.layout_style(.Column, grow=1, padding=24, gap=12, clip=true),
-		color=alicorn.Color{0.035, 0.045, 0.065, 1},
-	)
-	alicorn.text(&ui, "Retained GPU surface", style=alicorn.layout_style(height=34), text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_BOLD})
-	alicorn.text(&ui, "A scheduled callback updates geometry at 30 Hz. The ordinary description, layout, and paint remain idle.", style=alicorn.layout_style(height=48))
-	alicorn.container_begin(
-		&ui,
-		.Container,
-		label="surface-panel",
-		style=alicorn.layout_style(grow=1, padding=12, clip=true),
-		color=alicorn.Color{0.075, 0.095, 0.135, 1},
-	)
-	app.surface = alicorn.gpu_geometry_surface(
-		&ui,
-		"animated-waveform",
-		alicorn.layout_style(grow=1, width=-1, height=-1),
-		dpi_scale,
-	)
-	alicorn.container_end(&ui)
-	alicorn.text(&ui, "The description remains static while the retained GPU payload revision advances.", style=alicorn.layout_style(height=26))
-	alicorn.container_end(&ui)
-	alicorn.end_frame(&ui)
+	root := alicorn.container_begin(&ctx, .Root, label="custom-surface-root", style=alicorn.layout_style(grow=1))
+	if ui.column(&ctx, grow=1, padding=24, gap=12, clip=true, label="custom-surface-content") {
+		ui.text(&ctx, "Retained GPU surface", size=24)
+		ui.text(&ctx, "A scheduled callback updates geometry at 30 Hz. The ordinary description, layout, and paint remain idle.")
+		if ui.panel(&ctx, grow=1, padding=12, clip=true, fill=ui.rgb(0x131822), label="surface-panel") {
+			app.surface = alicorn.gpu_geometry_surface(
+				&ctx,
+				"animated-waveform",
+				alicorn.layout_style(grow=1, width=-1, height=-1),
+				dpi_scale,
+			)
+		}
+		ui.text(&ctx, "The description stays static while the retained GPU payload revision advances.")
+	}
+	alicorn.container_end(&ctx)
+	alicorn.end_frame(&ctx)
 	return root
 }
 

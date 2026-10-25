@@ -90,11 +90,10 @@ describes text and a button; when the button activates, the app updates that
 struct. `ui.run` supplies the routine single-window host and frame lifecycle.
 That is enough to start building your own UI.
 
-## Explore the widget gallery
+## Explore the form example
 
-The gallery is a runnable reference for Alicorn's checkbox and slider controls.
-It includes disabled states, stepped and continuous input, keyboard operation,
-and a negative slider range:
+The form combines the `alicorn:ui` layout helpers with Alicorn's controlled
+text field, checkbox, slider, and icon controls:
 
 ```powershell
 .\tools\widget_gallery.ps1

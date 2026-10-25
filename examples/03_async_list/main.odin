@@ -1,17 +1,17 @@
 package main
 
-// 03 · Async List teaches worker-to-UI notification and fixed-row
-// virtualization. Run with `odin run examples/03_async_list`; the worker
-// builds 10,000 records, then Alicorn sleeps until input. Change the row or
-// dataset generation below.
+// 03 · Async List adds worker completion, retained scrolling, and fixed-row
+// virtualization. The worker builds 10,000 records; after one completion wake,
+// the host sleeps until input.
 
 import "core:fmt"
 import "core:os"
 import "core:sync"
 import "core:thread"
 import "core:time"
-import alicorn "../../runtime"
+import alicorn "alicorn:runtime"
 import host "../../native/sdl_gpu"
+import ui "alicorn:ui"
 
 ASYNC_LIST_ITEM_COUNT :: 10_000
 ASYNC_LIST_ROW_HEIGHT :: 30
@@ -38,14 +38,10 @@ App :: struct {
 
 load_items :: proc(data: rawptr) {
 	app := cast(^App)data
-	// A short deterministic delay makes the asynchronous loading state visible
-	// without introducing any network, timer loop, or external dependency.
+	// A short delay makes the loading state visible without a polling loop.
 	time.sleep(180 * time.Millisecond)
 	for index in 0..<ASYNC_LIST_ITEM_COUNT {
-		app.items[index] = Item{
-			id=u64(index+1),
-			score=(index*37+11)%1000,
-		}
+		app.items[index] = Item{id=u64(index+1), score=(index*37+11)%1000}
 	}
 	sync.mutex_lock(&app.completion_mutex)
 	app.worker_complete = true
@@ -63,7 +59,7 @@ build_app :: proc(
 	_ = logical_height
 	_ = dpi_scale
 	app := cast(^App)state
-	ui, should_build := alicorn.begin_frame(rt)
+	ctx, should_build := alicorn.begin_frame(rt)
 	if !should_build { return 0 }
 	app.build_calls += 1
 
@@ -71,56 +67,49 @@ build_app :: proc(
 		alicorn.Action_Descriptor{id=ASYNC_LIST_ACTIVATE, name="async-list.select", label="Select record"},
 		alicorn.Action_State{enabled=app.loaded},
 	)
-	root := alicorn.container_begin(
-		&ui,
-		.Root,
-		label="async-list-root",
-		style=alicorn.layout_style(.Column, grow=1, padding=20, gap=10, clip=true),
-		color=alicorn.Color{0.035, 0.045, 0.065, 1},
-	)
-	alicorn.text(&ui, "03 · Async virtual list", style=alicorn.layout_style(height=30), text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_BOLD})
-	if !app.loaded {
-		message := "Loading 10,000 records on a worker…"
-		if app.load_failed { message = "Worker could not be started. Close and rerun the example." }
-		alicorn.text(&ui, message)
-		alicorn.container_end(&ui)
-		alicorn.end_frame(&ui)
-		return root
-	}
-	status := fmt.tprintf("Loaded %d records · selected #%d · idle until input", len(app.items), app.selected_id)
-	alicorn.text(&ui, status, style=alicorn.layout_style(height=24))
-	list := alicorn.virtual_list_begin(
-		&ui,
-		len(app.items),
-		ASYNC_LIST_ROW_HEIGHT,
-		key=alicorn.key_string("records"),
-		style=alicorn.layout_style(grow=1, clip=true),
-		label="10,000 stable records",
-	)
-	for position := list.first; position < list.last; position += 1 {
-		item := app.items[position]
-		if alicorn.component_begin(&ui, alicorn.key_u64(item.id)) {
-			alicorn.container_begin(&ui, .Container, label="record-row", style=alicorn.layout_style(.Row, height=ASYNC_LIST_ROW_HEIGHT, gap=10, align=.Center))
-			alicorn.text(&ui, fmt.tprintf("Record %05d · score %03d", item.id, item.score), style=alicorn.layout_style(.Row, grow=1))
-			if alicorn.button(
-				&ui,
-				"Select",
-				key=alicorn.key_string("select"),
-				style=alicorn.layout_style(.Row, width=84, height=26),
-				state=alicorn.Button_State{selected=item.id == app.selected_id},
-			) {
-				app.selected_id = item.id
-				alicorn.trace_action(rt, ASYNC_LIST_ACTIVATE, "Select async-list record")
-				alicorn.trace_mutation(rt, "selected async-list record")
-				alicorn.invalidate_root(rt, "async-list selection changed")
+	root := alicorn.container_begin(&ctx, .Root, label="async-list-root", style=alicorn.layout_style(grow=1))
+	if ui.column(&ctx, grow=1, padding=20, gap=10, clip=true, label="async-list-content") {
+		ui.text(&ctx, "03 · Async virtual list", size=24)
+		if !app.loaded {
+			message := "Loading 10,000 records on a worker…"
+			if app.load_failed { message = "Worker could not be started. Close and rerun the example." }
+			ui.text(&ctx, message)
+		} else {
+			ui.text(
+				&ctx,
+				fmt.tprintf("Loaded %d records · selected #%d · idle until input", len(app.items), app.selected_id),
+				style=alicorn.layout_style(height=24),
+			)
+			list := alicorn.virtual_list_begin(
+				&ctx,
+				len(app.items),
+				ASYNC_LIST_ROW_HEIGHT,
+				key=alicorn.key_string("records"),
+				style=alicorn.layout_style(grow=1, clip=true),
+				label="10,000 stable records",
+			)
+			for position := list.first; position < list.last; position += 1 {
+				item := app.items[position]
+				if ui.row(&ctx, key=alicorn.key_u64(item.id), height=ASYNC_LIST_ROW_HEIGHT, gap=10, align=.Center, label="record-row") {
+					ui.text(
+						&ctx,
+						fmt.tprintf("Record %05d · score %03d", item.id, item.score),
+						style=alicorn.layout_style(.Row, grow=1),
+					)
+					if ui.button(&ctx, "Select", key=alicorn.key_string("select"), width=84, height=26,
+						state=alicorn.Button_State{selected=item.id == app.selected_id}) {
+						app.selected_id = item.id
+						alicorn.trace_action(rt, ASYNC_LIST_ACTIVATE, "Select async-list record")
+						alicorn.trace_mutation(rt, "selected async-list record")
+						alicorn.invalidate_root(rt, "async-list selection changed")
+					}
+				}
 			}
-			alicorn.container_end(&ui)
-			alicorn.component_end(&ui)
+			alicorn.virtual_list_end(&ctx, list)
 		}
 	}
-	alicorn.virtual_list_end(&ui, list)
-	alicorn.container_end(&ui)
-	alicorn.end_frame(&ui)
+	alicorn.container_end(&ctx)
+	alicorn.end_frame(&ctx)
 	app.settled_builds = app.build_calls
 	return root
 }

@@ -37,7 +37,7 @@ The process counters can be sampled with this PowerShell pattern while the
 25-second process is running:
 
 ```powershell
-$process = Start-Process .\out\alicorn_native_hello_perf.exe -ArgumentList '--idle-validation-seconds=25' -PassThru
+$process = Start-Process .\out\examples\01_hello.exe -ArgumentList '--idle-validation-seconds=25' -PassThru
 $started = [DateTimeOffset]::Now
 foreach ($target in @(5, 20)) {
     $remaining = $target - ([DateTimeOffset]::Now - $started).TotalSeconds
@@ -108,10 +108,7 @@ no input, so they do not characterize interactive deferral or lateness.
 From a fresh Alicorn checkout, build and run the current native hello app:
 
 ```powershell
-New-Item -ItemType Directory -Force out | Out-Null
-odin build examples/01_hello -o:speed -out:out/alicorn_native_hello_perf.exe
-Copy-Item (Join-Path (Split-Path -Parent (Get-Command odin).Source) 'vendor\sdl3\SDL3.dll') out\SDL3.dll -Force
-.\out\alicorn_native_hello_perf.exe --idle-validation-seconds=25
+.\tools\run_example.ps1 -Example 01_hello -Speed -AppArgs @('--idle-validation-seconds=25')
 ```
 
 For startup probes, run three fresh processes with a five-second limit and
@@ -120,7 +117,7 @@ distinct capture directories:
 ```powershell
 1..3 | ForEach-Object {
     $capture = "out/native-hello-startup-$_"
-    .\out\alicorn_native_hello_perf.exe --idle-validation-seconds=5 --capture-after=0 "--capture-dir=$capture"
+    .\tools\run_example.ps1 -Example 01_hello -Speed -AppArgs @('--idle-validation-seconds=5', '--capture-after=0', "--capture-dir=$capture")
 }
 ```
 

@@ -4,7 +4,7 @@ import "core:encoding/json"
 import "core:fmt"
 import "core:math"
 import "core:os"
-import alicorn "../../runtime"
+import alicorn "../../../runtime"
 
 // An application schema. No Runtime, Node_ID, token, or derived text/geometry
 // product crosses the file boundary. The version belongs to this application.

@@ -36,7 +36,7 @@ Pending semantic restoration does not poll or request idle descriptions.
 
 ## Reproduce an actual process restart
 
-The public-API [fixture](../examples/durable_restoration/main.odin) uses a tiny
+The public-API [fixture](../tests/fixtures/durable_restoration/main.odin) uses a tiny
 versioned application JSON schema containing a split ratio, scroll offset, and
 logical record identity. Each invocation creates and destroys a fresh Runtime:
 

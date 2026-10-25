@@ -17,7 +17,7 @@ New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
 Push-Location $RepoRoot
 try {
     Write-Host 'Building the public-API secondary-window acceptance application'
-    & $Odin build examples\06_secondary_windows "-extra-linker-flags:$($AccessKit.LinkerFlags)" "-out:$Executable"
+    & $Odin build tests\fixtures\secondary_windows "-collection:alicorn=$RepoRoot" "-extra-linker-flags:$($AccessKit.LinkerFlags)" "-out:$Executable"
     if ($LASTEXITCODE -ne 0) { throw "Secondary-window fixture build failed (exit $LASTEXITCODE)." }
 
     $OdinRoot = Split-Path -Parent $Odin

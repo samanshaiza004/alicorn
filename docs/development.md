@@ -6,9 +6,11 @@ native starter app, use [Getting Started](getting-started.md).
 ## Repository map
 
 ```text
-runtime/          retained runtime and public UI API
+runtime/          retained runtime and lower-level public API
+ui/               convenience API for ordinary native application UI
 native/sdl_gpu/   SDL3 / SDL_GPU host and compositor
-examples/         headless examples and the native starter app
+examples/         numbered native application lessons
+tests/fixtures/   focused runtime and lifecycle validation applications
 tests/            deterministic foundation tests
 benchmarks/       retained-work benchmark workloads
 third_party/      vendored dependencies and their notices

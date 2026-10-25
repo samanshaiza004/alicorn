@@ -1,9 +1,9 @@
 package main
 
 import "core:fmt"
-import alicorn "../../runtime"
+import alicorn "../../../runtime"
 
-ADVANCED_BUTTON_SITE :: alicorn.Source_Site{"examples/advanced_identity/main.odin", 1, 1, "diagnostic_button"}
+ADVANCED_BUTTON_SITE :: alicorn.Source_Site{"tests/fixtures/advanced_identity/main.odin", 1, 1, "diagnostic_button"}
 
 main :: proc() {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 360})

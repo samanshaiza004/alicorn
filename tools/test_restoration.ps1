@@ -6,7 +6,7 @@ $Root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 Push-Location $Root
 try {
     New-Item -ItemType Directory -Force -Path 'out' | Out-Null
-    & $Odin build examples\durable_restoration -out:out\durable-restoration.exe
+    & $Odin build tests\fixtures\durable_restoration -out:out\durable-restoration.exe
     if ($LASTEXITCODE -ne 0) { throw 'Restoration fixture build failed.' }
     $Session = Join-Path $Root 'out\restoration-session.json'
     # Each invocation is a new process with an independently created Runtime.

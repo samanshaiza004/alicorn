@@ -162,7 +162,7 @@ application-private renderer code.
 
 See the [collections reference](reference.md#collections-and-panes), the
 [surface reference](reference.md#text-runtime-and-presentation), and the
-[Crucible validation fixture](../examples/crucible/main.odin). Crucible is a
+[Crucible validation fixture](../tests/fixtures/crucible/main.odin). Crucible is a
 headless runtime fixture, not proof of native GPU presentation.
 
 ### Actions, semantic focus, and causality

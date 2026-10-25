@@ -188,12 +188,16 @@ run_probe wayland-protocols wayland-info
 run_probe mango-version mango -v
 
 if [ "$HEADLESS_ONLY" = yes ]; then
+	record_skip example-runner-hello
+	record_skip example-runner-async-list
 	record_skip native-surface-smoke
 	record_skip native-surface-stress
 	record_skip native-diagnostic-capture
 else
 	# These runs exercise the real Wayland/Vulkan host, but their output is
 	# still not a substitute for a person using a keyboard, pointer, or IME.
+	run_required example-runner-hello sh "$SCRIPT_DIR/run_example.sh" --odin "$ODIN" 01_hello --idle-validation-seconds=2
+	run_required example-runner-async-list sh "$SCRIPT_DIR/run_example.sh" --odin "$ODIN" 03_async_list --smoke
 	run_required native-surface-smoke sh "$SCRIPT_DIR/custom_surface.sh" --odin "$ODIN" --smoke
 	run_required native-surface-stress sh "$SCRIPT_DIR/native_sdl_gpu.sh" --odin "$ODIN" --surface-stress
 	run_required native-diagnostic-capture "$REPO_ROOT/out/alicorn_custom_surface" \
