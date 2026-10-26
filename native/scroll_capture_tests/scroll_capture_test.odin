@@ -92,8 +92,8 @@ scroll_capture_test_describe :: proc(rt: ^alicorn.Runtime, nested := false, moda
 scroll_capture_test_wheel :: proc(x, y: f32) -> sdl3.Event {
 	event := sdl3.Event{type=.MOUSE_WHEEL}
 	event.wheel.mouse_x, event.wheel.mouse_y = x, y
-	event.wheel.x, event.wheel.y = -0.375, -0.625
-	event.wheel.integer_x, event.wheel.integer_y = -7, -9
+	event.wheel.x, event.wheel.y = 0.375, -0.625
+	event.wheel.integer_x, event.wheel.integer_y = 7, -9
 	event.wheel.direction = .FLIPPED
 	return event
 }
@@ -127,6 +127,40 @@ scroll_capture_test_pump :: proc(
 }
 
 @(test)
+test_scroll_host_horizontal_wheel_matches_platform_direction :: proc(t: ^testing.T) {
+	if !scroll_capture_test_start(t) { return }
+	defer scroll_capture_test_stop()
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 240})
+	defer alicorn.destroy_runtime(&rt)
+	editor, _, _ := scroll_capture_test_describe(&rt)
+	probe := Scroll_Capture_Test_State{}
+	app := host.Application{state=&probe, on_scroll_capture=scroll_capture_test_capture, on_scroll=scroll_capture_test_fallback}
+	for replay in ([2]bool{false, true}) {
+		for flipped in ([2]bool{false, true}) {
+			for sign in ([2]f32{1, -1}) {
+				_ = alicorn.scroll_region_set_offset_x(&rt, editor, 100)
+				_ = alicorn.scroll_region_set_offset(&rt, editor, 100)
+				event := scroll_capture_test_wheel(200, 140)
+				event.wheel.direction = .FLIPPED if flipped else .NORMAL
+				event.wheel.x, event.wheel.y = sign*0.375, -sign*0.625
+				event.wheel.integer_x, event.wheel.integer_y = i32(sign)*7, -i32(sign)*9
+				events := [?]sdl3.Event{event}
+				scroll_capture_test_pump(t, &rt, &app, events[:], replay=replay)
+				testing.expect(t, alicorn.scroll_region_offset_x(&rt, editor) == 100+sign*3.75,
+					"SDL positive horizontal input must increase the viewport offset; negative input must decrease it")
+				testing.expect(t, alicorn.scroll_region_offset(&rt, editor) == 100+sign*12.5,
+					"horizontal normalization must preserve vertical scrolling and fractional precision")
+				testing.expect(t, probe.event.delta_x == -event.wheel.x && probe.event.ticks_x == -int(event.wheel.integer_x) &&
+					probe.event.delta_y == event.wheel.y && probe.event.ticks_y == int(event.wheel.integer_y),
+					"capture must receive content-motion deltas, preserving the OS direction without applying FLIPPED twice")
+			}
+		}
+	}
+	testing.expect(t, probe.captures == 8 && probe.fallbacks == 0,
+		"both window queues must route each event once to the retained scroll region")
+}
+
+@(test)
 test_scroll_capture_claim_and_decline_preserve_precise_input :: proc(t: ^testing.T) {
 	if !scroll_capture_test_start(t) { return }
 	defer scroll_capture_test_stop()
@@ -146,7 +180,7 @@ test_scroll_capture_claim_and_decline_preserve_precise_input :: proc(t: ^testing
 		modifiers={shift=true, control=true, alt=true, super=true},
 	}
 	testing.expect(t, probe.captures == 1 && probe.runtime == &rt && probe.target == editor && probe.event == expected,
-		"capture should receive the app state, runtime, exact target, precise deltas, whole ticks and all modifiers unchanged")
+		"capture should receive the app state, runtime, exact target, normalized precise deltas and whole ticks, and all modifiers")
 	testing.expect(t, probe.offset_x_before == 0 && probe.offset_y_before == 0 &&
 		alicorn.scroll_region_offset_x(&rt, editor) == 0 && alicorn.scroll_region_offset(&rt, editor) == 0 && probe.fallbacks == 0,
 		"claiming must run before mutation and skip both retained axes and fallback")
@@ -154,7 +188,7 @@ test_scroll_capture_claim_and_decline_preserve_precise_input :: proc(t: ^testing
 	scroll_capture_test_pump(t, &rt, &app, events[:], replay=false)
 	testing.expect(t, probe.captures == 2 && probe.event == expected && probe.offset_y_before == 0 &&
 		alicorn.scroll_region_offset_x(&rt, editor) == 3.75 && alicorn.scroll_region_offset(&rt, editor) == 12.5 && probe.fallbacks == 0,
-		"declining should preserve precise retained scrolling rather than substitute integer ticks or flip SDL direction")
+		"declining should preserve precise retained scrolling rather than substitute integer ticks or reinterpret natural scrolling")
 	app.on_scroll_capture = nil
 	scroll_capture_test_pump(t, &rt, &app, events[:], replay=false)
 	testing.expect(t, probe.captures == 2 && alicorn.scroll_region_offset(&rt, editor) == 25 && probe.fallbacks == 0,

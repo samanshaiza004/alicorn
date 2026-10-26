@@ -4,6 +4,19 @@ import "core:fmt"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
+native_scroll_event_from_sdl :: proc(wheel: sdl3.MouseWheelEvent, modifiers: alicorn.Input_Modifiers) -> alicorn.Scroll_Event {
+	// SDL X is positive toward the right of the document; Alicorn's
+	// deltas describe content motion (positive right/down), so only X
+	// needs negating. SDL Y already matches. Natural scrolling is
+	// already encoded in the values: do not apply FLIPPED again.
+	return alicorn.Scroll_Event{
+		delta_x=-wheel.x, delta_y=wheel.y,
+		ticks_x=-int(wheel.integer_x), ticks_y=int(wheel.integer_y),
+		x=wheel.mouse_x, y=wheel.mouse_y,
+		modifiers=modifiers,
+	}
+}
+
 native_drag_autoscroll_update :: proc(rt: ^alicorn.Runtime, deadline_ns: ^u64, now_ns: u64) {
 	if deadline_ns == nil { return }
 	if rt == nil || !alicorn.drag_autoscroll_can_step(rt) {
@@ -383,29 +396,7 @@ pump_events :: proc(
 		if application != nil && event.type == .MOUSE_WHEEL && wheel_in_application {
 			scroll_cause := alicorn.cause_begin(rt, .Scroll, "mouse wheel")
 			if devtools_last_cause != nil { devtools_last_cause^ = scroll_cause.cause }
-			delta_x := event.wheel.x
-			delta_y := event.wheel.y
-			ticks_x := int(event.wheel.integer_x)
-			ticks_y := int(event.wheel.integer_y)
-			mod := sdl3.GetModState()
-			modifiers := alicorn.Input_Modifiers{
-				shift=native_text_modifier(mod, sdl3.KMOD_SHIFT),
-				control=native_text_modifier(mod, sdl3.KMOD_CTRL),
-				alt=native_text_modifier(mod, sdl3.KMOD_ALT),
-				super=native_text_modifier(mod, sdl3.KMOD_GUI),
-			}
-			// SDL already reports the platform's chosen scroll direction. Keep
-			// precise deltas and the native natural-scroll preference intact;
-			// retained regions apply their own logical offset convention.
-			scroll_event := alicorn.Scroll_Event{
-				delta_x=delta_x,
-				delta_y=delta_y,
-				ticks_x=ticks_x,
-				ticks_y=ticks_y,
-				x=event.wheel.mouse_x,
-				y=event.wheel.mouse_y,
-				modifiers=modifiers,
-			}
+			scroll_event := native_scroll_event_from_sdl(event.wheel, pointer_modifiers_from_sdl(sdl3.GetModState()))
 			scroll_captured := false
 			if application.on_scroll_capture != nil {
 				target := alicorn.scroll_region_hit_test(rt, scroll_event.x, scroll_event.y)

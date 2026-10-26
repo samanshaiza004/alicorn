@@ -374,12 +374,7 @@ native_inspector_route_event :: proc(
 		inside := event.wheel.mouse_x >= bounds.x && event.wheel.mouse_y >= bounds.y &&
 			event.wheel.mouse_x < bounds.x+bounds.w && event.wheel.mouse_y < bounds.y+bounds.h
 		if !inside { return false }
-		_ = alicorn.process_scroll(&overlay.runtime, alicorn.Scroll_Event{
-			delta_x=event.wheel.x, delta_y=event.wheel.y,
-			ticks_x=int(event.wheel.integer_x), ticks_y=int(event.wheel.integer_y),
-			x=event.wheel.mouse_x, y=event.wheel.mouse_y,
-			modifiers=pointer_modifiers_from_sdl(modifiers),
-		})
+		_ = alicorn.process_scroll(&overlay.runtime, native_scroll_event_from_sdl(event.wheel, pointer_modifiers_from_sdl(modifiers)))
 		return true
 	}
 	if event.type == .TEXT_INPUT || event.type == .TEXT_EDITING {

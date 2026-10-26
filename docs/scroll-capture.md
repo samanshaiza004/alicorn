@@ -39,7 +39,11 @@ to block covered regions and fallback input.
 
 The event preserves precise floating-point deltas, integer ticks, logical
 content coordinates, and Shift/Control/Alt/Super modifiers. Use precise deltas
-for continuous gestures; the host preserves SDL's chosen scroll direction.
+for continuous gestures. Positive deltas describe content motion right/down
+(decreasing viewport offsets). The SDL host negates SDL's horizontal values
+and ticks to match that convention and preserves vertical values. Both axes
+respect the OS scroll direction setting; `SDL_MOUSEWHEEL_FLIPPED` is already
+represented in SDL's values and must not cause another inversion.
 
 Primary and secondary windows use their own application state and runtime.
 Installing capture schedules no ticks, polling or automatic invalidation.

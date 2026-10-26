@@ -43,6 +43,35 @@ native_inspector_test_button_bounds :: proc(rt: ^alicorn.Runtime, label: string)
 }
 
 @(test)
+test_native_inspector_horizontal_wheel_matches_application_direction :: proc(t: ^testing.T) {
+	app := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 240})
+	defer alicorn.destroy_runtime(&app)
+	overlay: Native_Inspector_Overlay
+	native_inspector_runtime_init(&overlay, {enabled=true, start_visible=true}, app.viewport)
+	defer native_inspector_destroy(&overlay)
+	overlay.state.panel_bounds = app.viewport
+	ui, ready := alicorn.begin_frame(&overlay.runtime)
+	testing.expect(t, ready, "the inspector runtime should be ready for its first description")
+	if !ready { return }
+	alicorn.container_begin(&ui, .Root, style=alicorn.layout_style(.Column))
+	region := alicorn.scroll_region_begin(&ui, viewport_width=240, viewport_height=180, content_width=600, content_height=600,
+		line_width=10, line_height=20, axes=.Both, axis_behavior=.Free,
+		style=alicorn.layout_style(.Column, width=240, height=180, clip=true))
+	alicorn.scroll_region_end(&ui)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	_ = alicorn.scroll_region_set_offset_x(&overlay.runtime, region.id, 100)
+	_ = alicorn.scroll_region_set_offset(&overlay.runtime, region.id, 100)
+	event := sdl3.Event{type=.MOUSE_WHEEL}
+	event.wheel.mouse_x, event.wheel.mouse_y = 20, 20
+	event.wheel.x, event.wheel.y, event.wheel.direction = 0.375, -0.625, .FLIPPED
+	testing.expect(t, native_inspector_route_event(&overlay, &app, event, {}), "the inspector must own input inside its panel")
+	testing.expect(t, alicorn.scroll_region_offset_x(&overlay.runtime, region.id) == 103.75 &&
+		alicorn.scroll_region_offset(&overlay.runtime, region.id) == 112.5,
+		"inspector scroll regions must apply the same precise axis conversion as application windows")
+}
+
+@(test)
 test_native_inspector_requires_explicit_host_opt_in :: proc(t: ^testing.T) {
 	none := [?]string{"application", "--diagnostics"}
 	hidden := [?]string{"application", "--inspector"}

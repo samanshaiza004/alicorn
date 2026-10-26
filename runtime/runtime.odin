@@ -533,6 +533,9 @@ POINTER_BUTTON_MIDDLE :: 2
 POINTER_BUTTON_SECONDARY :: 3
 
 // Scroll_Event preserves both precise device deltas and whole wheel ticks.
+// Positive deltas describe content motion right/down, decreasing the viewport
+// offset on that axis. Hosts translate platform axes while respecting the
+// user's scroll direction setting; ticks use the same signs as precise deltas.
 // The precise deltas are authoritative for scrolling. Whole ticks remain
 // available to diagnostics and applications that explicitly need coarse
 // wheel semantics.
