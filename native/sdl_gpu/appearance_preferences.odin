@@ -11,8 +11,10 @@ Native_Appearance_Known_Fields :: alicorn.Accessibility_Appearance_Known_Fields
 // from a known false preference. Unknown values never erase the last known
 // value or the Alicorn default.
 Native_Appearance_Snapshot :: struct {
-	preferences: alicorn.Accessibility_Appearance_Preferences,
-	known:       Native_Appearance_Known_Fields,
+	preferences:     alicorn.Accessibility_Appearance_Preferences,
+	known:           Native_Appearance_Known_Fields,
+	text_scale:      f32,
+	text_scale_known: bool,
 }
 
 Native_Appearance_Monitor :: struct {
@@ -27,7 +29,7 @@ Native_Appearance_Monitor :: struct {
 native_appearance_snapshot_merge :: proc(
 	previous: Native_Appearance_Snapshot,
 	observed: Native_Appearance_Snapshot,
-) -> (merged: Native_Appearance_Snapshot, preferences_changed: bool) {
+) -> (merged: Native_Appearance_Snapshot, appearance_changed: bool) {
 	merged = previous
 	for field in Native_Appearance_Field {
 		if field not_in observed.known { continue }
@@ -43,7 +45,12 @@ native_appearance_snapshot_merge :: proc(
 			merged.preferences.differentiate_without_color = observed.preferences.differentiate_without_color
 		}
 	}
-	preferences_changed = merged.preferences != previous.preferences
+	if observed.text_scale_known {
+		merged.text_scale = observed.text_scale
+		merged.text_scale_known = true
+	}
+	appearance_changed = merged.preferences != previous.preferences ||
+		merged.text_scale != previous.text_scale || merged.text_scale_known != previous.text_scale_known
 	return
 }
 
@@ -81,6 +88,8 @@ native_appearance_monitor_apply_snapshot :: proc(
 		return alicorn.style_root_accessibility_observation_set(rt, alicorn.Accessibility_Appearance_Observation{
 			preferences=next.preferences,
 			known=next.known,
+			text_scale=next.text_scale,
+			text_scale_known=next.text_scale_known,
 		})
 	}
 	return false

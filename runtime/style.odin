@@ -47,10 +47,20 @@ style_root_accessibility_observation_set :: proc(
 	observation: Accessibility_Appearance_Observation,
 ) -> bool {
 	if rt == nil || rt.frame_open { return false }
+	if observation.text_scale_known &&
+		(observation.text_scale != observation.text_scale || observation.text_scale <= 0 || observation.text_scale >= 100) {
+		return false
+	}
+	text_scale_changed := observation.text_scale_known &&
+		(!rt.root_text_scale_known || rt.root_text_scale != observation.text_scale)
 	if rt.root_accessibility_appearance == observation.preferences &&
-		rt.root_accessibility_appearance_known == observation.known { return false }
+		rt.root_accessibility_appearance_known == observation.known && !text_scale_changed { return false }
 	rt.root_accessibility_appearance = observation.preferences
 	rt.root_accessibility_appearance_known = observation.known
+	if observation.text_scale_known {
+		rt.root_text_scale = observation.text_scale
+		rt.root_text_scale_known = true
+	}
 	invalidate_root(rt, "root accessibility appearance observation changed")
 	return true
 }
@@ -62,6 +72,8 @@ style_root_accessibility_observation_get :: proc(rt: ^Runtime) -> Accessibility_
 	return Accessibility_Appearance_Observation{
 		preferences=rt.root_accessibility_appearance,
 		known=rt.root_accessibility_appearance_known,
+		text_scale=rt.root_text_scale,
+		text_scale_known=rt.root_text_scale_known,
 	}
 }
 

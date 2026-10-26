@@ -32,11 +32,14 @@ Win32_Appearance_State :: struct {
 	allocator:                 mem.Allocator,
 	monitor:                   ^Native_Appearance_Monitor,
 	hwnd:                      win.HWND,
-	ui_settings:               rawptr,
-	advanced_effects_handler:  ^WinRT_Appearance_Event_Handler,
+	ui_settings4:               rawptr,
+	ui_settings2:               rawptr,
+	settings_event_handler:     ^WinRT_Appearance_Event_Handler,
 	advanced_effects_token:    WinRT_Event_Token,
+	text_scale_token:          WinRT_Event_Token,
 	ro_initialized:            bool,
 	advanced_effects_subscribed: bool,
+	text_scale_subscribed:     bool,
 	installed:                 bool,
 }
 
@@ -69,6 +72,24 @@ WinRT_UI_Settings4 :: struct {
 	vtable: ^WinRT_UI_Settings4_VTable,
 }
 
+// IUISettings2 exposes TextScaleFactor and TextScaleFactorChanged. Its vtable
+// begins with IInspectable's six entries, then these three interface methods.
+WinRT_UI_Settings2_VTable :: struct {
+	query_interface:                  proc "system" (this: rawptr, iid: ^win.GUID, result: ^rawptr) -> win.HRESULT,
+	add_ref:                          proc "system" (this: rawptr) -> win.ULONG,
+	release:                          proc "system" (this: rawptr) -> win.ULONG,
+	get_iids:                         rawptr,
+	get_runtime_class_name:           rawptr,
+	get_trust_level:                  rawptr,
+	get_text_scale_factor:            proc "system" (this: rawptr, value: ^f64) -> win.HRESULT,
+	add_text_scale_factor_changed:    proc "system" (this: rawptr, handler: rawptr, token: ^WinRT_Event_Token) -> win.HRESULT,
+	remove_text_scale_factor_changed: proc "system" (this: rawptr, token: WinRT_Event_Token) -> win.HRESULT,
+}
+
+WinRT_UI_Settings2 :: struct {
+	vtable: ^WinRT_UI_Settings2_VTable,
+}
+
 WinRT_Event_Token :: struct {
 	value: i64,
 }
@@ -89,6 +110,7 @@ WinRT_Appearance_Event_Handler_VTable :: struct {
 
 WINRT_IID_IUNKNOWN :: win.GUID{0x00000000, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}}
 WINRT_IID_UI_SETTINGS4 :: win.GUID{0x52BB3002, 0x919B, 0x4D6B, {0x9B, 0x78, 0x8D, 0xD6, 0x6F, 0xF4, 0xB9, 0x3B}}
+WINRT_IID_UI_SETTINGS2 :: win.GUID{0xBAD82401, 0x2721, 0x44F9, {0xBB, 0x91, 0x2B, 0xB2, 0x28, 0xBE, 0x44, 0x2F}}
 WINRT_IID_UI_SETTINGS_EFFECTS_CHANGED :: win.GUID{0x2DBDBA9D, 0x20DA, 0x519D, {0x90, 0x78, 0x09, 0xF8, 0x35, 0xBC, 0x5B, 0xC7}}
 WINRT_HRESULT_NO_INTERFACE :: win.HRESULT(i32(-2147467262))
 WINRT_HRESULT_CHANGED_MODE :: win.HRESULT(i32(-2147417850))
@@ -165,13 +187,20 @@ winrt_appearance_monitor_init :: proc(state: ^Win32_Appearance_State) -> bool {
 	if !win.SUCCEEDED(RoActivateInstance(class_id, &instance)) || instance == nil { return false }
 	defer winrt_ui_settings_release(instance)
 
-	ui_settings: rawptr
 	inspectable := cast(^WinRT_Inspectable)instance
 	iid_ui_settings4 := WINRT_IID_UI_SETTINGS4
-	if !win.SUCCEEDED(inspectable.vtable.query_interface(instance, &iid_ui_settings4, &ui_settings)) || ui_settings == nil {
-		return false
+	if win.SUCCEEDED(inspectable.vtable.query_interface(instance, &iid_ui_settings4, &state.ui_settings4)) {
+		// Keep this reference through event unsubscription at shutdown.
+	} else {
+		state.ui_settings4 = nil
 	}
-	state.ui_settings = ui_settings
+	iid_ui_settings2 := WINRT_IID_UI_SETTINGS2
+	if win.SUCCEEDED(inspectable.vtable.query_interface(instance, &iid_ui_settings2, &state.ui_settings2)) {
+		// Keep this reference through event unsubscription at shutdown.
+	} else {
+		state.ui_settings2 = nil
+	}
+	if state.ui_settings4 == nil && state.ui_settings2 == nil { return false }
 
 	handler := new(WinRT_Appearance_Event_Handler, allocator=state.allocator)
 	handler^ = WinRT_Appearance_Event_Handler{
@@ -180,21 +209,40 @@ winrt_appearance_monitor_init :: proc(state: ^Win32_Appearance_State) -> bool {
 		allocator = state.allocator,
 		ref_count = 1,
 	}
-	state.advanced_effects_handler = handler
-	settings := cast(^WinRT_UI_Settings4)ui_settings
-	if win.SUCCEEDED(settings.vtable.add_advanced_effects_changed(ui_settings, rawptr(handler), &state.advanced_effects_token)) {
-		state.advanced_effects_subscribed = true
-	} else {
+	state.settings_event_handler = handler
+	if state.ui_settings4 != nil {
+		settings := cast(^WinRT_UI_Settings4)state.ui_settings4
+		state.advanced_effects_subscribed = win.SUCCEEDED(settings.vtable.add_advanced_effects_changed(
+			state.ui_settings4, rawptr(handler), &state.advanced_effects_token))
+	}
+	if state.ui_settings2 != nil {
+		settings := cast(^WinRT_UI_Settings2)state.ui_settings2
+		state.text_scale_subscribed = win.SUCCEEDED(settings.vtable.add_text_scale_factor_changed(
+			state.ui_settings2, rawptr(handler), &state.text_scale_token))
+	}
+	if !state.advanced_effects_subscribed && !state.text_scale_subscribed {
 		_ = winrt_appearance_event_handler_release(rawptr(handler))
-		state.advanced_effects_handler = nil
+		state.settings_event_handler = nil
 	}
 	return true
 }
 
 winrt_ui_settings_advanced_effects_enabled :: proc(state: ^Win32_Appearance_State) -> (enabled: bool, available: bool) {
-	if state == nil || state.ui_settings == nil { return }
-	settings := cast(^WinRT_UI_Settings4)state.ui_settings
-	available = win.SUCCEEDED(settings.vtable.get_advanced_effects_enabled(state.ui_settings, &enabled))
+	if state == nil || state.ui_settings4 == nil { return }
+	settings := cast(^WinRT_UI_Settings4)state.ui_settings4
+	available = win.SUCCEEDED(settings.vtable.get_advanced_effects_enabled(state.ui_settings4, &enabled))
+	return
+}
+
+winrt_ui_settings_text_scale_factor :: proc(state: ^Win32_Appearance_State) -> (scale: f32, available: bool) {
+	if state == nil || state.ui_settings2 == nil { return }
+	settings := cast(^WinRT_UI_Settings2)state.ui_settings2
+	value: f64
+	if !win.SUCCEEDED(settings.vtable.get_text_scale_factor(state.ui_settings2, &value)) || value < 1 || value > 2.25 {
+		return
+	}
+	scale = f32(value)
+	available = true
 	return
 }
 
@@ -220,6 +268,11 @@ win32_appearance_snapshot_read :: proc(state: ^Win32_Appearance_State) -> Native
 			snapshot.known += {.Reduce_Transparency}
 			snapshot.preferences.reduce_transparency = disable_overlapped_content != false
 		}
+	}
+	text_scale, text_scale_available := winrt_ui_settings_text_scale_factor(state)
+	if text_scale_available {
+		snapshot.text_scale = text_scale
+		snapshot.text_scale_known = true
 	}
 	return snapshot
 }
@@ -280,18 +333,26 @@ native_appearance_monitor_destroy :: proc(monitor: ^Native_Appearance_Monitor) {
 	if monitor.platform_data != nil {
 		state := cast(^Win32_Appearance_State)monitor.platform_data
 		if state.installed { _ = RemoveWindowSubclass(state.hwnd, win32_appearance_subclass, WIN32_APPEARANCE_SUBCLASS_ID) }
-		if state.ui_settings != nil {
-			settings := cast(^WinRT_UI_Settings4)state.ui_settings
+		if state.ui_settings4 != nil {
+			settings := cast(^WinRT_UI_Settings4)state.ui_settings4
 			if state.advanced_effects_subscribed {
-				_ = settings.vtable.remove_advanced_effects_changed(state.ui_settings, state.advanced_effects_token)
+				_ = settings.vtable.remove_advanced_effects_changed(state.ui_settings4, state.advanced_effects_token)
 			}
-			winrt_ui_settings_release(state.ui_settings)
-			state.ui_settings = nil
+			winrt_ui_settings_release(state.ui_settings4)
+			state.ui_settings4 = nil
 		}
-		if state.advanced_effects_handler != nil {
-			state.advanced_effects_handler.hwnd = nil
-			_ = winrt_appearance_event_handler_release(rawptr(state.advanced_effects_handler))
-			state.advanced_effects_handler = nil
+		if state.ui_settings2 != nil {
+			settings := cast(^WinRT_UI_Settings2)state.ui_settings2
+			if state.text_scale_subscribed {
+				_ = settings.vtable.remove_text_scale_factor_changed(state.ui_settings2, state.text_scale_token)
+			}
+			winrt_ui_settings_release(state.ui_settings2)
+			state.ui_settings2 = nil
+		}
+		if state.settings_event_handler != nil {
+			state.settings_event_handler.hwnd = nil
+			_ = winrt_appearance_event_handler_release(rawptr(state.settings_event_handler))
+			state.settings_event_handler = nil
 		}
 		if state.ro_initialized { RoUninitialize() }
 		free(state, allocator=state.allocator)

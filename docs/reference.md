@@ -433,11 +433,15 @@ positive and below 100; theme colors use normalized RGBA channels with nonzero
 alpha. Accent overrides are opaque and quantized to 8-bit RGB.
 
 The native SDL host imports supported Windows/macOS accessibility-appearance
-preferences into a persistent runtime base. Applications that host their own
-preference source can update it between frames with
-`style_root_accessibility_set(&runtime, preferences)`. The setter returns
-`false` when the value is unchanged or a frame is open. A pushed scope with
-`accessibility_set=true` explicitly overrides that base for the scoped subtree.
+preferences into a persistent runtime base. Windows also maps its system
+`UISettings.TextScaleFactor` to Alicorn's normalized text scale. Applications
+that host their own preference source can update appearance preferences
+between frames with `style_root_accessibility_set(&runtime, preferences)`, or
+pass a known-field `Accessibility_Appearance_Observation` to
+`style_root_accessibility_observation_set` when they also have a system text
+scale. The observation setter returns `false` when the normalized value is
+unchanged, invalid, or a frame is open. A pushed scope can explicitly override
+text scale or the accessibility bundle for its subtree.
 
 Text scale invalidates typography and metrics. Density invalidates metrics.
 Theme and accent invalidate Paint. Increased contrast invalidates Paint and
