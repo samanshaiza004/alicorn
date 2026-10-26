@@ -29,6 +29,9 @@ Semantic_Surface_Style :: struct {
 	material: Material_ID,
 	physical_height: f32,
 	material_group: Material_Group_ID,
+	// Optional retained visual above this surface. Only an abutting, visible
+	// visual can open the corresponding segment of the top material edge.
+	open_top_edge: Node_ID,
 }
 
 Semantic_Surface_Resolved_Style :: struct {
@@ -99,6 +102,7 @@ semantic_surface_style_hash :: proc(style: Semantic_Surface_Style) -> u64 {
 	h = hash_mix(h, u64(u32(style.material)))
 	h = hash_mix(h, u64(transmute(u32)style.physical_height))
 	h = hash_mix(h, u64(u32(style.material_group)))
+	h = hash_mix(h, u64(style.open_top_edge))
 	return h
 }
 
@@ -119,6 +123,7 @@ surface_begin :: proc(
 	fill := NO_BACKGROUND_COLOR,
 	stroke := Paint_Stroke{},
 	stroke_placement := Paint_Stroke_Placement.Centered,
+	open_top_edge: Node_ID = 0,
 ) -> Node_ID {
 	if ui == nil || ui.runtime == nil { return 0 }
 	rt := ui.runtime
@@ -133,6 +138,7 @@ surface_begin :: proc(
 		material=material,
 		physical_height=physical_height,
 		material_group=material_group,
+		open_top_edge=open_top_edge,
 	}
 	if !rt.frame_open || !semantic_surface_style_is_valid(rt, rt.style_environment, semantic_style) {
 		append_diagnostic(rt, "surface_begin requires an open frame, resolvable theme role, supported shape, bounded optical height, and registered material")
@@ -162,4 +168,38 @@ surface_begin :: proc(
 // surface_end closes the layout scope opened by surface_begin.
 surface_end :: proc(ui: ^UI) {
 	container_end(ui)
+}
+
+semantic_surface_top_edge_gap :: proc(rt: ^Runtime, node: ^Node, style: Semantic_Surface_Style) -> [2]f32 {
+	if rt == nil || node == nil || style.open_top_edge == 0 || style.shape.kind != .Rectangle { return {} }
+	above, found := rt.nodes[style.open_top_edge]
+	if !found || above == nil || !above.active || !above.present ||
+	   abs(above.bounds.y+above.bounds.h-node.bounds.y) > 1.0/64.0 { return {} }
+	visible := rect_intersection(above.bounds, above.clip)
+	if visible.w <= 0 || visible.h <= 0 || abs(visible.y+visible.h-node.bounds.y) > 1.0/64.0 { return {} }
+	left := maxf(node.bounds.x, visible.x)
+	right := minf(node.bounds.x+node.bounds.w, visible.x+visible.w)
+	if right <= left { return {} }
+	return {left, right}
+}
+
+// Called after retained layout and before paint consumption. A linked tab can
+// move during scrolling or a Split drag without re-describing the paper.
+semantic_surface_refresh_top_edge_gaps :: proc(rt: ^Runtime) {
+	if rt == nil || len(rt.paint_queue) == 0 || len(rt.surface_top_edge_links) == 0 { return }
+	for id in rt.surface_top_edge_links {
+		style := rt.semantic_surfaces[id]
+		node, found := rt.nodes[id]
+		if !found || node == nil || !node.active || !node.present { continue }
+		gap := semantic_surface_top_edge_gap(rt, node, style)
+		previous := [2]f32{}
+		if len(node.paint) > 0 {
+			if surface, ok := node.paint[0].payload.(Surface_Paint); ok { previous = surface.top_edge_gap }
+		}
+		if previous != gap {
+			dirty_set(&node.dirty, .Paint, true)
+			dirty_set(&node.dirty, .Composite, true)
+			queue_paint(rt, id)
+		}
+	}
 }

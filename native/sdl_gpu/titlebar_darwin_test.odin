@@ -7,6 +7,65 @@ import NS "core:sys/darwin/Foundation"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
+Darwin_Split_Chrome_Test_State :: struct {
+	header: alicorn.Node_ID,
+	regions: [2]Window_Chrome_Region,
+}
+
+darwin_split_chrome_test_layout :: proc(state: rawptr, rt: ^alicorn.Runtime) -> Window_Chrome_Layout {
+	fixture := cast(^Darwin_Split_Chrome_Test_State)state
+	return Window_Chrome_Layout{header=fixture.header, regions=fixture.regions[:]}
+}
+
+@(test)
+test_darwin_titlebar_split_grab_target_uses_finalized_hit_bounds_and_header_clip :: proc(t: ^testing.T) {
+	for scale in ([4]f32{1, 1.25, 1.5, 2}) {
+		rt := alicorn.new_runtime(alicorn.Rect{0, 0, 400, 240})
+		defer alicorn.destroy_runtime(&rt)
+		_ = alicorn.set_presentation_scale(&rt, scale, scale)
+		ui, ready := alicorn.begin_frame(&rt)
+		if !ready { testing.expect(t, false, "split chrome fixture should build"); continue }
+		split := alicorn.split_begin(&ui, "titlebar-grab-split", .Horizontal, 120, 40, 40)
+		_ = alicorn.split_first_begin(&ui, split)
+		alicorn.split_first_end(&ui, split)
+		divider_id := alicorn.split_divider(&ui, split, thickness=2, hit_size=10)
+		_ = alicorn.split_second_begin(&ui, split)
+		alicorn.split_second_end(&ui, split)
+		alicorn.split_end(&ui, split)
+		alicorn.end_frame(&ui)
+		divider, found := alicorn.node_info(&rt, divider_id)
+		if !found { testing.expect(t, false, "split divider should have finalized geometry"); continue }
+		fixture := Darwin_Split_Chrome_Test_State{
+			header=split.id,
+			regions={{node=divider_id, kind=.Interactive}, {node=split.id, kind=.Window_Drag}},
+		}
+		application := Application{state=&fixture, window_chrome_layout=darwin_split_chrome_test_layout}
+		native_state: Darwin_Menu_State
+		native_state.titlebar.active = true
+		native_state.titlebar.metrics = Window_Chrome_Metrics{header={0, 3, 400, 32}}
+		menu := Native_Menu_Runtime{application=&application, runtime=&rt, platform_data=&native_state}
+		native_darwin_titlebar_sync_layout(&menu)
+		geometry := native_state.titlebar.geometry
+		testing.expect(t, geometry.interactive_count == 1 &&
+			geometry.interactive[0] == darwin_titlebar_intersection(divider.hit_bounds, geometry.header) &&
+			geometry.interactive[0].w > divider.bounds.w &&
+			geometry.interactive[0].y == 3 && geometry.interactive[0].h == 32,
+			"the header snapshot must preserve the wider finalized split grab target and clip away the body")
+		point := sdl3.Point{i32(divider.bounds.x-2), 12}
+		owner := Darwin_Titlebar_Gesture_Owner.None
+		testing.expect(t, darwin_titlebar_hit_test(geometry, point, {.LEFT}, &owner) == .NORMAL && owner == .Alicorn,
+			"the titlebar must deliver a divider grab outside the painted rule to Alicorn instead of moving the window")
+		owner = .None
+		testing.expect(t, darwin_titlebar_hit_test(geometry, {point[0], 36}, {.LEFT}, &owner) == .NORMAL && owner == .Client,
+			"the titlebar divider region must not extend below the measured native header")
+		geometry.native_controls[0] = {divider.hit_bounds.x, 3, divider.hit_bounds.w, 32}
+		geometry.native_control_count = 1
+		owner = .None
+		_ = darwin_titlebar_hit_test(geometry, point, {.LEFT}, &owner)
+		testing.expect(t, owner == .Native_Control, "native controls keep priority over an expanded splitter target")
+	}
+}
+
 @(test)
 test_darwin_titlebar_regions_follow_real_tabs_and_empty_space :: proc(t: ^testing.T) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 900, 560})

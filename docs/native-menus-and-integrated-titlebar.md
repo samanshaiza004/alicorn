@@ -91,6 +91,15 @@ moves between top-level menus, and Escape leaves menu mode. F10 remains
 Alicorn's DevTools HUD shortcut. Native HMENU owns navigation after a popup
 opens.
 
+Applications with retained titlebar content may set
+`Application.menu_presentation=.Hidden` on Windows. This removes top-level
+label paint and pointer exclusions while retaining the same HMENU descriptions,
+enabled/checked state, command IDs, and accelerators. Press and release Alt to
+open the first native menu, or use Alt plus the first letter of a menu name to
+open that category directly. Hidden popups anchor below the caption band.
+Alt+Space remains the Windows system menu and F10 remains DevTools. This option
+does not hide the macOS system menu bar or a Windows system-decorated menu bar.
+
 On macOS, the menu is the normal system menu bar and the SDL window retains its
 standard title bar and traffic lights. `Integrated_Title_Bar` does not remove
 or overlay macOS chrome. AppKit owns keyboard navigation and native shortcut

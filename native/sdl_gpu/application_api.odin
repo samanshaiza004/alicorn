@@ -113,10 +113,15 @@ Window_Decoration_Mode :: enum {
 	Content_Title_Bar,
 }
 
+// Hidden affects only Windows Integrated_Title_Bar labels. The native menu
+// descriptions, command shortcuts, and Alt menu access remain available.
+Application_Menu_Presentation :: enum { Labels, Hidden }
+
 // Window_Chrome_Metrics reports measured native geometry for an application-
 // authored titlebar header. Rectangles use top-left window-logical points. On
 // macOS, content_start_x follows the native traffic lights. On Windows,
-// content_start_x follows the native menu labels and content_end_x precedes
+// content_start_x follows visible native menu labels (or the frame inset when
+// menu_presentation is Hidden) and content_end_x precedes
 // the native caption buttons. The host keeps native-control hit testing.
 Window_Chrome_Metrics :: struct {
 	header: alicorn.Rect,
@@ -332,6 +337,7 @@ Application :: struct {
 	width:              int,
 	height:             int,
 	menus:              []Application_Menu,
+	menu_presentation:  Application_Menu_Presentation,
 	window_decorations: Window_Decoration_Mode,
 	// Content_Title_Bar is the macOS full-size-content mode. Integrated_Title_Bar
 	// may also opt in to application-authored controls in the Windows native

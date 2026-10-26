@@ -326,7 +326,11 @@ native_darwin_titlebar_sync_layout :: proc(menu: ^Native_Menu_Runtime) {
 		if region.node == 0 { continue }
 		node, ok := alicorn.node_info(menu.runtime, region.node)
 		if !ok || !node.active { continue }
-		bounds := darwin_titlebar_intersection(node.bounds, geometry.header)
+		region_bounds := node.bounds
+		// The divider's retained grab target is wider than its painted rule.
+		// Keep that target client-owned in the titlebar, just as in the body.
+		if region.kind == .Interactive && node.kind == .Split_Handle { region_bounds = node.hit_bounds }
+		bounds := darwin_titlebar_intersection(region_bounds, geometry.header)
 		if bounds.w <= 0 || bounds.h <= 0 { continue }
 		if region.kind == .Interactive {
 			if geometry.interactive_count < len(geometry.interactive) {

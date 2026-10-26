@@ -802,6 +802,29 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		old_viewport := parent.scroll_viewport_bounds
 		old_vertical, old_horizontal := parent.scrollbar_vertical_visible, parent.scrollbar_horizontal_visible
 		old_offset_x, old_offset_y := parent.scroll_offset_x, parent.scroll_offset_y
+		for request in rt.scroll_visibility_requests {
+			if request.node != parent.id || parent.scroll_axes == .Vertical { continue }
+			viewport_width := geometry.viewport.w
+			if request.start_x < parent.scroll_offset_x {
+				parent.scroll_offset_x = request.start_x
+			} else if request.end_x > parent.scroll_offset_x+viewport_width {
+				parent.scroll_offset_x = request.end_x-viewport_width
+			}
+			parent.scroll_offset_x = clampf(parent.scroll_offset_x, 0, maxf(parent.scroll_content_width-viewport_width, 0))
+			if parent.scroll_offset_x != old_offset_x {
+				geometry = scroll_bar_geometry(
+					parent.bounds,
+					parent.scroll_content_width,
+					parent.scroll_content_height,
+					parent.style.padding,
+					parent.scroll_axes,
+					parent.scrollbar_policy,
+					parent.scroll_offset_x,
+					parent.scroll_offset_y,
+				)
+				break
+			}
+		}
 		parent.scroll_viewport_bounds = geometry.viewport
 		parent.scroll_geometry_resolved = true
 		parent.scrollbar_vertical_visible = geometry.vertical_visible
@@ -816,6 +839,14 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		parent.scroll_offset_y = clampf(parent.scroll_offset_y, 0, maxf(parent.scroll_content_height-geometry.viewport.h, 0))
 		parent.layout_scroll_offset_x = parent.scroll_offset_x
 		parent.layout_scroll_offset_y = parent.scroll_offset_y
+		if old_offset_x != parent.scroll_offset_x {
+			for child_id in children {
+				if child, found := rt.nodes[child_id]; found && child.kind == .Virtual_List {
+					child.scroll_offset_x = parent.scroll_offset_x
+					child.layout_scroll_offset_x = parent.scroll_offset_x
+				}
+			}
+		}
 		inner = geometry.viewport
 		if !same_rect(old_viewport, geometry.viewport) || old_vertical != geometry.vertical_visible || old_horizontal != geometry.horizontal_visible ||
 			old_offset_x != parent.scroll_offset_x || old_offset_y != parent.scroll_offset_y {

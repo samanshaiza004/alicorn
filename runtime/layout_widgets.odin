@@ -354,6 +354,21 @@ scroll_region_set_offset_x :: proc(rt: ^Runtime, id: Node_ID, offset_x: f32, rea
 	return true
 }
 
+// scroll_region_request_visible_range_x defers horizontal visibility to layout
+// so the requested range is fitted against the viewport the parent actually
+// assigns, including flex siblings and responsive constraints.
+scroll_region_request_visible_range_x :: proc(rt: ^Runtime, id: Node_ID, start_x, end_x: f32) {
+	if rt == nil || id == 0 || end_x < start_x { return }
+	for &request in rt.scroll_visibility_requests {
+		if request.node == id {
+			request.start_x, request.end_x = maxf(start_x, 0), maxf(end_x, 0)
+			return
+		}
+	}
+	append(&rt.scroll_visibility_requests,
+		Scroll_Visibility_Request{node=id, start_x=maxf(start_x, 0), end_x=maxf(end_x, 0)})
+}
+
 // virtual_list_ensure_visible is the intent-level companion to
 // virtual_list_begin. The retained region already knows its fixed row height
 // and viewport, so selection/navigation code need not duplicate scroll math.

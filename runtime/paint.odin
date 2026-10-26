@@ -263,6 +263,7 @@ append_visual_row_background :: proc(rt: ^Runtime, row: ^Node) {
 }
 
 update_paint :: proc(rt: ^Runtime) {
+	semantic_surface_refresh_top_edge_gaps(rt)
 	display_target_changed := false
 	// Only nodes queued by description or layout changes are visited. An
 	// unchanged retained display command is left in place.
@@ -383,6 +384,7 @@ update_paint :: proc(rt: ^Runtime) {
 							material_group=semantic_surface_style.material_group,
 							stroke=resolved_surface.stroke,
 							stroke_placement=resolved_surface.stroke_placement,
+							top_edge_gap=semantic_surface_top_edge_gap(rt, node, semantic_surface_style),
 						))
 					}
 				} else if node.paint_background {
@@ -425,6 +427,8 @@ update_paint :: proc(rt: ^Runtime) {
 				}
 				text_clip := rect_intersection(node.clip, content_bounds)
 				text_color := style_environment_color(rt, node.style_environment, .Text)
+				connected_style, connected := rt.semantic_surfaces[node.id]
+				connected = connected && connected_style.shape.kind == .Connected_Tab && node.selected
 				parent_is_context_menu := false
 				if parent, ok := rt.nodes[node.parent]; ok {
 					parent_is_context_menu = parent.kind == .Context_Menu_Panel
@@ -452,7 +456,10 @@ update_paint :: proc(rt: ^Runtime) {
 						disabled=node.disabled,
 					}, node.drop_position == .On)
 					text_color = resolved_style.text
-					if resolved_style.surface.a > 0 {
+					if connected {
+						text_color = node.color
+						append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, connected_style.fill_override, shape=connected_style.shape))
+					} else if resolved_style.surface.a > 0 {
 						append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, resolved_style.surface, shape=resolved_style.shape, material=resolved_style.material, physical_height=resolved_style.physical_height))
 					}
 					if resolved_style.selected_indicator == .Underline && !visual_part_owner_has_role(rt, node.id, .Selected_Indicator) {
@@ -461,6 +468,12 @@ update_paint :: proc(rt: ^Runtime) {
 						append(&node.paint, paint_surface_command(node.id, indicator, node.clip, resolved_style.selected_indicator_color))
 					}
 					if node.semantic_active { append_focus_outline(node, resolved_style.semantic_active, style_structural_border_thickness(node.style_environment), resolved_style.shape) }
+					if connected && (node.style_environment.accessibility.increased_contrast || node.style_environment.accessibility.differentiate_without_color) {
+						// Keep a non-color selection cue above the seam rather than
+						// reinstating the underline across the paper connection.
+						marker := Rect{node.bounds.x+24, node.bounds.y+5, maxf(node.bounds.w-48, 0), 2}
+						append(&node.paint, paint_surface_command(node.id, marker, node.clip, resolved_style.selected_indicator_color))
+					}
 					show_focus := resolved_style.focus_indicator_mode == .Always || rt.focus_visible
 					if show_focus && rt.focused == node.id && !node.disabled {
 						// Focus is an independent outline so it remains visible without

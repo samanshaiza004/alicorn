@@ -21,6 +21,8 @@ Tab_Bar_Item :: struct {
 
 Tab_Bar_Presentation :: enum { Standard = 0, Compact }
 
+Tab_Bar_Appearance :: enum { Standard = 0, Connected }
+
 Tab_Bar_Options :: struct {
 	min_tab_width: f32,
 	max_tab_width: f32,
@@ -29,6 +31,12 @@ Tab_Bar_Options :: struct {
 	close_policy:  Tab_Close_Policy,
 	drag_type:     Drag_Type,
 	presentation:  Tab_Bar_Presentation,
+	appearance:    Tab_Bar_Appearance,
+	// Applications resolve their controlled surface's theme separately from
+	// the workbench environment containing the tabs.
+	selected_fill: Color,
+	selected_text: Color,
+	selected_fill_set: bool,
 }
 
 DEFAULT_TAB_BAR_OPTIONS :: Tab_Bar_Options{
@@ -56,6 +64,8 @@ Tab_Bar_Action :: enum { None, Select, Close }
 Tab_Bar_Result :: struct {
 	action:     Tab_Bar_Action,
 	item_index: int,
+	// Stable visual identity for a surface's optional open_top_edge link.
+	selected_tab: Node_ID,
 }
 
 Tab_Bar_Navigation :: enum {
@@ -109,6 +119,7 @@ tab_bar :: proc(
 	opts.height = clampf(opts.height, 26, 256)
 	opts.gap = clampf(opts.gap, 0, 64)
 	compact := opts.presentation == .Compact
+	connected_appearance := opts.appearance == .Connected
 	bar_style.direction = .Row
 	bar_style.clip = true
 	viewport_guess := tab_bar_viewport_guess(ui, bar_style)
@@ -195,6 +206,7 @@ tab_bar :: proc(
 	}
 
 	scroll_style := layout_style(.Column, width=scroll_viewport_guess, height=opts.height, clip=true)
+	if connected_appearance { scroll_style.width, scroll_style.grow = -1, 1 }
 	scroll := scroll_region_begin(
 		ui,
 		key=key_u64(1),
@@ -222,6 +234,7 @@ tab_bar :: proc(
 	selection_changed := !previous_state_valid || previous_selection_hash != selected_state_hash
 	viewport_changed := previous_scroll_width > 0 && abs(previous_scroll_width-viewport_width) > 0.5
 	content_changed := previous_content_width > 0 && abs(previous_content_width-content_width) > 0.5
+	selection_visibility_pending := selected_index >= 0 && tab_width > 0 && (selection_changed || viewport_changed || content_changed)
 	if selected_index >= 0 && tab_width > 0 && (selection_changed || viewport_changed || content_changed) {
 		left := f32(selected_index)*(tab_width+opts.gap)
 		right := left+tab_width
@@ -265,6 +278,7 @@ tab_bar :: proc(
 			variant=.Tab,
 		)
 		if tab_id == 0 { continue }
+		if item.selected { result.selected_tab = tab_id }
 		if len(item.tooltip) > 0 { _ = tooltip(ui, item.tooltip) }
 		_ = visual_part_attach(ui, tab_id, tab_id, visual_part_core(.Surface))
 		pending := &rt.pending[len(rt.pending)-1].description
@@ -274,6 +288,23 @@ tab_bar :: proc(
 		pending.paint_value |= 1 << 5 // selected underline is a composed surface part
 		if item.closable { pending.paint_value |= 1 << 3 }
 		if item.dirty { pending.paint_value |= 1 << 4 }
+		connected := opts.appearance == .Connected && item.selected
+		connected_ink := style_color(ui, .Text)
+		if connected {
+			fill := style_color(ui, .Surface)
+			ink := style_color(ui, .Text)
+			if opts.selected_fill_set && semantic_surface_color_is_valid(opts.selected_fill) && semantic_surface_color_is_valid(opts.selected_text) {
+				fill, ink = opts.selected_fill, opts.selected_text
+			}
+			if rt.style_environment.accessibility.increased_contrast { ink = style_contrast_fallback(ink, fill, 4.5) }
+			rt.pending[len(rt.pending)-1].semantic_surface_style = Semantic_Surface_Style{
+				defined=true, role=surface_core_color_role(.Surface),
+				fill_override=fill, fill_override_set=true,
+				shape=Surface_Shape{kind=.Connected_Tab},
+			}
+			pending.color = ink
+			connected_ink = ink
+		}
 		item_semantic_id := item.semantic_id
 		if !semantic_id_is_valid(item_semantic_id) { item_semantic_id = semantic_visual_id(tab_id) }
 		pending.semantic_id = item_semantic_id
@@ -291,7 +322,7 @@ tab_bar :: proc(
 			_ = drag_source(ui, opts.drag_type, item.semantic_id)
 			_ = drop_target(ui, opts.drag_type, item.semantic_id, .Between_Horizontal)
 		}
-		if tab_activated && result.action == .None { result = Tab_Bar_Result{.Select, index} }
+		if tab_activated && result.action == .None { result.action, result.item_index = .Select, index }
 
 		// Equal top and selected-indicator tracks center the content in the tab.
 		track_height := f32(1 if compact else 2)
@@ -309,7 +340,7 @@ tab_bar :: proc(
 			.Container,
 			label="tab-content",
 			key=key_u64(1),
-			style=layout_style(.Row, width=tab_width-16 if compact else tab_width,
+			style=layout_style(.Row, width=maxf(tab_width-(40 if connected_appearance else 16), 0) if compact else tab_width,
 				height=content_height, gap=0, align=.Center, clip=true, padding=0 if compact else 8),
 		)
 		_ = visual_part_attach(ui, content_id, tab_id, visual_part_core(.Content))
@@ -328,7 +359,7 @@ tab_bar :: proc(
 			append(&italic_span, Text_Style_Span{start=0, end=len(item.label), italic=true, italic_set=true})
 			_ = text_style_spans(ui, label_id, italic_span[:])
 		}
-		if item.label_muted && len(item.label) > 0 {
+		if item.label_muted && !connected && len(item.label) > 0 {
 			muted_span := make([dynamic]Text_Paint_Span, 0, 1, allocator=context.temp_allocator)
 			append(&muted_span, Text_Paint_Span{
 				start=0,
@@ -382,7 +413,7 @@ tab_bar :: proc(
 				}
 				close_id, close_activated := button_begin(
 					ui,
-					"×" if !dirty_close_reveal else "",
+					"×" if !dirty_close_reveal && !connected else "",
 					key=key_u64(5),
 					style=layout_style(.Row, width=close_width, height=TAB_CLOSE_CONTROL_SIZE, align=.Center),
 					text_style=DEFAULT_BUTTON_TEXT_STYLE,
@@ -396,7 +427,11 @@ tab_bar :: proc(
 				}
 				_ = visual_part_attach(ui, close_id, tab_id, visual_part_core(.Overlay), close_visibility,
 					reveal_on_direct_hover=dirty_close_reveal)
-				if close_activated && result.action == .None { result = Tab_Bar_Result{.Close, index} }
+				if close_activated && result.action == .None { result.action, result.item_index = .Close, index }
+				if connected && !dirty_close_reveal {
+					glyph := text(ui, "×", key=key_u64(1), style=layout_style(.Row, width=close_width, height=TAB_CLOSE_CONTROL_SIZE, align=.Center), text_style=DEFAULT_BUTTON_TEXT_STYLE)
+					_ = visual_part_attach(ui, glyph, tab_id, visual_part_core(.Label))
+				}
 				if dirty_close_reveal {
 					close_content := container_begin_simple(
 						ui,
@@ -419,6 +454,10 @@ tab_bar :: proc(
 						style=layout_style(.Row, width=TAB_CLOSE_CONTROL_SIZE, height=TAB_CLOSE_CONTROL_SIZE, align=.Center),
 						text_style=DEFAULT_BUTTON_TEXT_STYLE)
 					_ = visual_part_attach(ui, glyph_id, close_id, visual_part_core(.Label), .Owner_Hovered)
+					if connected {
+						span := [1]Text_Paint_Span{{start=0,end=2,color=connected_ink,color_set=true}}
+						_ = text_paint_spans(ui,glyph_id,span[:])
+					}
 					container_end(ui)
 				}
 				button_end(ui)
@@ -430,7 +469,7 @@ tab_bar :: proc(
 			ui,
 			surface_core_color_role(.Accent),
 			key=key_u64(6),
-			style=layout_style(.Row, height=track_height if item.selected else 0),
+			style=layout_style(.Row, height=track_height if item.selected && !connected else 0),
 			label="tab-selected-indicator",
 		)
 		_ = visual_part_attach(ui, indicator_id, tab_id, visual_part_core(.Selected_Indicator))
@@ -456,11 +495,17 @@ tab_bar :: proc(
 			loc,
 		)
 		if right_scroll_clicked {
+			selection_visibility_pending = false
 			offset_x = minf(offset_x+maxf(viewport_width*0.75, opts.min_tab_width+opts.gap), maxf(content_width-viewport_width, 0))
 			tab_bar_pending_scroll_set(rt, scroll.id, offset_x, content_width)
 		}
 		tab_bar_pending_button_disabled_set(rt, left_scroll_id, offset_x <= 0)
 		tab_bar_pending_button_disabled_set(rt, right_scroll_id, offset_x >= maxf(content_width-viewport_width, 0))
+	}
+	if left_scroll_clicked { selection_visibility_pending = false }
+	if selection_visibility_pending {
+		left := f32(selected_index)*(tab_width+opts.gap)
+		scroll_region_request_visible_range_x(rt, scroll.id, left, left+tab_width)
 	}
 	container_end(ui)
 	return result

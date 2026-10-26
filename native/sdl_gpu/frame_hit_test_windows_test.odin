@@ -8,6 +8,61 @@ import win "core:sys/windows"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
+Win32_Split_Chrome_Test_State :: struct {
+	header: alicorn.Node_ID,
+	regions: [2]Window_Chrome_Region,
+}
+
+win32_split_chrome_test_layout :: proc(state: rawptr, rt: ^alicorn.Runtime) -> Window_Chrome_Layout {
+	fixture := cast(^Win32_Split_Chrome_Test_State)state
+	return Window_Chrome_Layout{header=fixture.header, regions=fixture.regions[:]}
+}
+
+@(test)
+test_integrated_titlebar_split_grab_target_uses_finalized_hit_bounds_and_header_clip :: proc(t: ^testing.T) {
+	for scale in ([4]f32{1, 1.25, 1.5, 2}) {
+		rt := alicorn.new_runtime(alicorn.Rect{0, 0, 400, 240})
+		defer alicorn.destroy_runtime(&rt)
+		_ = alicorn.set_presentation_scale(&rt, scale, scale)
+		ui, ready := alicorn.begin_frame(&rt)
+		if !ready { testing.expect(t, false, "split chrome fixture should build"); continue }
+		split := alicorn.split_begin(&ui, "titlebar-grab-split", .Horizontal, 120, 40, 40)
+		_ = alicorn.split_first_begin(&ui, split)
+		alicorn.split_first_end(&ui, split)
+		divider_id := alicorn.split_divider(&ui, split, thickness=2, hit_size=10)
+		_ = alicorn.split_second_begin(&ui, split)
+		alicorn.split_second_end(&ui, split)
+		alicorn.split_end(&ui, split)
+		alicorn.end_frame(&ui)
+		divider, found := alicorn.node_info(&rt, divider_id)
+		if !found { testing.expect(t, false, "split divider should have finalized geometry"); continue }
+		fixture := Win32_Split_Chrome_Test_State{
+			header=split.id,
+			regions={{node=divider_id, kind=.Interactive}, {node=split.id, kind=.Window_Drag}},
+		}
+		chrome_height_pixels := i32(native_pixel_edge(32, scale))
+		geometry := win32_menu_resolve_chrome_geometry(&rt, win32_split_chrome_test_layout(&fixture, &rt),
+			win.RECT{left=0, top=0, right=800, bottom=win.LONG(chrome_height_pixels)}, scale)
+		x0, y0, x1, y1 := logical_to_pixel_bounds(divider.hit_bounds, scale, scale)
+		expected := win32_rect_intersection(win.RECT{win.LONG(x0), win.LONG(y0), win.LONG(x1), win.LONG(y1)}, geometry.header)
+		testing.expect(t, geometry.region_count == 2 && geometry.regions[0].bounds == expected &&
+			expected.right-expected.left > win.LONG(native_pixel_edge(divider.bounds.w, scale)) &&
+			expected.top == 0 && expected.bottom == win.LONG(chrome_height_pixels),
+			"the native header snapshot must use the finalized split grab target and clip away its body extent")
+		x := i32(native_pixel_edge(divider.bounds.x-2, scale))
+		y := i32(native_pixel_edge(12, scale))
+		testing.expect(t, win32_integrated_frame_hit_test(x, y, 800, 480, chrome_height_pixels,
+			0, 0, true, nil, nil, geometry.regions[:geometry.region_count], true) == win.LRESULT(win.HTCLIENT),
+			"the titlebar must route a splitter grab outside its visual rule to Alicorn rather than the window manager")
+		testing.expect(t, !win32_rect_contains(geometry.regions[0].bounds, x, chrome_height_pixels+1),
+			"the copied divider region must not extend below the measured native header")
+		controls := [1]Win32_Caption_Control{{bounds=expected, hit_test=win.LRESULT(win.HTCLOSE)}}
+		testing.expect(t, win32_integrated_frame_hit_test(x, y, 800, 480, chrome_height_pixels,
+			0, 0, true, controls[:], nil, geometry.regions[:geometry.region_count], true) == win.LRESULT(win.HTCLOSE),
+			"native caption controls retain priority over expanded splitter targets")
+	}
+}
+
 @(test)
 test_integrated_topmost_window_mouse_entry_preserves_native_rectangle :: proc(t: ^testing.T) {
 	if !sdl3.Init(sdl3.INIT_VIDEO) { testing.expect(t, false, "SDL video initialization failed"); return }
