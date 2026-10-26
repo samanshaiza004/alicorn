@@ -9,23 +9,49 @@ must be flagged in a `### Breaking changes` section per release.
 Source-compatible additions (new procs, new defaulted parameters,
 new optional features) live under `### Added` / `### Changed`.
 
-## Unreleased — Alicorn integration patches
+## Alicorn integration extensions — based on upstream v1.5.3
 
-Based on upstream v1.5.1 (`348fbe0caa2c691cf0e305258605342f45c547f5`).
+These additions are local to Alicorn's vendored copy and are not upstream
+patches to Runa:
 
 ### Added
 
 - `Paragraph_Opts.font_style_spans` selects font faces and one optional
-  variation axis over sorted, non-overlapping UTF-8 ranges. These ranges
-  participate in shaping and may affect metrics. Invalid or non-codepoint
-  boundaries return `Error.Invalid_Table`.
+  variation axis over sorted, non-overlapping UTF-8 ranges. The ranges
+  participate in shaping and can affect line metrics. Invalid or
+  non-codepoint boundaries return `Error.Invalid_Table`.
 - Read-only atlas page/slot views and generation-checked dirty snapshots let
-  retained GPU uploaders acknowledge only the exact atlas writes they submit.
+  retained GPU uploaders acknowledge only the atlas writes they submit.
+
+## 1.5.3 — 2026-10-25
+
+### Added
+
+- **`FEAT_TNUM` / `FEAT_PNUM` / `FEAT_LNUM`** figure-feature tag constants, beside
+  `FEAT_ONUM`.
+
+### Changed
+
+- **`parse.tag` and `feature` are now `contextless`**, so `feature(...)` works at
+  global scope (e.g. a package-level feature list). A non-4-byte tag returns
+  `Tag(0)` rather than asserting.
+
+## 1.5.2 — 2026-10-25
 
 ### Fixed
 
-- Hard line-break controls stay in paragraph layout but do not become visible
-  `.notdef` glyphs in fonts that lack control glyphs.
+- **Hard line-break controls no longer draw a `.notdef` box.** LF / CR / NEL /
+  LS / PS (and VT / FF) have no glyph, so the cmap maps them to .notdef — and
+  many fonts ship a *drawable* .notdef box (SF Compact, Roboto, Inter …), so a
+  renderer painted a visible box at every hard break. They're now blanked like a
+  default-ignorable: kept in the cluster stream as a zero-advance space, never
+  drawn. Line breaking and source clusters are unchanged. Reported by
+  @samanshaiza004 (#1).
+- **Other non-printing controls no longer box either.** A TAB the font leaves
+  unmapped now renders as a space (a font's own tab glyph is respected; true
+  tab-stop expansion stays the caller's job); the C0 / C1 / DEL controls (NUL,
+  BEL, …) are blanked to a zero-advance space. Genuinely missing *printable*
+  glyphs are still .notdef — that box is the correct "missing glyph" signal.
 
 ## 1.5.1 — 2026-10-20
 

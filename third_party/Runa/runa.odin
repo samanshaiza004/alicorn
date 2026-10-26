@@ -275,8 +275,9 @@ Feature_Setting :: shape.Feature_Setting
 
 // feature builds a Feature_Setting from a 4-character tag name. `on`
 // chooses the value: 1 (on) or 0 (off). A tag the shaper doesn't apply
-// is a silent no-op, exactly as in HarfBuzz.
-feature :: proc(name: string, on := true) -> Feature_Setting {
+// is a silent no-op, exactly as in HarfBuzz. Contextless, so it can be
+// used at global scope (e.g. a package-level `@(rodata)` feature list).
+feature :: proc "contextless" (name: string, on := true) -> Feature_Setting {
 	return Feature_Setting{tag = parse.tag(name), value = on ? 1 : 0}
 }
 
@@ -554,20 +555,6 @@ wrap_glyphs :: proc(text: string, all_glyphs: []Paragraph_Glyph, max_width, line
 		off += byte_len
 	}
 	runes := runes_buf[:]
-	// Hard breaks advance the paragraph even though the shaper intentionally
-	// emits no glyph for them. Count logical breaks here so a newline-only or
-	// trailing-newline paragraph still receives its empty line(s).
-	is_hard_break :: proc(r: rune) -> bool {
-		return r == '\n' || r == '\r' || r == 0x85 || r == 0x2028 || r == 0x2029
-	}
-	expected_line_count := 1
-	for i := 0; i < len(runes); i += 1 {
-		if !is_hard_break(runes[i]) { continue }
-		expected_line_count += 1
-		if runes[i] == '\r' && i+1 < len(runes) && runes[i+1] == '\n' {
-			i += 1
-		}
-	}
 
 	// allowed_breaks[i] = true if a line may break BEFORE codepoint i.
 	// mandatory_breaks[i] = true if a line MUST break before i.
@@ -609,9 +596,7 @@ wrap_glyphs :: proc(text: string, all_glyphs: []Paragraph_Glyph, max_width, line
 
 	out := make([dynamic]Line, 0, 4, allocator)
 	if len(all_glyphs) == 0 {
-		for _ in 0..<expected_line_count {
-			append(&out, Line{glyphs = make([]Paragraph_Glyph, 0, allocator), width = 0, height = line_h, baseline = baseline})
-		}
+		append(&out, Line{glyphs = make([]Paragraph_Glyph, 0, allocator), width = 0, height = line_h, baseline = baseline})
 		return out[:]
 	}
 
@@ -675,9 +660,6 @@ wrap_glyphs :: proc(text: string, all_glyphs: []Paragraph_Glyph, max_width, line
 	}
 	// Emit the tail.
 	emit_line(&out, all_glyphs, line_start_glyph, len(all_glyphs), line_h, baseline, allocator)
-	for len(out) < expected_line_count {
-		append(&out, Line{glyphs = make([]Paragraph_Glyph, 0, allocator), width = 0, height = line_h, baseline = baseline})
-	}
 
 	// Caller (`layout_paragraph`) owns `all_glyphs`'s backing storage
 	// and frees it after we return — we hold a slice view, not the

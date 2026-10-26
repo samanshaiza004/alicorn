@@ -137,6 +137,39 @@ is_default_ignorable :: proc(r: rune) -> bool {
 	return false
 }
 
+// is_hard_break_control reports a mandatory line/paragraph-break control
+// (UAX #14 BK, plus CR / LF / NEL). No font has a glyph for these, so the
+// cmap maps them to .notdef — and many fonts ship a *drawable* .notdef box
+// (SF Compact, Roboto, Inter, …), which paints a visible box at every hard
+// break. They drive line breaking but must never paint, so they are blanked
+// exactly like a default-ignorable: kept in the cluster stream as a
+// zero-advance space, never drawn.
+@(private)
+is_hard_break_control :: proc(r: rune) -> bool {
+	switch r {
+	case 0x000A, 0x000B, 0x000C, 0x000D, 0x0085, 0x2028, 0x2029:
+		return true
+	}
+	return false
+}
+
+// is_nonprinting_control reports a C0 / C1 / DEL control that has no display
+// form — NUL, BEL, backspace, the device controls, DEL, and the C1 block —
+// other than TAB (handled as a space) and the hard line-break controls above.
+// Like those, the cmap maps them to a (possibly drawable) .notdef, so they are
+// blanked to a zero-advance space: present in the cluster stream, never drawn.
+// Genuinely missing *printable* glyphs are left as .notdef on purpose — that
+// box is the correct "this glyph is missing" signal.
+@(private)
+is_nonprinting_control :: proc(r: rune) -> bool {
+	switch r {
+	case 0x0000..=0x0008, 0x000E..=0x001F, 0x007F,
+	     0x0080..=0x0084, 0x0086..=0x009F:
+		return true
+	}
+	return false
+}
+
 // shape_run shapes `text` for one font at `size` pixels, appending to
 // `out`. Existing entries in `out` are kept — the caller can reuse the
 // dynamic array across calls. Allocations made during shaping land in
@@ -159,30 +192,25 @@ shape_run :: proc(in_: ^Shape_Inputs, opts: Shape_Run_Opts, text: string, size: 
 
 	byte_idx: u32 = 0
 	for r in text {
-		rune_byte_len: u32
-		if r < 0x80 { rune_byte_len = 1 }
-		else if r < 0x800 { rune_byte_len = 2 }
-		else if r < 0x10000 { rune_byte_len = 3 }
-		else { rune_byte_len = 4 }
-
-		// Hard line-break controls participate in paragraph layout, but
-		// they are not drawable glyphs. Sending LF/CR through cmap lookup
-		// produces a .notdef box in fonts that lack a visible control glyph.
-		// Keep their source offsets implicit for the line-break pass while
-		// leaving the shaped stream strictly drawable.
-		if r == '\n' || r == '\r' || r == 0x85 || r == 0x2028 || r == 0x2029 {
-			byte_idx += rune_byte_len
-			continue
-		}
 		gid := parse.cmap_lookup(in_.cmap, r)
+		// A tab the font doesn't map (cmap → .notdef) is whitespace, not a
+		// break: render it as the font's space (one space wide) rather than a
+		// box. A font that maps tab to its own glyph keeps it. True tab-stop
+		// expansion is the caller's job, before shaping.
+		if r == '\t' && gid == 0 {
+			if sp := parse.cmap_lookup(in_.cmap, ' '); sp != 0 { gid = sp }
+		}
 		append(&gids, gid)
 		append(&clusters, byte_idx)
 		append(&runes, r)
-		append(&ignorable, is_default_ignorable(r))
+		append(&ignorable, is_default_ignorable(r) || is_hard_break_control(r) || is_nonprinting_control(r))
 
 		// Advance byte index by the UTF-8 length of the codepoint we
 		// just consumed.
-		byte_idx += rune_byte_len
+		if r < 0x80 { byte_idx += 1 }
+		else if r < 0x800 { byte_idx += 2 }
+		else if r < 0x10000 { byte_idx += 3 }
+		else { byte_idx += 4 }
 	}
 
 	// Stage 1b: Arabic / cursive-joining per-position substitution.
@@ -296,8 +324,9 @@ shape_run :: proc(in_: ^Shape_Inputs, opts: Shape_Run_Opts, text: string, size: 
 		if i < len(clusters) { cluster = clusters[i] }
 
 		// Default-ignorables (LRM / RLM / ALM, ZWJ / ZWNJ, variation
-		// selectors) have already done their job in the joining and bidi
-		// passes and must not paint. Emit the font's space glyph at zero
+		// selectors) and hard line-break controls (LF / CR / NEL / LS / PS)
+		// have done their job in the joining / bidi / line-break passes and
+		// must not paint. Emit the font's space glyph at zero
 		// advance where it has one (HarfBuzz's default — keeps the glyph
 		// and its cluster in the run). Where the font ships no space glyph
 		// — many emoji fonts don't, and a variation selector routes to the
