@@ -281,7 +281,7 @@ native_solid_build :: proc(
 		visible_command := native_solid_visible_command(draw, surface, material, scale_x, scale_y)
 		_, _, _, _, visible := native_solid_pixel_bounds(visible_command, scale_x, scale_y, target_w, target_h)
 		if visible {
-			required_vertices += native_solid_material_vertex_count(material, surface.physical_height, surface.shape, surface.stroke)
+			required_vertices += native_solid_material_vertex_count(material, surface.physical_height, surface.shape, surface.stroke, surface.top_edge_gap)
 		}
 	}
 	if required_vertices > cap(renderer.vertices) {
@@ -297,13 +297,20 @@ native_solid_build :: proc(
 		visible_command := native_solid_visible_command(draw, surface, material, scale_x, scale_y)
 		x0, y0, x1, y1, visible := native_solid_pixel_bounds(visible_command, scale_x, scale_y, target_w, target_h)
 		if !visible { continue }
-		needed := native_solid_material_vertex_count(material, surface.physical_height, surface.shape, surface.stroke)
+		needed := native_solid_material_vertex_count(material, surface.physical_height, surface.shape, surface.stroke, surface.top_edge_gap)
 		if len(renderer.vertices) + needed > renderer.vertex_capacity && !native_solid_ensure_vertex_capacity(renderer, len(renderer.vertices) + needed) {
 			return false
 		}
 		first := sdl3.Uint32(len(renderer.vertices))
 		rounded := native_solid_shape_is_rounded(surface.shape)
-		if rounded {
+		if surface.shape.kind == .Connected_Tab {
+			base := native_solid_unclipped_pixel_bounds(draw, scale_x, scale_y)
+			native_solid_append_connected_tab(&renderer.vertices, base, surface.fill, draw.opacity, max(scale_x,scale_y))
+			renderer.draws[i] = Native_Solid_Draw{
+				first_vertex=first, vertex_count=sdl3.Uint32(len(renderer.vertices)-int(first)),
+				scissor=native_solid_pixel_scissor(draw, scale_x, scale_y, target_w, target_h), has_scissor=true,
+			}
+		} else if rounded {
 			base := native_solid_unclipped_pixel_bounds(draw, scale_x, scale_y)
 			shape := surface.shape
 			shape.corner_radius *= max(scale_x, scale_y)
@@ -350,7 +357,11 @@ native_solid_build :: proc(
 			}
 			stroke := surface.stroke
 			stroke.width *= max(scale_x, scale_y)
-			native_solid_append_material_surface(&renderer.vertices, base, shadow, surface.fill, material, surface.physical_height, draw.opacity, stroke, draw.stroke_placement)
+			gap := [2]f32{}
+			if surface.top_edge_gap[1] > surface.top_edge_gap[0] {
+				gap = {f32(native_pixel_edge(surface.top_edge_gap[0]+draw.translation[0],scale_x)), f32(native_pixel_edge(surface.top_edge_gap[1]+draw.translation[0],scale_x))}
+			}
+			native_solid_append_material_surface(&renderer.vertices, base, shadow, surface.fill, material, surface.physical_height, draw.opacity, stroke, draw.stroke_placement, gap)
 			renderer.draws[i] = Native_Solid_Draw{
 				first_vertex=first,
 				vertex_count=sdl3.Uint32(len(renderer.vertices)-int(first)),

@@ -363,7 +363,8 @@ semantic_surface_material_inputs_changed :: proc(previous, next: Semantic_Surfac
 	       previous.shape.corner_radius != next.shape.corner_radius ||
 	       previous.material != next.material ||
 	       previous.physical_height != next.physical_height ||
-	       previous.material_group != next.material_group
+	       previous.material_group != next.material_group ||
+	       previous.open_top_edge != next.open_top_edge
 }
 
 semantic_surface_role_changed :: proc(previous, next: Semantic_Surface_Style) -> bool {
@@ -512,6 +513,9 @@ copy_node_description :: proc(
 	} else {
 		delete_key(&rt.semantic_surfaces, node.id)
 	}
+	if semantic_surface_style.defined && semantic_surface_style.open_top_edge != 0 {
+		rt.surface_top_edge_links[node.id] = semantic_surface_style.open_top_edge
+	} else { delete_key(&rt.surface_top_edge_links, node.id) }
 	if visual_part.defined {
 		rt.visual_parts[node.id] = visual_part
 	} else {
@@ -734,6 +738,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	delete_key(&rt.computed_styles, id)
 	gpu_surface_image_layers_destroy(rt, id)
 	delete_key(&rt.semantic_surfaces, id)
+	delete_key(&rt.surface_top_edge_links, id)
 	delete_key(&rt.visual_parts, id)
 	delete_key(&rt.semantic_tree_orders, id)
 	adaptive_semantic_descriptor_delete(rt, id)
@@ -1019,6 +1024,7 @@ reconcile :: proc(rt: ^Runtime) {
 	semantic_prune_touched_collections(rt)
 	semantic_commit(rt)
 	update_paint(rt)
+	clear(&rt.scroll_visibility_requests)
 	rt.frame_open = false
 	// Preserve application invalidations raised while this description was
 	// open, in addition to follow-up work caused by changed scroll geometry.
@@ -1092,6 +1098,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.finalized_geometry)
 	delete(rt.computed_styles)
 	delete(rt.semantic_surfaces)
+	delete(rt.surface_top_edge_links)
 	delete(rt.visual_parts)
 	for _, &entity in rt.semantic_entities { semantic_entity_strings_destroy(&entity, rt.persistent_allocator) }
 	delete(rt.semantic_entities)
@@ -1113,6 +1120,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.order)
 	delete(rt.top_level)
 	delete(rt.pending)
+	delete(rt.scroll_visibility_requests)
 	delete(rt.seen)
 	delete(rt.identity_scopes)
 	delete(rt.grid_pending_scopes)

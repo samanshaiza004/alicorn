@@ -555,6 +555,13 @@ Scroll_Axes :: enum {
 	Both,
 }
 
+// A one-frame layout intent used by retained controls whose scrollable content
+// must reveal a range after their actual viewport has been allocated.
+Scroll_Visibility_Request :: struct {
+	node: Node_ID,
+	start_x, end_x: f32,
+}
+
 Scroll_Axis_Behavior :: enum {
 	Auto_Lock,
 	Free,
@@ -1769,6 +1776,7 @@ Runtime :: struct {
 	computed_styles: map[Node_ID]Computed_Style,
 	style_stats_suppressed: bool,
 	semantic_surfaces: map[Node_ID]Semantic_Surface_Style,
+	surface_top_edge_links: map[Node_ID]Node_ID,
 	visual_parts: map[Node_ID]Visual_Part_Style,
 	semantic_entities: map[Semantic_ID]Semantic_Entity,
 	semantic_tree_orders: map[Node_ID]u64,
@@ -1795,6 +1803,7 @@ Runtime :: struct {
 	order:       [dynamic]Node_ID,
 	top_level:   [dynamic]Node_ID,
 	pending:     [dynamic]Pending_Item,
+	scroll_visibility_requests: [dynamic]Scroll_Visibility_Request,
 	seen:        map[Node_ID]Identity_Declaration,
 	identity_scopes: map[Node_ID]Identity_Declaration,
 	grid_pending_scopes: map[Node_ID]bool,

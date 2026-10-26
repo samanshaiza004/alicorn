@@ -96,6 +96,7 @@ style_inspector_surface_shape_name :: proc(kind: Surface_Shape_Kind) -> string {
 	case .Rectangle: return "rectangle"
 	case .Rounded_Rectangle: return "rounded-rectangle"
 	case .Line: return "line"
+	case .Connected_Tab: return "connected-tab-contour"
 	}
 	return "unknown"
 }

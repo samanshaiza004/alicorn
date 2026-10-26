@@ -445,6 +445,7 @@ begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
 	rt.frame_open = true
 	rt.context_menu.described = false
 	clear(&rt.pending)
+	clear(&rt.scroll_visibility_requests)
 	clear(&rt.semantic_collection_touched)
 	clear(&rt.seen)
 	clear(&rt.identity_scopes)

@@ -12,6 +12,8 @@ NATIVE_ROUNDED_CONTOUR_POINTS :: 4 * NATIVE_ROUNDED_CORNER_SEGMENTS + 3
 NATIVE_ROUNDED_FILL_VERTICES :: NATIVE_ROUNDED_CONTOUR_POINTS * 9
 NATIVE_ROUNDED_RING_VERTICES :: NATIVE_ROUNDED_CONTOUR_POINTS * 6
 NATIVE_ROUNDED_ANTIALIAS_FRINGE :: 0.75
+NATIVE_CONNECTED_TAB_STEPS :: 20
+NATIVE_CONNECTED_TAB_VERTICES :: NATIVE_CONNECTED_TAB_STEPS*18+6
 
 // Native material effects are expanded into ordinary surface vertices. The
 // flat path remains one quad per Surface_Paint and needs no material geometry.
@@ -24,7 +26,9 @@ native_solid_material_vertex_count :: proc(
 	physical_height: f32,
 	shape := alicorn.Surface_Shape{kind=.Rectangle},
 	stroke := alicorn.Paint_Stroke{},
+	top_edge_gap := [2]f32{},
 ) -> int {
+	if shape.kind == .Connected_Tab { return NATIVE_CONNECTED_TAB_VERTICES }
 	if native_solid_shape_is_rounded(shape) {
 		count := NATIVE_ROUNDED_FILL_VERTICES
 		if material.kind == .Analytic_Relief && physical_height != 0 {
@@ -37,11 +41,56 @@ native_solid_material_vertex_count :: proc(
 	}
 	count := 6 // the filled surface itself
 	if stroke.width > 0 { count += 24 }
+	if top_edge_gap[1] > top_edge_gap[0] && stroke.width > 0 { count += 6 }
 	if material.kind != .Analytic_Relief || physical_height == 0 { return count }
 	if physical_height > 0 && material.outer_shadow_strength > 0 && material.outer_shadow_radius > 0 { count += 12 }
 	if material.bevel_strength > 0 && material.bevel_width > 0 { count += 24 }
 	if material.inner_shadow_strength > 0 { count += 24 }
+	if top_edge_gap[1] > top_edge_gap[0] {
+		if material.bevel_strength > 0 && material.bevel_width > 0 { count += 6 }
+		if material.inner_shadow_strength > 0 { count += 6 }
+	}
 	return count
+}
+
+// Bounded component-private contour: two cubic shoulders joined by a flat
+// crown and an open baseline. Every vertex stays in the tab's own allocation,
+// so its decoration cannot cover an adjacent label or close target.
+native_solid_append_connected_tab :: proc(vertices: ^[dynamic]Native_Text_Vertex, bounds: alicorn.Rect, fill: alicorn.Color, opacity: f32, scale: f32) {
+	if bounds.w <= 0 || bounds.h <= 0 { return }
+	shoulder := min(bounds.w*0.22, 28*scale)
+	top := bounds.y+min(4*scale, bounds.h*0.12)
+	bottom := bounds.y+bounds.h
+	color := [4]f32{fill.r, fill.g, fill.b, fill.a*opacity}
+	transparent := color
+	transparent[3] = 0
+	fringe := f32(NATIVE_ROUNDED_ANTIALIAS_FRINGE)
+	previous_x, previous_y := bounds.x, bottom
+	for step in 1..=NATIVE_CONNECTED_TAB_STEPS {
+		t := f32(step)/f32(NATIVE_CONNECTED_TAB_STEPS)
+		u := 1-t
+		// Cubic control points give horizontal tangents at both endpoints.
+		x := bounds.x+shoulder*(3*u*u*t*0.48+3*u*t*t*0.52+t*t*t)
+		y := bottom+(top-bottom)*(3*u*t*t+t*t*t)
+		previous_right := bounds.x+bounds.w-(previous_x-bounds.x)
+		right := bounds.x+bounds.w-(x-bounds.x)
+		uv := [2]f32{0.5,0.5}
+		append(vertices,
+			Native_Text_Vertex{{previous_x,previous_y,0},color,uv}, Native_Text_Vertex{{previous_right,previous_y,0},color,uv}, Native_Text_Vertex{{right,y,0},color,uv},
+			Native_Text_Vertex{{previous_x,previous_y,0},color,uv}, Native_Text_Vertex{{right,y,0},color,uv}, Native_Text_Vertex{{x,y,0},color,uv},
+			Native_Text_Vertex{{previous_x,previous_y,0},color,uv}, Native_Text_Vertex{{x,y,0},color,uv}, Native_Text_Vertex{{x-fringe,y,0},transparent,uv},
+			Native_Text_Vertex{{previous_x,previous_y,0},color,uv}, Native_Text_Vertex{{x-fringe,y,0},transparent,uv}, Native_Text_Vertex{{previous_x-fringe,previous_y,0},transparent,uv},
+			Native_Text_Vertex{{previous_right,previous_y,0},color,uv}, Native_Text_Vertex{{right+fringe,y,0},transparent,uv}, Native_Text_Vertex{{right,y,0},color,uv},
+			Native_Text_Vertex{{previous_right,previous_y,0},color,uv}, Native_Text_Vertex{{previous_right+fringe,previous_y,0},transparent,uv}, Native_Text_Vertex{{right+fringe,y,0},transparent,uv},
+		)
+		previous_x, previous_y = x,y
+	}
+	uv := [2]f32{0.5,0.5}
+	left, right := bounds.x+shoulder, bounds.x+bounds.w-shoulder
+	append(vertices,
+		Native_Text_Vertex{{left,top,0},color,uv}, Native_Text_Vertex{{right,top,0},color,uv}, Native_Text_Vertex{{right,top-fringe,0},transparent,uv},
+		Native_Text_Vertex{{left,top,0},color,uv}, Native_Text_Vertex{{right,top-fringe,0},transparent,uv}, Native_Text_Vertex{{left,top-fringe,0},transparent,uv},
+	)
 }
 
 native_solid_rounded_contour_point :: proc(bounds: alicorn.Rect, radius, inset: f32, index: int) -> (point, normal: [2]f32) {
@@ -247,6 +296,7 @@ native_solid_append_rect_stroke :: proc(
 	stroke: alicorn.Paint_Stroke,
 	opacity: f32,
 	stroke_placement := alicorn.Paint_Stroke_Placement.Centered,
+	top_edge_gap := [2]f32{},
 ) {
 	if stroke.width <= 0 || base.w <= 0 || base.h <= 0 { return }
 	inside := stroke.width*0.5
@@ -262,7 +312,7 @@ native_solid_append_rect_stroke :: proc(
 	top := base.y-outside
 	right := base.x+base.w+outside
 	bottom := base.y+base.h+outside
-	native_solid_append_material_edge(vertices, left, top, right, base.y+inside, color)
+	native_solid_append_top_edge(vertices, left, top, right, base.y+inside, color, top_edge_gap)
 	native_solid_append_material_edge(vertices, left, base.y+base.h-inside, right, bottom, color)
 	native_solid_append_material_edge(vertices, left, base.y+inside, base.x+inside, base.y+base.h-inside, color)
 	native_solid_append_material_edge(vertices, base.x+base.w-inside, base.y+inside, right, base.y+base.h-inside, color)
@@ -277,6 +327,7 @@ native_solid_append_material_surface :: proc(
 	opacity: f32,
 	stroke := alicorn.Paint_Stroke{},
 	stroke_placement := alicorn.Paint_Stroke_Placement.Centered,
+	top_edge_gap := [2]f32{},
 ) {
 	if base.w <= 0 || base.h <= 0 { return }
 	if material.kind != .Analytic_Relief || physical_height == 0 {
@@ -284,7 +335,7 @@ native_solid_append_material_surface :: proc(
 		// path: no shadow/bevel geometry and no intermediate material work.
 		native_solid_append_quad(vertices, base.x, base.y, base.x+base.w, base.y+base.h,
 			[4]f32{fill.r, fill.g, fill.b, fill.a*opacity})
-		native_solid_append_rect_stroke(vertices, base, stroke, opacity, stroke_placement)
+		native_solid_append_rect_stroke(vertices, base, stroke, opacity, stroke_placement, top_edge_gap)
 		return
 	}
 	height_factor := native_solid_material_height_factor(physical_height)
@@ -316,7 +367,7 @@ native_solid_append_material_surface :: proc(
 		left[3] *= opacity
 		bottom[3] *= opacity
 		right[3] *= opacity
-		native_solid_append_material_edge(vertices, base.x, base.y, base.x+base.w, base.y+bevel_width, top)
+		native_solid_append_top_edge(vertices, base.x, base.y, base.x+base.w, base.y+bevel_width, top, top_edge_gap)
 		native_solid_append_material_edge(vertices, base.x, base.y+bevel_width, base.x+bevel_width, base.y+base.h-bevel_width, left)
 		native_solid_append_material_edge(vertices, base.x, base.y+base.h-bevel_width, base.x+base.w, base.y+base.h, bottom)
 		native_solid_append_material_edge(vertices, base.x+base.w-bevel_width, base.y+bevel_width, base.x+base.w, base.y+base.h-bevel_width, right)
@@ -331,10 +382,19 @@ native_solid_append_material_surface :: proc(
 		inner_left[3] *= opacity
 		inner_bottom[3] *= opacity
 		inner_right[3] *= opacity
-		native_solid_append_material_edge(vertices, base.x+bevel_width, base.y+bevel_width, base.x+base.w-bevel_width, base.y+bevel_width+inner_width, inner_top)
+		native_solid_append_top_edge(vertices, base.x+bevel_width, base.y+bevel_width, base.x+base.w-bevel_width, base.y+bevel_width+inner_width, inner_top, top_edge_gap)
 		native_solid_append_material_edge(vertices, base.x+bevel_width, base.y+bevel_width+inner_width, base.x+bevel_width+inner_width, base.y+base.h-bevel_width, inner_left)
 		native_solid_append_material_edge(vertices, base.x+bevel_width, base.y+base.h-bevel_width-inner_width, base.x+base.w-bevel_width, base.y+base.h-bevel_width, inner_bottom)
 		native_solid_append_material_edge(vertices, base.x+base.w-bevel_width-inner_width, base.y+bevel_width+inner_width, base.x+base.w-bevel_width, base.y+base.h-bevel_width-inner_width, inner_right)
 	}
-	native_solid_append_rect_stroke(vertices, base, stroke, opacity, stroke_placement)
+	native_solid_append_rect_stroke(vertices, base, stroke, opacity, stroke_placement, top_edge_gap)
+}
+
+native_solid_append_top_edge :: proc(vertices: ^[dynamic]Native_Text_Vertex, x0,y0,x1,y1:f32, color:[4]f32, gap:[2]f32) {
+	if gap[1] <= gap[0] || gap[1] <= x0 || gap[0] >= x1 {
+		native_solid_append_material_edge(vertices,x0,y0,x1,y1,color)
+		return
+	}
+	native_solid_append_material_edge(vertices,x0,y0,max(x0,gap[0]),y1,color)
+	native_solid_append_material_edge(vertices,min(x1,gap[1]),y0,x1,y1,color)
 }

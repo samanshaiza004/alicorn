@@ -109,6 +109,7 @@ Win32_Menu_State :: struct {
 	hovered:    int,
 	active_menu: int,
 	menu_mode: bool,
+	alt_menu_pending: bool,
 	chrome_height: f32,
 	chrome_height_pixels: i32,
 	pixels_per_unit: f32,
@@ -506,6 +507,10 @@ win32_menu_layout_label_bounds :: proc(state: ^Win32_Menu_State) {
 	} else {
 		state.title.bounds = win.RECT{}
 	}
+	if win32_menu_labels_hidden(state) {
+		for &label in state.labels { label.bounds = win.RECT{} }
+		return
+	}
 	for i in 0..<len(state.labels) {
 		label := &state.labels[i]
 		label.bounds = win.RECT{}
@@ -516,6 +521,12 @@ win32_menu_layout_label_bounds :: proc(state: ^Win32_Menu_State) {
 		label.bounds = win.RECT{left=win.LONG(left), top=0, right=win.LONG(min(left+width, usable_right)), bottom=win.LONG(state.chrome_height_pixels)}
 		left += width
 	}
+}
+
+win32_menu_labels_hidden :: proc(state: ^Win32_Menu_State) -> bool {
+	return state != nil && state.menu != nil && state.menu.application != nil &&
+		state.menu.application.window_decorations == .Integrated_Title_Bar &&
+		state.menu.application.menu_presentation == .Hidden
 }
 
 win32_menu_application_owns_chrome :: proc(state: ^Win32_Menu_State) -> bool {
@@ -595,28 +606,40 @@ native_menu_sync_chrome_layout :: proc(menu: ^Native_Menu_Runtime) {
 	if menu == nil || menu.platform_data == nil || menu.runtime == nil || menu.application == nil { return }
 	state := cast(^Win32_Menu_State)menu.platform_data
 	if !state.frame_enabled || !win32_menu_application_owns_chrome(state) { return }
-	geometry := Win32_Chrome_Geometry{application_owned=true}
 	layout := menu.application.window_chrome_layout(menu.application.state, menu.runtime)
-	header, header_ok := alicorn.node_info(menu.runtime, layout.header)
 	client: win.RECT
 	if !win.GetClientRect(state.hwnd, &client) { return }
 	native_header := win.RECT{left=0, top=0,
 		right=client.right,
 		bottom=win.LONG(min(state.chrome_height_pixels, i32(client.bottom)))}
+	state.chrome_geometry = win32_menu_resolve_chrome_geometry(menu.runtime, layout, native_header, state.pixels_per_unit)
+}
+
+// Resolve once after retained finalization, rather than traversing the tree
+// from WM_NCHITTEST. The same bounded snapshot covers pointer-only split drags.
+win32_menu_resolve_chrome_geometry :: proc(
+	rt: ^alicorn.Runtime,
+	layout: Window_Chrome_Layout,
+	native_header: win.RECT,
+	density: f32,
+) -> Win32_Chrome_Geometry {
+	geometry := Win32_Chrome_Geometry{application_owned=true}
+	header, header_ok := alicorn.node_info(rt, layout.header)
 	if header_ok && header.active {
-		x0, y0, x1, y1 := logical_to_pixel_bounds(header.bounds, state.pixels_per_unit, state.pixels_per_unit)
+		x0, y0, x1, y1 := logical_to_pixel_bounds(header.bounds, density, density)
 		retained_header := win.RECT{win.LONG(x0), win.LONG(y0), win.LONG(x1), win.LONG(y1)}
 		geometry.header = win32_rect_intersection(retained_header, native_header)
 	}
 	if geometry.header.right <= geometry.header.left || geometry.header.bottom <= geometry.header.top {
-		state.chrome_geometry = geometry
-		return
+		return geometry
 	}
 	for region in layout.regions {
 		if region.node == 0 || geometry.region_count >= len(geometry.regions) { continue }
-		node, ok := alicorn.node_info(menu.runtime, region.node)
+		node, ok := alicorn.node_info(rt, region.node)
 		if !ok || !node.active { continue }
-		x0, y0, x1, y1 := logical_to_pixel_bounds(node.bounds, state.pixels_per_unit, state.pixels_per_unit)
+		region_bounds := node.bounds
+		if region.kind == .Interactive && node.kind == .Split_Handle { region_bounds = node.hit_bounds }
+		x0, y0, x1, y1 := logical_to_pixel_bounds(region_bounds, density, density)
 		bounds := win32_rect_intersection(
 			win.RECT{win.LONG(x0), win.LONG(y0), win.LONG(x1), win.LONG(y1)},
 			geometry.header,
@@ -625,7 +648,7 @@ native_menu_sync_chrome_layout :: proc(menu: ^Native_Menu_Runtime) {
 		geometry.regions[geometry.region_count] = Win32_Chrome_Hit_Region{bounds, region.kind}
 		geometry.region_count += 1
 	}
-	state.chrome_geometry = geometry
+	return geometry
 }
 
 win32_menu_extend_frame :: proc(state: ^Win32_Menu_State) -> bool {
@@ -928,6 +951,7 @@ win32_menu_dispatch_native_id :: proc(state: ^Win32_Menu_State, native_id: u32) 
 win32_menu_exit_mode_state :: proc(state: ^Win32_Menu_State, hovered_index: int) {
 	if state == nil { return }
 	state.menu_mode = false
+	state.alt_menu_pending = false
 	state.active_menu = -1
 	state.hovered = hovered_index
 }
@@ -956,6 +980,35 @@ win32_menu_finish_popup :: proc(state: ^Win32_Menu_State, native_id: u32, hovere
 	}
 }
 
+win32_menu_popup_anchor :: proc(state: ^Win32_Menu_State, index: int) -> win.POINT {
+	if state == nil || index < 0 || index >= len(state.labels) { return {} }
+	if win32_menu_labels_hidden(state) {
+		scale := f32(state.dpi if state.dpi != 0 else 96)/96
+		return win.POINT{win.LONG(native_pixel_edge(8, scale)), win.LONG(state.chrome_height_pixels)}
+	}
+	return win.POINT{state.labels[index].bounds.left, state.labels[index].bounds.bottom}
+}
+
+// A bare Alt opens a native popup on release. Waiting for release leaves
+// Alt+Space with Windows and lets Alt+letter choose its original menu.
+win32_menu_take_alt_popup :: proc(state: ^Win32_Menu_State) -> int {
+	if state == nil { return -1 }
+	pending := state.alt_menu_pending
+	state.alt_menu_pending = false
+	if pending && win32_menu_labels_hidden(state) {
+		for label, index in state.labels {
+			if label.popup != nil && label.direct_menu == nil { return index }
+		}
+	}
+	return -1
+}
+
+win32_menu_cancel_input :: proc(state: ^Win32_Menu_State) {
+	if state == nil { return }
+	state.gesture_owner = .None
+	state.alt_menu_pending = false
+}
+
 win32_menu_open_popup :: proc(state: ^Win32_Menu_State, index: int) {
 	if state == nil || index < 0 || index >= len(state.labels) { return }
 	label := state.labels[index]
@@ -963,10 +1016,11 @@ win32_menu_open_popup :: proc(state: ^Win32_Menu_State, index: int) {
 	win32_menu_refresh_state(state)
 	client_origin := win.POINT{}
 	if !win.ClientToScreen(state.hwnd, &client_origin) { return }
+	anchor := win32_menu_popup_anchor(state, index)
 	flags := win.UINT(win.TPM_RETURNCMD | win.TPM_NONOTIFY | win.TPM_LEFTALIGN | win.TPM_TOPALIGN)
 	command := win.TrackPopupMenu(label.popup, flags,
-		win.INT(client_origin.x+label.bounds.left),
-		win.INT(client_origin.y+label.bounds.bottom),
+		win.INT(client_origin.x+anchor.x),
+		win.INT(client_origin.y+anchor.y),
 		0, state.hwnd, nil)
 	hovered_index := -1
 	if command == 0 { hovered_index = win32_menu_hovered_label_at_cursor(state) }
@@ -976,6 +1030,7 @@ win32_menu_open_popup :: proc(state: ^Win32_Menu_State, index: int) {
 
 win32_menu_label_activate :: proc(state: ^Win32_Menu_State, index: int) {
 	if state == nil || state.menu == nil || state.menu.application == nil || index < 0 || index >= len(state.labels) { return }
+	state.alt_menu_pending = false
 	label := &state.labels[index]
 	if label.direct_menu != nil {
 		if label.direct_menu.state.enabled {
@@ -997,15 +1052,17 @@ native_menu_handle_keydown :: proc(menu: ^Native_Menu_Runtime, keycode: int, mod
 	alt := native_text_modifier(modifiers, sdl3.KMOD_ALT)
 	control := native_text_modifier(modifiers, sdl3.KMOD_CTRL)
 	super := native_text_modifier(modifiers, sdl3.KMOD_GUI)
-	if alt && keycode == int(sdl3.K_SPACE) { return false }
+	if alt && keycode == int(sdl3.K_SPACE) { state.alt_menu_pending = false; return false }
 	if (keycode == int(sdl3.K_LALT) || keycode == int(sdl3.K_RALT)) && !control && !super {
 		if len(state.labels) == 0 { return false }
+		if win32_menu_labels_hidden(state) { state.alt_menu_pending = true; return true }
 		state.menu_mode = true
 		state.active_menu = 0
 		state.hovered = -1
 		native_menu_request_chrome_redraw(menu)
 		return true
 	}
+	state.alt_menu_pending = false
 	if alt && !control && !super {
 		upper := keycode
 		if upper >= 'a' && upper <= 'z' { upper -= ('a' - 'A') }
@@ -1131,7 +1188,7 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 	state.hwnd = hwnd
 	integrated := state.frame_enabled
 	if message == win.WM_CANCELMODE || message == win.WM_CAPTURECHANGED || message == win.WM_KILLFOCUS {
-		state.gesture_owner = .None
+		win32_menu_cancel_input(state)
 	} else if message == win.WM_LBUTTONUP &&
 		(state.gesture_owner == .Alicorn || state.gesture_owner == .Native_Menu) {
 		state.gesture_owner = .None
@@ -1203,6 +1260,10 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 	if message == win.WM_INITMENUPOPUP { win32_menu_refresh_state(state) }
 
 	if integrated {
+		if message == win.WM_LBUTTONDOWN || message == win.WM_RBUTTONDOWN ||
+			message == win.WM_NCLBUTTONDOWN || message == win.WM_NCRBUTTONDOWN {
+			state.alt_menu_pending = false
+		}
 		if message == win.WM_LBUTTONUP && state.caption_pressed >= 0 {
 			state.caption_pressed = -1
 			native_menu_request_chrome_redraw(state.menu)
@@ -1253,6 +1314,13 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 			alt_context := (uintptr(lparam) & (uintptr(1) << 29)) != 0
 			if key == win.VK_MENU {
 				if len(state.labels) > 0 {
+					if win32_menu_labels_hidden(state) {
+						// AltGr and modified Alt chords must not arm the bare-Alt route.
+						state.alt_menu_pending = win.GetKeyState(win.VK_CONTROL) >= 0 &&
+							win.GetKeyState(win.VK_LWIN) >= 0 && win.GetKeyState(win.VK_RWIN) >= 0
+						if state.alt_menu_pending { return 0 }
+						return win.DefSubclassProc(hwnd, message, wparam, lparam)
+					}
 					state.menu_mode = true
 					state.active_menu = 0
 					state.hovered = -1
@@ -1260,6 +1328,7 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 					return 0
 				}
 			} else if key != WIN32_VK_SPACE && alt_context {
+				state.alt_menu_pending = false
 				for menu, index in state.menu.application.menus {
 					if len(menu.label) > 0 {
 						first := int(menu.label[0])
@@ -1274,7 +1343,9 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 						}
 					}
 				}
-			}
+			} else { state.alt_menu_pending = false }
+		} else if message == win.WM_SYSKEYUP && int(uintptr(wparam) & 0xff) == win.VK_MENU {
+			if index := win32_menu_take_alt_popup(state); index >= 0 { win32_menu_label_activate(state, index); return 0 }
 		}
 	}
 

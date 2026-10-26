@@ -56,10 +56,13 @@ Icon_Paint :: struct {
 	color: Color,
 }
 
-Surface_Shape_Kind :: enum {
+Surface_Shape_Kind :: enum u8 {
 	Rectangle,
 	Rounded_Rectangle,
 	Line,
+	// Component-private bounded contour. Public surface_begin callers cannot
+	// author this shape; TabBar owns its decoration and interaction separately.
+	Connected_Tab,
 }
 
 Surface_Shape :: struct {
@@ -76,6 +79,8 @@ surface_shape_is_valid :: proc(shape: Surface_Shape) -> bool {
 	case .Rounded_Rectangle:
 		return shape.corner_radius == shape.corner_radius && shape.corner_radius >= 0 && shape.corner_radius <= SURFACE_CORNER_RADIUS_MAX
 	case .Line:
+		return false
+	case .Connected_Tab:
 		return false
 	}
 	return false
@@ -99,6 +104,9 @@ Surface_Paint :: struct {
 	material:        Material_ID,
 	physical_height: f32,
 	material_group:  Material_Group_ID,
+	// Absolute logical X coordinates of an opening in the top optical edge.
+	// A zero interval keeps the ordinary uninterrupted surface treatment.
+	top_edge_gap:    [2]f32,
 }
 
 Text_Run_Source :: enum {
@@ -161,6 +169,7 @@ paint_surface_command :: proc(
 	material_group: Material_Group_ID = MATERIAL_GROUP_NONE,
 	stroke: Paint_Stroke = {},
 	stroke_placement: Paint_Stroke_Placement = .Centered,
+	top_edge_gap: [2]f32 = {},
 ) -> Paint_Command {
 	return Paint_Command{
 		owner=owner,
@@ -176,6 +185,7 @@ paint_surface_command :: proc(
 			physical_height=physical_height,
 			material_group=material_group,
 			stroke=stroke,
+			top_edge_gap=top_edge_gap,
 		},
 	}
 }
