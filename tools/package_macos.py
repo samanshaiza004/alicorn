@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import ctypes
 import hashlib
 import json
 import os
@@ -35,11 +36,68 @@ def sha256(path: pathlib.Path) -> str:
 
 
 def sdl_source_provenance() -> dict[str, str]:
-    # macOS packaging always builds SDL from this pinned source archive, whether
-    # the resulting app links SDL dynamically or statically.
+    # This provenance applies only to the static build, which links the pinned
+    # SDL source archive. Shared packages record their actual dylib input.
     return {
         "sdlSource": SDL_SOURCE,
         "sdlSourceSha256": SDL_SOURCE_SHA256,
+    }
+
+
+def detect_sdl_runtime_version(path: pathlib.Path) -> str:
+    """Read SDL_GetVersion from the exact dynamic library being packaged."""
+    library = ctypes.CDLL(str(path.resolve(strict=True)))
+    get_version = library.SDL_GetVersion
+    get_version.argtypes = []
+    get_version.restype = ctypes.c_int
+    encoded = get_version()
+    if encoded <= 0:
+        raise RuntimeError(f"SDL_GetVersion returned an invalid version number: {encoded}")
+    major, remainder = divmod(encoded, 1_000_000)
+    minor, patch = divmod(remainder, 1_000)
+    return f"{major}.{minor}.{patch}"
+
+
+def validate_sdl_runtime_version(detected: str, declared: str) -> None:
+    if detected != declared:
+        raise RuntimeError(
+            f"SDL runtime version mismatch: package expects {declared}, "
+            f"but the supplied library reports {detected}"
+        )
+    if detected != SDL_VERSION:
+        raise RuntimeError(
+            f"macOS Alicorn requires SDL {SDL_VERSION}; "
+            f"the supplied runtime reports {detected}"
+        )
+
+
+def validate_smoke_output(output: str, expected_version: str) -> None:
+    version = re.search(r"\bsdl3_version\s+(\d+)\s+(\d+)\s+(\d+)", output)
+    if version is None or ".".join(version.groups()) != expected_version:
+        actual = ".".join(version.groups()) if version else "missing"
+        raise RuntimeError(f"Launch smoke used SDL {actual}; expected {expected_version}")
+    if "SDL application PASS" not in output:
+        raise RuntimeError("Launch smoke exited without the host completion summary")
+    submissions = re.search(r"\bsubmissions\s+(\d+)", output)
+    if submissions is None or int(submissions.group(1)) < 1:
+        raise RuntimeError("Launch smoke completed without a GPU frame submission")
+
+
+def sdl_runtime_provenance(
+    path: pathlib.Path,
+    version: str,
+    provider: str,
+) -> dict[str, object]:
+    provenance: dict[str, str] = {"provider": provider}
+    if provider == "homebrew":
+        provenance["formula"] = "sdl3"
+    return {
+        "sdlRuntime": {
+            "inputFilename": path.name,
+            "inputSha256": sha256(path),
+            "detectedVersion": version,
+            "provenance": provenance,
+        },
     }
 
 
@@ -154,7 +212,7 @@ def package(args: argparse.Namespace) -> None:
         raise ValueError("executableName must be a filename, not a path")
     sdl_version = args.sdl_version or SDL_VERSION
     if args.linkage == "shared" and args.sdl_version is None:
-        raise ValueError("Shared SDL packaging requires --sdl-version from the runtime package metadata")
+        raise ValueError("Shared SDL packaging requires --sdl-version")
     if len(sdl_version.split(".")) != 3 or not all(part.isdecimal() for part in sdl_version.split(".")):
         raise ValueError(f"SDL version must use major.minor.patch form: {sdl_version!r}")
 
@@ -210,12 +268,20 @@ def package(args: argparse.Namespace) -> None:
         shutil.copy2(source, destination)
         private_libraries[destination.name.casefold()] = destination
 
+    sdl_runtime_manifest: dict[str, object] = {}
     if args.linkage == "shared":
         if args.sdl_runtime is None:
             raise ValueError("Shared SDL packaging requires --sdl-runtime")
         runtime = args.sdl_runtime.resolve(strict=True)
         if "Mach-O" not in run("file", str(runtime), capture=True):
             raise ValueError(f"SDL runtime is not a Mach-O library: {runtime}")
+        detected_version = detect_sdl_runtime_version(runtime)
+        validate_sdl_runtime_version(detected_version, sdl_version)
+        sdl_runtime_manifest = sdl_runtime_provenance(
+            runtime,
+            detected_version,
+            args.sdl_runtime_provider,
+        )
         destination = frameworks / "SDL3.dylib"
         if destination.name.casefold() in private_libraries:
             raise ValueError("privateLibraries must not supply SDL3.dylib when SDL linkage is shared")
@@ -318,7 +384,7 @@ def package(args: argparse.Namespace) -> None:
             "alicornRevision": git_revision,
             "sdlVersion": sdl_version,
             "sdlLinkage": args.linkage,
-            **sdl_source_provenance(),
+            **(sdl_source_provenance() if args.linkage == "static" else sdl_runtime_manifest),
             "license": {
                 "path": "Contents/Resources/SDL-LICENSE.txt",
                 "sha256": sha256(resources / "SDL-LICENSE.txt"),
@@ -356,18 +422,34 @@ def package(args: argparse.Namespace) -> None:
     }
     (staging / "alicorn-package.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
-    if args.smoke_test:
-        with tempfile.TemporaryDirectory(prefix="alicorn-package-smoke-") as empty:
-            subprocess.run(
-                [str(app_executable), "--idle-validation-seconds=2"],
-                cwd=empty,
-                check=True,
-                timeout=30,
-            )
-        print("Empty-directory launch smoke passed.")
     if final_output.exists():
         final_output.rmdir()
     staging.rename(final_output)
+    if args.smoke_test:
+        published_executable = final_output / app.name / "Contents" / "MacOS" / executable_name
+        try:
+            with tempfile.TemporaryDirectory(prefix="alicorn-package-smoke-") as empty:
+                smoke = subprocess.run(
+                    [str(published_executable), "--idle-validation-seconds=2"],
+                    cwd=empty,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                output = smoke.stdout + smoke.stderr
+                if smoke.returncode != 0:
+                    raise subprocess.CalledProcessError(
+                        smoke.returncode,
+                        smoke.args,
+                        output=output,
+                        stderr=smoke.stderr,
+                    )
+                validate_smoke_output(output, sdl_version)
+        except Exception:
+            shutil.rmtree(final_output)
+            raise
+        print("Published-bundle empty-directory launch smoke passed.")
     print(f"Verified app bundle: {final_output / app.name}")
 
 
@@ -381,6 +463,12 @@ def main() -> None:
     parser.add_argument("--accesskit-license-apache", type=pathlib.Path)
     parser.add_argument("--accesskit-license-mit", type=pathlib.Path)
     parser.add_argument("--sdl-runtime", type=pathlib.Path)
+    parser.add_argument(
+        "--sdl-runtime-provider",
+        choices=("unknown", "homebrew"),
+        default="unknown",
+        help="Declared origin of the shared SDL input; the input hash and runtime version are verified.",
+    )
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--smoke-test", action="store_true")
     args = parser.parse_args()

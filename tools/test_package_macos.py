@@ -2,18 +2,26 @@
 """Platform-independent regression tests for macOS package path auditing."""
 
 import pathlib
+import tempfile
 import unittest
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+
+import package_macos
 
 from package_macos import (
     SDL_SOURCE,
     SDL_SOURCE_SHA256,
     SDL_VERSION,
+    detect_sdl_runtime_version,
     is_sdl_runtime_install_name,
     resolve_bundle_dependency,
     sdl_source_provenance,
     sign_local_bundle,
+    sdl_runtime_provenance,
     validate_bundle_rpath,
+    validate_smoke_output,
+    validate_sdl_runtime_version,
 )
 
 
@@ -57,6 +65,58 @@ class PackageDependencyAuditTests(unittest.TestCase):
                 "sdlSourceSha256": SDL_SOURCE_SHA256,
             },
         )
+
+    def test_shared_provenance_hashes_the_actual_input_and_does_not_claim_source_archive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = pathlib.Path(directory) / "libSDL3.0.dylib"
+            runtime.write_bytes(b"test SDL dylib")
+
+            provenance = sdl_runtime_provenance(runtime, "3.4.18", "homebrew")
+
+        self.assertEqual(
+            provenance["sdlRuntime"],
+            {
+                "inputFilename": "libSDL3.0.dylib",
+                "inputSha256": "27c0d2d7ee75d88c6fa8beedf05a9d8f3c6bed434d1527f38ad90b186485e942",
+                "detectedVersion": "3.4.18",
+                "provenance": {"provider": "homebrew", "formula": "sdl3"},
+            },
+        )
+        self.assertNotIn("sdlSource", provenance)
+
+    def test_shared_version_is_read_from_the_supplied_library(self):
+        get_version = Mock(return_value=3_004_018)
+        library = SimpleNamespace(SDL_GetVersion=get_version)
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = pathlib.Path(directory) / "libSDL3.dylib"
+            runtime.touch()
+            with patch("package_macos.ctypes.CDLL", return_value=library):
+                self.assertEqual(detect_sdl_runtime_version(runtime), "3.4.18")
+        self.assertEqual(get_version.argtypes, [])
+        self.assertEqual(get_version.restype, package_macos.ctypes.c_int)
+
+    def test_shared_runtime_must_match_host_exact_version(self):
+        validate_sdl_runtime_version("3.4.18", "3.4.18")
+        with self.assertRaisesRegex(RuntimeError, "package expects 3.4.18"):
+            validate_sdl_runtime_version("3.4.19", "3.4.18")
+        with self.assertRaisesRegex(RuntimeError, "macOS Alicorn requires SDL 3.4.18"):
+            validate_sdl_runtime_version("3.4.19", "3.4.19")
+
+    def test_launch_smoke_requires_expected_runtime_and_gpu_submission(self):
+        validate_smoke_output(
+            "sdl3_version 3 4 18\nSDL application PASS submissions 2 retired 2\n",
+            "3.4.18",
+        )
+        with self.assertRaisesRegex(RuntimeError, "SDL 3.4.19; expected 3.4.18"):
+            validate_smoke_output(
+                "sdl3_version 3 4 19\nSDL application PASS submissions 2\n",
+                "3.4.18",
+            )
+        with self.assertRaisesRegex(RuntimeError, "GPU frame submission"):
+            validate_smoke_output(
+                "sdl3_version 3 4 18\nSDL application PASS submissions 0\n",
+                "3.4.18",
+            )
 
     def test_recognizes_versioned_sdl_dylib_names_only(self):
         self.assertTrue(is_sdl_runtime_install_name("@rpath/libSDL3.0.dylib"))

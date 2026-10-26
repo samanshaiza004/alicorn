@@ -41,6 +41,7 @@ BUILD="$SDL_ROOT/build"
 PREFIX="$SDL_ROOT/prefix"
 SDL_URL='https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz'
 SDL_SHA='9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3'
+SDL_REQUIRED_VERSION=3.4.18
 mkdir -p "$SDL_ROOT"
 ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
 ACCESSKIT_ROOT="$REPO_ROOT/.deps/accesskit/accesskit-c-0.23.1"
@@ -60,7 +61,7 @@ SDL_LICENSE="$SOURCE/LICENSE.txt"
 
 SDL_LINK_FLAGS=
 SDL_RUNTIME=
-SDL_VERSION=3.4.18
+SDL_VERSION=$SDL_REQUIRED_VERSION
 if [ "$SDL_LINKAGE" = static ]; then
 	if [ ! -f "$BUILD/CMakeCache.txt" ]; then
 		cmake -S "$SOURCE" -B "$BUILD" \
@@ -84,6 +85,10 @@ else
 	command -v brew >/dev/null 2>&1 || { echo 'Shared SDL packaging requires Homebrew SDL3.' >&2; exit 1; }
 	SDL_PREFIX=$(brew --prefix sdl3)
 	SDL_VERSION=$(PKG_CONFIG_PATH="$SDL_PREFIX/lib/pkgconfig" pkg-config --modversion sdl3)
+	[ "$SDL_VERSION" = "$SDL_REQUIRED_VERSION" ] || {
+		echo "macOS Alicorn requires SDL $SDL_REQUIRED_VERSION; Homebrew reports $SDL_VERSION." >&2
+		exit 1
+	}
 	SDL_RUNTIME=$(find "$SDL_PREFIX/lib" -maxdepth 1 -type f -name 'libSDL3*.dylib' | sort | head -n 1)
 	[ -n "$SDL_RUNTIME" ] || { echo "No SDL3 dylib found under $SDL_PREFIX/lib." >&2; exit 1; }
 	SDL_LINK_FLAGS="-L$SDL_PREFIX/lib"
@@ -114,5 +119,6 @@ case "$OUTPUT" in
 	*) PACKAGE_ARGS+=(--output "$REPO_ROOT/$OUTPUT") ;;
 esac
 if [ -n "$SDL_RUNTIME" ]; then PACKAGE_ARGS+=(--sdl-runtime "$SDL_RUNTIME"); fi
+if [ -n "$SDL_RUNTIME" ]; then PACKAGE_ARGS+=(--sdl-runtime-provider homebrew); fi
 if [ "$SMOKE" -eq 1 ]; then PACKAGE_ARGS+=(--smoke-test); fi
 python3 "${PACKAGE_ARGS[@]}"
