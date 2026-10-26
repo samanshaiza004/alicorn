@@ -1,10 +1,14 @@
-# runa API reference (v1.5.1)
+# runa API reference (v1.5.3)
 
 Pure-Odin text engine — parse, shape, line-break, raster, atlas.
-Public API lives in the **facade** in `runa.odin` and the packages
-(`parse`, `shape`, `itemize`, `bidi`, `linebreak`, `raster`). Most callers
-only need the facade. The Alicorn vendor copy omits upstream examples, tests,
-and tools; see the [upstream v1.5.1 tree](https://github.com/BuLEEto/Runa/tree/348fbe0caa2c691cf0e305258605342f45c547f5).
+Public API lives in three layers: the **facade** in `runa.odin`,
+the **packages** (`parse`, `shape`, `itemize`, `bidi`, `linebreak`,
+`raster`), and the **examples**. Most callers only need the facade.
+
+This Alicorn vendor copy is based on upstream v1.5.3, commit
+[`5c7ebb6`](https://github.com/BuLEEto/Runa/tree/5c7ebb628100ecb28b6117d735a5bf080939f71e),
+and omits upstream tests, examples, and tools. Alicorn keeps two local
+facade extensions documented under **Alicorn vendor extensions** below.
 
 ## Stability
 
@@ -64,16 +68,6 @@ feature :: proc(name: string, on := true) -> Feature_Setting      // feature("sm
 // The deprecated `disable_features` names only the three ligature features.
 Feature :: enum u8 { Ligatures, Contextual_Ligatures, Contextual_Alternates }
 
-// Alicorn integration extension: selects a face and optional variation over a
-// half-open, codepoint-aligned UTF-8 byte range.
-Font_Style_Span :: struct {
-    start, end: int,
-    font: ^Font,
-    variation_tag: Axis_Tag,
-    variation_value: f32,
-    variation_set: bool,
-}
-
 // Does the font actually carry a GSUB feature (e.g. "smcp"), so a caller can
 // fall back — faking small caps from scaled capitals where it doesn't.
 font_has_feature :: proc(font: ^Font, name: string,
@@ -89,7 +83,7 @@ Paragraph_Opts :: struct {
     features:  []Feature_Setting,         // e.g. {feature("smcp"), feature("onum")};
                                           // feeds layout AND measurement
     disable_features: bit_set[Feature],   // DEPRECATED — prefer `features`/NO_LIGATURES
-    font_style_spans: []Font_Style_Span,  // Alicorn integration extension
+    font_style_spans: []Font_Style_Span,  // Alicorn vendor extension
 }
 
 layout_paragraph :: proc(text: string, opts: Paragraph_Opts,
@@ -102,7 +96,7 @@ line_destroy     :: proc(l: ^Line, allocator := context.allocator)
 `layout_paragraph` runs the full pipeline:
 1. itemize into (font, script, style) runs (UAX #24 script segmentation);
    `font_style_spans` must be sorted, non-overlapping, and codepoint-aligned
-   (Alicorn integration extension)
+   (Alicorn vendor extension)
 2. UAX #9 bidi resolve when the text contains any RTL codepoints
 3. shape each run via `shape_text` (GSUB + GPOS, with the Indic /
    Arabic / SEA shaper paths dispatched by script tag)
@@ -331,3 +325,26 @@ BaseGlyphList.
   hyphens (U+00AD); runa's Knuth–Plass breaker optimises over them
   but doesn't ship language patterns. (Total-fit breaking itself
   landed in 1.5.0 — see **Line breaking** above.)
+
+## Alicorn vendor extensions
+
+These source-compatible additions are kept in Alicorn's vendor copy and are
+not part of upstream Runa v1.5.3.
+
+### Font style spans
+
+`Font_Style_Span` selects a face and optionally a variation-axis value over a
+half-open UTF-8 byte range. Ranges must be sorted, non-overlapping, and aligned
+to decoded codepoint boundaries. A nil `font` keeps the regular fallback stack
+while applying the requested variation when the face supports that axis.
+Invalid ranges return `Error.Invalid_Table`. `Paragraph_Glyph.style_span` is
+the index of the source span, or `-1` when no span applies.
+
+### Retained atlas views
+
+`atlas_page_view` and `atlas_slot_view` expose read-only consumer views without
+requiring a renderer to depend on atlas packing internals. `atlas_dirty_snapshot`
+returns dirty rectangles with write generations; call `atlas_dirty_ack` only
+after the corresponding GPU upload is submitted. A later atlas write changes
+the generation, so acknowledging an older snapshot cannot discard newer work.
+`atlas_flush_dirty` remains available for synchronous consumers.

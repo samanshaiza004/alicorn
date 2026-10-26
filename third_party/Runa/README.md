@@ -5,17 +5,18 @@ line-breaking, rasterization. Built first to replace fontstash +
 stb_truetype in [Skald](https://github.com/BuLEEto/Skald), designed
 to be useful for any Odin project that needs production-quality text.
 
-**Status:** upstream v1.5.1
-(`348fbe0caa2c691cf0e305258605342f45c547f5`, 2026-10-20), with
-Alicorn-specific atlas, hard-break, and font-style-span integration patches
-recorded at the top of [`CHANGELOG.md`](CHANGELOG.md). Upstream adds total-fit
+**Status:** upstream v1.5.3
+(`5c7ebb628100ecb28b6117d735a5bf080939f71e`, 2026-10-25), with
+Alicorn-specific atlas and font-style-span integration extensions recorded
+at the top of [`CHANGELOG.md`](CHANGELOG.md). Upstream adds total-fit
 line breaking, OpenType feature control by tag, CID-keyed CFF1 fonts, and TTC face loading;
-it also includes the v1.3.x shaping, variable-font, and default-ignorable fixes.
-See [`API.md`](API.md) for the upstream API and the local integration extension.
+it also includes the hard-line-break control fix and the v1.3.x shaping,
+variable-font, and default-ignorable fixes. See [`API.md`](API.md) for the
+upstream API and the local integration extensions.
 
 This Alicorn vendor copy keeps the runtime source and omits upstream tests,
 examples, development tools, screenshots, and test fonts. Those live in the
-[upstream v1.5.1 tree](https://github.com/BuLEEto/Runa/tree/348fbe0caa2c691cf0e305258605342f45c547f5).
+[upstream v1.5.3 tree](https://github.com/BuLEEto/Runa/tree/5c7ebb628100ecb28b6117d735a5bf080939f71e).
 
 Shaping accuracy varies by script — see
 [Script status](#script-status) before picking runa for a specific
@@ -24,7 +25,7 @@ some Devanagari conjuncts, Arabic ligatures-with-marks and Hebrew
 nikud have known divergences from HarfBuzz.
 
 <p align="center">
-  <a href="https://github.com/BuLEEto/Runa/blob/348fbe0caa2c691cf0e305258605342f45c547f5/screenshots/multiscript.png">View the upstream multiscript preview</a>
+  <a href="https://github.com/BuLEEto/Runa/blob/5c7ebb628100ecb28b6117d735a5bf080939f71e/screenshots/multiscript.png">View the upstream multiscript preview</a>
 </p>
 
 <p align="center"><sub>Latin · Cyrillic · Greek · Arabic (joined + RTL) · Hebrew (RTL) · Chinese · Japanese · colour emoji · OpenType ligatures.</sub></p>
