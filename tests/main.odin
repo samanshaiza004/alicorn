@@ -2355,11 +2355,20 @@ test_multiline_text_controls :: proc(state: ^Test_State) {
 	}
 	defer alicorn.text_run_destroy(&run)
 	expect(state, len(run.lines) >= 2, "newline must advance to a second text line")
-	newline_glyph := false
+	newline_placeholder_found := false
 	for glyph in run.glyphs {
-		if glyph.cluster_start == 5 { newline_glyph = true; break }
+		if glyph.cluster_start != 5 { continue }
+		newline_placeholder_found = true
+		space_glyph := runa.font_lookup_glyph(&engine.font, ' ')
+		expect(state, space_glyph != 0 && glyph.glyph_id == space_glyph, "newline cluster may retain the font's blank space glyph, not .notdef")
+		expect(state, glyph.x_advance == 0, "newline's retained space glyph must not advance the pen")
+		_, drawable, glyph_ok := alicorn.text_engine_glyph(&engine, glyph.glyph_id, 16, scratch_allocator=context.temp_allocator)
+		expect(state, glyph_ok && !drawable, "newline placeholder must not produce a drawable glyph quad")
 	}
-	expect(state, !newline_glyph, "newline must not produce a visible missing-glyph box")
+	// Runa 1.5.2+ can retain hard-break controls as zero-advance space glyphs
+	// for cluster/source mapping. Their presence is valid; only drawable ink
+	// at the hard-break position is forbidden.
+	expect(state, newline_placeholder_found, "newline source cluster must retain the font's zero-advance space glyph")
 	if len(run.lines) >= 2 {
 		expect(state, run.lines[1].y > run.lines[0].y, "newline line geometry must advance vertically")
 	}
