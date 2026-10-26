@@ -22,14 +22,14 @@ python3 tools/validate_macos_package_desktop.py \
   --results-dir "out/native-package/desktop acceptance"
 ```
 
-The validator checks the bundle manifest and signature, confirms that both variants use the same Alicorn revision, then exercises each variant directly and through `open -n -W -a`. It verifies the launched PID's executable path, captures the first-frame screenshot, prompts for a physical pointer activation and Tab+Space activation, and asks the operator to quit normally. The starter writes a unique result marker after `ui.run` returns, so a successful result is emitted after native-host cleanup. Each launch is followed by a fresh relaunch smoke. The JSON report records `PASS`, `FAIL`, or `BLOCKED` per cell; unavailable GUI access or screen-capture permission must remain blocked.
+The validator checks the bundle manifest and signature, confirms that both variants use the same Alicorn revision, then exercises each variant directly and through `open -n -W -a`. It verifies the launched PID's executable path, captures the first-frame screenshot, prompts for a physical pointer activation and Tab+Space activation, and asks the operator to quit normally. The starter writes a unique result marker after `ui.run` returns, so a successful result is emitted after native-host cleanup. Each launch is followed by a fresh relaunch smoke. Direct launches and Launch Services launches with output redirection must also show the expected SDL version, host completion summary, and submitted frame. If `open` cannot redirect output, the interactive launch may still be verified visually and by operator attestation, but its unattended relaunch is `BLOCKED`; a shutdown marker alone does not prove that startup or frame submission succeeded. The JSON report records `PASS`, `FAIL`, or `BLOCKED` per cell, and labels physical input and visual confirmation as operator-attested evidence.
 
 | Variant | Direct executable | Launch Services |
 | --- | --- | --- |
 | Static SDL | PASS / FAIL / BLOCKED | PASS / FAIL / BLOCKED |
 | Shared SDL | PASS / FAIL / BLOCKED | PASS / FAIL / BLOCKED |
 
-CI builds and audits both linkages and runs noninteractive launch smokes. CI is not a substitute for this logged-in desktop interaction matrix. The validation driver detects whether the installed `open` supports application stdout/stderr redirection and records when it cannot capture those logs.
+CI builds and audits both linkages and runs noninteractive launch smokes. CI is not a substitute for this logged-in desktop interaction matrix. The validation driver detects whether the installed `open` supports application stdout/stderr redirection and records when it cannot capture those logs; in that case, the corresponding relaunch cell cannot pass on the shutdown marker alone.
 
 ## Why both launch paths matter
 

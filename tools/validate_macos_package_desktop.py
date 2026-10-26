@@ -61,6 +61,93 @@ def app_open_supports_output_redirection(help_output: str) -> bool:
     return "--stdout" in help_output and "--stderr" in help_output
 
 
+def require_relaunch_host_output(
+    mode: str,
+    *,
+    require_interaction: bool,
+    output_available: bool,
+) -> None:
+    """Require machine-verifiable startup evidence for unattended relaunches."""
+    if mode == "open" and not require_interaction and not output_available:
+        raise BlockedError(
+            "Launch Services cannot verify host startup without --stdout/--stderr; "
+            "relaunch is BLOCKED rather than accepted from its shutdown marker alone"
+        )
+
+
+def verify_process_executable(pid: int, expected: pathlib.Path) -> pathlib.Path:
+    actual = process_executable(pid)
+    if actual != expected:
+        raise RuntimeError(f"Launch resolved to {actual}; expected {expected}")
+    return actual
+
+
+def capture_screenshot(path: pathlib.Path) -> None:
+    if shutil.which("/usr/sbin/screencapture") is None:
+        raise BlockedError("macOS screen-capture tool is unavailable")
+    try:
+        screenshot = subprocess.run(
+            ["/usr/sbin/screencapture", "-x", str(path)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise BlockedError("macOS screen capture timed out") from error
+    if screenshot.returncode != 0 or not path.is_file():
+        details = screenshot.stderr.strip() or screenshot.stdout.strip() or "no image was written"
+        raise BlockedError("Could not capture the confirmed first frame: " + details)
+
+
+def wait_for_launcher(
+    launcher: subprocess.Popen[Any], mode: str, *, timeout: float
+) -> None:
+    try:
+        launcher.wait(timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        raise TimeoutError(f"{mode} launch did not quit within {timeout:g} seconds") from error
+
+
+def stop_failed_launch(
+    launcher: subprocess.Popen[Any],
+    pid: int | None,
+    expected: pathlib.Path,
+    *,
+    run_id: str | None = None,
+) -> None:
+    """Stop only the verified app process; always reap the launcher process."""
+    if launcher.poll() is not None:
+        return
+    if pid is None and run_id is not None:
+        try:
+            pid = _running_process_for_run(run_id)
+        except (OSError, RuntimeError, subprocess.SubprocessError):
+            # Cleanup is best-effort if process enumeration itself is unavailable.
+            pass
+    if pid is not None:
+        try:
+            if process_executable(pid) == expected:
+                os.kill(pid, signal.SIGTERM)
+        except (OSError, RuntimeError):
+            # The process may already have exited. Never signal an unverified PID.
+            pass
+    try:
+        launcher.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        if pid is not None:
+            try:
+                if process_executable(pid) == expected:
+                    os.kill(pid, signal.SIGKILL)
+            except (OSError, RuntimeError):
+                pass
+        try:
+            launcher.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            launcher.terminate()
+            launcher.wait(timeout=5)
+
+
 def validate_result_file(
     path: pathlib.Path,
     run_id: str,
@@ -234,6 +321,11 @@ def run_launch(
     require_interaction: bool,
     open_redirects_output: bool,
 ) -> dict[str, Any]:
+    require_relaunch_host_output(
+        mode,
+        require_interaction=require_interaction,
+        output_available=open_redirects_output,
+    )
     app = pathlib.Path(app_info["app"])
     executable = pathlib.Path(app_info["executable"])
     run_id = uuid.uuid4().hex
@@ -279,33 +371,16 @@ def run_launch(
         actual_executable: pathlib.Path | None = None
         try:
             pid = launcher.pid if mode == "direct" else _wait_for_process(run_id, launcher, 30)
-            actual_executable = process_executable(pid)
-            if actual_executable != executable:
-                raise RuntimeError(
-                    f"Launch resolved to {actual_executable}; expected {executable}"
-                )
+            actual_executable = verify_process_executable(pid, executable)
 
             if require_interaction:
                 print(f"\n{app_info['linkage']} SDL via {mode}; PID {pid}")
                 print(f"Verified process executable: {actual_executable}")
-                if shutil.which("/usr/sbin/screencapture") is None:
-                    raise BlockedError("macOS screen-capture tool is unavailable")
                 # Capture while the app launched by Launch Services is still
                 # foreground; asking for terminal input first would foreground
                 # the terminal and capture the wrong window.
                 time.sleep(2)
-                screenshot = subprocess.run(
-                    ["/usr/sbin/screencapture", "-x", str(screenshot_path)],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=15,
-                )
-                if screenshot.returncode != 0 or not screenshot_path.is_file():
-                    raise BlockedError(
-                        "Could not capture the confirmed first frame: "
-                        + screenshot.stderr.strip()
-                    )
+                capture_screenshot(screenshot_path)
                 screenshot_captured = True
                 if input(
                     f"Review {screenshot_path}; if the app's first frame is visible, type yes: "
@@ -317,25 +392,9 @@ def run_launch(
                 ).strip().lower() != "yes":
                     raise BlockedError("Operator did not confirm pointer, keyboard, and normal quit")
             timeout = 330 if require_interaction else 30
-            try:
-                launcher.wait(timeout=timeout)
-            except subprocess.TimeoutExpired as error:
-                raise TimeoutError(
-                    f"{mode} launch did not quit within {timeout} seconds"
-                ) from error
+            wait_for_launcher(launcher, mode, timeout=timeout)
         finally:
-            if launcher.poll() is None:
-                if pid is not None:
-                    try:
-                        if process_executable(pid) == executable:
-                            os.kill(pid, signal.SIGTERM)
-                    except (OSError, RuntimeError):
-                        pass
-                try:
-                    launcher.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    launcher.terminate()
-                    launcher.wait(timeout=5)
+            stop_failed_launch(launcher, pid, executable, run_id=run_id)
 
     if launcher.returncode != 0:
         raise RuntimeError(f"{mode} launch exited with status {launcher.returncode}")
@@ -343,7 +402,8 @@ def run_launch(
     logs = stdout_path.read_text(encoding="utf-8", errors="replace")
     if open_redirects_output and mode == "open":
         logs += stderr_path.read_text(encoding="utf-8", errors="replace")
-    if mode == "direct" or open_redirects_output:
+    startup_logs_verified = mode == "direct" or open_redirects_output
+    if startup_logs_verified:
         validate_smoke_output(logs, REQUIRED_SDL_VERSION)
 
     return {
@@ -358,6 +418,16 @@ def run_launch(
         "pointerInputAttested": require_interaction,
         "keyboardInputAttested": require_interaction,
         "normalQuitAttested": require_interaction,
+        "startupEvidence": (
+            "host logs verified SDL version and frame submission"
+            if startup_logs_verified
+            else "operator visually confirmed first frame"
+        ),
+        "interactionEvidence": (
+            "operator-attested physical pointer and keyboard actions; activation counts recorded separately"
+            if require_interaction
+            else "not required for unattended relaunch"
+        ),
         "screenshot": str(screenshot_path) if screenshot_captured else None,
         "shutdownResult": str(result_path),
         **result,
