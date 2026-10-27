@@ -72,7 +72,7 @@ jobs:
           name: alicorn-hello-windows-x86_64
           path: out/native-package/windows-x86_64
 
-  macos-static-sdl:
+  macos-sdl:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -95,14 +95,24 @@ jobs:
           path: .deps/accesskit
           key: accesskit-c-0.23.1-${{ runner.os }}-${{ runner.arch }}
       - name: Install packaging tools
-        run: brew install cmake pkgconf
-      - name: Build, package, audit, and smoke-test 01_hello
+        run: brew install cmake pkgconf sdl3
+      - name: Build and smoke-test static SDL package
         shell: bash
-        run: bash tools/build_native_release.sh --odin "$(command -v odin)" --sdl-linkage static --output out/native-package/macos
-      - name: Verify Homebrew/developer paths are rejected
-        run: python3 tools/test_package_macos.py
-      - name: Upload verified package
+        run: bash tools/build_native_release.sh --odin "$(command -v odin)" --sdl-linkage static --output out/native-package/macos-static
+      - name: Build and smoke-test shared SDL package
+        shell: bash
+        run: bash tools/build_native_release.sh --odin "$(command -v odin)" --sdl-linkage shared --output out/native-package/macos-shared
+      - name: Test macOS package audits and desktop acceptance helpers
+        run: |
+          python3 tools/test_package_macos.py
+          python3 tools/test_validate_macos_package_desktop.py
+      - name: Upload verified static SDL package
         uses: actions/upload-artifact@v4
         with:
-          name: alicorn-hello-macos
-          path: out/native-package/macos
+          name: alicorn-hello-macos-static
+          path: out/native-package/macos-static
+      - name: Upload verified shared SDL package
+        uses: actions/upload-artifact@v4
+        with:
+          name: alicorn-hello-macos-shared
+          path: out/native-package/macos-shared
