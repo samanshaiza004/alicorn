@@ -116,8 +116,11 @@ From the repository root, after the pinned dependency has been bootstrapped:
 
 ```sh
 odin check accesskit -no-entry-point
-odin test accesskit \
-  -extra-linker-flags:"-L.deps/accesskit/accesskit-c-0.23.1/lib/macos/arm64/static -framework AppKit -framework Foundation -framework CoreFoundation -lobjc -lc++"
+REPO_ROOT=$PWD
+. tools/accesskit.sh
+ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
+ABI_PROBE_LINK_FLAGS=$(sh tools/build_accesskit_abi_probe.sh out/accesskit_abi_probe)
+odin test accesskit "-extra-linker-flags:$ACCESSKIT_LINK_FLAGS $ABI_PROBE_LINK_FLAGS"
 odin run accesskit/consumer \
   -collection:accesskit=. \
   -extra-linker-flags:"-L.deps/accesskit/accesskit-c-0.23.1/lib/macos/arm64/static -framework AppKit -framework Foundation -framework CoreFoundation -lobjc -lc++"

@@ -3,6 +3,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot\common.ps1"
+Initialize-AlicornMsvcEnvironment
 $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $HeaderDir = Join-Path $RepoRoot '.deps\accesskit\accesskit-c-0.23.1\include'
 $Source = Join-Path $RepoRoot 'tests\accesskit_abi_contract\accesskit_abi_contract.c'
