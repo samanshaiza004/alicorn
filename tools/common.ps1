@@ -17,11 +17,30 @@ function Initialize-AlicornMsvcEnvironment {
     }
 
     $CommandShell = if ($env:ComSpec) { $env:ComSpec } else { 'cmd.exe' }
-    $Command = 'call "{0}" -arch=x64 -host_arch=x64 >nul && set' -f $VsDevCmd
-    $EnvironmentLines = & $CommandShell /d /s /c "`"$Command`""
-    if ($LASTEXITCODE -ne 0) {
-        throw "VsDevCmd.bat failed to initialize the x64 C++ environment (exit code $LASTEXITCODE)."
+    $StartInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $StartInfo.FileName = $CommandShell
+    $StartInfo.Arguments = "/d /c call `"$VsDevCmd`" -arch=x64 -host_arch=x64 >nul && set"
+    $StartInfo.UseShellExecute = $false
+    $StartInfo.CreateNoWindow = $true
+    $StartInfo.RedirectStandardOutput = $true
+    $StartInfo.RedirectStandardError = $true
+    $Process = New-Object System.Diagnostics.Process
+    $Process.StartInfo = $StartInfo
+    try {
+        if (-not $Process.Start()) { throw 'cmd.exe did not start.' }
+        $OutputTask = $Process.StandardOutput.ReadToEndAsync()
+        $ErrorTask = $Process.StandardError.ReadToEndAsync()
+        $Process.WaitForExit()
+        $EnvironmentOutput = $OutputTask.GetAwaiter().GetResult()
+        $ErrorOutput = $ErrorTask.GetAwaiter().GetResult()
+        if ($Process.ExitCode -ne 0) {
+            throw "VsDevCmd.bat failed to initialize the x64 C++ environment (exit code $($Process.ExitCode)): $ErrorOutput"
+        }
     }
+    finally {
+        $Process.Dispose()
+    }
+    $EnvironmentLines = $EnvironmentOutput -split "`r?`n"
     foreach ($Line in $EnvironmentLines) {
         $Separator = $Line.IndexOf('=')
         if ($Separator -le 0) { continue }
