@@ -652,9 +652,13 @@ Accessibility_Appearance_Known_Fields :: distinct bit_set[Accessibility_Appearan
 // Accessibility_Appearance_Observation is the normalized host preference
 // snapshot plus the fields the platform could actually report. An unset
 // known bit means unsupported or unavailable, not a known false preference.
+// text_scale_known independently reports whether the host has a coherent
+// system text scale. Unknown scale observations preserve the previous value.
 Accessibility_Appearance_Observation :: struct {
-	preferences: Accessibility_Appearance_Preferences,
-	known:       Accessibility_Appearance_Known_Fields,
+	preferences:     Accessibility_Appearance_Preferences,
+	known:           Accessibility_Appearance_Known_Fields,
+	text_scale:      f32,
+	text_scale_known: bool,
 }
 
 Style_Color_Role :: enum {
@@ -1823,6 +1827,8 @@ Runtime :: struct {
 	style_environment: Style_Environment,
 	root_accessibility_appearance: Accessibility_Appearance_Preferences,
 	root_accessibility_appearance_known: Accessibility_Appearance_Known_Fields,
+	root_text_scale: f32,
+	root_text_scale_known: bool,
 	style_themes: [dynamic]Style_Theme,
 	style_materials: [dynamic]Style_Material,
 	style_scope_stack: [dynamic]Style_Environment_Scope,

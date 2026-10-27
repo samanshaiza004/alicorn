@@ -1238,6 +1238,7 @@ end_frame :: proc(ui: ^UI) {
 		clear(&ui.runtime.adaptive_description_scopes)
 	}
 	ui.runtime.style_environment = DEFAULT_STYLE_ENVIRONMENT
+	ui.runtime.style_environment.text_scale = ui.runtime.root_text_scale
 	ui.runtime.style_environment.accessibility = ui.runtime.root_accessibility_appearance
 	ui.runtime.style_environment.accessibility_set = true
 	if len(ui.runtime.stack) != 0 || len(ui.runtime.identity_stack) != 0 {

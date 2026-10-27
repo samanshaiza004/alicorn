@@ -261,7 +261,7 @@ test_root_host_appearance_inherits_and_respects_explicit_override :: proc(t: ^te
 	testing.expect(t, style_root_accessibility_observation_set(&rt, observation) && rt.invalidated,
 		"a changed host appearance base should request one application description")
 	observed := style_root_accessibility_observation_get(&rt)
-	testing.expect(t, observed == observation &&
+	testing.expect(t, observed.preferences == observation.preferences && observed.known == observation.known &&
 		Accessibility_Appearance_Field.Increased_Contrast in observed.known &&
 		Accessibility_Appearance_Field.Differentiate_Without_Color not_in observed.known,
 		"host diagnostics should report inherited values separately from unsupported/unavailable fields")
@@ -300,4 +300,31 @@ test_root_appearance_observation_tracks_support_without_value_change :: proc(t: 
 	rt.invalidated = false
 	testing.expect(t, !style_root_accessibility_observation_set(&rt, observation) && !rt.invalidated,
 		"identical value and support metadata should not cause another wake")
+}
+
+@(test)
+test_root_text_scale_observation_is_persistent_and_idempotent :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 180})
+	defer destroy_runtime(&rt)
+	observation := Accessibility_Appearance_Observation{text_scale=1.5, text_scale_known=true}
+	testing.expect(t, style_root_accessibility_observation_set(&rt, observation) && rt.invalidated,
+		"a newly available system text scale should request one application description")
+	observed := style_root_accessibility_observation_get(&rt)
+	testing.expect(t, observed.text_scale == 1.5 && observed.text_scale_known,
+		"the accepted root observation should expose the normalized text scale and its availability")
+	ui, should_build := begin_frame(&rt)
+	testing.expect(t, should_build && ui.runtime.style_environment.text_scale == 1.5,
+		"the persistent host text scale should be active in the next application description")
+	end_frame(&ui)
+
+	rt.invalidated = false
+	unknown := Accessibility_Appearance_Observation{}
+	testing.expect(t, !style_root_accessibility_observation_set(&rt, unknown) && !rt.invalidated,
+		"an unavailable text-scale query should preserve the previous accepted value without scheduling work")
+	observed = style_root_accessibility_observation_get(&rt)
+	testing.expect(t, observed.text_scale == 1.5 && observed.text_scale_known,
+		"an unknown host query must not erase a previously known system scale")
+	invalid := Accessibility_Appearance_Observation{text_scale=0, text_scale_known=true}
+	testing.expect(t, !style_root_accessibility_observation_set(&rt, invalid) && !rt.invalidated,
+		"invalid normalized scales should be ignored")
 }

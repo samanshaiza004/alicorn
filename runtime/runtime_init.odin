@@ -31,6 +31,7 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 		presentation_scale_x = 1,
 		presentation_scale_y = 1,
 		style_environment = DEFAULT_STYLE_ENVIRONMENT,
+		root_text_scale = 1,
 		invalidated = true,
 	}
 	rt.scratch_arena = new(mem.Dynamic_Arena, allocator=rt.persistent_allocator)
