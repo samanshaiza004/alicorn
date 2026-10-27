@@ -31,6 +31,8 @@ git diff --check
 "$ODIN" build tests "-out:$OUT_DIR/alicorn_tests"
 "$ODIN" build benchmarks "-out:$OUT_DIR/alicorn_benchmarks"
 "$SCRIPT_DIR/build_examples.sh" --odin "$ODIN"
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	test examples/01_hello "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_hello_tests"
 mkdir -p "$OUT_DIR/fixtures"
 for fixture in tests/fixtures/* tools/runa_text; do
 	[ -f "$fixture/main.odin" ] || continue

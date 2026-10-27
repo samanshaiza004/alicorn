@@ -61,8 +61,7 @@ main :: proc() {
 			fmt.eprintln("desktop validation requires a run ID")
 			os.exit(1)
 		}
-		result := fmt.tprintf(
-			"{\"runId\":\"%s\",\"pointerActivations\":%d,\"keyboardActivations\":%d}\n",
+		result := desktop_validation_result_json(
 			run_id,
 			app.pointer_activations,
 			app.keyboard_activations,
@@ -72,4 +71,17 @@ main :: proc() {
 			os.exit(1)
 		}
 	}
+}
+
+desktop_validation_result_json :: proc(
+	run_id: string,
+	pointer_activations, keyboard_activations: int,
+) -> string {
+	// fmt treats single braces as format syntax; doubled braces emit JSON delimiters.
+	return fmt.tprintf(
+		"{{\"runId\":\"%s\",\"pointerActivations\":%d,\"keyboardActivations\":%d}}\n",
+		run_id,
+		pointer_activations,
+		keyboard_activations,
+	)
 }
