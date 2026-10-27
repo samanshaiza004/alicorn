@@ -36,6 +36,10 @@ jobs:
         shell: sh
         run: ./tools/test.sh
 
+      - name: Validate source-over blending through Metal readback
+        shell: sh
+        run: sh tools/validate_blending.sh
+
       - name: Smoke-test example runners
         shell: sh
         run: |
