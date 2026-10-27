@@ -1,8 +1,10 @@
 package alicorn_sdl_gpu
 
 import "core:testing"
+import "core:c"
 import base_runtime "base:runtime"
 import alicorn "../../runtime"
+import ak "../../accesskit"
 
 @(test)
 test_native_appearance_snapshot_merges_only_known_fields :: proc(t: ^testing.T) {
@@ -205,8 +207,8 @@ test_accessibility_projection_maps_text_runs_and_area_selection :: proc(t: ^test
 	replacement_action, _, replacement_supported := native_accessibility_action_to_semantic(
 		ACCESSKIT_ACTION_REPLACE_SELECTED_TEXT, area,
 	)
-	selection_data := AccessKit_Action_Data{
-		tag=ACCESSKIT_ACTION_DATA_SET_TEXT_SELECTION,
+	selection_data := ak.Action_Data_ABI{
+		tag=c.int(ACCESSKIT_ACTION_DATA_SET_TEXT_SELECTION),
 		value=[4]u64{first.id, 1, second.id, 2},
 	}
 	decoded_action, action_data_ok := native_accessibility_selection_from_action_data(

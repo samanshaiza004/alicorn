@@ -1,208 +1,94 @@
 package alicorn_sdl_gpu
 
-import "core:c"
 import libc "core:c/libc"
 import "base:runtime"
 import "core:strings"
 import alicorn "../../runtime"
+import ak "../../accesskit"
 import "vendor:sdl3"
 
-// Keep the stable AccessKit action-data payload type available to the
-// platform-independent projection helpers and tests. The native callback is
-// Windows/macOS-only, but its serialized C union layout is not.
-AccessKit_Action_Data :: struct {
-	tag: c.int,
-	padding: c.int,
-	// The largest C union arm is accesskit_text_selection (two 16-byte
-	// positions), so preserve the full 32-byte payload and its alignment.
-	value: [4]u64,
-}
+// Alicorn keeps semantic projection and action routing; C ABI declarations,
+// AccessKit identifiers, and native adapters live in the standalone package.
+ACCESSKIT_ACTION_CLICK :: ak.ACTION_CLICK
+ACCESSKIT_ACTION_FOCUS :: ak.ACTION_FOCUS
+ACCESSKIT_ACTION_COLLAPSE :: ak.ACTION_COLLAPSE
+ACCESSKIT_ACTION_EXPAND :: ak.ACTION_EXPAND
+ACCESSKIT_ACTION_HIDE_TOOLTIP :: ak.ACTION_HIDE_TOOLTIP
+ACCESSKIT_ACTION_REPLACE_SELECTED_TEXT :: ak.ACTION_REPLACE_SELECTED_TEXT
+ACCESSKIT_ACTION_DECREMENT :: ak.ACTION_DECREMENT
+ACCESSKIT_ACTION_INCREMENT :: ak.ACTION_INCREMENT
+ACCESSKIT_ACTION_SCROLL_DOWN :: ak.ACTION_SCROLL_DOWN
+ACCESSKIT_ACTION_SCROLL_UP :: ak.ACTION_SCROLL_UP
+ACCESSKIT_ACTION_SCROLL_INTO_VIEW :: ak.ACTION_SCROLL_INTO_VIEW
+ACCESSKIT_ACTION_SET_TEXT_SELECTION :: ak.ACTION_SET_TEXT_SELECTION
+ACCESSKIT_ACTION_SET_VALUE :: ak.ACTION_SET_VALUE
 
-when ODIN_OS == .Windows || ODIN_OS == .Darwin {
-	when ODIN_OS == .Windows {
-		foreign import accesskit "system:accesskit.lib"
-	} else when ODIN_OS == .Darwin {
-		foreign import accesskit "system:accesskit"
-	}
+ACCESSKIT_ACTION_DATA_VALUE :: ak.ACTION_DATA_VALUE
+ACCESSKIT_ACTION_DATA_NUMERIC_VALUE :: ak.ACTION_DATA_NUMERIC_VALUE
+ACCESSKIT_ACTION_DATA_SET_TEXT_SELECTION :: ak.ACTION_DATA_SET_TEXT_SELECTION
 
-	AccessKit_Tree_Update_Factory :: proc "c" (userdata: rawptr) -> rawptr
-	AccessKit_Activation_Callback :: proc "c" (userdata: rawptr) -> rawptr
-	AccessKit_Action_Callback :: proc "c" (request, userdata: rawptr)
+ACCESSKIT_ROLE_UNKNOWN :: ak.ROLE_UNKNOWN
+ACCESSKIT_ROLE_TEXT_RUN :: ak.ROLE_TEXT_RUN
+ACCESSKIT_ROLE_LABEL :: ak.ROLE_LABEL
+ACCESSKIT_ROLE_LIST_ITEM :: ak.ROLE_LIST_ITEM
+ACCESSKIT_ROLE_MENU_ITEM :: ak.ROLE_MENU_ITEM
+ACCESSKIT_ROLE_TREE_ITEM :: ak.ROLE_TREE_ITEM
+ACCESSKIT_ROLE_GENERIC_CONTAINER :: ak.ROLE_GENERIC_CONTAINER
+ACCESSKIT_ROLE_CHECK_BOX :: ak.ROLE_CHECK_BOX
+ACCESSKIT_ROLE_TEXT_INPUT :: ak.ROLE_TEXT_INPUT
+ACCESSKIT_ROLE_BUTTON :: ak.ROLE_BUTTON
+ACCESSKIT_ROLE_LIST :: ak.ROLE_LIST
+ACCESSKIT_ROLE_LIST_BOX_OPTION :: ak.ROLE_LIST_BOX_OPTION
+ACCESSKIT_ROLE_COMBO_BOX :: ak.ROLE_COMBO_BOX
+ACCESSKIT_ROLE_LIST_BOX :: ak.ROLE_LIST_BOX
+ACCESSKIT_ROLE_STATUS :: ak.ROLE_STATUS
+ACCESSKIT_ROLE_ALERT :: ak.ROLE_ALERT
+ACCESSKIT_ROLE_DIALOG :: ak.ROLE_DIALOG
+ACCESSKIT_ROLE_GROUP :: ak.ROLE_GROUP
+ACCESSKIT_ROLE_SCROLL_VIEW :: ak.ROLE_SCROLL_VIEW
+ACCESSKIT_ROLE_SLIDER :: ak.ROLE_SLIDER
+ACCESSKIT_ROLE_TAB :: ak.ROLE_TAB
+ACCESSKIT_ROLE_TAB_LIST :: ak.ROLE_TAB_LIST
+ACCESSKIT_ROLE_TAB_PANEL :: ak.ROLE_TAB_PANEL
+ACCESSKIT_ROLE_MENU :: ak.ROLE_MENU
+ACCESSKIT_ROLE_MULTILINE_TEXT_INPUT :: ak.ROLE_MULTILINE_TEXT_INPUT
+ACCESSKIT_ROLE_TREE :: ak.ROLE_TREE
+ACCESSKIT_ROLE_TOOLTIP :: ak.ROLE_TOOLTIP
+ACCESSKIT_ROLE_WINDOW :: ak.ROLE_WINDOW
 
-	AccessKit_Rect :: struct {
-		x0, y0, x1, y1: f64,
-	}
-	#assert(size_of(AccessKit_Rect) == 32)
-	#assert(align_of(AccessKit_Rect) == 8)
-
-	AccessKit_Optional_Action_Data :: struct {
-		has_value: bool,
-		padding: [7]u8,
-		value: AccessKit_Action_Data,
-	}
-
-	AccessKit_Text_Position :: struct {
-		node: u64,
-		character_index: uint,
-	}
-
-	AccessKit_Text_Selection :: struct {
-		anchor: AccessKit_Text_Position,
-		focus: AccessKit_Text_Position,
-	}
-
-	AccessKit_Action_Request :: struct {
-		action: u8,
-		target_tree: [16]u8,
-		target_node: u64,
-		data: AccessKit_Optional_Action_Data,
-	}
-
-	#assert(offset_of(AccessKit_Action_Request, target_node) == 24)
-	#assert(offset_of(AccessKit_Action_Request, data) == 32)
-	#assert(offset_of(AccessKit_Action_Data, value) == 8)
-	#assert(size_of(AccessKit_Action_Data) == 40)
-	#assert(align_of(AccessKit_Action_Data) == 8)
-	#assert(size_of(AccessKit_Optional_Action_Data) == 48)
-	#assert(size_of(AccessKit_Action_Request) == 80)
-	#assert(size_of(AccessKit_Text_Position) == 16)
-	#assert(size_of(AccessKit_Text_Selection) == 32)
-
-	foreign accesskit {
-		accesskit_node_new :: proc "c" (role: u8) -> rawptr ---
-		accesskit_node_free :: proc "c" (node: rawptr) ---
-		accesskit_node_push_child :: proc "c" (node: rawptr, item: u64) ---
-		accesskit_node_add_action :: proc "c" (node: rawptr, action: u8) ---
-		accesskit_node_set_label_with_length :: proc "c" (node: rawptr, value: rawptr, length: uint) ---
-		accesskit_node_set_description_with_length :: proc "c" (node: rawptr, value: rawptr, length: uint) ---
-		accesskit_node_set_value_with_length :: proc "c" (node: rawptr, value: rawptr, length: uint) ---
-		accesskit_node_set_character_lengths :: proc "c" (node: rawptr, length: uint, values: rawptr) ---
-		accesskit_node_set_text_selection :: proc "c" (node: rawptr, value: AccessKit_Text_Selection) ---
-		accesskit_node_set_live :: proc "c" (node: rawptr, value: u8) ---
-		accesskit_node_set_live_atomic :: proc "c" (node: rawptr) ---
-		accesskit_node_set_bounds :: proc "c" (node: rawptr, value: AccessKit_Rect) ---
-		accesskit_node_set_disabled :: proc "c" (node: rawptr) ---
-		accesskit_node_set_required :: proc "c" (node: rawptr) ---
-		accesskit_node_set_read_only :: proc "c" (node: rawptr) ---
-		accesskit_node_set_expanded :: proc "c" (node: rawptr, value: bool) ---
-		accesskit_node_set_selected :: proc "c" (node: rawptr, value: bool) ---
-		accesskit_node_set_toggled :: proc "c" (node: rawptr, value: u8) ---
-		accesskit_node_set_invalid :: proc "c" (node: rawptr, value: u8) ---
-		accesskit_node_set_busy :: proc "c" (node: rawptr) ---
-		accesskit_node_set_aria_current :: proc "c" (node: rawptr, value: u8) ---
-		accesskit_node_set_size_of_set :: proc "c" (node: rawptr, value: uint) ---
-		accesskit_node_set_position_in_set :: proc "c" (node: rawptr, value: uint) ---
-		accesskit_node_set_numeric_value :: proc "c" (node: rawptr, value: f64) ---
-		accesskit_node_set_min_numeric_value :: proc "c" (node: rawptr, value: f64) ---
-		accesskit_node_set_max_numeric_value :: proc "c" (node: rawptr, value: f64) ---
-		accesskit_node_set_numeric_value_step :: proc "c" (node: rawptr, value: f64) ---
-		accesskit_tree_info_new :: proc "c" (root: u64) -> rawptr ---
-		accesskit_tree_info_set_toolkit_name_with_length :: proc "c" (tree: rawptr, value: rawptr, length: uint) ---
-		accesskit_tree_info_set_toolkit_version_with_length :: proc "c" (tree: rawptr, value: rawptr, length: uint) ---
-		accesskit_tree_info_free :: proc "c" (tree: rawptr) ---
-		accesskit_tree_update_with_capacity_and_focus :: proc "c" (capacity: uint, focus: u64) -> rawptr ---
-		accesskit_tree_update_free :: proc "c" (update: rawptr) ---
-		accesskit_tree_update_push_node :: proc "c" (update: rawptr, id: u64, node: rawptr) ---
-		accesskit_tree_update_set_tree_info :: proc "c" (update: rawptr, tree: rawptr) ---
-		accesskit_action_request_free :: proc "c" (request: rawptr) ---
-	}
-}
-
-when ODIN_OS == .Windows {
-	foreign accesskit {
-		accesskit_windows_subclassing_adapter_new :: proc "c" (
-			hwnd: rawptr,
-			activation: AccessKit_Activation_Callback,
-			activation_userdata: rawptr,
-			action: AccessKit_Action_Callback,
-			action_userdata: rawptr,
-		) -> rawptr ---
-		accesskit_windows_subclassing_adapter_free :: proc "c" (adapter: rawptr) ---
-		accesskit_windows_subclassing_adapter_update_if_active :: proc "c" (
-			adapter: rawptr,
-			factory: AccessKit_Tree_Update_Factory,
-			userdata: rawptr,
-		) -> rawptr ---
-		accesskit_windows_queued_events_raise :: proc "c" (events: rawptr) ---
-	}
-}
-
-when ODIN_OS == .Darwin {
-	foreign accesskit {
-		accesskit_macos_add_focus_forwarder_to_window_class :: proc "c" (class_name: cstring) ---
-		accesskit_macos_subclassing_adapter_for_window :: proc "c" (
-			window: rawptr,
-			activation: AccessKit_Activation_Callback,
-			activation_userdata: rawptr,
-			action: AccessKit_Action_Callback,
-			action_userdata: rawptr,
-		) -> rawptr ---
-		accesskit_macos_subclassing_adapter_free :: proc "c" (adapter: rawptr) ---
-		accesskit_macos_subclassing_adapter_update_if_active :: proc "c" (
-			adapter: rawptr,
-			factory: AccessKit_Tree_Update_Factory,
-			userdata: rawptr,
-		) -> rawptr ---
-		accesskit_macos_subclassing_adapter_update_view_focus_state :: proc "c" (adapter: rawptr, focused: bool) -> rawptr ---
-		accesskit_macos_queued_events_raise :: proc "c" (events: rawptr) ---
-	}
-}
-
-ACCESSKIT_ACTION_CLICK :: u8(0)
-ACCESSKIT_ACTION_FOCUS :: u8(1)
-ACCESSKIT_ACTION_COLLAPSE :: u8(3)
-ACCESSKIT_ACTION_EXPAND :: u8(4)
-ACCESSKIT_ACTION_HIDE_TOOLTIP :: u8(8)
-ACCESSKIT_ACTION_REPLACE_SELECTED_TEXT :: u8(10)
-ACCESSKIT_ACTION_DECREMENT :: u8(6)
-ACCESSKIT_ACTION_INCREMENT :: u8(7)
-ACCESSKIT_ACTION_SCROLL_DOWN :: u8(11)
-ACCESSKIT_ACTION_SCROLL_UP :: u8(14)
-ACCESSKIT_ACTION_SCROLL_INTO_VIEW :: u8(15)
-ACCESSKIT_ACTION_SET_TEXT_SELECTION :: u8(18)
-ACCESSKIT_ACTION_SET_VALUE :: u8(20)
-
-ACCESSKIT_ACTION_DATA_VALUE :: c.int(1)
-ACCESSKIT_ACTION_DATA_NUMERIC_VALUE :: c.int(2)
-ACCESSKIT_ACTION_DATA_SET_TEXT_SELECTION :: c.int(7)
-
-ACCESSKIT_ROLE_UNKNOWN :: u8(0)
-ACCESSKIT_ROLE_TEXT_RUN :: u8(1)
-ACCESSKIT_ROLE_LABEL :: u8(3)
-ACCESSKIT_ROLE_LIST_ITEM :: u8(7)
-ACCESSKIT_ROLE_MENU_ITEM :: u8(11)
-ACCESSKIT_ROLE_TREE_ITEM :: u8(9)
-ACCESSKIT_ROLE_GENERIC_CONTAINER :: u8(14)
-ACCESSKIT_ROLE_CHECK_BOX :: u8(15)
-ACCESSKIT_ROLE_TEXT_INPUT :: u8(17)
-ACCESSKIT_ROLE_BUTTON :: u8(18)
-ACCESSKIT_ROLE_LIST :: u8(24)
-ACCESSKIT_ROLE_LIST_BOX_OPTION :: u8(10)
-ACCESSKIT_ROLE_COMBO_BOX :: u8(56)
-ACCESSKIT_ROLE_LIST_BOX :: u8(85)
-ACCESSKIT_ROLE_STATUS :: u8(114)
-ACCESSKIT_ROLE_ALERT :: u8(44)
-ACCESSKIT_ROLE_DIALOG :: u8(66)
-ACCESSKIT_ROLE_GROUP :: u8(78)
-ACCESSKIT_ROLE_SCROLL_VIEW :: u8(108)
-ACCESSKIT_ROLE_SLIDER :: u8(113)
-ACCESSKIT_ROLE_TAB :: u8(120)
-ACCESSKIT_ROLE_TAB_LIST :: u8(121)
-ACCESSKIT_ROLE_TAB_PANEL :: u8(122)
-ACCESSKIT_ROLE_MENU :: u8(30)
-ACCESSKIT_ROLE_MULTILINE_TEXT_INPUT :: u8(31)
-ACCESSKIT_ROLE_TREE :: u8(129)
-ACCESSKIT_ROLE_TOOLTIP :: u8(128)
-ACCESSKIT_ROLE_WINDOW :: u8(133)
-
-ACCESSKIT_TOGGLED_FALSE :: u8(0)
-ACCESSKIT_TOGGLED_TRUE :: u8(1)
-ACCESSKIT_LIVE_OFF :: u8(0)
-ACCESSKIT_LIVE_POLITE :: u8(1)
-ACCESSKIT_LIVE_ASSERTIVE :: u8(2)
+ACCESSKIT_TOGGLED_FALSE :: ak.TOGGLED_FALSE
+ACCESSKIT_TOGGLED_TRUE :: ak.TOGGLED_TRUE
+ACCESSKIT_LIVE_OFF :: ak.LIVE_OFF
+ACCESSKIT_LIVE_POLITE :: ak.LIVE_POLITE
+ACCESSKIT_LIVE_ASSERTIVE :: ak.LIVE_ASSERTIVE
 
 NATIVE_ACCESSIBILITY_ACTION_QUEUE_CAPACITY :: 64
 NATIVE_ACCESSIBILITY_ACTION_TEXT_LIMIT :: 1 << 20
+
+Native_Accessibility_Sync_Plan :: struct {
+	required: bool,
+	force_snapshot: bool,
+}
+
+// AccessKit bounds depend on native host geometry as well as semantic content.
+// In particular, a content inset change moves every exported node without
+// changing the semantic revision, so it requires a full tree refresh.
+native_accessibility_sync_plan :: proc(
+	projection_ready: bool,
+	projection_revision, semantic_revision: u64,
+	current_inset, requested_inset: f32,
+) -> Native_Accessibility_Sync_Plan {
+	if !projection_ready {
+		return {required=true, force_snapshot=true}
+	}
+
+	semantic_changed := projection_revision != semantic_revision
+	geometry_changed := current_inset != requested_inset
+	return {
+		required=semantic_changed || geometry_changed,
+		force_snapshot=geometry_changed,
+	}
+}
 
 Native_Accessibility_Queued_Action :: struct {
 	semantic_id: alicorn.Semantic_ID,
@@ -291,9 +177,11 @@ native_accessibility_host_shutdown :: proc(host: ^Native_Accessibility_Host) {
 	}
 	if host.adapter != nil {
 		when ODIN_OS == .Windows {
-			accesskit_windows_subclassing_adapter_free(host.adapter)
+			adapter := ak.Windows_Subclassing_Adapter{raw=host.adapter}
+			ak.windows_subclassing_adapter_destroy(&adapter)
 		} else when ODIN_OS == .Darwin {
-			accesskit_macos_subclassing_adapter_free(host.adapter)
+			adapter := ak.MacOS_Subclassing_Adapter{raw=host.adapter}
+			ak.macos_subclassing_adapter_destroy(&adapter)
 		}
 		host.adapter = nil
 	}
@@ -329,7 +217,7 @@ native_accessibility_callback_leave :: proc(host: ^Native_Accessibility_Host) {
 	sdl3.UnlockMutex(host.mutex)
 }
 
-native_accessibility_action_to_semantic :: proc(action: u8, node: Accessibility_Projection_Node) -> (alicorn.Semantic_Action, bool, bool) {
+native_accessibility_action_to_semantic :: proc(action: ak.Action, node: Accessibility_Projection_Node) -> (alicorn.Semantic_Action, bool, bool) {
 	// The final bool identifies ScrollIntoView, which is a reveal request rather
 	// than an action. Select is represented by AccessKit Click on Tab nodes.
 	switch action {
@@ -365,9 +253,9 @@ native_accessibility_action_to_semantic :: proc(action: u8, node: Accessibility_
 native_accessibility_selection_from_action_data :: proc(
 	projection: Accessibility_Projection,
 	area_id: alicorn.Semantic_ID,
-	data: AccessKit_Action_Data,
+	data: ak.Action_Data_ABI,
 ) -> (selection: alicorn.Semantic_Text_Selection, ok: bool) {
-	if data.tag != ACCESSKIT_ACTION_DATA_SET_TEXT_SELECTION { return {}, false }
+	if ak.Action_Data_Tag(data.tag) != ACCESSKIT_ACTION_DATA_SET_TEXT_SELECTION { return {}, false }
 	return accessibility_projection_text_selection_decode(
 		projection,
 		area_id,
@@ -379,61 +267,55 @@ when ODIN_OS == .Windows || ODIN_OS == .Darwin {
 native_accessibility_action_callback :: proc "c" (request_pointer, userdata: rawptr) {
 	context = runtime.default_context()
 	if request_pointer == nil { return }
-	request := cast(^AccessKit_Action_Request)request_pointer
+	request_owner := ak.action_request_take(request_pointer)
+	defer ak.action_request_destroy(&request_owner)
+	request, request_ok := ak.action_request_borrow(&request_owner)
+	if !request_ok { return }
 	host := cast(^Native_Accessibility_Host)userdata
-	if !native_accessibility_callback_enter(host) {
-		accesskit_action_request_free(request_pointer)
-		return
-	}
+	if !native_accessibility_callback_enter(host) { return }
 	defer native_accessibility_callback_leave(host)
 
 	// The current semantic projection owns this mapping. It is bounded by the
 	// exported working set and is read only under the same mutex as publication.
 	sdl3.LockMutex(host.mutex)
-	node, found := native_accessibility_semantic_for_node(host, request.target_node)
+	node, found := native_accessibility_semantic_for_node(host, u64(request.target_node))
 	if !found {
 		host.counters.actions_dropped += 1
 		sdl3.UnlockMutex(host.mutex)
-		accesskit_action_request_free(request_pointer)
 		return
 	}
 	action, reveal, supported := native_accessibility_action_to_semantic(request.action, node)
 	if !supported || host.action_count >= len(host.actions) {
 		host.counters.actions_dropped += 1
 		sdl3.UnlockMutex(host.mutex)
-		accesskit_action_request_free(request_pointer)
 		return
 	}
 	queued := Native_Accessibility_Queued_Action{semantic_id=node.semantic_id, action=action}
-	if (action == .Set_Value || action == .Replace_Selected_Text) && request.data.has_value {
-		if request.data.value.tag == ACCESSKIT_ACTION_DATA_VALUE {
+	if (action == .Set_Value || action == .Replace_Selected_Text) && request.has_data {
+		if request.data_tag == ACCESSKIT_ACTION_DATA_VALUE {
 			if node.role != .Text_Input && node.role != .Text_Area {
 				host.counters.actions_dropped += 1
 				sdl3.UnlockMutex(host.mutex)
-				accesskit_action_request_free(request_pointer)
 				return
 			}
 			// AccessKit's Value union arm contains a borrowed char pointer. Copy
 			// it before freeing the action request at the end of this callback.
-			text := transmute(cstring)request.data.value.value[0]
+			text := request.text_value
 			if text == nil {
 				host.counters.actions_dropped += 1
 				sdl3.UnlockMutex(host.mutex)
-				accesskit_action_request_free(request_pointer)
 				return
 			}
 			length := native_accessibility_cstring_length(text, NATIVE_ACCESSIBILITY_ACTION_TEXT_LIMIT)
 			if length == NATIVE_ACCESSIBILITY_ACTION_TEXT_LIMIT {
 				host.counters.actions_dropped += 1
 				sdl3.UnlockMutex(host.mutex)
-				accesskit_action_request_free(request_pointer)
 				return
 			}
 			copy := libc.malloc(uint(length))
 			if length > 0 && copy == nil {
 				host.counters.actions_dropped += 1
 				sdl3.UnlockMutex(host.mutex)
-				accesskit_action_request_free(request_pointer)
 				return
 			}
 			if length > 0 {
@@ -443,39 +325,35 @@ native_accessibility_action_callback :: proc "c" (request_pointer, userdata: raw
 				queued.text_pointer = copy
 				queued.text_length = length
 			}
-		} else if request.data.value.tag == ACCESSKIT_ACTION_DATA_NUMERIC_VALUE {
+		} else if request.data_tag == ACCESSKIT_ACTION_DATA_NUMERIC_VALUE {
 			if !node.has_numeric_value {
 				host.counters.actions_dropped += 1
 				sdl3.UnlockMutex(host.mutex)
-				accesskit_action_request_free(request_pointer)
 				return
 			}
-			queued.numeric_value = transmute(f64)request.data.value.value[0]
+			queued.numeric_value = request.numeric_value
 			queued.has_numeric_value = true
 		} else {
 			host.counters.actions_dropped += 1
 			sdl3.UnlockMutex(host.mutex)
-			accesskit_action_request_free(request_pointer)
 			return
 		}
-	} else if action == .Set_Text_Selection && request.data.has_value &&
-	   request.data.value.tag == ACCESSKIT_ACTION_DATA_SET_TEXT_SELECTION {
+	} else if action == .Set_Text_Selection && request.has_data &&
+	   request.data_tag == ACCESSKIT_ACTION_DATA_SET_TEXT_SELECTION {
 		// ActionData::SetTextSelection is two 16-byte positions in the
 		// union's 32-byte payload: {node, character_index} for each endpoint.
 		selection, selection_ok := native_accessibility_selection_from_action_data(
-			host.projection, node.semantic_id, request.data.value,
+			host.projection, node.semantic_id, request.payload,
 		)
 		if !selection_ok {
 			host.counters.actions_dropped += 1
 			sdl3.UnlockMutex(host.mutex)
-			accesskit_action_request_free(request_pointer)
 			return
 		}
 		queued.text_selection = selection
 	} else if action == .Set_Value || action == .Replace_Selected_Text || action == .Set_Text_Selection {
 		host.counters.actions_dropped += 1
 		sdl3.UnlockMutex(host.mutex)
-		accesskit_action_request_free(request_pointer)
 		return
 	}
 	if reveal { queued.action = .Scroll_Into_View }
@@ -484,7 +362,6 @@ native_accessibility_action_callback :: proc "c" (request_pointer, userdata: raw
 	host.action_count += 1
 	host.counters.actions_received += 1
 	sdl3.UnlockMutex(host.mutex)
-	accesskit_action_request_free(request_pointer)
 	native_host_event_wake(host.host_waker)
 }
 }
@@ -543,8 +420,9 @@ native_accessibility_take_counters :: proc(host: ^Native_Accessibility_Host) -> 
 native_accessibility_focus_changed :: proc(host: ^Native_Accessibility_Host, focused: bool) {
 	if host == nil || host.adapter == nil { return }
 	when ODIN_OS == .Darwin {
-		events := accesskit_macos_subclassing_adapter_update_view_focus_state(host.adapter, focused)
-		if events != nil { accesskit_macos_queued_events_raise(events) }
+		adapter := ak.MacOS_Subclassing_Adapter{raw=host.adapter}
+		events := ak.macos_subclassing_adapter_update_focus_state(&adapter, focused)
+		ak.macos_queued_events_raise(&events)
 	}
 }
 
@@ -554,7 +432,7 @@ native_accessibility_prepare_platform :: proc() -> bool {
 		// find the content view's focused accessibility element.
 		class_name, err := strings.clone_to_cstring("SDL3Window", context.temp_allocator)
 		if err != nil { return false }
-		accesskit_macos_add_focus_forwarder_to_window_class(class_name)
+		ak.macos_add_focus_forwarder_to_window_class(class_name)
 	}
 	return true
 }
@@ -565,19 +443,23 @@ native_accessibility_adapter_init :: proc(host: ^Native_Accessibility_Host, wind
 	when ODIN_OS == .Windows {
 		hwnd := sdl3.GetPointerProperty(props, "SDL.window.win32.hwnd", nil)
 		if hwnd == nil { return false }
-		host.adapter = accesskit_windows_subclassing_adapter_new(
+		adapter, ok := ak.windows_subclassing_adapter_create(
 		hwnd,
 		native_accessibility_activation_callback, rawptr(host),
 		native_accessibility_action_callback, rawptr(host),
 		)
+		if !ok { return false }
+		host.adapter = adapter.raw
 	} else when ODIN_OS == .Darwin {
 		native_window := sdl3.GetPointerProperty(props, "SDL.window.cocoa.window", nil)
 		if native_window == nil { return false }
-		host.adapter = accesskit_macos_subclassing_adapter_for_window(
+		adapter, ok := ak.macos_subclassing_adapter_create_for_window(
 			native_window,
 			native_accessibility_activation_callback, rawptr(host),
 			native_accessibility_action_callback, rawptr(host),
 		)
+		if !ok { return false }
+		host.adapter = adapter.raw
 	} else {
 		return false
 	}
@@ -614,9 +496,12 @@ native_accessibility_sync :: proc(
 	if !active { return false }
 	revision := alicorn.semantic_revision(rt)
 	sdl3.LockMutex(host.mutex)
-	unchanged := host.projection_ready && host.projection.revision == revision
+	plan := native_accessibility_sync_plan(
+		host.projection_ready, host.projection.revision, revision,
+		host.content_inset_top, content_inset_top,
+	)
 	sdl3.UnlockMutex(host.mutex)
-	if unchanged { return false }
+	if !plan.required { return false }
 
 	snapshot := alicorn.semantic_snapshot(rt, context.temp_allocator)
 	defer alicorn.semantic_snapshot_destroy(&snapshot)
@@ -627,7 +512,11 @@ native_accessibility_sync :: proc(
 		sdl3.UnlockMutex(host.mutex)
 		return false
 	}
-	full_snapshot := !host.projection_ready
+	current_plan := native_accessibility_sync_plan(
+		host.projection_ready, host.projection.revision, snapshot.revision,
+		host.content_inset_top, content_inset_top,
+	)
+	full_snapshot := current_plan.force_snapshot
 	delta: Accessibility_Projection_Delta
 	if !host.projection_ready {
 		projection, status := accessibility_projection_from_snapshot(snapshot, context.allocator)
@@ -700,15 +589,17 @@ native_accessibility_sync :: proc(
 			force_snapshot=full_snapshot,
 		}
 		when ODIN_OS == .Windows {
-			events := accesskit_windows_subclassing_adapter_update_if_active(
-				host.adapter, native_accessibility_update_factory, rawptr(&update_context),
+			adapter := ak.Windows_Subclassing_Adapter{raw=host.adapter}
+			events := ak.windows_subclassing_adapter_update_if_active(
+				&adapter, native_accessibility_update_factory, rawptr(&update_context),
 			)
-			if events != nil { accesskit_windows_queued_events_raise(events) }
+			ak.windows_queued_events_raise(&events)
 		} else when ODIN_OS == .Darwin {
-			events := accesskit_macos_subclassing_adapter_update_if_active(
-				host.adapter, native_accessibility_update_factory, rawptr(&update_context),
+			adapter := ak.MacOS_Subclassing_Adapter{raw=host.adapter}
+			events := ak.macos_subclassing_adapter_update_if_active(
+				&adapter, native_accessibility_update_factory, rawptr(&update_context),
 			)
-			if events != nil { accesskit_macos_queued_events_raise(events) }
+			ak.macos_queued_events_raise(&events)
 		}
 	}
 	accessibility_projection_delta_destroy(&delta)
@@ -779,135 +670,138 @@ native_accessibility_build_tree_update :: proc(
 	content_inset_top: f32,
 	include_tree_info: bool,
 ) -> rawptr {
-	update := accesskit_tree_update_with_capacity_and_focus(uint(len(nodes)), focus)
-	if update == nil { return nil }
+	update, update_ok := ak.tree_update_create(uint(len(nodes)), ak.Node_ID(focus))
+	if !update_ok { return nil }
+	defer ak.tree_update_destroy(&update)
 	if include_tree_info {
-		tree := accesskit_tree_info_new(root_id)
-		if tree == nil { accesskit_tree_update_free(update); return nil }
+		tree, tree_ok := ak.tree_info_create(ak.Node_ID(root_id))
+		if !tree_ok { return nil }
+		defer ak.tree_info_destroy(&tree)
 		toolkit_name := "Alicorn"
 		toolkit_version := "0.1"
-		accesskit_tree_info_set_toolkit_name_with_length(tree, raw_data(toolkit_name), uint(len(toolkit_name)))
-		accesskit_tree_info_set_toolkit_version_with_length(tree, raw_data(toolkit_version), uint(len(toolkit_version)))
-		accesskit_tree_update_set_tree_info(update, tree)
+		ak.tree_info_set_toolkit_name(&tree, toolkit_name)
+		ak.tree_info_set_toolkit_version(&tree, toolkit_version)
+		if !ak.tree_update_set_tree_info(&update, &tree) { return nil }
 	}
 	for source in nodes {
-		node := native_accessibility_build_node(source, content_inset_top)
-		if node == nil {
-			accesskit_tree_update_free(update)
-			return nil
-		}
-		accesskit_tree_update_push_node(update, source.id, node)
+		node, node_ok := native_accessibility_build_node(source, content_inset_top)
+		if !node_ok { return nil }
+		defer ak.node_destroy(&node)
+		if !ak.tree_update_push_node(&update, ak.Node_ID(source.id), &node) { return nil }
 	}
-	return update
+	return ak.tree_update_take(&update)
 }
 }
 
 when ODIN_OS == .Windows || ODIN_OS == .Darwin {
-native_accessibility_build_node :: proc(source: Accessibility_Projection_Node, content_inset_top: f32) -> rawptr {
-	node := accesskit_node_new(native_accessibility_accesskit_role(source.role))
-	if node == nil { return nil }
+native_accessibility_build_node :: proc(
+	source: Accessibility_Projection_Node,
+	content_inset_top: f32,
+) -> (node: ak.Node, ok: bool) {
+	node, ok = ak.node_create(native_accessibility_accesskit_role(source.role))
+	if !ok { return }
 	if len(source.label) > 0 {
-		accesskit_node_set_label_with_length(node, raw_data(source.label), uint(len(source.label)))
+		ak.node_set_label(&node, source.label)
 	}
 	description := source.description
 	if len(description) == 0 && accessibility_projection_state_has(source.states, .Modified) {
 		description = "Modified"
 	}
 	if len(description) > 0 {
-		accesskit_node_set_description_with_length(node, raw_data(description), uint(len(description)))
+		ak.node_set_description(&node, description)
 	}
 	if len(source.value) > 0 || source.role == .Text_Run {
-		accesskit_node_set_value_with_length(node, raw_data(source.value), uint(len(source.value)))
+		ak.node_set_value(&node, source.value)
 	}
 	if source.live != .Off {
 		live := ACCESSKIT_LIVE_OFF
 		if source.live == .Polite { live = ACCESSKIT_LIVE_POLITE }
 		if source.live == .Assertive { live = ACCESSKIT_LIVE_ASSERTIVE }
-		accesskit_node_set_live(node, live)
-		if source.live_atomic { accesskit_node_set_live_atomic(node) }
+		ak.node_set_live(&node, live)
+		if source.live_atomic { ak.node_set_live_atomic(&node) }
 	}
 	if source.has_bounds {
-		bounds := AccessKit_Rect{
-			x0=f64(source.bounds.x),
-			y0=f64(source.bounds.y+content_inset_top),
-			x1=f64(source.bounds.x+source.bounds.w),
-			y1=f64(source.bounds.y+source.bounds.h+content_inset_top),
-		}
-		accesskit_node_set_bounds(node, bounds)
+		ak.node_set_bounds(&node, native_accessibility_bounds(source.bounds, content_inset_top))
 	}
-	if accessibility_projection_state_has(source.states, .Disabled) { accesskit_node_set_disabled(node) }
-	if accessibility_projection_state_has(source.states, .Selected) { accesskit_node_set_selected(node, true) }
+	if accessibility_projection_state_has(source.states, .Disabled) { ak.node_set_disabled(&node, true) }
+	if accessibility_projection_state_has(source.states, .Selected) { ak.node_set_selected(&node, true) }
 	if source.role == .Check_Box {
 		toggled := ACCESSKIT_TOGGLED_FALSE
 		if accessibility_projection_state_has(source.states, .Checked) { toggled = ACCESSKIT_TOGGLED_TRUE }
-		accesskit_node_set_toggled(node, toggled)
+		ak.node_set_toggled(&node, toggled)
 	}
-	if accessibility_projection_state_has(source.states, .Required) { accesskit_node_set_required(node) }
-	if accessibility_projection_state_has(source.states, .Read_Only) { accesskit_node_set_read_only(node) }
-	if accessibility_projection_state_has(source.states, .Invalid) { accesskit_node_set_invalid(node, 0) }
-	if accessibility_projection_state_has(source.states, .Busy) { accesskit_node_set_busy(node) }
-	if accessibility_projection_state_has(source.states, .Current) { accesskit_node_set_aria_current(node, 1) }
+	if accessibility_projection_state_has(source.states, .Required) { ak.node_set_required(&node) }
+	if accessibility_projection_state_has(source.states, .Read_Only) { ak.node_set_read_only(&node) }
+	if accessibility_projection_state_has(source.states, .Invalid) { ak.node_set_invalid(&node, ak.INVALID_TRUE) }
+	if accessibility_projection_state_has(source.states, .Busy) { ak.node_set_busy(&node) }
+	if accessibility_projection_state_has(source.states, .Current) { ak.node_set_aria_current(&node, ak.ARIA_CURRENT_TRUE) }
 	if accessibility_projection_state_has(source.states, .Expanded) ||
 		accessibility_projection_action_has(source.actions, .Expand) ||
 		accessibility_projection_action_has(source.actions, .Collapse) {
-		accesskit_node_set_expanded(node, accessibility_projection_state_has(source.states, .Expanded))
+		ak.node_set_expanded(&node, accessibility_projection_state_has(source.states, .Expanded))
 	}
-	if source.has_position_in_set { accesskit_node_set_position_in_set(node, uint(source.position_in_set)) }
+	if source.has_position_in_set { ak.node_set_position_in_set(&node, uint(source.position_in_set)) }
 	if source.is_collection && source.size_of_set > 0 {
-		accesskit_node_set_size_of_set(node, uint(source.size_of_set))
+		ak.node_set_size_of_set(&node, uint(source.size_of_set))
 	}
 	if source.has_numeric_value {
-		accesskit_node_set_numeric_value(node, source.numeric_value)
-		accesskit_node_set_min_numeric_value(node, source.numeric_minimum)
-		accesskit_node_set_max_numeric_value(node, source.numeric_maximum)
-		accesskit_node_set_numeric_value_step(node, source.numeric_step)
+		ak.node_set_numeric_value(&node, source.numeric_value)
+		ak.node_set_min_numeric_value(&node, source.numeric_minimum)
+		ak.node_set_max_numeric_value(&node, source.numeric_maximum)
+		ak.node_set_numeric_value_step(&node, source.numeric_step)
 	}
-	for child in source.children { accesskit_node_push_child(node, child) }
+	for child in source.children { ak.node_push_child(&node, ak.Node_ID(child)) }
 	if len(source.text_run_character_lengths) > 0 {
-		accesskit_node_set_character_lengths(
-			node,
-			uint(len(source.text_run_character_lengths)),
-			raw_data(source.text_run_character_lengths),
-		)
+		ak.node_set_character_lengths(&node, source.text_run_character_lengths)
 	}
 	if source.text_selection.valid {
-		accesskit_node_set_text_selection(node, AccessKit_Text_Selection{
+		ak.node_set_text_selection(&node, ak.Text_Selection{
 			anchor={node=source.text_selection.anchor.node_id, character_index=uint(source.text_selection.anchor.character_index)},
 			focus={node=source.text_selection.focus.node_id, character_index=uint(source.text_selection.focus.character_index)},
 		})
 	}
-	native_accessibility_add_node_actions(node, source.actions)
-	return node
+	native_accessibility_add_node_actions(&node, source.actions)
+	ok = true
+	return
+}
+
+native_accessibility_bounds :: proc(bounds: alicorn.Rect, content_inset_top: f32) -> ak.Rect {
+	return {
+		x0=f64(bounds.x),
+		y0=f64(bounds.y+content_inset_top),
+		x1=f64(bounds.x+bounds.w),
+		y1=f64(bounds.y+bounds.h+content_inset_top),
+	}
 }
 }
 
 when ODIN_OS == .Windows || ODIN_OS == .Darwin {
-native_accessibility_add_node_actions :: proc(node: rawptr, actions: Accessibility_Projection_Actions) {
+native_accessibility_add_node_actions :: proc(node: ^ak.Node, actions: Accessibility_Projection_Actions) {
 	if accessibility_projection_action_has(actions, .Press) || accessibility_projection_action_has(actions, .Select) {
-		accesskit_node_add_action(node, ACCESSKIT_ACTION_CLICK)
+		ak.node_add_action(node, ACCESSKIT_ACTION_CLICK)
 	}
-	if accessibility_projection_action_has(actions, .Focus) { accesskit_node_add_action(node, ACCESSKIT_ACTION_FOCUS) }
+	if accessibility_projection_action_has(actions, .Focus) { ak.node_add_action(node, ACCESSKIT_ACTION_FOCUS) }
 	if accessibility_projection_action_has(actions, .Set_Value) {
-		accesskit_node_add_action(node, ACCESSKIT_ACTION_SET_VALUE)
+		ak.node_add_action(node, ACCESSKIT_ACTION_SET_VALUE)
 	}
 	if accessibility_projection_action_has(actions, .Set_Text_Selection) {
-		accesskit_node_add_action(node, ACCESSKIT_ACTION_SET_TEXT_SELECTION)
+		ak.node_add_action(node, ACCESSKIT_ACTION_SET_TEXT_SELECTION)
 	}
 	if accessibility_projection_action_has(actions, .Replace_Selected_Text) {
-		accesskit_node_add_action(node, ACCESSKIT_ACTION_REPLACE_SELECTED_TEXT)
+		ak.node_add_action(node, ACCESSKIT_ACTION_REPLACE_SELECTED_TEXT)
 	}
-	if accessibility_projection_action_has(actions, .Increment) { accesskit_node_add_action(node, ACCESSKIT_ACTION_INCREMENT) }
-	if accessibility_projection_action_has(actions, .Decrement) { accesskit_node_add_action(node, ACCESSKIT_ACTION_DECREMENT) }
-	if accessibility_projection_action_has(actions, .Expand) { accesskit_node_add_action(node, ACCESSKIT_ACTION_EXPAND) }
-	if accessibility_projection_action_has(actions, .Collapse) { accesskit_node_add_action(node, ACCESSKIT_ACTION_COLLAPSE) }
-	if accessibility_projection_action_has(actions, .Scroll_Into_View) { accesskit_node_add_action(node, ACCESSKIT_ACTION_SCROLL_INTO_VIEW) }
-	if accessibility_projection_action_has(actions, .Scroll_Forward) { accesskit_node_add_action(node, ACCESSKIT_ACTION_SCROLL_DOWN) }
-	if accessibility_projection_action_has(actions, .Scroll_Backward) { accesskit_node_add_action(node, ACCESSKIT_ACTION_SCROLL_UP) }
-	if accessibility_projection_action_has(actions, .Dismiss) { accesskit_node_add_action(node, ACCESSKIT_ACTION_HIDE_TOOLTIP) }
+	if accessibility_projection_action_has(actions, .Increment) { ak.node_add_action(node, ACCESSKIT_ACTION_INCREMENT) }
+	if accessibility_projection_action_has(actions, .Decrement) { ak.node_add_action(node, ACCESSKIT_ACTION_DECREMENT) }
+	if accessibility_projection_action_has(actions, .Expand) { ak.node_add_action(node, ACCESSKIT_ACTION_EXPAND) }
+	if accessibility_projection_action_has(actions, .Collapse) { ak.node_add_action(node, ACCESSKIT_ACTION_COLLAPSE) }
+	if accessibility_projection_action_has(actions, .Scroll_Into_View) { ak.node_add_action(node, ACCESSKIT_ACTION_SCROLL_INTO_VIEW) }
+	if accessibility_projection_action_has(actions, .Scroll_Forward) { ak.node_add_action(node, ACCESSKIT_ACTION_SCROLL_DOWN) }
+	if accessibility_projection_action_has(actions, .Scroll_Backward) { ak.node_add_action(node, ACCESSKIT_ACTION_SCROLL_UP) }
+	if accessibility_projection_action_has(actions, .Dismiss) { ak.node_add_action(node, ACCESSKIT_ACTION_HIDE_TOOLTIP) }
 }
 }
 
-native_accessibility_accesskit_role :: proc(role: Accessibility_Projection_Role) -> u8 {
+native_accessibility_accesskit_role :: proc(role: Accessibility_Projection_Role) -> ak.Role {
 	switch role {
 	case .Window: return ACCESSKIT_ROLE_WINDOW
 	case .Group: return ACCESSKIT_ROLE_GROUP

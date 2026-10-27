@@ -32,6 +32,9 @@ alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	build native/sdl_gpu_entry "-out:$OUT_DIR/alicorn_sdl_gpu"
 "$ODIN" test runtime
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	test tests/fixtures/accessibility_contract \
+	"-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/accessibility_contract_tests"
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	test ui "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_ui_tests"
 "$ODIN" test theme
 "$ODIN" build tools/theme "-out:$OUT_DIR/alicorn_theme"
