@@ -500,16 +500,46 @@ native_secondary_window_event_queue_clear :: proc(child: ^Native_Secondary_Windo
 	child.event_queue_read = 0
 }
 
+native_secondary_window_event_queue_full :: proc(manager: ^Native_Secondary_Window_Manager) -> bool {
+	if manager == nil || manager.child == nil || !manager.child.active { return false }
+	child := manager.child
+	return len(child.event_queue)-child.event_queue_read >= NATIVE_SECONDARY_EVENT_CAPACITY
+}
+
 native_secondary_window_enqueue_event :: proc(manager: ^Native_Secondary_Window_Manager, event: sdl3.Event) -> bool {
 	if manager == nil || manager.child == nil || !manager.child.active { return false }
 	child := manager.child
-	if len(child.event_queue)-child.event_queue_read >= NATIVE_SECONDARY_EVENT_CAPACITY {
+	if native_secondary_window_event_queue_full(manager) {
 		manager.event_overflows += 1
-		return false
+		// Motion samples are replaceable under overload. Never displace a
+		// transition or committed text just to retain another motion sample.
+		if event.type == .MOUSE_MOTION { return true }
+		motion_index := -1
+		for index in child.event_queue_read..<len(child.event_queue) {
+			if child.event_queue[index].event.type == .MOUSE_MOTION {
+				motion_index = index
+				break
+			}
+		}
+		if motion_index < 0 { return false }
+		native_secondary_window_queued_event_destroy(&child.event_queue[motion_index])
+		ordered_remove(&child.event_queue, motion_index)
 	}
 	queued, ok := native_secondary_window_queued_event_copy(event)
 	if !ok { return false }
-	append(&child.event_queue, queued)
+	// Reuse consumed slots even when delivery and enqueue interleave without
+	// an empty pop; the backing queue must not grow with the read cursor.
+	if len(child.event_queue) >= NATIVE_SECONDARY_EVENT_CAPACITY && child.event_queue_read > 0 {
+		pending := len(child.event_queue)-child.event_queue_read
+		copy(child.event_queue[:], child.event_queue[child.event_queue_read:])
+		resize(&child.event_queue, pending)
+		child.event_queue_read = 0
+	}
+	appended, _ := append(&child.event_queue, queued)
+	if appended != 1 {
+		native_secondary_window_queued_event_destroy(&queued)
+		return false
+	}
 	return true
 }
 

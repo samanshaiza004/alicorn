@@ -3,6 +3,7 @@
 package alicorn_sdl_gpu
 
 import "core:testing"
+import "core:sync"
 import "core:encoding/json"
 import win "core:sys/windows"
 import alicorn "../../runtime"
@@ -65,6 +66,8 @@ test_integrated_titlebar_split_grab_target_uses_finalized_hit_bounds_and_header_
 
 @(test)
 test_integrated_topmost_window_mouse_entry_preserves_native_rectangle :: proc(t: ^testing.T) {
+	sync.mutex_lock(&native_sdl_event_test_mutex)
+	defer sync.mutex_unlock(&native_sdl_event_test_mutex)
 	if !sdl3.Init(sdl3.INIT_VIDEO) { testing.expect(t, false, "SDL video initialization failed"); return }
 	defer sdl3.Quit()
 	window := sdl3.CreateWindow("Alicorn topmost entry regression", 480, 320, {.HIDDEN, .RESIZABLE})

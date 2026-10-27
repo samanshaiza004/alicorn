@@ -1,6 +1,7 @@
 package alicorn_sdl_gpu
 
 import "core:testing"
+import "core:sync"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
@@ -116,6 +117,8 @@ menu_application_wake_test_callback :: proc(data: rawptr, rt: ^alicorn.Runtime) 
 
 @(test)
 	test_native_chrome_wake_isolated_from_application_wake :: proc(t: ^testing.T) {
+	sync.mutex_lock(&native_sdl_event_test_mutex)
+	defer sync.mutex_unlock(&native_sdl_event_test_mutex)
 	if !sdl3.Init(sdl3.INIT_EVENTS) {
 		testing.expect(t, false, "SDL event subsystem should initialize for host-wake routing regression")
 		return

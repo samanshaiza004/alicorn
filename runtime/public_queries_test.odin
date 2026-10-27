@@ -93,3 +93,59 @@ test_node_identity_key_returns_local_string_key_inside_scope :: proc(t: ^testing
 	testing.expect(t, resolved_found && resolved == row,
 		"node_by_key should resolve a string-keyed node independently of its parent scope")
 }
+
+public_query_test_region :: proc(t: ^testing.T, rt: ^Runtime, key: string, revision: u64, legacy_container := false) -> (id: Node_ID, reused: bool) {
+	ui, build := begin_frame(rt)
+	if !build { testing.expect(t, false, "the region query fixture must describe a frame"); return }
+	container_begin(&ui, .Root, key=key_string("region-query-root"), style=layout_style())
+	if !key_scope_begin(&ui, key_string("region-query-parent-scope")) {
+		testing.expect(t, false, "the containing identity scope must open")
+		return
+	}
+	source := site("tests/public-region-query.odin", 10, 1, "region-query")
+	if legacy_container {
+		id = container_begin_ex(&ui, .Container, source, key=key, explicit_key=true)
+		container_end(&ui)
+	} else {
+		id, reused = region_begin(&ui, key, revision, source)
+		region_end(&ui, id, reused, 0)
+	}
+	key_scope_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+	return
+}
+
+@(test)
+test_region_string_key_is_queryable_with_legacy_identity :: proc(t: ^testing.T) {
+	keys := []string{"queryable-region", ""}
+	for key in keys {
+		legacy := new_runtime(Rect{0, 0, 240, 120})
+		expected_id, _ := public_query_test_region(t, &legacy, key, 1, legacy_container=true)
+		destroy_runtime(&legacy)
+		rt := new_runtime(Rect{0, 0, 240, 120})
+		for frame in 0..<3 {
+			revision := u64(1)
+			if frame == 1 { invalidate_root(&rt, "query a reused region") }
+			if frame == 2 {
+				revision = 2
+				invalidate_region(&rt, key, revision, "query an invalidated region")
+			}
+			id, reused := public_query_test_region(t, &rt, key, revision)
+			testing.expect(t, id != 0 && id == expected_id,
+				"region IDs must retain the legacy explicit-string encoding across reuse and invalidation")
+			testing.expect(t, reused == (frame == 1), "the fixture must exercise initial, reused and invalidated descriptions")
+			resolved, found := node_by_key(&rt, key_string(key), .Container)
+			testing.expect(t, found && resolved == id, "node_by_key must resolve the region's explicit string key")
+			identity_key, identity_found := node_identity_key(&rt, id)
+			identity_string, is_string := identity_key.(string)
+			testing.expect(t, identity_found && is_string && identity_string == key,
+				"node_identity_key must return the region's local key rather than its containing scope")
+			info, info_found := node_info(&rt, id)
+			info_string, info_is_string := info.key.(string)
+			testing.expect(t, info_found && info.active && info.kind == .Container && info_is_string && info_string == key,
+				"node_info must expose the live region's explicit string key")
+		}
+		destroy_runtime(&rt)
+	}
+}
