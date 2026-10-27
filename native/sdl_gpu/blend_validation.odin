@@ -25,6 +25,20 @@ Blend_Validation_Stats :: struct {
 	family_cases, family_failed: [Blend_Validation_Family]int,
 }
 
+BLEND_VALIDATION_EXPECTED_CASES :: 156
+
+blend_validation_expected_family_cases :: proc(family: Blend_Validation_Family) -> int {
+	switch family {
+	case .Surface:  return 48
+	case .Geometry: return 24
+	case .Icon:     return 24
+	case .Image:    return 24
+	case .Text:     return 24
+	case .Mixed:    return 12
+	}
+	return -1
+}
+
 // Straight source RGB is weighted by coverage/opacity once; destination RGB
 // already contains its composited contribution. Alpha uses As + Ad*(1-As).
 // Worked anchors: half red then half blue over clear = (.25,0,.5,.75);
@@ -291,13 +305,24 @@ blend_validation_cases :: proc(renderers: ^Blend_Validation_Renderers, rt: ^alic
 			}
 		}
 	}
+	case_counts_ok := stats.cases == BLEND_VALIDATION_EXPECTED_CASES
+	if !case_counts_ok {
+		fmt.println("blend_gpu_case_count_mismatch", "actual",stats.cases,"expected",BLEND_VALIDATION_EXPECTED_CASES)
+	}
 	for family in Blend_Validation_Family {
+		expected_family_cases := blend_validation_expected_family_cases(family)
+		if stats.family_cases[family] != expected_family_cases {
+			case_counts_ok = false
+			fmt.println("blend_gpu_family_count_mismatch",family,"actual",stats.family_cases[family],
+				"expected",expected_family_cases)
+		}
 		fmt.println("blend_gpu_family",family,"cases",stats.family_cases[family],"failed",stats.family_failed[family])
 	}
 	fmt.println("blend_gpu_validation", "driver",sdl3.GetGPUDeviceDriver(renderers.solid.device),
 		"target","R8G8B8A8_UNORM","scales","1,1.25,1.5,2","destination_alpha","0,0.4,1",
-		"cases",stats.cases,"failed",stats.failed,"rgba_tolerance_bytes",2)
-	return stats.failed == 0
+		"cases",stats.cases,"expected_cases",BLEND_VALIDATION_EXPECTED_CASES,
+		"case_counts_ok",case_counts_ok,"failed",stats.failed,"rgba_tolerance_bytes",2)
+	return stats.failed == 0 && case_counts_ok
 }
 
 blend_validation_device :: proc() -> bool {
