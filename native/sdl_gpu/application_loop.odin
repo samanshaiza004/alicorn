@@ -100,7 +100,11 @@ run_application_loop :: proc(
 		cancel=native_application_cancel_scheduled,
 		read_stats=native_application_scheduler_stats,
 	}
-	secondary_windows := Native_Secondary_Window_Manager{device=device, primary_window=window}
+	text_input_coordinator: Native_Text_Input_Coordinator
+	secondary_windows := Native_Secondary_Window_Manager{
+		device=device, primary_window=window,
+		text_input_coordinator=&text_input_coordinator,
+	}
 	defer native_secondary_window_manager_destroy(&secondary_windows)
 	dialog_bridge := native_dialog_bridge_make(window, application_waker)
 	defer native_dialog_bridge_release(dialog_bridge)
@@ -143,7 +147,7 @@ run_application_loop :: proc(
 	initial_summary := native_inspector_host_summary(&timing, rt, 0)
 	native_inspector_update(&inspector, rt, rt.viewport, &initial_summary)
 	devtools_cursor := native_devtools_cursor_init(rt, &timing, &text_events)
-	sync_text_input_focus(window, rt, &text_input_state, &application_instance)
+	sync_text_input_focus(window, rt, &text_input_state, &application_instance, &text_input_coordinator)
 	when ODIN_OS == .Windows || ODIN_OS == .Darwin {
 		if accessibility_host_ready {
 			if native_accessibility_adapter_init(&accessibility_host, window) {
@@ -159,6 +163,9 @@ run_application_loop :: proc(
 	live_resize_state := Native_Live_Resize_State{
 		active=true,
 		window=window,
+		window_id=sdl3.GetWindowID(window),
+		secondary_manager=&secondary_windows,
+		text_input_coordinator=&text_input_coordinator,
 		device=device,
 		rt=rt,
 		application=&application_instance,
@@ -318,6 +325,7 @@ run_application_loop :: proc(
 			native_menu=native_menu,
 			last_user_interaction_ns=&last_user_interaction_ns,
 			text_input_state=&text_input_state,
+			text_input_coordinator=&text_input_coordinator,
 			pointer_modifier_state=&pointer_modifier_state,
 			pointer_button_state=&pointer_button_state,
 			devtools_hud=&devtools_hud,
@@ -371,6 +379,7 @@ run_application_loop :: proc(
 				native_host_wake_events=&child.timing.native_host_wake_events,
 				last_user_interaction_ns=&child.last_user_interaction_ns,
 				text_input_state=&child.text_input_state,
+				text_input_coordinator=&text_input_coordinator,
 				pointer_modifier_state=&child.pointer_modifier_state,
 				pointer_button_state=&child.pointer_button_state,
 				accessibility=&child.accessibility_host,
@@ -381,6 +390,16 @@ run_application_loop :: proc(
 				flight_recorder=&child.flight_recorder,
 				diagnostics_capture_requested=&diagnostics.capture_requested,
 			)
+			// The primary pump may defer child events through its bounded queue.
+			// Refresh once at the child safe point as well, so rendering never
+			// pairs a newly resized swapchain with stale child layout metrics.
+			current_child_metrics: Window_Metrics
+			if read_window_metrics(child.window, &current_child_metrics, child.native_menu.content_inset_top) {
+				_ = native_window_metrics_apply(
+					child.runtime, &child.metrics, current_child_metrics,
+					"SDL secondary window content viewport changed",
+				)
+			}
 			if command, ok := native_menu_take_pending(&child.native_menu); ok {
 				native_menu_dispatch_command(&child.native_menu, command)
 			}
@@ -425,7 +444,10 @@ run_application_loop :: proc(
 			if queued_events > 0 && rt != nil {
 				alicorn.invalidate_root(rt, "secondary window input may have changed shared application state")
 			}
-			sync_text_input_focus(child.window, child.runtime, &child.text_input_state, &child.application)
+			sync_text_input_focus(
+				child.window, child.runtime, &child.text_input_state, &child.application,
+				&text_input_coordinator,
+			)
 			if !native_secondary_window_render(&secondary_windows, child) {
 				fail("secondary window GPU presentation failed")
 			}
@@ -491,7 +513,7 @@ run_application_loop :: proc(
 		}
 		// A focus or caret change can update the platform candidate anchor
 		// without requiring a procedural description rebuild.
-		sync_text_input_focus(window, rt, &text_input_state, &application_instance)
+		sync_text_input_focus(window, rt, &text_input_state, &application_instance, &text_input_coordinator)
 
 		// Interaction-only invalidation updates retained paint without asking the
 		// application to rebuild its procedural description. Flush that retained
@@ -534,7 +556,7 @@ run_application_loop :: proc(
 		// A toolbar Close can be consumed during this description, after the
 		// native pump has already drained. Resume its preserved app owner now.
 		native_inspector_finish_input_pump(&inspector, &text_input_state)
-		sync_text_input_focus(window, rt, &text_input_state, &application_instance)
+		sync_text_input_focus(window, rt, &text_input_state, &application_instance, &text_input_coordinator)
 		application_submission_pending := alicorn.frame_needs_submission(rt)
 		native_chrome_submission_pending := native_menu != nil && native_menu.chrome_redraw_pending
 		inspector_submission_pending := native_inspector_submission_pending(&inspector)
@@ -768,13 +790,10 @@ run_application_loop :: proc(
 	if native_menu != nil { native_menu.inspector = nil }
 	if !sdl3.WaitForGPUIdle(device) { fail("SDL application GPU idle wait failed") }
 	native_dialog_bridge_shutdown(dialog_bridge)
-	native_cancel_current_text_composition(&application_instance, rt, &text_input_state, "application shutdown")
-	if text_input_state.active {
-		_ = sdl3.ClearComposition(window)
-		_ = sdl3.StopTextInput(window)
-		text_input_state.active = false
-		text_input_state.owner = 0
-	}
+	native_text_input_coordinator_relinquish(
+		&text_input_coordinator, window, rt, &text_input_state, &application_instance,
+		"application shutdown",
+	)
 	if application_instance.on_stop != nil {
 		// Stop worker threads while the host-owned waker state is still alive.
 		// This prevents a late worker completion from calling through a stack

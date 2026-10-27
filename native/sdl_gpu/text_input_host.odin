@@ -18,6 +18,38 @@ Native_Text_Input_State :: struct {
 	content_inset_top: f32,
 }
 
+// SDL's Cocoa backend owns one process-wide NSTextInputContext/editor even
+// though Alicorn retains focus independently for each window. This coordinator
+// serializes the native side effects while each window keeps its own runtime
+// focus, composition, and application state.
+Native_Text_Input_Coordinator :: struct {
+	owner_window: ^sdl3.Window,
+	owner_window_id: sdl3.WindowID,
+	owner_state: ^Native_Text_Input_State,
+	owner_runtime: ^alicorn.Runtime,
+	owner_application: ^Application,
+	generation: u64,
+}
+
+native_text_input_coordinator_owns_state :: proc(
+	coordinator: ^Native_Text_Input_Coordinator,
+	state: ^Native_Text_Input_State,
+) -> bool {
+	return coordinator != nil && state != nil && coordinator.owner_state == state
+}
+
+native_text_input_focus_matches_window :: proc(window_id, focused_window_id: sdl3.WindowID) -> bool {
+	return window_id != 0 && window_id == focused_window_id
+}
+
+native_text_input_should_replay_child_before_primary_focus :: proc(
+	event_type: sdl3.EventType,
+	replaying_child_events: bool,
+	pending_child_events: int,
+) -> bool {
+	return !replaying_child_events && event_type == .WINDOW_FOCUS_GAINED && pending_child_events > 0
+}
+
 native_text_input_owner_is_valid :: proc(rt: ^alicorn.Runtime, id: alicorn.Node_ID) -> bool {
 	node, ok := rt.nodes[id]
 	if !ok || !node.active || !node.focusable || node.disabled { return false }
@@ -244,6 +276,8 @@ sync_text_input_focus :: proc(
 	rt: ^alicorn.Runtime,
 	state: ^Native_Text_Input_State,
 	application: ^Application = nil,
+	coordinator: ^Native_Text_Input_Coordinator = nil,
+	allow_native_transition := true,
 ) {
 	desired := rt.focused
 	if state.suspended || !state.window_focused || !native_text_input_owner_is_valid(rt, desired) { desired = 0 }
@@ -253,24 +287,21 @@ sync_text_input_focus :: proc(
 			desired = 0
 		}
 	}
-	if desired != state.owner {
-		native_cancel_current_text_composition(application, rt, state)
-		if state.active {
-			// Clear platform preedit before changing the Alicorn owner; otherwise
-			// a late platform event could be applied to the wrong target.
-			if !sdl3.ClearComposition(window) { fail("SDL_ClearComposition failed during text-input focus transfer") }
-			if !sdl3.StopTextInput(window) { fail("SDL_StopTextInput failed during text-input focus transfer") }
-			state.active = false
-		}
-		state.owner = 0
-		state.last_area_valid = false
-		if desired != 0 {
-			if !sdl3.StartTextInput(window) { fail("SDL_StartTextInput failed for focused text-input target") }
-			state.active = true
-			state.owner = desired
+	if allow_native_transition {
+		when ODIN_OS == .Darwin {
+			if coordinator != nil {
+				native_text_input_coordinator_sync(
+					coordinator, window, rt, state, application, desired, allow_native_transition,
+				)
+			} else {
+				native_text_input_sync_window(window, rt, state, application, desired)
+			}
+		} else {
+			native_text_input_sync_window(window, rt, state, application, desired)
 		}
 	}
-	if state.active && state.owner != 0 {
+	owns_native_session := coordinator == nil || native_text_input_coordinator_owns_state(coordinator, state)
+	if state.active && state.owner != 0 && owns_native_session {
 		area, ok := alicorn.text_input_area(rt, state.owner)
 		if !ok {
 			if native_text_input_area_update_required(state, {}, false) {
@@ -302,6 +333,146 @@ sync_text_input_focus :: proc(
 			state.last_area = cache_area
 			state.last_area_valid = true
 		}
+	}
+}
+
+native_text_input_sync_window :: proc(
+	window: ^sdl3.Window,
+	rt: ^alicorn.Runtime,
+	state: ^Native_Text_Input_State,
+	application: ^Application,
+	desired: alicorn.Node_ID,
+) {
+	if desired == state.owner { return }
+	native_cancel_current_text_composition(application, rt, state)
+	if state.active {
+		// Clear platform preedit before changing the Alicorn owner; otherwise a
+		// late platform event could be applied to the wrong target.
+		if !sdl3.ClearComposition(window) { fail("SDL_ClearComposition failed during text-input focus transfer") }
+		if !sdl3.StopTextInput(window) { fail("SDL_StopTextInput failed during text-input focus transfer") }
+		state.active = false
+	}
+	state.owner = 0
+	state.last_area_valid = false
+	if desired != 0 {
+		if !sdl3.StartTextInput(window) { fail("SDL_StartTextInput failed for focused text-input target") }
+		state.active = true
+		state.owner = desired
+	}
+}
+
+native_text_input_coordinator_retire_owner :: proc(
+	coordinator: ^Native_Text_Input_Coordinator,
+	reason := "native text-input ownership transferred",
+) {
+	if coordinator == nil || coordinator.owner_state == nil { return }
+	state := coordinator.owner_state
+	rt := coordinator.owner_runtime
+	window := coordinator.owner_window
+	if rt != nil {
+		native_cancel_current_text_composition(coordinator.owner_application, rt, state, reason)
+	}
+	// A registered owner represents the one live SDL/Cocoa input session. Stop
+	// it exactly once, before installing a new window as native owner.
+	if window != nil {
+		if !sdl3.ClearComposition(window) { fail("SDL_ClearComposition failed while retiring native text-input owner") }
+		if !sdl3.StopTextInput(window) { fail("SDL_StopTextInput failed while retiring native text-input owner") }
+	}
+	state.active = false
+	state.owner = 0
+	state.last_area_valid = false
+	coordinator.owner_window = nil
+	coordinator.owner_window_id = 0
+	coordinator.owner_state = nil
+	coordinator.owner_runtime = nil
+	coordinator.owner_application = nil
+	coordinator.generation += 1
+}
+
+native_text_input_coordinator_sync :: proc(
+	coordinator: ^Native_Text_Input_Coordinator,
+	window: ^sdl3.Window,
+	rt: ^alicorn.Runtime,
+	state: ^Native_Text_Input_State,
+	application: ^Application,
+	requested_owner: alicorn.Node_ID,
+	allow_native_transition: bool,
+) {
+	if coordinator == nil || window == nil || rt == nil || state == nil || !allow_native_transition { return }
+	desired := requested_owner
+	focused_window := sdl3.GetKeyboardFocus()
+	focused_window_id := sdl3.WindowID(0)
+	if focused_window != nil { focused_window_id = sdl3.GetWindowID(focused_window) }
+	window_id := sdl3.GetWindowID(window)
+	if desired != 0 && !native_text_input_focus_matches_window(window_id, focused_window_id) {
+		// SDL focus events can be deferred per-window. The platform's current
+		// keyboard target is authoritative for acquiring the shared Cocoa editor.
+		desired = 0
+	}
+	owns_session := native_text_input_coordinator_owns_state(coordinator, state)
+	if desired == 0 {
+		if owns_session {
+			native_text_input_coordinator_retire_owner(coordinator, "native text-input window lost focus or target")
+		} else if state.owner != 0 || state.composition_owner != 0 {
+			// A stale non-owner must clear only its logical state. Calling SDL's
+			// stop API here could remove another window's process-wide Cocoa editor.
+			native_cancel_current_text_composition(application, rt, state)
+			state.active = false
+			state.owner = 0
+			state.last_area_valid = false
+		}
+		return
+	}
+	if owns_session && state.owner == desired { return }
+	if coordinator.owner_state != nil {
+		native_text_input_coordinator_retire_owner(coordinator)
+	}
+	if state.owner != 0 || state.composition_owner != 0 {
+		native_cancel_current_text_composition(application, rt, state)
+		state.active = false
+		state.owner = 0
+		state.last_area_valid = false
+	}
+	if !sdl3.StartTextInput(window) { fail("SDL_StartTextInput failed for coordinated text-input target") }
+	state.active = true
+	state.owner = desired
+	state.last_area_valid = false
+	coordinator.owner_window = window
+	coordinator.owner_window_id = window_id
+	coordinator.owner_state = state
+	coordinator.owner_runtime = rt
+	coordinator.owner_application = application
+	coordinator.generation += 1
+}
+
+native_text_input_coordinator_relinquish :: proc(
+	coordinator: ^Native_Text_Input_Coordinator,
+	window: ^sdl3.Window,
+	rt: ^alicorn.Runtime,
+	state: ^Native_Text_Input_State,
+	application: ^Application,
+	reason := "native text-input window destroyed",
+) {
+	if coordinator == nil || state == nil { return }
+	when ODIN_OS == .Darwin {
+		if native_text_input_coordinator_owns_state(coordinator, state) &&
+			(window == nil || coordinator.owner_window == window) {
+			native_text_input_coordinator_retire_owner(coordinator, reason)
+		} else {
+			if rt != nil { native_cancel_current_text_composition(application, rt, state, reason) }
+			state.active = false
+			state.owner = 0
+			state.last_area_valid = false
+		}
+	} else {
+		if rt != nil { native_cancel_current_text_composition(application, rt, state, reason) }
+		if state.active && window != nil {
+			_ = sdl3.ClearComposition(window)
+			_ = sdl3.StopTextInput(window)
+		}
+		state.active = false
+		state.owner = 0
+		state.last_area_valid = false
 	}
 }
 

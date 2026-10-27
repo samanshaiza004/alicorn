@@ -22,6 +22,11 @@ SMOKE_LIFETIME    :: u64(60)
 SMOKE_CLOSE_AFTER :: u64(24)
 GPU_STRESS_SEGMENTS :: 560
 GPU_STRESS_CIRCLES  :: 100
+ACCEPTANCE_JAPANESE_SAMPLE :: "日本語あいうアイウ"
+ACCEPTANCE_JAPANESE_FONT_PATHS :: [2]string{
+	"/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+	"/Library/Fonts/Arial Unicode.ttf",
+}
 
 Shared_State :: struct {
 	primary_waker:           host.Application_Waker,
@@ -36,7 +41,8 @@ Shared_State :: struct {
 	primary_worker_wakes:    u64,
 	tool_worker_wakes:       u64,
 	text_changes:            u64,
-	composition_events:     u64,
+	japanese_fallback_checks: u64,
+	japanese_fallback_failures: u64,
 	menu_commands:           u64,
 	geometry_updates:        u64,
 }
@@ -52,7 +58,10 @@ Window_State :: struct {
 	worker_enabled:     u32,
 	text:               string,
 	text_owned:         bool,
-	preedit:            string,
+	japanese_fallback_loaded: bool,
+	japanese_fallback_checked: bool,
+	japanese_fallback_verified: bool,
+	japanese_glyphs_rasterized: int,
 	build_count:        u64,
 	worker_wake_count:  u64,
 	surface:            alicorn.Node_ID,
@@ -77,8 +86,22 @@ acceptance_build :: proc(
 	if !should_build { return 0 }
 	app.build_count += 1
 	app.surface = 0
+	when ODIN_OS == .Darwin {
+		if !app.japanese_fallback_checked {
+			app.japanese_fallback_checked = true
+			app.japanese_glyphs_rasterized = acceptance_verify_japanese_fallback(rt, dpi_scale)
+			app.japanese_fallback_verified = app.japanese_glyphs_rasterized == 9
+			app.shared.japanese_fallback_checks += 1
+			if !app.japanese_fallback_verified { app.shared.japanese_fallback_failures += 1 }
+		}
+	}
 
-	root := alicorn.container_begin(&ctx, .Root, label="secondary-window-acceptance-root", style=alicorn.layout_style(grow=1))
+	root := alicorn.container_begin(
+		&ctx, .Root,
+		label="secondary-window-acceptance-root",
+		style=alicorn.layout_style(grow=1),
+		color=ui.rgb(0x090B10),
+	)
 	if ui.column(&ctx, grow=1, padding=20, gap=8, clip=true, label="secondary-window-content") {
 		role := "Primary window" if !app.is_tool else fmt.tprintf("Tool window · cycle %d", app.cycle)
 		ui.text(&ctx, role, size=22)
@@ -132,22 +155,35 @@ acceptance_build :: proc(
 			}
 		}
 
-		ui.text(&ctx, "Independent text input (IME composition is counted below)")
+		ui.text(&ctx, "Independent text input · type Japanese, convert, then commit with Return")
 		field_key := alicorn.key_string("secondary-tool-text") if app.is_tool else alicorn.key_string("secondary-primary-text")
 		field := alicorn.text_field(&ctx, app.text, key=field_key, style=alicorn.layout_style(.Row, height=40))
-		field_focused := alicorn.focused_node(rt) == field
-		ui.text(&ctx, fmt.tprintf("This window's field focus: %v · text bytes: %d · composition: %q", field_focused, len(app.text), app.preedit))
+		field_state, field_state_ok := alicorn.text_field_interaction(rt, field)
+		field_focused := field_state_ok && field_state.focused
+		composition_active := field_state_ok && field_state.composition_active
+		ui.text(&ctx, fmt.tprintf("Retained field focus: %v · committed bytes: %d · IME composition active: %v", field_focused, len(app.text), composition_active))
+		ui.text(&ctx, "Native window focus / IME owner: unavailable through the public host API")
+		japanese_status := "Japanese font check runs on macOS"
+		when ODIN_OS == .Darwin {
+			japanese_status = fmt.tprintf(
+				"Japanese fallback loaded: %v · 日本語あいうアイウ · %d/9 glyphs rasterized",
+				app.japanese_fallback_loaded,
+				app.japanese_glyphs_rasterized,
+			)
+		}
+		ui.text(&ctx, japanese_status)
 
 		ui.text(
 			&ctx,
 			fmt.tprintf(
-				"Shared: open requests %d · starts/stops %d/%d · failures %d · text changes %d · IME events %d · menu commands %d",
+				"Shared: open requests %d · starts/stops %d/%d · failures %d · text changes %d · Japanese font checks %d/%d failed · menu commands %d",
 				app.shared.open_requests,
 				app.shared.tool_starts,
 				app.shared.tool_stops,
 				app.shared.open_failures,
 				app.shared.text_changes,
-				app.shared.composition_events,
+				app.shared.japanese_fallback_checks,
+				app.shared.japanese_fallback_failures,
 				app.shared.menu_commands,
 			),
 		)
@@ -169,6 +205,47 @@ acceptance_build :: proc(
 	alicorn.container_end(&ctx)
 	alicorn.end_frame(&ctx)
 	return root
+}
+
+acceptance_initialize :: proc(state: rawptr, rt: ^alicorn.Runtime) {
+	app := cast(^Window_State)state
+	when ODIN_OS == .Darwin {
+		for path in ACCEPTANCE_JAPANESE_FONT_PATHS {
+			if !os.exists(path) { continue }
+			data, err := os.read_entire_file_from_path(path, context.allocator)
+			if err != nil { continue }
+			loaded := alicorn.font_load_fallback_bytes(rt, .UI, data)
+			delete(data)
+			if loaded {
+				app.japanese_fallback_loaded = true
+				return
+			}
+		}
+		fmt.eprintln("secondary-window acceptance: no loadable system Japanese fallback font found")
+	}
+}
+
+acceptance_verify_japanese_fallback :: proc(rt: ^alicorn.Runtime, dpi_scale: f32) -> int {
+	if rt == nil { return 0 }
+	run, ok := alicorn.text_run_build(&rt.text_engine, ACCEPTANCE_JAPANESE_SAMPLE, 22)
+	if !ok { return 0 }
+	defer alicorn.text_run_destroy(&run)
+	if len(run.glyphs) != 9 { return 0 }
+	rasterized := 0
+	for glyph in run.glyphs {
+		if glyph.glyph_id == 0 || glyph.font_source != .Fallback { continue }
+		_, drawable, raster_ok := alicorn.text_engine_glyph(
+			&rt.text_engine,
+			glyph.glyph_id,
+			22 * dpi_scale,
+			font_role=.UI,
+			font_source=.Fallback,
+			font_weight=glyph.font_weight,
+			italic=glyph.italic,
+		)
+		if raster_ok && drawable { rasterized += 1 }
+	}
+	return rasterized
 }
 
 acceptance_open_tool :: proc(primary: ^Window_State) -> bool {
@@ -204,9 +281,9 @@ acceptance_open_tool :: proc(primary: ^Window_State) -> bool {
 		height=620,
 		menus=tool.menus[:],
 		window_decorations=.Integrated_Title_Bar,
+		on_initialize=acceptance_initialize,
 		build=acceptance_build,
 		on_text_change=acceptance_text_change,
-		on_text_input=acceptance_text_input,
 		on_services=acceptance_services,
 		on_start=acceptance_start,
 		on_wake=acceptance_wake,
@@ -233,7 +310,6 @@ acceptance_open_tool :: proc(primary: ^Window_State) -> bool {
 acceptance_free_window :: proc(app: ^Window_State) {
 	if app == nil { return }
 	if app.text_owned { delete(app.text, context.allocator) }
-	if len(app.preedit) > 0 { delete(app.preedit, context.allocator) }
 	free(app, allocator=context.allocator)
 }
 
@@ -392,18 +468,6 @@ acceptance_text_change :: proc(state: rawptr, rt: ^alicorn.Runtime, change: alic
 	app.shared.text_changes += 1
 }
 
-acceptance_text_input :: proc(state: rawptr, rt: ^alicorn.Runtime, owner: alicorn.Node_ID, event: host.Application_Text_Input_Event) {
-	_ = rt
-	_ = owner
-	app := cast(^Window_State)state
-	app.shared.composition_events += 1
-	if len(app.preedit) > 0 { delete(app.preedit, context.allocator) }
-	if event.kind == .Preedit {
-		value, err := strings.clone(event.text, context.allocator)
-		if err == nil { app.preedit = value }
-	}
-}
-
 acceptance_menu_command :: proc(state: rawptr, rt: ^alicorn.Runtime, command: host.Application_Command_ID) {
 	app := cast(^Window_State)state
 	app.shared.menu_commands += 1
@@ -443,6 +507,9 @@ acceptance_stop :: proc(state: rawptr) {
 			app.shared.tool_starts == 2 && app.shared.tool_stops == 2 &&
 			app.shared.geometry_updates >= SMOKE_LIFETIME &&
 			app.shared.tool_worker_wakes > 0
+		when ODIN_OS == .Darwin {
+			passed = passed && app.shared.japanese_fallback_checks == 3 && app.shared.japanese_fallback_failures == 0
+		}
 		fmt.println(
 			"secondary_window_lifecycle_smoke",
 			"result", "PASS" if passed else "FAIL",
@@ -452,6 +519,8 @@ acceptance_stop :: proc(state: rawptr) {
 			"failures", app.shared.open_failures,
 			"worker_wakes", app.shared.tool_worker_wakes,
 			"geometry_updates", app.shared.geometry_updates,
+			"japanese_font_checks", app.shared.japanese_fallback_checks,
+			"japanese_font_failures", app.shared.japanese_fallback_failures,
 		)
 		if !passed { os.exit(1) }
 	}
@@ -463,16 +532,16 @@ run_acceptance :: proc(smoke, gpu_stress: bool) {
 	primary := Window_State{
 		shared=&shared,
 		text="Primary window text",
-		animation_enabled=smoke,
+		animation_enabled=true,
 	}
 	application := host.Application{
 		state=rawptr(&primary),
 		title="Alicorn Secondary Window Acceptance",
 		width=920,
 		height=720,
+		on_initialize=acceptance_initialize,
 		build=acceptance_build,
 		on_text_change=acceptance_text_change,
-		on_text_input=acceptance_text_input,
 		on_services=acceptance_services,
 		on_start=acceptance_start,
 		on_wake=acceptance_wake,

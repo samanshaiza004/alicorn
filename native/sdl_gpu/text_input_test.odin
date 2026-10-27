@@ -3,6 +3,30 @@ package alicorn_sdl_gpu
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
+native_text_input_coordinator_contract_test :: proc() -> Native_Validation_Result {
+	primary := Native_Text_Input_State{}
+	child := Native_Text_Input_State{}
+	coordinator := Native_Text_Input_Coordinator{owner_state=&child}
+	// A delayed focus-loss event from the old window may clear its local state,
+	// but must never be treated as permission to stop the new native owner.
+	if !native_text_input_coordinator_owns_state(&coordinator, &child) ||
+		native_text_input_coordinator_owns_state(&coordinator, &primary) {
+		return native_validation_failed()
+	}
+	if native_text_input_focus_matches_window(11, 22) ||
+		!native_text_input_focus_matches_window(22, 22) ||
+		native_text_input_focus_matches_window(0, 22) {
+		return native_validation_failed()
+	}
+	if !native_text_input_should_replay_child_before_primary_focus(.WINDOW_FOCUS_GAINED, false, 1) ||
+		native_text_input_should_replay_child_before_primary_focus(.WINDOW_FOCUS_GAINED, true, 1) ||
+		native_text_input_should_replay_child_before_primary_focus(.WINDOW_FOCUS_LOST, false, 1) ||
+		native_text_input_should_replay_child_before_primary_focus(.WINDOW_FOCUS_GAINED, false, 0) {
+		return native_validation_failed()
+	}
+	return Native_Validation_Result{ok=true}
+}
+
 native_text_paint_span_contract_test :: proc() -> Native_Validation_Result {
 	red := alicorn.Color{1, 0, 0, 1}
 	green := alicorn.Color{0, 1, 0, 1}

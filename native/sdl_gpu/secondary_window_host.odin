@@ -23,6 +23,8 @@ Native_Secondary_Window_Queued_Event :: struct {
 Native_Secondary_Window :: struct {
 	active: bool,
 	presentation_suspended: bool,
+	live_resize_rendering: bool,
+	live_resize_pending: bool,
 	closing: bool,
 	claimed: bool,
 	callbacks_started: bool,
@@ -69,6 +71,7 @@ Native_Secondary_Window :: struct {
 Native_Secondary_Window_Manager :: struct {
 	device: ^sdl3.GPUDevice,
 	primary_window: ^sdl3.Window,
+	text_input_coordinator: ^Native_Text_Input_Coordinator,
 	child: ^Native_Secondary_Window,
 	pending: bool,
 	pending_close: bool,
@@ -380,6 +383,14 @@ native_secondary_window_destroy :: proc(manager: ^Native_Secondary_Window_Manage
 	child.active = false
 	child.scheduler_state.active = false
 	for &pending in child.scheduler_state.pending { pending = false }
+	native_text_input_coordinator_relinquish(
+		manager.text_input_coordinator,
+		child.window,
+		child.runtime,
+		&child.text_input_state,
+		&child.application,
+		"secondary native window destroyed",
+	)
 	native_secondary_window_stop_application(child)
 	native_appearance_monitor_destroy(&child.appearance_monitor)
 	native_accessibility_host_destroy(&child.accessibility_host)
@@ -630,4 +641,64 @@ native_secondary_window_render :: proc(
 	child.timing.gpu_submissions += 1
 	child.native_menu.chrome_redraw_pending = false
 	return true
+}
+
+native_secondary_window_live_resize_redraw :: proc(
+	manager: ^Native_Secondary_Window_Manager,
+	child: ^Native_Secondary_Window,
+) {
+	if manager == nil || child == nil || !child.active || child.runtime == nil { return }
+	if child.live_resize_rendering {
+		child.live_resize_pending = true
+		return
+	}
+	child.live_resize_rendering = true
+	defer child.live_resize_rendering = false
+	for _ in 0..<2 {
+		child.live_resize_pending = false
+		native_secondary_window_live_resize_redraw_once(manager, child)
+		if !child.live_resize_pending { return }
+	}
+}
+
+native_secondary_window_live_resize_redraw_once :: proc(
+	manager: ^Native_Secondary_Window_Manager,
+	child: ^Native_Secondary_Window,
+) {
+	if manager == nil || child == nil || !child.active || child.runtime == nil { return }
+	native_host_scratch_reset(&child.host_scratch)
+	current_metrics: Window_Metrics
+	if !read_window_metrics(child.window, &current_metrics, child.native_menu.content_inset_top) { return }
+	_ = native_window_metrics_apply(
+		child.runtime, &child.metrics, current_metrics,
+		"SDL secondary window live-resize viewport changed",
+	)
+	if child.runtime.invalidated {
+		stabilization := native_application_build_until_stable(&child.application, child.runtime, &child.metrics, &child.timing)
+		if !stabilization.stable { return }
+	}
+	when ODIN_OS == .Windows {
+		if child.native_menu.application != nil {
+			native_menu_sync_chrome_layout(&child.native_menu)
+			application_submission_pending := alicorn.frame_needs_submission(child.runtime)
+			_ = native_menu_sync_chrome_appearance(&child.native_menu, request_redraw=!application_submission_pending)
+		}
+	}
+	if child.native_menu.application != nil && child.native_menu.chrome_redraw_pending {
+		// The window chrome may need a frame even when application content is clean.
+		alicorn.request_presentation(child.runtime, "secondary native chrome live resize")
+	} else {
+		alicorn.request_presentation(child.runtime, "SDL secondary live-resize expose")
+	}
+	if alicorn.presentation_needs_frame(child.runtime) {
+		presentation_ui, ready := alicorn.begin_presentation_frame(child.runtime)
+		if ready { alicorn.end_presentation_frame(&presentation_ui) }
+	}
+	sync_text_input_focus(
+		child.window, child.runtime, &child.text_input_state, &child.application,
+		manager.text_input_coordinator, allow_native_transition=false,
+	)
+	if !native_secondary_window_render(manager, child) {
+		fail("SDL secondary live-resize redraw failed")
+	}
 }

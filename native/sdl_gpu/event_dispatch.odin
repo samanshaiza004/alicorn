@@ -62,6 +62,7 @@ pump_events :: proc(
 	native_menu: ^Native_Menu_Runtime = nil,
 	last_user_interaction_ns: ^u64 = nil,
 	text_input_state: ^Native_Text_Input_State = nil,
+	text_input_coordinator: ^Native_Text_Input_Coordinator = nil,
 	pointer_modifier_state: ^sdl3.Keymod = nil,
 	pointer_button_state: ^Native_Pointer_Button_State = nil,
 	devtools_hud: ^Native_DevTools_HUD = nil,
@@ -122,6 +123,43 @@ pump_events :: proc(
 			if event_window != 0 && event_window != sdl3.GetWindowID(window) {
 				has_event = native_event_next(&event, secondary_child, true)
 				continue
+			}
+		}
+		// The primary window is polled before the child queue is replayed at the
+		// ordinary application safe point. Before accepting primary focus, drain
+		// earlier child events in order so a queued Japanese commit is delivered
+		// before the child's focus-loss event retires Cocoa's shared editor.
+		if secondary_manager != nil {
+			if child := secondary_manager.child; child != nil &&
+				native_text_input_should_replay_child_before_primary_focus(
+					event.type,
+					replay_secondary_events,
+					len(child.event_queue)-child.event_queue_read,
+				) {
+				pump_events(
+				child.window, child.runtime, &child.metrics, &child.quit_requested,
+				&child.logical_resize_events, &child.pixel_resize_events, &child.scale_events,
+				&child.text_input_events, &child.composition_events, &child.platform_text,
+				application=&child.application,
+				diagnostics_capture_requested=diagnostics_capture_requested,
+				wake_event=child.wake_state.event_type,
+				wake_event_enabled=true,
+				host_wake_event=child.host_wake_state.event_type,
+				host_wake_event_enabled=true,
+				native_host_wake_events=&child.timing.native_host_wake_events,
+				native_menu=&child.native_menu,
+				last_user_interaction_ns=&child.last_user_interaction_ns,
+				text_input_state=&child.text_input_state,
+				text_input_coordinator=text_input_coordinator,
+				pointer_modifier_state=&child.pointer_modifier_state,
+				pointer_button_state=&child.pointer_button_state,
+				accessibility=&child.accessibility_host,
+				appearance_monitor=&child.appearance_monitor,
+				flight_recorder=&child.flight_recorder,
+				secondary_manager=secondary_manager,
+				secondary_child=child,
+				replay_secondary_events=true,
+				)
 			}
 		}
 		// This event only returns the sleeping host loop to its compositor. It
@@ -216,6 +254,7 @@ pump_events :: proc(
 		}
 		if event_inside_app && native_inspector_route_event(
 			inspector, rt, event, mod_state, application, text_input_state, window,
+			text_input_coordinator,
 			translated_pointer=pointer, translated_pointer_ok=pointer_ok,
 		) {
 			// Host diagnostics are available while the inspector owns input. Do
@@ -668,50 +707,17 @@ pump_events :: proc(
 		case .WINDOW_RESIZED:
 			host_cause := alicorn.cause_begin(rt, .Host_Event, "window resized")
 			if devtools_last_cause != nil { devtools_last_cause^ = host_cause.cause }
-			// data1/data2 are logical window coordinates for this event.
-			metrics.logical_width = int(event.window.data1)
-			metrics.window_logical_height = int(event.window.data2)
-			inset_top := f32(0)
-			if native_menu != nil { inset_top = native_menu.content_inset_top }
-			transform := native_content_transform_make(f32(metrics.window_logical_height), inset_top)
-			metrics.logical_height = int(transform.app_height)
 			logical_resize_events^ += 1
-			rt.viewport.w = f32(metrics.logical_width)
-			rt.viewport.h = f32(metrics.logical_height)
-			alicorn.invalidate_root(rt, "SDL logical window size changed")
 			alicorn.cause_end(rt, host_cause)
 		case .WINDOW_PIXEL_SIZE_CHANGED, .WINDOW_METAL_VIEW_RESIZED:
 			host_cause := alicorn.cause_begin(rt, .Host_Event, "drawable size changed")
 			if devtools_last_cause != nil { devtools_last_cause^ = host_cause.cause }
-			// data1/data2 are physical drawable pixels for these events. Do not
-			// feed them into the logical layout viewport.
-			metrics.pixel_width = int(event.window.data1)
-			metrics.pixel_height = int(event.window.data2)
 			pixel_resize_events^ += 1
-			if metrics.logical_width > 0 && metrics.window_logical_height > 0 {
-				_ = alicorn.set_presentation_scale(
-					rt,
-					f32(metrics.pixel_width)/f32(metrics.logical_width),
-					f32(metrics.pixel_height)/f32(metrics.window_logical_height),
-				)
-			}
 			alicorn.cause_end(rt, host_cause)
 		case .WINDOW_DISPLAY_SCALE_CHANGED:
 			host_cause := alicorn.cause_begin(rt, .Host_Event, "display scale changed")
 			if devtools_last_cause != nil { devtools_last_cause^ = host_cause.cause }
 			scale_events^ += 1
-			metrics.pixel_density = sdl3.GetWindowPixelDensity(window)
-			metrics.display_scale = sdl3.GetWindowDisplayScale(window)
-			inset_top := f32(0)
-			if native_menu != nil { inset_top = native_menu.content_inset_top }
-			_ = read_window_metrics(window, metrics, inset_top)
-			if metrics.logical_width > 0 && metrics.window_logical_height > 0 {
-				_ = alicorn.set_presentation_scale(
-					rt,
-					f32(metrics.pixel_width)/f32(metrics.logical_width),
-					f32(metrics.pixel_height)/f32(metrics.window_logical_height),
-				)
-			}
 			alicorn.cause_end(rt, host_cause)
 		case .TEXT_INPUT:
 			text_cause := alicorn.cause_begin(rt, .Text_Input, "SDL text input")
@@ -805,18 +811,17 @@ pump_events :: proc(
 					)
 				}
 			}
-			if !read_window_metrics(window, metrics, inset_top) {
+			current_metrics: Window_Metrics
+			if !read_window_metrics(window, &current_metrics, inset_top) {
 				fail("window metrics became unavailable after a window event")
 			}
-			if rt.viewport.w != f32(metrics.logical_width) || rt.viewport.h != f32(metrics.logical_height) {
-				rt.viewport.w = f32(metrics.logical_width)
-				rt.viewport.h = f32(metrics.logical_height)
-				alicorn.invalidate_root(rt, "SDL host content viewport changed")
-			}
+			reason := "SDL host content viewport changed"
+			if event.type == .WINDOW_DISPLAY_SCALE_CHANGED { reason = "SDL display scale changed" }
+			_ = native_window_metrics_apply(rt, metrics, current_metrics, reason)
 		}
 		if text_input_state != nil {
 			if native_menu != nil { text_input_state.content_inset_top = native_menu.content_inset_top }
-			sync_text_input_focus(window, rt, text_input_state, application)
+			sync_text_input_focus(window, rt, text_input_state, application, text_input_coordinator)
 		}
 		has_event = native_event_next(&event, secondary_child, replay_secondary_events)
 	}

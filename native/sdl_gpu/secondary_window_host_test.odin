@@ -35,6 +35,27 @@ test_secondary_window_does_not_release_gpu_resources_after_failed_idle_wait :: p
 		"setup failures without submitted child work need not wait for a device")
 }
 
+@(test)
+test_live_resize_routes_expose_events_to_the_matching_window_context :: proc(t: ^testing.T) {
+	child := Native_Secondary_Window{active=true, window_id=sdl3.WindowID(22)}
+	manager := Native_Secondary_Window_Manager{child=&child}
+	state := Native_Live_Resize_State{
+		active=true,
+		window_id=sdl3.WindowID(11),
+		secondary_manager=&manager,
+	}
+
+	testing.expect(t, native_live_resize_target(&state, sdl3.WindowID(11)) == .Primary,
+		"primary expose events must continue using the primary redraw state")
+	testing.expect(t, native_live_resize_target(&state, sdl3.WindowID(22)) == .Secondary,
+		"secondary expose events must redraw the matching secondary runtime")
+	testing.expect(t, native_live_resize_target(&state, sdl3.WindowID(33)) == .None,
+		"unowned window expose events must not enter either runtime")
+	child.active = false
+	testing.expect(t, native_live_resize_target(&state, sdl3.WindowID(22)) == .None,
+		"events for a retired child window must be ignored")
+}
+
 secondary_window_test_build :: proc(
 	state: rawptr,
 	rt: ^alicorn.Runtime,
@@ -42,6 +63,55 @@ secondary_window_test_build :: proc(
 	dpi_scale: f32,
 ) -> alicorn.Node_ID {
 	return 0
+}
+
+@(test)
+test_secondary_window_resize_applies_logical_and_drawable_metrics_together :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 752, 620})
+	defer alicorn.destroy_runtime(&rt)
+	_ = alicorn.set_presentation_scale(&rt, 2, 2)
+	rt.invalidated = false
+	child := Native_Secondary_Window{
+		runtime=&rt,
+		metrics=Window_Metrics{
+			logical_width=752, logical_height=620, window_logical_height=620,
+			pixel_width=1504, pixel_height=1240, pixel_density=2, display_scale=2,
+		},
+	}
+	resized := Window_Metrics{
+		logical_width=296, logical_height=620, window_logical_height=620,
+		pixel_width=592, pixel_height=1240, pixel_density=2, display_scale=2,
+	}
+
+	changed := native_window_metrics_apply(&rt, &child.metrics, resized)
+	testing.expect(t, changed, "a logical-width change must be observed at the child safe point")
+	testing.expect(t, child.metrics.logical_width == 296 && rt.viewport.w == 296 && rt.viewport.h == 620,
+		"the retained viewport must use the resized logical client dimensions")
+	testing.expect(t, rt.presentation_scale_x == 2 && rt.presentation_scale_y == 2,
+		"drawable scaling must be recomputed from the same logical/drawable measurement")
+	testing.expect(t, rt.invalidated, "a resized viewport must request a fresh description before presentation")
+}
+
+@(test)
+test_secondary_window_display_scale_change_rebuilds_application_surface_descriptions :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 640, 480})
+	defer alicorn.destroy_runtime(&rt)
+	_ = alicorn.set_presentation_scale(&rt, 2, 2)
+	rt.invalidated = false
+	metrics := Window_Metrics{
+		logical_width=640, logical_height=480, window_logical_height=480,
+		pixel_width=1280, pixel_height=960, pixel_density=2, display_scale=2,
+	}
+	current := Window_Metrics{
+		logical_width=640, logical_height=480, window_logical_height=480,
+		pixel_width=640, pixel_height=480, pixel_density=1, display_scale=1,
+	}
+
+	changed := native_window_metrics_apply(&rt, &metrics, current)
+	testing.expect(t, changed, "moving a window to a different display scale must be observed")
+	testing.expect(t, rt.presentation_scale_x == 1 && rt.presentation_scale_y == 1,
+		"the presentation scale must match the new drawable density")
+	testing.expect(t, rt.invalidated, "application descriptions may need to resize DPI-dependent surfaces")
 }
 
 @(test)

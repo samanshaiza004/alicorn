@@ -22,6 +22,9 @@ Native_Diagnostics_Options :: struct {
 	last_capture_dir:    string,
 }
 
+NATIVE_DIAGNOSTICS_ORGANIZATION :: "Alicorn"
+NATIVE_DIAGNOSTICS_APPLICATION :: "Alicorn Diagnostics"
+
 Native_Host_Timing :: struct {
 	frames:              u64,
 	event_pump_ns:       u64,
@@ -142,10 +145,45 @@ native_timing_percentile :: proc(samples: []u64, fraction: f64) -> u64 {
 	return ordered[index]
 }
 
+native_diagnostics_default_capture_dir :: proc() -> (directory, failure: string) {
+	// SDL_GetPrefPath is the platform-supported writable location for
+	// application data. Its path is already dedicated to diagnostics, so the
+	// returned SDL-owned allocation is copied into Odin storage before it is
+	// released. The caller controls the copied string's lifetime.
+	native_path := sdl3.GetPrefPath(
+		NATIVE_DIAGNOSTICS_ORGANIZATION,
+		NATIVE_DIAGNOSTICS_APPLICATION,
+	)
+	if native_path != nil {
+		defer sdl3.free(rawptr(native_path))
+		directory, clone_err := strings.clone_from_cstring(cstring(native_path), context.allocator)
+		if clone_err != nil {
+			return "", fmt.tprintf("copy SDL_GetPrefPath result: %v", clone_err)
+		}
+		return directory, ""
+	}
+	sdl_failure := "unknown SDL error"
+	if error_cstring := sdl3.GetError(); error_cstring != nil {
+		sdl_failure = string(error_cstring)
+	}
+	return "", fmt.tprintf("SDL_GetPrefPath failed: %s", sdl_failure)
+}
+
+native_diagnostics_capture_dir_override :: proc(args: []string, default_dir: string) -> (directory: string, overridden: bool) {
+	directory = default_dir
+	for argument in args {
+		capture_dir_prefix := "--capture-dir="
+		if len(argument) > len(capture_dir_prefix) && argument[:len(capture_dir_prefix)] == capture_dir_prefix {
+			directory = argument[len(capture_dir_prefix):]
+			overridden = true
+		}
+	}
+	return
+}
+
 native_parse_diagnostics_options :: proc() -> Native_Diagnostics_Options {
 	options := Native_Diagnostics_Options{
 		capture_after_ns = 2_000_000_000,
-		capture_dir = "out/diagnostics",
 	}
 	for argument in os.args {
 		if argument == "--diagnostics" {
@@ -165,11 +203,10 @@ native_parse_diagnostics_options :: proc() -> Native_Diagnostics_Options {
 			}
 			continue
 		}
-		capture_dir_prefix := "--capture-dir="
-		if len(argument) > len(capture_dir_prefix) && argument[:len(capture_dir_prefix)] == capture_dir_prefix {
-			options.enabled = true
-			options.capture_dir = argument[len(capture_dir_prefix):]
-		}
+	}
+	if override, overridden := native_diagnostics_capture_dir_override(os.args, options.capture_dir); overridden {
+		options.enabled = true
+		options.capture_dir = override
 	}
 	return options
 }
@@ -187,19 +224,48 @@ native_diagnostics_timestamp :: proc(moment: time.Time) -> (stamp, iso: string, 
 	return stamp, iso, true
 }
 
-native_diagnostics_create_bundle :: proc(root, stamp: string, first_sequence: u64) -> (directory: string, sequence: u64, ok: bool) {
-	if err := os.make_directory_all(root); err != nil && err != .Exist { return }
+native_diagnostics_path_join :: proc(parent, child: string) -> string {
+	if len(parent) == 0 { return child }
+	last := parent[len(parent)-1]
+	separator := "/" if last != '/' && last != '\\' else ""
+	return fmt.tprintf("%s%s%s", parent, separator, child)
+}
+
+native_diagnostics_create_bundle :: proc(root, stamp: string, first_sequence: u64) -> (directory: string, sequence: u64, ok: bool, failure: string) {
+	if err := os.make_directory_all(root); err != nil && err != .Exist {
+		failure = fmt.tprintf("create capture root: %v", err)
+		return
+	}
 	sequence = first_sequence
 	for attempt in 0..<10_000 {
-		candidate := fmt.tprintf("%s/%s-%04d", root, stamp, sequence)
+		candidate := native_diagnostics_path_join(root, fmt.tprintf("%s-%04d", stamp, sequence))
 		if err := os.make_directory(candidate); err == nil {
-			return candidate, sequence, true
+			return candidate, sequence, true, ""
 		} else if err != .Exist {
-			return "", 0, false
+			failure = fmt.tprintf("create capture bundle: %v", err)
+			return "", 0, false, failure
 		}
 		sequence += 1
 	}
-	return "", 0, false
+	failure = "no unused capture sequence found after 10000 attempts"
+	return "", 0, false, failure
+}
+
+native_diagnostics_capture_failed :: proc(
+	options: ^Native_Diagnostics_Options,
+	attempted_path, failure: string,
+	automatic_due: bool,
+) {
+	path_for_log := attempted_path
+	if path_for_log == "" { path_for_log = "<default capture directory unavailable>" }
+	failure_for_log := failure
+	if failure_for_log == "" { failure_for_log = "unspecified diagnostics capture failure" }
+	fmt.println("alicorn_diagnostics", "capture_failed", "path", path_for_log, "error", failure_for_log)
+	// One log and one attempt per manual request. Automatic capture is also
+	// latched after failure, otherwise its due condition would remain true on
+	// every idle event-loop iteration.
+	options.capture_requested = false
+	if automatic_due { options.automatic_capture_done = true }
 }
 
 native_write_diagnostics :: proc(
@@ -225,9 +291,34 @@ native_write_diagnostics :: proc(
 	if timing.gpu_submissions == 0 { return false }
 	stamp, captured_at, timestamp_ok := native_diagnostics_timestamp(time.now())
 	if !timestamp_ok { return false }
-	bundle_dir, capture_sequence, bundle_ok := native_diagnostics_create_bundle(
-		options.capture_dir, stamp, options.capture_sequence+1)
-	if !bundle_ok { return false }
+	bundle_dir: string
+	capture_sequence: u64
+	bundle_ok: bool
+	bundle_failure: string
+	attempted_root := options.capture_dir
+	if options.capture_dir == "" {
+		capture_root, path_failure := native_diagnostics_default_capture_dir()
+		if capture_root == "" {
+			native_diagnostics_capture_failed(
+				options,
+				"SDL_GetPrefPath(Alicorn, Alicorn Diagnostics)",
+				path_failure,
+				automatic_due,
+			)
+			return false
+		}
+		defer delete(capture_root)
+		attempted_root = capture_root
+		bundle_dir, capture_sequence, bundle_ok, bundle_failure = native_diagnostics_create_bundle(
+			capture_root, stamp, options.capture_sequence+1)
+	} else {
+		bundle_dir, capture_sequence, bundle_ok, bundle_failure = native_diagnostics_create_bundle(
+			options.capture_dir, stamp, options.capture_sequence+1)
+	}
+	if !bundle_ok {
+		native_diagnostics_capture_failed(options, attempted_root, bundle_failure, automatic_due)
+		return false
+	}
 
 	p50 := native_timing_percentile(timing.frame_samples[:], 0.50)
 	p95 := native_timing_percentile(timing.frame_samples[:], 0.95)
@@ -245,7 +336,11 @@ native_write_diagnostics :: proc(
 	average := u64(0)
 	if timing.frames > 0 { average = timing.frame_ns_total / timing.frames }
 	builder, builder_err := strings.builder_make()
-	if builder_err != nil { return false }
+	if builder_err != nil {
+		_ = os.remove_all(bundle_dir)
+		native_diagnostics_capture_failed(options, bundle_dir, fmt.tprintf("allocate diagnostics JSON builder: %v", builder_err), automatic_due)
+		return false
+	}
 	defer strings.builder_destroy(&builder)
 	fmt.sbprintf(&builder, `{{
   "schema": 1,
@@ -404,7 +499,11 @@ native_write_diagnostics :: proc(
 `)
 	json := strings.to_string(builder)
 	path := fmt.tprintf("%s/diagnostics.json", bundle_dir)
-	if err := os.write_entire_file(path, json); err != nil { return false }
+	if err := os.write_entire_file(path, json); err != nil {
+		_ = os.remove_all(bundle_dir)
+		native_diagnostics_capture_failed(options, path, fmt.tprintf("write diagnostics JSON: %v", err), automatic_due)
+		return false
+	}
 	// Keep the full retained-tree explanation beside the compact JSON. The
 	// human-readable inspector already contains node identity, bounds, dirty
 	// stages, focus/hover state, and invalidation reasons without requiring a
@@ -413,11 +512,17 @@ native_write_diagnostics :: proc(
 	inspection_path := fmt.tprintf("%s/inspector.txt", bundle_dir)
 	if err := os.write_entire_file(inspection_path, inspection); err != nil {
 		delete(inspection)
+		_ = os.remove_all(bundle_dir)
+		native_diagnostics_capture_failed(options, inspection_path, fmt.tprintf("write inspector snapshot: %v", err), automatic_due)
 		return false
 	}
 	delete(inspection)
 	timeline_path := fmt.tprintf("%s/timeline.json", bundle_dir)
-	if !native_write_flight_timeline(timeline_path, recorder) { return false }
+	if !native_write_flight_timeline(timeline_path, recorder) {
+		_ = os.remove_all(bundle_dir)
+		native_diagnostics_capture_failed(options, timeline_path, "flight timeline writer failed", automatic_due)
+		return false
+	}
 	options.capture_sequence = capture_sequence
 	options.last_capture_dir = bundle_dir
 	options.capture_requested = false

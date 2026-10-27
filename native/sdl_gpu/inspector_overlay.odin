@@ -183,6 +183,7 @@ native_inspector_set_visible :: proc(
 	application: ^Application = nil,
 	text_input: ^Native_Text_Input_State = nil,
 	window: ^sdl3.Window = nil,
+	text_input_coordinator: ^Native_Text_Input_Coordinator = nil,
 ) {
 	if overlay == nil || !overlay.enabled || overlay.state.visible == visible { return }
 	if visible {
@@ -200,7 +201,9 @@ native_inspector_set_visible :: proc(
 	}
 	overlay.redraw_pending = true
 	if window != nil {
-		if text_input != nil { sync_text_input_focus(window, source, text_input, application) }
+		if text_input != nil {
+			sync_text_input_focus(window, source, text_input, application, text_input_coordinator)
+		}
 	}
 }
 
@@ -267,6 +270,7 @@ native_inspector_route_event :: proc(
 	application: ^Application = nil,
 	text_input: ^Native_Text_Input_State = nil,
 	window: ^sdl3.Window = nil,
+	text_input_coordinator: ^Native_Text_Input_Coordinator = nil,
 	translated_pointer: alicorn.Pointer_Event = {},
 	translated_pointer_ok := false,
 ) -> bool {
@@ -282,13 +286,17 @@ native_inspector_route_event :: proc(
 		}
 		if event.type == .KEY_DOWN && event.key.down && !event.key.repeat && event.key.key == sdl3.K_F9 {
 			if valid_index { overlay.swallowed_keys[index] = true }
-			native_inspector_set_visible(overlay, !visible, source, application, text_input, window)
+			native_inspector_set_visible(
+				overlay, !visible, source, application, text_input, window, text_input_coordinator,
+			)
 			return true
 		}
 		if event.type == .KEY_UP { return was_swallowed }
 		if !visible || !overlay.keyboard_owned { return was_swallowed }
 		if event.type == .KEY_DOWN && event.key.down && event.key.key == sdl3.K_ESCAPE {
-			native_inspector_set_visible(overlay, false, source, application, text_input, window)
+			native_inspector_set_visible(
+				overlay, false, source, application, text_input, window, text_input_coordinator,
+			)
 			if valid_index { overlay.swallowed_keys[index] = true }
 			return true
 		}

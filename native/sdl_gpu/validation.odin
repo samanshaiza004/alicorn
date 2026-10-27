@@ -240,9 +240,11 @@ RunFoundation :: proc() {
 		if !paint_result.ok { fail(fmt.tprintf("native text paint-span contract failed at %s", paint_result.failure)) }
 		input_result := native_generic_text_input_contract_test()
 		if !input_result.ok { fail(fmt.tprintf("generic text-input host contract failed at %s", input_result.failure)) }
+		coordinator_result := native_text_input_coordinator_contract_test()
+		if !coordinator_result.ok { fail(fmt.tprintf("native text-input ownership contract failed at %s", coordinator_result.failure)) }
 		navigation_result := native_generic_text_navigation_contract_test()
 		if !navigation_result.ok { fail(fmt.tprintf("generic text-navigation host contract failed at %s", navigation_result.failure)) }
-		fmt.println("Alicorn generic text-input/navigation/paint-span host contract: PASS")
+		fmt.println("Alicorn generic text-input/navigation/paint-span and native ownership host contract: PASS")
 		return
 	}
 	if surface_geometry_test {

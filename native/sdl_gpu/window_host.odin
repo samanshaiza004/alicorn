@@ -71,6 +71,46 @@ read_window_metrics :: proc(window: ^sdl3.Window, metrics: ^Window_Metrics, cont
 		metrics.pixel_density > 0 && metrics.display_scale > 0
 }
 
+// native_window_metrics_apply publishes one coherent SDL measurement to the
+// retained viewport and device-grid presentation. Keeping the logical and
+// drawable dimensions from the same read avoids stretching a resized window
+// with a new swapchain size and an old layout viewport.
+native_window_metrics_apply :: proc(
+	rt: ^alicorn.Runtime,
+	metrics: ^Window_Metrics,
+	current: Window_Metrics,
+	reason := "SDL host window metrics changed",
+) -> bool {
+	if metrics == nil { return false }
+	previous := metrics^
+	logical_changed := previous.logical_width != current.logical_width ||
+		previous.logical_height != current.logical_height
+	window_height_changed := previous.window_logical_height != current.window_logical_height
+	metadata_scale_changed := previous.pixel_density != current.pixel_density ||
+		previous.display_scale != current.display_scale
+	old_scale_x := f32(previous.pixel_width)/f32(max(previous.logical_width, 1))
+	old_scale_y := f32(previous.pixel_height)/f32(max(previous.window_logical_height, 1))
+	new_scale_x := f32(current.pixel_width)/f32(max(current.logical_width, 1))
+	new_scale_y := f32(current.pixel_height)/f32(max(current.window_logical_height, 1))
+	metrics^ = current
+	if rt != nil {
+		if logical_changed {
+			rt.viewport.w = f32(current.logical_width)
+			rt.viewport.h = f32(current.logical_height)
+			alicorn.invalidate_root(rt, reason)
+		} else if metadata_scale_changed {
+			// Application descriptions receive display_scale and may size GPU
+			// surfaces from it, so a monitor/DPI transition needs a fresh build.
+			alicorn.invalidate_root(rt, "SDL display scale changed")
+		}
+		if new_scale_x > 0 && new_scale_y > 0 {
+			_ = alicorn.set_presentation_scale(rt, new_scale_x, new_scale_y)
+		}
+	}
+	return logical_changed || window_height_changed || metadata_scale_changed ||
+		old_scale_x != new_scale_x || old_scale_y != new_scale_y
+}
+
 native_live_resize_redraw :: proc(state: ^Native_Live_Resize_State) {
 	if state == nil || !state.active || state.window == nil || state.device == nil || state.rt == nil ||
 		state.application == nil || state.metrics == nil || state.text_renderer == nil ||
@@ -135,7 +175,10 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 		state.text_input_state.content_inset_top = inset_top
 		state.text_input_state.suspended = native_inspector_keyboard_owns_input(state.inspector) ||
 			(state.inspector != nil && state.inspector.suppress_text_until_drain)
-		sync_text_input_focus(state.window, state.rt, state.text_input_state, state.application)
+	sync_text_input_focus(
+		state.window, state.rt, state.text_input_state, state.application,
+		state.text_input_coordinator, allow_native_transition=false,
+	)
 	}
 	if (!inspector_enabled || !state.rt.hard_error) && alicorn.presentation_needs_frame(state.rt) {
 		presentation_ui, ready := alicorn.begin_presentation_frame(state.rt)
@@ -278,16 +321,34 @@ native_live_resize_event_watch :: proc "c" (userdata: rawptr, event: ^sdl3.Event
 	// WINDOW_EXPOSED events arrive on the main thread for direct redraw.
 	if event == nil || event.type != .WINDOW_EXPOSED || event.window.data1 != 1 { return true }
 	state := cast(^Native_Live_Resize_State)userdata
-	if state == nil || !state.active || state.window == nil || event.window.windowID != sdl3.GetWindowID(state.window) {
-		return true
-	}
-	if state.rendering {
-		state.pending = true
-		return true
-	}
+	if state == nil || !state.active { return true }
 	context = runtime.default_context()
-	native_live_resize_redraw(state)
+	switch native_live_resize_target(state, event.window.windowID) {
+	case .Primary:
+		if state.rendering {
+			state.pending = true
+			return true
+		}
+		native_live_resize_redraw(state)
+	case .Secondary:
+		native_secondary_window_live_resize_redraw(state.secondary_manager, state.secondary_manager.child)
+	case .None:
+		return true
+	}
 	return true
+}
+
+Native_Live_Resize_Target :: enum {None, Primary, Secondary}
+
+native_live_resize_target :: proc(state: ^Native_Live_Resize_State, window_id: sdl3.WindowID) -> Native_Live_Resize_Target {
+	if state == nil || !state.active { return .None }
+	if state.window_id != 0 && window_id == state.window_id { return .Primary }
+	manager := state.secondary_manager
+	if manager != nil {
+		child := manager.child
+		if child != nil && child.active && child.window_id != 0 && window_id == child.window_id { return .Secondary }
+	}
+	return .None
 }
 
 print_window_metrics :: proc(label: string, metrics: Window_Metrics) {
@@ -309,6 +370,9 @@ Native_Live_Resize_State :: struct {
 	rendering: bool,
 	pending: bool,
 	window: ^sdl3.Window,
+	window_id: sdl3.WindowID,
+	secondary_manager: ^Native_Secondary_Window_Manager,
+	text_input_coordinator: ^Native_Text_Input_Coordinator,
 	device: ^sdl3.GPUDevice,
 	rt: ^alicorn.Runtime,
 	application: ^Application,
