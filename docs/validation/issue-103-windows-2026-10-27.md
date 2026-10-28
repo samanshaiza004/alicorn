@@ -19,16 +19,16 @@ this checkout. The macOS half is pending maintainer validation.
 
 | Gate | Windows result | Evidence and limits |
 | --- | --- | --- |
-| Foreground keyboard, focus, editing, clipboard/selection, close/reopen | **PASS — maintainer-reported** | The maintainer reports Windows input validation. The individual key/edit/clipboard/lifecycle cases and whether each used the primary or child window were not itemized in the record. |
-| Non-Latin IME composition, commit, cancel | **PASS — maintainer-reported, details incomplete** | IME validation was reported. The IME name and separate composition/commit/cancel outcomes were not captured. The native text-input contract also passed in `tools/test.ps1`, but that is not a substitute for OS IME input. |
+| Foreground input and window lifecycle | **PARTIAL — maintainer-reported** | Windows input validation was reported. Key down/up, focus transitions, controlled editing, clipboard/selection, close/reopen, and primary/child-window coverage were not individually recorded. |
+| Non-Latin IME composition, commit, cancel | **PARTIAL — maintainer-reported** | IME testing was reported. The IME name and separate composition/commit/cancel outcomes were not captured. The native text-input contract also passed in `tools/test.ps1`, but that is not a substitute for OS IME input. |
 | Narrator and NVDA | **PASS — maintainer-reported** | Both latest installed readers were used on this candidate; the maintainer reports successful checks for modal boundaries and virtualized content. Exact reader versions, actions, and observed exported-range transitions were not recorded. |
 | Mixed-DPI movement | **PASS — maintainer-reported, details incomplete** | Movement across mixed-scale displays was reported. Exact scales and per-window checks for clipping, caret/selection, hit targets, and focus outlines were not itemized. |
-| OS accessibility appearance changes | **PASS — maintainer-reported, counters not captured** | Physical appearance changes were reported. No log records the individual settings or the one-change / repeated-value update and wake counts. |
+| OS accessibility appearance changes | **PARTIAL — maintainer-reported** | Physical appearance changes were reported. No log records the individual settings or the one-change / repeated-value update and wake counts. |
 | D3D12 blend readback | **PASS — agent-run** | Direct3D 12, offscreen `R8G8B8A8_UNORM`: 156/156 cases, six renderer families, scales 1/1.25/1.5/2, destination alpha 0/0.4/1, tolerance 2 RGBA8 values, zero failures. This does not cover native swapchain/display color-space parity or identify the selected GPU adapter. See [raw output](raw/issue-103-windows-d3d12-02d050a.txt). |
 | Native titlebar host startup/shutdown | **PASS — agent-run smoke** | The Windows titlebar fixture selected Direct3D 12, completed its bounded run, and retired all 6 submitted frames. This is a startup/shutdown smoke, not a manual menu, caption, or drag acceptance run. See [raw output](raw/issue-103-windows-titlebar-smoke-02d050a.txt). |
 | Alicorn Windows project checks | **PASS — agent-run** | `tools/test.ps1` passed: AccessKit C-header ABI contract, AccessKit package and consumer, runtime/UI/theme/native tests, restoration checks, and generic native text-input contract. The final host contract printed `PASS`. See [raw output](raw/issue-103-windows-project-tests-02d050a.txt). |
 
-## MacOS follow-up
+## macOS follow-up
 
 Run these from the Alicorn checkout at the same candidate tree and keep the
 terminal output for the report:
