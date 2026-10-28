@@ -24,6 +24,18 @@ native_flight_cause_name :: proc(kind: alicorn.Cause_Kind) -> string {
 	return "unknown"
 }
 
+native_flight_global_work_reason_name :: proc(reason: alicorn.Retained_Global_Work_Reason) -> string {
+	switch reason {
+	case .Measure_Font_Generation: return "measure_font_generation"
+	case .Display_Structure_Rebuild: return "display_structure_rebuild"
+	case .Display_Scale_Change: return "display_scale_change"
+	case .Display_Transient_Update: return "display_transient_update"
+	case .Display_Incremental_Fallback: return "display_incremental_fallback"
+	case .Semantic_Order_Rebuild: return "semantic_order_rebuild"
+	}
+	return "unknown"
+}
+
 native_flight_pointer_kind_name :: proc(kind: alicorn.Pointer_Kind) -> string {
 	switch kind {
 	case .Move:   return "move"
@@ -141,6 +153,20 @@ native_flight_timeline_json :: proc(recorder: ^Native_Flight_Recorder) -> string
         "measure_requests": %d,
         "measure_cache_hits": %d,
         "measure_cache_misses": %d,
+        "measure_nodes_examined": %d,
+        "measure_nodes_executed": %d,
+        "display_commands_finalized": %d,
+        "display_finalization_full_passes": %d,
+        "semantic_order_nodes_examined": %d,
+        "global_fallbacks": %d,
+        "global_work_by_reason": {{
+          "measure_font_generation": %d,
+          "display_structure_rebuild": %d,
+          "display_scale_change": %d,
+          "display_transient_update": %d,
+          "display_incremental_fallback": %d,
+          "semantic_order_rebuild": %d
+        }},
         "text_shape_requests": %d,
         "persistent_allocations": %d,
         "persistent_bytes_live": %d,
@@ -169,7 +195,17 @@ native_flight_timeline_json :: proc(recorder: ^Native_Flight_Recorder) -> string
 			sample.accessibility_action_wakes, sample.accessibility_reveal_wakes, sample.accessibility_updates_submitted,
 			sample.accessibility_requests_received, sample.accessibility_requests_dropped,
 			sample.semantic_focus_search_visits, sample.semantic_active_update_visits,
-			sample.measure_requests, sample.measure_cache_hits, sample.measure_cache_misses, sample.text_shape_requests,
+			sample.measure_requests, sample.measure_cache_hits, sample.measure_cache_misses,
+			sample.measure_nodes_examined, sample.measure_nodes_executed,
+			sample.display_commands_finalized, sample.display_finalization_full_passes,
+			sample.semantic_order_nodes_examined, sample.global_fallbacks,
+			sample.global_work_by_reason[.Measure_Font_Generation],
+			sample.global_work_by_reason[.Display_Structure_Rebuild],
+			sample.global_work_by_reason[.Display_Scale_Change],
+			sample.global_work_by_reason[.Display_Transient_Update],
+			sample.global_work_by_reason[.Display_Incremental_Fallback],
+			sample.global_work_by_reason[.Semantic_Order_Rebuild],
+			sample.text_shape_requests,
 			sample.persistent_allocations, sample.persistent_bytes_live, sample.scratch_requested_bytes,
 			sample.build_ns, sample.encode_ns, sample.submit_ns, sample.input_to_submit_ns, comma)
 	}

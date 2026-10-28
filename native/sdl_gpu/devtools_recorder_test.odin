@@ -19,6 +19,13 @@ test_devtools_sample_reports_runtime_work_since_cursor :: proc(t: ^testing.T) {
 	rt.stats.descriptions_emitted = 9
 	rt.stats.regions_skipped = 2
 	rt.stats.retained_subtrees_reused = 2
+	rt.stats.measure_nodes_examined = 6
+	rt.stats.measure_nodes_executed = 3
+	rt.stats.display_commands_finalized = 4
+	rt.stats.display_finalization_full_passes = 1
+	rt.stats.semantic_order_nodes_examined = 8
+	rt.stats.global_fallbacks = 2
+	rt.stats.global_work_by_reason[.Display_Incremental_Fallback] = 1
 	rt.presentation_revision = 4
 	rt.allocation_stats.persistent_alloc_calls += 5
 	rt.allocation_stats.persistent_requested_bytes_live = 640
@@ -37,6 +44,11 @@ test_devtools_sample_reports_runtime_work_since_cursor :: proc(t: ^testing.T) {
 		"sample should preserve stage, node, and presentation work counts")
 	testing.expect(t, sample.descriptions_emitted == 9 && sample.regions_skipped == 2 && sample.retained_subtrees_reused == 2,
 		"sample should preserve description and retained-region work")
+	testing.expect(t, sample.measure_nodes_examined == 6 && sample.measure_nodes_executed == 3 &&
+		sample.display_commands_finalized == 4 && sample.display_finalization_full_passes == 1 &&
+		sample.semantic_order_nodes_examined == 8 &&
+		sample.global_fallbacks == 2 && sample.global_work_by_reason[.Display_Incremental_Fallback] == 1,
+		"sample should preserve counters for hidden retained-locality work and its global fallback reason")
 	testing.expect(t, sample.persistent_allocations == 5 && sample.persistent_bytes_live == 640 && sample.scratch_requested_bytes == 128,
 		"sample should preserve bounded allocator telemetry")
 	testing.expect(t, native_devtools_observed_wake(&cursor, sample, &timing, &text_events),

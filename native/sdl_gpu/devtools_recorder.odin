@@ -153,7 +153,16 @@ native_devtools_make_sample :: proc(
 		measure_requests=current.measure_requests-previous.measure_requests,
 		measure_cache_hits=current.measure_cache_hits-previous.measure_cache_hits,
 		measure_cache_misses=current.measure_cache_misses-previous.measure_cache_misses,
+		measure_nodes_examined=current.measure_nodes_examined-previous.measure_nodes_examined,
+		measure_nodes_executed=current.measure_nodes_executed-previous.measure_nodes_executed,
+		display_commands_finalized=current.display_commands_finalized-previous.display_commands_finalized,
+		display_finalization_full_passes=current.display_finalization_full_passes-previous.display_finalization_full_passes,
+		semantic_order_nodes_examined=current.semantic_order_nodes_examined-previous.semantic_order_nodes_examined,
+		global_fallbacks=current.global_fallbacks-previous.global_fallbacks,
 		text_shape_requests=current.text_shape_requests-previous.text_shape_requests,
+	}
+	for reason in alicorn.Retained_Global_Work_Reason {
+		sample.global_work_by_reason[reason] = current.global_work_by_reason[reason]-previous.global_work_by_reason[reason]
 	}
 	if rt.allocation_stats != nil {
 		sample.persistent_allocations = rt.allocation_stats.persistent_alloc_calls-cursor.persistent_allocations
@@ -222,7 +231,9 @@ native_devtools_record_wake :: proc(
 		sample.semantic_projection_nodes_added > 0 || sample.semantic_projection_nodes_updated > 0 ||
 		sample.semantic_projection_nodes_removed > 0 || sample.accessibility_activation_wakes > 0 ||
 		sample.accessibility_action_wakes > 0 || sample.accessibility_reveal_wakes > 0 || sample.accessibility_updates_submitted > 0 ||
-		sample.measure_requests > 0 || sample.measure_cache_hits > 0 || sample.measure_cache_misses > 0 || sample.text_shape_requests > 0
+		 sample.measure_requests > 0 || sample.measure_cache_hits > 0 || sample.measure_cache_misses > 0 || sample.text_shape_requests > 0 ||
+		sample.measure_nodes_examined > 0 || sample.measure_nodes_executed > 0 || sample.display_commands_finalized > 0 ||
+			sample.display_finalization_full_passes > 0 || sample.semantic_order_nodes_examined > 0 || sample.global_fallbacks > 0
 	if write_sample { native_flight_record(recorder, sample) }
 	cursor^ = native_devtools_cursor_init(rt, timing, text_events)
 }

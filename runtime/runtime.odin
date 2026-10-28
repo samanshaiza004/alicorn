@@ -350,6 +350,11 @@ Measure_State :: struct {
 	parent_layout_dependencies: Layout_Axes,
 }
 
+Measure_Queue_Entry :: struct {
+	node: Node_ID,
+	generation: u64,
+}
+
 // Target_Layout_Rect is the canonical unsnapped solver result. Finalization
 // derives a presentation Rect from these absolute edges and never feeds the
 // snapped result back into the next layout solve.
@@ -1395,6 +1400,8 @@ Node :: struct {
 	paint:       [dynamic]Paint_Command,
 	surface_resource_generation: u64,
 	display_index: int,
+	measure_queued: bool,
+	measure_queue_generation: u64,
 	paint_queued: bool,
 	layout_root_queued: bool,
 }
@@ -1726,6 +1733,17 @@ Frame_Stats :: struct {
 	measure_requests:  u64,
 	measure_cache_hits: u64,
 	measure_cache_misses: u64,
+	// These counters include scheduling work which is otherwise hidden by the
+	// stage-level visit counts. measure_nodes_examined includes queued entries
+	// and the deliberately broad font-generation invalidation pass; executed
+	// counts cache misses which perform a fresh measurement.
+	measure_nodes_examined: u64,
+	measure_nodes_executed: u64,
+	display_commands_finalized: u64,
+	display_finalization_full_passes: u64,
+	semantic_order_nodes_examined: u64,
+	global_fallbacks: u64,
+	global_work_by_reason: [Retained_Global_Work_Reason]u64,
 	text_shape_requests: u64,
 	paint_updates:     u64,
 	composite_updates:  u64,
@@ -1758,6 +1776,18 @@ Frame_Stats :: struct {
 	surface_stale_update_rejections: u64,
 }
 
+// Retained_Global_Work_Reason identifies the intentional operations whose
+// cost may scale with the retained tree or display list. Keeping reasons
+// separate makes broad invalidation distinguishable from locality fallbacks.
+Retained_Global_Work_Reason :: enum {
+	Measure_Font_Generation,
+	Display_Structure_Rebuild,
+	Display_Scale_Change,
+	Display_Transient_Update,
+	Display_Incremental_Fallback,
+	Semantic_Order_Rebuild,
+}
+
 // Runtime's fields remain exported because Odin does not support private
 Controlled_Text_Field_State :: struct {
 	model_text: string,
@@ -1782,6 +1812,8 @@ Runtime :: struct {
 	nodes:       map[Node_ID]^Node,
 	controlled_text_fields: map[Node_ID]Controlled_Text_Field_State,
 	measure_states: map[Node_ID]Measure_State,
+	measure_queue: [dynamic]Measure_Queue_Entry,
+	measure_queue_sequence: u64,
 	finalized_geometry: map[Node_ID]Finalized_Geometry,
 	computed_styles: map[Node_ID]Computed_Style,
 	style_stats_suppressed: bool,

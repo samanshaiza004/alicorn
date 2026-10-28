@@ -1268,6 +1268,7 @@ semantic_sync_node :: proc(rt: ^Runtime, node: ^Node, semantic: Semantic_Descrip
 // order aligned with keyed visual reorder without an extra per-frame scan.
 semantic_sync_tree_order :: proc(rt: ^Runtime, node_id: Node_ID, tree_order: u64) {
 	if rt == nil { return }
+	rt.stats.semantic_order_nodes_examined += 1
 	node, found := rt.nodes[node_id]
 	if found && adaptive_node_has_alternative_ancestor(rt, node_id) { rt.semantic_tree_orders[node_id] = tree_order }
 	else { delete_key(&rt.semantic_tree_orders, node_id) }

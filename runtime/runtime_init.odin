@@ -47,6 +47,7 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 	rt.controlled_text_fields = make(map[Node_ID]Controlled_Text_Field_State, allocator=rt.persistent_allocator)
 	rt.restore_controls = make(map[Restore_Target]^Restore_Control_State, allocator=rt.persistent_allocator)
 	rt.measure_states = make(map[Node_ID]Measure_State, allocator=rt.persistent_allocator)
+	rt.measure_queue = make([dynamic]Measure_Queue_Entry, 0, allocator=rt.persistent_allocator)
 	rt.finalized_geometry = make(map[Node_ID]Finalized_Geometry, allocator=rt.persistent_allocator)
 	rt.computed_styles = make(map[Node_ID]Computed_Style, allocator=rt.persistent_allocator)
 	rt.semantic_surfaces = make(map[Node_ID]Semantic_Surface_Style, allocator=rt.persistent_allocator)

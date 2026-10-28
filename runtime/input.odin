@@ -758,7 +758,7 @@ invalidate_text_product :: proc(rt: ^Runtime, node: ^Node, reason := "retained t
 		node.text_run_handle_generation = 0
 	}
 	text_composition_run_destroy(node)
-	dirty_set(&node.dirty, .Measure, true)
+	layout_measure_mark_dirty(rt, node)
 	dirty_set(&node.dirty, .Paint, true)
 	dirty_set(&node.dirty, .Composite, true)
 	if len(node.last_reason) > 0 { delete(node.last_reason, rt.persistent_allocator) }

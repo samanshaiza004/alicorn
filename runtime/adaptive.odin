@@ -451,9 +451,8 @@ adaptive_semantics_sync_descriptions :: proc(rt: ^Runtime) {
 			semantic_retire_node_id(rt, node, previous_id)
 		}
 	}
-	// Newly synchronized alternative nodes were not present when retained tree
-	// order was rebuilt earlier in reconciliation. Refresh only their stable
-	// preorder numbers before committing this frame's semantic delta.
-	for id, index in rt.order { semantic_sync_tree_order(rt, id, u64(index)) }
+	// semantic_sync_node reads the retained preorder cached during rebuild_order.
+	// Newly described alternatives use that stable mapping, so ordinary
+	// descriptions do not need a second pass over every retained node here.
 }
 

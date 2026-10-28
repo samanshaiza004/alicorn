@@ -24,6 +24,11 @@ Native_DevTools_Sample :: struct {
 	accessibility_requests_received, accessibility_requests_dropped: u64,
 	semantic_focus_search_visits, semantic_active_update_visits: u64,
 	measure_requests, measure_cache_hits, measure_cache_misses, text_shape_requests: u64,
+	measure_nodes_examined, measure_nodes_executed: u64,
+	display_commands_finalized, display_finalization_full_passes: u64,
+	semantic_order_nodes_examined: u64,
+	global_fallbacks: u64,
+	global_work_by_reason: [alicorn.Retained_Global_Work_Reason]u64,
 	persistent_allocations, persistent_bytes_live, scratch_requested_bytes: u64,
 	cause_kind: alicorn.Cause_Kind,
 }

@@ -3,6 +3,9 @@ package alicorn
 import "core:fmt"
 import "core:testing"
 
+ADAPTIVE_MEASURE_TEST_FONT_A :: #load("../assets/fonts/AtkinsonHyperlegibleNext-Variable.ttf")
+ADAPTIVE_MEASURE_TEST_FONT_B :: #load("../assets/fonts/AtkinsonHyperlegibleMono-Variable.ttf")
+
 Adaptive_Test_Semantic_ID :: Semantic_ID{namespace=0x4144415054495645, value=1}
 Adaptive_Test_Focus_ID :: Semantic_ID{namespace=0x4144415054495645, value=2}
 Adaptive_Test_Nested_Action_ID :: Semantic_ID{namespace=0x4144415054495645, value=3}
@@ -90,11 +93,13 @@ adaptive_retained_split_describe :: proc(
 	rt: ^Runtime,
 	semantic_id := Adaptive_Retained_Semantic_ID,
 	omit_semantic_role := false,
+	reverse_content_order := false,
+	viewport_width := f32(500),
 ) -> (handle: Node_ID, wide_button, compact_button: Node_ID) {
 	invalidate_root(rt, "adaptive retained semantic fixture description")
 	ui, build := begin_frame(rt)
 	if !build { return }
-	container_begin(&ui, .Root, key=key_string("adaptive-retained-root"), style=layout_style(.Column, width=500, height=200))
+	container_begin(&ui, .Root, key=key_string("adaptive-retained-root"), style=layout_style(.Column, width=viewport_width, height=200))
 	split := split_begin(&ui, key_string("adaptive-retained-split"), .Horizontal, 100,
 		style=layout_style(.Row, grow=1, height=200, clip=true))
 	_ = split_first_begin(&ui, split, style=layout_style(width=100, grow=0))
@@ -103,6 +108,7 @@ adaptive_retained_split_describe :: proc(
 	_ = split_second_begin(&ui, split)
 	_ = adaptive_begin(&ui, key_string("adaptive-retained-owner"), style=layout_style(.Column, grow=1, height=80))
 	_ = adaptive_alternative_begin(&ui, key_string("adaptive-retained-wide"), "Wide", minimum_width=380)
+	if reverse_content_order { adaptive_retained_run_describe(&ui, "Wide", Adaptive_Retained_Area_ID) }
 	wide_button, _ = button_begin(&ui, "Wide action", key_string("adaptive-retained-wide-action"), style=layout_style(width=120, height=32))
 	if omit_semantic_role {
 		_ = semantic_bind(&ui, semantic_id)
@@ -111,9 +117,10 @@ adaptive_retained_split_describe :: proc(
 		_ = semantic_describe_as(&ui, semantic_id, .Button, "Wide custom name", actions=semantic_actions_add({}, .Press))
 	}
 	button_end(&ui)
-	adaptive_retained_run_describe(&ui, "Wide", Adaptive_Retained_Area_ID)
+	if !reverse_content_order { adaptive_retained_run_describe(&ui, "Wide", Adaptive_Retained_Area_ID) }
 	adaptive_alternative_end(&ui)
 	_ = adaptive_alternative_begin(&ui, key_string("adaptive-retained-compact"), "Compact")
+	if reverse_content_order { adaptive_retained_run_describe(&ui, "Compact", Adaptive_Retained_Compact_Area_ID) }
 	compact_button, _ = button_begin(&ui, "Compact action", key_string("adaptive-retained-compact-action"), style=layout_style(width=120, height=32))
 	if omit_semantic_role {
 		_ = semantic_bind(&ui, semantic_id)
@@ -122,7 +129,7 @@ adaptive_retained_split_describe :: proc(
 		_ = semantic_describe_as(&ui, semantic_id, .Button, "Compact custom name", actions=semantic_actions_add({}, .Press))
 	}
 	button_end(&ui)
-	adaptive_retained_run_describe(&ui, "Compact", Adaptive_Retained_Compact_Area_ID)
+	if !reverse_content_order { adaptive_retained_run_describe(&ui, "Compact", Adaptive_Retained_Compact_Area_ID) }
 	adaptive_alternative_end(&ui)
 	adaptive_end(&ui)
 	split_second_end(&ui, split)
@@ -161,6 +168,61 @@ adaptive_retained_split_drag :: proc(rt: ^Runtime, handle_id: Node_ID, delta: f3
 	_ = process_pointer(rt, Pointer_Event{kind=.Down, x=x, y=y, button=POINTER_BUTTON_PRIMARY})
 	_ = process_pointer(rt, Pointer_Event{kind=.Move, x=x+delta, y=y, timestamp_ns=1})
 	_ = process_pointer(rt, Pointer_Event{kind=.Up, x=x+delta, y=y, button=POINTER_BUTTON_PRIMARY})
+}
+
+@(test)
+test_stable_adaptive_descriptions_do_not_rescan_semantic_preorder :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 500, 200})
+	defer destroy_runtime(&rt)
+	_, wide_button, _ := adaptive_retained_split_describe(&rt)
+	before := rt.stats.semantic_order_nodes_examined
+	_, updated_wide, _ := adaptive_retained_split_describe(&rt)
+	entity, found := semantic_node_lookup(&rt, Adaptive_Retained_Semantic_ID)
+	order, order_found := rt.semantic_tree_orders[updated_wide]
+	testing.expect(t, updated_wide == wide_button && found && order_found && entity.visual_node == updated_wide &&
+		entity.tree_order == order,
+		"a stable adaptive description should retain its accessible preorder mapping")
+	testing.expect(t, rt.stats.semantic_order_nodes_examined == before,
+		"unchanged adaptive descriptions should not rescan the retained preorder")
+}
+
+@(test)
+test_hidden_adaptive_text_remeasures_after_font_generation_change :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 500, 180})
+	defer destroy_runtime(&rt)
+	testing.expect(t, text_engine_load_font(&rt.text_engine, ADAPTIVE_MEASURE_TEST_FONT_A),
+		"the first adaptive measurement face should load")
+	_ = adaptive_test_describe(&rt, 500)
+	wide_text_id: Node_ID = 0
+	for id, node in rt.nodes {
+		if node.text == "Wide branch detail" { wide_text_id = id; break }
+	}
+	if wide_text_id == 0 {
+		testing.expect(t, false, "the selected wide alternative should retain its text detail")
+		return
+	}
+	initial_state := rt.measure_states[wide_text_id]
+	initial_generation := initial_state.cache_key.dependencies.font_generation
+	if !initial_state.cache_key.valid {
+		testing.expect(t, false, "visible wide text should have a valid initial measurement")
+		return
+	}
+	_ = adaptive_test_describe(&rt, 450)
+	hidden_node := rt.nodes[wide_text_id]
+	testing.expect(t, !hidden_node.present, "the wide text should be hidden in the compact presentation")
+	testing.expect(t, text_engine_load_font(&rt.text_engine, ADAPTIVE_MEASURE_TEST_FONT_B),
+		"a second face should advance the font generation while wide text is hidden")
+	_ = adaptive_test_describe(&rt, 450)
+	hidden_state := rt.measure_states[wide_text_id]
+	testing.expect(t, hidden_state.cache_key.dependencies.font_generation == initial_generation &&
+		dirty_has(hidden_node.dirty, .Measure) && !hidden_node.measure_queued,
+		"hidden text keeps a dirty measurement after broad font invalidation skips inactive presentation work")
+	executed_before_reactivation := rt.stats.measure_nodes_executed
+	_ = adaptive_test_describe(&rt, 500)
+	reactivated_state := rt.measure_states[wide_text_id]
+	testing.expect(t, reactivated_state.cache_key.dependencies.font_generation == rt.text_engine.font_generation &&
+		!dirty_has(hidden_node.dirty, .Measure) && rt.stats.measure_nodes_executed > executed_before_reactivation,
+		"reactivating the hidden alternative must measure its text with the current font generation")
 }
 
 @(test)
@@ -210,6 +272,55 @@ test_retained_split_drag_rebinds_adaptive_semantics_without_description :: proc(
 		"returning to Wide should restore its independently owned custom Text_Run descriptor")
 	testing.expect(t, semantic_action_request(&rt, Adaptive_Retained_Semantic_ID, .Press),
 		"Press should route to the active Wide visual node after the return transition")
+}
+
+@(test)
+test_adaptive_semantic_order_survives_structural_reorder_then_alternative_switch :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 500, 200})
+	defer destroy_runtime(&rt)
+	handle, wide_button, compact_button := adaptive_retained_split_describe(&rt)
+	wide_before, wide_before_ok := rt.semantic_tree_orders[wide_button]
+	compact_before, compact_before_ok := rt.semantic_tree_orders[compact_button]
+	wide_run_before, wide_run_before_ok := semantic_node_lookup(&rt, Adaptive_Retained_Run_ID)
+	wide_run_order_before, wide_run_order_before_ok := rt.semantic_tree_orders[wide_run_before.visual_node]
+	if !wide_before_ok || !compact_before_ok {
+		testing.expect(t, false, "both adaptive alternatives should receive retained preorder positions")
+		return
+	}
+	testing.expect(t, wide_before < wide_run_order_before && wide_run_before_ok && wide_run_order_before_ok && wide_before < compact_before,
+		"the initial description should order the Wide control before its text run and the Compact alternative")
+	order_visits := rt.stats.semantic_order_nodes_examined
+	_, reordered_wide, reordered_compact := adaptive_retained_split_describe(&rt, Adaptive_Retained_Semantic_ID, false, true)
+	wide_after, wide_after_ok := rt.semantic_tree_orders[reordered_wide]
+	compact_after, compact_after_ok := rt.semantic_tree_orders[reordered_compact]
+	wide_run_after, wide_run_after_ok := semantic_node_lookup(&rt, Adaptive_Retained_Run_ID)
+	wide_run_order_after, wide_run_order_after_ok := rt.semantic_tree_orders[wide_run_after.visual_node]
+	active_semantic, active_semantic_ok := semantic_node_lookup(&rt, Adaptive_Retained_Semantic_ID)
+	testing.expect(t, wide_after_ok && compact_after_ok && wide_after > wide_run_order_after && wide_run_after_ok && wide_run_order_after_ok &&
+		rt.stats.semantic_order_nodes_examined > order_visits,
+		"a structural sibling reorder should refresh retained preorder in the normal tree rebuild")
+	testing.expect(t, active_semantic_ok && active_semantic.visual_node == reordered_wide && active_semantic.tree_order == wide_after,
+		"the active semantic entity should adopt its reordered retained preorder position")
+	testing.expect(t, focus(&rt, reordered_wide), "the active Wide control should accept focus before switching alternatives")
+	rt.viewport = Rect{0, 0, 450, 200}
+	_, _, compact_button = adaptive_retained_split_describe(&rt, Adaptive_Retained_Semantic_ID, false, true, 450)
+	active_semantic, active_semantic_ok = semantic_node_lookup(&rt, Adaptive_Retained_Semantic_ID)
+	compact_after, compact_after_ok = rt.semantic_tree_orders[compact_button]
+	run, run_ok := semantic_node_lookup(&rt, Adaptive_Retained_Run_ID)
+	run_order, run_order_ok := rt.semantic_tree_orders[run.visual_node]
+	compact_alternative := rt.nodes[compact_button].parent
+	adaptive_owner := rt.nodes[compact_alternative].parent
+	selection := adaptive_selection_state(&rt, adaptive_owner)
+	testing.expect(t, selection.valid && selection.selected_alternative == compact_alternative &&
+		rt.nodes[compact_button].present && !rt.nodes[reordered_wide].present,
+		"the splitter should switch from Wide to a visible Compact alternative after the structural reorder")
+	testing.expect(t, active_semantic_ok && active_semantic.visual_node == compact_button &&
+		active_semantic.tree_order == compact_after && compact_after_ok,
+		"switching alternatives should publish the selected node at its retained semantic position")
+	testing.expect(t, rt.focused == compact_button,
+		"switching alternatives after a structural reorder should transfer focus and publish the selected node at its retained position")
+	testing.expect(t, run_ok && run_order_ok && run.tree_order == run_order && run_order < compact_after,
+		"the active adaptive Text_Run should retain its reordered preorder when the alternative changes")
 }
 
 @(test)

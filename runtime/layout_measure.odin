@@ -3,6 +3,17 @@ package alicorn
 import "core:math"
 import "core:fmt"
 
+layout_measure_mark_dirty :: proc(rt: ^Runtime, node: ^Node) {
+	if node == nil { return }
+	dirty_set(&node.dirty, .Measure, true)
+	if rt == nil || node.measure_queued { return }
+	rt.measure_queue_sequence += 1
+	if rt.measure_queue_sequence == 0 { rt.measure_queue_sequence = 1 }
+	node.measure_queue_generation = rt.measure_queue_sequence
+	node.measure_queued = true
+	append(&rt.measure_queue, Measure_Queue_Entry{node.id, node.measure_queue_generation})
+}
+
 // The first geometry experiment uses 1/1024 logical units. This is not a
 // public ABI choice: f32 input precision dominates at large coordinates, so
 // the conformance tests compare coarser/finer scales and report round-trip
@@ -537,6 +548,7 @@ layout_measure_node :: proc(
 		return state.result
 	}
 	rt.stats.measure_cache_misses += 1
+	rt.stats.measure_nodes_executed += 1
 	reason := measure_cache_reason(state.cache_key, key)
 	record_trace(rt, .Measure, node.id, fmt.tprintf("measure cache miss: %s", reason))
 	if node_has_text_product(node.kind) {
@@ -637,12 +649,12 @@ layout_measure_propagate_parent_size_change :: proc(rt: ^Runtime, child_id: Node
 		child_id, child_axes, parent_axes))
 	parent_state := rt.measure_states[parent.id]
 	if !parent_state.cache_key.valid {
-		dirty_set(&parent.dirty, .Measure, true)
+		layout_measure_mark_dirty(rt, parent)
 		mark_layout_ancestors(rt, parent.id, parent_axes)
 		return
 	}
 	old_result := parent_state.result
-	dirty_set(&parent.dirty, .Measure, true)
+	layout_measure_mark_dirty(rt, parent)
 	_ = layout_measure_node(rt, parent, parent_state.cache_key.constraints)
 	parent_state = rt.measure_states[parent.id]
 	changed_axes := layout_measure_changed_axes(old_result, parent_state.result)
@@ -662,11 +674,29 @@ layout_measure_propagate_parent_size_change :: proc(rt: ^Runtime, child_id: Node
 layout_measure_retained_dirty_nodes :: proc(rt: ^Runtime) {
 	if rt == nil { return }
 	font_changed := rt.text_font_generation_seen != rt.text_engine.font_generation
-	if font_changed { rt.text_font_generation_seen = rt.text_engine.font_generation }
-	for id in rt.order {
-		node, ok := rt.nodes[id]
-		if !ok || node == nil || !node.active || !node_is_presentation_active(rt, id) { continue }
-		if font_changed && node_has_text_product(node.kind) { dirty_set(&node.dirty, .Measure, true) }
+	if font_changed {
+		rt.text_font_generation_seen = rt.text_engine.font_generation
+		rt.stats.global_work_by_reason[.Measure_Font_Generation] += 1
+		// Font generation changes are intentionally broad: every retained text
+		// product may have different glyph metrics. Ordinary dirty work below is
+		// drained from the deduplicated queue and never scans rt.order.
+		for id in rt.order {
+			rt.stats.measure_nodes_examined += 1
+			node, ok := rt.nodes[id]
+			if !ok || node == nil || !node.active || !node_has_text_product(node.kind) { continue }
+			layout_measure_mark_dirty(rt, node)
+		}
+	}
+	queue_index := 0
+	for queue_index < len(rt.measure_queue) {
+		entry := rt.measure_queue[queue_index]
+		queue_index += 1
+		rt.stats.measure_nodes_examined += 1
+		node, ok := rt.nodes[entry.node]
+		if !ok || node == nil || !node.measure_queued || node.measure_queue_generation != entry.generation { continue }
+		node.measure_queued = false
+		id := entry.node
+		if !node.active || !node_is_presentation_active(rt, id) { continue }
 		state := rt.measure_states[id]
 		if !dirty_has(node.dirty, .Measure) || !state.cache_key.valid { continue }
 		old_result := state.result
@@ -685,6 +715,7 @@ layout_measure_retained_dirty_nodes :: proc(rt: ^Runtime) {
 			record_trace(rt, .Layout, node.parent, "child measurement changed; parent placement invalidated")
 		}
 	}
+	clear(&rt.measure_queue)
 }
 
 layout_text_measure_constraints :: proc(parent: ^Node, child: ^Node, cross_size: f32) -> Layout_Constraints {
@@ -747,14 +778,35 @@ layout_finalize_node_geometry :: proc(rt: ^Runtime) {
 
 // display_target retains unsnapped paint geometry. Rebuilding the finalized
 // list from it makes repeated DPI changes independent of previous snapping.
-layout_finalize_display :: proc(rt: ^Runtime) {
+layout_finalize_paint_command :: proc(target: Paint_Command, scale_x, scale_y: f32) -> Paint_Command {
+	command := target
+	command.bounds = layout_finalize_rect(target.bounds, scale_x, scale_y)
+	command.clip = layout_finalize_rect(target.clip, scale_x, scale_y)
+	return command
+}
+
+layout_finalize_display_slot :: proc(rt: ^Runtime, owner: Node_ID, index: int, target: Paint_Command) -> bool {
+	if rt == nil || index < 0 || index >= len(rt.display_target) || index >= len(rt.display) ||
+		len(rt.display_target) != len(rt.display) || target.owner != owner ||
+		rt.display_target[index].owner != owner || rt.display[index].owner != owner {
+		return false
+	}
+	// Finalize from the retained unsnapped target. Never feed rounded
+	// presentation geometry into a later scale transition.
+	rt.display_target[index] = target
+	rt.display[index] = layout_finalize_paint_command(target, rt.presentation_scale_x, rt.presentation_scale_y)
+	rt.stats.display_commands_finalized += 1
+	return true
+}
+
+layout_finalize_display :: proc(rt: ^Runtime, reason: Retained_Global_Work_Reason) {
 	if rt == nil { return }
+	rt.stats.global_work_by_reason[reason] += 1
+	rt.stats.display_finalization_full_passes += 1
 	clear(&rt.display)
 	for target in rt.display_target {
-		command := target
-		command.bounds = layout_finalize_rect(target.bounds, rt.presentation_scale_x, rt.presentation_scale_y)
-		command.clip = layout_finalize_rect(target.clip, rt.presentation_scale_x, rt.presentation_scale_y)
-		append(&rt.display, command)
+		append(&rt.display, layout_finalize_paint_command(target, rt.presentation_scale_x, rt.presentation_scale_y))
+		rt.stats.display_commands_finalized += 1
 	}
 }
 
@@ -773,7 +825,7 @@ set_presentation_scale :: proc(rt: ^Runtime, scale_x, scale_y: f32) -> bool {
 	// presentation-only update immediately so revision-based hosts observe it
 	// without waiting for a later application reconciliation.
 	_ = semantic_commit(rt)
-	layout_finalize_display(rt)
+	layout_finalize_display(rt, .Display_Scale_Change)
 	request_presentation(rt, "device-scale finalization changed")
 	advance_presentation_revision(rt)
 	return true

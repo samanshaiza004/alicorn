@@ -7,7 +7,7 @@ import alicorn "../../runtime"
 @(test)
 test_native_flight_timeline_is_versioned_and_oldest_first :: proc(t: ^testing.T) {
 	recorder: Native_Flight_Recorder
-	native_flight_record(&recorder, Native_DevTools_Sample{
+	first_sample := Native_DevTools_Sample{
 		timestamp_ns = 100,
 		cause_id = 7,
 		cause_kind = .Keyboard,
@@ -32,9 +32,16 @@ test_native_flight_timeline_is_versioned_and_oldest_first :: proc(t: ^testing.T)
 		accessibility_requests_dropped = 1,
 		semantic_focus_search_visits = 4,
 		semantic_active_update_visits = 9,
+		measure_nodes_examined = 11,
+		measure_nodes_executed = 4,
+		display_commands_finalized = 7,
+		display_finalization_full_passes = 2,
+		semantic_order_nodes_examined = 13,
 		build_ns = 900,
 		input_to_submit_ns = 1_200,
-	})
+	}
+	first_sample.global_work_by_reason[.Display_Incremental_Fallback] = 1
+	native_flight_record(&recorder, first_sample)
 	native_flight_record(&recorder, Native_DevTools_Sample{
 		timestamp_ns = 200,
 		cause_id = 8,
@@ -91,4 +98,12 @@ test_native_flight_timeline_is_versioned_and_oldest_first :: proc(t: ^testing.T)
 	testing.expect(t, strings.contains(json, `"semantic_focus_search_visits": 4`) &&
 		strings.contains(json, `"semantic_active_update_visits": 9`),
 		"timeline exports the two independently instrumented semantic-focus scans")
+	testing.expect(t, strings.contains(json, `"measure_nodes_examined": 11`) &&
+		strings.contains(json, `"measure_nodes_executed": 4`) &&
+		strings.contains(json, `"display_commands_finalized": 7`) &&
+		strings.contains(json, `"display_finalization_full_passes": 2`) &&
+		strings.contains(json, `"semantic_order_nodes_examined": 13`) &&
+		strings.contains(json, `"global_fallbacks": 0`) &&
+		strings.contains(json, `"display_incremental_fallback": 1`),
+		"timeline exports the locality counters and the reason for a global display fallback")
 }
