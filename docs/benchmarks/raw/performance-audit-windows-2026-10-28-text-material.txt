@@ -1,0 +1,42 @@
+Alicorn headless text-layout and material benchmark rerun; source 3d2c89e55ba3f34a2fb741926521f482ee57a17e; Odin dev-2026-09-nightly:a2fb372
+
+COMMAND: tools/bench_text_layout.ps1
+
+Alicorn focused text-layout benchmark (headless; raw wall-clock nanoseconds)
+workload logical_rows 20000 viewport 1180 x 860 estimated_row_height 84 text_bytes_first_row 358 typography_spans 2 paint_spans 3
+initial_frame visible_rows 11 measured_heights 11 shape_calls_total 11 retained_nodes 14
+warmup_geometry measured_height_rows 12 height_min 62.40039 height_max 104.00098
+variable_height_scroll frames 120 elapsed_ns 347475200 ns_per_frame 2895626 shape_calls 246 shape_cache_hits 0 layout_node_visits 3460 retained_nodes 15
+wrapped_width_reflow frames 40 elapsed_ns 134471500 ns_per_frame 3361787 shape_calls 362 shape_cache_hits 0 layout_node_visits 924 retained_nodes 13
+final_geometry measured_height_rows 317 height_min 62.40039 height_max 187.2002
+text_cache_entries 317
+
+TEXT_EXIT: 0
+
+COMMAND: tools/bench_material.ps1
+
+Alicorn native material flat-path benchmark; CPU vertex expansion only
+surfaces_per_sample 4096 iterations 80 vertices_per_batch 24576
+sample 1 direct_quad_ns 2864100 flat_material_ns 2617700 direct_ns_per_surface 8.74053955078125 flat_ns_per_surface 7.98858642578125 vertices 24576 capacity 24576 same_output true
+sample 2 direct_quad_ns 2708200 flat_material_ns 2605400 direct_ns_per_surface 8.2647705078125 flat_ns_per_surface 7.9510498046875 vertices 24576 capacity 24576 same_output true
+sample 3 direct_quad_ns 2686900 flat_material_ns 2652100 direct_ns_per_surface 8.19976806640625 flat_ns_per_surface 8.09356689453125 vertices 24576 capacity 24576 same_output true
+material_budget scale 1 height 0 ok true surface_draw_slots 1 vertices 6
+material_budget scale 1 height 0.5 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1 height -0.25 ok true surface_draw_slots 1 vertices 54
+material_budget scale 1 height 1 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1.25 height 0 ok true surface_draw_slots 1 vertices 6
+material_budget scale 1.25 height 0.5 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1.25 height -0.25 ok true surface_draw_slots 1 vertices 54
+material_budget scale 1.25 height 1 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1.5 height 0 ok true surface_draw_slots 1 vertices 6
+material_budget scale 1.5 height 0.5 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1.5 height -0.25 ok true surface_draw_slots 1 vertices 54
+material_budget scale 1.5 height 1 ok true surface_draw_slots 1 vertices 66
+material_budget scale 2 height 0 ok true surface_draw_slots 1 vertices 6
+material_budget scale 2 height 0.5 ok true surface_draw_slots 1 vertices 66
+material_budget scale 2 height -0.25 ok true surface_draw_slots 1 vertices 54
+material_budget scale 2 height 1 ok true surface_draw_slots 1 vertices 66
+
+MATERIAL_EXIT: 0
+
+\n

@@ -1,0 +1,183 @@
+Alicorn construction probes; Windows 10 Home 22H2; Ryzen 5 7600X; Odin dev-2026-09-nightly:a2fb372; source 3d2c89e55ba3f34a2fb741926521f482ee57a17e
+Build: odin build benchmarks\diagnostics\perf_construction_probe.odin -file -out:out\perf_construction_probe.exe
+Five fresh-process samples per workload; modes alternate order each sample; default Odin profile.
+SAMPLE 1 MODE containers
+construction_probe containers logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 16384 pending_capacity_bytes 20840448
+phase_timing_ns reserve 100 description 19399000 end_frame 94791900 total 114191000
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 0 requested_bytes 0
+phase_allocations description calls 46 requested_bytes 55310186
+phase_allocations end_frame calls 100115 requested_bytes 37444461
+memory_requested live_after_end_frame 56406900 high_water 57059398
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 0 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 1 shape_requests 0
+SAMPLE 1 MODE short
+construction_probe short logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 16384 pending_capacity_bytes 20840448
+phase_timing_ns reserve 100 description 25018600 end_frame 123441800 total 148460500
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 0 requested_bytes 0
+phase_allocations description calls 46 requested_bytes 55310186
+phase_allocations end_frame calls 130137 requested_bytes 56708973
+memory_requested live_after_end_frame 70879156 high_water 70879208
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 10000 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 10001 shape_requests 0
+SAMPLE 1 MODE short-reserve
+construction_probe short-reserve logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 10001 pending_capacity_bytes 12721272
+phase_timing_ns reserve 5400 description 17933100 end_frame 127037100 total 144975600
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 1 requested_bytes 12721272
+phase_allocations description calls 34 requested_bytes 13639466
+phase_allocations end_frame calls 130137 requested_bytes 56708973
+memory_requested live_after_end_frame 62759980 high_water 62760032
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 10000 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 10001 shape_requests 0
+SAMPLE 1 MODE wrapped
+construction_probe wrapped logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 16384 pending_capacity_bytes 20840448
+phase_timing_ns reserve 100 description 19708500 end_frame 126535800 total 146244400
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 0 requested_bytes 0
+phase_allocations description calls 46 requested_bytes 55310186
+phase_allocations end_frame calls 130137 requested_bytes 58438973
+memory_requested live_after_end_frame 72609156 high_water 72609208
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 10000 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 10001 shape_requests 0
+SAMPLE 2 MODE wrapped
+construction_probe wrapped logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 16384 pending_capacity_bytes 20840448
+phase_timing_ns reserve 0 description 20560500 end_frame 126381200 total 146941700
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 0 requested_bytes 0
+phase_allocations description calls 46 requested_bytes 55310186
+phase_allocations end_frame calls 130137 requested_bytes 58438973
+memory_requested live_after_end_frame 72609156 high_water 72609208
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 10000 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 10001 shape_requests 0
+SAMPLE 2 MODE short-reserve
+construction_probe short-reserve logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 10001 pending_capacity_bytes 12721272
+phase_timing_ns reserve 6400 description 17113200 end_frame 116593000 total 133712600
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 1 requested_bytes 12721272
+phase_allocations description calls 34 requested_bytes 13639466
+phase_allocations end_frame calls 130137 requested_bytes 56708973
+memory_requested live_after_end_frame 62759980 high_water 62760032
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 10000 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 10001 shape_requests 0
+SAMPLE 2 MODE short
+construction_probe short logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 16384 pending_capacity_bytes 20840448
+phase_timing_ns reserve 0 description 18617100 end_frame 114147300 total 132764400
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 0 requested_bytes 0
+phase_allocations description calls 46 requested_bytes 55310186
+phase_allocations end_frame calls 130137 requested_bytes 56708973
+memory_requested live_after_end_frame 70879156 high_water 70879208
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 10000 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 10001 shape_requests 0
+SAMPLE 2 MODE containers
+construction_probe containers logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 16384 pending_capacity_bytes 20840448
+phase_timing_ns reserve 100 description 19365900 end_frame 94364100 total 113730100
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 0 requested_bytes 0
+phase_allocations description calls 46 requested_bytes 55310186
+phase_allocations end_frame calls 100115 requested_bytes 37444461
+memory_requested live_after_end_frame 56406900 high_water 57059398
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 0 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 1 shape_requests 0
+SAMPLE 3 MODE containers
+construction_probe containers logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 16384 pending_capacity_bytes 20840448
+phase_timing_ns reserve 0 description 18617300 end_frame 93714500 total 112331800
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 0 requested_bytes 0
+phase_allocations description calls 46 requested_bytes 55310186
+phase_allocations end_frame calls 100115 requested_bytes 37444461
+memory_requested live_after_end_frame 56406900 high_water 57059398
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 0 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 1 shape_requests 0
+SAMPLE 3 MODE short
+construction_probe short logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 16384 pending_capacity_bytes 20840448
+phase_timing_ns reserve 100 description 19137300 end_frame 114212200 total 133349600
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 0 requested_bytes 0
+phase_allocations description calls 46 requested_bytes 55310186
+phase_allocations end_frame calls 130137 requested_bytes 56708973
+memory_requested live_after_end_frame 70879156 high_water 70879208
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 10000 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 10001 shape_requests 0
+SAMPLE 3 MODE short-reserve
+construction_probe short-reserve logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 10001 pending_capacity_bytes 12721272
+phase_timing_ns reserve 5800 description 18378000 end_frame 113666100 total 132049900
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 1 requested_bytes 12721272
+phase_allocations description calls 34 requested_bytes 13639466
+phase_allocations end_frame calls 130137 requested_bytes 56708973
+memory_requested live_after_end_frame 62759980 high_water 62760032
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 10000 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 10001 shape_requests 0
+SAMPLE 3 MODE wrapped
+construction_probe wrapped logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 16384 pending_capacity_bytes 20840448
+phase_timing_ns reserve 0 description 19684000 end_frame 128061500 total 147745500
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 0 requested_bytes 0
+phase_allocations description calls 46 requested_bytes 55310186
+phase_allocations end_frame calls 130137 requested_bytes 58438973
+memory_requested live_after_end_frame 72609156 high_water 72609208
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 10000 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 10001 shape_requests 0
+SAMPLE 4 MODE wrapped
+construction_probe wrapped logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 16384 pending_capacity_bytes 20840448
+phase_timing_ns reserve 0 description 20285600 end_frame 123533900 total 143819500
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 0 requested_bytes 0
+phase_allocations description calls 46 requested_bytes 55310186
+phase_allocations end_frame calls 130137 requested_bytes 58438973
+memory_requested live_after_end_frame 72609156 high_water 72609208
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 10000 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 10001 shape_requests 0
+SAMPLE 4 MODE short-reserve
+construction_probe short-reserve logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 10001 pending_capacity_bytes 12721272
+phase_timing_ns reserve 6500 description 16757600 end_frame 115735200 total 132499300
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 1 requested_bytes 12721272
+phase_allocations description calls 34 requested_bytes 13639466
+phase_allocations end_frame calls 130137 requested_bytes 56708973
+memory_requested live_after_end_frame 62759980 high_water 62760032
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 10000 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 10001 shape_requests 0
+SAMPLE 4 MODE short
+construction_probe short logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 16384 pending_capacity_bytes 20840448
+phase_timing_ns reserve 100 description 18634900 end_frame 113480900 total 132115900
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 0 requested_bytes 0
+phase_allocations description calls 46 requested_bytes 55310186
+phase_allocations end_frame calls 130137 requested_bytes 56708973
+memory_requested live_after_end_frame 70879156 high_water 70879208
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 10000 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 10001 shape_requests 0
+SAMPLE 4 MODE containers
+construction_probe containers logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 16384 pending_capacity_bytes 20840448
+phase_timing_ns reserve 0 description 19365800 end_frame 92989800 total 112355600
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 0 requested_bytes 0
+phase_allocations description calls 46 requested_bytes 55310186
+phase_allocations end_frame calls 100115 requested_bytes 37444461
+memory_requested live_after_end_frame 56406900 high_water 57059398
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 0 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 1 shape_requests 0
+SAMPLE 5 MODE containers
+construction_probe containers logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 16384 pending_capacity_bytes 20840448
+phase_timing_ns reserve 0 description 19035300 end_frame 100402200 total 119437500
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 0 requested_bytes 0
+phase_allocations description calls 46 requested_bytes 55310186
+phase_allocations end_frame calls 100115 requested_bytes 37444461
+memory_requested live_after_end_frame 56406900 high_water 57059398
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 0 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 1 shape_requests 0
+SAMPLE 5 MODE short
+construction_probe short logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 16384 pending_capacity_bytes 20840448
+phase_timing_ns reserve 0 description 18619300 end_frame 119091700 total 137711000
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 0 requested_bytes 0
+phase_allocations description calls 46 requested_bytes 55310186
+phase_allocations end_frame calls 130137 requested_bytes 56708973
+memory_requested live_after_end_frame 70879156 high_water 70879208
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 10000 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 10001 shape_requests 0
+SAMPLE 5 MODE short-reserve
+construction_probe short-reserve logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 10001 pending_capacity_bytes 12721272
+phase_timing_ns reserve 6500 description 17414100 end_frame 116164400 total 133585000
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 1 requested_bytes 12721272
+phase_allocations description calls 34 requested_bytes 13639466
+phase_allocations end_frame calls 130137 requested_bytes 56708973
+memory_requested live_after_end_frame 62759980 high_water 62760032
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 10000 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 10001 shape_requests 0
+SAMPLE 5 MODE wrapped
+construction_probe wrapped logical_items 10000 retained_nodes 10001 pending_item_size 1272 pending_capacity 16384 pending_capacity_bytes 20840448
+phase_timing_ns reserve 100 description 19761900 end_frame 134058000 total 153820000
+phase_allocations init calls 11 requested_bytes 40188
+phase_allocations reserve calls 0 requested_bytes 0
+phase_allocations description calls 46 requested_bytes 55310186
+phase_allocations end_frame calls 130137 requested_bytes 58438973
+memory_requested live_after_end_frame 72609156 high_water 72609208
+work_counters description 10001 reconcile 10001 measure_examined 0 measure_executed 10000 layout 20001 semantic_descriptions 0 semantic_resolved 0 paint 10001 compose 10001 shape_requests 0

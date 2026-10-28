@@ -1,0 +1,17 @@
+Alicorn record-size comparison
+Date: 2026-10-28
+Compiler: Odin dev-2026-09-nightly:a2fb372
+Baseline: 96461223cdbf43080acb957276c045ad704f4606
+Current source: 3d2c89e55ba3f34a2fb741926521f482ee57a17e
+Method: temporary @(test) in package alicorn printed size_of for each type.
+
+Baseline 9646122:
+PERF_TYPE_SIZES baseline Pending_Item 720 Description 704 Node 1792 Display_Command 96
+
+Current 3d2c89e:
+PERF_TYPE_SIZES Pending_Item 1272 Description 768 Node 2048 Paint_Command 128
+
+Notes:
+- Pending_Item grew 552 bytes (76.7%); Description grew 64 bytes (9.1%); Node grew 256 bytes (14.3%).
+- The old runtime had Display_Command, not Paint_Command. Those records represent different contracts, so 96 versus 128 bytes is not a direct like-for-like comparison.
+- Commands in both worktrees: odin test runtime. Baseline ran 27 tests; current ran 267 tests including the temporary size probe (266 ordinary tests).
