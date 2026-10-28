@@ -398,31 +398,31 @@ copy_node_description :: proc(
 	semantic: Semantic_Descriptor,
 	semantic_surface_style: Semantic_Surface_Style,
 	visual_part: Visual_Part_Style,
-	accessibility: Accessibility_Appearance_Preferences,
+	next_style_environment: Style_Environment,
+	style_changes: Style_Domains,
 ) {
 	// Runtime-owned copies are important: a generic description may borrow a
 	// caller's string for only the duration of this procedure.
 	label_changed := (d.kind == .Button || d.kind == .Checkbox || d.kind == .Slider) && node.label != d.label
 	tooltip_changed := node.tooltip_text != d.tooltip_text || node.tooltip_delay_ms != d.tooltip_delay_ms
 	text_changed := node.text != d.text || label_changed
-	next_style_environment := style_environment_with_accessibility(d.style_environment, accessibility)
-	style_changes := style_environment_changed_domains(node.style_environment, next_style_environment)
+	resolved_style_changes := style_changes
 	if node.kind == .Text_Field && node.style_environment.theme != next_style_environment.theme {
 		previous_inset := style_text_field_horizontal_inset(rt, node.style_environment)
 		next_inset := style_text_field_horizontal_inset(rt, next_style_environment)
-		if previous_inset != next_inset { style_changes += {.Metrics} }
+		if previous_inset != next_inset { resolved_style_changes += {.Metrics} }
 	}
 	previous_surface_style := rt.semantic_surfaces[node.id]
 	if semantic_surface_role_changed(previous_surface_style, semantic_surface_style) {
-		style_changes += {.Paint}
+		resolved_style_changes += {.Paint}
 	}
 	if semantic_surface_material_inputs_changed(previous_surface_style, semantic_surface_style) {
-		style_changes += {.Material}
+		resolved_style_changes += {.Material}
 	}
-	if style_generations_advance(&node.style_generations, style_changes) {
+	if style_generations_advance(&node.style_generations, resolved_style_changes) {
 		style_computed_cache_invalidate(rt, node.id)
 	}
-	typography_changed := Style_Domain.Typography in style_changes
+	typography_changed := Style_Domain.Typography in resolved_style_changes
 	font_changed := node.font != d.font
 	weight_changed := effective_font_weight(node.text_style.font_weight) != effective_font_weight(d.text_style.font_weight)
 	font_size_changed := text_style_requested_size(node.text_style, DEFAULT_STYLE_ENVIRONMENT) != text_style_requested_size(d.text_style, DEFAULT_STYLE_ENVIRONMENT)
@@ -860,7 +860,10 @@ reconcile :: proc(rt: ^Runtime) {
 			node.surface_circles = make([dynamic]GPU_Surface_Filled_Circle, 0, allocator=rt.persistent_allocator)
 			rt.nodes[d.id] = node
 			rt.stats.nodes_created += 1
-			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part, item.accessibility)
+			next_style_environment := style_environment_with_accessibility(d.style_environment, item.accessibility)
+			style_changes := style_environment_changed_domains(node.style_environment, next_style_environment)
+			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part,
+				next_style_environment, style_changes)
 			grid_tracks_copy_retained(rt, node, item)
 			node.description_hash = description_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
 			node.layout_hash = layout_hash_pending(d, item)
@@ -891,7 +894,8 @@ reconcile :: proc(rt: ^Runtime) {
 			measurement_changed = measurement_changed || Dirty_Stage.Measure in style_stages
 			paint_changed := node.paint_hash != new_paint_hash || Dirty_Stage.Paint in style_stages
 			composite_changed := Dirty_Stage.Composite in style_stages
-			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part, item.accessibility)
+			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part,
+				next_style_environment, style_changes)
 			grid_tracks_copy_retained(rt, node, item)
 			if was_selected != node.selected {
 				visual_part_invalidate_dependents(rt, d.id, "visual part owner selection changed")
