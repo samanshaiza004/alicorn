@@ -407,6 +407,68 @@ test_accessibility_projection_exports_stable_reversible_semantic_ids :: proc(t: 
 }
 
 @(test)
+test_accessibility_projection_focus_only_update_reuses_tree_and_advances_revision :: proc(t: ^testing.T) {
+	first_id := alicorn.Semantic_ID{namespace=27, value=1}
+	second_id := alicorn.Semantic_ID{namespace=27, value=2}
+	nodes := [2]alicorn.Semantic_Node{
+		{id=first_id, role=.Button, label="First", tree_order=1},
+		{id=second_id, role=.Text_Field, label="Second", tree_order=2},
+	}
+	initial_snapshot := accessibility_projection_test_snapshot(40, nodes[:], first_id)
+	projection, status := accessibility_projection_from_snapshot(initial_snapshot, context.temp_allocator)
+	testing.expect(t, status == .Success, "the focus-only fixture should build an initial projection")
+	defer accessibility_projection_destroy(&projection)
+	second_platform_id, second_id_ok := accessibility_semantic_to_node_id(second_id)
+	testing.expect(t, second_id_ok && projection.keyboard_focus_semantic_id == first_id,
+		"initial keyboard focus should be represented in the projection")
+
+	next_snapshot := accessibility_projection_test_snapshot(41, nodes[:], second_id)
+	update := alicorn.Semantic_Update_View{
+		from_revision=40,
+		to_revision=41,
+		keyboard_focus=second_id,
+	}
+	nodes_storage := raw_data(projection.nodes)
+	delta, result := accessibility_projection_apply_update(&projection, update, next_snapshot, context.temp_allocator)
+	defer accessibility_projection_delta_destroy(&delta)
+	testing.expect(t, result == .Applied && !delta.requires_snapshot &&
+		len(delta.changed_nodes) == 0 && len(delta.removed_ids) == 0,
+		"a focus-only semantic revision should update focus without producing node changes")
+	testing.expect(t, projection.revision == 41 && projection.keyboard_focus == second_platform_id &&
+		projection.keyboard_focus_semantic_id == second_id && delta.keyboard_focus == second_platform_id,
+		"the focus-only transition should advance revision and publish the new platform focus ID")
+	testing.expect(t, raw_data(projection.nodes) == nodes_storage,
+		"focus-only transitions must preserve the retained node storage instead of cloning the full tree")
+
+	stale_update := alicorn.Semantic_Update_View{
+		from_revision=41,
+		to_revision=42,
+		keyboard_focus=first_id,
+	}
+	stale_snapshot := accessibility_projection_test_snapshot(42, nodes[:], second_id)
+	stale_delta, stale_result := accessibility_projection_apply_update(&projection, stale_update, stale_snapshot, context.temp_allocator)
+	defer accessibility_projection_delta_destroy(&stale_delta)
+	testing.expect(t, stale_result == .Requires_Snapshot && projection.revision == 41 &&
+		projection.keyboard_focus_semantic_id == second_id && raw_data(projection.nodes) == nodes_storage,
+		"focus disagreement must keep the exact-base projection unchanged and request a fresh snapshot")
+
+	incomplete_nodes := [1]alicorn.Semantic_Node{nodes[0]}
+	incomplete_snapshot := accessibility_projection_test_snapshot(42, incomplete_nodes[:], second_id)
+	incomplete_update := alicorn.Semantic_Update_View{
+		from_revision=41,
+		to_revision=42,
+		keyboard_focus=second_id,
+	}
+	incomplete_delta, incomplete_result := accessibility_projection_apply_update(
+		&projection, incomplete_update, incomplete_snapshot, context.temp_allocator,
+	)
+	defer accessibility_projection_delta_destroy(&incomplete_delta)
+	testing.expect(t, incomplete_result == .Requires_Snapshot && projection.revision == 41 &&
+			projection.keyboard_focus_semantic_id == second_id && raw_data(projection.nodes) == nodes_storage,
+		"an empty delta cannot advance across a snapshot with missing entities")
+}
+
+@(test)
 test_accessibility_projection_destroy_with_persistent_allocator :: proc(t: ^testing.T) {
 	id := alicorn.Semantic_ID{namespace=19, value=1}
 	nodes := [1]alicorn.Semantic_Node{{id=id, role=.Button, label="Open"}}

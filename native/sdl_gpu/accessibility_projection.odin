@@ -641,6 +641,27 @@ accessibility_projection_apply_update :: proc(
 		delta.keyboard_focus = projection.keyboard_focus
 		return delta, .Applied
 	}
+	// Keyboard focus is part of the ordered semantic revision, but it does not
+	// change the projected node tree. Keep this common transition out of the
+	// clone/rebuild path; that path performs work proportional to the whole tree
+	// and is reserved for updates that actually change semantic entities.
+	if len(update.changed_ids) == 0 && len(update.removed_ids) == 0 {
+		if !accessibility_projection_matches_snapshot(projection^, snapshot) {
+			delta.requires_snapshot = true
+			return delta, .Requires_Snapshot
+		}
+		focus_id := projection.root_id
+		if update.keyboard_focus != (alicorn.Semantic_ID{}) {
+			if focus_index := accessibility_projection_find_semantic(projection^, update.keyboard_focus); focus_index > 0 {
+				focus_id = projection.nodes[focus_index].id
+			}
+		}
+		projection.revision = update.to_revision
+		projection.keyboard_focus = focus_id
+		projection.keyboard_focus_semantic_id = update.keyboard_focus
+		delta.keyboard_focus = focus_id
+		return delta, .Applied
+	}
 	working, cloned := accessibility_projection_clone(projection^, allocator)
 	if !cloned { delta.requires_snapshot = true; return delta, .Requires_Snapshot }
 	old := projection^
@@ -886,12 +907,19 @@ accessibility_projection_semantic_indices :: proc(projection: Accessibility_Proj
 @(private)
 accessibility_projection_matches_snapshot :: proc(projection: Accessibility_Projection, snapshot: alicorn.Semantic_Snapshot) -> bool {
 	if len(projection.nodes) != len(snapshot.nodes)+1 { return false }
-	seen := make(map[alicorn.Semantic_ID]bool, allocator=context.allocator)
-	defer delete(seen)
+	matched := make(map[alicorn.Semantic_ID]bool, allocator=context.allocator)
+	defer delete(matched)
+	for index in 1..<len(projection.nodes) {
+		id := projection.nodes[index].semantic_id
+		if id == (alicorn.Semantic_ID{}) { return false }
+		if _, found := matched[id]; found { return false }
+		matched[id] = false
+	}
 	for source in snapshot.nodes {
-		if source.id == (alicorn.Semantic_ID{}) || seen[source.id] { return false }
-		seen[source.id] = true
-		if accessibility_projection_find_semantic(projection, source.id) <= 0 { return false }
+		if source.id == (alicorn.Semantic_ID{}) { return false }
+		seen, found := matched[source.id]
+		if !found || seen { return false }
+		matched[source.id] = true
 	}
 	return true
 }
