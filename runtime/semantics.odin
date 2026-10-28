@@ -548,6 +548,7 @@ semantic_node_remove :: proc(rt: ^Runtime, id: Semantic_ID) -> bool {
 	if rt == nil || !semantic_id_is_valid(id) { return false }
 	entity, found := rt.semantic_entities[id]
 	if !found { return false }
+	if entity.node.is_collection { rt.semantic_collection_prune_pending = true }
 	if semantic_text_owner_role_is_valid(entity.node.role) {
 		child_ids := make([dynamic]Semantic_ID, 0, allocator=rt.scratch_allocator)
 		defer delete(child_ids)
@@ -1350,6 +1351,10 @@ semantic_retire_node_id :: proc(rt: ^Runtime, node: ^Node, id: Semantic_ID) {
 // selected, and logical semantic-focus entities stay pinned beyond the range.
 semantic_prune_touched_collections :: proc(rt: ^Runtime) {
 	if rt == nil { return }
+	if len(rt.semantic_collection_touched) == 0 && !rt.semantic_collection_prune_pending { return }
+	// Consume the pending cleanup before removing rows. If removal of a nested
+	// collection schedules another orphan pass, leave that request pending.
+	rt.semantic_collection_prune_pending = false
 	remove_ids := make([dynamic]Semantic_ID, 0, allocator=rt.scratch_allocator)
 	for id, &entity in rt.semantic_entities {
 		collection_id := entity.node.collection_id

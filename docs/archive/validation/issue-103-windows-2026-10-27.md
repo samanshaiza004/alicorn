@@ -1,10 +1,15 @@
 # Alicorn #103 — Windows acceptance (2026-10-27)
 
+> This is the detailed contemporaneous record. Partial entries and its original
+> open-gate status were later superseded by the maintainer-confirmed
+> [final acceptance matrix](../../validation/issue-103-final.md). Unreported session details
+> remain unknown and are not inferred here.
+
 This records the Windows physical acceptance observations for #103 separately
 from reproducible checks run in this checkout. The manual session used the
 candidate and environment listed below. A separate macOS record is now available
 in [the macOS acceptance report](issue-103-macos-2026-10-27.md); the consolidated
-current-candidate status is in [the acceptance matrix](issue-103-final.md).
+current-candidate status is in [the acceptance matrix](../../validation/issue-103-final.md).
 
 ## Candidate and machine
 
@@ -30,7 +35,12 @@ current-candidate status is in [the acceptance matrix](issue-103-final.md).
 | Native titlebar host startup/shutdown | **PASS — agent-run smoke** | The Windows titlebar fixture selected Direct3D 12, completed its bounded run, and retired all 6 submitted frames. This is a startup/shutdown smoke, not a manual menu, caption, or drag acceptance run. See [raw output](raw/issue-103-windows-titlebar-smoke-02d050a.txt). |
 | Alicorn Windows project checks | **PASS — agent-run** | `tools/test.ps1` passed: AccessKit C-header ABI contract, AccessKit package and consumer, runtime/UI/theme/native tests, restoration checks, and generic native text-input contract. The final host contract printed `PASS`. See [raw output](raw/issue-103-windows-project-tests-02d050a.txt). |
 
-## macOS follow-up
+## macOS follow-up checklist from this snapshot
+
+> This checklist captured the remaining work as understood when the detailed
+> reports were written. The later final acceptance matrix confirms the scoped
+> physical IME, VoiceOver, appearance, display-movement, and blend checks; the
+> missing per-session details remain unrecorded.
 
 Run these from the Alicorn checkout at the same candidate tree and keep the
 terminal output for the report:
@@ -61,13 +71,11 @@ terminal output for the report:
    update/wake counters for one change and an identical repeated value, then
    confirm the app returns to idle.
 
-## Remaining evidence before closing #103
+## Later acceptance status
 
-The maintainer-reported Windows results cover real-reader and desktop checks,
-but subcase details remain incomplete. The physical session is not on the
-current integrated candidate and used SDL 3.4.2; see the consolidated
-[acceptance matrix](issue-103-final.md) for the remaining retests and limits.
-Metal and D3D12 readbacks passed on the integrated candidate, but the blend
-probe is an offscreen RGBA8 test rather than a physical display
-color-management test. Keep #103 open until remaining physical results and any
-blocked cases are recorded.
+The detailed Windows session below predates the integrated candidate and used
+SDL 3.4.2. The later closeout confirmed the scoped physical Windows checks on
+the integrated candidate, including the packaged SDL 3.4.18 build; the exact
+executable used for each physical session was not supplied. The final matrix
+records that status and its limits. Metal and D3D12 readbacks use offscreen
+RGBA8 targets and do not establish native display color-management parity.

@@ -655,8 +655,9 @@ commands.
 
 The retained node kinds distinguish tabs and their close actions internally.
 The experimental AccessKit bridge projects a TabList, tabs, and close actions
-to Windows/macOS platform accessibility APIs; actual assistive-technology
-behavior remains unvalidated.
+to Windows/macOS platform accessibility APIs. The final physical acceptance
+matrix records representative screen-reader checks; see it for scope and
+remaining conformance limitations.
 
 ## Identity and repeated UI
 
@@ -845,9 +846,11 @@ operation or reveal/scroll the item and then describes the resulting state.
 
 The million-item tests exercise bounded retained semantics with visible-only,
 visible-plus-horizon, and current/selected/focused-pinned policies. The
-AccessKit adapter exports that bounded working set, but this proves neither
-real screen-reader navigation across gaps nor that platform clients will
-request reveal at the expected time.
+AccessKit adapter exports that bounded working set. Those tests alone do not
+prove real screen-reader navigation across gaps. The final Windows/macOS
+physical acceptance separately confirms representative bounded virtualized
+traversal; see the [acceptance matrix](validation/issue-103-final.md) for the
+tested scope and record limitations.
 
 ### Accessibility boundary
 
@@ -861,14 +864,15 @@ SetTextSelection and ReplaceSelectedText actions, Tab/TabList, list boxes and
 options, combo boxes, status and alert live regions, and the bounded-collection
 slice. Linux platform integration is not included.
 
-Representative controls have been manually exercised with VoiceOver on macOS
-and a screen reader on Windows; the Windows reader and OS/reader versions were
-not recorded. This is not certified accessibility support, and screen-reader
-traversal across gaps in virtualized collections remains unvalidated. Semantic
-updates remain dirty-driven; activation can cause a bounded one-shot wake but
-never starts idle polling. Native host menus and dialogs are OS-owned services,
-while custom context-menu accessibility remains incomplete. See the
-[screen-reader validation record](validation/accessibility-screen-reader.md)
+The final physical acceptance matrix confirms representative Windows and macOS
+screen-reader behavior, including bounded virtualized traversal. Exact reader
+versions and some per-session traces were not recorded. This remains
+experimental rather than comprehensive accessibility conformance; Linux has
+no platform adapter, and custom context-menu semantics may be incomplete.
+Semantic updates remain dirty-driven; activation can cause a bounded one-shot
+wake but never starts idle polling. Native host menus and dialogs are OS-owned
+services. See the [final acceptance matrix](validation/issue-103-final.md),
+[screen-reader validation record](validation/accessibility-screen-reader.md),
 and the [guide's accessibility status](guide.md#accessibility-status).
 
 ## Transient modal surfaces

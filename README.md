@@ -25,10 +25,10 @@ main :: proc() {
 ```
 
 <p align="center">
-  <img src="assets/screenshots/scratchpad-on-alicorn.png" alt="Scratchpad running on Alicorn, with its file tree, Find panel, and source editor visible" width="800" />
+  <img src="assets/screenshots/scratchpad-on-alicorn.png" alt="Scratchpad running on Alicorn, with the workspace file tree and JSON editor visible" width="800" />
 </p>
 
-<p align="center"><sub>Scratchpad running on Alicorn.</sub></p>
+<p align="center"><sub>Scratchpad editing <code>caliber.config.json</code> with its workspace file tree open.</sub></p>
 
 Application state stays in your code. `ui` lowers into the same retained
 Runtime as the lower-level API; it adds no application state store or second
@@ -37,22 +37,26 @@ widget tree. The API is still evolving, and Alicorn is not production-ready.
 **New to Alicorn?** Follow [Getting Started](docs/getting-started.md) to install
 the prerequisites, build the project, and run an editable native example.
 For this release's scope and limitations, see the
-[v0.1.0 release notes](RELEASE_NOTES_v0.1.0.md).
+[v0.2.0 release notes](RELEASE_NOTES_v0.2.0.md).
 
 For the reusable native distribution path, see
 [Native application packaging](docs/packaging.md).
 
-Then explore the [progressive application guide](docs/guide.md), [API reference](docs/reference.md),
+Browse the [documentation index](docs/README.md) for the complete guide map.
+Then explore the [progressive application guide](docs/guide.md),
+[API reference](docs/reference.md),
 [Choosing Alicorn](docs/choosing-alicorn.md), [examples](examples/README.md),
 [typed themes](docs/themes.md),
 [performance evidence](docs/performance.md), [architecture](docs/architecture.md),
 or [contributor guide](docs/development.md). The current Linux evidence is
 recorded in the [NixOS/Mango validation report](docs/validation/linux-nixos-mangowc-2026-10-23.md).
 
-**Accessibility status:** Alicorn now has an experimental AccessKit bridge for
-Windows UI Automation and macOS accessibility, with initial control, tab, and
-bounded-collection projection. Real screen-reader navigation/action behavior
-has not yet been validated; see the guide's
+**Accessibility status:** Alicorn has an experimental AccessKit bridge for
+Windows UI Automation and macOS accessibility. Maintainer-confirmed physical
+checks include Narrator/NVDA and VoiceOver interaction, editable controls,
+modal boundaries, and bounded virtualized content. Linux has no platform
+adapter, and this is not comprehensive accessibility conformance; see the
+[final acceptance matrix](docs/validation/issue-103-final.md) and the guide's
 [accessibility status](docs/guide.md#accessibility-status).
 The reusable Odin binding is in [`accesskit/`](accesskit/); it is separate from
 Alicorn's semantic projection and SDL window integration.

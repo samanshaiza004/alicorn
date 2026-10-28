@@ -1,8 +1,8 @@
 # Native menus and integrated title bar
 
 For the macOS tab/titlebar integration, see the
-[research and implementation record](research/macos-integrated-titlebar.md)
-and its [macOS validation record](validation/macos-sync-2026-10-20.md).
+[research and implementation record](archive/research/macos-integrated-titlebar.md)
+and its [macOS validation record](archive/validation/macos-sync-2026-10-20.md).
 The Linux host evidence is recorded in the
 [NixOS/Mango validation record](validation/linux-nixos-mangowc-2026-10-23.md).
 
@@ -60,7 +60,7 @@ Windows 11 Snap Layout for `HTMAXBUTTON`. The host draws its own caption marks.
 SDL_GPU rejects transparent windows; this alone does not establish that an
 AppWindow caption overlay is incompatible with the opaque swapchain. The
 bounded deployment experiment is recorded in
-[Windows caption validation](validation/windows-captions.md).
+[Windows caption validation](archive/validation/windows-captions.md).
 The integrated band uses the resolved application menu chrome colors (or
 Windows menu colors when no appearance is supplied), keeps ordinary hover
 neutral, and uses the conventional red close-button hover. High-contrast mode

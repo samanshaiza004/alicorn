@@ -1,5 +1,13 @@
 # v0.2 release stabilization — 2026-10-23
 
+> **Historical snapshot (2026-10-23).** Its open-gate and blocked/pending
+> entries below describe the candidate state at that date, not current release
+> status. #103 is now closed as completed; physical accessibility, appearance,
+> DPI, input, and GPU acceptance are summarized in the
+> [final acceptance matrix](../../validation/issue-103-final.md). Native packaging and SDL 3.4.18
+> checks are documented in [packaging](../../packaging.md) and the dated
+> [SDL validation record](sdl-3.4.18.md).
+
 This is an initial candidate audit, not a release certification. The starting
 framework revision is `d7e5441` (merged #99 and #100). #24 is complete; #27 remains
 the deferred architecture roadmap. #98 is an opt-in experiment with the
@@ -34,9 +42,9 @@ accessibility implementation is justified by the passing structural tests alone.
 
 ## Release recommendation
 
-Raw outputs: [retained](../benchmarks/raw/workbench-relief-windows-2026-10-23-retained.txt),
-[text layout](../benchmarks/raw/workbench-relief-windows-2026-10-23-text.txt),
-[material](../benchmarks/raw/workbench-relief-windows-2026-10-23-material.txt).
+Raw outputs: [retained](../../benchmarks/raw/workbench-relief-windows-2026-10-23-retained.txt),
+[text layout](../../benchmarks/raw/workbench-relief-windows-2026-10-23-text.txt),
+[material](../../benchmarks/raw/workbench-relief-windows-2026-10-23-material.txt).
 
 Do not label or publish a v0.2.0 release candidate yet. Finish the physical
 accessibility sessions, recover the foreground-focus native input run, obtain

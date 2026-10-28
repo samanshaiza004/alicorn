@@ -565,37 +565,41 @@ otherwise a full snapshot is sent. Native actions route through Alicorn's
 semantic action/reveal APIs on the UI thread, not synthetic pointer events.
 Text-run action payloads are validated against the current semantic projection
 before they enter the application queue. The bridge has no Linux platform
-adapter. Representative native controls have manual screen-reader validation;
-virtualized collection traversal and broader platform/widget coverage remain
-unverified.
+adapter. The final #103 acceptance matrix records maintainer-confirmed physical
+screen-reader checks on Windows and macOS, including editable controls, modal
+boundaries, and bounded virtualized content traversal. The matrix also records
+the missing per-session details and the limits of the automated blend probe;
+this is not comprehensive accessibility conformance. See the
+[final acceptance matrix](validation/issue-103-final.md).
 
 `Style_Environment` can separately carry normalized accessibility appearance
 preferences such as increased contrast, reduced transparency, reduced motion,
 and non-color state cues. These inputs affect visual recipes/materials only;
-they do not create, rename, or modify semantic entities. The application or
-host supplies these values; Alicorn does not yet query OS accessibility
-preferences automatically.
+they do not create, rename, or modify semantic entities. The Windows/macOS
+native host imports supported system appearance preferences as a persistent
+base and refreshes them on OS notifications, without polling. Application
+scopes may explicitly override that base.
 
-This is an **experimental integration**. Representative controls have been
-manually exercised with VoiceOver on macOS and a screen reader on Windows, but
-the Windows reader and OS/reader versions were not recorded; this is not a
-certification of comprehensive screen-reader support. In particular, the
-million-item test proves bounded semantic storage, not that a screen reader can
-cross gaps in the bounded exported tree. The Alicorn runtime and native bridge
-support a Text_Area/Text_Run projection and queued text selection/replacement
-actions; applications still need to supply a complete text model and handle
-those requests. Alicorn-rendered context menus and other custom controls may
-also have incomplete platform semantics. Native menus and dialogs continue to
-use OS facilities. See the
+This remains an **experimental integration**, not a certification of
+comprehensive screen-reader support. The final physical matrix confirms
+representative Windows and macOS screen-reader behavior, including traversal
+of bounded virtualized content. Exact versions, display scales, and some traces
+were not recorded; Linux has no platform adapter. The Alicorn runtime and
+native bridge support a Text_Area/Text_Run projection and queued text
+selection/replacement actions; applications still need to supply a complete
+text model and handle those requests. Alicorn-rendered context menus and some
+custom controls may have incomplete platform semantics. Native menus and
+dialogs continue to use OS facilities. See the
+[final acceptance matrix](validation/issue-103-final.md) and the
 [screen-reader validation record](validation/accessibility-screen-reader.md).
 
 Semantic updates are dirty-driven and do not start an idle polling loop.
 Accessibility activation may cause a one-shot host wake to build a bounded
-initial projection; it does not start a timer. For now, treat keyboard
-reachability and screen-reader support as separate capabilities, and verify
-assistive-technology behavior on each target platform before relying on it.
-See the [reference](reference.md#semantic-model-and-collections) for the API
-boundary and virtualization limitations.
+initial projection; it does not start a timer. Keyboard reachability and
+screen-reader behavior remain separate capabilities. See the
+[reference](reference.md#semantic-model-and-collections) for the API boundary
+and the [final acceptance matrix](validation/issue-103-final.md) for tested
+platform behavior and limitations.
 
 ## When something looks wrong
 

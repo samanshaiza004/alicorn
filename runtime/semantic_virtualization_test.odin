@@ -293,6 +293,39 @@ test_semantic_virtual_collection_is_bounded_for_million_items :: proc(t: ^testin
 }
 
 @(test)
+test_removed_semantic_collection_prunes_orphaned_items :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 200})
+	defer destroy_runtime(&rt)
+	collection_id := semantic_virtual_test_id(0xC001)
+	item_id := semantic_virtual_test_item_id(17)
+	_ = semantic_node_set(&rt, Semantic_Node_Description{
+		id=collection_id,
+		role=.List,
+		label="Search results",
+		is_collection=true,
+		logical_count=100,
+	})
+	_ = semantic_node_set(&rt, Semantic_Node_Description{
+		id=item_id,
+		role=.List_Item,
+		label="Build log",
+		parent=collection_id,
+		collection_id=collection_id,
+		position_in_set=17,
+		size_of_set=100,
+		is_virtual_item=true,
+	})
+	_ = semantic_commit(&rt)
+	testing.expect(t, semantic_node_remove(&rt, collection_id), "the collection should be removable")
+	testing.expect(t, rt.semantic_collection_prune_pending,
+		"removing a collection should schedule cleanup of its logical members")
+	semantic_prune_touched_collections(&rt)
+	_, item_found := semantic_node_lookup(&rt, item_id)
+	testing.expect(t, !item_found && !rt.semantic_collection_prune_pending,
+		"orphaned members should be removed and the one-shot cleanup request consumed")
+}
+
+@(test)
 test_semantic_virtual_collection_horizon_and_pinned_entities :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 360, 216})
 	defer destroy_runtime(&rt)

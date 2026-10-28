@@ -23,6 +23,9 @@ limitations before using a number.
 - [Native and dogfood apps on Windows](benchmarks/native-dogfood-windows.md):
   Direct3D 12 idle/submission, process-memory and qualified startup samples,
   plus bounded Monitor, History, and fixed-fixture Scope smoke runs.
+- [Windows performance audit (2026-10-27)](benchmarks/performance-audit-windows-2026-10-27.md):
+  matched retained-runtime baseline/candidate samples, current text/material
+  benchmarks, and measured release-size/buffer-capacity experiments.
 
 ## Reproduce
 
@@ -43,9 +46,9 @@ reports above.
 
 ## Coverage boundary
 
-The v0.1.0 evidence now contains Windows/macOS focused text-layout results,
-retained-work results on both platforms, native-host idle/startup samples, and
-bounded Windows dogfood runs for Monitor, History, and Scope. Monitor observes
+The evidence contains Windows/macOS focused text-layout results, retained-work
+results on both platforms, native-host idle/startup samples, and bounded Windows
+dogfood runs for Monitor, History, and Scope. Monitor observes
 the live machine; History uses a 27-commit local repository; Scope uses the
 published deterministic 100,000-event fixture. Only native hello is used for
 the controlled idle CPU/submission claim. The dogfood smoke captures are short

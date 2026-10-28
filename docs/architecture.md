@@ -101,7 +101,7 @@ outer extent depends on its children. Layout traces identify changed axes,
 each ancestor visited, and whether a boundary stopped or passed the
 invalidation onward. A full boundary is a caller promise that both
 parent-assigned outer dimensions stay stable while descendants relayout.
-The [v0.2 acceptance audit](validation/layout-v0.2-acceptance.md) records the
+The [v0.2 acceptance audit](archive/validation/layout-v0.2-acceptance.md) records the
 supported per-axis matrix, cross-axis reflow/replay and locality evidence,
 diagnostic chain, and measured benchmark comparison. FIT_CONTENT width and
 constraint-validity certificates remain deferred; the supported content policy
@@ -299,7 +299,10 @@ cadences, not animations or general-purpose task queues.
 The current surface API supports typed retained presentation data; it is not
 an application shader API. The runtime's keyboard focus, semantic focus, and
 action IDs are exported through an experimental Windows/macOS AccessKit bridge;
-real screen-reader behavior remains unvalidated. See the
+representative real screen-reader behavior has been physically validated on
+Windows and macOS. This is not comprehensive accessibility conformance; Linux
+has no platform adapter. See the
+[final acceptance matrix](validation/issue-103-final.md) and the guide's
 [accessibility status](guide.md#accessibility-status).
 Broader platform validation and additional advanced text behavior remain
 future work. The project is experimental, and its API may change.

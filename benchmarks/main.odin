@@ -89,6 +89,8 @@ Bench_Delta :: struct {
 	composite_updates: u64,
 	surface_updates: u64,
 	surface_frames_consumed: u64,
+	semantic_focus_search_visits: u64,
+	semantic_active_update_visits: u64,
 }
 
 delta :: proc(before, after: alicorn.Frame_Stats) -> Bench_Delta {
@@ -108,6 +110,8 @@ delta :: proc(before, after: alicorn.Frame_Stats) -> Bench_Delta {
 		after.composite_updates-before.composite_updates,
 		after.surface_updates-before.surface_updates,
 		after.surface_frames_consumed-before.surface_frames_consumed,
+		after.semantic_focus_search_visits-before.semantic_focus_search_visits,
+		after.semantic_active_update_visits-before.semantic_active_update_visits,
 	}
 }
 
@@ -132,6 +136,8 @@ print_row :: proc(name: string, elapsed_ns: i64, before, after: alicorn.Frame_St
 		"retired", d.nodes_retired,
 		"paint", d.paint_updates,
 		"composite", d.composite_updates,
+		"semantic_focus_search", d.semantic_focus_search_visits,
+		"semantic_active_updates", d.semantic_active_update_visits,
 		"retained", retained)
 }
 
@@ -528,7 +534,7 @@ main :: proc() {
 	allocator_state := Bench_Allocator_State{backing = context.allocator}
 	context.allocator = bench_allocator(&allocator_state)
 	fmt.println("Alicorn retained-work benchmark suite (headless; raw wall-clock nanoseconds)")
-	fmt.println("columns: emit reuse region_skip subtree_reuse alloc alloc_bytes frees reconcile layout paint_visit compose_visit adjacency created retired paint composite retained")
+	fmt.println("columns: emit reuse region_skip subtree_reuse alloc alloc_bytes frees reconcile layout paint_visit compose_visit adjacency created retired paint composite semantic_focus_search semantic_active_updates retained")
 	measure_idle(&allocator_state)
 	measure_tree(100, &allocator_state)
 	measure_tree(1000, &allocator_state)
