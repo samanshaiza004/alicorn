@@ -2,7 +2,7 @@
 
 > Historical report from 2026-10-20. Its Windows validation-pending note was
 > resolved by the later Windows/macOS candidate and packaging checks recorded
-> in the [final #103 acceptance matrix](issue-103-final.md).
+> in the [final #103 acceptance matrix](../../validation/issue-103-final.md).
 
 Date: 2026-10-20  
 Candidate: `chore/sdl-3.4.18`, based on Alicorn `0b52d7ee`  

@@ -2,14 +2,14 @@
 
 > This is the detailed contemporaneous record. Partial entries and its original
 > open-gate status were later superseded by the maintainer-confirmed
-> [final acceptance matrix](issue-103-final.md). Unreported session details
+> [final acceptance matrix](../../validation/issue-103-final.md). Unreported session details
 > remain unknown and are not inferred here.
 
 This records the Windows physical acceptance observations for #103 separately
 from reproducible checks run in this checkout. The manual session used the
 candidate and environment listed below. A separate macOS record is now available
 in [the macOS acceptance report](issue-103-macos-2026-10-27.md); the consolidated
-current-candidate status is in [the acceptance matrix](issue-103-final.md).
+current-candidate status is in [the acceptance matrix](../../validation/issue-103-final.md).
 
 ## Candidate and machine
 

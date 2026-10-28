@@ -113,7 +113,7 @@ needed. [Firefox source, `NonDraggableView` and frame handling](https://github.c
 ## Public contract and ownership
 
 The API is implemented in `native/sdl_gpu/application_api.odin` and documented
-in the [reference](../reference.md):
+in the [reference](../../reference.md):
 
 1. `.Content_Title_Bar` opts a Darwin window into the extended content area;
    `System` remains the default and Windows behavior is unchanged.

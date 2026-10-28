@@ -1,7 +1,7 @@
 # Alicorn #103 — Native source-over blend readback
 
 > Historical, renderer-only record. Its original “full #103 blocked” status
-> preceded the later maintainer-confirmed [final acceptance matrix](issue-103-final.md).
+> preceded the later maintainer-confirmed [final acceptance matrix](../../validation/issue-103-final.md).
 > The offscreen readback limitations below remain applicable.
 
 This record covers the GPU blending portion of #103 only. It does not establish
@@ -33,7 +33,7 @@ gates.
 | Local Metal executable in this non-desktop session | BLOCKED | SDL could not initialize a display; hosted Metal readback passed on the exact guarded revision |
 | Windows / legacy blend factors | FAIL as expected | 108/156 cases failed; surface, geometry, text, and mixed failed; icon and image passed |
 | Physical Apple Silicon desktop / Metal presentation | BLOCKED | Hosted Metal CI is not physical desktop acceptance |
-| Full #103 physical acceptance | BLOCKED at this report date; later completed | See the [final acceptance matrix](issue-103-final.md) for the consolidated status |
+| Full #103 physical acceptance | BLOCKED at this report date; later completed | See the [final acceptance matrix](../../validation/issue-103-final.md) for the consolidated status |
 
 The legacy-factor run used `.SRC_ALPHA` for solid, surface, and text output
 alpha, and `.ONE` for icon and image output alpha. Its failures confirm that

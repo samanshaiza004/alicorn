@@ -7,7 +7,7 @@
 - Integrated code candidate: [`6fb430a`](https://github.com/samanshaiza004/alicorn/commit/6fb430a11b9ced75dca13650554429a6a212f041), the merge of PR #150 onto PR #151's Windows acceptance work. The final matrix documentation was subsequently merged in PR #152; it did not change the tested code.
 - The updated PR #150 head [`af0e8ff`](https://github.com/samanshaiza004/alicorn/commit/af0e8ff8ae34151a3b259999bd94aa7918bcc0a5) has the same source tree as `6fb430a`. Its Windows, macOS, packaging, and icon workflows passed.
 - The maintainer confirmed the final physical checklist on the integrated candidate, including the packaged Windows build using SDL 3.4.18. The exact executable/build identifier for each physical session was not supplied.
-- Detailed platform records: [Windows acceptance](issue-103-windows-2026-10-27.md) and [macOS acceptance](issue-103-macos-2026-10-27.md). Earlier machine and OS details remain in those records; this closeout does not retroactively infer missing scale factors, reader versions, or trace values.
+- Detailed platform records: [Windows acceptance](../archive/validation/issue-103-windows-2026-10-27.md) and [macOS acceptance](../archive/validation/issue-103-macos-2026-10-27.md). Earlier machine and OS details remain in those records; this closeout does not retroactively infer missing scale factors, reader versions, or trace values.
 
 ## Final results
 

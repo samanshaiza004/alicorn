@@ -101,7 +101,7 @@ outer extent depends on its children. Layout traces identify changed axes,
 each ancestor visited, and whether a boundary stopped or passed the
 invalidation onward. A full boundary is a caller promise that both
 parent-assigned outer dimensions stay stable while descendants relayout.
-The [v0.2 acceptance audit](validation/layout-v0.2-acceptance.md) records the
+The [v0.2 acceptance audit](archive/validation/layout-v0.2-acceptance.md) records the
 supported per-axis matrix, cross-axis reflow/replay and locality evidence,
 diagnostic chain, and measured benchmark comparison. FIT_CONTENT width and
 constraint-validity certificates remain deferred; the supported content policy

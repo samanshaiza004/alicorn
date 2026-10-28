@@ -25,10 +25,10 @@ main :: proc() {
 ```
 
 <p align="center">
-  <img src="assets/screenshots/scratchpad-on-alicorn.png" alt="Scratchpad running on Alicorn, with its file tree, Find panel, and source editor visible" width="800" />
+  <img src="assets/screenshots/scratchpad-on-alicorn.png" alt="Scratchpad running on Alicorn, with the workspace file tree and JSON editor visible" width="800" />
 </p>
 
-<p align="center"><sub>Scratchpad running on Alicorn.</sub></p>
+<p align="center"><sub>Scratchpad editing <code>caliber.config.json</code> with its workspace file tree open.</sub></p>
 
 Application state stays in your code. `ui` lowers into the same retained
 Runtime as the lower-level API; it adds no application state store or second
@@ -42,7 +42,9 @@ For this release's scope and limitations, see the
 For the reusable native distribution path, see
 [Native application packaging](docs/packaging.md).
 
-Then explore the [progressive application guide](docs/guide.md), [API reference](docs/reference.md),
+Browse the [documentation index](docs/README.md) for the complete guide map.
+Then explore the [progressive application guide](docs/guide.md),
+[API reference](docs/reference.md),
 [Choosing Alicorn](docs/choosing-alicorn.md), [examples](examples/README.md),
 [typed themes](docs/themes.md),
 [performance evidence](docs/performance.md), [architecture](docs/architecture.md),
