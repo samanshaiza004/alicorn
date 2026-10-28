@@ -750,4 +750,19 @@ if ui.panel(ctx,
 }
 ```
 
-Percentages are preferred extents, not proportional shares. For example, in a 400-unit row, two `ui.percent(0.5)` children each request 200 units. Adding a 16-unit sibling gap makes their total preferred width 416 units; the percentages are not renormalized to 48% each. The ordinary allocator and its min/max and compression rules determine the final geometry, including overflow when compression is unavailable.
+Percentages are preferred extents, not proportional shares. In a 400-unit row, two `ui.percent(0.5)` children each request 200 units:
+
+```odin
+if ui.row(ctx, width=400, gap=16) {
+    if ui.layout_sized(ctx, ui.layout_style(.Column, height=24),
+        ui.sizing(width=ui.percent(0.5)), key="first-half") {
+        ui.text(ctx, "First")
+    }
+    if ui.layout_sized(ctx, ui.layout_style(.Column, height=24),
+        ui.sizing(width=ui.percent(0.5)), key="second-half") {
+        ui.text(ctx, "Second")
+    }
+}
+```
+
+Their total preferred width is 416 units, so they overflow the row by 16 units when compression is unavailable. The percentages are not renormalized to 48% each. The ordinary allocator and its min/max and compression rules determine the final geometry.
