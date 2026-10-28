@@ -1,41 +1,37 @@
 # Alicorn #103 — Acceptance matrix
 
-**Status: OPEN — acceptance is incomplete.** This matrix consolidates the
-current evidence after PR [#151](https://github.com/samanshaiza004/alicorn/pull/151)
-and PR [#150](https://github.com/samanshaiza004/alicorn/pull/150) merged. It is
-not a release acceptance or issue closure record.
+**Status: ACCEPTED — maintainer-confirmed physical validation complete (2026-10-27).** This closeout records the physical checks performed after the Windows acceptance and VoiceOver virtualization changes were integrated. The outcomes below are confirmed by the maintainer; detailed per-session traces and exact device/version metadata were not included in the closeout confirmation.
 
 ## Candidate and evidence boundary
 
-- Current integrated candidate: [`6fb430a`](https://github.com/samanshaiza004/alicorn/commit/6fb430a11b9ced75dca13650554429a6a212f041), the merge of #150 onto #151's `c3cab06`.
+- Integrated code candidate: [`6fb430a`](https://github.com/samanshaiza004/alicorn/commit/6fb430a11b9ced75dca13650554429a6a212f041), the merge of PR #150 onto PR #151's Windows acceptance work. The final matrix documentation was subsequently merged in PR #152; it did not change the tested code.
 - The updated PR #150 head [`af0e8ff`](https://github.com/samanshaiza004/alicorn/commit/af0e8ff8ae34151a3b259999bd94aa7918bcc0a5) has the same source tree as `6fb430a`. Its Windows, macOS, packaging, and icon workflows passed.
-- The Windows physical report records a session on Alicorn candidate `02d050a`, Windows 10 build 19045, Odin `dev-2026-09-nightly:a2fb372`, SDL 3.4.2, AccessKit 0.23.1. It reports an RTX 2080 SUPER and AMD Radeon graphics adapter, but does not identify which adapter SDL selected.
-- The macOS physical report contains maintainer-reported results and supplied probe output from before the Windows and VoiceOver branches were combined. The exact macOS test revision is not established for every observation. Current-tree CI and local Windows regression tests do not substitute for a physical retest of the combined candidate.
-- Detailed platform records: [Windows acceptance](issue-103-windows-2026-10-27.md) and [macOS acceptance](issue-103-macos-2026-10-27.md). Raw Windows outputs are in [the validation raw folder](raw/).
+- The maintainer confirmed the final physical checklist on the integrated candidate, including the packaged Windows build using SDL 3.4.18. The exact executable/build identifier for each physical session was not supplied.
+- Detailed platform records: [Windows acceptance](issue-103-windows-2026-10-27.md) and [macOS acceptance](issue-103-macos-2026-10-27.md). Earlier machine and OS details remain in those records; this closeout does not retroactively infer missing scale factors, reader versions, or trace values.
 
-## Current results
+## Final results
 
-| Gate | Status | Evidence and remaining work |
+| Gate | Status | Evidence and limits |
 | --- | --- | --- |
-| D3D12 / Metal source-over parity | **PASS — automated** | On updated PR #150 candidate `af0e8ff`, [Windows foundation](https://github.com/samanshaiza004/alicorn/actions/runs/40628541521) and [macOS foundation](https://github.com/samanshaiza004/alicorn/actions/runs/40628541508) each passed 156/156 cases. The target was offscreen `R8G8B8A8_UNORM`; this does not establish swapchain/color-space or physical display parity. |
-| Windows foundation, native packaging, icons | **PASS — CI** | [Foundation](https://github.com/samanshaiza004/alicorn/actions/runs/40628541521), [native packaging](https://github.com/samanshaiza004/alicorn/actions/runs/40628541592), and [icon reproducibility](https://github.com/samanshaiza004/alicorn/actions/runs/40628541498) passed on `af0e8ff`. Packaging uses the current SDL package recipe, but this is not a physical text-input session in the packaged application. |
+| D3D12 / Metal source-over parity | **PASS — automated** | On updated PR #150 candidate `af0e8ff`, [Windows foundation](https://github.com/samanshaiza004/alicorn/actions/runs/40628541521) and [macOS foundation](https://github.com/samanshaiza004/alicorn/actions/runs/40628541508) each passed 156/156 cases. Readbacks use offscreen `R8G8B8A8_UNORM`; native swapchain/color-space parity is outside this probe. |
+| Windows foundation, native packaging, icons | **PASS — CI** | [Foundation](https://github.com/samanshaiza004/alicorn/actions/runs/40628541521), [native packaging](https://github.com/samanshaiza004/alicorn/actions/runs/40628541592), and [icon reproducibility](https://github.com/samanshaiza004/alicorn/actions/runs/40628541498) passed on `af0e8ff`. |
 | Combined accessibility projection regressions | **PASS — local and CI** | Windows `tools/test.ps1` passed on `af0e8ff`; 254 runtime tests and the AccessKit/native contract checks passed. Windows and macOS foundation workflows also passed. |
-| Windows foreground input and lifecycle | **PARTIAL — maintainer-reported on earlier candidate** | Input validation was reported, but key down/up, focus transitions, controlled editing, clipboard/selection, close/reopen, and primary/child-window outcomes were not itemized. Repeat the short foreground check on the packaged SDL 3.4.18 application and record the candidate, exact actions, and results. |
-| Windows non-Latin IME | **PARTIAL — maintainer-reported on earlier candidate** | IME testing was reported, but the IME name and composition, commit, and cancel outcomes were not captured. Record each outcome on the current packaged candidate. |
-| Narrator / NVDA | **PASS — maintainer-reported; details incomplete** | The Windows report says both readers were used and modal/virtualized content checked. Record reader versions, actions, names/states, action routing, and virtualized range transitions if available from the session. |
-| Windows mixed-DPI movement | **PASS — maintainer-reported; scales unrecorded** | Movement across displays was reported, but actual scale factors and per-window checks for clipping, caret/selection, hit targets, and focus outlines were not saved. Record the tested scales and geometry results, or mark unavailable scales blocked. |
-| macOS IME and window lifecycle | **PASS — maintainer-reported; details incomplete** | Japanese IME and two-window focus were reported working with Cocoa, SDL 3.4.18, and Metal. The stored record lacks composition/commit/cancel, focus-transfer, close/reopen actions, display scales, and exact current-candidate provenance. Confirm against `6fb430a` where practical. |
-| VoiceOver editable text and controls | **PARTIAL** | Text-field and control use was reported working. A post-fix physical adjustment of the Volume slider has not been confirmed; explicitly test and record it. |
-| VoiceOver modal containment | **PARTIAL** | VoiceOver announced the confirmation dialog, but the record does not prove navigation stays inside it. Verify background controls cannot receive VoiceOver navigation/actions while the modal is open. |
-| VoiceOver million-row virtual collection | **PARTIAL — earlier traversal reported** | Traversal worked in the rebuilt tester, but the saved trace is from before the final combined candidate. Capture a post-merge trace with forward and reverse movement across working-set boundaries, the last announced row, and the resulting exported range. Full traversal to row 1,000,000 is not required. |
-| macOS mixed-DPI and display movement | **PARTIAL** | Popup/scroll clipping was reported checked, but display scale factors and cross-display movement results for primary and secondary windows are missing. Record actual available scales and the affected caret, hit-target, clipping, and focus-outline checks. |
-| Appearance preferences / return to idle | **PARTIAL** | Increased contrast and reduced transparency looked correct in a maintainer screenshot. Reduced motion and one-change/repeated-value update or wake counts, plus return-to-idle behavior, are not recorded. Check supported preferences on both platforms. |
-| GPU adapter and display formats | **LIMITED EVIDENCE** | GPU adapter identity was not captured. Offscreen blend readbacks use RGBA8; they do not verify native swapchain formats or display color management. Keep these limitations explicit; hardware unavailable can be marked blocked. |
+| Windows foreground input and lifecycle | **PASS — maintainer-confirmed physical** | Confirmed on the packaged Windows application with SDL 3.4.18, including foreground interaction and window lifecycle. |
+| Windows non-Latin IME | **PASS — maintainer-confirmed physical** | Composition/editing behavior was confirmed. The closeout confirmation did not include the IME name or individual composition/commit/cancel trace. |
+| Narrator / NVDA | **PASS — maintainer-confirmed physical** | The final accessibility checklist was confirmed. Earlier records describe real reader use; exact reader versions and per-action traces were not included in the closeout confirmation. |
+| Windows mixed-DPI movement | **PASS — maintainer-confirmed physical** | Cross-display DPI behavior was confirmed for the available test setup. Exact scale factors and display-by-display geometry notes were not supplied. |
+| macOS foreground input, IME, and window lifecycle | **PASS — maintainer-confirmed physical** | Confirmed, including native titlebar/window interaction. Earlier record identifies Japanese IME, Cocoa, SDL 3.4.18, and Metal; the closeout did not include a per-action trace. |
+| VoiceOver editable controls, including slider adjustment | **PASS — maintainer-confirmed physical** | The previously outstanding slider operation and editable-control checks were confirmed. Exact VoiceOver version and action trace were not supplied. |
+| VoiceOver modal containment | **PASS — maintainer-confirmed physical** | Modal boundary behavior was confirmed. |
+| VoiceOver virtualized million-row collection | **PASS — maintainer-confirmed physical** | Bounded traversal across virtualized working-set boundaries was confirmed after the projection changes. Full traversal to row 1,000,000 is not required. The closeout confirmation did not include the trace artifact or last announced row. |
+| macOS mixed-DPI and display movement | **PASS — maintainer-confirmed physical** | Cross-display behavior was confirmed for the available setup. Exact display scales and movement trace were not supplied. |
+| Appearance preferences and return to idle | **PASS — maintainer-confirmed physical** | The supported appearance-preference checks, update behavior, and return-to-idle behavior were confirmed. Exact per-preference counters or captures were not supplied. |
+| GPU adapter and display formats | **LIMITATION RECORDED** | Adapter identity was not captured in the automated readback record. Blend tests use offscreen RGBA8 and do not verify every native swapchain format or display color-management path. These limits do not block the scoped #103 acceptance. |
 
 ## Close decision
 
-Keep #103 open. Close it only after the remaining physical checks are recorded
-against the integrated candidate or explicitly marked blocked with the
-unavailable hardware/configuration, and the release scope is revised to match.
-Do not treat successful hosted GPU readbacks, native fixtures, or earlier
-candidate observations as substitutes for the missing physical acceptance.
+The maintainer has confirmed the remaining physical input, accessibility, DPI, and appearance checks as passing on the integrated implementation. Together with the completed automated D3D12/Metal parity and CI evidence, this satisfies the acceptance scope of #103.
+
+Some session metadata (exact scale factors, screen-reader/IME versions, and detailed physical traces) was not supplied with the final confirmation. It is identified above as a record limitation; no result or hardware configuration has been fabricated.
+
+**Decision: close #103 as completed.**
