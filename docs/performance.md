@@ -7,6 +7,8 @@ limitations before using a number.
 
 ## Reports
 
+- [v0.2.0 candidate rerun on macOS (2026-10-28)](benchmarks/macos-v020-rc-2026-10-28.md):
+  retained-work, text-layout, and CPU material measurements with raw captures.
 - [Wrapped text/layout](benchmarks/text-layout.md): the same 20,000-logical-row
   headless scroll/reflow workload, measured separately on Windows and macOS,
   with raw per-run output for both platforms.
