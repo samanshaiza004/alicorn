@@ -586,6 +586,10 @@ measure_container_rich_frame_scaling :: proc(count: int, allocator_state: ^Bench
 }
 
 main :: proc() {
+	if len(os.args) > 1 && os.args[1] == "--allocation-attribution" {
+		measure_tree_allocation_attribution()
+		return
+	}
 	allocator_state := Bench_Allocator_State{backing = context.allocator}
 	context.allocator = bench_allocator(&allocator_state)
 	fmt.println("Alicorn retained-work benchmark suite (headless; raw wall-clock nanoseconds)")

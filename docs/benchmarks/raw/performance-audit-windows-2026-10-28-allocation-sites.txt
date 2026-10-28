@@ -1,0 +1,35 @@
+allocation_attribution tree 10000 retained 10001
+allocation_phase runtime_init allocations 11 allocated_bytes 40188
+allocation_phase initial_description allocations 46 allocated_bytes 55310156
+allocation_phase initial_end_frame allocations 130137 allocated_bytes 56339142
+allocation_site_count 45 site_overflow 0
+allocation_site initial_description C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/description.odin 164 emit allocations 12 allocated_bytes 41670720
+allocation_site initial_end_frame C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/reconcile.odin 852 reconcile allocations 10001 allocated_bytes 20482048
+allocation_site initial_end_frame C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/paint.odin 610 update_paint allocations 10000 allocated_bytes 10240000
+allocation_site initial_description C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/description.odin 126 emit allocations 12 allocated_bytes 6819456
+allocation_site initial_description C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/description.odin 316 key_scope_u64 allocations 12 allocated_bytes 6819456
+allocation_site initial_end_frame C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/reconcile.odin 870 reconcile allocations 12 allocated_bytes 6819456
+allocation_site initial_end_frame C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/paint.odin 225 compose_subtree allocations 12 allocated_bytes 4193280
+allocation_site initial_end_frame C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/layout_measure.odin 813 layout_finalize_display allocations 12 allocated_bytes 4193280
+allocation_site initial_end_frame C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/identity.odin 82 owned_with_allocator allocations 70009 allocated_bytes 3824580
+allocation_site initial_end_frame C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/layout_measure.odin 767 layout_finalize_node_geometry_for_node allocations 12 allocated_bytes 2623104
+allocation_site initial_end_frame C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/reconcile.odin 861 reconcile allocations 12 allocated_bytes 787776
+allocation_site initial_end_frame C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/reconcile.odin 944 reconcile allocations 7 allocated_bytes 549376
+allocation_site initial_end_frame C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/reconcile.odin 829 reconcile allocations 7 allocated_bytes 549184
+allocation_site initial_end_frame C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/identity.odin 76 owned allocations 40004 allocated_bytes 450050
+allocation_site initial_end_frame C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/layout.odin 276 resolve_main_sizes allocations 1 allocated_bytes 400000
+allocation_site initial_end_frame C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/reconcile.odin 651 queue_paint allocations 12 allocated_bytes 262080
+allocation_site initial_end_frame C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/reconcile.odin 954 reconcile allocations 12 allocated_bytes 262080
+allocation_site initial_end_frame C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/reconcile.odin 787 append_order_subtree allocations 12 allocated_bytes 262080
+allocation_site initial_end_frame C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/reconcile.odin 836 reconcile allocations 6 allocated_bytes 254080
+allocation_site initial_end_frame C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/layout.odin 278 resolve_main_sizes allocations 1 allocated_bytes 80000
+allocation_site initial_end_frame C:/Users/saman/Documents/odin/dist/core/mem/allocators.odin 1729 _dynamic_arena_cycle_new_block allocations 1 allocated_bytes 65536
+allocation_site initial_end_frame C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/layout.odin 923 layout_children allocations 1 allocated_bytes 40000
+allocation_site runtime_init C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/runtime_init.odin 83 new_runtime allocations 1 allocated_bytes 28928
+allocation_site runtime_init C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/third_party/Runa/cache.odin 104 cache_make allocations 1 allocated_bytes 5632
+allocation_site runtime_init C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/third_party/Runa/cache.odin 101 cache_make allocations 1 allocated_bytes 5056
+allocation_site initial_end_frame C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/paint.odin 390 update_paint allocations 1 allocated_bytes 1024
+allocation_site runtime_init C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/runtime_init.odin 37 new_runtime allocations 1 allocated_bytes 184
+allocation_site initial_description C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/description.odin 21 push_identity_scope allocations 1 allocated_bytes 128
+allocation_site initial_description C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/runtime/description.odin 25 push_identity_scope allocations 1 allocated_bytes 128
+allocation_site runtime_init C:/Users/saman/dev/alicorn/out/worktrees/issue-51-accesskit-odin/third_party/Runa/raster/atlas.odin 129 atlas_make allocations 1 allocated_bytes 88

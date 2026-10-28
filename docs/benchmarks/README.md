@@ -7,6 +7,7 @@ without crowding the project’s user and contributor guides.
 ## Reports
 
 - [Performance audit — Windows, 2026-10-27](performance-audit-windows-2026-10-27.md)
+- [Runtime performance audit — Windows, 2026-10-28](performance-audit-windows-2026-10-28.md)
 - [Final performance refresh — Windows, 2026-10-28](performance-final-windows-2026-10-28.md)
 - [Retained work — Windows](retained-work-windows.md)
 - [Retained work — macOS](retained-work-macos.md)

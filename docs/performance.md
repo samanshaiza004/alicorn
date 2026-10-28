@@ -29,6 +29,9 @@ limitations before using a number.
 - [Final Windows refresh (2026-10-28)](benchmarks/performance-final-windows-2026-10-28.md):
   final release-candidate rerun and same-machine comparison with the
   post-merge optimized baseline.
+- [Windows runtime performance audit (2026-10-28)](benchmarks/performance-audit-windows-2026-10-28.md):
+  unchanged-root allocation reduction, initial-construction attribution, and
+  current retained/text/material workload evidence.
 
 ## Reproduce
 
