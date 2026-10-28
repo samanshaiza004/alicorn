@@ -861,13 +861,15 @@ SetTextSelection and ReplaceSelectedText actions, Tab/TabList, list boxes and
 options, combo boxes, status and alert live regions, and the bounded-collection
 slice. Linux platform integration is not included.
 
-The bridge has compile/link coverage, but real Narrator/NVDA/VoiceOver behavior
-and screen-reader traversal across gaps in virtualized collections are not yet
-validated. It must not be described as certified accessibility support.
-Semantic updates remain dirty-driven; activation can cause one bounded
-one-shot wake but never starts idle polling. Native host menus and dialogs are
-OS-owned services, while custom context-menu accessibility remains incomplete.
-See the [guide's accessibility status](guide.md#accessibility-status).
+Representative controls have been manually exercised with VoiceOver on macOS
+and a screen reader on Windows; the Windows reader and OS/reader versions were
+not recorded. This is not certified accessibility support, and screen-reader
+traversal across gaps in virtualized collections remains unvalidated. Semantic
+updates remain dirty-driven; activation can cause a bounded one-shot wake but
+never starts idle polling. Native host menus and dialogs are OS-owned services,
+while custom context-menu accessibility remains incomplete. See the
+[screen-reader validation record](validation/accessibility-screen-reader.md)
+and the [guide's accessibility status](guide.md#accessibility-status).
 
 ## Transient modal surfaces
 

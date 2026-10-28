@@ -501,8 +501,9 @@ requires a snapshot. The native Windows/macOS host projects these snapshots
 and deltas through AccessKit; the semantic runtime remains the source of truth.
 Select controls expose Combo_Box, List_Box, and List_Box_Option semantics.
 Notices expose polite Status or assertive Alert live regions and never steal
-keyboard focus. This is bridge coverage; native Narrator/NVDA/VoiceOver behavior
-still needs platform testing.
+keyboard focus. Representative controls have been manually exercised with
+VoiceOver on macOS and a screen reader on Windows; see the
+[screen-reader validation record](validation/accessibility-screen-reader.md).
 
 Ordinary visual `Text` is intentionally not exported automatically. For
 standalone informational copy, call `semantic_static_text` immediately after
@@ -524,8 +525,8 @@ typing, pointer placement, and caret movement. IME preedit remains transient
 until committed. The native host converts logical control bounds to
 window-relative physical pixels for AccessKit and refreshes them when the
 window's backing scale changes. These contracts support VoiceOver text
-feedback and focus-ring placement, but still require physical VoiceOver
-validation on macOS.
+feedback and focus-ring placement; representative text interaction has been
+manually validated on macOS (see the validation record above).
 
 Sliders retain their numeric value, range, and step for assistive technology.
 If the normalized number is not meaningful to users, call
@@ -564,8 +565,9 @@ otherwise a full snapshot is sent. Native actions route through Alicorn's
 semantic action/reveal APIs on the UI thread, not synthetic pointer events.
 Text-run action payloads are validated against the current semantic projection
 before they enter the application queue. The bridge has no Linux platform
-adapter, and real Narrator/NVDA/VoiceOver behavior still requires manual
-validation.
+adapter. Representative native controls have manual screen-reader validation;
+virtualized collection traversal and broader platform/widget coverage remain
+unverified.
 
 `Style_Environment` can separately carry normalized accessibility appearance
 preferences such as increased contrast, reduced transparency, reduced motion,
@@ -574,16 +576,18 @@ they do not create, rename, or modify semantic entities. The application or
 host supplies these values; Alicorn does not yet query OS accessibility
 preferences automatically.
 
-This is an **experimental integration, not yet a validated screen-reader
-experience**. Windows and macOS builds compile and link, but real Narrator,
-NVDA, and VoiceOver traversal/action behavior has not yet been certified. In
-particular, the million-item test proves bounded semantic storage, not that a
-screen reader can cross gaps in the bounded exported tree. The Alicorn runtime
-and native bridge now support a Text_Area/Text_Run projection and queued text
-selection/replacement actions; applications still need to supply a complete
-text model and handle those requests. Alicorn-rendered context menus and other
-custom controls may also have incomplete platform semantics. Native menus and
-dialogs continue to use OS facilities.
+This is an **experimental integration**. Representative controls have been
+manually exercised with VoiceOver on macOS and a screen reader on Windows, but
+the Windows reader and OS/reader versions were not recorded; this is not a
+certification of comprehensive screen-reader support. In particular, the
+million-item test proves bounded semantic storage, not that a screen reader can
+cross gaps in the bounded exported tree. The Alicorn runtime and native bridge
+support a Text_Area/Text_Run projection and queued text selection/replacement
+actions; applications still need to supply a complete text model and handle
+those requests. Alicorn-rendered context menus and other custom controls may
+also have incomplete platform semantics. Native menus and dialogs continue to
+use OS facilities. See the
+[screen-reader validation record](validation/accessibility-screen-reader.md).
 
 Semantic updates are dirty-driven and do not start an idle polling loop.
 Accessibility activation may cause a one-shot host wake to build a bounded

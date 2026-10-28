@@ -77,12 +77,15 @@ or whether it requires an explicit scroll/reveal action. This is a bounded
 working-set acceptance check, not a promise that every logical row is retained
 in the platform tree simultaneously.
 
-## Still requires a person
+## Manual screen-reader validation
 
-These probes establish native tree exposure and programmatic accessibility
-actions. They do not replace a screen-reader session. Confirm that Narrator or
-NVDA can navigate to and announce the button, editable field, disabled state,
-and changing status on Windows, and that VoiceOver can do the same on macOS.
-Note the OS version, screen reader/version, fixture revision, and any manual
-action that was required. Windows execution and screen-reader acceptance
-require a Windows desktop; macOS AX queries require Accessibility permission.
+The project maintainer reports successful VoiceOver interaction on macOS and
+successful screen-reader interaction with the Windows fixture. The Windows
+reader and OS/reader versions were not recorded. See the
+[validation record](../../../docs/validation/accessibility-screen-reader.md).
+The UIA/AX probes remain useful for repeatable checks of roles, names, values,
+actions, focus, status, and bounds; they do not replace screen-reader testing.
+
+The million-item collection still needs its own real screen-reader traversal
+check. Its bounded-memory tests do not prove navigation across gaps in the
+exported platform tree.

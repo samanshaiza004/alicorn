@@ -106,9 +106,12 @@ It does not discover native handles, create windows, implement event loops,
 translate Alicorn semantics, synchronize application state, or route
 accessibility actions into an application. Those remain the toolkit or
 consumer's responsibility. There is no native adapter on Linux in this
-version. The platform adapters and native assistive-technology behavior still
-require Windows/macOS host validation; package tests alone do not establish
-UIA/AX or screen-reader compatibility.
+version. The platform adapters have representative Windows/macOS validation
+through Alicorn's host fixture. The project maintainer reports successful
+VoiceOver interaction on macOS and screen-reader interaction on Windows; the
+Windows reader and OS/reader versions were not recorded. This does not
+establish compatibility for every host or screen-reader scenario. See the
+[validation record](../docs/validation/accessibility-screen-reader.md).
 
 ## Local checks
 
