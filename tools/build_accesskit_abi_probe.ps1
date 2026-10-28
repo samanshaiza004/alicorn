@@ -22,7 +22,7 @@ $OutputDirectory = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot $OutputDir
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 $Object = Join-Path $OutputDirectory 'accesskit_abi_round_trip.obj'
 $Library = Join-Path $OutputDirectory 'alicorn_accesskit_abi_probe.lib'
-& $CompilerPath /nologo /std:c11 /W4 /WX "/I$HeaderDir" /c $Source "/Fo$Object"
+& $CompilerPath /nologo /std:c11 /W4 /WX "/I$HeaderDir" /c $Source "/Fo$Object" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "AccessKit ABI probe: C compilation failed with exit code $LASTEXITCODE." }
 $LibCommand = Get-Command 'lib' -ErrorAction SilentlyContinue
 if (-not $LibCommand) { throw 'AccessKit ABI probe: MSVC lib.exe was not found in PATH.' }

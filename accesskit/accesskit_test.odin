@@ -3,7 +3,11 @@ package accesskit
 import "core:c/libc"
 import "core:testing"
 
-foreign import abi_probe "system:alicorn_accesskit_abi_probe"
+when ODIN_OS == .Windows {
+	foreign import abi_probe "system:alicorn_accesskit_abi_probe.lib"
+} else {
+	foreign import abi_probe "system:alicorn_accesskit_abi_probe"
+}
 foreign abi_probe {
 	accesskit_abi_rect_round_trip :: proc "c" (value: Rect) -> Rect ---
 	accesskit_abi_text_selection_round_trip :: proc "c" (value: Text_Selection) -> Text_Selection ---

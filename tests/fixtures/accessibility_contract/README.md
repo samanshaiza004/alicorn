@@ -42,6 +42,10 @@ On Windows PowerShell, from the repository root:
 .\tests\fixtures\accessibility_contract\query_windows.ps1
 ```
 
+The Windows AccessKit fragment root currently exposes the generic name
+`Alicorn`; the probe uses that root name to find the fixture window. The
+macOS probe finds the native window by its application title.
+
 The probes check the window and control names/roles, field value and focus,
 native value setting, and activation that changes the status value. The fixture
 adopts AccessKit `SetValue` requests into its application-owned controlled text

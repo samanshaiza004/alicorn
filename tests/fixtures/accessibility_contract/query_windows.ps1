@@ -1,5 +1,5 @@
 param(
-	[string]$Title = 'Alicorn Accessibility Contract',
+	[string]$Title = 'Alicorn',
 	[string]$ExpectedInitialValue = 'Editable value',
 	[string]$ProbeValue = 'UIA contract value',
 	[int]$TimeoutSeconds = 10
