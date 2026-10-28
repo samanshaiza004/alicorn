@@ -1,0 +1,5 @@
+Alicorn native material flat-path benchmark; CPU vertex expansion only
+surfaces_per_sample 4096 iterations 80 vertices_per_batch 24576
+sample 1 direct_quad_ns 3077200 flat_material_ns 2710800 direct_ns_per_surface 9.390869140625 flat_ns_per_surface 8.272705078125 vertices 24576 capacity 24576 same_output true
+sample 2 direct_quad_ns 2619700 flat_material_ns 2769700 direct_ns_per_surface 7.99468994140625 flat_ns_per_surface 8.45245361328125 vertices 24576 capacity 24576 same_output true
+sample 3 direct_quad_ns 2639300 flat_material_ns 2605500 direct_ns_per_surface 8.05450439453125 flat_ns_per_surface 7.95135498046875 vertices 24576 capacity 24576 same_output true

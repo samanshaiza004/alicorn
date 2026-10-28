@@ -8,6 +8,7 @@ processes. Results are written below out/retained-locality-comparison.
 
 import argparse
 import json
+import os
 import re
 import statistics
 import subprocess
@@ -70,7 +71,8 @@ for name, ref in refs.items():
     if marker not in source:
         raise RuntimeError(f"benchmark entry point missing in {name} snapshot")
     (probe / "main.odin").write_text(source.rsplit(marker, 1)[0] + main)
-    executable = work / f"{name}-{commit[:12]}-probe"
+    executable_suffix = ".exe" if os.name == "nt" else ""
+    executable = work / f"{name}-{commit[:12]}-probe{executable_suffix}"
     print(f"BUILD {name} {commit}", flush=True)
     command = [odin, "build", str(probe)]
     if args.speed:

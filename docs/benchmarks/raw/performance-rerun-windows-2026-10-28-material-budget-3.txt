@@ -1,0 +1,16 @@
+material_budget scale 1 height 0 ok true surface_draw_slots 1 vertices 6
+material_budget scale 1 height 0.5 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1 height -0.25 ok true surface_draw_slots 1 vertices 54
+material_budget scale 1 height 1 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1.25 height 0 ok true surface_draw_slots 1 vertices 6
+material_budget scale 1.25 height 0.5 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1.25 height -0.25 ok true surface_draw_slots 1 vertices 54
+material_budget scale 1.25 height 1 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1.5 height 0 ok true surface_draw_slots 1 vertices 6
+material_budget scale 1.5 height 0.5 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1.5 height -0.25 ok true surface_draw_slots 1 vertices 54
+material_budget scale 1.5 height 1 ok true surface_draw_slots 1 vertices 66
+material_budget scale 2 height 0 ok true surface_draw_slots 1 vertices 6
+material_budget scale 2 height 0.5 ok true surface_draw_slots 1 vertices 66
+material_budget scale 2 height -0.25 ok true surface_draw_slots 1 vertices 54
+material_budget scale 2 height 1 ok true surface_draw_slots 1 vertices 66
