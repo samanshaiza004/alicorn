@@ -130,7 +130,7 @@ Semantic_Descriptor :: struct {
 	// For Text_Run, each entry is the UTF-8 byte length of one selectable unit.
 	// The entries must be positive and sum to len(value).
 	text_run_character_lengths: []u8,
-	// Text_Area owns the current selection; endpoints refer to Text_Run children.
+// Editable text roles own the current selection; endpoints refer to Text_Run children.
 	text_selection: Semantic_Text_Selection,
 	// Live regions are announced without changing keyboard focus.
 	live: Semantic_Live_Announcement,
@@ -151,10 +151,18 @@ semantic_actions_has :: proc(actions: Semantic_Actions, action: Semantic_Action)
 // retained node identities. Applications should use their own nonzero
 // namespace when supplying logical IDs.
 ALICORN_SEMANTIC_NAMESPACE :: u64(0x414C49434F524E01)
+// The second reserved namespace supplies stable generated text-run IDs for
+// built-in single-line fields; application code should not publish IDs here.
+ALICORN_TEXT_RUN_NAMESPACE :: u64(0x414C49434F525402)
 
 semantic_visual_id :: proc(node: Node_ID) -> Semantic_ID {
 	if node == 0 { return {} }
 	return Semantic_ID{namespace=ALICORN_SEMANTIC_NAMESPACE, value=u64(node)}
+}
+
+semantic_text_field_run_id :: proc(node: Node_ID) -> Semantic_ID {
+	if node == 0 { return {} }
+	return Semantic_ID{namespace=ALICORN_TEXT_RUN_NAMESPACE, value=u64(node)}
 }
 
 Semantic_Node :: struct {
@@ -431,16 +439,25 @@ semantic_text_run_lengths_clone :: proc(source: []u8, allocator: mem.Allocator) 
 }
 
 @(private)
-semantic_pending_text_area :: proc(rt: ^Runtime, area_id: Semantic_ID) -> ^Semantic_Descriptor {
-	if rt == nil || !semantic_id_is_valid(area_id) { return nil }
+semantic_text_owner_role_is_valid :: proc(role: Semantic_Role) -> bool {
+	return role == .Text_Area || role == .Text_Field
+}
+
+@(private)
+semantic_pending_text_owner :: proc(rt: ^Runtime, owner_id: Semantic_ID) -> ^Semantic_Descriptor {
+	if rt == nil || !semantic_id_is_valid(owner_id) { return nil }
 	for index := len(rt.pending)-1; index >= 0; index -= 1 {
 		pending := &rt.pending[index]
-		if pending.kind != .Description || pending.semantic.role != .Text_Area { continue }
+		if pending.kind != .Description || !semantic_text_owner_role_is_valid(pending.semantic.role) { continue }
 		pending_id := pending.description.semantic_id
 		if !semantic_id_is_valid(pending_id) { pending_id = semantic_visual_id(pending.description.id) }
-		if pending_id == area_id { return &pending.semantic }
+		if pending_id == owner_id { return &pending.semantic }
 	}
 	return nil
+}
+
+semantic_pending_text_area :: proc(rt: ^Runtime, area_id: Semantic_ID) -> ^Semantic_Descriptor {
+	return semantic_pending_text_owner(rt, area_id)
 }
 
 semantic_node_set :: proc(rt: ^Runtime, description: Semantic_Node_Description) -> bool {
@@ -448,14 +465,18 @@ semantic_node_set :: proc(rt: ^Runtime, description: Semantic_Node_Description) 
 	if description.role == .Text_Run &&
 	   (!semantic_id_is_valid(description.parent) || !semantic_text_run_payload_valid(description.value, description.text_run_character_lengths)) { return false }
 	if description.role != .Text_Run && len(description.text_run_character_lengths) > 0 { return false }
-	if description.role != .Text_Area && description.text_selection.valid { return false }
+	if !semantic_text_owner_role_is_valid(description.role) && description.text_selection.valid { return false }
 	if description.role == .Text_Run {
 		parent, parent_found := rt.semantic_entities[description.parent]
-		if (!parent_found || parent.node.role != .Text_Area) && semantic_pending_text_area(rt, description.parent) == nil { return false }
+		if (!parent_found || !semantic_text_owner_role_is_valid(parent.node.role)) &&
+			semantic_pending_text_owner(rt, description.parent) == nil { return false }
 	}
 	if description.role == .Text_Area && description.text_selection.valid &&
 	   !semantic_text_selection_valid_for_area(rt, description.id, description.text_selection) { return false }
-	if semantic_actions_has(description.actions, .Set_Text_Selection) && description.role != .Text_Area { return false }
+	if description.role == .Text_Field && description.text_selection.valid &&
+	   !semantic_text_selection_valid_for_area(rt, description.id, description.text_selection) { return false }
+	if semantic_actions_has(description.actions, .Set_Text_Selection) &&
+	   !semantic_text_owner_role_is_valid(description.role) { return false }
 	if semantic_actions_has(description.actions, .Replace_Selected_Text) && description.role != .Text_Area { return false }
 	if description.collection_id.namespace != 0 && description.size_of_set != 0 && description.position_in_set >= description.size_of_set {
 		return false
@@ -527,16 +548,24 @@ semantic_node_remove :: proc(rt: ^Runtime, id: Semantic_ID) -> bool {
 	if rt == nil || !semantic_id_is_valid(id) { return false }
 	entity, found := rt.semantic_entities[id]
 	if !found { return false }
+	if semantic_text_owner_role_is_valid(entity.node.role) {
+		child_ids := make([dynamic]Semantic_ID, 0, allocator=rt.scratch_allocator)
+		defer delete(child_ids)
+		for child_id, child in rt.semantic_entities {
+			if child.node.role == .Text_Run && child.node.parent == id { append(&child_ids, child_id) }
+		}
+		for child_id in child_ids { _ = semantic_node_remove(rt, child_id) }
+	}
 	if entity.node.role == .Text_Run && semantic_id_is_valid(entity.node.parent) {
 		parent_id := entity.node.parent
-		if parent, parent_found := rt.semantic_entities[parent_id]; parent_found && parent.node.role == .Text_Area &&
+		if parent, parent_found := rt.semantic_entities[parent_id]; parent_found && semantic_text_owner_role_is_valid(parent.node.role) &&
 		   semantic_text_selection_references_run(parent.node.text_selection, id) {
 			parent.node.text_selection = {}
 			rt.semantic_entities[parent_id] = parent
 			rt.semantic_pending_changed[parent_id] = true
 			rt.stats.semantic_entities_resolved += 1
 		}
-		if pending := semantic_pending_text_area(rt, parent_id); pending != nil &&
+		if pending := semantic_pending_text_owner(rt, parent_id); pending != nil &&
 		   semantic_text_selection_references_run(pending.text_selection, id) {
 			pending.text_selection = {}
 		}
@@ -571,6 +600,110 @@ semantic_text_run_set :: proc(
 	})
 }
 
+@(private)
+semantic_text_field_value_set :: proc(rt: ^Runtime, field_id: Semantic_ID, value: string) -> bool {
+	if rt == nil { return false }
+	entity, found := rt.semantic_entities[field_id]
+	if !found || entity.node.role != .Text_Field || entity.node.value == value { return false }
+	copy := owned_with_allocator(value, rt.persistent_allocator)
+	if len(value) > 0 && len(copy) == 0 { return false }
+	if len(entity.node.value) > 0 { delete(entity.node.value, rt.persistent_allocator) }
+	entity.node.value = copy
+	rt.semantic_entities[field_id] = entity
+	rt.semantic_pending_changed[field_id] = true
+	rt.stats.semantic_entities_resolved += 1
+	return true
+}
+
+// semantic_text_field_selection_set publishes the built-in field's current
+// caret or selection. Endpoints refer to its stable generated Text_Run.
+semantic_text_field_selection_set :: proc(
+	rt: ^Runtime,
+	field_id: Semantic_ID,
+	selection: Semantic_Text_Selection,
+) -> bool {
+	if rt == nil || !semantic_id_is_valid(field_id) { return false }
+	entity, found := rt.semantic_entities[field_id]
+	if !found || entity.node.role != .Text_Field { return false }
+	if selection.valid && !semantic_text_selection_valid_for_area(rt, field_id, selection) { return false }
+	if entity.node.text_selection == selection { return false }
+	entity.node.text_selection = selection
+	rt.semantic_entities[field_id] = entity
+	rt.semantic_pending_changed[field_id] = true
+	rt.stats.semantic_entities_resolved += 1
+	return true
+}
+
+// semantic_text_field_accessibility_sync copies the retained field's committed
+// text and grapheme-based caret into its semantic representation. IME preedit
+// is intentionally excluded; it remains transient until SDL commits it.
+semantic_text_field_accessibility_sync :: proc(rt: ^Runtime, node: ^Node) -> bool {
+	if rt == nil || node == nil || node.kind != .Text_Field { return false }
+	field_id := node.semantic_id
+	if !semantic_id_is_valid(field_id) { field_id = semantic_visual_id(node.id) }
+	field, found := rt.semantic_entities[field_id]
+	if !found || field.node.role != .Text_Field { return false }
+
+	run_id := semantic_text_field_run_id(node.id)
+	run_entity, run_found := rt.semantic_entities[run_id]
+	lengths: []u8
+	owned_lengths := false
+	if run_found && run_entity.node.value == node.text {
+		lengths = run_entity.node.text_run_character_lengths
+	} else {
+		generated_lengths, lengths_ok := semantic_text_character_lengths(node.text, rt.scratch_allocator)
+		lengths = generated_lengths
+		if !lengths_ok {
+			if run_found { _ = semantic_node_remove(rt, run_id) }
+			_ = semantic_text_field_selection_set(rt, field_id, {})
+			return false
+		}
+		owned_lengths = true
+	}
+	if owned_lengths { defer delete(lengths, rt.scratch_allocator) }
+
+	changed := semantic_text_field_value_set(rt, field_id, node.text)
+	changed = semantic_text_run_set(rt, run_id, field_id, node.text, lengths) || changed
+	run_entity, run_found = rt.semantic_entities[run_id]
+	if !run_found { return changed }
+	anchor_index, anchor_ok := semantic_text_run_character_index(run_entity.node, u64(max(node.selection_anchor.byte, 0)))
+	focus_index, focus_ok := semantic_text_run_character_index(run_entity.node, u64(max(node.selection_focus.byte, 0)))
+	if !anchor_ok || !focus_ok {
+		return semantic_text_field_selection_set(rt, field_id, {}) || changed
+	}
+	selection := Semantic_Text_Selection{
+		anchor={run_id=run_id, character_index=anchor_index},
+		focus={run_id=run_id, character_index=focus_index},
+		valid=true,
+	}
+	return semantic_text_field_selection_set(rt, field_id, selection) || changed
+}
+
+// semantic_text_selection_apply routes native selections to the correct owner:
+// a built-in single-line field updates its retained caret directly, while a
+// Text_Area leaves editing policy with its application as before.
+semantic_text_selection_apply :: proc(
+	rt: ^Runtime,
+	owner_id: Semantic_ID,
+	selection: Semantic_Text_Selection,
+) -> bool {
+	if rt == nil || !selection.valid { return false }
+	owner, found := rt.semantic_entities[owner_id]
+	if !found || !semantic_actions_has(owner.node.actions, .Set_Text_Selection) ||
+	   !semantic_text_selection_valid_for_area(rt, owner_id, selection) { return false }
+	if owner.node.role == .Text_Area {
+		return semantic_text_selection_request(rt, owner_id, selection)
+	}
+	if owner.node.role != .Text_Field || selection.anchor.run_id != selection.focus.run_id ||
+	   owner.node.visual_node == 0 { return false }
+	run, run_found := rt.semantic_entities[selection.anchor.run_id]
+	if !run_found { return false }
+	anchor_byte, anchor_ok := semantic_text_run_byte_offset(run.node, selection.anchor.character_index)
+	focus_byte, focus_ok := semantic_text_run_byte_offset(run.node, selection.focus.character_index)
+	if !anchor_ok || !focus_ok { return false }
+	return set_text_selection(rt, owner.node.visual_node, int(anchor_byte), int(focus_byte))
+}
+
 // semantic_text_area_selection_set publishes the editor's current selection
 // after its text runs have been synchronized. A valid collapsed selection is
 // a caret; valid=false clears selection metadata.
@@ -583,7 +716,7 @@ semantic_text_area_selection_set :: proc(
 	entity, found := rt.semantic_entities[area_id]
 	if !found {
 		pending := semantic_pending_text_area(rt, area_id)
-		if pending == nil { return false }
+		if pending == nil || pending.role != .Text_Area { return false }
 		if selection.valid && (!semantic_actions_has(pending.actions, .Set_Text_Selection) ||
 		   !semantic_text_selection_valid_for_area(rt, area_id, selection)) { return false }
 		if pending.text_selection == selection { return false }
@@ -921,7 +1054,10 @@ semantic_description_defaults :: proc(d: ^Description, semantic: ^Semantic_Descr
 		semantic.role = .Text_Field
 		semantic.value = d.text
 		actions = semantic_actions_add(actions, .Focus)
-		if !d.disabled { actions = semantic_actions_add(actions, .Set_Value) }
+		if !d.disabled {
+			actions = semantic_actions_add(actions, .Set_Value)
+			actions = semantic_actions_add(actions, .Set_Text_Selection)
+		}
 	case:
 		return
 	}
@@ -1021,6 +1157,11 @@ semantic_sync_node :: proc(rt: ^Runtime, node: ^Node, semantic: Semantic_Descrip
 			_ = semantic_node_remove(rt, previous_id)
 		}
 	}
+	if semantic.role != .Text_Field {
+		if old, found := rt.semantic_entities[id]; found && old.node.role == .Text_Field && old.node.visual_node == node.id {
+			_ = semantic_node_remove(rt, semantic_text_field_run_id(node.id))
+		}
+	}
 	parent := semantic.parent
 	if !semantic_id_is_valid(parent) && semantic_id_is_valid(semantic.collection_id) {
 		parent = semantic.collection_id
@@ -1082,6 +1223,9 @@ semantic_sync_node :: proc(rt: ^Runtime, node: ^Node, semantic: Semantic_Descrip
 		}
 	}
 	_ = semantic_node_set(rt, description)
+	if semantic.role == .Text_Field && node.kind == .Text_Field {
+		_ = semantic_text_field_accessibility_sync(rt, node)
+	}
 }
 
 // Called from the retained preorder rebuild, where the runtime is already

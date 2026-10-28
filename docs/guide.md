@@ -518,6 +518,15 @@ requests through its normal editor mutation path. AccessKit stores each
 selectable unit's UTF-8 length in an 8-bit field, so a single unit longer than
 255 bytes cannot be represented directly.
 
+Built-in single-line `Text_Field` controls publish committed text as a stable
+`Text_Run` child and keep its grapheme-based caret/selection synchronized with
+typing, pointer placement, and caret movement. IME preedit remains transient
+until committed. The native host converts logical control bounds to
+window-relative physical pixels for AccessKit and refreshes them when the
+window's backing scale changes. These contracts support VoiceOver text
+feedback and focus-ring placement, but still require physical VoiceOver
+validation on macOS.
+
 Sliders retain their numeric value, range, and step for assistive technology.
 If the normalized number is not meaningful to users, call
 `semantic_range_value_text(&ui, "65%")` immediately after `slider_f32` to add

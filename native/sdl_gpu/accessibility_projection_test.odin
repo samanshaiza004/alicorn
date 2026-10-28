@@ -224,6 +224,48 @@ test_accessibility_projection_maps_text_runs_and_area_selection :: proc(t: ^test
 }
 
 @(test)
+test_accessibility_projection_maps_builtin_text_field_selection :: proc(t: ^testing.T) {
+	field_id := alicorn.Semantic_ID{namespace=26, value=40}
+	run_id := alicorn.Semantic_ID{namespace=27, value=40}
+	lengths := [4]u8{1, 3, 3, 4}
+	actions := alicorn.semantic_actions_add({}, .Focus)
+	actions = alicorn.semantic_actions_add(actions, .Set_Value)
+	actions = alicorn.semantic_actions_add(actions, .Set_Text_Selection)
+	selection := alicorn.Semantic_Text_Selection{
+		anchor={run_id=run_id, character_index=2},
+		focus={run_id=run_id, character_index=3},
+		valid=true,
+	}
+	nodes := [2]alicorn.Semantic_Node{
+		{id=field_id, role=.Text_Field, value="A日本🙂", actions=actions, text_selection=selection, tree_order=1},
+		{id=run_id, role=.Text_Run, parent=field_id, value="A日本🙂", text_run_character_lengths=lengths[:], tree_order=2},
+	}
+	snapshot := accessibility_projection_test_snapshot(9, nodes[:])
+	projection, status := accessibility_projection_from_snapshot(snapshot, context.temp_allocator)
+	defer accessibility_projection_destroy(&projection)
+	field, field_found := accessibility_projection_node_by_semantic_id(projection, field_id)
+	run, run_found := accessibility_projection_node_by_semantic_id(projection, run_id)
+	decoded, decoded_ok := accessibility_projection_text_selection_decode(
+		projection, field_id, run.id, 1, run.id, 4,
+	)
+	selection_action, _, selection_supported := native_accessibility_action_to_semantic(
+		ACCESSKIT_ACTION_SET_TEXT_SELECTION, field,
+	)
+	testing.expect(t, status == .Success && field_found && field.role == .Text_Input && field.text_selection.valid &&
+		field.text_selection.anchor.node_id == run.id && field.text_selection.anchor.character_index == 2 &&
+		field.text_selection.focus.character_index == 3,
+		"built-in text fields must project a text run and selection on the AccessKit text-input node")
+	testing.expect(t, run_found && run.role == .Text_Run && run.value == "A日本🙂" &&
+		len(run.text_run_character_lengths) == len(lengths) &&
+		run.text_run_character_lengths[0] == 1 && run.text_run_character_lengths[1] == 3 &&
+		run.text_run_character_lengths[2] == 3 && run.text_run_character_lengths[3] == 4 && decoded_ok &&
+		decoded.anchor.character_index == 1 && decoded.focus.character_index == 4,
+		"field text selection decoding must preserve Unicode grapheme indexes")
+	testing.expect(t, selection_supported && selection_action == .Set_Text_Selection,
+		"editable text fields must expose the native SetTextSelection action")
+}
+
+@(test)
 test_accessibility_projection_rejects_invalid_text_selection_tree :: proc(t: ^testing.T) {
 	area_id := alicorn.Semantic_ID{namespace=25, value=30}
 	run_id := alicorn.Semantic_ID{namespace=25, value=31}
@@ -304,6 +346,22 @@ test_accessibility_action_translation_keeps_reveal_separate_from_perform :: proc
 	action, reveal, supported = native_accessibility_action_to_semantic(ACCESSKIT_ACTION_SCROLL_UP, scrollable_collection)
 	testing.expect(t, supported && action == .Scroll_Backward && !reveal,
 		"AccessKit scroll-up should route to the collection's backward semantic action")
+}
+
+@(test)
+test_accessibility_action_translation_supports_slider_adjustment :: proc(t: ^testing.T) {
+	slider := Accessibility_Projection_Node{
+		role=.Slider,
+		actions=transmute(Accessibility_Projection_Actions)(bit_set[Accessibility_Projection_Action; u32]{
+			.Set_Value, .Increment, .Decrement,
+		}),
+	}
+	action, reveal, supported := native_accessibility_action_to_semantic(ACCESSKIT_ACTION_INCREMENT, slider)
+	testing.expect(t, supported && action == .Increment && !reveal,
+		"AccessKit slider increment should route as an application-owned action")
+	action, reveal, supported = native_accessibility_action_to_semantic(ACCESSKIT_ACTION_DECREMENT, slider)
+	testing.expect(t, supported && action == .Decrement && !reveal,
+		"AccessKit slider decrement should route as an application-owned action")
 }
 
 @(test)

@@ -153,7 +153,9 @@ run_application_loop :: proc(
 			if native_accessibility_adapter_init(&accessibility_host, window) {
 				content_inset := f32(0)
 				if native_menu != nil { content_inset = native_menu.content_inset_top }
-				_ = native_accessibility_sync(&accessibility_host, rt, content_inset)
+				scale_x := f32(metrics.pixel_width)/f32(max(metrics.logical_width, 1))
+				scale_y := f32(metrics.pixel_height)/f32(max(metrics.window_logical_height, 1))
+				_ = native_accessibility_sync(&accessibility_host, rt, content_inset, scale_x, scale_y)
 			} else {
 				fmt.println("accessibility", "AccessKit native adapter initialization failed; continuing without platform semantics")
 			}
@@ -410,7 +412,12 @@ run_application_loop :: proc(
 			native_dispatch_scheduled_wakes(&child.application, child.runtime, &child.scheduler_state, child.last_user_interaction_ns, &child.timing)
 			when ODIN_OS == .Windows || ODIN_OS == .Darwin {
 				if child.accessibility_ready {
-					_ = native_accessibility_sync(&child.accessibility_host, child.runtime, child.native_menu.content_inset_top)
+					scale_x := f32(child.metrics.pixel_width)/f32(max(child.metrics.logical_width, 1))
+					scale_y := f32(child.metrics.pixel_height)/f32(max(child.metrics.window_logical_height, 1))
+					_ = native_accessibility_sync(
+						&child.accessibility_host, child.runtime,
+						child.native_menu.content_inset_top, scale_x, scale_y,
+					)
 					counters := native_accessibility_take_counters(&child.accessibility_host)
 					child.runtime.stats.accessibility_activation_wakes += counters.activation_wakes
 					child.runtime.stats.accessibility_updates_submitted += counters.updates_submitted
@@ -542,7 +549,9 @@ run_application_loop :: proc(
 		if accessibility_host_ready {
 			content_inset := f32(0)
 			if native_menu != nil { content_inset = native_menu.content_inset_top }
-			_ = native_accessibility_sync(&accessibility_host, rt, content_inset)
+			scale_x := f32(metrics.pixel_width)/f32(max(metrics.logical_width, 1))
+			scale_y := f32(metrics.pixel_height)/f32(max(metrics.window_logical_height, 1))
+			_ = native_accessibility_sync(&accessibility_host, rt, content_inset, scale_x, scale_y)
 			accessibility_counters := native_accessibility_take_counters(&accessibility_host)
 			rt.stats.accessibility_activation_wakes += accessibility_counters.activation_wakes
 			rt.stats.accessibility_updates_submitted += accessibility_counters.updates_submitted

@@ -788,6 +788,14 @@ and per-character geometry are not yet projected. These APIs provide a
 runtime/bridge contract; application-level text projection and screen-reader
 behavior still need end-to-end validation.
 
+Built-in single-line `Text_Field` controls create one stable `Text_Run` child
+internally. The runtime publishes committed text and caret/selection positions
+as one semantic update, including updates caused by typing, pointer placement,
+and keyboard caret movement. Native text-selection actions update the retained
+field directly. IME preedit is not exposed as committed text. Native AccessKit
+bounds are transformed from logical Alicorn rectangles to window-relative
+physical pixels, and backing-scale changes force a geometry refresh.
+
 For a slider whose numeric value needs a human-readable representation, call
 `semantic_range_value_text(ui, value)` immediately after `slider_f32`. This sets
 the optional semantic string value while preserving numeric value/minimum/

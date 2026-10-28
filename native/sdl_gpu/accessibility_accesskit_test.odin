@@ -33,10 +33,14 @@ test_native_accessibility_exported_bounds_include_host_inset :: proc(t: ^testing
 	source := alicorn.Rect{4, 10, 80, 20}
 	without_inset := native_accessibility_bounds(source, 0)
 	with_inset := native_accessibility_bounds(source, 8)
+	retina := native_accessibility_bounds(source, 8, 2, 2)
 	testing.expect(t,
 		without_inset.x0 == 4 && without_inset.y0 == 10 && without_inset.x1 == 84 && without_inset.y1 == 30 &&
 		with_inset.x0 == 4 && with_inset.y0 == 18 && with_inset.x1 == 84 && with_inset.y1 == 38,
 		"host inset must translate exported Y bounds while preserving horizontal position and dimensions")
+	testing.expect(t,
+		retina.x0 == 8 && retina.y0 == 36 && retina.x1 == 168 && retina.y1 == 76,
+		"2x accessibility bounds must be physical pixels after applying the logical host inset")
 }
 }
 
@@ -86,4 +90,29 @@ test_native_accessibility_sync_distinguishes_incremental_and_host_geometry :: pr
 	)
 	testing.expect(t, semantic_change_with_host_current.required && !semantic_change_with_host_current.force_snapshot,
 		"semantic-only updates retain their incremental path regardless of adapter activation")
+}
+
+@(test)
+test_native_accessibility_sync_refreshes_after_backing_scale_change :: proc(t: ^testing.T) {
+	changed := native_accessibility_sync_plan(
+		true, 12, 12,
+		0, 0,
+		1, 1, 2, 2,
+	)
+	settled := native_accessibility_sync_plan(
+		true, 12, 12,
+		0, 0,
+		2, 2, 2, 2,
+	)
+	changed_y_only := native_accessibility_sync_plan(
+		true, 12, 12,
+		0, 0,
+		2, 1, 2, 1.5,
+	)
+	testing.expect(t, changed.required && changed.force_snapshot,
+		"backing-scale changes must refresh physical accessibility bounds without semantic changes")
+	testing.expect(t, !settled.required && !settled.force_snapshot,
+		"a stable backing scale must return to the idle path")
+	testing.expect(t, changed_y_only.required && changed_y_only.force_snapshot,
+		"per-axis backing-scale changes must be detected independently")
 }

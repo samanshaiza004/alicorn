@@ -71,19 +71,25 @@ Native_Accessibility_Sync_Plan :: struct {
 }
 
 // AccessKit bounds depend on native host geometry as well as semantic content.
-// In particular, a content inset change moves every exported node without
-// changing the semantic revision, so it requires a full tree refresh.
+// In particular, a content inset or backing-scale change moves/resizes every
+// exported node without changing the semantic revision, so it requires a full
+// tree refresh.
 native_accessibility_sync_plan :: proc(
 	projection_ready: bool,
 	projection_revision, semantic_revision: u64,
 	current_inset, requested_inset: f32,
+	current_scale_x: f32 = 1,
+	current_scale_y: f32 = 1,
+	requested_scale_x: f32 = 1,
+	requested_scale_y: f32 = 1,
 ) -> Native_Accessibility_Sync_Plan {
 	if !projection_ready {
 		return {required=true, force_snapshot=true}
 	}
 
 	semantic_changed := projection_revision != semantic_revision
-	geometry_changed := current_inset != requested_inset
+	geometry_changed := current_inset != requested_inset ||
+		current_scale_x != requested_scale_x || current_scale_y != requested_scale_y
 	return {
 		required=semantic_changed || geometry_changed,
 		force_snapshot=geometry_changed,
@@ -117,6 +123,8 @@ Native_Accessibility_Host :: struct {
 	projection_ready: bool,
 	adapter_revision: u64,
 	content_inset_top: f32,
+	scale_x: f32,
+	scale_y: f32,
 	actions: []Native_Accessibility_Queued_Action,
 	action_read: int,
 	action_write: int,
@@ -392,7 +400,7 @@ native_accessibility_drain_actions :: proc(host: ^Native_Accessibility_Host, rt:
 		if event.action == .Scroll_Into_View {
 			_ = alicorn.semantic_reveal_request(rt, event.semantic_id)
 		} else if event.action == .Set_Text_Selection {
-			_ = alicorn.semantic_text_selection_request(rt, event.semantic_id, event.text_selection)
+			_ = alicorn.semantic_text_selection_apply(rt, event.semantic_id, event.text_selection)
 		} else {
 			text_value := ""
 			if event.text_pointer != nil {
@@ -488,6 +496,8 @@ native_accessibility_sync :: proc(
 	host: ^Native_Accessibility_Host,
 	rt: ^alicorn.Runtime,
 	content_inset_top: f32 = 0,
+	scale_x: f32 = 1,
+	scale_y: f32 = 1,
 ) -> bool {
 	if host == nil || rt == nil || host.mutex == nil { return false }
 	sdl3.LockMutex(host.mutex)
@@ -499,6 +509,7 @@ native_accessibility_sync :: proc(
 	plan := native_accessibility_sync_plan(
 		host.projection_ready, host.projection.revision, revision,
 		host.content_inset_top, content_inset_top,
+		host.scale_x, host.scale_y, scale_x, scale_y,
 	)
 	sdl3.UnlockMutex(host.mutex)
 	if !plan.required { return false }
@@ -515,6 +526,7 @@ native_accessibility_sync :: proc(
 	current_plan := native_accessibility_sync_plan(
 		host.projection_ready, host.projection.revision, snapshot.revision,
 		host.content_inset_top, content_inset_top,
+		host.scale_x, host.scale_y, scale_x, scale_y,
 	)
 	full_snapshot := current_plan.force_snapshot
 	delta: Accessibility_Projection_Delta
@@ -579,6 +591,8 @@ native_accessibility_sync :: proc(
 		}
 	}
 	host.content_inset_top = content_inset_top
+	host.scale_x = scale_x
+	host.scale_y = scale_y
 	host_revision := host.projection.revision
 	sdl3.UnlockMutex(host.mutex)
 
@@ -624,12 +638,14 @@ native_accessibility_update_factory :: proc "c" (userdata: rawptr) -> rawptr {
 	if full_snapshot {
 		result = native_accessibility_build_tree_update(
 			host.projection.nodes[:], host.projection.keyboard_focus,
-			host.projection.root_id, host.content_inset_top, include_tree_info=true,
+			host.projection.root_id, host.content_inset_top,
+			host.scale_x, host.scale_y, include_tree_info=true,
 		)
 	} else {
 		result = native_accessibility_build_tree_update(
 			update_context.delta.changed_nodes[:], update_context.delta.keyboard_focus,
-			host.projection.root_id, host.content_inset_top, include_tree_info=false,
+			host.projection.root_id, host.content_inset_top,
+			host.scale_x, host.scale_y, include_tree_info=false,
 		)
 	}
 	if result != nil {
@@ -651,7 +667,8 @@ native_accessibility_build_snapshot_update :: proc(host: ^Native_Accessibility_H
 	}
 	update := native_accessibility_build_tree_update(
 		host.projection.nodes[:], host.projection.keyboard_focus,
-		host.projection.root_id, host.content_inset_top, include_tree_info=true,
+		host.projection.root_id, host.content_inset_top,
+		host.scale_x, host.scale_y, include_tree_info=true,
 	)
 	if update != nil {
 		host.adapter_revision = host.projection.revision
@@ -668,6 +685,7 @@ native_accessibility_build_tree_update :: proc(
 	nodes: []Accessibility_Projection_Node,
 	focus, root_id: u64,
 	content_inset_top: f32,
+	scale_x, scale_y: f32,
 	include_tree_info: bool,
 ) -> rawptr {
 	update, update_ok := ak.tree_update_create(uint(len(nodes)), ak.Node_ID(focus))
@@ -684,7 +702,7 @@ native_accessibility_build_tree_update :: proc(
 		if !ak.tree_update_set_tree_info(&update, &tree) { return nil }
 	}
 	for source in nodes {
-		node, node_ok := native_accessibility_build_node(source, content_inset_top)
+		node, node_ok := native_accessibility_build_node(source, content_inset_top, scale_x, scale_y)
 		if !node_ok { return nil }
 		defer ak.node_destroy(&node)
 		if !ak.tree_update_push_node(&update, ak.Node_ID(source.id), &node) { return nil }
@@ -697,6 +715,8 @@ when ODIN_OS == .Windows || ODIN_OS == .Darwin {
 native_accessibility_build_node :: proc(
 	source: Accessibility_Projection_Node,
 	content_inset_top: f32,
+	scale_x: f32 = 1,
+	scale_y: f32 = 1,
 ) -> (node: ak.Node, ok: bool) {
 	node, ok = ak.node_create(native_accessibility_accesskit_role(source.role))
 	if !ok { return }
@@ -721,7 +741,7 @@ native_accessibility_build_node :: proc(
 		if source.live_atomic { ak.node_set_live_atomic(&node) }
 	}
 	if source.has_bounds {
-		ak.node_set_bounds(&node, native_accessibility_bounds(source.bounds, content_inset_top))
+		ak.node_set_bounds(&node, native_accessibility_bounds(source.bounds, content_inset_top, scale_x, scale_y))
 	}
 	if accessibility_projection_state_has(source.states, .Disabled) { ak.node_set_disabled(&node, true) }
 	if accessibility_projection_state_has(source.states, .Selected) { ak.node_set_selected(&node, true) }
@@ -765,12 +785,17 @@ native_accessibility_build_node :: proc(
 	return
 }
 
-native_accessibility_bounds :: proc(bounds: alicorn.Rect, content_inset_top: f32) -> ak.Rect {
+native_accessibility_bounds :: proc(
+	bounds: alicorn.Rect,
+	content_inset_top: f32,
+	scale_x: f32 = 1,
+	scale_y: f32 = 1,
+) -> ak.Rect {
 	return {
-		x0=f64(bounds.x),
-		y0=f64(bounds.y+content_inset_top),
-		x1=f64(bounds.x+bounds.w),
-		y1=f64(bounds.y+bounds.h+content_inset_top),
+		x0=f64(bounds.x*scale_x),
+		y0=f64((bounds.y+content_inset_top)*scale_y),
+		x1=f64((bounds.x+bounds.w)*scale_x),
+		y1=f64((bounds.y+bounds.h+content_inset_top)*scale_y),
 	}
 }
 }
