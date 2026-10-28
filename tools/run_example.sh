@@ -28,7 +28,7 @@ fi
 EXAMPLE=$1
 shift
 case "$EXAMPLE" in
-	01_hello|02_form|03_async_list|04_custom_surface|05_inspector|06_secondary_windows|07_simple_appearance) ;;
+	01_hello|02_form|03_async_list|04_custom_surface|05_inspector|06_secondary_windows|07_simple_appearance|08_control_gallery) ;;
 	*) echo "Unknown numbered example: $EXAMPLE" >&2; exit 2 ;;
 esac
 

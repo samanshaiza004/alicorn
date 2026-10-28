@@ -35,7 +35,8 @@ It groups related fixes and features instead of repeating merge commits.
   composition, controlled text fields, pointer-bound checkboxes and sliders,
   icon controls, automatic informational-text semantics, interaction results,
   and common layout helpers. The form example imports only this package;
-  repeated data retains stable explicit-key support.
+  repeated data retains stable explicit-key support. The focused form lesson
+  uses bare widget calls, with icon examples in a separate Control Gallery.
 - Added a composite `Tab_Bar` with selected and dirty states, an integrated
   close action, hover and pressed treatment, shrink-to-fit and overflow
   behavior, active-tab visibility, reorder feedback, and keyboard navigation.

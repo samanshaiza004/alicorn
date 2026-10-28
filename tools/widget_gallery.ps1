@@ -13,7 +13,7 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 Push-Location $RepoRoot
 try {
 	$AccessKit = Get-AlicornAccessKit
-	& $Odin build examples\02_form "-collection:alicorn=$RepoRoot" "-extra-linker-flags:$($AccessKit.LinkerFlags)" "-out:$Executable"
+	& $Odin build examples\08_control_gallery "-collection:alicorn=$RepoRoot" "-extra-linker-flags:$($AccessKit.LinkerFlags)" "-out:$Executable"
 	if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 	$OdinRoot = Split-Path -Parent $Odin

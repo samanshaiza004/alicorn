@@ -93,19 +93,21 @@ That is enough to start building your own UI.
 ## Explore the form example
 
 The form uses only `alicorn:ui` for layout, text, a managed controlled text
-field, a pointer-bound checkbox and slider, and icons. Informational text and
-standard controls expose their accessibility semantics by default; use
+field, and pointer-bound checkbox and slider. Informational text and standard
+controls expose their accessibility semantics by default; use
 `decorative=true` for text that should remain visual-only:
 
 ```powershell
-.\tools\widget_gallery.ps1
+.\tools\run_example.ps1 -Example 02_form
 ```
 
 ```sh
-./tools/widget_gallery.sh
+./tools/run_example.sh 02_form
 ```
 
 The app source is [`examples/02_form/main.odin`](../examples/02_form/main.odin).
+Browse icons and named icon buttons in the
+[Control Gallery](../examples/08_control_gallery/main.odin).
 Continue through the [numbered example progression](../examples/README.md) for
 worker-backed virtualization, custom GPU surfaces, and the built-in inspector.
 

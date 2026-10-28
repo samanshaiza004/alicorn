@@ -17,6 +17,7 @@ Install Odin and the native prerequisites from
 | 5 | [Inspector](05_inspector/main.odin) | Retained tree, focus, semantic actions, and invalidation causes |
 | 6 | [Secondary Windows](06_secondary_windows/main.odin) | Opening and closing a tool window with independent application state |
 | 7 | [Appearance](07_simple_appearance/main.odin) | Direct colors, panels, borders, rounded surfaces, and fixed-size boxes |
+| 8 | [Control Gallery](08_control_gallery/main.odin) | Font-independent icons and named icon buttons |
 
 Run a lesson from the repository root. The runner resolves Odin and native
 linker dependencies, builds the selected program, and launches it:
@@ -60,6 +61,8 @@ build. Program arguments follow the example name on the shell runner and use
 6. In `06_secondary_windows`, open and close a child window, then compare its
    counter and lifecycle with the main window.
 7. In `07_simple_appearance`, change panel fill, border, or swatch colors.
+8. In `08_control_gallery`, browse the built-in icon assets and activate the
+   named icon button.
 
 ## Build and validation
 
@@ -69,7 +72,7 @@ foundation CI jobs run this check. `tools/check.ps1` and `tools/check.sh` also
 compile internal validation fixtures, which live under `tests/fixtures` rather
 than in the beginner-facing example list.
 
-The starter and form also have older dedicated runners:
+The starter and Control Gallery also have older dedicated runners:
 
 ```powershell
 .\tools\native_hello.ps1
@@ -82,7 +85,7 @@ The starter and form also have older dedicated runners:
 ```
 
 The `widget_gallery` runner name is retained for compatibility; it launches
-the focused form lesson. `tools/run_example` is the recommended path for any
+the Control Gallery. `tools/run_example` is the recommended path for any
 numbered lesson because it supplies the `alicorn:ui` collection and platform
 linker settings automatically.
 
