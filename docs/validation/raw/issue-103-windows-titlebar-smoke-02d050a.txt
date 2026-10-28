@@ -1,0 +1,5 @@
+sdl_video_driver windows
+sdl3_version 3 4 2
+sdl_input_debug window_flags WindowFlags{HIDDEN, RESIZABLE, HIGH_PIXEL_DENSITY}
+gpu_driver_requested  gpu_driver_selected direct3d12
+SDL application PASS submissions 6 retired 6 max_frames_in_flight 2 wall_ns 2999577800 logical_resize_events 1 pixel_resize_events 1 scale_events 0 text_input_events 0 composition_events 0 text_change_dispatches 0 text_changes 0 text_edit_key_events 0 text_navigation_key_events 0 text_selection_key_events 0 text_word_key_events 0 events_per_pump_max 0 oldest_event_age_max_ns 0 input_to_submit_p95_ns 0 input_to_submit_max_ns 0 text_mesh_rebuilds 1 text_mesh_cache_hits 0 text_fingerprint_ns 6900 text_fingerprint_bytes 645 text_mesh_rebuild_ns 2972900 text_vertex_uploads 1 frame_p95_ns 533803100 gpu_encode_ns 13743600 inspector_encode_ns 0 inspector_submissions 0 gpu_submit_ns 2606500 fence_wait_ns 108600 application_tick_max_ns 0 application_build_max_ns 3092100 application_stabilization_rebuilds 1 application_stabilization_limit_hits 0 event_waits 6 application_wake_events 0 native_host_wake_events 5 native_chrome_encode_ns 4586100 gpu_encode_max_ns 9153800 fence_wait_max_ns 48700
