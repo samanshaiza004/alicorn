@@ -110,6 +110,8 @@ Browse icons and named icon buttons in the
 [Control Gallery](../examples/08_control_gallery/main.odin).
 Continue through the [numbered example progression](../examples/README.md) for
 worker-backed virtualization, custom GPU surfaces, and the built-in inspector.
+Step 3 keeps the same typed render procedure and `alicorn:ui` import, adding
+app-owned workers through `ui.run` lifecycle hooks and a scoped virtual list.
 
 ## If Odin is not on `PATH`
 

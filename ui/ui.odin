@@ -1,6 +1,7 @@
 package ui
 
 import "core:mem"
+import "core:math"
 import alicorn "alicorn:runtime"
 import host "alicorn:native/sdl_gpu"
 import odin_runtime "base:runtime"
@@ -27,6 +28,7 @@ Style_Color_Role :: alicorn.Style_Color_Role
 Icon_ID :: alicorn.Icon_ID
 Text_Buffer :: alicorn.Text_Field_Buffer
 Text_Field_Response :: alicorn.Text_Field_Response
+Virtual_List :: alicorn.Virtual_List_Handle
 
 @(private)
 DEFAULT_CHECKBOX_STYLE :: Layout_Style{
@@ -464,8 +466,62 @@ button :: proc(
 		text_style=text_style, content_style=content_style, variant=variant)
 }
 
-invalidate :: proc(ui: ^UI, reason := "simple UI explicitly invalidated") {
+@(private)
+virtual_list_end :: proc(
+	ui: ^UI, _item_count: int, _row_height: f32, _key: UI_Key,
+	_width, _height, _grow: f32, _label: string, _loc: odin_runtime.Source_Code_Location,
+	list: Virtual_List, opened: bool,
+) {
+	if opened { alicorn.virtual_list_end(ui, list) }
+}
+
+// Use `if list, ok := virtual_list(...); ok { ... }` to close the retained
+// scroll/content scopes automatically. Emit only [first, last), with one
+// row occupying exactly row_height and stable data keys for its component.
+@(deferred_in_out=virtual_list_end)
+virtual_list :: proc(
+	ui: ^UI,
+	item_count: int,
+	row_height: f32,
+	key: UI_Key = alicorn.UI_Unkeyed{},
+	width: f32 = -1,
+	height: f32 = -1,
+	grow: f32 = 1,
+	label: string = "virtual-list",
+	loc := #caller_location,
+) -> (list: Virtual_List, opened: bool) {
+	if item_count < 0 || row_height <= 0 || math.is_nan(row_height) || math.is_inf(row_height) ||
+		math.is_inf(f32(item_count)*row_height) { return }
+	list = alicorn.virtual_list_begin(ui, item_count, row_height, key=key,
+		style=alicorn.layout_style(.Column, width=width, height=height, grow=grow, clip=true), label=label, loc=loc)
+	opened = list.scroll.id != 0
+	return
+}
+
+// Application_Context is borrowed for one application-thread wake callback.
+// Do not retain it or pass it to a worker. Only Application_Waker may cross
+// that boundary; the app owns result storage and its synchronization.
+Application_Context :: distinct ^alicorn.Runtime
+Application_Waker :: host.Application_Waker
+
+// wake is the native host's thread-safe event request. It does not publish or
+// synchronize application data. Stop and join every producer in on_stop before
+// returning; no borrowed waker may be used afterward.
+wake :: proc(waker: Application_Waker) {
+	host.application_wake(waker)
+}
+
+invalidate :: proc {invalidate_ui, invalidate_application}
+
+@(private)
+invalidate_ui :: proc(ui: ^UI, reason := "simple UI explicitly invalidated") {
 	if ui != nil && ui.runtime != nil { alicorn.invalidate_root(ui.runtime, reason) }
+}
+
+@(private)
+invalidate_application :: proc(ctx: Application_Context, reason := "application explicitly invalidated") {
+	rt := cast(^alicorn.Runtime)ctx
+	if rt != nil { alicorn.invalidate_root(rt, reason) }
 }
 
 @(private)
@@ -473,6 +529,9 @@ Run_State :: struct($T: typeid) {
 	app: ^T,
 	render: proc(^T, ^UI),
 	render_overlays: proc(^T, ^UI),
+	on_start: proc(^T, Application_Waker),
+	on_wake: proc(^T, Application_Context),
+	on_stop: proc(^T),
 }
 
 @(private)
@@ -491,22 +550,8 @@ run_describe :: proc(state: ^Run_State($T), ctx: ^UI) -> alicorn.Node_ID {
 	return root
 }
 
-// run is a typed convenience over the native host. It uses the same Runtime,
-// identity, layout, paint, event, and bounded corrective-description paths as
-// host.Run. An optional overlay description runs after the main root closes.
-run :: proc(
-	state: ^$T,
-	render: proc(^T, ^UI),
-	title: string = "Alicorn",
-	width: int = 720,
-	height: int = 480,
-	render_overlays: proc(^T, ^UI) = nil,
-) {
-	run_state := Run_State(T){
-		app=state,
-		render=render,
-		render_overlays=render_overlays,
-	}
+@(private)
+run_application :: proc(run_state: ^Run_State($T), title: string, width, height: int) -> host.Application {
 	build :: proc(
 		data: rawptr,
 		rt: ^alicorn.Runtime,
@@ -519,14 +564,53 @@ run :: proc(
 		alicorn.end_frame(&ctx)
 		return root
 	}
+	start :: proc(data: rawptr, waker: host.Application_Waker) {
+		state := cast(^Run_State(T))data
+		state.on_start(state.app, waker)
+	}
+	woken :: proc(data: rawptr, rt: ^alicorn.Runtime) {
+		state := cast(^Run_State(T))data
+		state.on_wake(state.app, Application_Context(rt))
+	}
+	stop :: proc(data: rawptr) {
+		state := cast(^Run_State(T))data
+		state.on_stop(state.app)
+	}
 
 	application := host.Application{
-		state=rawptr(&run_state),
+		state=rawptr(run_state),
 		title=title,
 		width=width,
 		height=height,
 		build=build,
 		interaction_update_policy=.Correct_After_Interaction,
 	}
-	host.Run(application)
+	if run_state.on_start != nil { application.on_start = start }
+	if run_state.on_wake != nil { application.on_wake = woken }
+	if run_state.on_stop != nil { application.on_stop = stop }
+	return application
+}
+
+// run borrows state until the synchronous native host returns. Optional hooks
+// run on the application thread: on_start receives the borrowed worker waker;
+// on_wake adopts results and explicitly invalidates through its context;
+// on_stop stops and joins all producers before the host destroys the waker.
+// Rendering uses the same bounded corrective-description policy as host.Run.
+run :: proc(
+	state: ^$T,
+	render: proc(^T, ^UI),
+	title: string = "Alicorn",
+	width: int = 720,
+	height: int = 480,
+	render_overlays: proc(^T, ^UI) = nil,
+	on_start: proc(^T, Application_Waker) = nil,
+	on_wake: proc(^T, Application_Context) = nil,
+	on_stop: proc(^T) = nil,
+	smoke: bool = false,
+) {
+	run_state := Run_State(T){
+		app=state, render=render, render_overlays=render_overlays,
+		on_start=on_start, on_wake=on_wake, on_stop=on_stop,
+	}
+	host.Run(run_application(&run_state, title, width, height), smoke=smoke)
 }

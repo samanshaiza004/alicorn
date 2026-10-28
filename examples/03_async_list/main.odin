@@ -11,13 +11,10 @@ import "core:os"
 import "core:sync"
 import "core:thread"
 import "core:time"
-import alicorn "alicorn:runtime"
-import host "alicorn:native/sdl_gpu"
 import ui "alicorn:ui"
 
 ASYNC_LIST_ITEM_COUNT :: 10_000
 ASYNC_LIST_ROW_HEIGHT :: 30
-ASYNC_LIST_ACTIVATE :: alicorn.Action_ID(301)
 
 Item :: struct {
 	id:    u64,
@@ -31,10 +28,11 @@ App :: struct {
 	worker_complete:   bool,
 	loaded:            bool,
 	load_failed:       bool,
-	waker:             host.Application_Waker,
+	waker:             ui.Application_Waker,
 	selected_id:       u64,
 	build_calls:       u64,
-	settled_builds:    u64,
+	loaded_builds:     u64,
+	wake_calls:        u64,
 	smoke:             bool,
 }
 
@@ -48,7 +46,8 @@ load_items :: proc(data: rawptr) {
 	sync.mutex_lock(&app.completion_mutex)
 	app.worker_complete = true
 	sync.mutex_unlock(&app.completion_mutex)
-	host.application_wake(app.waker)
+	// The mutex publishes the data; the borrowed waker only requests an event.
+	ui.wake(app.waker)
 }
 
 render_record :: proc(ctx: ^ui.UI, item: Item, selected: bool) -> bool {
@@ -63,81 +62,60 @@ render_record :: proc(ctx: ^ui.UI, item: Item, selected: bool) -> bool {
 	return false
 }
 
-build_app :: proc(
-	state: rawptr,
-	rt: ^alicorn.Runtime,
-	_logical_width, _logical_height: int,
-	_dpi_scale: f32,
-) -> alicorn.Node_ID {
-	app := cast(^App)state
-	ctx, should_build := alicorn.begin_frame(rt)
-	if !should_build { return 0 }
+render :: proc(app: ^App, ctx: ^ui.UI) {
 	app.build_calls += 1
-
-	alicorn.action_update(rt,
-		alicorn.Action_Descriptor{id=ASYNC_LIST_ACTIVATE, name="async-list.select", label="Select record"},
-		alicorn.Action_State{enabled=app.loaded},
-	)
-	root := alicorn.container_begin(&ctx, .Root, label="async-list-root", style=ui.layout_style(grow=1))
-	if ui.column(&ctx, grow=1, padding=20, gap=10, clip=true, label="async-list-content") {
-		ui.text(&ctx, "03 · Async virtual list", size=24)
+	if app.loaded { app.loaded_builds += 1 }
+	if ui.column(ctx, grow=1, padding=20, gap=10, clip=true, label="async-list-content") {
+		ui.text(ctx, "03 · Async virtual list", size=24)
 		if !app.loaded {
 			message := "Loading 10,000 records on a worker…"
 			if app.load_failed { message = "Worker could not be started. Close and rerun the example." }
-			ui.text(&ctx, message)
+			ui.text(ctx, message)
 		} else {
 			ui.text(
-				&ctx,
+				ctx,
 				fmt.tprintf("Loaded %d records · selected #%d · idle until input", len(app.items), app.selected_id),
 				style=ui.layout_style(height=24),
 			)
-			list := alicorn.virtual_list_begin(
-				&ctx,
+			// Virtualization requires every emitted row to use this fixed height.
+			if list, ok := ui.virtual_list(
+				ctx,
 				len(app.items),
 				ASYNC_LIST_ROW_HEIGHT,
 				key="records",
-				style=ui.layout_style(grow=1, clip=true),
 				label="10,000 stable records",
-			)
-			for position := list.first; position < list.last; position += 1 {
-				item := app.items[position]
-				if render_record(&ctx, item, item.id == app.selected_id) {
-					app.selected_id = item.id
-					alicorn.trace_action(rt, ASYNC_LIST_ACTIVATE, "Select async-list record")
-					alicorn.trace_mutation(rt, "selected async-list record")
-					alicorn.invalidate_root(rt, "async-list selection changed")
+			); ok {
+				for position in list.first..<list.last {
+					item := app.items[position]
+					if render_record(ctx, item, item.id == app.selected_id) {
+						app.selected_id = item.id
+					}
 				}
 			}
-			alicorn.virtual_list_end(&ctx, list)
 		}
 	}
-	alicorn.container_end(&ctx)
-	alicorn.end_frame(&ctx)
-	app.settled_builds = app.build_calls
-	return root
 }
 
-start_app :: proc(state: rawptr, waker: host.Application_Waker) {
-	app := cast(^App)state
+start_app :: proc(app: ^App, waker: ui.Application_Waker) {
 	app.waker = waker
 	app.worker = thread.create_and_start_with_data(rawptr(app), load_items, name="alicorn-example-loader")
 	app.load_failed = app.worker == nil
 }
 
-wake_app :: proc(state: rawptr, rt: ^alicorn.Runtime) {
-	app := cast(^App)state
+wake_app :: proc(app: ^App, ctx: ui.Application_Context) {
+	app.wake_calls += 1
 	sync.mutex_lock(&app.completion_mutex)
 	complete := app.worker_complete
 	sync.mutex_unlock(&app.completion_mutex)
 	if complete && !app.loaded {
 		app.loaded = true
-		alicorn.invalidate_root(rt, "async list worker completed")
+		ui.invalidate(ctx, "async list worker completed")
 	}
 }
 
-stop_app :: proc(state: rawptr) {
-	app := cast(^App)state
+stop_app :: proc(app: ^App) {
 	if app.worker != nil {
+		// Join before releasing data or returning the borrowed waker to the host.
 		thread.join(app.worker)
 		thread.destroy(app.worker)
 		app.worker = nil
@@ -147,13 +125,15 @@ stop_app :: proc(state: rawptr) {
 			fmt.eprintln("async-list smoke stopped before the worker result was presented")
 			os.exit(1)
 		}
-		if app.build_calls != app.settled_builds {
+		// The initial loaded description may require one retained-layout pass.
+		// Further descriptions without input would violate the idle contract.
+		if app.wake_calls != 1 || app.loaded_builds < 1 || app.loaded_builds > 2 {
 			fmt.eprintln("async-list performed application builds after reaching idle")
 			os.exit(1)
 		}
-		fmt.println("async_list_smoke", "items", len(app.items), "settled_builds", app.settled_builds, "idle", true)
+		fmt.println("async_list_smoke", "items", len(app.items), "builds", app.build_calls,
+			"loaded_builds", app.loaded_builds, "completion_wakes", app.wake_calls, "idle", true)
 	}
-	delete(app.items)
 }
 
 main :: proc() {
@@ -162,11 +142,12 @@ main :: proc() {
 		if argument == "--smoke" { smoke = true }
 	}
 	app := App{items=make([]Item, ASYNC_LIST_ITEM_COUNT), smoke=smoke}
-	host.Run(host.Application{
-		state=rawptr(&app), title="Alicorn · Async List", width=860, height=680,
-		build=build_app,
+	// Result storage outlives the worker; run returns after on_stop joins it.
+	defer delete(app.items)
+	ui.run(&app, render, title="Alicorn · Async List", width=860, height=680,
 		on_start=start_app,
 		on_wake=wake_app,
 		on_stop=stop_app,
-	}, smoke=smoke)
+		smoke=smoke,
+	)
 }

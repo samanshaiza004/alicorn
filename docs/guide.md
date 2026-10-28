@@ -15,12 +15,12 @@ uses the same Runtime as the detailed API below.
 2. **Containers and layout:** `ui.row`, `ui.column`, and `ui.panel` provide
    scoped layout, while `ui.box` describes a leaf surface.
 3. **Repeated data:** pass stable keys for items that can move or be inserted.
-4. **Scrolling and virtual collections:** use retained scroll regions and
-   virtual-list APIs when a collection is larger than its viewport.
+4. **Scrolling and virtual collections:** use `ui.virtual_list` for a
+   fixed-height collection larger than its viewport.
 5. **Regions and reuse:** add explicit revisions when a subtree can be reused
    independently from the rest of the description.
-6. **Async host wake:** use ordinary app-owned workers and the native host's
-   waker service when background results need to wake an idle window.
+6. **Async host wake:** add typed lifecycle callbacks to `ui.run`; app-owned
+   workers publish results and use the borrowed native waker to wake the window.
 7. **GPU and custom surfaces:** update retained geometry or versioned image
    surfaces for specialized visualizations.
 8. **Runtime, allocator, and diagnostics:** use explicit invalidation,
@@ -28,17 +28,18 @@ uses the same Runtime as the detailed API below.
    needs those controls.
 
 The simple package does not own application state or retain a second widget
-tree. `ui.run` is the routine single-window host path; applications that need
-native callbacks such as custom wake handling can use `host.Run` and pass the
-same `^alicorn.UI` description context to both convenience helpers and direct
-runtime calls.
+tree. `ui.run` covers the routine single-window frame lifecycle and typed
+worker start, wake and shutdown callbacks. Applications that need additional
+native services can use `host.Run` and pass the same `^alicorn.UI` description
+context to both convenience helpers and direct runtime calls.
 
 `ui.run` uses Alicorn's existing bounded correction policy after consumed UI
 actions. The description can therefore run again after a click: keep file I/O,
 worker submissions, and other external side effects behind consumed actions
-or explicit application transitions. For custom async wake, initialization,
-or native event callbacks, use `host.Run` instead. That path keeps explicit
-invalidation and host-service ownership available.
+or explicit application transitions. Worker completions are adopted in
+`on_wake`, which explicitly requests a description with `ui.invalidate`.
+Use `host.Run` for runtime/font initialization and additional native events
+or host services.
 
 Convenience sizing is local to `ui`: the application root fills the viewport;
 rows and columns use their allocated width and fit their children's height;
@@ -60,12 +61,9 @@ and nonnegative `grow` overrides that style field. Omitted sizing overrides
 leave the supplied style intact. These helpers share the same context and
 one-shot control behavior as direct runtime calls.
 
-`ui.text` currently uses Alicorn's existing `DEFAULT_COLOR` unless a color is
-passed explicitly; it does not yet resolve the active theme's semantic Text
-role. The typed `ui.run` path also does not yet expose initialization, shutdown,
-or native event callbacks. Use `host.Run` for runtime-specific setup/cleanup or
-custom host services; theme-aware default text color and typed lifecycle hooks
-are follow-up API work.
+`ui.text` inherits the active theme's Text role unless a color is passed
+explicitly. The typed `ui.run` path exposes worker lifecycle callbacks. Use
+`host.Run` for runtime/font initialization and additional native host services.
 
 `ui.panel` is a column layout with a retained surface. An omitted fill uses
 the active theme's Surface role; `fill`, `radius`, and `stroke` provide direct
@@ -397,12 +395,65 @@ virtualized or replaced by another presentation, use semantic focus; the
 [reference](reference.md#semantic-focus-in-virtualized-views) explains the
 small identity/binding API.
 
+## Add a worker and a bounded list
+
+[Async List](../examples/03_async_list/main.odin) continues the Form example
+with the same typed `render(app, ctx)` and one `alicorn:ui` import. Add callbacks
+to the existing runner:
+
+```odin
+ui.run(&app, render, title="Async List",
+	on_start=start_worker,
+	on_wake=receive_completion,
+	on_stop=stop_worker,
+)
+```
+
+`start_worker(app: ^App, waker: ui.Application_Waker)` starts the app's ordinary
+Odin thread and gives it a copy of the borrowed waker. Publish completion data
+through app-owned synchronization, then call `ui.wake(waker)`. The wake requests
+an event; the mutex or other synchronization publishes the result bytes.
+
+`receive_completion(app: ^App, ctx: ui.Application_Context)` runs on the
+application thread. Read and adopt any completed result, then call
+`ui.invalidate(ctx, "worker result adopted")` when the UI needs rebuilding.
+A wake alone does not request a new description. The host's existing async
+cause records the callback and resulting invalidation in diagnostics.
+Keep this borrowed callback context on the application thread and within the
+callback. Workers receive only the waker and the app's own result-storage
+references.
+
+`stop_worker(app: ^App)` stops and joins every producer before returning. The
+host keeps the waker alive throughout this callback and retires it afterward.
+Release shared result storage after joining; no copy of the waker may be used
+after `on_stop` returns. The app and callback state stay alive until `ui.run`
+returns.
+
+Render large fixed-height collections using a scoped visible range:
+
+```odin
+if list, ok := ui.virtual_list(ctx, len(app.items), row_height=30, key="records"); ok {
+	for position in list.first..<list.last {
+		render_record(app, ctx, &app.items[position])
+	}
+}
+```
+
+The list fills its allocated width and grows into remaining height by default;
+explicit `width`, `height`, and `grow` remain available. It owns the retained
+scroll/clip scopes and closes both at the end of the `if`, including early
+exits. Use the call directly in the `if` initializer. Each row must occupy
+exactly `row_height`, with a stable key such as `ui.key_scope(ctx, item.id)`.
+Keep that fixed geometry even when the row's content is short: it is the
+virtualization contract used to calculate the visible range.
+
 ## Grow only when the app needs it
 
 Start with the root description. Add more specialized mechanisms for a real
 need:
 
-- `virtual_list_begin/end` for a large, fixed-height collection;
+- `ui.virtual_list` for a large, fixed-height collection, or the lower-level
+  `virtual_list_begin/end` for additional scroll configuration;
 - `region_begin/end` with an application-owned revision when an unchanged
   subtree is expensive to describe;
 - `split_begin/end` for retained, draggable panes;

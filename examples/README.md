@@ -1,7 +1,8 @@
 # Alicorn examples
 
 Follow the numbered native applications in order. Ordinary application UI
-uses only `alicorn:ui`, including the controlled form fields in step 2. Later
+uses only `alicorn:ui`, including the controlled form fields in step 2 and
+worker lifecycle/virtualization in step 3. Later
 lessons use lower-level runtime APIs only when demonstrating a specialized
 runtime capability; both paths share the same UI context and retained Runtime.
 
@@ -12,7 +13,7 @@ Install Odin and the native prerequisites from
 |---|---|---|
 | 1 | [Hello](01_hello/main.odin) | Typed `ui.run`, app-owned state, text, and a button |
 | 2 | [Form](02_form/main.odin) | One-package controls, managed text buffers, accessible labels, and app-owned values |
-| 3 | [Async List](03_async_list/main.odin) | Worker completion, reusable rows with `ui.key_scope`, fixed-height virtualization, and true idle |
+| 3 | [Async List](03_async_list/main.odin) | Typed `ui.run` lifecycle, app-owned worker/completion storage, `ui.key_scope`, scoped virtualization, and true idle |
 | 4 | [Custom Surface](04_custom_surface/main.odin) | Retained GPU geometry inside a clipped UI panel; resize and DPI-aware updates |
 | 5 | [Inspector](05_inspector/main.odin) | Retained tree, focus, semantic actions, and invalidation causes |
 | 6 | [Secondary Windows](06_secondary_windows/main.odin) | Opening and closing a tool window with independent application state |
@@ -43,8 +44,10 @@ build. Program arguments follow the example name on the shell runner and use
 2. In `02_form`, edit the name, toggle the checkbox, adjust the slider, and
    compare the application-owned values shown at the bottom.
 3. In `03_async_list`, wait for the worker result, scroll, and select rows. The
-   list describes only visible records; after its completion wake, the host
-   returns to event wait. Pass `--smoke` to the runner to run the bounded idle
+   list describes only visible records. Follow the explicit worker start,
+   mutex-protected completion and shutdown join; `ui.wake` requests one host
+   event, and `on_wake` adopts the result and calls `ui.invalidate`. The host
+   then returns to event wait. Pass `--smoke` to run the bounded wake/idle
    check (`./tools/run_example.sh 03_async_list --smoke`).
 4. In `04_custom_surface`, change the waveform function or segment count. The
    application description stays idle while scheduled callbacks update the

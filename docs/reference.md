@@ -69,15 +69,43 @@ one-shot activation behavior.
 
 The convenience package includes `key_scope`, `text`, `text_field`, `checkbox`, `slider_f32`,
 `icon`, `icon_button`, `button`, `row`, `column`, `panel`, `layout`, `box`,
-`border`, basic colors, `rgb`, and root invalidation. It writes ordinary
+`virtual_list`, `border`, basic colors, `rgb`, invalidation, and worker wakes. It writes ordinary
 retained nodes and surface paint through the same Runtime; it does not add an
-application state store or a second tree. Use `host.Run` when custom host
-callbacks, worker wakes, initialization, or native lifecycle control are
-needed. Both paths can call the lower-level runtime API with the same `UI`.
+application state store or a second tree. `ui.run` supports typed worker
+lifecycle callbacks; use `host.Run` for additional native events, services and
+runtime/font initialization. Both paths can call the lower-level runtime API
+with the same `UI`.
 
 See [Getting Started](getting-started.md) for the first window and the
 [application guide](guide.md) for sizing defaults and the progressive path to
 identity, virtual collections, regions, async wakes, surfaces, and diagnostics.
+
+### Typed lifecycle and worker wakes
+
+Append optional named callbacks to `ui.run(&app, render, ...)`. The callbacks
+borrow the same `^App` passed to `run`; state stays alive until the synchronous
+runner returns. All callbacks execute on the application thread:
+
+| Parameter | Signature | Responsibility |
+| --- | --- | --- |
+| `on_start` | `proc(app: ^App, waker: ui.Application_Waker)` | Start app-owned producers, copying the borrowed thread-safe waker if needed. Runs before the initial description. |
+| `on_wake` | `proc(app: ^App, ctx: ui.Application_Context)` | Adopt synchronized results and call `ui.invalidate(ctx, reason)` when a new description is required. |
+| `on_stop` | `proc(app: ^App)` | Stop and join every producer before returning; release shared result storage after joining. |
+
+`ui.wake(waker)` forwards to the existing host event request. The application
+supplies result storage and synchronization; a waker does not publish bytes,
+transfer ownership, or implicitly invalidate. The host preserves async causal
+tracing around `on_wake`. `Application_Context` is a borrowed callback
+capability for explicit invalidation; keep it on the application thread and
+within that callback. `ui.invalidate` accepts either this context or `^ui.UI`.
+
+The borrowed waker remains valid through `on_stop`, then the host retires its
+backing state. All producer calls must finish before `on_stop` returns. Hooks
+default to `nil`, preserving existing simple apps without polling or synthetic
+callbacks. The bridge uses `host.Application` and the existing native loop.
+An optional `smoke=true` uses the host's bounded smoke mode for example tests.
+See [03_async_list](../examples/03_async_list/main.odin) for an app-owned Odin
+thread, mutex-protected completion, typed adoption and explicit shutdown join.
 
 ## Native application host
 
@@ -704,6 +732,17 @@ position-based identity.
 
 ## Collections and panes
 
+- `if list, ok := ui.virtual_list(ctx, item_count, row_height, key=...); ok { ... }`
+  opens the existing retained fixed-height list and closes both scroll/content
+  scopes automatically on block exit, including `return`, `break` and
+  `continue`. Emit only `[list.first, list.last)` and key rows by data identity.
+  Each row must occupy exactly `row_height`; counts are nonnegative, and heights
+  and the resulting content extent must be finite and positive (an empty list
+  is valid). `width=-1`, `height=-1`, `grow=1` are the defaults; `label` and caller
+  location preserve diagnostic context. The `ui.Virtual_List` handle aliases
+  the runtime's `Virtual_List_Handle` and is borrowed for this description.
+  Use the call directly in the `if` initializer and let its deferred cleanup
+  close the scopes.
 - `virtual_list_begin` / `virtual_list_end` return the visible row range for a
   fixed-height list. Emit only those rows, and key each row by its data identity.
 - `virtual_list_ensure_visible` scrolls a fixed-row item into view.
