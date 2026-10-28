@@ -188,7 +188,11 @@ semantic_focus_clear :: proc(rt: ^Runtime) -> bool {
 	}
 	previous := rt.semantic_focus.id
 	previous_owner := rt.semantic_focus.owner
-	rt.semantic_focus = Semantic_Focus_State{}
+	// Keep the prior realization until refresh can retire its visual state.
+	// Clearing the whole struct first would lose the only node that needs its
+	// semantic-active presentation flag cleared.
+	rt.semantic_focus.id = Semantic_ID{}
+	rt.semantic_focus.owner = 0
 	refresh_semantic_focus_realization(rt)
 	invalidate_interaction_paint(rt, previous_owner, "semantic focus cleared")
 	record_trace(rt, .Focus, 0,
@@ -208,6 +212,16 @@ semantic_node_within_owner :: proc(rt: ^Runtime, id, owner: Node_ID) -> bool {
 	return false
 }
 
+semantic_active_update_node :: proc(rt: ^Runtime, id: Node_ID, active: bool) {
+	if rt == nil || id == 0 { return }
+	node, found := rt.nodes[id]
+	if !found { return }
+	rt.stats.semantic_active_update_visits += 1
+	if node.semantic_active == active { return }
+	node.semantic_active = active
+	invalidate_interaction_paint(rt, id, "semantic focus presentation changed")
+}
+
 refresh_semantic_focus_realization :: proc(rt: ^Runtime) {
 	previous := rt.semantic_focus.realized_node
 	next := Node_ID(0)
@@ -222,14 +236,8 @@ refresh_semantic_focus_realization :: proc(rt: ^Runtime) {
 			}
 		}
 	}
-	for id, node in rt.nodes {
-		rt.stats.semantic_active_update_visits += 1
-		should_be_active := id == next
-		if node.semantic_active != should_be_active {
-			node.semantic_active = should_be_active
-			invalidate_interaction_paint(rt, id, "semantic focus presentation changed")
-		}
-	}
+	if previous != next { semantic_active_update_node(rt, previous, false) }
+	if next != 0 { semantic_active_update_node(rt, next, true) }
 	rt.semantic_focus.realized_node = next
 	if previous != next {
 		invalidate_interaction_paint(rt, rt.semantic_focus.owner, "semantic focus realization changed")

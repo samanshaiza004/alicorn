@@ -1803,6 +1803,7 @@ Runtime :: struct {
 	semantic_last_to_revision: u64,
 	semantic_collection_generation: u64,
 	semantic_collection_touched: map[Semantic_ID]u64,
+	semantic_collection_prune_pending: bool,
 	semantic_keyboard_focus: Semantic_ID,
 	semantic_keyboard_focus_pending: bool,
 	semantic_requests: [dynamic]Semantic_Request_Event,

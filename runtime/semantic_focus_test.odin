@@ -48,6 +48,8 @@ test_semantic_focus_survives_virtualization_and_lod :: proc(t: ^testing.T) {
 
 	owner, row := semantic_focus_test_render(&rt, true)
 	testing.expect(t, owner != 0 && row != 0, "the detailed list should realize the first event row")
+	testing.expect(t, rt.stats.semantic_active_update_visits == 0,
+		"reconciling an ordinary tree without semantic focus should not walk retained nodes to update flags")
 	if owner == 0 || row == 0 { return }
 
 	event := Semantic_ID{namespace=7, value=1}
@@ -58,7 +60,10 @@ test_semantic_focus_survives_virtualization_and_lod :: proc(t: ^testing.T) {
 	testing.expect(t, rt.focused == keyboard_focus_before && rt.selected == selected_before,
 		"setting semantic focus should not take keyboard focus or change retained selection")
 	testing.expect(t, focus(&rt, owner), "the list owner should retain keyboard focus")
+	active_updates_before := rt.stats.semantic_active_update_visits
 	_, _ = semantic_focus_test_render(&rt, true)
+	testing.expect(t, rt.stats.semantic_active_update_visits-active_updates_before <= 2,
+		"a stable realized semantic focus should update only its presentation node per reconciliation")
 	state := semantic_focus_state(&rt)
 	testing.expect(t, state.id == event && state.owner == owner && state.realized_node == row,
 		"semantic identity, durable owner, and realized row should be reported independently")
@@ -132,6 +137,16 @@ test_semantic_focus_survives_virtualization_and_lod :: proc(t: ^testing.T) {
 	state = semantic_focus_state(&rt)
 	testing.expect(t, row_again != 0 && state.realized_node == row_again,
 		"returning to detailed LOD should reconnect the same semantic identity")
+	active_row := state.realized_node
+	testing.expect(t, semantic_focus_clear(&rt), "semantic focus should clear while its row is realized")
+	if active_row != 0 {
+		testing.expect(t, !rt.nodes[active_row].semantic_active,
+			"clearing semantic focus should clear the previous row's semantic-active presentation")
+	}
+	_ = semantic_focus_set(&rt, event, owner)
+	_, row_again = semantic_focus_test_render(&rt, true)
+	testing.expect(t, row_again != 0 && rt.nodes[row_again].semantic_active,
+		"semantic-active presentation should be restored after focus is cleared and set again")
 
 	_ = semantic_focus_set(&rt, track_with_same_numeric_value, owner)
 	state = semantic_focus_state(&rt)

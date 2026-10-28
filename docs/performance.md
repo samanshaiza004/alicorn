@@ -23,6 +23,9 @@ limitations before using a number.
 - [Native and dogfood apps on Windows](benchmarks/native-dogfood-windows.md):
   Direct3D 12 idle/submission, process-memory and qualified startup samples,
   plus bounded Monitor, History, and fixed-fixture Scope smoke runs.
+- [Windows performance audit (2026-10-27)](benchmarks/performance-audit-windows-2026-10-27.md):
+  matched retained-runtime baseline/candidate samples, current text/material
+  benchmarks, and measured release-size/buffer-capacity experiments.
 
 ## Reproduce
 
