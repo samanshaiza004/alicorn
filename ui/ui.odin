@@ -548,7 +548,7 @@ button :: proc(
 virtual_list_end :: proc(
 	ui: ^UI, _item_count: int, _row_height: f32, _key: UI_Key,
 	_width, _height, _grow: f32, _label: string, _loc: odin_runtime.Source_Code_Location,
-	list: Virtual_List, opened: bool,
+	_focusable: bool, list: Virtual_List, opened: bool,
 ) {
 	if opened { alicorn.virtual_list_end(ui, list) }
 }
@@ -567,11 +567,20 @@ virtual_list :: proc(
 	grow: f32 = 1,
 	label: string = "virtual-list",
 	loc := #caller_location,
+	focusable: bool = false,
 ) -> (list: Virtual_List, opened: bool) {
 	if item_count < 0 || row_height <= 0 || math.is_nan(row_height) || math.is_inf(row_height) ||
 		math.is_inf(f32(item_count)*row_height) { return }
-	list = alicorn.virtual_list_begin(ui, item_count, row_height, key=key,
-		style=alicorn.layout_style(.Column, width=width, height=height, grow=grow, clip=true), label=label, loc=loc)
+	list = alicorn.virtual_list_begin(
+		ui,
+		item_count,
+		row_height,
+		key=key,
+		style=alicorn.layout_style(.Column, width=width, height=height, grow=grow, clip=true),
+		label=label,
+		loc=loc,
+		focusable=focusable,
+	)
 	opened = list.scroll.id != 0
 	return
 }

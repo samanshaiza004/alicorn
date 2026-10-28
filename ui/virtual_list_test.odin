@@ -12,7 +12,7 @@ UI_List_Test_App :: struct {
 }
 
 ui_list_test_render :: proc(app: ^UI_List_Test_App, ctx: ^UI) {
-	if list, ok := virtual_list(ctx, app.count, 20, key="records", height=100, grow=0); ok {
+	if list, ok := virtual_list(ctx, app.count, 20, key="records", height=100, grow=0, focusable=true); ok {
 		app.owner, app.first, app.last = list.scroll.id, list.first, list.last
 		for i in list.first..<list.last {
 			if key_scope(ctx, u64(i)) {
@@ -39,6 +39,8 @@ test_scoped_virtual_list_bounds_realization_and_preserves_fractional_scrolling :
 		"the if initializer must close both retained list scopes before the next sibling")
 	owner := app.owner
 	testing.expect(t, strings.contains(rt.nodes[owner].site.file, "virtual_list_test.odin"), "forward the application list call site")
+	owner_info, owner_info_ok := alicorn.node_info(&rt, owner)
+	testing.expect(t, owner_info_ok && owner_info.focusable, "the scoped helper must forward keyboard focusability to its scroll owner")
 	testing.expect(t, alicorn.scroll_region_set_offset(&rt, owner, 50, "fractional row scroll"))
 	_ = application.build(application.state, &rt, 240, 160, 1)
 	first := rt.nodes[app.first_row]
