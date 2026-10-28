@@ -79,13 +79,15 @@ in the platform tree simultaneously.
 
 ## Manual screen-reader validation
 
-The project maintainer reports successful VoiceOver interaction on macOS and
-successful screen-reader interaction with the Windows fixture. The Windows
-reader and OS/reader versions were not recorded. See the
-[validation record](../../../docs/validation/accessibility-screen-reader.md).
+The project maintainer confirmed physical VoiceOver, Narrator, and NVDA checks
+on the integrated #103 candidate, including traversal across the million-item
+collection's bounded exported working set. Exact reader versions and detailed
+session traces were not recorded. See the [final acceptance matrix](../../../docs/validation/issue-103-final.md)
+and the [validation record](../../../docs/validation/accessibility-screen-reader.md).
 The UIA/AX probes remain useful for repeatable checks of roles, names, values,
-actions, focus, status, and bounds; they do not replace screen-reader testing.
+actions, focus, status, and bounds; they complement physical screen-reader
+testing.
 
-The million-item collection still needs its own real screen-reader traversal
-check. Its bounded-memory tests do not prove navigation across gaps in the
-exported platform tree.
+The bounded-memory tests alone do not prove navigation across gaps in the
+exported platform tree. The physical traversal check confirmed the tested
+working-set path; repeat it when changing semantic projection or host actions.
