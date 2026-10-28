@@ -7,6 +7,7 @@ the current project status.
 
 ## Current acceptance and platform limits
 
+- [macOS static/shared desktop launch matrix (2026-10-28)](macos-desktop-launch-2026-10-28.md) — current integrated-revision evidence for direct and Launch Services launches.
 - [Final Windows/macOS acceptance matrix](issue-103-final.md) — maintainer
   confirmed physical input, IME, mixed-DPI, appearance, and screen-reader checks,
   alongside automated GPU and CI evidence.
