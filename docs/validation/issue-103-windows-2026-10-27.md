@@ -1,8 +1,10 @@
 # Alicorn #103 — Windows acceptance (2026-10-27)
 
-This is the Windows half of the physical acceptance record for #103. It records
-maintainer-reported desktop checks separately from reproducible checks run in
-this checkout. The macOS half is pending maintainer validation.
+This records the Windows physical acceptance observations for #103 separately
+from reproducible checks run in this checkout. The manual session used the
+candidate and environment listed below. A separate macOS record is now available
+in [the macOS acceptance report](issue-103-macos-2026-10-27.md); the consolidated
+current-candidate status is in [the acceptance matrix](issue-103-final.md).
 
 ## Candidate and machine
 
@@ -61,11 +63,11 @@ terminal output for the report:
 
 ## Remaining evidence before closing #103
 
-The maintainer-reported Windows results cover the important real-reader and
-desktop behaviors, so this report does not request another Windows test pass.
-For a complete record, the Windows subcase details above can be filled in if
-they were retained. The required remaining platform pass is macOS/VoiceOver
-and Metal readback on this candidate. The final comparison should also state
-that the blend probe is an offscreen RGBA8 test, not a physical display
-color-management test. Keep #103 open until the macOS results and any blocked
-cases are recorded.
+The maintainer-reported Windows results cover real-reader and desktop checks,
+but subcase details remain incomplete. The physical session is not on the
+current integrated candidate and used SDL 3.4.2; see the consolidated
+[acceptance matrix](issue-103-final.md) for the remaining retests and limits.
+Metal and D3D12 readbacks passed on the integrated candidate, but the blend
+probe is an offscreen RGBA8 test rather than a physical display
+color-management test. Keep #103 open until remaining physical results and any
+blocked cases are recorded.
