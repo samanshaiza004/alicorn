@@ -299,7 +299,10 @@ cadences, not animations or general-purpose task queues.
 The current surface API supports typed retained presentation data; it is not
 an application shader API. The runtime's keyboard focus, semantic focus, and
 action IDs are exported through an experimental Windows/macOS AccessKit bridge;
-real screen-reader behavior remains unvalidated. See the
+representative real screen-reader behavior has been physically validated on
+Windows and macOS. This is not comprehensive accessibility conformance; Linux
+has no platform adapter. See the
+[final acceptance matrix](validation/issue-103-final.md) and the guide's
 [accessibility status](guide.md#accessibility-status).
 Broader platform validation and additional advanced text behavior remain
 future work. The project is experimental, and its API may change.

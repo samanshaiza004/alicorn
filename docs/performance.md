@@ -46,9 +46,9 @@ reports above.
 
 ## Coverage boundary
 
-The v0.1.0 evidence now contains Windows/macOS focused text-layout results,
-retained-work results on both platforms, native-host idle/startup samples, and
-bounded Windows dogfood runs for Monitor, History, and Scope. Monitor observes
+The evidence contains Windows/macOS focused text-layout results, retained-work
+results on both platforms, native-host idle/startup samples, and bounded Windows
+dogfood runs for Monitor, History, and Scope. Monitor observes
 the live machine; History uses a 27-commit local repository; Scope uses the
 published deterministic 100,000-event fixture. Only native hello is used for
 the controlled idle CPU/submission claim. The dogfood smoke captures are short

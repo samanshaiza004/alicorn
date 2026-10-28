@@ -1,5 +1,13 @@
 # v0.2 release stabilization — 2026-10-23
 
+> **Historical snapshot (2026-10-23).** Its open-gate and blocked/pending
+> entries below describe the candidate state at that date, not current release
+> status. #103 is now closed as completed; physical accessibility, appearance,
+> DPI, input, and GPU acceptance are summarized in the
+> [final acceptance matrix](issue-103-final.md). Native packaging and SDL 3.4.18
+> checks are documented in [packaging](../packaging.md) and the dated
+> [SDL validation record](sdl-3.4.18.md).
+
 This is an initial candidate audit, not a release certification. The starting
 framework revision is `d7e5441` (merged #99 and #100). #24 is complete; #27 remains
 the deferred architecture roadmap. #98 is an opt-in experiment with the

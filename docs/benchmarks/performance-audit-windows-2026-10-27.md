@@ -54,6 +54,30 @@ outlier. Treat the median reductions as encouraging same-machine evidence,
 not as a guaranteed latency improvement. The virtual-list result is unchanged
 within measurement noise.
 
+### Revalidation after the #103 integration
+
+After merging `master` through `e9ae45c`, I rebuilt the retained-work benchmark
+from combined tree `4a96793` with the same Odin revision and `-o:speed`, then
+ran three fresh processes. These results check that the integrated
+accessibility-projection changes did not disturb the retained-work baseline;
+the headless benchmark does not measure native UIA/Accessibility adapter cost.
+
+| Workload | Median (range) on combined tree | Prior candidate median (range) |
+|---|---:|---:|
+| 10,000-node unchanged root invalidation | 18.547 ms (16.705–20.081) | 16.972 ms (16.226–21.134) |
+| 10,000-node root invalidation, one value changed | 17.958 ms (17.828–18.409) | 16.393 ms (15.824–23.803) |
+| 100-node region changed | 2.307 ms (2.263–3.563) | 2.209 ms (2.176–2.274) |
+| Reuse a retained 10,000-node subtree | 2.755 ms (2.696–3.307) | 2.519 ms (2.385–2.710) |
+| 1,000,000-item virtual list, 100 frames | 8.481 ms (8.387–8.888) | 8.385 ms (8.318–8.803) |
+
+All timing ranges overlap the prior candidate ranges, including the region
+case, whose first run is a high outlier. The deterministic work counters are
+unchanged: true idle reports zero work/allocations, no-focus refresh reports
+zero semantic-active visits, and the million-item list retains 23 visual
+nodes. This is a consistency check, not evidence of a further speedup. The
+[post-merge raw capture](raw/performance-audit-windows-post-merge-2026-10-27.txt)
+contains the command and all three outputs.
+
 ## Other documented headless benchmarks
 
 Three fresh processes were run with each documented script after the changes.
