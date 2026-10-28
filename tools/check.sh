@@ -26,6 +26,18 @@ ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
 cd "$REPO_ROOT"
 mkdir -p "$OUT_DIR"
 
+sh "$SCRIPT_DIR/check_accesskit_abi_contract.sh"
+
+"$ODIN" check accesskit -no-entry-point
+ACCESSKIT_ABI_PROBE_LINK_FLAGS=$(sh "$SCRIPT_DIR/build_accesskit_abi_probe.sh" "$OUT_DIR/accesskit_abi_probe")
+ACCESSKIT_TEST_LINK_FLAGS="$ACCESSKIT_LINK_FLAGS $ACCESSKIT_ABI_PROBE_LINK_FLAGS"
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_TEST_LINK_FLAGS" \
+	test accesskit "-out:$OUT_DIR/alicorn_accesskit_tests"
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	build accesskit/consumer "-collection:accesskit=$REPO_ROOT" \
+	"-out:$OUT_DIR/accesskit_external_consumer"
+"$OUT_DIR/accesskit_external_consumer"
+
 git diff --check
 
 "$ODIN" build tests "-out:$OUT_DIR/alicorn_tests"
@@ -38,7 +50,7 @@ for fixture in tests/fixtures/* tools/runa_text; do
 	[ -f "$fixture/main.odin" ] || continue
 	name=${fixture##*/}
 	alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
-		build "$fixture" "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/fixtures/$name"
+		build "$fixture" "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/fixtures/$name.bin"
 done
 
 "$OUT_DIR/alicorn_tests"

@@ -788,6 +788,14 @@ and per-character geometry are not yet projected. These APIs provide a
 runtime/bridge contract; application-level text projection and screen-reader
 behavior still need end-to-end validation.
 
+Built-in single-line `Text_Field` controls create one stable `Text_Run` child
+internally. The runtime publishes committed text and caret/selection positions
+as one semantic update, including updates caused by typing, pointer placement,
+and keyboard caret movement. Native text-selection actions update the retained
+field directly. IME preedit is not exposed as committed text. Native AccessKit
+bounds are transformed from logical Alicorn rectangles to window-relative
+physical pixels, and backing-scale changes force a geometry refresh.
+
 For a slider whose numeric value needs a human-readable representation, call
 `semantic_range_value_text(ui, value)` immediately after `slider_f32`. This sets
 the optional semantic string value while preserving numeric value/minimum/
@@ -853,13 +861,15 @@ SetTextSelection and ReplaceSelectedText actions, Tab/TabList, list boxes and
 options, combo boxes, status and alert live regions, and the bounded-collection
 slice. Linux platform integration is not included.
 
-The bridge has compile/link coverage, but real Narrator/NVDA/VoiceOver behavior
-and screen-reader traversal across gaps in virtualized collections are not yet
-validated. It must not be described as certified accessibility support.
-Semantic updates remain dirty-driven; activation can cause one bounded
-one-shot wake but never starts idle polling. Native host menus and dialogs are
-OS-owned services, while custom context-menu accessibility remains incomplete.
-See the [guide's accessibility status](guide.md#accessibility-status).
+Representative controls have been manually exercised with VoiceOver on macOS
+and a screen reader on Windows; the Windows reader and OS/reader versions were
+not recorded. This is not certified accessibility support, and screen-reader
+traversal across gaps in virtualized collections remains unvalidated. Semantic
+updates remain dirty-driven; activation can cause a bounded one-shot wake but
+never starts idle polling. Native host menus and dialogs are OS-owned services,
+while custom context-menu accessibility remains incomplete. See the
+[screen-reader validation record](validation/accessibility-screen-reader.md)
+and the [guide's accessibility status](guide.md#accessibility-status).
 
 ## Transient modal surfaces
 

@@ -54,6 +54,8 @@ Windows UI Automation and macOS accessibility, with initial control, tab, and
 bounded-collection projection. Real screen-reader navigation/action behavior
 has not yet been validated; see the guide's
 [accessibility status](docs/guide.md#accessibility-status).
+The reusable Odin binding is in [`accesskit/`](accesskit/); it is separate from
+Alicorn's semantic projection and SDL window integration.
 
 For live debugging, the native host includes an opt-in
 [visual inspector](docs/development.md#native-diagnostics): retained tree,

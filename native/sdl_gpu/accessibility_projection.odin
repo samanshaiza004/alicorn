@@ -435,7 +435,7 @@ accessibility_projection_apply_text_selections :: proc(
 	if projection == nil { return false }
 	for &node in projection.nodes { node.text_selection = {} }
 	for semantic in snapshot.nodes {
-		if semantic.role != .Text_Area || !semantic.text_selection.valid { continue }
+		if (semantic.role != .Text_Area && semantic.role != .Text_Field) || !semantic.text_selection.valid { continue }
 		area_index, area_found := semantic_indices[semantic.id]
 		anchor_index, anchor_found := semantic_indices[semantic.text_selection.anchor.run_id]
 		focus_index, focus_found := semantic_indices[semantic.text_selection.focus.run_id]
@@ -443,7 +443,7 @@ accessibility_projection_apply_text_selections :: proc(
 		area := projection.nodes[area_index]
 		anchor := projection.nodes[anchor_index]
 		focus := projection.nodes[focus_index]
-		if area.role != .Text_Area || anchor.role != .Text_Run || focus.role != .Text_Run ||
+		if (area.role != .Text_Area && area.role != .Text_Input) || anchor.role != .Text_Run || focus.role != .Text_Run ||
 		   anchor.semantic_parent != semantic.id || focus.semantic_parent != semantic.id ||
 		   semantic.text_selection.anchor.character_index > u64(len(anchor.text_run_character_lengths)) ||
 		   semantic.text_selection.focus.character_index > u64(len(focus.text_run_character_lengths)) { return false }
@@ -848,7 +848,7 @@ accessibility_projection_text_selection_decode :: proc(
 	area, area_found := accessibility_projection_node_by_semantic_id(projection, area_id)
 	anchor, anchor_found := accessibility_projection_node_by_id(projection, anchor_node_id)
 	focus, focus_found := accessibility_projection_node_by_id(projection, focus_node_id)
-	if !area_found || area.role != .Text_Area || !anchor_found || !focus_found ||
+	if !area_found || (area.role != .Text_Area && area.role != .Text_Input) || !anchor_found || !focus_found ||
 	   anchor.role != .Text_Run || focus.role != .Text_Run ||
 	   anchor.semantic_parent != area_id || focus.semantic_parent != area_id ||
 	   anchor_character_index > u64(len(anchor.text_run_character_lengths)) ||

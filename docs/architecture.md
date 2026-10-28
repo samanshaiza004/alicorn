@@ -234,6 +234,15 @@ Semantic state is dirty-driven and introduces no idle polling; activation can
 request one bounded host wake. Real platform assistive-technology navigation
 remains an explicit validation gate.
 
+The pinned AccessKit C ABI, typed node/tree-update ownership helpers, and
+Windows/macOS subclassing adapter bindings live in the standalone Odin package
+[`accesskit/`](../accesskit/). It has no Alicorn semantic or SDL dependency.
+The SDL host maps Alicorn's semantic projection into that package's tree
+updates, discovers and owns native window integration, and routes resulting
+actions back through Alicorn's existing semantic request path. The C-header
+contract probe checks the package's ABI mirrors against pinned AccessKit 0.23.1
+headers; this boundary does not imply screen-reader acceptance.
+
 ## Native and text boundaries
 
 The runtime is platform-neutral Odin code. `native/sdl_gpu` adapts SDL3 input,

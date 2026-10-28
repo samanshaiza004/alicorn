@@ -630,6 +630,7 @@ copy_node_description :: proc(
 		node.caret = Text_Position{len(d.text), .Leading}
 		node.selection_anchor = node.caret
 		node.selection_focus = node.caret
+		_ = semantic_text_field_accessibility_sync(rt, node)
 	}
 	if d.disabled {
 		node.hovered = false

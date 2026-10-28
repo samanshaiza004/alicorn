@@ -147,6 +147,7 @@ text_field_pointer_selection_update :: proc(rt: ^Runtime, owner: Node_ID, x, y: 
 	node.selection_anchor = anchor
 	node.selection_focus = focus_position
 	node.caret = focus_position
+	_ = semantic_text_field_accessibility_sync(rt, node)
 	invalidate_interaction_paint(rt, owner, "text field pointer selection extended")
 	return true
 }
@@ -675,6 +676,7 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 					node.caret = Text_Position{endpoints.focus, focus_affinity}
 					node.selection_anchor = Text_Position{endpoints.anchor, anchor_affinity}
 					node.selection_focus = node.caret
+					_ = semantic_text_field_accessibility_sync(rt, node)
 					invalidate_interaction_paint(rt, node.id, "pointer assigned text selection")
 					record_trace(rt, .Focus, target, "pointer assigned text selection at visual boundary")
 				}
@@ -830,6 +832,7 @@ process_text_edit :: proc(rt: ^Runtime, id: Node_ID, edit: Text_Edit) -> Text_Ch
 		invalidate_interaction_paint(rt, node.id, "text edit caret changed")
 		invalidate_root(rt, "text edit")
 	}
+	_ = semantic_text_field_accessibility_sync(rt, node)
 	return change
 }
 
@@ -848,6 +851,7 @@ set_text_position :: proc(rt: ^Runtime, id: Node_ID, position: Text_Position) ->
 	node.selection_focus = next
 	if changed {
 		invalidate_interaction_paint(rt, id, "text caret changed")
+		_ = semantic_text_field_accessibility_sync(rt, node)
 	}
 	return true
 }
@@ -874,6 +878,7 @@ set_text_selection :: proc(rt: ^Runtime, id: Node_ID, start, end: int) -> bool {
 	node.caret = focus_position
 	if changed {
 		invalidate_interaction_paint(rt, id, "text selection changed")
+		_ = semantic_text_field_accessibility_sync(rt, node)
 	}
 	return true
 }

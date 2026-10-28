@@ -9,14 +9,23 @@ alicorn_accesskit_linker_flags() {
 	archive="$cache_root/accesskit-c-$version.zip"
 	distribution="$cache_root/accesskit-c-$version"
 	case "$(uname -s)" in
-		Linux) printf '\n'; return 0 ;; # The native AccessKit bridge is currently Windows/macOS only.
-		Darwin) ;;
+		Linux)
+			platform=linux
+			case "$(uname -m)" in
+				x86_64|amd64) arch=x86_64 ;;
+				i386|i486|i586|i686) arch=x86 ;;
+				*) echo "AccessKit $version Linux static library does not support architecture '$(uname -m)'." >&2; return 1 ;;
+			esac
+			;;
+		Darwin)
+			platform=macos
+			case "$(uname -m)" in
+				arm64|aarch64) arch=arm64 ;;
+				x86_64) arch=x86_64 ;;
+				*) echo "AccessKit $version macOS static library does not support architecture '$(uname -m)'." >&2; return 1 ;;
+			esac
+			;;
 		*) echo "AccessKit $version static bootstrap does not support this OS in this helper (got $(uname -s))." >&2; return 1 ;;
-	esac
-	case "$(uname -m)" in
-		arm64|aarch64) arch=arm64 ;;
-		x86_64) arch=x86_64 ;;
-		*) echo "AccessKit $version macOS static library does not support architecture '$(uname -m)'." >&2; return 1 ;;
 	esac
 	mkdir -p "$cache_root"
 	if [ ! -f "$archive" ]; then
@@ -26,13 +35,20 @@ alicorn_accesskit_linker_flags() {
 			return 1
 		}
 	fi
-	actual_sha=$(shasum -a 256 "$archive" | awk '{print $1}') || return 1
+	if command -v shasum >/dev/null 2>&1; then
+		actual_sha=$(shasum -a 256 "$archive" | awk '{print $1}') || return 1
+	elif command -v sha256sum >/dev/null 2>&1; then
+		actual_sha=$(sha256sum "$archive" | awk '{print $1}') || return 1
+	else
+		echo 'AccessKit bootstrap requires shasum or sha256sum.' >&2
+		return 127
+	fi
 	if [ "$actual_sha" != "$sha" ]; then
 		echo "AccessKit $version archive SHA-256 mismatch. Expected $sha; got $actual_sha. Cached archive: $archive" >&2
 		return 1
 	fi
 
-	relative_library="lib/macos/$arch/static/libaccesskit.a"
+	relative_library="lib/$platform/$arch/static/libaccesskit.a"
 	library="$distribution/$relative_library"
 	if [ ! -f "$library" ]; then
 		if [ -d "$distribution" ]; then
@@ -49,12 +65,16 @@ alicorn_accesskit_linker_flags() {
 		staged_distribution="$stage/accesskit-c-$version"
 		if [ ! -f "$staged_distribution/$relative_library" ]; then
 			rm -r "$stage"
-			echo "Verified AccessKit archive does not contain expected macOS $arch static library: $relative_library" >&2
+			echo "Verified AccessKit archive does not contain expected $platform $arch static library: $relative_library" >&2
 			return 1
 		fi
 		mv "$staged_distribution" "$distribution"
 		rm -r "$stage"
 	fi
-	library_directory=".deps/accesskit/accesskit-c-$version/lib/macos/$arch/static"
-	printf '%s\n' "-L$library_directory -framework AppKit -framework Foundation -framework CoreFoundation -lobjc -lc++"
+	library_directory=".deps/accesskit/accesskit-c-$version/lib/$platform/$arch/static"
+	if [ "$platform" = linux ]; then
+		printf '%s\n' "-L$library_directory -laccesskit"
+	else
+		printf '%s\n' "-L$library_directory -framework AppKit -framework Foundation -framework CoreFoundation -lobjc -lc++"
+	fi
 }

@@ -1,3 +1,58 @@
+function Initialize-AlicornMsvcEnvironment {
+    if ($env:INCLUDE -and $env:LIB -and $env:VSCMD_VER) { return }
+
+    $VsWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (-not (Test-Path -LiteralPath $VsWhere -PathType Leaf)) {
+        if ($env:INCLUDE -and $env:LIB) { return }
+        throw 'MSVC environment is not initialized and vswhere.exe was not found. Install the Visual C++ build tools or run from a Visual Studio Developer PowerShell.'
+    }
+
+    $Install = & $VsWhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+    if ($LASTEXITCODE -ne 0 -or -not $Install) {
+        throw 'MSVC environment is not initialized and vswhere could not find Visual Studio with the x64 C++ toolchain.'
+    }
+    $VsDevCmd = Join-Path $Install 'Common7\Tools\VsDevCmd.bat'
+    if (-not (Test-Path -LiteralPath $VsDevCmd -PathType Leaf)) {
+        throw "MSVC environment setup script was not found: '$VsDevCmd'. Repair the Visual Studio C++ build tools installation."
+    }
+
+    $CommandShell = if ($env:ComSpec) { $env:ComSpec } else { 'cmd.exe' }
+    $StartInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $StartInfo.FileName = $CommandShell
+    $StartInfo.Arguments = "/d /c call `"$VsDevCmd`" -arch=x64 -host_arch=x64 >nul && set"
+    $StartInfo.UseShellExecute = $false
+    $StartInfo.CreateNoWindow = $true
+    $StartInfo.RedirectStandardOutput = $true
+    $StartInfo.RedirectStandardError = $true
+    $Process = New-Object System.Diagnostics.Process
+    $Process.StartInfo = $StartInfo
+    try {
+        if (-not $Process.Start()) { throw 'cmd.exe did not start.' }
+        $OutputTask = $Process.StandardOutput.ReadToEndAsync()
+        $ErrorTask = $Process.StandardError.ReadToEndAsync()
+        $Process.WaitForExit()
+        $EnvironmentOutput = $OutputTask.GetAwaiter().GetResult()
+        $ErrorOutput = $ErrorTask.GetAwaiter().GetResult()
+        if ($Process.ExitCode -ne 0) {
+            throw "VsDevCmd.bat failed to initialize the x64 C++ environment (exit code $($Process.ExitCode)): $ErrorOutput"
+        }
+    }
+    finally {
+        $Process.Dispose()
+    }
+    $EnvironmentLines = $EnvironmentOutput -split "`r?`n"
+    foreach ($Line in $EnvironmentLines) {
+        $Separator = $Line.IndexOf('=')
+        if ($Separator -le 0) { continue }
+        $Name = $Line.Substring(0, $Separator)
+        $Value = $Line.Substring($Separator + 1)
+        [System.Environment]::SetEnvironmentVariable($Name, $Value, 'Process')
+    }
+    if (-not ($env:INCLUDE -and $env:LIB -and $env:VSCMD_VER)) {
+        throw 'VsDevCmd.bat completed without exporting the expected INCLUDE, LIB, and VSCMD_VER variables.'
+    }
+}
+
 function Resolve-AlicornOdin {
     param(
         [AllowNull()]
