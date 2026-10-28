@@ -61,7 +61,7 @@ filtered, or reordered.
 
 ```odin
 for item in app.items {
-    if alicorn.component_begin(&ui, alicorn.key_u64(item.id)) {
+    if alicorn.component_begin(&ui, item.id) {
         alicorn.text(&ui, item.name)
         alicorn.component_end(&ui)
     }

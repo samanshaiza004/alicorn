@@ -9,7 +9,7 @@ package main
 import "core:math"
 import "core:os"
 import alicorn "alicorn:runtime"
-import host "../../native/sdl_gpu"
+import host "alicorn:native/sdl_gpu"
 import ui "alicorn:ui"
 
 SURFACE_PERIOD :: 33 * 1_000_000
@@ -24,16 +24,14 @@ App :: struct {
 build_app :: proc(
 	state: rawptr,
 	rt: ^alicorn.Runtime,
-	logical_width, logical_height: int,
+	_logical_width, _logical_height: int,
 	dpi_scale: f32,
 ) -> alicorn.Node_ID {
-	_ = logical_width
-	_ = logical_height
 	app := cast(^App)state
 	ctx, should_build := alicorn.begin_frame(rt)
 	if !should_build { return 0 }
 
-	root := alicorn.container_begin(&ctx, .Root, label="custom-surface-root", style=alicorn.layout_style(grow=1))
+	root := alicorn.container_begin(&ctx, .Root, label="custom-surface-root", style=ui.layout_style(grow=1))
 	if ui.column(&ctx, grow=1, padding=24, gap=12, clip=true, label="custom-surface-content") {
 		ui.text(&ctx, "Retained GPU surface", size=24)
 		ui.text(&ctx, "A scheduled callback updates geometry at 30 Hz. The ordinary description, layout, and paint remain idle.")
@@ -41,7 +39,7 @@ build_app :: proc(
 			app.surface = alicorn.gpu_geometry_surface(
 				&ctx,
 				"animated-waveform",
-				alicorn.layout_style(grow=1, width=-1, height=-1),
+				ui.layout_style(grow=1, width=-1, height=-1),
 				dpi_scale,
 			)
 		}
@@ -57,14 +55,12 @@ services_app :: proc(state: rawptr, services: host.Application_Services) {
 	app.scheduler = services.scheduler
 }
 
-start_app :: proc(state: rawptr, waker: host.Application_Waker) {
-	_ = waker
+start_app :: proc(state: rawptr, _waker: host.Application_Waker) {
 	app := cast(^App)state
-	_ = host.application_schedule_after(app.scheduler, .Frequent, SURFACE_PERIOD)
+	host.application_schedule_after(app.scheduler, .Frequent, SURFACE_PERIOD)
 }
 
-scheduled_wake_app :: proc(state: rawptr, rt: ^alicorn.Runtime, class: host.Scheduled_Wake_Class) {
-	_ = class
+scheduled_wake_app :: proc(state: rawptr, rt: ^alicorn.Runtime, _class: host.Scheduled_Wake_Class) {
 	app := cast(^App)state
 	surface, ok := alicorn.gpu_surface_context(rt, app.surface)
 	if ok && surface.logical_bounds.w > 0 && surface.logical_bounds.h > 0 {
@@ -110,7 +106,7 @@ scheduled_wake_app :: proc(state: rawptr, rt: ^alicorn.Runtime, class: host.Sche
 			app.phase += 0.16
 		}
 	}
-	_ = host.application_schedule_after(app.scheduler, .Frequent, SURFACE_PERIOD)
+	host.application_schedule_after(app.scheduler, .Frequent, SURFACE_PERIOD)
 }
 
 main :: proc() {

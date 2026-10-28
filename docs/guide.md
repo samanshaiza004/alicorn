@@ -49,10 +49,10 @@ main-axis space. Explicit box width or height overrides its square `size`;
 explicit row or column dimensions and `grow` are passed to the existing layout
 rules. The lower-level `Layout_Style` contract is unchanged.
 
-For an exact layout escape route, import `alicorn:runtime` alongside `ui` and
-use `if ui.layout(ctx, existing_style, label="Inspector") { ... }`. It scopes
-one plain container with the supplied style, including constraints, without
-changing defaults. Rows, columns, and panels also accept diagnostic labels.
+For an exact layout escape route, use `ui.layout(ctx, style,
+label="Inspector") { ... }`. It scopes one plain container with the supplied
+`ui.Layout_Style`, including constraints, without changing defaults. Rows,
+columns, and panels also accept diagnostic labels.
 `ui.text` forwards typed `style`, `font`, and `text_style`; a positive `size`
 overrides only the font size. `ui.button` forwards typed styling, state, content
 alignment, and variants; `width=96, height=28` can replace a layout constructor,
@@ -103,9 +103,18 @@ if ui.button(ctx, "Pause") {
 }
 ```
 
-The broader runtime API exposes controls that are not duplicated in the small
-facade. Import `alicorn:runtime` alongside `alicorn:ui` to use those controls
-with the same context:
+For ordinary forms, the pointer-bound `ui.checkbox` and `ui.slider_f32` adopt
+user changes directly into application-owned values:
+
+```odin
+ui.checkbox(ctx, "Show grid", &app.show_grid)
+ui.slider_f32(ctx, "Gain", &app.gain, 0, 1, step=0.05)
+```
+
+Their boolean results are optional change indicators. The runtime-level
+value-returning controls remain available when an application needs to
+validate or transform a proposed value before storing it. Import
+`alicorn:runtime` alongside `alicorn:ui` for that lower-level path:
 
 ```odin
 enabled := alicorn.checkbox(ctx, "Show grid", app.show_grid)
@@ -119,8 +128,9 @@ if gain.changed {
 }
 ```
 
-Both controls report a proposed value; the application stores it. A slider's
-optional step is `0` for continuous input or a positive snapping increment.
+The lower-level controls report a proposed value; the application stores it.
+A slider's optional step is `0` for continuous input or a positive snapping
+increment.
 
 The runtime retains UI identity and interaction state, but does not observe
 arbitrary application memory. When a logical change needs a new description,
@@ -189,7 +199,7 @@ preserved when only width or height is set:
 
 ```odin
 // In build, among the other retained children:
-alicorn.image(&ui, app.logo, alt_text="Studio logo", key=alicorn.key_string("logo"))
+alicorn.image(&ui, app.logo, alt_text="Studio logo", key="logo")
 ```
 
 The `initialize` procedure is assigned to `host.Application.on_initialize`.
@@ -284,10 +294,10 @@ interaction owner and describe its retained pieces as ordinary children:
 owner, activated := alicorn.button_begin(
 	&ui,
 	"",
-	key=alicorn.key_string("commit-row"),
+	key="commit-row",
 	style=alicorn.layout_style(.Row, height=32),
 )
-label_id := alicorn.text(&ui, "4f19c2a  Fix editor layout", key=alicorn.key_string("label"))
+label_id := alicorn.text(&ui, "4f19c2a  Fix editor layout", key="label")
 _ = alicorn.visual_part_attach(
 	&ui,
 	label_id,
@@ -321,7 +331,7 @@ requests to application state and describe the updated items on the next build:
 ```odin
 result := alicorn.tab_bar(
 	&ui,
-	alicorn.key_string("document-tabs"),
+	"document-tabs",
 	items,
 	options,
 	style,
@@ -351,7 +361,7 @@ label—lets focus and other retained state follow it through reordering:
 
 ```odin
 for item in app.items {
-	if alicorn.component_begin(&ui, alicorn.key_u64(item.id)) {
+	if alicorn.component_begin(&ui, item.id) {
 		if alicorn.button(&ui, item.name) {
 			app.selected_id = item.id
 		}
@@ -360,9 +370,9 @@ for item in app.items {
 }
 ```
 
-Use `key_string`, `key_u64`, or `key_pair` to match the identity you already
-have. The call site identifies the kind of UI; the key identifies the data
-item.
+Pass a string or `u64` data ID directly as `key`; use `key_pair` when identity
+depends on two numeric values. The call site identifies the kind of UI; the
+key identifies the data item.
 
 If keyboard operation must stay with a logical item while its row is
 virtualized or replaced by another presentation, use semantic focus; the
@@ -407,7 +417,7 @@ nesting Rows to reproduce the same columns:
 ```odin
 columns := [2]alicorn.Grid_Track{alicorn.grid_fixed(88), alicorn.grid_fraction(1)}
 rows := [3]alicorn.Grid_Track{alicorn.grid_auto(), alicorn.grid_auto(), alicorn.grid_auto()}
-alicorn.grid_begin(&ui, alicorn.key_string("commit-details"), columns[:], rows[:],
+alicorn.grid_begin(&ui, "commit-details", columns[:], rows[:],
 	style=alicorn.layout_style(width=480, height=120), gap_x=8, gap_y=4)
 author_label := alicorn.text(&ui, "Author")
 _ = alicorn.grid_cell(&ui, author_label, 0, 0)

@@ -341,18 +341,18 @@ can transfer to the selected peer; application-owned state remains outside the
 physical presentation subtree.
 
 ```odin
-alicorn.adaptive_begin(&ui, alicorn.key_string("commit-metadata"),
+alicorn.adaptive_begin(&ui, "commit-metadata",
 	style=alicorn.layout_style(.Column, height=116),
 	label="commit-metadata")
 
 alicorn.adaptive_alternative_begin(&ui,
-	alicorn.key_string("commit-metadata-wide"), "Wide",
+	"commit-metadata-wide", "Wide",
 	minimum_width=380, style=alicorn.layout_style(.Column))
 // Describe a Grid or other wide presentation.
 alicorn.adaptive_alternative_end(&ui)
 
 alicorn.adaptive_alternative_begin(&ui,
-	alicorn.key_string("commit-metadata-compact"), "Compact",
+	"commit-metadata-compact", "Compact",
 	minimum_width=0, style=alicorn.layout_style(.Column))
 // Describe a compact Row/Column presentation.
 alicorn.adaptive_alternative_end(&ui)
@@ -388,7 +388,7 @@ rows := [3]alicorn.Grid_Track{
 	alicorn.grid_auto(),
 	alicorn.grid_auto(),
 }
-alicorn.grid_begin(&ui, alicorn.key_string("commit-properties"), columns[:], rows[:],
+alicorn.grid_begin(&ui, "commit-properties", columns[:], rows[:],
 	style=alicorn.layout_style(width=480, height=120), gap_x=8, gap_y=4)
 author := alicorn.text(&ui, "Author")
 _ = alicorn.grid_cell(&ui, author, 0, 0)
@@ -640,7 +640,7 @@ options.presentation = .Compact
 options.height = 32
 options.min_tab_width, options.max_tab_width = 150, 180
 options.close_policy = .Selected_Or_Hover
-result := alicorn.tab_bar(ui, alicorn.key_string("documents"), tabs, options)
+result := alicorn.tab_bar(ui, "documents", tabs, options)
 ```
 
 The close policies are `Always`, `Hover`, `Selected_Or_Hover`, and `Auto`.
@@ -675,11 +675,14 @@ remaining conformance limitations.
 
 ## Identity and repeated UI
 
-`UI_Key` forms:
+Identity keys accept common Odin values directly:
 
-- `key_string(name)` for a stable named item;
-- `key_u64(id)` for a numeric item identity;
-- `key_pair(first, second)` for a pair of numeric identity values.
+- a string such as `key="document-tabs"` for a stable named item;
+- a `u64` such as `key=item.id` for a numeric item identity;
+- `key_pair(first, second)` when identity depends on two numeric values.
+
+The `key_string` and `key_u64` constructors remain available when an explicit
+`UI_Key` value is useful.
 
 Use `component_begin` / `component_end` to scope reusable UI for a data item.
 Keys follow logical items through filtering, insertion, and reorder; indices

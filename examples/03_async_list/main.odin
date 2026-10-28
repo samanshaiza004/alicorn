@@ -10,7 +10,7 @@ import "core:sync"
 import "core:thread"
 import "core:time"
 import alicorn "alicorn:runtime"
-import host "../../native/sdl_gpu"
+import host "alicorn:native/sdl_gpu"
 import ui "alicorn:ui"
 
 ASYNC_LIST_ITEM_COUNT :: 10_000
@@ -52,22 +52,19 @@ load_items :: proc(data: rawptr) {
 build_app :: proc(
 	state: rawptr,
 	rt: ^alicorn.Runtime,
-	logical_width, logical_height: int,
-	dpi_scale: f32,
+	_logical_width, _logical_height: int,
+	_dpi_scale: f32,
 ) -> alicorn.Node_ID {
-	_ = logical_width
-	_ = logical_height
-	_ = dpi_scale
 	app := cast(^App)state
 	ctx, should_build := alicorn.begin_frame(rt)
 	if !should_build { return 0 }
 	app.build_calls += 1
 
-	_ = alicorn.action_update(rt,
+	alicorn.action_update(rt,
 		alicorn.Action_Descriptor{id=ASYNC_LIST_ACTIVATE, name="async-list.select", label="Select record"},
 		alicorn.Action_State{enabled=app.loaded},
 	)
-	root := alicorn.container_begin(&ctx, .Root, label="async-list-root", style=alicorn.layout_style(grow=1))
+	root := alicorn.container_begin(&ctx, .Root, label="async-list-root", style=ui.layout_style(grow=1))
 	if ui.column(&ctx, grow=1, padding=20, gap=10, clip=true, label="async-list-content") {
 		ui.text(&ctx, "03 · Async virtual list", size=24)
 		if !app.loaded {
@@ -78,26 +75,26 @@ build_app :: proc(
 			ui.text(
 				&ctx,
 				fmt.tprintf("Loaded %d records · selected #%d · idle until input", len(app.items), app.selected_id),
-				style=alicorn.layout_style(height=24),
+				style=ui.layout_style(height=24),
 			)
 			list := alicorn.virtual_list_begin(
 				&ctx,
 				len(app.items),
 				ASYNC_LIST_ROW_HEIGHT,
-				key=alicorn.key_string("records"),
-				style=alicorn.layout_style(grow=1, clip=true),
+				key="records",
+				style=ui.layout_style(grow=1, clip=true),
 				label="10,000 stable records",
 			)
 			for position := list.first; position < list.last; position += 1 {
 				item := app.items[position]
-				if ui.row(&ctx, key=alicorn.key_u64(item.id), height=ASYNC_LIST_ROW_HEIGHT, gap=10, align=.Center, label="record-row") {
+				if ui.row(&ctx, key=item.id, height=ASYNC_LIST_ROW_HEIGHT, gap=10, align=.Center) {
 					ui.text(
 						&ctx,
 						fmt.tprintf("Record %05d · score %03d", item.id, item.score),
-						style=alicorn.layout_style(.Row, grow=1),
+						style=ui.layout_style(.Row, grow=1),
 					)
-					if ui.button(&ctx, "Select", key=alicorn.key_string("select"), width=84, height=26,
-						state=alicorn.Button_State{selected=item.id == app.selected_id}) {
+					if ui.button(&ctx, "Select", width=84, height=26,
+						state=ui.Button_State{selected=item.id == app.selected_id}) {
 						app.selected_id = item.id
 						alicorn.trace_action(rt, ASYNC_LIST_ACTIVATE, "Select async-list record")
 						alicorn.trace_mutation(rt, "selected async-list record")
