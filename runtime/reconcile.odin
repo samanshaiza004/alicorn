@@ -318,7 +318,8 @@ mark_dirty :: proc(node: ^Node, reason: string, description, layout, paint, comp
 	dirty_set(&node.dirty, .Layout, layout || previous_layout)
 	dirty_set(&node.dirty, .Paint, paint || previous_paint)
 	dirty_set(&node.dirty, .Composite, composite || previous_composite)
-	if !previous_paint {
+	new_work := description || layout || paint || composite
+	if new_work && !previous_paint && node.last_reason != reason {
 		if len(node.last_reason) > 0 { delete(node.last_reason, allocator) }
 		node.last_reason = owned(reason, allocator)
 	}

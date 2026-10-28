@@ -7,6 +7,11 @@ layout_measure_mark_dirty :: proc(rt: ^Runtime, node: ^Node) {
 	if node == nil { return }
 	dirty_set(&node.dirty, .Measure, true)
 	if rt == nil || node.measure_queued { return }
+	state, exists := rt.measure_states[node.id]
+	// A node without a prior parent-provided constraint key cannot be measured
+	// until layout visits it. Keep the dirty bit; the parent layout pass owns
+	// its first measurement and will establish the cache key.
+	if !exists || !state.cache_key.valid { return }
 	rt.measure_queue_sequence += 1
 	if rt.measure_queue_sequence == 0 { rt.measure_queue_sequence = 1 }
 	node.measure_queue_generation = rt.measure_queue_sequence

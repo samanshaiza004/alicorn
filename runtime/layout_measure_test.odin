@@ -126,6 +126,30 @@ test_measure_work_queue_deduplicates_and_font_generation_remains_broad :: proc(t
 }
 
 @(test)
+test_measure_dirty_without_valid_constraints_waits_for_layout :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 120})
+	defer destroy_runtime(&rt)
+
+	node := new(Node, allocator=rt.persistent_allocator)
+	node.id = 7004
+	node.kind = .Text
+	node.active = true
+	rt.nodes[node.id] = node
+	rt.measure_states[node.id] = Measure_State{input_revision=1}
+
+	layout_measure_mark_dirty(&rt, node)
+	state := rt.measure_states[node.id]
+	testing.expect(t, dirty_has(node.dirty, .Measure) && !node.measure_queued && len(rt.measure_queue) == 0,
+		"a node without a prior constraint key must remain dirty without an unprocessable queue entry")
+
+	state.cache_key.valid = true
+	rt.measure_states[node.id] = state
+	layout_measure_mark_dirty(&rt, node)
+	testing.expect(t, dirty_has(node.dirty, .Measure) && node.measure_queued && len(rt.measure_queue) == 1,
+		"once layout has supplied constraints, later invalidation must enter the retained measurement queue")
+}
+
+@(test)
 test_constraint_change_with_equal_result_stays_local_and_results_honor_exact_bounds :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 640, 120})
 	defer destroy_runtime(&rt)
