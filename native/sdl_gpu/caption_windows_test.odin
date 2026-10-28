@@ -8,6 +8,41 @@ import win "core:sys/windows"
 import alicorn "../../runtime"
 
 @(test)
+test_caption_synthetic_text_refresh_preserves_injected_window_metrics :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0,0,320,120})
+	defer alicorn.destroy_runtime(&rt)
+	testing.expect(t,alicorn.text_engine_load_font(&rt.text_engine,NATIVE_UI_FONT_DATA))
+	renderer := Native_Text_Renderer{runtime=&rt}
+	defer native_text_destroy(&renderer)
+	menus := [1]Application_Menu{{label="File"}}
+	app := Application{menus=menus[:],window_decorations=.Integrated_Title_Bar}
+	menu := Native_Menu_Runtime{application=&app}
+	labels := [1]Win32_Menu_Label{{host_node=NATIVE_MENU_HOST_NODE_BASE+1}}
+	state := Win32_Menu_State{
+		menu=&menu,
+		allocator=context.allocator,
+		dpi=144,
+		pixels_per_unit=1.5,
+		maximized=true,
+		frame_enabled=true,
+		text_renderer=&renderer,
+		title_text="Synthetic caption",
+		title=Win32_Menu_Label{host_node=NATIVE_MENU_HOST_NODE_BASE},
+		ellipsis_host_node=NATIVE_MENU_HOST_NODE_BASE+2,
+		labels=labels[:],
+	}
+	// Simulate an initial fixture refresh with a stale font generation and no HWND.
+	testing.expect(t,rt.text_engine.font_generation > state.font_generation)
+	testing.expect(t,native_caption_validation_refresh_text(&state,&rt))
+	testing.expect_value(t,state.dpi,u32(144))
+	testing.expect_value(t,state.pixels_per_unit,f32(1.5))
+	testing.expect(t,state.maximized,"synthetic maximized state must survive text refresh")
+	testing.expect_value(t,state.font_generation,rt.text_engine.font_generation)
+	testing.expect(t,native_text_host_run(&renderer,state.title.host_node) != nil,
+		"the fixture must still refresh shaped caption text")
+}
+
+@(test)
 test_caption_repeated_activation_preserves_hover_and_requests_no_frame :: proc(t: ^testing.T) {
 	menu := Native_Menu_Runtime{}
 	state := Win32_Menu_State{menu=&menu,active=true,caption_hovered=1,caption_pressed=1}
@@ -19,6 +54,16 @@ test_caption_repeated_activation_preserves_hover_and_requests_no_frame :: proc(t
 	menu.chrome_redraw_pending = false
 	testing.expect(t,!win32_menu_set_active(&state,false) && !menu.chrome_redraw_pending)
 	testing.expect(t,win32_menu_set_active(&state,true) && menu.chrome_redraw_pending)
+}
+
+@(test)
+test_native_fixture_smoke_argument_accepts_wrapper_flag_and_legacy_menu_flag :: proc(t: ^testing.T) {
+	testing.expect(t,native_fixture_smoke_requested([]string{"alicorn", "--smoke"}),
+		"the wrapper's canonical smoke flag must enable menu fixture timeout")
+	testing.expect(t,native_fixture_smoke_requested([]string{"alicorn", "--menu-fixture-smoke"}),
+		"the legacy menu fixture smoke flag must remain accepted")
+	testing.expect(t,!native_fixture_smoke_requested([]string{"alicorn", "--manual-ime"}),
+		"unrelated fixture arguments must not enable smoke mode")
 }
 
 @(test)

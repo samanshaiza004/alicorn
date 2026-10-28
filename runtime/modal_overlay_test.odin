@@ -49,6 +49,55 @@ modal_semantic_activation_describe :: proc(ui: ^UI, show_modal: bool) {
 	}
 }
 
+modal_text_selection_test_area :: proc(
+	ui: ^UI,
+	area_id, run_id: Semantic_ID,
+	label, key: string,
+) -> bool {
+	text(ui, label, key=key_string(key), style=layout_style(height=24))
+	actions := semantic_actions_add({}, .Set_Text_Selection)
+	if !semantic_describe_as(ui, area_id, .Text_Area, label, actions=actions) { return false }
+	lengths := [1]u8{1}
+	if semantic_text_run_set(ui.runtime, run_id, area_id, "x", lengths[:]) { return true }
+	run, found := semantic_node_lookup(ui.runtime, run_id)
+	return found && run.role == .Text_Run && run.parent == area_id && run.value == "x" &&
+		semantic_byte_lengths_equal(run.text_run_character_lengths, lengths[:])
+}
+
+modal_text_selection_test_describe :: proc(
+	ui: ^UI,
+	show_modal: bool,
+	background_area, background_run, modal_area, modal_run: Semantic_ID,
+) -> (background_area_ok, modal_area_ok: bool) {
+	container_begin_simple(ui, .Root, label="modal-text-selection-root", key=key_string("modal-text-selection-root"), style=layout_style(.Column, grow=1))
+	_ = text_field(ui, "background field", key=key_string("modal-text-selection-background-field"), style=layout_style(height=32))
+	background_area_ok = modal_text_selection_test_area(ui, background_area, background_run, "background area", "modal-text-selection-background-area")
+	container_end(ui)
+	if show_modal {
+		modal_overlay_begin(ui, key_string("modal-text-selection-overlay"), style=layout_style(.Column))
+		_ = text_field(ui, "modal field", key=key_string("modal-text-selection-modal-field"), style=layout_style(height=32))
+		modal_area_ok = modal_text_selection_test_area(ui, modal_area, modal_run, "modal area", "modal-text-selection-modal-area")
+		modal_overlay_end(ui)
+	}
+	return
+}
+
+modal_overlay_test_text_field :: proc(rt: ^Runtime, label: string) -> Node_ID {
+	for id in rt.order {
+		node, ok := rt.nodes[id]
+		if ok && node.kind == .Text_Field && node.text == label { return id }
+	}
+	return 0
+}
+
+modal_text_selection_test_selection :: proc(run_id: Semantic_ID, anchor, focus: u64) -> Semantic_Text_Selection {
+	return Semantic_Text_Selection{
+		anchor={run_id=run_id, character_index=anchor},
+		focus={run_id=run_id, character_index=focus},
+		valid=true,
+	}
+}
+
 @(test)
 test_semantic_activation_obeys_modal_scope_and_recovers_after_dismissal :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 640, 480})
@@ -113,6 +162,100 @@ test_semantic_activation_obeys_modal_scope_and_recovers_after_dismissal :: proc(
 		"the workspace tab should accept semantic Select after modal dismissal")
 	testing.expect(t, rt.activation_sequence == sequence_after_dismissal+2,
 		"workspace activation should resume after the modal is removed")
+}
+
+@(test)
+test_semantic_text_selection_obeys_modal_scope_and_owner_eligibility :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 640, 480})
+	defer destroy_runtime(&rt)
+	background_area := Semantic_ID{namespace=0x4D4F44414C53454C, value=1}
+	background_run := Semantic_ID{namespace=0x4D4F44414C53454C, value=2}
+	modal_area := Semantic_ID{namespace=0x4D4F44414C53454C, value=3}
+	modal_run := Semantic_ID{namespace=0x4D4F44414C53454C, value=4}
+
+	ui, should_build := begin_frame(&rt)
+	if !should_build { testing.expect(t, false, "the initial semantic text-selection fixture should build"); return }
+	background_area_ok, modal_area_ok := modal_text_selection_test_describe(
+		&ui, true, background_area, background_run, modal_area, modal_run,
+	)
+	end_frame(&ui)
+	background_field := modal_overlay_test_text_field(&rt, "background field")
+	modal_field := modal_overlay_test_text_field(&rt, "modal field")
+	background_field_semantic := semantic_visual_id(background_field)
+	modal_field_semantic := semantic_visual_id(modal_field)
+	background_selection := modal_text_selection_test_selection(semantic_text_field_run_id(background_field), 0, 1)
+	modal_selection := modal_text_selection_test_selection(semantic_text_field_run_id(modal_field), 0, 1)
+	area_selection := modal_text_selection_test_selection(background_run, 0, 1)
+	modal_area_selection := modal_text_selection_test_selection(modal_run, 0, 1)
+	background_area_node, background_area_found := semantic_node_lookup(&rt, background_area)
+	modal_area_node, modal_area_found := semantic_node_lookup(&rt, modal_area)
+	testing.expect(t, background_area_ok && modal_area_ok && background_field != 0 && modal_field != 0 &&
+		background_area_found && background_area_node.visual_node != 0 && modal_area_found && modal_area_node.visual_node != 0,
+		"both text owners should be realized in the workspace and active modal")
+	if !background_area_ok || !modal_area_ok || background_field == 0 || modal_field == 0 ||
+	   !background_area_found || !modal_area_found { return }
+
+	background_before, background_before_ok := text_field_interaction(&rt, background_field)
+	testing.expect(t, !semantic_text_selection_apply(&rt, background_field_semantic, background_selection),
+		"native selection must reject a Text_Field covered by a modal")
+	background_after, background_after_ok := text_field_interaction(&rt, background_field)
+	testing.expect(t, background_before_ok && background_after_ok &&
+		background_before.selection_start == background_after.selection_start &&
+		background_before.selection_end == background_after.selection_end,
+		"a rejected background Text_Field selection must not change its retained caret")
+	queued_before := len(rt.semantic_requests)-rt.semantic_request_read_index
+	testing.expect(t, !semantic_text_selection_apply(&rt, background_area, area_selection) &&
+		len(rt.semantic_requests)-rt.semantic_request_read_index == queued_before,
+		"native selection must not queue a Text_Area selection behind a modal")
+
+	testing.expect(t, semantic_text_selection_apply(&rt, modal_field_semantic, modal_selection),
+		"a Text_Field inside the active modal must accept native selection")
+	modal_field_interaction, modal_field_interaction_ok := text_field_interaction(&rt, modal_field)
+	testing.expect(t, modal_field_interaction_ok && modal_field_interaction.selection_start == 0 && modal_field_interaction.selection_end == 1,
+		"the active modal Text_Field must receive the requested selection")
+	testing.expect(t, semantic_text_selection_apply(&rt, modal_area, modal_area_selection),
+		"a Text_Area inside the active modal must queue native selection")
+	event, event_found := semantic_request_pop(&rt)
+	testing.expect(t, event_found && event.id == modal_area && event.action == .Set_Text_Selection &&
+		event.text_selection == modal_area_selection,
+		"the active modal Text_Area selection should reach the application request queue")
+	if event_found { semantic_request_event_destroy(&rt, &event) }
+
+	ui, should_build = begin_frame(&rt)
+	if !should_build { testing.expect(t, false, "dismissing the modal should rebuild the selection fixture"); return }
+	background_area_ok, _ = modal_text_selection_test_describe(
+		&ui, false, background_area, background_run, modal_area, modal_run,
+	)
+	end_frame(&ui)
+	testing.expect(t, background_area_ok && semantic_text_selection_apply(&rt, background_field_semantic, background_selection),
+		"the background Text_Field should accept selection again after modal dismissal")
+	testing.expect(t, semantic_text_selection_apply(&rt, background_area, area_selection),
+		"the background Text_Area should queue selection again after modal dismissal")
+	event, event_found = semantic_request_pop(&rt)
+	testing.expect(t, event_found && event.id == background_area && event.text_selection == area_selection,
+		"dismissed-modal Text_Area selection should be queued for the correct owner")
+	if event_found { semantic_request_event_destroy(&rt, &event) }
+
+	background_area_node, background_area_found = semantic_node_lookup(&rt, background_area)
+	if !background_area_found { testing.expect(t, false, "the background Text_Area should remain realized"); return }
+	selection_changed := modal_text_selection_test_selection(semantic_text_field_run_id(background_field), 1, 2)
+	rt.nodes[background_field].disabled = true
+	testing.expect(t, !semantic_text_selection_apply(&rt, background_field_semantic, selection_changed),
+		"native selection must reject a disabled Text_Field")
+	rt.nodes[background_field].disabled = false
+	rt.nodes[background_area_node.visual_node].disabled = true
+	testing.expect(t, !semantic_text_selection_apply(&rt, background_area, area_selection) &&
+		len(rt.semantic_requests)-rt.semantic_request_read_index == 0,
+		"native selection must reject a disabled Text_Area without queueing it")
+	rt.nodes[background_area_node.visual_node].disabled = false
+	rt.nodes[background_field].active = false
+	testing.expect(t, !semantic_text_selection_apply(&rt, background_field_semantic, selection_changed),
+		"native selection must reject an inactive Text_Field owner")
+	rt.nodes[background_field].active = true
+	rt.nodes[background_area_node.visual_node].active = false
+	testing.expect(t, !semantic_text_selection_apply(&rt, background_area, area_selection) &&
+		len(rt.semantic_requests)-rt.semantic_request_read_index == 0,
+		"native selection must reject an inactive Text_Area owner without queueing it")
 }
 
 @(test)

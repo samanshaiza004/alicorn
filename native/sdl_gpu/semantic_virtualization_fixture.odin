@@ -321,7 +321,7 @@ RunSemanticVirtualizationFixture :: proc() {
 		height=760,
 		build=semantic_virtual_fixture_build,
 		on_stop=semantic_virtual_fixture_stop,
-	})
+	}, smoke=native_fixture_smoke_requested(os.args))
 }
 
 @(test)

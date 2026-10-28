@@ -519,20 +519,25 @@ run_menu_fixture :: proc(titlebar_fixture, windows_titlebar_fixture, smoke: bool
 	}
 }
 
+native_fixture_smoke_requested :: proc(arguments: []string) -> bool {
+	for argument in arguments {
+		if argument == "--smoke" || argument == "--menu-fixture-smoke" { return true }
+	}
+	return false
+}
+
 // RunMenuFixture is a small end-to-end host fixture for menu rendering,
 // native keyboard navigation, and semantic command delivery.
 RunMenuFixture :: proc() {
 	titlebar_fixture := false
 	windows_titlebar_fixture := false
-	smoke := false
 	decoration_mode := Window_Decoration_Mode.System
 	for argument in os.args {
 		if argument == "--macos-titlebar-fixture" { titlebar_fixture = true }
 		if argument == "--windows-titlebar-fixture" { windows_titlebar_fixture = true }
 		if argument == "--integrated-title-bar" { decoration_mode = .Integrated_Title_Bar }
-		if argument == "--menu-fixture-smoke" { smoke = true }
 	}
-	run_menu_fixture(titlebar_fixture, windows_titlebar_fixture, smoke, decoration_mode)
+	run_menu_fixture(titlebar_fixture, windows_titlebar_fixture, native_fixture_smoke_requested(os.args), decoration_mode)
 }
 
 // RunMacOSTitlebarFixture is used only by the dedicated native fixture app
