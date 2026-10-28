@@ -68,3 +68,38 @@ construction remains a separate follow-up. The deterministic tests guard the
 locality contract independently of these noisy timing measurements. The raw
 alternating runs are [default profile](raw/retained-locality-macos-m1-2026-10-28-default.txt)
 and [`-o:speed`](raw/retained-locality-macos-m1-2026-10-28-speed.txt).
+
+## Recheck after rebasing onto current master
+
+The retained-locality branch was rebased onto `master` at `4ac8014` and
+revalidated at candidate `f5e788859018127127d7ef572c6798346462219f`. On the
+same MacBookAir10,1 / Apple M1 / 8 GB system running macOS 27.2 with Odin
+`dev-2026-09-nightly:a2fb372`, the comparison again built all three revisions
+from Git snapshots and ran three alternating fresh-process samples per
+revision.
+
+| Profile | Workload | Baseline | Regressed | Rebased candidate |
+| --- | --- | ---: | ---: | ---: |
+| Default | 10,000-descendant region reuse | 0.262 ms | 11.420 ms | 0.050 ms |
+| `-o:speed` | 10,000-descendant region reuse | 0.158 ms | 3.750 ms | 0.043 ms |
+| Default | Initial 10,000-node tree | 58.593 ms | 149.522 ms | 152.636 ms |
+| `-o:speed` | Initial 10,000-node tree | 25.093 ms | 60.781 ms | 58.110 ms |
+| Default | Unchanged 10,000-node root description | 22.506 ms | 43.314 ms | 37.943 ms |
+| `-o:speed` | Unchanged 10,000-node root description | 9.181 ms | 21.985 ms | 16.537 ms |
+
+The targeted reuse update is 228× faster than the regressed revision in the
+default profile and 87× faster with `-o:speed`. Its deterministic counters
+remain `measure_examined=0`, `measure_executed=0`,
+`semantic_order_examined=0`, `display_finalized=1`,
+`display_full_passes=0`, and `global_fallbacks=0`. The timing is also below the
+older baseline, though the fixed durations are short enough that the counters
+are the stronger evidence.
+
+Initial construction remains about 2.6× the older baseline in the default
+profile and 2.3× with `-o:speed`. This synthetic construction workload does not
+establish a Scratchpad startup regression; a representative application startup
+and interaction measurement remains a separate follow-up. Clip-geometry
+changes and multi-command paint updates are intentionally checked through the
+full-display fallback, while ordinary single-command sibling paint changes
+retain the local path. The rechecked raw samples are [default profile](raw/retained-locality-macos-m1-2026-10-28-combined-default.txt)
+and [`-o:speed`](raw/retained-locality-macos-m1-2026-10-28-combined-speed.txt).
