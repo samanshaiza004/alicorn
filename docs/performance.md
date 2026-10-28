@@ -26,6 +26,9 @@ limitations before using a number.
 - [Windows performance audit (2026-10-27)](benchmarks/performance-audit-windows-2026-10-27.md):
   matched retained-runtime baseline/candidate samples, current text/material
   benchmarks, and measured release-size/buffer-capacity experiments.
+- [Final Windows refresh (2026-10-28)](benchmarks/performance-final-windows-2026-10-28.md):
+  final release-candidate rerun and same-machine comparison with the
+  post-merge optimized baseline.
 
 ## Reproduce
 
