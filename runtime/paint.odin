@@ -245,7 +245,7 @@ rebuild_display :: proc(rt: ^Runtime) {
 	append_tooltip_overlay(rt)
 	rt.stats.composite_updates += 1
 	rt.composition_rebuild = false
-	layout_finalize_display(rt)
+	layout_finalize_display(rt, .Display_Structure_Rebuild)
 	record_trace(rt, .Composite, 0, "retained display list rebuilt after structure change")
 }
 
@@ -264,7 +264,6 @@ append_visual_row_background :: proc(rt: ^Runtime, row: ^Node) {
 
 update_paint :: proc(rt: ^Runtime) {
 	semantic_surface_refresh_top_edge_gaps(rt)
-	display_target_changed := false
 	// Only nodes queued by description or layout changes are visited. An
 	// unchanged retained display command is left in place.
 	for id in rt.paint_queue {
@@ -652,12 +651,17 @@ update_paint :: proc(rt: ^Runtime) {
 			record_trace(rt, .Paint, id, node.last_reason)
 		}
 		if !rt.composition_rebuild && node.kind != .Scroll_Region && node.display_index >= 0 && len(node.paint) == 1 {
-			rt.display_target[node.display_index] = node.paint[0]
-			display_target_changed = true
-			rt.stats.composition_nodes_visited += 1
-			rt.stats.stage_visits[.Composite] += 1
-			rt.stats.composite_updates += 1
-			record_trace(rt, .Composite, id, "retained display command updated")
+			if layout_finalize_display_slot(rt, id, node.display_index, node.paint[0]) {
+				rt.stats.composition_nodes_visited += 1
+				rt.stats.stage_visits[.Composite] += 1
+				rt.stats.composite_updates += 1
+				record_trace(rt, .Composite, id, "retained display command updated and finalized")
+			} else {
+				rt.stats.global_fallbacks += 1
+				rt.stats.global_work_by_reason[.Display_Incremental_Fallback] += 1
+				rt.composition_rebuild = true
+				record_trace(rt, .Composite, id, "retained display slot changed; full rebuild required")
+			}
 		} else {
 			rt.composition_rebuild = true
 		}
@@ -668,7 +672,5 @@ update_paint :: proc(rt: ^Runtime) {
 	clear(&rt.paint_queue)
 	if rt.composition_rebuild {
 		rebuild_display(rt)
-	} else if display_target_changed {
-		layout_finalize_display(rt)
 	}
 }

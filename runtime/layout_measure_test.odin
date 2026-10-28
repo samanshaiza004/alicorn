@@ -67,6 +67,8 @@ test_measure_cache_miss_with_equal_result_does_not_relayout_ancestors :: proc(t:
 	first_layout_visits := rt.stats.layout_nodes_visited
 	first_shape_requests := rt.stats.text_shape_requests
 	first_misses := rt.stats.measure_cache_misses
+	first_examined := rt.stats.measure_nodes_examined
+	first_executed := rt.stats.measure_nodes_executed
 
 	second_id := layout_measure_test_describe_text(&rt, "dog", black)
 	second_measure := rt.measure_states[second_id]
@@ -74,6 +76,9 @@ test_measure_cache_miss_with_equal_result_does_not_relayout_ancestors :: proc(t:
 		"text changes should advance the reconciliation-derived local measurement revision")
 	testing.expect(t, rt.stats.measure_cache_misses > first_misses && rt.stats.text_shape_requests > first_shape_requests,
 		"a changed input fingerprint should miss measurement and reshape its text product")
+	testing.expect(t, rt.stats.measure_nodes_examined == first_examined+1 &&
+		rt.stats.measure_nodes_executed == first_executed+1,
+		"a text edit should schedule and execute only the changed text measurement")
 	testing.expect(t, layout_measure_result_equal(first_measure.result, second_measure.result),
 		"equal fixed-size text should produce the same retained measure result despite different content")
 	testing.expect(t, rt.stats.layout_nodes_visited == first_layout_visits,
@@ -84,6 +89,40 @@ test_measure_cache_miss_with_equal_result_does_not_relayout_ancestors :: proc(t:
 	_ = layout_measure_test_describe_text(&rt, "dog", Color{0.8, 0.2, 0.1, 1})
 	testing.expect(t, rt.stats.measure_requests == measures_before_color && rt.stats.layout_nodes_visited == layout_before_color,
 		"paint-only color changes must not request measurement or layout")
+}
+
+@(test)
+test_measure_work_queue_deduplicates_and_font_generation_remains_broad :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 120})
+	defer destroy_runtime(&rt)
+	testing.expect(t, text_engine_load_font(&rt.text_engine, LAYOUT_MEASURE_TEST_FONT), "measurement fixture font should load")
+	id := layout_measure_test_describe_text(&rt, "stable", Color{0.1, 0.1, 0.1, 1})
+	if id == 0 { testing.expect(t, false, "font-generation fixture text should be retained"); return }
+
+	node := rt.nodes[id]
+	before_examined := rt.stats.measure_nodes_examined
+	layout_measure_mark_dirty(&rt, node)
+	layout_measure_mark_dirty(&rt, node)
+	layout_measure_retained_dirty_nodes(&rt)
+	testing.expect(t, rt.stats.measure_nodes_examined == before_examined+1 &&
+		!dirty_has(node.dirty, .Measure) && len(rt.measure_queue) == 0,
+		"repeated invalidation of one node should occupy one queue entry and settle once")
+
+	before_generation := rt.text_engine.font_generation
+	before_work := rt.stats.global_work_by_reason[.Measure_Font_Generation]
+	before_examined = rt.stats.measure_nodes_examined
+	before_executed := rt.stats.measure_nodes_executed
+	testing.expect(t, text_engine_load_font(&rt.text_engine, LAYOUT_MEASURE_TEST_MONO_FONT),
+		"a second font face should load for broad-generation invalidation")
+	if rt.text_engine.font_generation == before_generation {
+		testing.expect(t, false, "loading a new face should advance the font generation")
+		return
+	}
+	_ = layout_measure_test_describe_text(&rt, "stable", Color{0.1, 0.1, 0.1, 1})
+	testing.expect(t, rt.stats.global_work_by_reason[.Measure_Font_Generation] == before_work+1 &&
+		rt.stats.measure_nodes_examined-before_examined == u64(len(rt.order)+1) &&
+		rt.stats.measure_nodes_executed > before_executed,
+		"font changes should explicitly scan retained nodes, then execute affected text measurements")
 }
 
 @(test)

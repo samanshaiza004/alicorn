@@ -794,6 +794,7 @@ append_order_subtree :: proc(rt: ^Runtime, id: Node_ID) {
 
 rebuild_order :: proc(rt: ^Runtime) {
 	clear(&rt.order)
+	rt.stats.global_work_by_reason[.Semantic_Order_Rebuild] += 1
 	for id in rt.top_level {
 		append_order_subtree(rt, id)
 	}
@@ -871,7 +872,7 @@ reconcile :: proc(rt: ^Runtime) {
 			}
 			node.paint_hash = paint_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
 			mark_dirty(node, "new retained node", true, true, true, true, rt.persistent_allocator)
-			dirty_set(&node.dirty, .Measure, true)
+			layout_measure_mark_dirty(rt, node)
 			queue_paint(rt, d.id)
 			mark_layout_ancestors(rt, d.id)
 			record_trace(rt, .Reconcile, d.id, "new retained node")
@@ -903,7 +904,7 @@ reconcile :: proc(rt: ^Runtime) {
 			reason := "description reused"
 			if description_changed { reason = "description changed" }
 			mark_dirty(node, reason, description_changed, layout_changed, paint_changed || layout_changed, composite_changed, rt.persistent_allocator)
-			if measurement_changed { dirty_set(&node.dirty, .Measure, true) }
+			if measurement_changed { layout_measure_mark_dirty(rt, node) }
 			if layout_changed { mark_layout_ancestors(rt, d.id) }
 			if description_changed || layout_changed || paint_changed {
 				queue_paint(rt, d.id)
@@ -1096,6 +1097,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	for _, state in rt.restore_controls { free(state, allocator=rt.persistent_allocator) }
 	delete(rt.restore_controls)
 	delete(rt.measure_states)
+	delete(rt.measure_queue)
 	delete(rt.finalized_geometry)
 	delete(rt.computed_styles)
 	delete(rt.semantic_surfaces)

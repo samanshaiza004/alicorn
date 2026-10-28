@@ -186,7 +186,7 @@ drag_preview_pointer_moved :: proc(rt: ^Runtime) {
 		for &command in rt.display_target {
 			if command.owner == 0 { command.translation = translation }
 		}
-		layout_finalize_display(rt)
+		layout_finalize_display(rt, .Display_Transient_Update)
 	}
 	request_presentation(rt, "drag preview followed pointer")
 }

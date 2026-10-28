@@ -91,6 +91,11 @@ Bench_Delta :: struct {
 	surface_frames_consumed: u64,
 	semantic_focus_search_visits: u64,
 	semantic_active_update_visits: u64,
+	measure_nodes_examined, measure_nodes_executed: u64,
+	display_commands_finalized, display_finalization_full_passes: u64,
+	semantic_order_nodes_examined: u64,
+	global_fallbacks: u64,
+	measure_font_generation_work, display_incremental_fallback_work, semantic_order_rebuild_work: u64,
 }
 
 delta :: proc(before, after: alicorn.Frame_Stats) -> Bench_Delta {
@@ -112,6 +117,15 @@ delta :: proc(before, after: alicorn.Frame_Stats) -> Bench_Delta {
 		after.surface_frames_consumed-before.surface_frames_consumed,
 		after.semantic_focus_search_visits-before.semantic_focus_search_visits,
 		after.semantic_active_update_visits-before.semantic_active_update_visits,
+		after.measure_nodes_examined-before.measure_nodes_examined,
+		after.measure_nodes_executed-before.measure_nodes_executed,
+		after.display_commands_finalized-before.display_commands_finalized,
+		after.display_finalization_full_passes-before.display_finalization_full_passes,
+		after.semantic_order_nodes_examined-before.semantic_order_nodes_examined,
+		after.global_fallbacks-before.global_fallbacks,
+		after.global_work_by_reason[.Measure_Font_Generation]-before.global_work_by_reason[.Measure_Font_Generation],
+		after.global_work_by_reason[.Display_Incremental_Fallback]-before.global_work_by_reason[.Display_Incremental_Fallback],
+		after.global_work_by_reason[.Semantic_Order_Rebuild]-before.global_work_by_reason[.Semantic_Order_Rebuild],
 	}
 }
 
@@ -138,6 +152,15 @@ print_row :: proc(name: string, elapsed_ns: i64, before, after: alicorn.Frame_St
 		"composite", d.composite_updates,
 		"semantic_focus_search", d.semantic_focus_search_visits,
 		"semantic_active_updates", d.semantic_active_update_visits,
+		"measure_examined", d.measure_nodes_examined,
+		"measure_executed", d.measure_nodes_executed,
+		"display_finalized", d.display_commands_finalized,
+		"display_full_passes", d.display_finalization_full_passes,
+		"semantic_order_examined", d.semantic_order_nodes_examined,
+		"global_fallbacks", d.global_fallbacks,
+		"measure_font_scans", d.measure_font_generation_work,
+		"display_fallbacks", d.display_incremental_fallback_work,
+		"semantic_order_rebuilds", d.semantic_order_rebuild_work,
 		"retained", retained)
 }
 

@@ -164,6 +164,22 @@ adaptive_retained_split_drag :: proc(rt: ^Runtime, handle_id: Node_ID, delta: f3
 }
 
 @(test)
+test_stable_adaptive_descriptions_do_not_rescan_semantic_preorder :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 500, 200})
+	defer destroy_runtime(&rt)
+	_, wide_button, _ := adaptive_retained_split_describe(&rt)
+	before := rt.stats.semantic_order_nodes_examined
+	_, updated_wide, _ := adaptive_retained_split_describe(&rt)
+	entity, found := semantic_node_lookup(&rt, Adaptive_Retained_Semantic_ID)
+	order, order_found := rt.semantic_tree_orders[updated_wide]
+	testing.expect(t, updated_wide == wide_button && found && order_found && entity.visual_node == updated_wide &&
+		entity.tree_order == order,
+		"a stable adaptive description should retain its accessible preorder mapping")
+	testing.expect(t, rt.stats.semantic_order_nodes_examined == before,
+		"unchanged adaptive descriptions should not rescan the retained preorder")
+}
+
+@(test)
 test_retained_split_drag_rebinds_adaptive_semantics_without_description :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 500, 200})
 	defer destroy_runtime(&rt)
