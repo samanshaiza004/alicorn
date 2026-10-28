@@ -718,6 +718,22 @@ if valid && ui.layout(ctx, form_style, label="Form") {
 }
 ```
 
-`ui.logical` accepts a finite nonnegative logical extent. `fit_content` is currently supported for height and maps to the existing fit-content sentinel; `expand` maps to the existing weighted main-axis grow value. Min/max slots accept fixed extents only. Invalid bounds, nonfinite values, or conflicting values in the base `Layout_Style` return `valid=false`; they are not silently normalized. Parent-relative percentages and aspect ratios are still experimental and are not part of this wrapper-only stage.
+`ui.logical` accepts a finite nonnegative logical extent. `fit_content` is currently supported for height and maps to the existing fit-content sentinel; `expand` maps to the existing weighted main-axis grow value. Min/max slots accept fixed extents only. Invalid bounds, nonfinite values, or conflicting values in the base `Layout_Style` return `valid=false`; they are not silently normalized. Aspect ratios remain deferred.
 
 Standard controls also have theme-provided preferred and minimum target heights. They apply when height is omitted; measured text and vertical content padding can increase the result. A deliberate `height=` still overrides the theme target; `min_height=` can enforce a stricter application minimum, and `max_height=` can cap the implicit theme target. See [theme control metrics](themes.md#control-metrics).
+
+### Percentage-width prototype
+
+The opt-in `ui.layout_sized` scope currently supports percentage width only:
+
+```odin
+if ui.layout_sized(ctx,
+    ui.layout_style(.Column, height=48),
+    ui.sizing(width=ui.percent(0.75)),
+    key="reference-card",
+) {
+    // children
+}
+```
+
+`ui.percent(1)` means 100%. Resolution uses the current description's parent input: the host-assigned Root viewport or a fixed, non-growing, non-compressible parent width. The reference is the parent's inner width after padding; sibling gaps remain the existing allocator's responsibility. A maximum width by itself, content-sized parent, growing parent, or compressible parent is not definite and produces a source-located diagnostic. The resolved width is lowered into the existing `Layout_Style` before retention, so changing it preserves `Node_ID` and uses ordinary min/max, overflow, layout hashing, and measurement behavior. A viewport change is reflected on the next application description; prior-frame bounds are not used. Percentage height, aspect ratio, other allocated-parent cases, and `panel`/`row`/`column` convenience integration are not part of this prototype.

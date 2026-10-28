@@ -1,5 +1,6 @@
 package alicorn
 import "core:fmt"
+import "core:math"
 import "core:strings"
 
 current_node_parent :: proc(ui: ^UI) -> Node_ID {
@@ -108,6 +109,59 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	if len(rt.diagnostic) > 0 { delete(rt.diagnostic, rt.persistent_allocator) }
 	rt.diagnostic = owned(message, rt.persistent_allocator)
 	record_trace(rt, .Reconcile, 0, message)
+}
+
+layout_sizing_report_invalid :: proc(rt: ^Runtime, message: string, loc := #caller_location) {
+	if rt == nil { return }
+	append_diagnostic(rt, fmt.tprintf("Invalid layout sizing at %s:%d:%d: %s", loc.file_path, loc.line, loc.column, message))
+}
+
+// layout_percent_width_resolve accepts only an independently definite parent
+// width: the host-assigned Root viewport or a fixed, non-growing, non-compressible
+// parent width already present in this description. A maximum constraint alone
+// is intentionally insufficient. The result is an ordinary logical width, so
+// the existing allocator, layout hash, and text-measurement dependencies apply.
+layout_percent_width_resolve :: proc(ui: ^UI, fraction: f32, loc := #caller_location) -> (f32, bool) {
+	if ui == nil || ui.runtime == nil || !ui.runtime.frame_open {
+		if ui != nil { layout_sizing_report_invalid(ui.runtime, "percentage width requires an open description frame", loc) }
+		return 0, false
+	}
+	rt := ui.runtime
+	if math.is_nan(fraction) || math.is_inf(fraction) || fraction < 0 || fraction > 100 {
+		layout_sizing_report_invalid(rt, "percentage width fraction must be finite and between 0 and 100", loc)
+		return 0, false
+	}
+	parent_id := current_node_parent(ui)
+	for i := len(rt.pending)-1; i >= 0; i -= 1 {
+		item := &rt.pending[i]
+		if item.kind != .Description || item.description.id != parent_id { continue }
+		parent := item.description
+		extent: f32
+		if parent.kind == .Root {
+			extent = rt.viewport.w
+		} else if parent.style.width >= 0 && parent.style.grow == 0 && parent.style.compress_weight == 0 {
+			extent = clampf(parent.style.width, maxf(parent.style.min_width, 0), parent.style.max_width)
+		} else {
+			layout_sizing_report_invalid(rt, fmt.tprintf(
+				"percentage width needs a definite parent width; parent %q is content-sized, allocated, growing, or compressible (a maximum width alone does not make it definite)",
+				parent.label,
+			), loc)
+			return 0, false
+		}
+		if math.is_nan(extent) || math.is_inf(extent) || extent < 0 {
+			layout_sizing_report_invalid(rt, "definite parent width must be finite and nonnegative", loc)
+			return 0, false
+		}
+		inner_extent := maxf(extent-2*maxf(parent.style.padding, 0), 0)
+		resolved := inner_extent*fraction
+		if math.is_nan(resolved) || math.is_inf(resolved) {
+			layout_sizing_report_invalid(rt, "resolved percentage width is outside the supported logical range", loc)
+			return 0, false
+		}
+		return resolved, true
+	}
+	layout_sizing_report_invalid(rt, "percentage width requires a parent already described in the current frame", loc)
+	return 0, false
 }
 
 @(private)

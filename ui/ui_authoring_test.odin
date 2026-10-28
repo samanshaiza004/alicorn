@@ -2,6 +2,7 @@ package ui
 
 import "core:testing"
 import "core:math"
+import "core:strings"
 import alicorn "alicorn:runtime"
 
 UI_Authoring_Test_App :: struct {
@@ -38,6 +39,56 @@ ui_authoring_test_frame :: proc(rt: ^alicorn.Runtime, app: ^UI_Authoring_Test_Ap
 	return root != 0
 }
 
+ui_percent_test_describe_root_children :: proc(rt: ^alicorn.Runtime, viewport_width, fraction: f32) -> (root, first, second: alicorn.Node_ID) {
+	rt.viewport = alicorn.Rect{0, 0, viewport_width, 200}
+	alicorn.invalidate_root(rt, "percentage sizing fixture")
+	ctx, build := alicorn.begin_frame(rt)
+	if !build { return }
+	root = alicorn.container_begin(&ctx, .Root, key="percent-root", style=alicorn.layout_style(.Row, padding=20, gap=10))
+	if root == 0 { return }
+	if layout_sized(&ctx, alicorn.layout_style(.Column, height=30), sizing(width=percent(fraction)), key="percent-first", label="first percent") {
+		first = ctx.runtime.pending[len(ctx.runtime.pending)-1].description.id
+	}
+	if layout_sized(&ctx, alicorn.layout_style(.Column, height=30), sizing(width=percent(fraction)), key="percent-second", label="second percent") {
+		second = ctx.runtime.pending[len(ctx.runtime.pending)-1].description.id
+	}
+	alicorn.container_end(&ctx)
+	alicorn.end_frame(&ctx)
+	return
+}
+
+ui_percent_test_describe_content_parent :: proc(rt: ^alicorn.Runtime) {
+	alicorn.invalidate_root(rt, "percentage cycle rejection fixture")
+	ctx, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin(&ctx, .Root, key="percent-cycle-root", style=alicorn.layout_style(.Column, width=400, height=160))
+	if layout(&ctx, alicorn.layout_style(.Column, max_width=520, height=80), key="percent-content-parent", label="bounded content parent") {
+		_ = layout_sized(&ctx, alicorn.layout_style(.Column, height=24), sizing(width=percent(0.5)), key="percent-cycle-child", label="cyclic percent")
+	}
+	alicorn.container_end(&ctx)
+	alicorn.end_frame(&ctx)
+}
+
+ui_percent_test_describe_fixed_parent :: proc(rt: ^alicorn.Runtime) -> (parent, first, capped: alicorn.Node_ID) {
+	rt.viewport = alicorn.Rect{0, 0, 600, 200}
+	alicorn.invalidate_root(rt, "fixed-parent percentage fixture")
+	ctx, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin(&ctx, .Root, key="fixed-percent-root", style=alicorn.layout_style(.Column, width=600, height=180))
+	if layout(&ctx, alicorn.layout_style(.Row, width=400, height=80, padding=20, gap=10), key="fixed-percent-parent", label="fixed parent") {
+		parent = ctx.runtime.pending[len(ctx.runtime.pending)-1].description.id
+		if layout_sized(&ctx, alicorn.layout_style(.Column, height=30), sizing(width=percent(0.75)), key="fixed-percent-first", label="first fixed percent") {
+			first = ctx.runtime.pending[len(ctx.runtime.pending)-1].description.id
+		}
+		if layout_sized(&ctx, alicorn.layout_style(.Column, height=30), sizing(width=percent(0.75), max_width=logical(250)), key="fixed-percent-capped", label="capped fixed percent") {
+			capped = ctx.runtime.pending[len(ctx.runtime.pending)-1].description.id
+		}
+	}
+	alicorn.container_end(&ctx)
+	alicorn.end_frame(&ctx)
+	return
+}
+
 @(test)
 test_typed_sizing_lowers_to_legacy_layout_style_and_rejects_ambiguity :: proc(t: ^testing.T) {
 	declaration := sizing(
@@ -64,6 +115,8 @@ test_typed_sizing_lowers_to_legacy_layout_style_and_rejects_ambiguity :: proc(t:
 	invalid_nan := sizing(width=logical(math.nan_f32()))
 	_, valid = resolve_sizing(base, invalid_nan)
 	testing.expect(t, !valid, "non-finite logical extents should be rejected")
+	_, valid = resolve_sizing(base, sizing(width=percent(0.5)))
+	testing.expect(t, !valid, "the context-free normalizer must reject percentages that need a parent")
 	invalid_bounds := sizing(min_width=logical(300), max_width=logical(100))
 	_, valid = resolve_sizing(base, invalid_bounds)
 	testing.expect(t, !valid, "minimum greater than maximum should be rejected instead of normalized silently")
@@ -73,6 +126,74 @@ test_typed_sizing_lowers_to_legacy_layout_style_and_rejects_ambiguity :: proc(t:
 	invalid_expand := sizing(grow=expand(0))
 	_, valid = resolve_sizing(base, invalid_expand)
 	testing.expect(t, !valid, "expansion weights must be finite and positive")
+}
+
+@(test)
+test_percentage_width_resolves_from_definite_parent_and_matches_fresh_layout :: proc(t: ^testing.T) {
+	incremental := alicorn.new_runtime(alicorn.Rect{0, 0, 600, 200})
+	defer alicorn.destroy_runtime(&incremental)
+	root, first, second := ui_percent_test_describe_root_children(&incremental, 600, 0.75)
+	if root == 0 || first == 0 || second == 0 { testing.expect(t, false, "percentage children should be described"); return }
+	testing.expect(t, incremental.nodes[first].bounds.w == 420 && incremental.nodes[second].bounds.w == 420,
+		"75% widths should use the root inner width after padding")
+	testing.expect(t, incremental.nodes[second].bounds.x == 450 && incremental.nodes[second].bounds.x+incremental.nodes[second].bounds.w > 600,
+		"percentages totaling over 100% should retain their preferred sizes and overflow through the ordinary Row allocator")
+	first_id, second_id := first, second
+	first_description_hash := incremental.nodes[first].description_hash
+	first_layout_hash := incremental.nodes[first].layout_hash
+
+	root, first, second = ui_percent_test_describe_root_children(&incremental, 800, 0.75)
+	testing.expect(t, root != 0 && first == first_id && second == second_id,
+		"resizing the viewport must preserve percentage child identities")
+	testing.expect(t, incremental.nodes[first].bounds.w == 570 && incremental.nodes[second].bounds.w == 570,
+		"the next description must resolve percentages from the new viewport without using prior geometry")
+	testing.expect(t, incremental.nodes[first].description_hash == first_description_hash &&
+		incremental.nodes[first].layout_hash != first_layout_hash,
+		"viewport-relative sizing must change retained layout inputs without changing paint/description inputs")
+
+	previous_layout_hash := incremental.nodes[first].layout_hash
+	root, first, second = ui_percent_test_describe_root_children(&incremental, 800, 0.5)
+	testing.expect(t, root != 0 && first == first_id && second == second_id &&
+		incremental.nodes[first].bounds.w == 380 && incremental.nodes[second].bounds.w == 380,
+		"changing a percentage must update layout while retaining the same Node_IDs")
+	testing.expect(t, incremental.nodes[first].description_hash == first_description_hash &&
+		incremental.nodes[first].layout_hash != previous_layout_hash,
+		"changing the percentage must advance only the retained layout input")
+
+	fresh := alicorn.new_runtime(alicorn.Rect{0, 0, 800, 200})
+	defer alicorn.destroy_runtime(&fresh)
+	_, fresh_first, fresh_second := ui_percent_test_describe_root_children(&fresh, 800, 0.5)
+	testing.expect(t, fresh_first == first_id && fresh_second == second_id &&
+		incremental.nodes[first].bounds == fresh.nodes[fresh_first].bounds &&
+		incremental.nodes[second].bounds == fresh.nodes[fresh_second].bounds,
+		"incremental and fresh runtimes must produce identical geometry for the same sizing inputs")
+}
+
+@(test)
+test_percentage_width_uses_fixed_parent_inner_width_and_existing_bounds :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 600, 200})
+	defer alicorn.destroy_runtime(&rt)
+	parent, first, capped := ui_percent_test_describe_fixed_parent(&rt)
+	if parent == 0 || first == 0 || capped == 0 { testing.expect(t, false, "fixed-parent percentage fixture should build"); return }
+	testing.expect(t, rt.nodes[parent].bounds.w == 400 && rt.nodes[first].bounds.w == 270,
+		"a fixed nested parent should resolve percentages against its 360-unit inner width")
+	testing.expect(t, rt.nodes[first].bounds.x == 20 && rt.nodes[capped].bounds.x == 300 && rt.nodes[capped].bounds.w == 250,
+		"parent padding, sibling gap, and child max-width should retain their existing independent allocator semantics")
+}
+
+@(test)
+test_percentage_width_rejects_content_dependent_parent_with_source_diagnostic :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 600, 200})
+	defer alicorn.destroy_runtime(&rt)
+	ui_percent_test_describe_content_parent(&rt)
+	testing.expect(t, rt.hard_error && strings.contains(rt.diagnostic, "definite parent width") &&
+		strings.contains(rt.diagnostic, "maximum width alone does not make it definite") &&
+		strings.contains(rt.diagnostic, "ui_authoring_test.odin:"),
+		"a percentage under a content-sized parent with finite max width must be rejected with its source location")
+	cycle_child_retained := false
+	for _, node in rt.nodes { if node.label == "cyclic percent" { cycle_child_retained = true } }
+	testing.expect(t, !cycle_child_retained,
+		"a rejected percentage must not silently emit a child with an unrelated width")
 }
 
 UI_Bound_Control_Test_App :: struct {

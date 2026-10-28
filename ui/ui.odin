@@ -202,6 +202,57 @@ layout :: proc(
 }
 
 @(private)
+layout_sized_end :: proc(
+	ui: ^UI,
+	_base: alicorn.Layout_Style,
+	_declaration: Sizing,
+	_key: UI_Key,
+	_label: string,
+	_loc: odin_runtime.Source_Code_Location,
+	opened: bool,
+) {
+	if opened { alicorn.container_end(ui) }
+}
+
+// layout_sized is the low-level percentage-width prototype. Fixed, fit-height,
+// and grow inputs lower to ordinary Layout_Style values. A percentage width is
+// resolved against the current parent's definite inner width before emission;
+// invalid or cyclic declarations add a source-located diagnostic and do not
+// open a scope. This intentionally does not add percentage fields to retained
+// nodes or make panel/row/column APIs percentage-aware yet.
+@(deferred_in_out=layout_sized_end)
+layout_sized :: proc(
+	ui: ^UI,
+	base: alicorn.Layout_Style,
+	declaration: Sizing,
+	key: UI_Key = alicorn.UI_Unkeyed{},
+	label: string = "layout",
+	loc := #caller_location,
+) -> bool {
+	lowered_declaration := declaration
+	percent_width := declaration.width.kind == .Percentage
+	if percent_width {
+		if base.width != alicorn.DEFAULT_STYLE.width {
+			alicorn.layout_sizing_report_invalid(ui.runtime,
+				"percentage width cannot be combined with a width already set in the base Layout_Style", loc)
+			return false
+		}
+		lowered_declaration.width = {}
+	}
+	style, valid := resolve_sizing(base, lowered_declaration)
+	if !valid {
+		alicorn.layout_sizing_report_invalid(ui.runtime,
+			"unsupported, conflicting, nonfinite, or out-of-range typed sizing input", loc)
+		return false
+	}
+	if percent_width {
+		style.width, valid = alicorn.layout_percent_width_resolve(ui, declaration.width.value, loc)
+		if !valid { return false }
+	}
+	return alicorn.container_begin(ui, .Container, label=label, key=key, style=style, loc=loc) != 0
+}
+
+@(private)
 panel_end :: proc(
 	ui: ^UI,
 	_key: UI_Key,

@@ -4,9 +4,10 @@ import "core:math"
 import alicorn "alicorn:runtime"
 
 // Size_Input is a bounded authoring declaration. Fixed and fit-content
-// dimensions lower to the existing Layout_Style representation; this stage
-// introduces no retained-node or solver state.
-Size_Input_Kind :: enum { Unspecified, Fixed, Fit_Content }
+// dimensions lower to the existing Layout_Style representation. Percentage
+// width is a separate description-time prototype; it adds no retained-node or
+// solver state.
+Size_Input_Kind :: enum { Unspecified, Fixed, Fit_Content, Percentage }
 
 Size_Input :: struct {
 	kind: Size_Input_Kind,
@@ -35,6 +36,13 @@ fit_content :: proc() -> Size_Input {
 	return Size_Input{kind=.Fit_Content}
 }
 
+// percent expresses a parent-relative fraction, where 1 means 100%. The first
+// prototype supports width only and resolves it at description time against a
+// provably definite parent inner width.
+percent :: proc(fraction: f32) -> Size_Input {
+	return Size_Input{kind=.Percentage, value=fraction}
+}
+
 expand :: proc(weight: f32 = 1) -> Expand_Input {
 	return Expand_Input{defined=true, weight=weight}
 }
@@ -51,7 +59,7 @@ sizing :: proc(
 	return Sizing{width, height, min_width, max_width, min_height, max_height, grow}
 }
 
-size_input_valid :: proc(input: Size_Input, allow_fit_content: bool) -> bool {
+size_input_valid :: proc(input: Size_Input, allow_fit_content: bool, allow_percentage: bool = false) -> bool {
 	switch input.kind {
 	case .Unspecified:
 		return true
@@ -59,6 +67,8 @@ size_input_valid :: proc(input: Size_Input, allow_fit_content: bool) -> bool {
 		return !math.is_nan(input.value) && !math.is_inf(input.value) && input.value >= 0
 	case .Fit_Content:
 		return allow_fit_content
+	case .Percentage:
+		return allow_percentage && !math.is_nan(input.value) && !math.is_inf(input.value) && input.value >= 0 && input.value <= 100
 	}
 	return false
 }
@@ -75,14 +85,18 @@ resolve_size_input :: proc(input: Size_Input, current, default_value, fit_value:
 	case .Fit_Content:
 		if current != default_value && current != fit_value { return current, false }
 		return fit_value, true
+	case .Percentage:
+		return current, false
 	}
 	return current, false
 }
 
-// resolve_sizing lowers typed declarations to the existing style fields.
+// resolve_sizing lowers fixed declarations to the existing style fields.
 // Supplying a second, conflicting value in the base style is rejected; callers
 // can use base for padding, gap, direction and alignment without maintaining
 // two competing size declarations. Bounds accept fixed logical values only.
+// Percentage declarations need a description-time parent and are handled by
+// the scoped layout_sized UI helper instead.
 resolve_sizing :: proc(base: Layout_Style, declaration: Sizing) -> (Layout_Style, bool) {
 	result := base
 	valid: bool
