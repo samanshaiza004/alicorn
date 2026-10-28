@@ -356,23 +356,41 @@ semantic model; it is not a native screen-reader accessibility interface.
 
 ## Give repeated data stable identity
 
-For a repeated item, its logical key—not its current row number or visible
-label—lets focus and other retained state follow it through reordering:
+For a repeated item, its logical key lets focus and other retained state follow
+it through reordering. A single widget can use `key=item.id`. For a reusable
+component, one `ui.key_scope` identifies all its children:
 
 ```odin
-for item in app.items {
-	if alicorn.component_begin(&ui, item.id) {
-		if alicorn.button(&ui, item.name) {
+render_record :: proc(app: ^App, ctx: ^ui.UI, item: ^Item) {
+	if ui.key_scope(ctx, item.id) {
+		ui.text(ctx, item.name)
+		ui.checkbox(ctx, "Enabled", &item.enabled)
+		if ui.button(ctx, "Details") {
 			app.selected_id = item.id
 		}
-		alicorn.component_end(&ui)
 	}
 }
 ```
 
 Pass a string or `u64` data ID directly as `key`; use `key_pair` when identity
 depends on two numeric values. The call site identifies the kind of UI; the
-key identifies the data item.
+key identifies the data item. Use a durable ID, rather than an array index or
+editable label. The same helper called twice under one parent needs distinct
+keys even when the calls themselves are on different lines: its widgets still
+come from the same locations inside the helper.
+
+Use `ui.key_scope` directly in an `if` condition, just like `ui.row`. It closes
+on block exit, including `return`, `break`, and `continue`, and adds no layout
+node. Nested scopes may reuse local keys beneath different component instances.
+Keys remain relative to their call site and enclosing identity parent; moving
+a component to a different parent or changing its call site changes identity.
+The [Async List](../examples/03_async_list/main.odin) shows a reusable row whose
+text and button share one record key.
+
+Ambiguous declarations fail with **Repeated widget identity**, explaining
+whether keys are missing or duplicated and showing both declarations. Add
+`key=item.id` or use a unique `ui.key_scope(ctx, item.id)` around each component.
+The runtime never assigns positional identities to recover from a collision.
 
 If keyboard operation must stay with a logical item while its row is
 virtualized or replaced by another presentation, use semantic focus; the

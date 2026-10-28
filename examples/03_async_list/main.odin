@@ -3,6 +3,8 @@ package main
 // 03 · Async List adds worker completion, retained scrolling, and fixed-row
 // virtualization. The worker builds 10,000 records; after one completion wake,
 // the host sleeps until input.
+// render_record uses one key scope for the whole component. Its children keep
+// their call-site identities when records move or leave the visible window.
 
 import "core:fmt"
 import "core:os"
@@ -49,6 +51,18 @@ load_items :: proc(data: rawptr) {
 	host.application_wake(app.waker)
 }
 
+render_record :: proc(ctx: ^ui.UI, item: Item, selected: bool) -> bool {
+	if ui.key_scope(ctx, item.id) {
+		if ui.row(ctx, height=ASYNC_LIST_ROW_HEIGHT, gap=10, align=.Center) {
+			ui.text(ctx, fmt.tprintf("Record %05d · score %03d", item.id, item.score),
+				style=ui.layout_style(.Row, grow=1))
+			return ui.button(ctx, "Select", width=84, height=26,
+				state=ui.Button_State{selected=selected})
+		}
+	}
+	return false
+}
+
 build_app :: proc(
 	state: rawptr,
 	rt: ^alicorn.Runtime,
@@ -87,19 +101,11 @@ build_app :: proc(
 			)
 			for position := list.first; position < list.last; position += 1 {
 				item := app.items[position]
-				if ui.row(&ctx, key=item.id, height=ASYNC_LIST_ROW_HEIGHT, gap=10, align=.Center) {
-					ui.text(
-						&ctx,
-						fmt.tprintf("Record %05d · score %03d", item.id, item.score),
-						style=ui.layout_style(.Row, grow=1),
-					)
-					if ui.button(&ctx, "Select", width=84, height=26,
-						state=ui.Button_State{selected=item.id == app.selected_id}) {
-						app.selected_id = item.id
-						alicorn.trace_action(rt, ASYNC_LIST_ACTIVATE, "Select async-list record")
-						alicorn.trace_mutation(rt, "selected async-list record")
-						alicorn.invalidate_root(rt, "async-list selection changed")
-					}
+				if render_record(&ctx, item, item.id == app.selected_id) {
+					app.selected_id = item.id
+					alicorn.trace_action(rt, ASYNC_LIST_ACTIVATE, "Select async-list record")
+					alicorn.trace_mutation(rt, "selected async-list record")
+					alicorn.invalidate_root(rt, "async-list selection changed")
 				}
 			}
 			alicorn.virtual_list_end(&ctx, list)

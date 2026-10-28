@@ -110,6 +110,23 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	record_trace(rt, .Reconcile, 0, message)
 }
 
+@(private)
+report_repeated_identity :: proc(rt: ^Runtime, id: Node_ID, first, duplicate: Identity_Declaration, explicit_key: bool, scope := false) {
+	title := "Repeated widget identity"
+	cause := "Two widgets were created from the same call site under the same identity parent without unique keys."
+	suggestion := "Add key=item.id to the repeated widget, or wrap each repeated component in a unique ui.key_scope(ctx, item.id)."
+	if scope {
+		title = "Repeated key scope identity"
+		cause = "Two key scopes used the same key at the same call site under the same identity parent."
+		suggestion = "Give each component instance a unique stable key in ui.key_scope(ctx, item.id)."
+	} else if explicit_key {
+		cause = "Two widgets used the same explicit key at the same call site under the same identity parent."
+		suggestion = "Give each repeated widget a unique stable key=item.id, or wrap each repeated component in a unique ui.key_scope(ctx, item.id)."
+	}
+	append_diagnostic(rt, fmt.tprintf("%s\n\n%s\nSuggestion: %s\n  retained identity: %d\n  first declaration: %s\n  duplicate declaration: %s",
+		title, cause, suggestion, id, identity_declaration_text(rt, first), identity_declaration_text(rt, duplicate)))
+}
+
 	emit :: proc(ui: ^UI, kind: Node_Kind, source: Source_Site, label := "", text := "", key := "", explicit_key := false, style := DEFAULT_STYLE, color := DEFAULT_COLOR, paint_value: u64 = 0, region_revision: u64 = 0, is_region := false, focusable := false, surface_kind := GPU_Surface_Kind.Waveform, surface_interaction := GPU_Surface_Interaction.Inert, surface_pixel_width: int = 0, surface_pixel_height: int = 0, surface_dpi_scale: f32 = 1, paint_background := true, scroll_offset_y: f32 = 0, layout_scroll_offset_y: f32 = -1, scroll_content_height: f32 = 0, scroll_viewport_height: f32 = 0, scroll_line_height: f32 = 0, scroll_offset_x: f32 = 0, layout_scroll_offset_x: f32 = -1, scroll_content_width: f32 = 0, scroll_viewport_width: f32 = 0, scroll_line_width: f32 = 0, scroll_axes := Scroll_Axes.Both, scroll_axis_behavior := Scroll_Axis_Behavior.Auto_Lock, font := Font_Role.UI, text_style := DEFAULT_TEXT_STYLE, button_content := DEFAULT_BUTTON_CONTENT_STYLE, button_variant := Button_Variant.Default) -> Node_ID {
 	rt := ui.runtime
 	parent_node := current_node_parent(ui)
@@ -119,8 +136,7 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	if explicit_key { identity_key_value = key }
 	current_context := identity_declaration(rt, source, identity_key_value, parent_identity, .Node, kind, label)
 	if first_context, exists := rt.seen[id]; exists {
-		kind_text := explicit_key ? "duplicate key" : "repeated unkeyed sibling"
-		append_diagnostic(rt, fmt.tprintf("%s resolved to retained identity %d.\n  first declaration: %s\n  duplicate declaration: %s\nSuggestion: give repeated data items stable unique keys with ui.key_scope/component_begin, and keep the widget call site stable.", kind_text, id, identity_declaration_text(rt, first_context), identity_declaration_text(rt, current_context)))
+		report_repeated_identity(rt, id, first_context, current_context, explicit_key)
 		return 0
 	}
 	rt.seen[id] = current_context
@@ -179,8 +195,7 @@ append_diagnostic :: proc(rt: ^Runtime, message: string) {
 	id := identity_hash_key(parent_identity, source, key)
 	current_context := identity_declaration(rt, source, key, parent_identity, .Node, kind, label)
 	if first_context, exists := rt.seen[id]; exists {
-		kind_text := ui_key_is_explicit(key) ? "duplicate key" : "repeated unkeyed sibling"
-		append_diagnostic(rt, fmt.tprintf("%s resolved to retained identity %d.\n  first declaration: %s\n  duplicate declaration: %s\nSuggestion: give repeated data items stable unique keys with ui.key_scope/component_begin, and keep the widget call site stable.", kind_text, id, identity_declaration_text(rt, first_context), identity_declaration_text(rt, current_context)))
+		report_repeated_identity(rt, id, first_context, current_context, ui_key_is_explicit(key))
 		return 0
 	}
 	rt.seen[id] = current_context
@@ -265,7 +280,7 @@ key_scope_begin_ex :: proc(ui: ^UI, key: string, source := Source_Site{}, loc :=
 	id := identity_hash(parent, resolved_source, key, true)
 	current_context := identity_declaration(rt, resolved_source, UI_Key(key), parent, .Key_Scope, label=key)
 	if first_context, exists := rt.identity_scopes[id]; exists {
-		append_diagnostic(rt, fmt.tprintf("duplicate key scope resolved to identity %d.\n  first declaration: %s\n  duplicate declaration: %s\nSuggestion: use a different stable key for each sibling item.", id, identity_declaration_text(rt, first_context), identity_declaration_text(rt, current_context)))
+		report_repeated_identity(rt, id, first_context, current_context, true, scope=true)
 		return false
 	}
 	rt.identity_scopes[id] = current_context
@@ -280,7 +295,7 @@ key_scope_begin_key :: proc(ui: ^UI, key: UI_Key, source := Source_Site{}, loc :
 	id := identity_hash_key(parent, resolved_source, key)
 	current_context := identity_declaration(rt, resolved_source, key, parent, .Key_Scope)
 	if first_context, exists := rt.identity_scopes[id]; exists {
-		append_diagnostic(rt, fmt.tprintf("duplicate key scope resolved to identity %d.\n  first declaration: %s\n  duplicate declaration: %s\nSuggestion: use a different stable key for each sibling item.", id, identity_declaration_text(rt, first_context), identity_declaration_text(rt, current_context)))
+		report_repeated_identity(rt, id, first_context, current_context, ui_key_is_explicit(key), scope=true)
 		return false
 	}
 	rt.identity_scopes[id] = current_context
@@ -310,7 +325,7 @@ key_scope_u64 :: proc(ui: ^UI, key: u64, source := Source_Site{}, loc := #caller
 	id := identity_hash_u64(parent, resolved_source, key)
 	current_context := identity_declaration(rt, resolved_source, UI_Key(key), parent, .Numeric_Key_Scope)
 	if first_context, exists := rt.identity_scopes[id]; exists {
-		append_diagnostic(rt, fmt.tprintf("duplicate numeric key scope resolved to identity %d.\n  first declaration: %s\n  duplicate declaration: %s\nSuggestion: use a different stable numeric key for each sibling item.", id, identity_declaration_text(rt, first_context), identity_declaration_text(rt, current_context)))
+		report_repeated_identity(rt, id, first_context, current_context, true, scope=true)
 		return false
 	}
 	rt.identity_scopes[id] = current_context

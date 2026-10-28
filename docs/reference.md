@@ -67,7 +67,7 @@ level package. Existing button positional arguments, including `key` and
 Arguments are borrowed for the description, and buttons retain their existing
 one-shot activation behavior.
 
-The convenience package includes `text`, `text_field`, `checkbox`, `slider_f32`,
+The convenience package includes `key_scope`, `text`, `text_field`, `checkbox`, `slider_f32`,
 `icon`, `icon_button`, `button`, `row`, `column`, `panel`, `layout`, `box`,
 `border`, basic colors, `rgb`, and root invalidation. It writes ordinary
 retained nodes and surface paint through the same Runtime; it does not add an
@@ -684,7 +684,16 @@ Identity keys accept common Odin values directly:
 The `key_string` and `key_u64` constructors remain available when an explicit
 `UI_Key` value is useful.
 
-Use `component_begin` / `component_end` to scope reusable UI for a data item.
+Use `if ui.key_scope(ctx, item.id) { ... }` to identify a reusable component
+and all its children. Its required `UI_Key` accepts strings, `u64` values and
+`ui.key_pair(a, b)`. It forwards the application call site to the existing
+runtime key scope, adds no layout node, and closes on block exit, including
+early `return`, `break` and `continue`. Use it directly as an `if` condition;
+assigning its result or combining it with short-circuit conditions changes the
+deferred cleanup scope. Nested scopes are relative to their enclosing identity
+parent. The lower-level `component_begin` / `component_end` and
+`key_scope_begin` / `key_scope_end` remain available for manual scope control.
+
 Keys follow logical items through filtering, insertion, and reorder; indices
 and labels are not durable identities. Duplicate keys in one scope are
 diagnostics, not an implicit request to use position. A duplicate identity

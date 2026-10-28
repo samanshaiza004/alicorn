@@ -44,6 +44,20 @@ DEFAULT_CHECKBOX_STYLE :: Layout_Style{
 key_u64 :: proc(value: u64) -> UI_Key { return alicorn.key_u64(value) }
 key_pair :: proc(first, second: u64) -> UI_Key { return alicorn.key_pair(first, second) }
 
+@(private)
+key_scope_end :: proc(ui: ^UI, _key: UI_Key, _loc: odin_runtime.Source_Code_Location, opened: bool) {
+	if opened { alicorn.key_scope_end(ui) }
+}
+
+// key_scope identifies one reusable component instance without adding a layout
+// node. Use directly as an if condition; its identity scope closes on block
+// exit, including return, break and continue. The key must follow the data,
+// rather than its current position in a collection.
+@(deferred_in_out=key_scope_end)
+key_scope :: proc(ui: ^UI, key: UI_Key, loc := #caller_location) -> bool {
+	return alicorn.key_scope_begin(ui, key, loc=loc)
+}
+
 layout_style :: proc(
 	direction: Layout_Direction = .Column,
 	width: f32 = -1,

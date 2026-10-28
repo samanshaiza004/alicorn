@@ -12,7 +12,7 @@ Install Odin and the native prerequisites from
 |---|---|---|
 | 1 | [Hello](01_hello/main.odin) | Typed `ui.run`, app-owned state, text, and a button |
 | 2 | [Form](02_form/main.odin) | One-package controls, managed text buffers, accessible labels, and app-owned values |
-| 3 | [Async List](03_async_list/main.odin) | Worker completion, stable keyed rows, fixed-height virtualization, and true idle |
+| 3 | [Async List](03_async_list/main.odin) | Worker completion, reusable rows with `ui.key_scope`, fixed-height virtualization, and true idle |
 | 4 | [Custom Surface](04_custom_surface/main.odin) | Retained GPU geometry inside a clipped UI panel; resize and DPI-aware updates |
 | 5 | [Inspector](05_inspector/main.odin) | Retained tree, focus, semantic actions, and invalidation causes |
 | 6 | [Secondary Windows](06_secondary_windows/main.odin) | Opening and closing a tool window with independent application state |
