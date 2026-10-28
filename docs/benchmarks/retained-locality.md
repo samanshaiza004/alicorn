@@ -57,7 +57,14 @@ and zero global fallbacks.
 
 Initial construction remains costly and is slightly slower than the regressed
 revision in these samples; this change targets post-construction locality and
-does not claim to solve construction cost. The deterministic tests guard the
+does not claim to solve construction cost. The fixed 10,000-node initial build
+measured 130,195 allocations and 112,173,458 cumulatively allocated bytes
+(allocation traffic, not peak resident memory), with 10,000 text measurements,
+20,001 layout visits, and 10,001 finalized display commands. These counters
+show the work scales with the requested initial tree, but do not yet identify
+the dominant allocation or CPU time by function. Native macOS sampling could
+not attach to the benchmark process in this environment, so profiling
+construction remains a separate follow-up. The deterministic tests guard the
 locality contract independently of these noisy timing measurements. The raw
 alternating runs are [default profile](raw/retained-locality-macos-m1-2026-10-28-default.txt)
 and [`-o:speed`](raw/retained-locality-macos-m1-2026-10-28-speed.txt).
