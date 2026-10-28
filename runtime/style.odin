@@ -25,6 +25,43 @@ style_environment_changed_domains :: proc(previous, next: Style_Environment) -> 
 	return changed
 }
 
+// style_environment_changed_domains_for_node adds theme-owned geometry
+// dependencies only when this node consumes them. Palette-only changes never
+// become measurement changes, and explicit control heights bypass preferred
+// theme metrics.
+style_environment_changed_domains_for_node :: proc(
+	rt: ^Runtime,
+	node: ^Node,
+	next_layout_style: Layout_Style,
+	previous, next: Style_Environment,
+) -> Style_Domains {
+	changed := style_environment_changed_domains(previous, next)
+	if previous.theme == next.theme || rt == nil || node == nil { return changed }
+	control_metrics_changed := false
+	#partial switch node.kind {
+	case .Button:
+		if next_layout_style.height < 0 {
+			control_metrics_changed = style_theme_control_metrics(rt, previous.theme).button != style_theme_control_metrics(rt, next.theme).button
+		}
+	case .Checkbox:
+		if next_layout_style.height < 0 {
+			control_metrics_changed = style_theme_control_metrics(rt, previous.theme).checkbox != style_theme_control_metrics(rt, next.theme).checkbox
+		}
+	case .Slider:
+		if next_layout_style.height < 0 {
+			control_metrics_changed = style_theme_control_metrics(rt, previous.theme).slider != style_theme_control_metrics(rt, next.theme).slider
+		}
+	case .Text_Field:
+		control_metrics_changed = (next_layout_style.height < 0 &&
+			style_theme_control_metrics(rt, previous.theme).text_field != style_theme_control_metrics(rt, next.theme).text_field) ||
+			style_text_field_horizontal_inset(rt, previous) != style_text_field_horizontal_inset(rt, next)
+	}
+	if control_metrics_changed {
+		changed += {.Metrics}
+	}
+	return changed
+}
+
 // style_root_accessibility_set updates the persistent host appearance base.
 // Application style_environment_push scopes inherit it and may explicitly
 // override the full preference bundle. Call only between description frames.
@@ -234,6 +271,13 @@ style_theme_is_valid :: proc(theme: Style_Theme) -> bool {
 	if !style_slider_recipe_is_valid(theme.slider_recipe) { return false }
 	if !style_text_field_recipe_is_valid(theme.text_field_recipe) { return false }
 	if !style_scrollbar_recipe_is_valid(theme.scrollbar_recipe) { return false }
+	if theme.control_metrics.defined {
+		for metric in ([4]Control_Metric{theme.control_metrics.button, theme.control_metrics.checkbox, theme.control_metrics.slider, theme.control_metrics.text_field}) {
+			for value in ([3]f32{metric.preferred_height, metric.minimum_hit_height, metric.content_padding_y}) {
+				if math.is_nan(value) || math.is_inf(value) || value < 0 || value > 10000 { return false }
+			}
+		}
+	}
 	return true
 }
 

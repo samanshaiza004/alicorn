@@ -55,6 +55,135 @@ layout_measure_test_trace_has_reason :: proc(rt: ^Runtime, node: Node_ID, fragme
 	return false
 }
 
+layout_measure_test_describe_controls :: proc(rt: ^Runtime, theme: Style_Theme_ID, density, text_scale: f32) -> (button_id, checkbox_id, slider_id, field_id, explicit_id: Node_ID) {
+	invalidate_root(rt, "control metrics fixture description")
+	ui, build := begin_frame(rt)
+	if !build { return }
+	container_begin(&ui, .Root, key=key_string("control-metrics-root"), style=layout_style(.Column, width=400, height=320, gap=4))
+	scope := style_environment_push(&ui, Style_Environment{theme=theme, density=density, text_scale=text_scale})
+	_ = button(&ui, "Button", key=key_string("control-metrics-button"))
+	button_id = ui.runtime.pending[len(ui.runtime.pending)-1].description.id
+	_ = checkbox(&ui, "Checkbox", false, key=key_string("control-metrics-checkbox"))
+	checkbox_id = ui.runtime.pending[len(ui.runtime.pending)-1].description.id
+	_ = slider_f32(&ui, "Slider", 0.5, 0, 1, key=key_string("control-metrics-slider"))
+	slider_id = ui.runtime.pending[len(ui.runtime.pending)-1].description.id
+	field_id = text_field(&ui, "Field", key=key_string("control-metrics-field"))
+	_ = button(&ui, "Explicit", key=key_string("control-metrics-explicit"), style=layout_style(.Row, height=18))
+	explicit_id = ui.runtime.pending[len(ui.runtime.pending)-1].description.id
+	style_environment_pop(&ui, scope)
+	container_end(&ui)
+	end_frame(&ui)
+	return
+}
+
+@(test)
+test_theme_control_metrics_invalidate_measurement_without_identity_changes :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 420, 340})
+	defer destroy_runtime(&rt)
+	if !text_engine_load_font(&rt.text_engine, LAYOUT_MEASURE_TEST_FONT) {
+		testing.expect(t, false, "control metrics fixture font should load")
+		return
+	}
+	button_id, checkbox_id, slider_id, field_id, explicit_id := layout_measure_test_describe_controls(&rt, DEFAULT_STYLE_THEME_ID, 1, 1)
+	if button_id == 0 || checkbox_id == 0 || slider_id == 0 || field_id == 0 || explicit_id == 0 {
+		testing.expect(t, false, "default controls should be retained")
+		return
+	}
+	base_button_id := button_id
+	base_checkbox_id := checkbox_id
+	base_slider_id := slider_id
+	base_field_id := field_id
+	base_explicit_metric_generation := rt.nodes[explicit_id].style_generations.metrics
+	base_generations := [4]u32{
+		rt.nodes[button_id].style_generations.metrics,
+		rt.nodes[checkbox_id].style_generations.metrics,
+		rt.nodes[slider_id].style_generations.metrics,
+		rt.nodes[field_id].style_generations.metrics,
+	}
+	base_height := layout_unit_to_f32(rt.measure_states[button_id].result.size.height)
+	testing.expect(t, layout_unit_to_f32(rt.measure_states[explicit_id].result.size.height) == 18,
+		"explicit control height should override the theme's preferred and minimum target heights")
+
+	metrics_theme := DEFAULT_STYLE_THEME
+	metrics_theme.control_metrics.button = Control_Metric{preferred_height=24, minimum_hit_height=24, content_padding_y=4}
+	metrics_theme_id := style_theme_register(&rt, metrics_theme)
+	if metrics_theme_id == 0 { testing.expect(t, false, "valid control metrics should register"); return }
+	button_id, checkbox_id, slider_id, field_id, explicit_id = layout_measure_test_describe_controls(&rt, metrics_theme_id, 1, 1)
+	custom_heights := [4]f32{
+		layout_unit_to_f32(rt.measure_states[button_id].result.size.height),
+		layout_unit_to_f32(rt.measure_states[checkbox_id].result.size.height),
+		layout_unit_to_f32(rt.measure_states[slider_id].result.size.height),
+		layout_unit_to_f32(rt.measure_states[field_id].result.size.height),
+	}
+	expected_preferred := [4]f32{24, 32, 44, 32}
+	for height, index in custom_heights {
+		testing.expect(t, height >= expected_preferred[index], "theme control preferences should affect intrinsic geometry")
+	}
+	testing.expect(t, button_id == base_button_id && checkbox_id == base_checkbox_id && slider_id == base_slider_id && field_id == base_field_id,
+		"changing theme metrics must preserve retained control identity")
+	testing.expect(t, rt.nodes[button_id].style_generations.metrics > base_generations[0],
+		"the changed Button metric should advance its measurement dependency")
+	testing.expect(t, rt.nodes[checkbox_id].style_generations.metrics == base_generations[1] &&
+		rt.nodes[slider_id].style_generations.metrics == base_generations[2] &&
+		rt.nodes[field_id].style_generations.metrics == base_generations[3],
+		"a Button-only metric change must not invalidate other controls")
+	testing.expect(t, layout_unit_to_f32(rt.measure_states[explicit_id].result.size.height) == 18,
+		"explicit dimensions should remain authoritative under a theme metric and density change")
+	testing.expect(t, rt.nodes[explicit_id].style_generations.metrics == base_explicit_metric_generation,
+		"an explicit control height must not depend on or invalidate for the theme's preferred height")
+	testing.expect(t, layout_unit_to_f32(rt.measure_states[button_id].result.size.height) < base_height,
+		"a compact theme should be able to lower the preferred button height")
+
+	button_id, checkbox_id, slider_id, field_id, explicit_id = layout_measure_test_describe_controls(&rt, metrics_theme_id, 1.5, 1)
+	testing.expect(t, layout_unit_to_f32(rt.measure_states[button_id].result.size.height) >= 36 &&
+		layout_unit_to_f32(rt.measure_states[checkbox_id].result.size.height) >= 48 &&
+		layout_unit_to_f32(rt.measure_states[slider_id].result.size.height) >= 66 &&
+		layout_unit_to_f32(rt.measure_states[field_id].result.size.height) >= 48,
+		"density should scale theme control geometry once across control families")
+
+	before_text_scale := layout_unit_to_f32(rt.measure_states[button_id].result.size.height)
+	executed_before_text_scale := rt.stats.measure_nodes_executed
+	button_id, checkbox_id, slider_id, field_id, explicit_id = layout_measure_test_describe_controls(&rt, metrics_theme_id, 1, 2)
+	testing.expect(t, rt.stats.measure_nodes_executed > executed_before_text_scale,
+		"text scale should invalidate and remeasure controls that depend on shaped text")
+	testing.expect(t, layout_unit_to_f32(rt.measure_states[button_id].result.size.height) > before_text_scale,
+		"large text should expand a control beyond its theme preferred height when needed")
+
+	paint_theme := metrics_theme
+	paint_theme.colors[int(Style_Color_Role.Surface)] = Color{0.3, 0.2, 0.1, 1}
+	paint_theme_id := style_theme_register(&rt, paint_theme)
+	if paint_theme_id == 0 { testing.expect(t, false, "paint-only control theme should register"); return }
+	metrics_before_paint_change := rt.stats.measure_nodes_executed
+	button_id, checkbox_id, slider_id, field_id, explicit_id = layout_measure_test_describe_controls(&rt, paint_theme_id, 1, 2)
+	testing.expect(t, rt.stats.measure_nodes_executed == metrics_before_paint_change,
+		"palette-only theme changes must not invalidate control measurements")
+}
+
+@(test)
+test_theme_control_minimum_survives_compression_with_explicit_overrides :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 160, 16})
+	defer destroy_runtime(&rt)
+	invalidate_root(&rt, "theme control minimum fixture")
+	ui, build := begin_frame(&rt)
+	if !build { testing.expect(t, false, "control minimum fixture should build"); return }
+	container_begin(&ui, .Root, key=key_string("control-minimum-root"), style=layout_style(.Column, width=160, height=16))
+	_ = button(&ui, "Target", key=key_string("control-minimum-default"))
+	default_id := ui.runtime.pending[len(ui.runtime.pending)-1].description.id
+	_ = button(&ui, "Capped", key=key_string("control-minimum-capped"), style=layout_style(.Row, max_height=20))
+	capped_id := ui.runtime.pending[len(ui.runtime.pending)-1].description.id
+	_ = button(&ui, "Explicit", key=key_string("control-minimum-explicit"), style=layout_style(.Row, height=18))
+	explicit_id := ui.runtime.pending[len(ui.runtime.pending)-1].description.id
+	container_end(&ui)
+	end_frame(&ui)
+	testing.expect(t, default_id != 0 && capped_id != 0 && explicit_id != 0, "control targets should be retained")
+	testing.expect(t, rt.nodes[default_id].bounds.h == 32,
+		"the theme minimum target must survive compression by a too-short Column")
+	testing.expect(t, rt.nodes[capped_id].bounds.h == 20,
+		"an explicit maximum may cap the implicit theme target")
+	testing.expect(t, rt.nodes[explicit_id].bounds.h == 18,
+		"an explicit height must override the theme target minimum")
+}
+
 @(test)
 test_measure_cache_miss_with_equal_result_does_not_relayout_ancestors :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 240, 120})

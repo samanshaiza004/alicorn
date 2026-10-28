@@ -162,17 +162,8 @@ intrinsic_main :: proc(rt: ^Runtime, node: ^Node, direction: Layout_Direction) -
 		return 80 + 2*padding_x
 	}
 	if node.style.height >= 0 { return node.style.height }
-	if node.kind == .Checkbox {
-		if node.text_run_valid { return maxf(28, node.text_run.height+8) }
-		return 28
-	}
-	if node.kind == .Slider {
-		if node.text_run_valid { return maxf(44, node.text_run.height+24) }
-		return 44
-	}
-	if node.kind == .Text_Field {
-		if node.text_run_valid { return node.text_run.height+8 }
-		return 28
+	if node.kind == .Button || node.kind == .Checkbox || node.kind == .Slider || node.kind == .Text_Field {
+		return layout_control_default_height(rt, node)
 	}
 	if node.text_run_valid { return node.text_run.height + 2*padding_y }
 	return 24 + 2*padding_y
@@ -188,6 +179,10 @@ main_axis_max :: proc(style: Layout_Style, direction: Layout_Direction) -> f32 {
 
 resolved_main_size :: proc(node: ^Node, direction: Layout_Direction, basis: f32) -> f32 {
 	return clampf(basis, main_axis_min(node.style, direction), main_axis_max(node.style, direction))
+}
+
+layout_node_main_min :: proc(rt: ^Runtime, node: ^Node, direction: Layout_Direction) -> f32 {
+	return layout_node_min_height(rt, node) if direction == .Column else main_axis_min(node.style, direction)
 }
 
 // Float grow weights are normalized against the largest participant before
@@ -209,7 +204,7 @@ layout_grow_weight_units :: proc(value, maximum: f32) -> u32 {
 }
 
 layout_main_style_bounds :: proc(rt: ^Runtime, node: ^Node, direction: Layout_Direction) -> (minimum, maximum: Layout_Unit, max_unbounded: bool) {
-	minimum_value := main_axis_min(node.style, direction)
+	minimum_value := layout_node_main_min(rt, node, direction)
 	if math.is_nan(minimum_value) || math.is_inf(minimum_value) || minimum_value < 0 {
 		layout_trace_allocator_input_error(rt, node, "minimum must be finite and nonnegative; using zero")
 		minimum_value = 0
@@ -404,7 +399,7 @@ layout_child_cross_size :: proc(rt: ^Runtime, parent, child: ^Node, cross_size: 
 	if parent.style.direction == .Row {
 		if child.kind == .Image {
 			intrinsic := layout_measure_intrinsic_size(rt, child)
-			return clampf(layout_unit_to_f32(intrinsic.height), child.style.min_height, child.style.max_height)
+			return clampf(layout_unit_to_f32(intrinsic.height), layout_node_min_height(rt, child), child.style.max_height)
 		}
 		cross := child.style.height if child.style.height >= 0 else cross_size
 		if layout_node_has_content_height(child) {
@@ -412,7 +407,7 @@ layout_child_cross_size :: proc(rt: ^Runtime, parent, child: ^Node, cross_size: 
 				cross = layout_unit_to_f32(state.result.size.height)
 			}
 		}
-		return clampf(cross, child.style.min_height, child.style.max_height)
+		return clampf(cross, layout_node_min_height(rt, child), child.style.max_height)
 	}
 	if child.kind == .Image {
 		intrinsic := layout_measure_intrinsic_size(rt, child)
@@ -911,13 +906,13 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 				width=layout_axis_constraint_normalize(parent.bounds.w, parent.bounds.w),
 				height=layout_axis_constraint_normalize(0, available),
 			}
-			constraints := layout_content_child_constraints(parent, child, parent_constraints)
+			constraints := layout_content_child_constraints(rt, parent, child, parent_constraints)
 			_ = layout_measure_node(rt, child, constraints)
 		}
 		// A Row grow child's width is not known until the existing allocator
 		// distributes space below. Avoid shaping it with an invented width.
 		if node_has_text_product(child.kind) && !(parent.style.direction == .Row && layout_grow_weight_is_finite_positive(child.style.grow)) {
-			_ = layout_measure_node(rt, child, layout_text_measure_constraints(parent, child, cross_size))
+			_ = layout_measure_node(rt, child, layout_text_measure_constraints(rt, parent, child, cross_size))
 		}
 	}
 	main_sizes := make([]f32, count, allocator=rt.scratch_allocator)
@@ -933,11 +928,11 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 				width=layout_axis_constraint_normalize(main, main),
 				height=layout_axis_constraint_normalize(0, cross_size),
 			}
-			constraints := layout_content_child_constraints(parent, child, parent_constraints, assigned_width=main)
+			constraints := layout_content_child_constraints(rt, parent, child, parent_constraints, assigned_width=main)
 			_ = layout_measure_node(rt, child, constraints)
 		}
 		if (layout_grow_weight_is_finite_positive(child.style.grow) || child.style.compress_weight > 0) && node_has_text_product(child.kind) {
-			_ = layout_measure_node(rt, child, layout_grow_measure_constraints(parent, child, main, cross_size))
+			_ = layout_measure_node(rt, child, layout_grow_measure_constraints(rt, parent, child, main, cross_size))
 		}
 	}
 
@@ -1000,7 +995,7 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 			cross_is_reversed := layout_effective_writing_direction(rt, parent) == .Right_To_Left
 			if parent.style.align == .Center { cross_pos += (cross_size-cross)/2 }
 			if parent.style.align == .End && !cross_is_reversed || parent.style.align == .Start && cross_is_reversed { cross_pos += cross_size-cross }
-			child.bounds = Rect{cross_pos, inner.y+main_offset, cross, clampf(main, child.style.min_height, child.style.max_height)}
+			child.bounds = Rect{cross_pos, inner.y+main_offset, cross, clampf(main, layout_node_min_height(rt, child), child.style.max_height)}
 		}
 		old_clip := child.clip
 		if parent.kind == .Scroll_Region {

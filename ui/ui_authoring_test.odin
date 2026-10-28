@@ -1,6 +1,7 @@
 package ui
 
 import "core:testing"
+import "core:math"
 import alicorn "alicorn:runtime"
 
 UI_Authoring_Test_App :: struct {
@@ -35,6 +36,43 @@ ui_authoring_test_frame :: proc(rt: ^alicorn.Runtime, app: ^UI_Authoring_Test_Ap
 	alicorn.container_end(&ctx)
 	alicorn.end_frame(&ctx)
 	return root != 0
+}
+
+@(test)
+test_typed_sizing_lowers_to_legacy_layout_style_and_rejects_ambiguity :: proc(t: ^testing.T) {
+	declaration := sizing(
+		width=logical(240),
+		height=fit_content(),
+		min_width=logical(100),
+		max_width=logical(300),
+		min_height=logical(24),
+		grow=expand(1.5),
+	)
+	base := layout_style(.Row, padding=8, gap=6, align=.Center, clip=true)
+	lowered, valid := resolve_sizing(base, declaration)
+	expected := alicorn.layout_style(.Row, width=240, height=alicorn.LAYOUT_SIZE_FIT_CONTENT,
+		min_width=100, max_width=300, min_height=24, grow=1.5, padding=8, gap=6, align=.Center, clip=true)
+	testing.expect(t, valid && lowered == expected,
+		"typed fixed, fit, expand, and bound declarations should normalize to the existing style representation")
+
+	invalid_fit_bound := sizing(min_width=fit_content())
+	_, valid = resolve_sizing(base, invalid_fit_bound)
+	testing.expect(t, !valid, "fit-content is not a valid minimum bound")
+	invalid_fit_width := sizing(width=fit_content())
+	_, valid = resolve_sizing(base, invalid_fit_width)
+	testing.expect(t, !valid, "fit-content width is not part of the existing bounded contract")
+	invalid_nan := sizing(width=logical(math.nan_f32()))
+	_, valid = resolve_sizing(base, invalid_nan)
+	testing.expect(t, !valid, "non-finite logical extents should be rejected")
+	invalid_bounds := sizing(min_width=logical(300), max_width=logical(100))
+	_, valid = resolve_sizing(base, invalid_bounds)
+	testing.expect(t, !valid, "minimum greater than maximum should be rejected instead of normalized silently")
+	conflicting_base := alicorn.layout_style(.Row, width=200)
+	_, valid = resolve_sizing(conflicting_base, sizing(width=logical(240)))
+	testing.expect(t, !valid, "conflicting legacy and typed declarations should be rejected")
+	invalid_expand := sizing(grow=expand(0))
+	_, valid = resolve_sizing(base, invalid_expand)
+	testing.expect(t, !valid, "expansion weights must be finite and positive")
 }
 
 UI_Bound_Control_Test_App :: struct {

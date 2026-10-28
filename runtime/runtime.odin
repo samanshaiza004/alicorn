@@ -880,6 +880,35 @@ DEFAULT_BUTTON_RECIPES :: Button_Recipe_Set{recipes={
 
 // A registered theme is immutable and retained once per Runtime. Nodes carry
 // only the compact ID through Style_Environment, not a copy of this palette.
+// Control_Metric provides a preferred intrinsic height, a minimum target
+// height, and vertical content padding. These are separate inputs: the
+// preferred height is a theme default, the minimum target protects ordinary
+// controls, and measured text plus padding may require more room. Explicit
+// Layout_Style dimensions remain an application override.
+Control_Metric :: struct {
+	preferred_height: f32,
+	minimum_hit_height: f32,
+	content_padding_y: f32,
+}
+
+Control_Metrics :: struct {
+	defined: bool,
+	button: Control_Metric,
+	checkbox: Control_Metric,
+	slider: Control_Metric,
+	text_field: Control_Metric,
+}
+
+Control_Metric_Kind :: enum { Button, Checkbox, Slider, Text_Field }
+
+DEFAULT_CONTROL_METRICS :: Control_Metrics{
+	defined=true,
+	button=Control_Metric{preferred_height=32, minimum_hit_height=32, content_padding_y=4},
+	checkbox=Control_Metric{preferred_height=28, minimum_hit_height=32, content_padding_y=4},
+	slider=Control_Metric{preferred_height=44, minimum_hit_height=32, content_padding_y=12},
+	text_field=Control_Metric{preferred_height=28, minimum_hit_height=32, content_padding_y=4},
+}
+
 Style_Theme :: struct {
 	colors:                 [STYLE_COLOR_ROLE_COUNT]Color,
 	button_recipes:         Button_Recipe_Set,
@@ -887,6 +916,7 @@ Style_Theme :: struct {
 	slider_recipe:          Slider_Recipe,
 	text_field_recipe:      Text_Field_Recipe,
 	scrollbar_recipe:       Scrollbar_Recipe,
+	control_metrics:        Control_Metrics,
 	color_tokens:           []Color,
 	length_tokens:          []Style_Length,
 	core_color_tokens:      [STYLE_COLOR_ROLE_COUNT]Style_Color_Token_ID,
@@ -917,7 +947,7 @@ DEFAULT_STYLE_THEME :: Style_Theme{colors={
 	Color{0.17, 0.39, 0.34, 1},
 	Color{0.08, 0.10, 0.14, 1},
 	Color{0.38, 0.48, 0.62, 1},
-}, button_recipes=DEFAULT_BUTTON_RECIPES, checkbox_recipe=DEFAULT_CHECKBOX_RECIPE, slider_recipe=DEFAULT_SLIDER_RECIPE, text_field_recipe=DEFAULT_TEXT_FIELD_RECIPE, scrollbar_recipe=DEFAULT_SCROLLBAR_RECIPE}
+}, button_recipes=DEFAULT_BUTTON_RECIPES, checkbox_recipe=DEFAULT_CHECKBOX_RECIPE, slider_recipe=DEFAULT_SLIDER_RECIPE, text_field_recipe=DEFAULT_TEXT_FIELD_RECIPE, scrollbar_recipe=DEFAULT_SCROLLBAR_RECIPE, control_metrics=DEFAULT_CONTROL_METRICS}
 
 DEFAULT_STYLE_THEME_ID :: Style_Theme_ID(1)
 

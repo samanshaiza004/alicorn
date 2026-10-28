@@ -24,17 +24,17 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 		ui.text(ctx, "02 · A small form", size=24, color=ui.white)
 		ui.text(ctx, "Edit the name, toggle an option, and adjust its value.")
 
-		ui.text_field(ctx, "Name", &app.name, height=36)
-		ui.checkbox(ctx, "Show grid", &app.show_grid, height=36)
-		ui.slider_f32(ctx, "Gain", &app.gain, 0, 1, step=0.05, height=52)
+		ui.text_field(ctx, "Name", &app.name)
+		ui.checkbox(ctx, "Show grid", &app.show_grid)
+		ui.slider_f32(ctx, "Gain", &app.gain, 0, 1, step=0.05)
 		ui.text(ctx, fmt.tprintf("Gain: %.0f%%", app.gain*100))
 
 		if ui.row(ctx, gap=8) {
-			if ui.button(ctx, "Reset", width=100, height=34) {
+			if ui.button(ctx, "Reset", width=100) {
 				app.show_grid = true
 				app.gain = 0.65
 			}
-			if ui.button(ctx, "Click", width=100, height=34) {
+			if ui.button(ctx, "Click", width=100) {
 				app.clicks += 1
 			}
 		}

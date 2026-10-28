@@ -699,3 +699,25 @@ returns input to the application's existing focus. The native host also has
 diagnostic captures; see
 [Development](development.md#native-diagnostics). For the design boundaries,
 see [Architecture](architecture.md).
+
+## Typed sizing prototype
+
+For declarations that should stay independent of the legacy float sentinels, `ui.sizing` builds a typed value and `ui.sizing_layout` lowers it to the same `Layout_Style` fields. This normalization adds no retained node fields or layout pass:
+
+```odin
+form_sizing := ui.sizing(
+    width=ui.logical(360),
+    height=ui.fit_content(),
+    min_width=ui.logical(280),
+    max_width=ui.logical(520),
+    grow=ui.expand(1),
+)
+form_style, valid := ui.sizing_layout(.Column, form_sizing, padding=24, gap=14)
+if valid && ui.layout(ctx, form_style, label="Form") {
+    // children
+}
+```
+
+`ui.logical` accepts a finite nonnegative logical extent. `fit_content` is currently supported for height and maps to the existing fit-content sentinel; `expand` maps to the existing weighted main-axis grow value. Min/max slots accept fixed extents only. Invalid bounds, nonfinite values, or conflicting values in the base `Layout_Style` return `valid=false`; they are not silently normalized. Parent-relative percentages and aspect ratios are still experimental and are not part of this wrapper-only stage.
+
+Standard controls also have theme-provided preferred and minimum target heights. They apply when height is omitted; measured text and vertical content padding can increase the result. A deliberate `height=` still overrides the theme target; `min_height=` can enforce a stricter application minimum, and `max_height=` can cap the implicit theme target. See [theme control metrics](themes.md#control-metrics).

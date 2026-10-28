@@ -140,6 +140,56 @@ layout_node_has_content_height :: proc(node: ^Node) -> bool {
 	return node.kind == .Container && (node.style.direction == .Column || node.style.direction == .Row)
 }
 
+// layout_control_default_height combines independent theme preference,
+// minimum target size, and measured text/padding. An explicit authored height
+// bypasses this preference in layout_measure_intrinsic_size as before.
+layout_control_default_height :: proc(rt: ^Runtime, node: ^Node) -> f32 {
+	if node == nil { return 0 }
+	kind := Control_Metric_Kind.Button
+	#partial switch node.kind {
+	case .Button: kind = .Button
+	case .Checkbox: kind = .Checkbox
+	case .Slider: kind = .Slider
+	case .Text_Field: kind = .Text_Field
+	case: return 0
+	}
+	metric := style_control_metric(rt, node.style_environment, kind)
+	padding_y := metric.content_padding_y
+	// Button_Content_Style is an existing explicit authoring override. The
+	// default value follows theme density/metrics; custom values retain their
+	// original logical-unit meaning.
+	if node.kind == .Button && node.button_content_style != DEFAULT_BUTTON_CONTENT_STYLE {
+		padding_y = maxf(node.button_content_style.padding_y, 0)
+	}
+	text_height: f32 = 0
+	if node.text_run_valid { text_height = node.text_run.height }
+	return maxf(maxf(metric.preferred_height, metric.minimum_hit_height), text_height+2*padding_y)
+}
+
+// layout_node_min_height includes a control's theme target minimum only while
+// its height is implicit. An authored height opts out; an authored max-height
+// can also cap the target unless the application supplied a contradictory
+// explicit min-height, which is left for the normal constraint diagnostic.
+layout_node_min_height :: proc(rt: ^Runtime, node: ^Node) -> f32 {
+	if node == nil { return 0 }
+	minimum := maxf(node.style.min_height, 0)
+	if node.style.height >= 0 { return minimum }
+	kind := Control_Metric_Kind.Button
+	#partial switch node.kind {
+	case .Button: kind = .Button
+	case .Checkbox: kind = .Checkbox
+	case .Slider: kind = .Slider
+	case .Text_Field: kind = .Text_Field
+	case: return minimum
+	}
+	target := style_control_metric(rt, node.style_environment, kind).minimum_hit_height
+	minimum = maxf(minimum, target)
+	if node.style.max_height >= 0 && node.style.min_height <= node.style.max_height {
+		minimum = minf(minimum, node.style.max_height)
+	}
+	return minimum
+}
+
 // Content signatures cover only realized descendants whose sizes contribute
 // to this measured container. Virtual lists contribute their declared extent
 // through the Scroll_Region node and never walk unrealized items.
@@ -180,8 +230,8 @@ layout_measure_content_signature :: proc(rt: ^Runtime, node: ^Node) -> u64 {
 	}
 	return h
 }
-
 layout_content_child_constraints :: proc(
+	rt: ^Runtime,
 	parent: ^Node,
 	child: ^Node,
 	parent_constraints: Layout_Constraints,
@@ -197,14 +247,15 @@ layout_content_child_constraints :: proc(
 	content_width = clampf(content_width, child.style.min_width, child.style.max_width)
 	width := layout_axis_constraint_normalize(content_width, content_width)
 
-	height := layout_axis_constraint_normalize(child.style.min_height, child.style.max_height)
+	min_height := layout_node_min_height(rt, child)
+	height := layout_axis_constraint_normalize(min_height, child.style.max_height)
 	if child.style.height >= 0 {
-		assigned_height := clampf(child.style.height, child.style.min_height, child.style.max_height)
+		assigned_height := clampf(child.style.height, min_height, child.style.max_height)
 		height = layout_axis_constraint_normalize(assigned_height, assigned_height)
 	} else if layout_node_has_content_height(child) && !parent_constraints.height.unbounded_max {
 		max_height := layout_unit_to_f32(parent_constraints.height.max)
 		if child.style.max_height >= 0 { max_height = minf(max_height, child.style.max_height) }
-		height = layout_axis_constraint_normalize(child.style.min_height, max_height)
+		height = layout_axis_constraint_normalize(min_height, max_height)
 	}
 	return Layout_Constraints{width=width, height=height}
 }
@@ -213,36 +264,39 @@ layout_content_child_constraints :: proc(
 // can assign constrained widths. Shape those children at their authored width
 // when present, otherwise at their intrinsic width; the second pass below
 // remeasures them at the allocator's exact width.
-layout_content_row_natural_child_constraints :: proc(child: ^Node) -> Layout_Constraints {
+layout_content_row_natural_child_constraints :: proc(rt: ^Runtime, child: ^Node) -> Layout_Constraints {
 	if child == nil { return {} }
 	width := layout_axis_constraint_normalize(child.style.min_width, child.style.max_width)
 	if child.style.width >= 0 {
 		assigned_width := clampf(child.style.width, child.style.min_width, child.style.max_width)
 		width = layout_axis_constraint_normalize(assigned_width, assigned_width)
 	}
-	height := layout_axis_constraint_normalize(child.style.min_height, child.style.max_height)
+	min_height := layout_node_min_height(rt, child)
+	height := layout_axis_constraint_normalize(min_height, child.style.max_height)
 	if child.style.height >= 0 {
-		assigned_height := clampf(child.style.height, child.style.min_height, child.style.max_height)
+		assigned_height := clampf(child.style.height, min_height, child.style.max_height)
 		height = layout_axis_constraint_normalize(assigned_height, assigned_height)
 	}
 	return Layout_Constraints{width=width, height=height}
 }
 
 layout_content_row_assigned_child_constraints :: proc(
+	rt: ^Runtime,
 	child: ^Node,
 	assigned_width: f32,
 	parent_constraints: Layout_Constraints,
 ) -> Layout_Constraints {
 	if child == nil { return {} }
 	width := clampf(assigned_width, child.style.min_width, child.style.max_width)
-	height := layout_axis_constraint_normalize(child.style.min_height, child.style.max_height)
+	min_height := layout_node_min_height(rt, child)
+	height := layout_axis_constraint_normalize(min_height, child.style.max_height)
 	if child.style.height >= 0 {
-		assigned_height := clampf(child.style.height, child.style.min_height, child.style.max_height)
+		assigned_height := clampf(child.style.height, min_height, child.style.max_height)
 		height = layout_axis_constraint_normalize(assigned_height, assigned_height)
 	} else if layout_node_has_content_height(child) && !parent_constraints.height.unbounded_max {
 		max_height := layout_unit_to_f32(parent_constraints.height.max)
 		if child.style.max_height >= 0 { max_height = minf(max_height, child.style.max_height) }
-		height = layout_axis_constraint_normalize(child.style.min_height, max_height)
+		height = layout_axis_constraint_normalize(min_height, max_height)
 	}
 	return Layout_Constraints{
 		width=layout_axis_constraint_normalize(width, width),
@@ -276,7 +330,7 @@ layout_measure_content_height :: proc(rt: ^Runtime, node: ^Node, constraints: La
 			child, ok := rt.nodes[child_id]
 			if !ok || child == nil || !child.active { continue }
 			realized_children += 1
-			child_constraints := layout_content_child_constraints(node, child, constraints)
+			child_constraints := layout_content_child_constraints(rt, node, child, constraints)
 			measured := layout_measure_node(rt, child, child_constraints)
 			child_state := rt.measure_states[child_id]
 			child_state.parent_size_dependencies = {.Height_To_Height}
@@ -297,7 +351,7 @@ layout_measure_content_height :: proc(rt: ^Runtime, node: ^Node, constraints: La
 			// Resolve an intrinsic main-axis ideal first. This pass deliberately
 			// leaves non-explicit widths unbounded so a wrapped label does not
 			// mistake the full Row proposal for its natural width.
-			_ = layout_measure_node(rt, child, layout_content_row_natural_child_constraints(child))
+			_ = layout_measure_node(rt, child, layout_content_row_natural_child_constraints(rt, child))
 		}
 		realized_children = len(children)
 		max_child_height: Layout_Unit = 0
@@ -321,7 +375,7 @@ layout_measure_content_height :: proc(rt: ^Runtime, node: ^Node, constraints: La
 			resolve_main_sizes(rt, children[:], .Row, available_units, main_sizes)
 			for child_id, index in children {
 				child := rt.nodes[child_id]
-				child_constraints := layout_content_row_assigned_child_constraints(child, main_sizes[index], constraints)
+				child_constraints := layout_content_row_assigned_child_constraints(rt, child, main_sizes[index], constraints)
 				measured := layout_measure_node(rt, child, child_constraints)
 				child_state := rt.measure_states[child_id]
 				child_state.parent_size_dependencies = {.Width_To_Height, .Height_To_Height}
@@ -501,23 +555,15 @@ layout_measure_intrinsic_size :: proc(rt: ^Runtime, node: ^Node) -> Layout_Size 
 		if node.kind == .Button && node.icon_id != .None { width += ICON_TRAILING_SLOT_WIDTH }
 	}
 	if height < 0 {
-		#partial switch node.kind {
-		case .Checkbox:
-			height = 28
-			if node.text_run_valid { height = maxf(28, node.text_run.height+8) }
-		case .Slider:
-			height = 44
-			if node.text_run_valid { height = maxf(44, node.text_run.height+24) }
-		case .Text_Field:
-			height = 28
-			if node.text_run_valid { height = node.text_run.height+8 }
-		case:
+		if node.kind == .Button || node.kind == .Checkbox || node.kind == .Slider || node.kind == .Text_Field {
+			height = layout_control_default_height(rt, node)
+		} else {
 			height = 24+2*padding_y
 			if node.text_run_valid { height = node.text_run.height+2*padding_y }
 		}
 	}
 	width = clampf(width, node.style.min_width, node.style.max_width)
-	height = clampf(height, node.style.min_height, node.style.max_height)
+	height = clampf(height, layout_node_min_height(rt, node), node.style.max_height)
 	return Layout_Size{layout_unit_extent(width), layout_unit_extent(height)}
 }
 
@@ -723,7 +769,7 @@ layout_measure_retained_dirty_nodes :: proc(rt: ^Runtime) {
 	clear(&rt.measure_queue)
 }
 
-layout_text_measure_constraints :: proc(parent: ^Node, child: ^Node, cross_size: f32) -> Layout_Constraints {
+layout_text_measure_constraints :: proc(rt: ^Runtime, parent: ^Node, child: ^Node, cross_size: f32) -> Layout_Constraints {
 	width := layout_axis_constraint_normalize(0, -1)
 	height := layout_axis_constraint_normalize(0, -1)
 	if child.style.width < 0 && parent.style.direction == .Column {
@@ -731,15 +777,17 @@ layout_text_measure_constraints :: proc(parent: ^Node, child: ^Node, cross_size:
 		width = layout_axis_constraint_normalize(assigned_width, assigned_width)
 	}
 	if child.style.height < 0 && parent.style.direction == .Row {
-		assigned_height := clampf(cross_size, child.style.min_height, child.style.max_height)
+		assigned_height := clampf(cross_size, layout_node_min_height(rt, child), child.style.max_height)
 		height = layout_axis_constraint_normalize(assigned_height, assigned_height)
 	}
 	return Layout_Constraints{width=width, height=height}
 }
 
-layout_grow_measure_constraints :: proc(parent: ^Node, child: ^Node, assigned_main, cross_size: f32) -> Layout_Constraints {
-	constraints := layout_text_measure_constraints(parent, child, cross_size)
-	assigned := clampf(assigned_main, main_axis_min(child.style, parent.style.direction), main_axis_max(child.style, parent.style.direction))
+layout_grow_measure_constraints :: proc(rt: ^Runtime, parent: ^Node, child: ^Node, assigned_main, cross_size: f32) -> Layout_Constraints {
+	constraints := layout_text_measure_constraints(rt, parent, child, cross_size)
+	minimum := main_axis_min(child.style, parent.style.direction)
+	if parent.style.direction == .Column { minimum = layout_node_min_height(rt, child) }
+	assigned := clampf(assigned_main, minimum, main_axis_max(child.style, parent.style.direction))
 	if parent.style.direction == .Row {
 		constraints.width = layout_axis_constraint_normalize(assigned, assigned)
 	} else {

@@ -1,5 +1,7 @@
 package alicorn
 
+import "core:math"
+
 // Control_Part_Transform composes visual state onto independent semantic
 // parts of a control. It deliberately contains no geometry or layout values;
 // those remain owned by the control and the layout system.
@@ -296,6 +298,37 @@ style_text_field_recipe :: proc(rt: ^Runtime, environment: Style_Environment) ->
 		}
 	}
 	return DEFAULT_TEXT_FIELD_RECIPE
+}
+
+style_theme_control_metrics :: proc(rt: ^Runtime, theme: Style_Theme_ID) -> Control_Metrics {
+	if rt != nil {
+		index := u64(u32(theme))
+		if index > 0 && index <= u64(len(rt.style_themes)) {
+			metrics := rt.style_themes[index-1].control_metrics
+			if metrics.defined { return metrics }
+		}
+	}
+	return DEFAULT_CONTROL_METRICS
+}
+
+// style_control_metric resolves theme logical units through density once.
+// Text scale remains a separate input applied by text shaping, so a larger
+// text run can raise the preferred size without being scaled twice.
+style_control_metric :: proc(rt: ^Runtime, environment: Style_Environment, kind: Control_Metric_Kind) -> Control_Metric {
+	metrics := style_theme_control_metrics(rt, environment.theme)
+	metric := metrics.button
+	switch kind {
+	case .Button: metric = metrics.button
+	case .Checkbox: metric = metrics.checkbox
+	case .Slider: metric = metrics.slider
+	case .Text_Field: metric = metrics.text_field
+	}
+	density := environment.density
+	if !(density > 0) || math.is_nan(density) || math.is_inf(density) || density >= 100 { density = 1 }
+	metric.preferred_height *= density
+	metric.minimum_hit_height *= density
+	metric.content_padding_y *= density
+	return metric
 }
 
 // style_text_field_horizontal_inset resolves the theme-provided logical inset

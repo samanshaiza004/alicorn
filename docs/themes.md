@@ -514,3 +514,11 @@ The retained domain boundary is part of the contract:
 
 This fixture closes the runtime architecture proof for issue #28. The current
 JSON source still accepts explicit sRGB and logical `px` dimensions only.
+
+## Control metrics
+
+`Style_Theme.control_metrics` is a typed setup API for ordinary control geometry. It keeps three concepts separate for Button, Checkbox, Slider, and Text Field: preferred height, minimum target height, and vertical content padding. A default height is resolved as the maximum of the preferred height, the target height, and measured text height plus twice the content padding. Text scale affects measured text; environment density scales the theme's logical metric values once.
+
+An explicit `Layout_Style.height` takes precedence over theme preferences and the theme target minimum. This permits specialized compact controls, but can produce undersized hit targets; applications should use `min_height` when a minimum must remain enforced. An explicit `max_height` may cap the implicit target. The theme minimum also survives parent compression when height is omitted. Theme metric changes invalidate measurement only for the affected control family. Palette, material, and other paint-only changes do not.
+
+The current JSON theme source does not author `control_metrics`; applications can configure them through the typed `Style_Theme` setup API. This is an experimental #109 surface pending the authoring and dogfood decision.

@@ -861,7 +861,7 @@ reconcile :: proc(rt: ^Runtime) {
 			rt.nodes[d.id] = node
 			rt.stats.nodes_created += 1
 			next_style_environment := style_environment_with_accessibility(d.style_environment, item.accessibility)
-			style_changes := style_environment_changed_domains(node.style_environment, next_style_environment)
+			style_changes := style_environment_changed_domains_for_node(rt, node, d.style, node.style_environment, next_style_environment)
 			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part,
 				next_style_environment, style_changes)
 			grid_tracks_copy_retained(rt, node, item)
@@ -888,7 +888,7 @@ reconcile :: proc(rt: ^Runtime) {
 			measure_state := rt.measure_states[d.id]
 			measurement_changed := measure_state.input_revision == 0 || measure_state.input_hash != new_measure_input_hash
 			next_style_environment := style_environment_with_accessibility(d.style_environment, item.accessibility)
-			style_changes := style_environment_changed_domains(node.style_environment, next_style_environment)
+			style_changes := style_environment_changed_domains_for_node(rt, node, d.style, node.style_environment, next_style_environment)
 			style_stages := style_domains_dirty_stages(style_changes)
 			layout_changed := node.layout_hash != new_layout_hash || Dirty_Stage.Layout in style_stages
 			measurement_changed = measurement_changed || Dirty_Stage.Measure in style_stages
