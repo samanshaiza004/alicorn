@@ -1,0 +1,77 @@
+default
+probe_nodes 100 frames 100 body_calls 1
+region_reuse wall_ns 12392000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1100 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 103
+probe_nodes 1000 frames 100 body_calls 1
+region_reuse wall_ns 81256000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1109 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 1003
+probe_nodes 10000 frames 100 body_calls 1
+region_reuse wall_ns 1114904000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1120 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 10003
+no-measure-sweep
+probe_nodes 100 frames 100 body_calls 1
+region_reuse wall_ns 10475000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1100 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 103
+probe_nodes 1000 frames 100 body_calls 1
+region_reuse wall_ns 54867000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1109 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 1003
+probe_nodes 10000 frames 100 body_calls 1
+region_reuse wall_ns 660844000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1120 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 10003
+local-finalization
+probe_nodes 100 frames 100 body_calls 1
+region_reuse wall_ns 6935000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1100 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 103
+probe_nodes 1000 frames 100 body_calls 1
+region_reuse wall_ns 38238000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1109 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 1003
+probe_nodes 10000 frames 100 body_calls 1
+region_reuse wall_ns 659018000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1120 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 10003
+no-adaptive-order-sweep
+probe_nodes 100 frames 100 body_calls 1
+region_reuse wall_ns 11753000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1100 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 103
+probe_nodes 1000 frames 100 body_calls 1
+region_reuse wall_ns 61174000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1109 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 1003
+probe_nodes 10000 frames 100 body_calls 1
+region_reuse wall_ns 799269000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1120 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 10003
+combined-diagnostic
+probe_nodes 100 frames 100 body_calls 1
+region_reuse wall_ns 1874000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1100 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 103
+probe_nodes 1000 frames 100 body_calls 1
+region_reuse wall_ns 2132000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1109 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 1003
+probe_nodes 10000 frames 100 body_calls 1
+region_reuse wall_ns 1582000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1120 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 10003
+baseline optimized run 1
+probe_nodes 100 frames 100 body_calls 1
+region_reuse wall_ns 396000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1201 alloc_bytes 30058 frees 1200 reconcile 300 layout 100 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 103
+probe_nodes 1000 frames 100 body_calls 1
+region_reuse wall_ns 785000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1201 alloc_bytes 30058 frees 1207 reconcile 300 layout 100 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003
+probe_nodes 10000 frames 100 body_calls 1
+region_reuse wall_ns 6839000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1201 alloc_bytes 30058 frees 1217 reconcile 300 layout 100 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 10003
+baseline optimized run 2
+probe_nodes 100 frames 100 body_calls 1
+region_reuse wall_ns 228000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1201 alloc_bytes 30058 frees 1200 reconcile 300 layout 100 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 103
+probe_nodes 1000 frames 100 body_calls 1
+region_reuse wall_ns 455000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1201 alloc_bytes 30058 frees 1207 reconcile 300 layout 100 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003
+probe_nodes 10000 frames 100 body_calls 1
+region_reuse wall_ns 6297000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1201 alloc_bytes 30058 frees 1217 reconcile 300 layout 100 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 10003
+baseline optimized run 3
+probe_nodes 100 frames 100 body_calls 1
+region_reuse wall_ns 216000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1201 alloc_bytes 30058 frees 1200 reconcile 300 layout 100 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 103
+probe_nodes 1000 frames 100 body_calls 1
+region_reuse wall_ns 424000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1201 alloc_bytes 30058 frees 1207 reconcile 300 layout 100 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003
+probe_nodes 10000 frames 100 body_calls 1
+region_reuse wall_ns 6359000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1201 alloc_bytes 30058 frees 1217 reconcile 300 layout 100 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 10003
+candidate optimized run 1
+probe_nodes 100 frames 100 body_calls 1
+region_reuse wall_ns 3349000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1100 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 103
+probe_nodes 1000 frames 100 body_calls 1
+region_reuse wall_ns 24787000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1109 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 1003
+probe_nodes 10000 frames 100 body_calls 1
+region_reuse wall_ns 260359000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1120 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 10003
+candidate optimized run 2
+probe_nodes 100 frames 100 body_calls 1
+region_reuse wall_ns 1914000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1100 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 103
+probe_nodes 1000 frames 100 body_calls 1
+region_reuse wall_ns 16201000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1109 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 1003
+probe_nodes 10000 frames 100 body_calls 1
+region_reuse wall_ns 264855000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1120 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 10003
+candidate optimized run 3
+probe_nodes 100 frames 100 body_calls 1
+region_reuse wall_ns 1849000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1100 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 103
+probe_nodes 1000 frames 100 body_calls 1
+region_reuse wall_ns 15548000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1109 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 1003
+probe_nodes 10000 frames 100 body_calls 1
+region_reuse wall_ns 334381000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1120 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 10003

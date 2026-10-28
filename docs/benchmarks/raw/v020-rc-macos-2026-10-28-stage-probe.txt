@@ -1,0 +1,17 @@
+Stage timing, unoptimized candidate
+probe_nodes 100 frames 100 body_calls 1
+region_reuse wall_ns 13935000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1100 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 103
+[DEBUG-region-reuse] measure_ns 2945000 layout_ns 107000 semantic_ns 3000 paint_ns 6564000
+probe_nodes 1000 frames 100 body_calls 1
+region_reuse wall_ns 79819000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1109 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 1003
+[DEBUG-region-reuse] measure_ns 20261000 layout_ns 78000 semantic_ns 0 paint_ns 42437000
+probe_nodes 10000 frames 100 body_calls 1
+region_reuse wall_ns 1127925000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1120 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 10003
+[DEBUG-region-reuse] measure_ns 462771000 layout_ns 170000 semantic_ns 5000 paint_ns 368941000
+Diagnostic ablation: bypass measurement sweep
+probe_nodes 100 frames 100 body_calls 1
+region_reuse wall_ns 11840000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1100 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 103
+probe_nodes 1000 frames 100 body_calls 1
+region_reuse wall_ns 58428000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1109 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 1003
+probe_nodes 10000 frames 100 body_calls 1
+region_reuse wall_ns 667432000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1120 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 semantic_focus_search 0 semantic_active_updates 0 retained 10003

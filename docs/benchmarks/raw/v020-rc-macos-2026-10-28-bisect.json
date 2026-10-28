@@ -1,0 +1,119 @@
+[
+  {
+    "ref": "28250e7c7eaf0b7bab9dcb37f43e285b101eea6b",
+    "samples_ns": [
+      56887000,
+      46635000
+    ],
+    "median_ns": 51761000.0,
+    "bad": true,
+    "stdout": [
+      "probe_nodes 1000 frames 100 body_calls 1\nregion_reuse wall_ns 56887000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1107 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003\n",
+      "probe_nodes 1000 frames 100 body_calls 1\nregion_reuse wall_ns 46635000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1107 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003\n"
+    ]
+  },
+  {
+    "ref": "666e6214d938e7ea9a9c3da266f0a30371ddc47d",
+    "samples_ns": [
+      2747000,
+      2140000
+    ],
+    "median_ns": 2443500.0,
+    "bad": false,
+    "stdout": [
+      "probe_nodes 1000 frames 100 body_calls 1\nregion_reuse wall_ns 2747000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1107 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003\n",
+      "probe_nodes 1000 frames 100 body_calls 1\nregion_reuse wall_ns 2140000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1107 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003\n"
+    ]
+  },
+  {
+    "ref": "86931ce9c3e1ab28e986129dfdf8a72b391eb751",
+    "samples_ns": [
+      2760000,
+      2323000
+    ],
+    "median_ns": 2541500.0,
+    "bad": false,
+    "stdout": [
+      "probe_nodes 1000 frames 100 body_calls 1\nregion_reuse wall_ns 2760000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1107 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003\n",
+      "probe_nodes 1000 frames 100 body_calls 1\nregion_reuse wall_ns 2323000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1107 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003\n"
+    ]
+  },
+  {
+    "ref": "61641ebdc88ec63a9ccba6bad307143591742570",
+    "samples_ns": [
+      2735000,
+      2325000
+    ],
+    "median_ns": 2530000.0,
+    "bad": false,
+    "stdout": [
+      "probe_nodes 1000 frames 100 body_calls 1\nregion_reuse wall_ns 2735000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1107 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003\n",
+      "probe_nodes 1000 frames 100 body_calls 1\nregion_reuse wall_ns 2325000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1107 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003\n"
+    ]
+  },
+  {
+    "ref": "e749593d127ebccedfec3bab84955595d8dc3269",
+    "samples_ns": [
+      54137000,
+      46050000
+    ],
+    "median_ns": 50093500.0,
+    "bad": true,
+    "stdout": [
+      "probe_nodes 1000 frames 100 body_calls 1\nregion_reuse wall_ns 54137000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1107 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003\n",
+      "probe_nodes 1000 frames 100 body_calls 1\nregion_reuse wall_ns 46050000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1107 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003\n"
+    ]
+  },
+  {
+    "ref": "927e74a55e3d819c087e42d66f9324cff783dc16",
+    "samples_ns": [
+      4002000,
+      2956000
+    ],
+    "median_ns": 3479000.0,
+    "bad": false,
+    "stdout": [
+      "probe_nodes 1000 frames 100 body_calls 1\nregion_reuse wall_ns 4002000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1107 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003\n",
+      "probe_nodes 1000 frames 100 body_calls 1\nregion_reuse wall_ns 2956000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1107 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003\n"
+    ]
+  },
+  {
+    "ref": "ac0a420c17f1c83ef283fee38da2a37fe4bfaedd",
+    "samples_ns": [
+      54694000,
+      48647000
+    ],
+    "median_ns": 51670500.0,
+    "bad": true,
+    "stdout": [
+      "probe_nodes 1000 frames 100 body_calls 1\nregion_reuse wall_ns 54694000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1107 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003\n",
+      "probe_nodes 1000 frames 100 body_calls 1\nregion_reuse wall_ns 48647000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1107 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003\n"
+    ]
+  },
+  {
+    "ref": "927e74a55e3d819c087e42d66f9324cff783dc16",
+    "samples_ns": [
+      3148000,
+      2461000
+    ],
+    "median_ns": 2804500.0,
+    "bad": false,
+    "stdout": [
+      "probe_nodes 1000 frames 100 body_calls 1\nregion_reuse wall_ns 3148000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1107 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003\n",
+      "probe_nodes 1000 frames 100 body_calls 1\nregion_reuse wall_ns 2461000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1107 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003\n"
+    ]
+  },
+  {
+    "ref": "ac0a420c17f1c83ef283fee38da2a37fe4bfaedd",
+    "samples_ns": [
+      53179000,
+      46088000
+    ],
+    "median_ns": 49633500.0,
+    "bad": true,
+    "stdout": [
+      "probe_nodes 1000 frames 100 body_calls 1\nregion_reuse wall_ns 53179000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1107 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003\n",
+      "probe_nodes 1000 frames 100 body_calls 1\nregion_reuse wall_ns 46088000 emit 300 reuse 200 region_skip 100 subtree_reuse 100 alloc 1101 alloc_bytes 28358 frees 1107 reconcile 300 layout 0 paint_visit 100 compose_visit 100 adjacency 0 created 0 retired 0 paint 100 composite 100 retained 1003\n"
+    ]
+  }
+]
