@@ -8,7 +8,12 @@ RETAINED_LOCALITY_SCOPE :: Source_Site{"runtime/retained_locality_test.odin", 30
 RETAINED_LOCALITY_REGION :: Source_Site{"runtime/retained_locality_test.odin", 31, 1, "locality_region"}
 RETAINED_LOCALITY_LEAF :: Source_Site{"runtime/retained_locality_test.odin", 32, 1, "locality_leaf"}
 
-retained_locality_describe :: proc(rt: ^Runtime, count: int, sibling_color: Color, body_calls: ^int) -> Node_ID {
+retained_locality_describe :: proc(
+	rt: ^Runtime,
+	count: int,
+	sibling_color: Color,
+	body_calls: ^int,
+) -> Node_ID {
 	invalidate_root(rt, "retained locality fixture")
 	ui, build := begin_frame(rt)
 	if !build { return 0 }
@@ -50,6 +55,23 @@ retained_locality_commands_match :: proc(a, b: Paint_Command) -> bool {
 	a_surface, a_ok := a.payload.(Surface_Paint)
 	b_surface, b_ok := b.payload.(Surface_Paint)
 	return a_ok && b_ok && a_surface == b_surface
+}
+
+retained_locality_finalized_commands_match :: proc(a, b: Paint_Command) -> bool {
+	if a.owner != b.owner || a.bounds != b.bounds || a.clip != b.clip || a.opacity != b.opacity ||
+		a.translation != b.translation || a.stroke_placement != b.stroke_placement { return false }
+	a_surface, a_surface_ok := a.payload.(Surface_Paint)
+	b_surface, b_surface_ok := b.payload.(Surface_Paint)
+	if a_surface_ok || b_surface_ok { return a_surface_ok && b_surface_ok && a_surface == b_surface }
+	a_text, a_text_ok := a.payload.(Text_Paint)
+	b_text, b_text_ok := b.payload.(Text_Paint)
+	if !a_text_ok || !b_text_ok || a_text.run != b_text.run || a_text.color != b_text.color || len(a_text.spans) != len(b_text.spans) {
+		return false
+	}
+	for span, index in a_text.spans {
+		if span != b_text.spans[index] { return false }
+	}
+	return true
 }
 
 @(test)
@@ -130,5 +152,108 @@ test_incremental_display_finalization_survives_fractional_and_round_trip_scales 
 		expected := layout_finalize_paint_command(rt.display_target[index], scale, scale)
 		testing.expect(t, retained_locality_commands_match(expected, rt.display[index]),
 			"later scale changes must use the updated unsnapped paint command without accumulated rounding")
+	}
+}
+
+@(test)
+test_incremental_display_finalization_rejects_mismatched_new_owner :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 640, 480})
+	defer destroy_runtime(&rt)
+	body_calls: int = 0
+	sibling := retained_locality_describe(&rt, 0, Color{0.1, 0.2, 0.3, 1}, &body_calls)
+	node, found := rt.nodes[sibling]
+	if !found || node.display_index < 0 || node.display_index >= len(rt.display_target) {
+		testing.expect(t, false, "fixture should retain the sibling's finalized display slot")
+		return
+	}
+	wrong_owner := rt.display_target[node.display_index]
+	wrong_owner.owner = 0
+	testing.expect(t, !layout_finalize_display_slot(&rt, sibling, node.display_index, wrong_owner),
+		"the local finalization fast path must reject a replacement command owned by a different node")
+}
+
+retained_clipped_slot_describe :: proc(rt: ^Runtime, clip_width: f32) -> (clipper, child: Node_ID) {
+	invalidate_root(rt, "retained clipped-slot description")
+	ui, build := begin_frame(rt)
+	if !build { return }
+	container_begin(&ui, .Root, key=key_string("retained-clipped-slot-root"), style=layout_style(.Column, width=320, height=120))
+	clipper = container_begin(&ui, .Container, key=key_string("retained-clipped-slot-clipper"),
+		style=layout_style(.Column, width=clip_width, height=80, clip=true))
+	child = container_begin(&ui, .Container, key=key_string("retained-clipped-slot-child"),
+		style=layout_style(width=120, height=24), color=Color{0.2, 0.3, 0.4, 1})
+	container_end(&ui)
+	container_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+	return
+}
+
+@(test)
+test_incremental_display_finalization_updates_changed_clip_geometry :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 120})
+	defer destroy_runtime(&rt)
+	_, child := retained_clipped_slot_describe(&rt, 100)
+	node, found := rt.nodes[child]
+	if !found || node.display_index < 0 || node.display_index >= len(rt.display_target) {
+		testing.expect(t, false, "clip fixture should retain the child's finalized display slot")
+		return
+	}
+	old_command := rt.display_target[node.display_index]
+	full_passes_before := rt.stats.display_finalization_full_passes
+	finalized_before := rt.stats.display_commands_finalized
+	_, _ = retained_clipped_slot_describe(&rt, 70)
+	updated := rt.display_target[node.display_index]
+	expected := layout_finalize_paint_command(updated, rt.presentation_scale_x, rt.presentation_scale_y)
+	testing.expect(t, updated.bounds == old_command.bounds && updated.clip.w == 70 && updated.clip != old_command.clip,
+		"changing a clipped ancestor should preserve child bounds while updating the child's clip geometry")
+	testing.expect(t, rt.stats.display_finalization_full_passes == full_passes_before+1 &&
+		rt.stats.display_commands_finalized-finalized_before == u64(len(rt.display_target)),
+		"a clip-geometry change should take the full display fallback and finalize every command")
+	all_match := len(rt.display) == len(rt.display_target)
+	for target, index in rt.display_target {
+		finalized := layout_finalize_paint_command(target, rt.presentation_scale_x, rt.presentation_scale_y)
+		all_match = all_match && retained_locality_commands_match(finalized, rt.display[index])
+	}
+	testing.expect(t, all_match && retained_locality_commands_match(expected, rt.display[node.display_index]),
+		"the clip-geometry fallback should rebuild every paint command from its unsnapped target")
+}
+
+retained_locality_slider_describe :: proc(rt: ^Runtime, value: f32) -> Node_ID {
+	invalidate_root(rt, "retained locality multi-command slider description")
+	ui, build := begin_frame(rt)
+	if !build { return 0 }
+	container_begin(&ui, .Root, key=key_string("retained-locality-slider-root"), style=layout_style(.Column, width=320, height=120, clip=true))
+	_ = slider_f32(&ui, "Gain", value, 0, 1, 0, key=key_string("retained-locality-slider"), style=layout_style(width=260, height=56))
+	id := ui.runtime.pending[len(ui.runtime.pending)-1].description.id
+	container_end(&ui)
+	end_frame(&ui)
+	return id
+}
+
+@(test)
+test_multi_command_paint_update_uses_full_display_rebuild :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 120})
+	defer destroy_runtime(&rt)
+	slider := retained_locality_slider_describe(&rt, 0.2)
+	node, found := rt.nodes[slider]
+	if !found || len(node.paint) <= 1 {
+		testing.expect(t, false, "slider fixture should retain multiple paint commands")
+		return
+	}
+	full_passes_before := rt.stats.display_finalization_full_passes
+	finalized_before := rt.stats.display_commands_finalized
+	_ = retained_locality_slider_describe(&rt, 0.8)
+	updated := rt.nodes[slider]
+	testing.expect(t, len(updated.paint) > 1 && rt.stats.display_finalization_full_passes == full_passes_before+1 &&
+		rt.stats.display_commands_finalized-finalized_before == u64(len(rt.display_target)),
+		"a multi-command paint update should use the full display rebuild and finalize every target command")
+	if len(rt.display) != len(rt.display_target) {
+		testing.expect(t, false, "the rebuilt display should remain aligned with its retained target")
+		return
+	}
+	for target, index in rt.display_target {
+		expected := layout_finalize_paint_command(target, rt.presentation_scale_x, rt.presentation_scale_y)
+		testing.expect(t, retained_locality_finalized_commands_match(expected, rt.display[index]),
+			"the multi-command fallback should finalize every command from its unsnapped target")
 	}
 }

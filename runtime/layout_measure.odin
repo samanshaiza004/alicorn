@@ -787,7 +787,8 @@ layout_finalize_paint_command :: proc(target: Paint_Command, scale_x, scale_y: f
 
 layout_finalize_display_slot :: proc(rt: ^Runtime, owner: Node_ID, index: int, target: Paint_Command) -> bool {
 	if rt == nil || index < 0 || index >= len(rt.display_target) || index >= len(rt.display) ||
-		len(rt.display_target) != len(rt.display) || rt.display_target[index].owner != owner || rt.display[index].owner != owner {
+		len(rt.display_target) != len(rt.display) || target.owner != owner ||
+		rt.display_target[index].owner != owner || rt.display[index].owner != owner {
 		return false
 	}
 	// Finalize from the retained unsnapped target. Never feed rounded

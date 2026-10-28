@@ -192,12 +192,19 @@ test_drag_source_identity_survives_virtualized_node_retirement :: proc(t: ^testi
 	testing.expect(t, presentation_ready && preview_card_found && preview_text_found,
 		"the retained display should compose a non-hit-testable card and source label for the drag preview")
 	frames_before_motion := rt.stats.frames_built
+	finalization_passes_before_motion := rt.stats.display_finalization_full_passes
+	transient_updates_before_motion := rt.stats.global_work_by_reason[.Display_Transient_Update]
+	finalized_commands_before_motion := rt.stats.display_commands_finalized
 	drag_x_before_motion, drag_y_before_motion := rt.drag.x, rt.drag.y
 	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=drag_x_before_motion+1, y=drag_y_before_motion+1})
 	testing.expect(t, rt.drag.x == drag_x_before_motion+1 && rt.drag.y == drag_y_before_motion+1,
 		"the drag preview position should track retained pointer coordinates")
 	testing.expect(t, rt.stats.frames_built == frames_before_motion && !rt.invalidated,
 		"drag preview pointer motion should not rebuild application descriptions")
+	testing.expect(t, rt.stats.display_finalization_full_passes == finalization_passes_before_motion+1 &&
+		rt.stats.global_work_by_reason[.Display_Transient_Update] == transient_updates_before_motion+1 &&
+		rt.stats.display_commands_finalized-finalized_commands_before_motion == u64(len(rt.display_target)),
+		"a transient drag overlay move should use its explicit full-display update path and finalize all commands")
 
 	invalidate_root(&rt, "retire virtualized drag source")
 	_, target_container_after, target_button_after := drag_test_build(&rt, include_source=false)
