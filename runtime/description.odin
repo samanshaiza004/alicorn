@@ -137,7 +137,7 @@ layout_percent_width_resolve :: proc(ui: ^UI, fraction: f32, loc := #caller_loca
 		if item.kind != .Description || item.description.id != parent_id { continue }
 		parent := item.description
 		extent: f32
-		if parent.kind == .Root {
+		if parent.kind == .Root || parent.kind == .Modal_Overlay {
 			extent = rt.viewport.w
 		} else if parent.style.width >= 0 && parent.style.grow == 0 && parent.style.compress_weight == 0 {
 			extent = clampf(parent.style.width, maxf(parent.style.min_width, 0), parent.style.max_width)

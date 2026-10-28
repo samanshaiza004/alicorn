@@ -736,4 +736,18 @@ if ui.layout_sized(ctx,
 }
 ```
 
-`ui.percent(1)` means 100%. Resolution uses the current description's parent input: the host-assigned Root viewport or a fixed, non-growing, non-compressible parent width. The reference is the parent's inner width after padding; sibling gaps remain the existing allocator's responsibility. A maximum width by itself, content-sized parent, growing parent, or compressible parent is not definite and produces a source-located diagnostic. The resolved width is lowered into the existing `Layout_Style` before retention, so changing it preserves `Node_ID` and uses ordinary min/max, overflow, layout hashing, and measurement behavior. A viewport change is reflected on the next application description; prior-frame bounds are not used. Percentage height, aspect ratio, other allocated-parent cases, and `panel`/`row`/`column` convenience integration are not part of this prototype.
+`ui.percent(1)` means 100%. Resolution uses the current description's parent input: the host-assigned Root viewport, the viewport-sized modal overlay, or a fixed, non-growing, non-compressible parent width. The reference is the parent's inner width after padding; sibling gaps remain the existing allocator's responsibility. A maximum width by itself, content-sized parent, growing parent, or compressible parent is not definite and produces a source-located diagnostic. The resolved width is lowered into the existing `Layout_Style` before retention, so changing it preserves `Node_ID` and uses ordinary min/max, overflow, layout hashing, and measurement behavior. A viewport change is reflected on the next application description; prior-frame bounds are not used. Percentage height, aspect ratio, and other allocated-parent cases remain unsupported.
+
+Paint-bearing panels accept the same declaration without adding a wrapper node:
+
+```odin
+if ui.panel(ctx,
+    sizing=ui.sizing(width=ui.percent(1), max_width=ui.logical(520)),
+    padding=24,
+    gap=12,
+) {
+    // children
+}
+```
+
+Percentages are preferred extents, not proportional shares. For example, in a 400-unit row, two `ui.percent(0.5)` children each request 200 units. Adding a 16-unit sibling gap makes their total preferred width 416 units; the percentages are not renormalized to 48% each. The ordinary allocator and its min/max and compression rules determine the final geometry, including overflow when compression is unavailable.

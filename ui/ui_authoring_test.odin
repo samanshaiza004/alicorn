@@ -44,7 +44,7 @@ ui_percent_test_describe_root_children :: proc(rt: ^alicorn.Runtime, viewport_wi
 	alicorn.invalidate_root(rt, "percentage sizing fixture")
 	ctx, build := alicorn.begin_frame(rt)
 	if !build { return }
-	root = alicorn.container_begin(&ctx, .Root, key="percent-root", style=alicorn.layout_style(.Row, padding=20, gap=10))
+	root = alicorn.container_begin(&ctx, .Root, key="percent-root", style=alicorn.layout_style(.Row, padding=20, gap=16))
 	if root == 0 { return }
 	if layout_sized(&ctx, alicorn.layout_style(.Column, height=30), sizing(width=percent(fraction)), key="percent-first", label="first percent") {
 		first = ctx.runtime.pending[len(ctx.runtime.pending)-1].description.id
@@ -85,6 +85,28 @@ ui_percent_test_describe_fixed_parent :: proc(rt: ^alicorn.Runtime) -> (parent, 
 		}
 	}
 	alicorn.container_end(&ctx)
+	alicorn.end_frame(&ctx)
+	return
+}
+
+ui_percent_test_describe_modal_panel :: proc(rt: ^alicorn.Runtime, viewport_width, viewport_height: f32) -> (overlay, panel_id: alicorn.Node_ID) {
+	rt.viewport = alicorn.Rect{0, 0, viewport_width, viewport_height}
+	alicorn.invalidate_root(rt, "modal percentage panel fixture")
+	ctx, build := alicorn.begin_frame(rt)
+	if !build { return }
+	overlay = alicorn.modal_overlay_begin(&ctx, "percent-panel-overlay",
+		style=alicorn.layout_style(.Column, grow=1, padding=24, align=.Center, justify=.Center))
+	if panel(&ctx,
+		key="percent-modal-panel",
+		height=80,
+		padding=12,
+		sizing=sizing(width=percent(1), max_width=logical(520)),
+		label="percentage modal panel",
+	) {
+		panel_id = ctx.runtime.pending[len(ctx.runtime.pending)-1].description.id
+		_ = text(&ctx, "Responsive panel content")
+	}
+	alicorn.modal_overlay_end(&ctx)
 	alicorn.end_frame(&ctx)
 	return
 }
@@ -136,7 +158,7 @@ test_percentage_width_resolves_from_definite_parent_and_matches_fresh_layout :: 
 	if root == 0 || first == 0 || second == 0 { testing.expect(t, false, "percentage children should be described"); return }
 	testing.expect(t, incremental.nodes[first].bounds.w == 420 && incremental.nodes[second].bounds.w == 420,
 		"75% widths should use the root inner width after padding")
-	testing.expect(t, incremental.nodes[second].bounds.x == 450 && incremental.nodes[second].bounds.x+incremental.nodes[second].bounds.w > 600,
+	testing.expect(t, incremental.nodes[second].bounds.x == 456 && incremental.nodes[second].bounds.x+incremental.nodes[second].bounds.w > 600,
 		"percentages totaling over 100% should retain their preferred sizes and overflow through the ordinary Row allocator")
 	first_id, second_id := first, second
 	first_description_hash := incremental.nodes[first].description_hash
@@ -167,6 +189,13 @@ test_percentage_width_resolves_from_definite_parent_and_matches_fresh_layout :: 
 		incremental.nodes[first].bounds == fresh.nodes[fresh_first].bounds &&
 		incremental.nodes[second].bounds == fresh.nodes[fresh_second].bounds,
 		"incremental and fresh runtimes must produce identical geometry for the same sizing inputs")
+
+	root, first, second = ui_percent_test_describe_root_children(&incremental, 440, 0.5)
+	root_bounds := incremental.nodes[root].bounds
+	second_bounds := incremental.nodes[second].bounds
+	testing.expect(t, incremental.nodes[first].bounds.w == 200 && second_bounds.x == 236 &&
+		second_bounds.x+second_bounds.w == 436 && second_bounds.x+second_bounds.w > root_bounds.x+root_bounds.w-20,
+		"two 50% widths in a 400-unit inner row request 200 each; their 16-unit gap overflows the inner extent by 16")
 }
 
 @(test)
@@ -179,6 +208,29 @@ test_percentage_width_uses_fixed_parent_inner_width_and_existing_bounds :: proc(
 		"a fixed nested parent should resolve percentages against its 360-unit inner width")
 	testing.expect(t, rt.nodes[first].bounds.x == 20 && rt.nodes[capped].bounds.x == 300 && rt.nodes[capped].bounds.w == 250,
 		"parent padding, sibling gap, and child max-width should retain their existing independent allocator semantics")
+}
+
+@(test)
+test_panel_percentage_width_uses_modal_viewport_without_wrapper_node :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 360, 280})
+	defer alicorn.destroy_runtime(&rt)
+	overlay, panel_id := ui_percent_test_describe_modal_panel(&rt, 360, 280)
+	if overlay == 0 || panel_id == 0 { testing.expect(t, false, "percentage panel should build in a viewport-sized modal"); return }
+	first_panel := panel_id
+	panel_node := rt.nodes[panel_id]
+	testing.expect(t, panel_node.bounds.w == 312 && panel_node.parent == overlay && len(rt.nodes[overlay].children) == 1,
+		"a modal panel should use the overlay's viewport width after its 24-unit side padding without adding a wrapper node")
+	first_layout_hash := panel_node.layout_hash
+	first_description_hash := panel_node.description_hash
+
+	overlay, panel_id = ui_percent_test_describe_modal_panel(&rt, 1200, 800)
+	testing.expect(t, overlay != 0 && panel_id == first_panel && rt.nodes[panel_id].bounds.w == 520,
+		"resizing the viewport should preserve panel identity while ordinary max-width negotiation caps its width")
+	testing.expect(t, rt.nodes[panel_id].layout_hash != first_layout_hash && rt.nodes[panel_id].description_hash == first_description_hash,
+		"the percentage should update only layout inputs while preserving the panel's retained description identity")
+	children := rt.nodes[overlay].children
+	testing.expect(t, len(children) == 1 && children[0] == panel_id,
+		"panel sizing should resolve directly on the existing surface node")
 }
 
 @(test)

@@ -214,12 +214,44 @@ layout_sized_end :: proc(
 	if opened { alicorn.container_end(ui) }
 }
 
-// layout_sized is the low-level percentage-width prototype. Fixed, fit-height,
+// resolve_sizing_for_ui lowers typed values and resolves the one supported
+// parent-relative declaration before a node is emitted. It keeps layout_sized
+// and paint-bearing surfaces on the same validation and diagnostic path.
+@(private)
+resolve_sizing_for_ui :: proc(
+	ui: ^UI,
+	base: alicorn.Layout_Style,
+	declaration: Sizing,
+	loc: odin_runtime.Source_Code_Location,
+) -> (alicorn.Layout_Style, bool) {
+	lowered_declaration := declaration
+	percent_width := declaration.width.kind == .Percentage
+	if percent_width {
+		if base.width != alicorn.DEFAULT_STYLE.width {
+			alicorn.layout_sizing_report_invalid(ui.runtime,
+				"percentage width cannot be combined with a width already set in the base Layout_Style", loc)
+			return base, false
+		}
+		lowered_declaration.width = {}
+	}
+	style, valid := resolve_sizing(base, lowered_declaration)
+	if !valid {
+		alicorn.layout_sizing_report_invalid(ui.runtime,
+			"unsupported, conflicting, nonfinite, or out-of-range typed sizing input", loc)
+		return base, false
+	}
+	if percent_width {
+		style.width, valid = alicorn.layout_percent_width_resolve(ui, declaration.width.value, loc)
+		if !valid { return base, false }
+	}
+	return style, true
+}
+
+// layout_sized is the low-level percentage-width scope. Fixed, fit-height,
 // and grow inputs lower to ordinary Layout_Style values. A percentage width is
 // resolved against the current parent's definite inner width before emission;
-// invalid or cyclic declarations add a source-located diagnostic and do not
-// open a scope. This intentionally does not add percentage fields to retained
-// nodes or make panel/row/column APIs percentage-aware yet.
+// invalid declarations produce source-located diagnostics and do not open a
+// scope. This adds no percentage fields to retained nodes.
 @(deferred_in_out=layout_sized_end)
 layout_sized :: proc(
 	ui: ^UI,
@@ -229,26 +261,8 @@ layout_sized :: proc(
 	label: string = "layout",
 	loc := #caller_location,
 ) -> bool {
-	lowered_declaration := declaration
-	percent_width := declaration.width.kind == .Percentage
-	if percent_width {
-		if base.width != alicorn.DEFAULT_STYLE.width {
-			alicorn.layout_sizing_report_invalid(ui.runtime,
-				"percentage width cannot be combined with a width already set in the base Layout_Style", loc)
-			return false
-		}
-		lowered_declaration.width = {}
-	}
-	style, valid := resolve_sizing(base, lowered_declaration)
-	if !valid {
-		alicorn.layout_sizing_report_invalid(ui.runtime,
-			"unsupported, conflicting, nonfinite, or out-of-range typed sizing input", loc)
-		return false
-	}
-	if percent_width {
-		style.width, valid = alicorn.layout_percent_width_resolve(ui, declaration.width.value, loc)
-		if !valid { return false }
-	}
+	style, valid := resolve_sizing_for_ui(ui, base, declaration, loc)
+	if !valid { return false }
 	return alicorn.container_begin(ui, .Container, label=label, key=key, style=style, loc=loc) != 0
 }
 
@@ -265,14 +279,19 @@ panel_end :: proc(
 	_stroke: Border,
 	_loc: odin_runtime.Source_Code_Location,
 	_label: string,
+	_sizing: Sizing,
+	_shape: alicorn.Surface_Shape,
+	_material: alicorn.Material_ID,
+	_physical_height: f32,
 	opened: bool,
 ) {
 	if opened { alicorn.surface_end(ui) }
 }
 
 // panel is a layout column with one ordinary retained surface paint command.
-// Omitted fill uses the active theme's Surface role; radius and border are
-// explicit logical-unit decorations.
+// Its optional typed sizing lowers onto the same surface node; percentage
+// width remains subject to the current parent's definiteness rules. Omitted
+// fill uses the active theme's Surface role.
 @(deferred_in_out=panel_end)
 panel :: proc(
 	ui: ^UI,
@@ -290,16 +309,24 @@ panel :: proc(
 	stroke: Border = {},
 	loc := #caller_location,
 	label: string = "panel",
+	sizing: Sizing = {},
+	shape: alicorn.Surface_Shape = {kind=.Rectangle},
+	material: alicorn.Material_ID = alicorn.MATERIAL_FLAT,
+	physical_height: f32 = 0,
 ) -> bool {
-	shape := alicorn.Surface_Shape{kind=.Rectangle}
-	if radius != 0 { shape = alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=radius} }
+	resolved_shape := shape
+	if radius != 0 { resolved_shape = alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=radius} }
 	style := alicorn.layout_style(.Column, width=width, height=height, grow=grow, padding=padding, gap=gap, align=align, justify=justify, clip=clip)
+	resolved_style, valid := resolve_sizing_for_ui(ui, style, sizing, loc)
+	if !valid { return false }
 	id := alicorn.surface_begin(
 		ui,
 		alicorn.surface_core_color_role(.Surface),
 		key=key,
-		style=style,
-		shape=shape,
+		style=resolved_style,
+		shape=resolved_shape,
+		material=material,
+		physical_height=physical_height,
 		fill=fill,
 		stroke=paint_stroke(stroke),
 		stroke_placement=stroke.placement,
