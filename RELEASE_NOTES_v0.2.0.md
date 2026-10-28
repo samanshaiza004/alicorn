@@ -38,11 +38,14 @@ and real screen-reader interaction. The tested native stack uses Odin
 per-session reader/IME versions, display scales, and some test traces were not
 recorded; the linked validation matrix preserves those evidence limits.
 
-Windows and macOS foundation, native packaging, and icon reproducibility
-workflows passed on the integrated #103 acceptance candidate. The performance
-and documentation changes in this release branch are being validated on the
-combined tree separately; do not treat those earlier workflow runs as CI for
-the final release SHA.
+The integrated #103 candidate passed Windows and macOS foundation, native
+packaging, and icon reproducibility workflows. The combined release candidate
+`e00b966` passed those same four workflows: [Windows foundation](https://github.com/samanshaiza004/alicorn/actions/runs/40631856576),
+[macOS foundation](https://github.com/samanshaiza004/alicorn/actions/runs/40631856709),
+[native packaging](https://github.com/samanshaiza004/alicorn/actions/runs/40631856629),
+and [icon reproducibility](https://github.com/samanshaiza004/alicorn/actions/runs/40631856602).
+These runs validate `e00b966`; run the workflows again for any later candidate
+commit before tagging.
 
 Linux has one conditional NixOS/Mango native validation record, not broad
 platform support. The Linux native host has no AccessKit screen-reader adapter.
