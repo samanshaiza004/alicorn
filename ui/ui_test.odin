@@ -570,3 +570,17 @@ test_extended_helpers_keep_warm_allocation_parity_and_true_idle :: proc(t: ^test
 		idle_persistent_allocations == 0 && idle_scratch_allocations == 0,
 		"idle helpers must perform zero builds, shaping calls or runtime allocations")
 }
+
+@(test)
+test_text_buffer_helpers_create_update_and_destroy_owned_text :: proc(t: ^testing.T) {
+	buffer, created := text_buffer("before")
+	if !created {
+		testing.expect(t, false, "the UI text buffer helper should create owned storage")
+		return
+	}
+	defer text_buffer_destroy(&buffer)
+	testing.expect(t, buffer.initialized && buffer.text == "before", "text_buffer should return initialized application-owned storage")
+	testing.expect(t, text_buffer_set(&buffer, "after") && buffer.text == "after", "text_buffer_set should replace the committed value")
+	text_buffer_destroy(&buffer)
+	testing.expect(t, !buffer.initialized, "text_buffer_destroy should release and clear the buffer")
+}

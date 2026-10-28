@@ -394,6 +394,10 @@ text_buffer :: proc(initial: string, allocator: mem.Allocator = context.allocato
 	return alicorn.text_field_buffer_init(initial, allocator)
 }
 
+text_buffer_set :: proc(buffer: ^Text_Buffer, value: string) -> bool {
+	return alicorn.text_field_buffer_set(buffer, value)
+}
+
 text_buffer_destroy :: proc(buffer: ^Text_Buffer) {
 	alicorn.text_field_buffer_destroy(buffer)
 }
