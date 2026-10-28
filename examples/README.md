@@ -1,9 +1,9 @@
 # Alicorn examples
 
-Follow the numbered native applications in order. Every UI lesson imports
-`alicorn:ui` for ordinary text, layout, and buttons. Lessons that demonstrate a
-runtime capability use the runtime API beside it for that specific job; the
-simple and advanced paths share the same UI context and retained Runtime.
+Follow the numbered native applications in order. Ordinary application UI
+uses only `alicorn:ui`, including the controlled form fields in step 2. Later
+lessons use lower-level runtime APIs only when demonstrating a specialized
+runtime capability; both paths share the same UI context and retained Runtime.
 
 Install Odin and the native prerequisites from
 [Getting Started](../docs/getting-started.md) first.
@@ -11,7 +11,7 @@ Install Odin and the native prerequisites from
 | Step | Example | What it teaches |
 |---|---|---|
 | 1 | [Hello](01_hello/main.odin) | Typed `ui.run`, app-owned state, text, and a button |
-| 2 | [Form](02_form/main.odin) | Scoped panels and rows, controlled text, checkbox and slider values |
+| 2 | [Form](02_form/main.odin) | One-package controls, managed text buffers, accessible labels, and app-owned values |
 | 3 | [Async List](03_async_list/main.odin) | Worker completion, stable keyed rows, fixed-height virtualization, and true idle |
 | 4 | [Custom Surface](04_custom_surface/main.odin) | Retained GPU geometry inside a clipped UI panel; resize and DPI-aware updates |
 | 5 | [Inspector](05_inspector/main.odin) | Retained tree, focus, semantic actions, and invalidation causes |

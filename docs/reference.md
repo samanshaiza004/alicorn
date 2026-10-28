@@ -39,23 +39,37 @@ interaction, so keep unrelated side effects out of the description.
 
 Rows, columns, and panels accept a diagnostic `label`, defaulting to their
 helper name. `ui.layout(ctx, style, key=..., label="layout")` scopes an exact
-`alicorn.Layout_Style` on one plain `.Container`; it adds no paint, node-kind
+`ui.Layout_Style` on one plain `.Container`; it adds no paint, node-kind
 choice, hierarchy, sizing defaults, or style normalization. All scoped helpers
 close on ordinary block exit, `return`, `break`, and `continue`, and preserve
 the caller's source location.
 
 | Helper | Additional options |
 | --- | --- |
-| `ui.text` | `style: Layout_Style`, `font: Font_Role`, `text_style: Text_Style`. A positive `size` overrides only `text_style.font_size`; otherwise the supplied typography is preserved. |
+| `ui.text` | `style: Layout_Style`, `font: Font_Role`, `text_style: Text_Style`, `decorative: bool`. Informational text is semantic by default; `decorative=true` opts it out. A positive `size` overrides only `text_style.font_size`; otherwise the supplied typography is preserved. |
 | `ui.button` | `style: Layout_Style`, `state: Button_State`, `text_style: Text_Style`, `content_style: Button_Content_Style`, `variant: Button_Variant`. Nonnegative `width`, `height`, and `grow` override those style fields; their `-1` defaults leave the style unchanged. |
+| `ui.text_field` | Draws a visible label and a controlled `ui.Text_Buffer`; the semantic field retains its name, current value, selection, and edit actions. |
+| `ui.checkbox` | Takes `^bool` and adopts only a real activation into application state. |
+| `ui.slider_f32` | Takes `^f32` plus `minimum`, `maximum`, and optional `step`; adopts only user-produced values, not initial range normalization. |
+| `ui.icon`, `ui.icon_button` | Font-independent icon and named icon button helpers. |
 
-These types and defaults come from `alicorn:runtime`. Existing positional
-arguments, including `key` and `loc`, retain their positions; use named
-arguments for the added options. Arguments are borrowed for the description,
-and buttons retain their existing one-shot activation behavior.
+Create persistent edit storage with `ui.text_buffer(initial)` and release it
+with `ui.text_buffer_destroy`. The buffer owns its text through an allocator
+that must outlive it; a normal Odin `context.allocator` is suitable for a
+buffer whose lifetime is the application. For repeated data or widgets that
+move, supply stable explicit keys. Static one-off controls use their forwarded
+application call site as identity and need no key.
 
-The convenience package includes `text`, `button`, `row`, `column`, `panel`, `layout`,
-`box`, `border`, basic colors, `rgb`, and root invalidation. It writes ordinary
+Common layout, text, and button style types are re-exported by `alicorn:ui`;
+`ui.layout_style` keeps explicit sizing available without importing the lower
+level package. Existing button positional arguments, including `key` and
+`loc`, retain their positions; use named arguments for the added options.
+Arguments are borrowed for the description, and buttons retain their existing
+one-shot activation behavior.
+
+The convenience package includes `text`, `text_field`, `checkbox`, `slider_f32`,
+`icon`, `icon_button`, `button`, `row`, `column`, `panel`, `layout`, `box`,
+`border`, basic colors, `rgb`, and root invalidation. It writes ordinary
 retained nodes and surface paint through the same Runtime; it does not add an
 application state store or a second tree. Use `host.Run` when custom host
 callbacks, worker wakes, initialization, or native lifecycle control are
@@ -758,11 +772,13 @@ TabList contains semantic Tab items and per-tab close actions; underline,
 dirty marker, hover surface, and other paint-only parts do not become separate
 semantic entities.
 
-Ordinary `text()` descriptions do not create semantic entities by default.
-For standalone informational copy, call `semantic_static_text(ui)` immediately
-after `text(&ui, ...)`; the text becomes the value of a `Static_Text` entity,
-which the AccessKit adapter maps to Label. Do not annotate text that already
-names a control, or the accessible name may be announced twice.
+The low-level runtime `text()` description does not create a semantic entity
+by default; call `semantic_static_text(ui)` immediately after it for standalone
+informational copy. In contrast, the beginner-facing `ui.text()` exposes
+informational text as `Static_Text` by default, with `decorative=true` as the
+visual-only escape hatch. The AccessKit adapter maps static text to Label and
+uses the entity's value as its spoken content. Do not separately annotate text
+that already names a control, or the accessible name may be announced twice.
 
 Editable document text uses one `Text_Area` with logical `Text_Run` children,
 independent of the rows realized by the visual editor. Describe the area on its

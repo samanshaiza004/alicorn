@@ -1119,8 +1119,7 @@ semantic_description :: proc(
 
 // semantic_static_text opts the immediately preceding text() description into
 // accessibility as standalone informational text. Its source text is exported
-// as the semantic value (the AccessKit Label convention); ordinary visual
-// Text remains absent from the semantic tree unless explicitly annotated.
+// as the semantic value (the AccessKit Label convention).
 semantic_static_text :: proc(ui: ^UI) -> bool {
 	if ui == nil || ui.runtime == nil || len(ui.runtime.pending) == 0 { return false }
 	last := len(ui.runtime.pending)-1
@@ -1132,6 +1131,18 @@ semantic_static_text :: proc(ui: ^UI) -> bool {
 	pending.semantic.role = .Static_Text
 	pending.semantic.value = d.text
 	if d.semantic_id.namespace == 0 { d.semantic_id = semantic_visual_id(d.id) }
+	return true
+}
+
+// semantic_text_field_label names the most recently described text field
+// without replacing its automatically derived value, states, or actions.
+semantic_text_field_label :: proc(ui: ^UI, label: string) -> bool {
+	if ui == nil || ui.runtime == nil || len(label) == 0 || len(ui.runtime.pending) == 0 { return false }
+	last := len(ui.runtime.pending)-1
+	if ui.runtime.pending[last].kind != .Description { return false }
+	pending := &ui.runtime.pending[last]
+	if pending.semantic.role != .Text_Field { return false }
+	pending.semantic.label = label
 	return true
 }
 

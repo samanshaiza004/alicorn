@@ -1011,6 +1011,9 @@ Control_Change_Bool :: struct {
 Control_Change_F32 :: struct {
 	value:   f32,
 	changed: bool,
+	// activated distinguishes a user-produced value from initial range
+	// normalization, which can make changed true during an ordinary description.
+	activated: bool,
 }
 
 // Text_Composition is transient interaction state owned by one retained text

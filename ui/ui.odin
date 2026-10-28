@@ -1,5 +1,6 @@
 package ui
 
+import "core:mem"
 import alicorn "alicorn:runtime"
 import host "alicorn:native/sdl_gpu"
 import odin_runtime "base:runtime"
@@ -14,6 +15,55 @@ Stroke_Placement :: alicorn.Paint_Stroke_Placement
 Align :: alicorn.Align
 Main_Axis_Distribution :: alicorn.Main_Axis_Distribution
 UI_Key :: alicorn.UI_Key
+UI_Key_Pair :: alicorn.UI_Key_Pair
+Layout_Direction :: alicorn.Layout_Direction
+Layout_Style :: alicorn.Layout_Style
+Text_Style :: alicorn.Text_Style
+Font_Role :: alicorn.Font_Role
+Button_State :: alicorn.Button_State
+Button_Content_Style :: alicorn.Button_Content_Style
+Button_Variant :: alicorn.Button_Variant
+Style_Color_Role :: alicorn.Style_Color_Role
+Icon_ID :: alicorn.Icon_ID
+Text_Buffer :: alicorn.Text_Field_Buffer
+Text_Field_Response :: alicorn.Text_Field_Response
+
+@(private)
+DEFAULT_CHECKBOX_STYLE :: Layout_Style{
+	direction=.Row,
+	width=-1,
+	height=-1,
+	min_width=0,
+	max_width=-1,
+	min_height=0,
+	max_height=-1,
+	align=.Stretch,
+	options=alicorn.Layout_Options(0),
+}
+
+key_u64 :: proc(value: u64) -> UI_Key { return alicorn.key_u64(value) }
+key_pair :: proc(first, second: u64) -> UI_Key { return alicorn.key_pair(first, second) }
+
+layout_style :: proc(
+	direction: Layout_Direction = .Column,
+	width: f32 = -1,
+	height: f32 = -1,
+	min_width: f32 = 0,
+	max_width: f32 = -1,
+	min_height: f32 = 0,
+	max_height: f32 = -1,
+	grow: f32 = 0,
+	padding: f32 = 0,
+	gap: f32 = 0,
+	align: Align = .Stretch,
+	clip: bool = false,
+	compress_weight: u8 = 0,
+	justify: Main_Axis_Distribution = .Start,
+	writing_direction: alicorn.Writing_Direction = .Inherit,
+) -> Layout_Style {
+	return alicorn.layout_style(direction, width, height, min_width, max_width, min_height, max_height,
+		grow, padding, gap, align, clip, compress_weight, justify, writing_direction)
+}
 
 // Border combines the retained stroke paint with its geometry-only placement.
 // Placement lives in Alicorn's semantic-surface sidecar, keeping it out of
@@ -235,10 +285,150 @@ text :: proc(
 	style: alicorn.Layout_Style = alicorn.DEFAULT_STYLE,
 	font: alicorn.Font_Role = .UI,
 	text_style: alicorn.Text_Style = alicorn.DEFAULT_TEXT_STYLE,
+	decorative: bool = false,
 ) -> alicorn.Node_ID {
 	effective_text_style := text_style
 	if size > 0 { effective_text_style.font_size = size }
-	return alicorn.text(ui, value, key, style=style, loc=loc, font=font, text_style=effective_text_style, color=color)
+	id := alicorn.text(ui, value, key, style=style, loc=loc, font=font, text_style=effective_text_style, color=color)
+	if id != 0 && !decorative { _ = alicorn.semantic_static_text(ui) }
+	return id
+}
+
+// Text_Buffer owns committed editable text through an explicit allocator.
+// The allocator must outlive the buffer; destroy each initialized buffer once.
+text_buffer :: proc(initial: string, allocator: mem.Allocator = context.allocator) -> (Text_Buffer, bool) {
+	return alicorn.text_field_buffer_init(initial, allocator)
+}
+
+text_buffer_destroy :: proc(buffer: ^Text_Buffer) {
+	alicorn.text_field_buffer_destroy(buffer)
+}
+
+@(private)
+control_style :: proc(style: alicorn.Layout_Style, width, height, grow: f32) -> alicorn.Layout_Style {
+	result := style
+	if width >= 0 { result.width = width }
+	if height >= 0 { result.height = height }
+	if grow >= 0 { result.grow = grow }
+	return result
+}
+
+// text_field draws a visible, decorative label followed by the controlled
+// field. The field carries that label in semantics while retaining its value,
+// selection, and editing actions. Buffer storage remains application-owned.
+text_field :: proc(
+	ui: ^UI,
+	label: string,
+	buffer: ^Text_Buffer,
+	key: UI_Key = alicorn.UI_Unkeyed{},
+	loc := #caller_location,
+	style: alicorn.Layout_Style = alicorn.DEFAULT_STYLE,
+	width: f32 = -1,
+	height: f32 = -1,
+	grow: f32 = -1,
+	font: alicorn.Font_Role = .UI,
+	text_style: alicorn.Text_Style = alicorn.DEFAULT_TEXT_STYLE,
+) -> Text_Field_Response {
+	_ = text(ui, label, decorative=true, loc=loc)
+	response := alicorn.text_field_controlled(
+		ui,
+		buffer,
+		key=key,
+		style=control_style(style, width, height, grow),
+		loc=loc,
+		font=font,
+		text_style=text_style,
+	)
+	if response.node != 0 { _ = alicorn.semantic_text_field_label(ui, label) }
+	return response
+}
+
+// checkbox adopts a one-shot activation into application-owned state. A
+// normal description never writes through the pointer.
+checkbox :: proc(
+	ui: ^UI,
+	label: string,
+	value: ^bool,
+	key: UI_Key = alicorn.UI_Unkeyed{},
+	loc := #caller_location,
+	style: alicorn.Layout_Style = DEFAULT_CHECKBOX_STYLE,
+	width: f32 = -1,
+	height: f32 = -1,
+	grow: f32 = -1,
+	disabled: bool = false,
+) -> bool {
+	if value == nil { return false }
+	effective_style := control_style(style, width, height, grow)
+	result := alicorn.checkbox(
+		ui,
+		label,
+		value^,
+		key=key,
+		style=effective_style,
+		disabled=disabled,
+		loc=loc,
+	)
+	if result.changed { value^ = result.value }
+	return result.changed
+}
+
+// slider_f32 adopts only values produced by a user interaction. Runtime
+// normalization of an out-of-range model value during description does not
+// mutate application state through this convenience API.
+slider_f32 :: proc(
+	ui: ^UI,
+	label: string,
+	value: ^f32,
+	minimum, maximum: f32,
+	step: f32 = 0,
+	key: UI_Key = alicorn.UI_Unkeyed{},
+	loc := #caller_location,
+	style: alicorn.Layout_Style = alicorn.DEFAULT_STYLE,
+	width: f32 = -1,
+	height: f32 = -1,
+	grow: f32 = -1,
+	disabled: bool = false,
+) -> bool {
+	if value == nil { return false }
+	result := alicorn.slider_f32(
+		ui,
+		label,
+		value^,
+		minimum,
+		maximum,
+		step,
+		key=key,
+		style=control_style(style, width, height, grow),
+		disabled=disabled,
+		loc=loc,
+	)
+	if result.activated { value^ = result.value }
+	return result.activated
+}
+
+icon :: proc(
+	ui: ^UI,
+	id: Icon_ID,
+	key: UI_Key = alicorn.UI_Unkeyed{},
+	size: f32 = 16,
+	color_role := alicorn.Style_Color_Role.Muted_Text,
+	loc := #caller_location,
+) -> Node_ID {
+	return alicorn.icon(ui, id, key=key, size=size, color_role=color_role, loc=loc)
+}
+
+icon_button :: proc(
+	ui: ^UI,
+	accessible_label: string,
+	id: Icon_ID,
+	key: UI_Key = alicorn.UI_Unkeyed{},
+	style: alicorn.Layout_Style = alicorn.DEFAULT_STYLE,
+	variant: alicorn.Button_Variant = .Quiet,
+	disabled: bool = false,
+	loc := #caller_location,
+) -> bool {
+	_, clicked := alicorn.icon_button(ui, accessible_label, id, key=key, style=style, variant=variant, disabled=disabled, loc=loc)
+	return clicked
 }
 
 button :: proc(
@@ -255,10 +445,7 @@ button :: proc(
 	height: f32 = -1,
 	grow: f32 = -1,
 ) -> bool {
-	effective_style := style
-	if width >= 0 { effective_style.width = width }
-	if height >= 0 { effective_style.height = height }
-	if grow >= 0 { effective_style.grow = grow }
+	effective_style := control_style(style, width, height, grow)
 	return alicorn.button(ui, label, key=key, style=effective_style, state=state, loc=loc,
 		text_style=text_style, content_style=content_style, variant=variant)
 }

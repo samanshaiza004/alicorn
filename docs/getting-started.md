@@ -92,8 +92,10 @@ That is enough to start building your own UI.
 
 ## Explore the form example
 
-The form combines the `alicorn:ui` layout helpers with Alicorn's controlled
-text field, checkbox, slider, and icon controls:
+The form uses only `alicorn:ui` for layout, text, a managed controlled text
+field, a pointer-bound checkbox and slider, and icons. Informational text and
+standard controls expose their accessibility semantics by default; use
+`decorative=true` for text that should remain visual-only:
 
 ```powershell
 .\tools\widget_gallery.ps1

@@ -1,0 +1,11 @@
+{
+  "name": "Alicorn macOS Desktop Validation",
+  "version": "0.2.0",
+  "bundleIdentifier": "org.alicorn.desktop-validation",
+  "executableName": "AlicornDesktopValidation",
+  "odinPackage": "tests/fixtures/macos_desktop_launch",
+  "minimumMacOSVersion": "13.0",
+  "icon": null,
+  "resources": [],
+  "privateLibraries": []
+}

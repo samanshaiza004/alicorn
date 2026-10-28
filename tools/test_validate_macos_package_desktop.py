@@ -140,6 +140,10 @@ class DesktopValidationHelperTests(unittest.TestCase):
             stop_failed_launch(launcher, 123, expected)
         kill.assert_not_called()
 
+    @unittest.skipUnless(
+        hasattr(validate_macos_package_desktop.signal, "SIGKILL"),
+        "SIGKILL escalation is specific to the macOS validator's POSIX process path",
+    )
     def test_interrupted_launch_cleanup_escalates_if_graceful_stop_times_out(self):
         expected = pathlib.Path("/Applications/Alicorn.app/Contents/MacOS/Alicorn")
         launcher = Mock()

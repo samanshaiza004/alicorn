@@ -46,6 +46,22 @@ macOS, from the repository root:
 bash tools/build_native_release.sh --odin "$(command -v odin)" --sdl-linkage static
 ```
 
+The ordinary `01_hello` remains the minimal learning application. The
+interactive macOS direct-launch/Launch Services acceptance protocol lives in
+[`tests/fixtures/macos_desktop_launch`](../tests/fixtures/macos_desktop_launch),
+so validation-only arguments and controls do not leak into beginner code. On
+macOS, build the fixture with both SDL linkages and pass those bundles to the
+desktop validator:
+
+```sh
+bash tools/build_native_release.sh --metadata tests/fixtures/macos_desktop_launch/package.json --sdl-linkage static --output "out/native-package/desktop fixture static"
+bash tools/build_native_release.sh --metadata tests/fixtures/macos_desktop_launch/package.json --sdl-linkage shared --output "out/native-package/desktop fixture shared"
+python3 tools/validate_macos_package_desktop.py \
+  --static "out/native-package/desktop fixture static/Alicorn macOS Desktop Validation.app" \
+  --shared "out/native-package/desktop fixture shared/Alicorn macOS Desktop Validation.app" \
+  --results-dir "out/native-package/desktop fixture results"
+```
+
 The default output is under `out/native-package/`. It includes the app,
 `SDL-LICENSE.txt`, the AccessKit Apache-2.0 and MIT license texts, and
 `alicorn-package.json` with the app/build identity, target architecture,

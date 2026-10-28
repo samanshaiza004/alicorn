@@ -32,8 +32,10 @@ It groups related fixes and features instead of repeating merge commits.
 ### Added
 
 - Added `alicorn:ui`, a concise procedural API for ordinary application
-  composition, controlled text fields, interaction results, and common UI
-  helpers. Expanded examples show both this API and the lower-level runtime.
+  composition, controlled text fields, pointer-bound checkboxes and sliders,
+  icon controls, automatic informational-text semantics, interaction results,
+  and common layout helpers. The form example imports only this package;
+  repeated data retains stable explicit-key support.
 - Added a composite `Tab_Bar` with selected and dirty states, an integrated
   close action, hover and pressed treatment, shrink-to-fit and overflow
   behavior, active-tab visibility, reorder feedback, and keyboard navigation.
@@ -90,6 +92,9 @@ It groups related fixes and features instead of repeating merge commits.
 - Windows and macOS build/package scripts now report resolved toolchain and
   architecture details, verify native dependency assumptions, and provide
   clearer failure output.
+- Moved the interactive macOS package-launch acceptance app and result protocol
+  out of `01_hello` into a dedicated fixture, keeping the starter focused on
+  ordinary application state and controls.
 
 ### Fixed
 
@@ -145,16 +150,16 @@ It groups related fixes and features instead of repeating merge commits.
   the runtime source did not change between captures, so they are not attributed
   to a new optimization. Text and material timings remain within overlapping
   ranges. See the [full methodology, ranges, and raw capture](docs/benchmarks/performance-final-windows-2026-10-28.md).
-- The final candidate workflows passed Windows foundation, macOS foundation,
-  native packaging, and icon reproducibility checks on implementation commit
-  `e00b966`: [Windows foundation](https://github.com/samanshaiza004/alicorn/actions/runs/40631856576),
+- The earlier release-candidate workflows passed Windows foundation, macOS
+  foundation, native packaging, and icon reproducibility checks on implementation
+  commit `e00b966`: [Windows foundation](https://github.com/samanshaiza004/alicorn/actions/runs/40631856576),
   [macOS foundation](https://github.com/samanshaiza004/alicorn/actions/runs/40631856709),
   [native packaging](https://github.com/samanshaiza004/alicorn/actions/runs/40631856629),
   and [icon reproducibility](https://github.com/samanshaiza004/alicorn/actions/runs/40631856602).
-  Commits after `e00b966` through the release-candidate tree changed
-  documentation, screenshots, and fixture documentation; they did not change
-  runtime or benchmark code. The physical acceptance details are in the
-  [candidate validation record](docs/validation/issue-103-final.md).
+  The later authoring-experience follow-up is covered by the Windows `tools/check.ps1`
+  run and the hosted workflows for its exact commit; do not treat the earlier
+  candidate runs as validation for this follow-up. The physical acceptance
+  details are in the [candidate validation record](docs/validation/issue-103-final.md).
 
 ## Dependencies and platform baseline
 

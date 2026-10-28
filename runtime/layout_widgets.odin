@@ -626,6 +626,7 @@ slider_f32 :: proc(
 	if node, ok := ui.runtime.nodes[id]; ok && node.control_pending {
 		result.value = slider_normalize(node.control_pending_value, minimum, maximum, step)
 		result.changed = result.value != value
+		result.activated = result.changed
 		node.control_pending = false
 		if result.changed { interaction_consumption_note(ui.runtime) }
 	}

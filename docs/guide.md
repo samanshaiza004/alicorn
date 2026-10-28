@@ -127,13 +127,19 @@ arbitrary application memory. When a logical change needs a new description,
 invalidate the root or the affected region. The native host handles ordinary
 pointer and window input and schedules the next build.
 
-For a form or search field, `Text_Field_Buffer` gives committed text explicit
-application ownership without retaining a pointer into app state. Initialize
-it once with an allocator and destroy it with the app; describe it with
-`text_field_controlled` and use the returned `changed` flag to update dependent
-state. IME preedit remains transient runtime state. Programmatic replacements
-use `text_field_buffer_set` and the application's normal invalidation path.
-The lower-level `text_field` and host edit callback remain available when that
+For an ordinary form, start with `alicorn:ui`: `ui.text_buffer` owns committed
+text, `ui.text_field` supplies a visible/accessibility label, and pointer-bound
+`ui.checkbox` and `ui.slider_f32` adopt user changes into app-owned values.
+Destroy each text buffer once with `ui.text_buffer_destroy`. This path keeps
+buffer ownership explicit and exposes standard-control semantics by default.
+
+The lower-level `Text_Field_Buffer` API offers the same explicit ownership
+contract without the convenience layer. Initialize it once with an allocator
+and destroy it with the app; describe it with `text_field_controlled` and use
+the returned `changed` flag to update dependent state. IME preedit remains
+transient runtime state. Programmatic replacements use
+`text_field_buffer_set` and the application's normal invalidation path. The
+lower-level `text_field` and host edit callback remain available when that
 fits the application better.
 
 ## Load application fonts and images
@@ -505,13 +511,13 @@ keyboard focus. Representative controls have been manually exercised with
 VoiceOver on macOS and a screen reader on Windows; see the
 [screen-reader validation record](validation/accessibility-screen-reader.md).
 
-Ordinary visual `Text` is intentionally not exported automatically. For
-standalone informational copy, call `semantic_static_text` immediately after
-`text`; it exposes that text as a `Static_Text` entity (mapped to AccessKit's
-Label role, whose text content is carried as its value). Text that already
-names a control should remain part of that control's semantic name rather than
-being annotated a second time. Rich editor/document text uses a specialized
-semantic model: a `Text_Area` with logical `Text_Run` children. Alicorn's
+The low-level runtime `text()` call remains visual-only unless followed by
+`semantic_static_text`. The beginner-facing `ui.text()` marks standalone
+informational text as `Static_Text` by default; pass `decorative=true` for
+ornament or glyph-like text. Text that names a control stays part of that
+control's semantic name rather than being annotated a second time. Rich
+editor/document text uses a specialized semantic model: a `Text_Area` with
+logical `Text_Run` children. Alicorn's
 native AccessKit projection publishes selectable-unit byte lengths, text
 selection, `SetTextSelection`, and `ReplaceSelectedText`. Application code must
 still publish a complete, revision-consistent text projection and apply queued

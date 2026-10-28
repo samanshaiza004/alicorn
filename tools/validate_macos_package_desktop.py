@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interactively validate static and shared macOS Alicorn bundles."""
+"""Interactively validate static and shared macOS desktop-fixture bundles."""
 
 from __future__ import annotations
 
@@ -561,8 +561,8 @@ def run_matrix(static_app: pathlib.Path, shared_app: pathlib.Path, results_dir: 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--static", type=pathlib.Path, required=True, help="Static-SDL .app bundle")
-    parser.add_argument("--shared", type=pathlib.Path, required=True, help="Shared-SDL .app bundle")
+    parser.add_argument("--static", type=pathlib.Path, required=True, help="Static-SDL macOS desktop validation fixture .app")
+    parser.add_argument("--shared", type=pathlib.Path, required=True, help="Shared-SDL macOS desktop validation fixture .app")
     parser.add_argument("--results-dir", type=pathlib.Path, required=True)
     args = parser.parse_args()
     run_matrix(args.static, args.shared, args.results_dir.resolve())
