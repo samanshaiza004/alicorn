@@ -7,8 +7,7 @@ that model and adds a simpler authoring surface, more capable layout and
 controls, native accessibility on Windows and macOS, and reusable native-app
 packaging tools.
 
-This changelog summarizes the changes from [v0.1.0 to the release-candidate
-tree](https://github.com/samanshaiza004/alicorn/compare/v0.1.0...3e31c743298f758b4cafd4f425e296a59cd95e34).
+This changelog summarizes the changes from [v0.1.0 to v0.2.0](https://github.com/samanshaiza004/alicorn/compare/v0.1.0...v0.2.0).
 It groups related fixes and features instead of repeating merge commits.
 
 ## Highlights
