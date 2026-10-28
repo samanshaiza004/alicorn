@@ -11,7 +11,12 @@ The Windows UI Automation contract probe also passes on the native fixture,
 covering names and roles, text value/focus, actions, disabled state, status
 changes, and resized bounds.
 
-This validates representative controls and text interaction. It does not
-validate navigation across gaps in the million-item virtual collection, the
-full widget set, Linux accessibility, or accessibility conformance. Those
-remain separate validation work.
+The macOS maintainer later reported that VoiceOver navigation through the
+million-item virtual collection worked with the rebuilt tester. The pre-fix
+capture showed backward cursor jumps during working-set changes; the post-fix
+run did not include a saved trace or final row number. See the
+[macOS #103 acceptance record](issue-103-macos-2026-10-27.md) for the exact
+scope and remaining gaps, including slider retest and modal containment.
+
+This does not establish complete coverage of every widget, Linux accessibility,
+or accessibility conformance.

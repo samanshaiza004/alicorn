@@ -647,3 +647,39 @@ test_accessibility_projection_keeps_virtual_collection_bounded_and_zero_based_po
 		accessibility_projection_action_has(item_node.actions, .Scroll_Into_View),
 		"bounds and supported semantic actions should be preserved")
 }
+
+@(test)
+test_accessibility_projection_orders_realized_and_virtual_collection_items_logically :: proc(t: ^testing.T) {
+	collection_id := alicorn.Semantic_ID{namespace=24, value=1}
+	first_id := alicorn.Semantic_ID{namespace=24, value=10}
+	second_id := alicorn.Semantic_ID{namespace=24, value=11}
+	third_id := alicorn.Semantic_ID{namespace=24, value=12}
+	nodes := [4]alicorn.Semantic_Node{
+		{id=collection_id, role=.List, label="Records", is_collection=true, logical_count=1_000_000, tree_order=1},
+		// The rows around the realized range have no visual traversal order.
+		// Their stable IDs sort around, rather than among, the realized row.
+		{id=first_id, role=.List_Item, label="Record 10", parent=collection_id,
+			collection_id=collection_id, position_in_set=9, size_of_set=1_000_000,
+			is_virtual_item=true, tree_order=0},
+		{id=second_id, role=.List_Item, label="Record 11", parent=collection_id,
+			collection_id=collection_id, position_in_set=10, size_of_set=1_000_000,
+			tree_order=100},
+		{id=third_id, role=.List_Item, label="Record 12", parent=collection_id,
+			collection_id=collection_id, position_in_set=11, size_of_set=1_000_000,
+			is_virtual_item=true, tree_order=0},
+	}
+	snapshot := accessibility_projection_test_snapshot(13, nodes[:])
+	projection, status := accessibility_projection_from_snapshot(snapshot, context.temp_allocator)
+	defer accessibility_projection_destroy(&projection)
+	collection_node, found := accessibility_projection_node_by_semantic_id(projection, collection_id)
+	ordered := [3]alicorn.Semantic_ID{}
+	if found && len(collection_node.children) == len(ordered) {
+		for child_id, index in collection_node.children {
+			child, child_found := accessibility_projection_node_by_id(projection, child_id)
+			if child_found { ordered[index] = child.semantic_id }
+		}
+	}
+	testing.expect(t, status == .Success && found && len(collection_node.children) == 3 &&
+		ordered[0] == first_id && ordered[1] == second_id && ordered[2] == third_id,
+		"assistive technology must receive realized and virtual rows in logical collection order")
+}

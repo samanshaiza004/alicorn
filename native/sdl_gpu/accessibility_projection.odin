@@ -563,7 +563,87 @@ accessibility_projection_rebuild_structure :: proc(projection: ^Accessibility_Pr
 		parent_index := parents[index]
 		append(&projection.nodes[parent_index].children, projection.nodes[index].id)
 	}
+	for parent_index in 0..<len(projection.nodes) {
+		parent := &projection.nodes[parent_index]
+		if parent.is_collection {
+			accessibility_projection_sort_collection_children(
+				parent.children[:],
+				projection^,
+				platform_indices,
+			)
+		}
+	}
 	return true
+}
+
+@(private)
+accessibility_projection_sort_collection_children :: proc(
+	children: []u64,
+	projection: Accessibility_Projection,
+	platform_indices: map[u64]int,
+) {
+	// A collection's logical position is its authoritative sibling order. This
+	// matters for virtual rows, which have no visual traversal order to inherit.
+	// Leave mixed/non-positional child lists in their authored tree order.
+	for child_id in children {
+		child_index, found := platform_indices[child_id]
+		if !found || !projection.nodes[child_index].has_position_in_set { return }
+	}
+	if len(children) < 2 { return }
+
+	// In-place heapsort avoids making collection traversal depend on a temporary
+	// allocation and remains O(n log n) for non-virtualized collections too.
+	for start := len(children)/2; start > 0; {
+		start -= 1
+		accessibility_projection_collection_sift_down(children, start, len(children), projection, platform_indices)
+	}
+	for end := len(children); end > 1; {
+		end -= 1
+		children[0], children[end] = children[end], children[0]
+		accessibility_projection_collection_sift_down(children, 0, end, projection, platform_indices)
+	}
+}
+
+@(private)
+accessibility_projection_collection_sift_down :: proc(
+	children: []u64,
+	root, end: int,
+	projection: Accessibility_Projection,
+	platform_indices: map[u64]int,
+) {
+	parent := root
+	for {
+		left := parent*2+1
+		if left >= end { break }
+		largest := left
+		right := left+1
+		if right < end && accessibility_projection_collection_child_less(
+			children[largest], children[right], projection, platform_indices,
+		) {
+			largest = right
+		}
+		if !accessibility_projection_collection_child_less(
+			children[parent], children[largest], projection, platform_indices,
+		) { break }
+		children[parent], children[largest] = children[largest], children[parent]
+		parent = largest
+	}
+}
+
+@(private)
+accessibility_projection_collection_child_less :: proc(
+	a, b: u64,
+	projection: Accessibility_Projection,
+	platform_indices: map[u64]int,
+) -> bool {
+	a_index := platform_indices[a]
+	b_index := platform_indices[b]
+	a_node := projection.nodes[a_index]
+	b_node := projection.nodes[b_index]
+	if a_node.position_in_set != b_node.position_in_set {
+		return a_node.position_in_set < b_node.position_in_set
+	}
+	return accessibility_semantic_id_less(a_node.semantic_id, b_node.semantic_id)
 }
 
 @(private)
