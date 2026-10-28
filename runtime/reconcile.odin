@@ -290,13 +290,11 @@ layout_hash_pending :: proc(d: Description, item: Pending_Item) -> u64 {
 	return h
 }
 
-paint_hash :: proc(
-	d: Description,
-	semantic_surface_style: Semantic_Surface_Style,
-	visual_part: Visual_Part_Style,
-	accessibility: Accessibility_Appearance_Preferences,
-) -> u64 {
-	h := description_hash(d, semantic_surface_style, visual_part, accessibility)
+paint_hash :: proc(d: Description, retained_description_hash: u64) -> u64 {
+	// The description hash already covers every value used by paint. Reuse it
+	// here instead of hashing strings, spans, style inputs, and sidecars twice
+	// for each node during reconciliation.
+	h := retained_description_hash
 	h = hash_mix(h, u64(d.focusable ? 1 : 0))
 	h = hash_mix(h, u64(d.selected ? 1 : 0))
 	h = hash_mix(h, u64(d.disabled ? 1 : 0))
@@ -871,7 +869,7 @@ reconcile :: proc(rt: ^Runtime) {
 				input_revision=1,
 				parent_layout_dependencies={.Width, .Height},
 			}
-			node.paint_hash = paint_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
+			node.paint_hash = paint_hash(d, node.description_hash)
 			mark_dirty(node, "new retained node", true, true, true, true, rt.persistent_allocator)
 			layout_measure_mark_dirty(rt, node)
 			queue_paint(rt, d.id)
@@ -881,7 +879,7 @@ reconcile :: proc(rt: ^Runtime) {
 			new_desc_hash := description_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
 			new_layout_hash := layout_hash_pending(d, item)
 			new_measure_input_hash := measure_input_hash(d)
-			new_paint_hash := paint_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
+			new_paint_hash := paint_hash(d, new_desc_hash)
 			was_selected := node.selected
 			description_changed := node.description_hash != new_desc_hash
 			measure_state := rt.measure_states[d.id]

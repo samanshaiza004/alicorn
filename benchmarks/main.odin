@@ -164,9 +164,9 @@ print_row :: proc(name: string, elapsed_ns: i64, before, after: alicorn.Frame_St
 		"retained", retained)
 }
 
-render_tree_numeric :: proc(rt: ^alicorn.Runtime, count: int, changed: int, reverse: bool) {
+describe_tree_numeric :: proc(rt: ^alicorn.Runtime, count: int, changed: int, reverse: bool) -> (ui: alicorn.UI, build: bool) {
 	alicorn.invalidate_root(rt, "benchmark root frame")
-	ui, build := alicorn.begin_frame(rt)
+	ui, build = alicorn.begin_frame(rt)
 	if !build { return }
 	alicorn.container_begin_ex(&ui, .Root, ROOT, label="benchmark")
 	for n := 0; n < count; n += 1 {
@@ -177,6 +177,12 @@ render_tree_numeric :: proc(rt: ^alicorn.Runtime, count: int, changed: int, reve
 		}
 	}
 	alicorn.container_end(&ui)
+	return
+}
+
+render_tree_numeric :: proc(rt: ^alicorn.Runtime, count: int, changed: int, reverse: bool) {
+	ui, build := describe_tree_numeric(rt, count, changed, reverse)
+	if !build { return }
 	alicorn.end_frame(&ui)
 }
 
@@ -360,12 +366,22 @@ measure_tree :: proc(count: int, allocator_state: ^Bench_Allocator_State) {
 	before := rt.stats
 	alloc_before := allocation_snapshot(allocator_state)
 	start := time.now()
-	render_tree_numeric(&rt, count, -1, false)
+	ui, build := describe_tree_numeric(&rt, count, -1, false)
+	initial_description_ns := time.duration_nanoseconds(time.since(start))
+	initial_description_alloc := allocation_snapshot(allocator_state)
+	end_frame_start := time.now()
+	if build { alicorn.end_frame(&ui) }
+	initial_end_frame_ns := time.duration_nanoseconds(time.since(end_frame_start))
 	first := time.duration_nanoseconds(time.since(start))
 	first_after := rt.stats
 	first_alloc_after := allocation_snapshot(allocator_state)
 	start = time.now()
-	render_tree_numeric(&rt, count, -1, false)
+	ui, build = describe_tree_numeric(&rt, count, -1, false)
+	root_description_ns := time.duration_nanoseconds(time.since(start))
+	root_description_alloc := allocation_snapshot(allocator_state)
+	end_frame_start = time.now()
+	if build { alicorn.end_frame(&ui) }
+	root_end_frame_ns := time.duration_nanoseconds(time.since(end_frame_start))
 	root_wake := time.duration_nanoseconds(time.since(start))
 	root_after := rt.stats
 	root_alloc_after := allocation_snapshot(allocator_state)
@@ -381,7 +397,23 @@ measure_tree :: proc(count: int, allocator_state: ^Bench_Allocator_State) {
 	reorder_alloc_after := allocation_snapshot(allocator_state)
 	fmt.println("tree", count)
 	print_row("  initial", first, before, first_after, len(rt.nodes), alloc_before, first_alloc_after)
+	initial_description_delta := allocation_delta(alloc_before, initial_description_alloc)
+	initial_end_frame_delta := allocation_delta(initial_description_alloc, first_alloc_after)
+	fmt.println("  initial_phase description_ns", initial_description_ns,
+		"description_alloc", initial_description_delta.allocations,
+		"description_alloc_bytes", initial_description_delta.allocated_bytes,
+		"end_frame_ns", initial_end_frame_ns,
+		"end_frame_alloc", initial_end_frame_delta.allocations,
+		"end_frame_alloc_bytes", initial_end_frame_delta.allocated_bytes)
 	print_row("  root_invalidated_unchanged", root_wake, first_after, root_after, len(rt.nodes), first_alloc_after, root_alloc_after)
+	root_description_delta := allocation_delta(first_alloc_after, root_description_alloc)
+	root_end_frame_delta := allocation_delta(root_description_alloc, root_alloc_after)
+	fmt.println("  unchanged_root_phase description_ns", root_description_ns,
+		"description_alloc", root_description_delta.allocations,
+		"description_alloc_bytes", root_description_delta.allocated_bytes,
+		"end_frame_ns", root_end_frame_ns,
+		"end_frame_alloc", root_end_frame_delta.allocations,
+		"end_frame_alloc_bytes", root_end_frame_delta.allocated_bytes)
 	print_row("  root_invalidated_one_value", one_change, root_after, one_after, len(rt.nodes), root_alloc_after, one_alloc_after)
 	print_row("  full_keyed_reorder", reorder, one_after, reorder_after, len(rt.nodes), one_alloc_after, reorder_alloc_after)
 	alicorn.destroy_runtime(&rt)

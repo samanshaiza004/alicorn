@@ -33,11 +33,59 @@ work.mkdir(parents=True, exist_ok=True)
 odin = str(Path(args.odin).resolve())
 refs = {"baseline": args.baseline, "regressed": args.regressed, "fixed": args.candidate}
 
+phase_probe = '''
+describe_tree_for_phase_probe :: proc(rt: ^alicorn.Runtime, count: int) -> (ui: alicorn.UI, build: bool) {
+    alicorn.invalidate_root(rt, "phase probe root frame")
+    ui, build = alicorn.begin_frame(rt)
+    if !build { return }
+    alicorn.container_begin_ex(&ui, .Root, ROOT, label="phase-probe")
+    for i := 0; i < count; i += 1 {
+        if alicorn.key_scope_u64(&ui, u64(i), NODE) {
+            alicorn.text_ex(&ui, "node", NODE)
+            alicorn.key_scope_end(&ui)
+        }
+    }
+    alicorn.container_end(&ui)
+    return
+}
+
+measure_tree_phase_probe :: proc(count: int) {
+    rt := alicorn.new_runtime(alicorn.Rect{0, 0, 1280, 900})
+
+    start := time.now()
+    ui, build := describe_tree_for_phase_probe(&rt, count)
+    initial_description_ns := time.duration_nanoseconds(time.since(start))
+    end_start := time.now()
+    if build { alicorn.end_frame(&ui) }
+    initial_end_frame_ns := time.duration_nanoseconds(time.since(end_start))
+    initial_total_ns := time.duration_nanoseconds(time.since(start))
+    fmt.println("phase_initial count", count,
+        "description_ns", initial_description_ns,
+        "end_frame_ns", initial_end_frame_ns,
+        "total_ns", initial_total_ns)
+
+    start = time.now()
+    ui, build = describe_tree_for_phase_probe(&rt, count)
+    unchanged_description_ns := time.duration_nanoseconds(time.since(start))
+    end_start = time.now()
+    if build { alicorn.end_frame(&ui) }
+    unchanged_end_frame_ns := time.duration_nanoseconds(time.since(end_start))
+    unchanged_total_ns := time.duration_nanoseconds(time.since(start))
+    fmt.println("phase_unchanged_root count", count,
+        "description_ns", unchanged_description_ns,
+        "end_frame_ns", unchanged_end_frame_ns,
+        "total_ns", unchanged_total_ns)
+
+    alicorn.destroy_runtime(&rt)
+}
+'''
+
 main = '''main :: proc() {
     allocator_state := Bench_Allocator_State{backing = context.allocator}
     context.allocator = bench_allocator(&allocator_state)
     measure_regions(&allocator_state)
     measure_tree(10_000, &allocator_state)
+    measure_tree_phase_probe(10_000)
     context.allocator = allocator_state.backing
 }
 '''
@@ -70,7 +118,7 @@ for name, ref in refs.items():
     marker = "main :: proc()"
     if marker not in source:
         raise RuntimeError(f"benchmark entry point missing in {name} snapshot")
-    (probe / "main.odin").write_text(source.rsplit(marker, 1)[0] + main)
+    (probe / "main.odin").write_text(source.rsplit(marker, 1)[0] + phase_probe + main)
     executable_suffix = ".exe" if os.name == "nt" else ""
     executable = work / f"{name}-{commit[:12]}-probe{executable_suffix}"
     print(f"BUILD {name} {commit}", flush=True)
