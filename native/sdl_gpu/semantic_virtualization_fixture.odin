@@ -12,6 +12,15 @@ SEMANTIC_VIRTUAL_FIXTURE_ITEM_COUNT :: 1_000_000
 SEMANTIC_VIRTUAL_FIXTURE_ROW_HEIGHT :: f32(32)
 SEMANTIC_VIRTUAL_FIXTURE_HORIZON :: 8
 
+semantic_virtual_fixture_reveal_offset :: proc(current_offset, viewport_height: f32, position: int) -> f32 {
+	row_top := f32(position)*SEMANTIC_VIRTUAL_FIXTURE_ROW_HEIGHT
+	row_bottom := row_top+SEMANTIC_VIRTUAL_FIXTURE_ROW_HEIGHT
+	if row_top < current_offset { return max(row_top, 0) }
+	viewport_bottom := current_offset+viewport_height
+	if row_bottom > viewport_bottom { return max(row_bottom-viewport_height, 0) }
+	return max(current_offset, 0)
+}
+
 Semantic_Virtualization_Fixture_State :: struct {
 	runtime: ^alicorn.Runtime,
 	list: alicorn.Node_ID,
@@ -20,6 +29,11 @@ Semantic_Virtualization_Fixture_State :: struct {
 	current_position: int,
 	has_current: bool,
 	reveal_requests: u64,
+	reveal_forward_requests: u64,
+	reveal_backward_requests: u64,
+	last_reveal_position: int,
+	last_reveal_delta: int,
+	has_last_reveal: bool,
 	scroll_forward_requests: u64,
 	scroll_backward_requests: u64,
 	focus_requests: u64,
@@ -43,6 +57,18 @@ semantic_virtual_fixture_item_position :: proc(id: alicorn.Semantic_ID) -> (posi
 	return
 }
 
+semantic_virtual_fixture_action_name :: proc(action: alicorn.Semantic_Action) -> string {
+	#partial switch action {
+	case .Focus: return "Focus"
+	case .Press: return "Press"
+	case .Select: return "Select"
+	case .Scroll_Into_View: return "Scroll_Into_View"
+	case .Scroll_Forward: return "Scroll_Forward"
+	case .Scroll_Backward: return "Scroll_Backward"
+	}
+	return "Other"
+}
+
 semantic_virtual_fixture_handle_requests :: proc(app: ^Semantic_Virtualization_Fixture_State, rt: ^alicorn.Runtime) {
 	if app == nil || rt == nil { return }
 	for {
@@ -52,20 +78,49 @@ semantic_virtual_fixture_handle_requests :: proc(app: ^Semantic_Virtualization_F
 		case .Reveal:
 			position, valid := semantic_virtual_fixture_item_position(event.id)
 			if valid {
+				delta := 0
+				if app.has_last_reveal {
+					delta = position-app.last_reveal_position
+					if delta > 0 { app.reveal_forward_requests += 1 }
+					if delta < 0 { app.reveal_backward_requests += 1 }
+				}
+				app.last_reveal_position = position
+				app.last_reveal_delta = delta
+				app.has_last_reveal = true
 				if app.diagnostics {
 					fmt.println("semantic_request", "kind", "Reveal", "position", position+1,
-						"from", app.first+1, app.last, "to", position+1)
+						"delta", delta, "from", app.first+1, app.last, "to", position+1)
 				}
-				_ = alicorn.scroll_region_set_offset(
-					rt,
-					app.list,
-					f32(position)*SEMANTIC_VIRTUAL_FIXTURE_ROW_HEIGHT,
-					"screen reader requested a virtual row reveal",
-				)
+				scroll := alicorn.scroll_region_state(rt, app.list)
+				next_offset := semantic_virtual_fixture_reveal_offset(scroll.offset_y, scroll.viewport_height, position)
+				if next_offset != scroll.offset_y {
+					if app.diagnostics {
+						fmt.println("semantic_reveal_scroll", "position", position+1,
+							"offset", scroll.offset_y, "to", next_offset)
+					}
+					_ = alicorn.scroll_region_set_offset(
+						rt,
+						app.list,
+						next_offset,
+						"screen reader requested an offscreen virtual row reveal",
+					)
+				} else if app.diagnostics {
+					fmt.println("semantic_reveal_scroll", "position", position+1, "already_visible", true)
+				}
 				app.current_position, app.has_current = position, true
 				app.reveal_requests += 1
 			}
 		case .Perform:
+			if app.diagnostics {
+				target := "other"
+				if event.id == SEMANTIC_VIRTUAL_FIXTURE_COLLECTION {
+					target = "collection"
+				} else if position, valid := semantic_virtual_fixture_item_position(event.id); valid {
+					target = fmt.tprintf("Record %d", position+1)
+				}
+				fmt.println("semantic_request", "kind", "Perform", "target", target,
+					"action", semantic_virtual_fixture_action_name(event.action))
+			}
 			if event.id == SEMANTIC_VIRTUAL_FIXTURE_COLLECTION {
 				scroll := alicorn.scroll_region_state(rt, app.list)
 				page := scroll.viewport_height-SEMANTIC_VIRTUAL_FIXTURE_ROW_HEIGHT
@@ -101,6 +156,20 @@ semantic_virtual_fixture_handle_requests :: proc(app: ^Semantic_Virtualization_F
 	}
 }
 
+@(test)
+test_semantic_virtual_fixture_reveal_scrolls_only_to_expose_offscreen_rows :: proc(t: ^testing.T) {
+	viewport_height := f32(608)
+	unchanged := semantic_virtual_fixture_reveal_offset(0, viewport_height, 18)
+	just_below := semantic_virtual_fixture_reveal_offset(0, viewport_height, 19)
+	back_to_top := semantic_virtual_fixture_reveal_offset(32, viewport_height, 0)
+	testing.expect(t, unchanged == 0,
+		"revealing a row already inside the viewport should not move the scroll position")
+	testing.expect(t, just_below == 32,
+		"revealing a row just below the viewport should scroll only enough to expose it")
+	testing.expect(t, back_to_top == 0,
+		"revealing a row above the viewport should align its top without producing a negative offset")
+}
+
 semantic_virtual_fixture_build :: proc(
 	state: rawptr,
 	rt: ^alicorn.Runtime,
@@ -118,6 +187,7 @@ semantic_virtual_fixture_build :: proc(
 		label="million-row-accessibility-root",
 		key=alicorn.key_string("million-row-accessibility-root"),
 		style=alicorn.layout_style(.Column, grow=1, padding=20, gap=8, clip=true),
+		color=alicorn.Color{0.055, 0.065, 0.09, 1},
 	)
 	alicorn.text(&ui, "Alicorn million-row accessibility fixture", style=alicorn.layout_style(height=30))
 	alicorn.text(&ui, "Use your screen reader to navigate the list. Scroll actions and ScrollIntoView reveal rows outside the visible range.",
@@ -161,6 +231,7 @@ semantic_virtual_fixture_build :: proc(
 			label=row_label,
 			style=alicorn.layout_style(.Row, height=SEMANTIC_VIRTUAL_FIXTURE_ROW_HEIGHT),
 		)
+		alicorn.text(&ui, row_label, style=alicorn.layout_style(grow=1))
 		row_actions := alicorn.semantic_actions_add({}, .Focus)
 		row_actions = alicorn.semantic_actions_add(row_actions, .Scroll_Into_View)
 		_ = alicorn.semantic_collection_item(&ui, collection, u64(position), alicorn.Semantic_Node_Description{
@@ -172,17 +243,6 @@ semantic_virtual_fixture_build :: proc(
 		})
 		alicorn.container_end(&ui)
 		alicorn.key_scope_end(&ui)
-	}
-	for position := max(list.first-SEMANTIC_VIRTUAL_FIXTURE_HORIZON, 0); position < list.first; position += 1 {
-		id := semantic_virtual_fixture_item_id(position)
-		row_label := fmt.tprintf("Record %d", position+1)
-		states := alicorn.Semantic_States{}
-		if id == current_id { states = alicorn.semantic_states_add(states, .Current) }
-		row_actions := alicorn.semantic_actions_add({}, .Focus)
-		row_actions = alicorn.semantic_actions_add(row_actions, .Scroll_Into_View)
-		_ = alicorn.semantic_collection_virtual_item(&ui, collection, u64(position), alicorn.Semantic_Node_Description{
-			id=id, role=.List_Item, label=row_label, states=states, actions=row_actions,
-		})
 	}
 	for position := list.last; position < min(list.last+SEMANTIC_VIRTUAL_FIXTURE_HORIZON, SEMANTIC_VIRTUAL_FIXTURE_ITEM_COUNT); position += 1 {
 		id := semantic_virtual_fixture_item_id(position)
@@ -196,18 +256,36 @@ semantic_virtual_fixture_build :: proc(
 		})
 	}
 	alicorn.virtual_list_end(&ui, list)
-	label := fmt.tprintf(
-		"1,000,000 logical rows | visible: %d..%d | reveals: %d | forward/back: %d/%d | focus: %d",
-		app.first+1, app.last, app.reveal_requests, app.scroll_forward_requests, app.scroll_backward_requests, app.focus_requests,
-	)
-	alicorn.text(&ui, label, style=alicorn.layout_style(height=24))
+	alicorn.text(&ui,
+		fmt.tprintf("Visible records: %d–%d of %d", app.first+1, app.last, SEMANTIC_VIRTUAL_FIXTURE_ITEM_COUNT),
+		style=alicorn.layout_style(height=24))
+	last_reveal := "none"
+	last_direction := "none"
+	if app.has_last_reveal {
+		last_reveal = fmt.tprintf("Record %d", app.last_reveal_position+1)
+		if app.last_reveal_delta > 0 {
+			last_direction = fmt.tprintf("forward %d", app.last_reveal_delta)
+		} else if app.last_reveal_delta < 0 {
+			last_direction = fmt.tprintf("backward %d", -app.last_reveal_delta)
+		} else {
+			last_direction = "same position"
+		}
+	}
+	alicorn.text(&ui,
+		fmt.tprintf("Last revealed: %s · %s · reveal forward/back: %d/%d · scroll forward/back: %d/%d · focus: %d",
+			last_reveal, last_direction, app.reveal_forward_requests, app.reveal_backward_requests,
+			app.scroll_forward_requests, app.scroll_backward_requests, app.focus_requests),
+		style=alicorn.layout_style(height=24))
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	if app.diagnostics && (!app.has_logged_range || app.logged_first != app.first || app.logged_last != app.last) {
+		current_record := 0
+		if app.has_current { current_record = app.current_position+1 }
 		fmt.println("semantic_working_set",
 			"visible_range", app.first+1, app.last,
 			"retained_entities", len(rt.semantic_entities),
 			"revision", alicorn.semantic_revision(rt),
+			"current_record", current_record,
 			"added", rt.stats.semantic_projection_nodes_added,
 			"updated", rt.stats.semantic_projection_nodes_updated,
 			"removed", rt.stats.semantic_projection_nodes_removed,
@@ -267,10 +345,9 @@ test_native_semantic_virtual_fixture_reveals_and_pages_with_bounded_working_set 
 	_ = semantic_virtual_fixture_build(rawptr(&app), &rt, 1100, 760, 1)
 	testing.expect(t, app.reveal_requests == 1 && app.first <= reveal_position && reveal_position < app.last,
 		"handling reveal should move the bounded visible range to include the requested logical row")
-	_, old_row_found := alicorn.semantic_node_lookup(&rt, semantic_virtual_fixture_item_id(initial_first))
 	revealed_bound := app.last-app.first+2*SEMANTIC_VIRTUAL_FIXTURE_HORIZON+1
-	testing.expect(t, !old_row_found && len(rt.semantic_entities) <= revealed_bound,
-		"rows leaving the working set should retire while the total semantic store stays bounded")
+	testing.expect(t, len(rt.semantic_entities) <= revealed_bound,
+		"minimal reveal scrolling should keep the collection's semantic store bounded")
 
 	previous_offset := alicorn.scroll_region_offset(&rt, app.list)
 	testing.expect(t, alicorn.semantic_action_request(&rt, SEMANTIC_VIRTUAL_FIXTURE_COLLECTION, .Scroll_Forward),
