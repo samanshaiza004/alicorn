@@ -8,6 +8,15 @@ import win "core:sys/windows"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
+// Synthetic captures provide their own DPI, density, and maximized state.
+// A font-generation change normally relays out labels from the live HWND,
+// which would overwrite those measurements (and is unavailable to this fixture).
+native_caption_validation_refresh_text :: proc(state: ^Win32_Menu_State, rt: ^alicorn.Runtime) -> bool {
+	if state == nil || rt == nil { return false }
+	state.font_generation = rt.text_engine.font_generation
+	return win32_menu_refresh_text(state, rt)
+}
+
 // Exercise the production paint path using synthetic DWM measurements. This
 // checks GPU pixels; it does not simulate native Snap or monitor transitions.
 native_caption_capture_case :: proc(
@@ -40,7 +49,7 @@ native_caption_capture_case :: proc(
 	defer win32_caption_destroy_masks(&state)
 	raw := win.RECT{win.LONG(width-i32(native_pixel_edge(138,scale))-edge),-win.LONG(edge),win.LONG(width-edge),win.LONG(height-edge)}
 	state.caption_controls = win32_caption_layout_controls(raw,true,width,height,dpi,state.maximized)
-	if !win32_menu_refresh_text(&state,text.runtime) { return false }
+	if !native_caption_validation_refresh_text(&state,text.runtime) { return false }
 	win32_menu_layout_label_bounds(&state)
 	display := native_menu_overlay_commands(&menu,f32(width)/density,f32(height)/density,context.allocator)
 	defer delete(display)

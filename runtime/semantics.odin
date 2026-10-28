@@ -679,6 +679,27 @@ semantic_text_field_accessibility_sync :: proc(rt: ^Runtime, node: ^Node) -> boo
 	return semantic_text_field_selection_set(rt, field_id, selection) || changed
 }
 
+// semantic_realized_action_owner_is_eligible centralizes the checks for
+// actions on realized owners. Logical-only semantic entities remain eligible
+// for application handling; their provider owns realization and policy.
+@(private)
+semantic_realized_action_owner_is_eligible :: proc(
+	rt: ^Runtime,
+	owner: Semantic_Node,
+	action: Semantic_Action,
+) -> bool {
+	if rt == nil { return false }
+	if owner.visual_node == 0 { return true }
+	visual, visual_found := rt.nodes[owner.visual_node]
+	if !visual_found || visual == nil || !node_is_presentation_active(rt, visual.id) || visual.disabled { return false }
+	overlay_root := modal_overlay_root(rt)
+	inside_modal := node_is_in_modal_overlay(rt, visual.id, overlay_root)
+	select_owns_popup_action := owner.role == .Combo_Box &&
+		owner.id == rt.select.trigger_semantic_id && select_open_owned(rt, &rt.select) &&
+		overlay_root == rt.context_menu.overlay && (action == .Expand || action == .Collapse)
+	return inside_modal || select_owns_popup_action
+}
+
 // semantic_text_selection_apply routes native selections to the correct owner:
 // a built-in single-line field updates its retained caret directly, while a
 // Text_Area leaves editing policy with its application as before.
@@ -695,7 +716,8 @@ semantic_text_selection_apply :: proc(
 		return semantic_text_selection_request(rt, owner_id, selection)
 	}
 	if owner.node.role != .Text_Field || selection.anchor.run_id != selection.focus.run_id ||
-	   owner.node.visual_node == 0 { return false }
+	   owner.node.visual_node == 0 ||
+	   !semantic_realized_action_owner_is_eligible(rt, owner.node, .Set_Text_Selection) { return false }
 	run, run_found := rt.semantic_entities[selection.anchor.run_id]
 	if !run_found { return false }
 	anchor_byte, anchor_ok := semantic_text_run_byte_offset(run.node, selection.anchor.character_index)
@@ -744,6 +766,7 @@ semantic_text_selection_request :: proc(
 	entity, found := rt.semantic_entities[area_id]
 	if !found || entity.node.role != .Text_Area ||
 	   !semantic_actions_has(entity.node.actions, .Set_Text_Selection) ||
+	   !semantic_realized_action_owner_is_eligible(rt, entity.node, .Set_Text_Selection) ||
 	   !semantic_text_selection_valid_for_area(rt, area_id, selection) ||
 	   len(rt.semantic_requests)-rt.semantic_request_read_index >= SEMANTIC_REQUEST_QUEUE_CAPACITY { return false }
 	append(&rt.semantic_requests, Semantic_Request_Event{
@@ -1399,13 +1422,7 @@ semantic_action_request :: proc(
 	if entity.node.visual_node != 0 {
 		visual_found: bool
 		visual, visual_found = rt.nodes[entity.node.visual_node]
-		if !visual_found || visual == nil || !node_is_presentation_active(rt, visual.id) || visual.disabled { return false }
-		overlay_root := modal_overlay_root(rt)
-		inside_modal := node_is_in_modal_overlay(rt, visual.id, overlay_root)
-		select_owns_popup_action := entity.node.role == .Combo_Box &&
-			id == rt.select.trigger_semantic_id && select_open_owned(rt, &rt.select) &&
-			overlay_root == rt.context_menu.overlay && (action == .Expand || action == .Collapse)
-		if !inside_modal && !select_owns_popup_action { return false }
+		if !visual_found || visual == nil || !semantic_realized_action_owner_is_eligible(rt, entity.node, action) { return false }
 	}
 	// Validate realized controls before specialized handlers mutate transient
 	// state. Select Expand/Collapse otherwise bypass the modal-scope guard below.

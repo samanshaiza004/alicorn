@@ -1,0 +1,12 @@
+blend_gpu_backend direct3d12 offscreen true
+blend_mask_coverage scale 1 text [Blend_Validation_Sample{x = 16, y = 16, coverage = 1}, Blend_Validation_Sample{x = 13, y = 16, coverage = 0.49411765}] icon [Blend_Validation_Sample{x = 13, y = 10, coverage = 1}, Blend_Validation_Sample{x = 13, y = 9, coverage = 0.30980393}]
+blend_mask_coverage scale 1.25 text [Blend_Validation_Sample{x = 20, y = 20, coverage = 1}, Blend_Validation_Sample{x = 17, y = 20, coverage = 0.5882353}] icon [Blend_Validation_Sample{x = 17, y = 12, coverage = 1}, Blend_Validation_Sample{x = 15, y = 12, coverage = 0.2509804}]
+blend_mask_coverage scale 1.5 text [Blend_Validation_Sample{x = 24, y = 23, coverage = 1}, Blend_Validation_Sample{x = 20, y = 23, coverage = 0.3372549}] icon [Blend_Validation_Sample{x = 22, y = 14, coverage = 1}, Blend_Validation_Sample{x = 20, y = 14, coverage = 0.56078434}]
+blend_mask_coverage scale 2 text [Blend_Validation_Sample{x = 28, y = 31, coverage = 1}, Blend_Validation_Sample{x = 29, y = 30, coverage = 0.49411765}] icon [Blend_Validation_Sample{x = 28, y = 19, coverage = 1}, Blend_Validation_Sample{x = 26, y = 19, coverage = 0.49803922}]
+blend_gpu_family Surface cases 48 failed 0
+blend_gpu_family Geometry cases 24 failed 0
+blend_gpu_family Icon cases 24 failed 0
+blend_gpu_family Image cases 24 failed 0
+blend_gpu_family Text cases 24 failed 0
+blend_gpu_family Mixed cases 12 failed 0
+blend_gpu_validation driver direct3d12 target R8G8B8A8_UNORM scales 1,1.25,1.5,2 destination_alpha 0,0.4,1 cases 156 expected_cases 156 case_counts_ok true failed 0 rgba_tolerance_bytes 2

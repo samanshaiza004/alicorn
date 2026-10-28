@@ -1,0 +1,87 @@
+accesskit_abi_contract.c
+AccessKit 0.23.1 C-header ABI contract: PASS
+[INFO ] --- [2026-10-28 02:13:55] Starting test runner with 7 threads. Set with -define:ODIN_TEST_THREADS=n.
+[INFO ] --- [2026-10-28 02:13:55] The random seed sent to every test is: 218801129650408. Set with -define:ODIN_TEST_RANDOM_SEED=n.
+[INFO ] --- [2026-10-28 02:13:55] Memory tracking is enabled. Tests will log their memory usage if there's an issue.
+[INFO ] --- [2026-10-28 02:13:55] < Final Mem/ Total Mem> <  Peak Mem> (#Free/Alloc) :: [package.test_name]
+
+Finished 7 tests in 243.6µs. All tests were successful.
+
+AccessKit external consumer built a two-node update.
+[INFO ] --- [2026-10-28 02:13:59] Starting test runner with 12 threads. Set with -define:ODIN_TEST_THREADS=n.
+[INFO ] --- [2026-10-28 02:13:59] The random seed sent to every test is: 218824019362809. Set with -define:ODIN_TEST_RANDOM_SEED=n.
+[INFO ] --- [2026-10-28 02:13:59] Memory tracking is enabled. Tests will log their memory usage if there's an issue.
+[INFO ] --- [2026-10-28 02:13:59] < Final Mem/ Total Mem> <  Peak Mem> (#Free/Alloc) :: [package.test_name]
+Alicorn retained paint commands: Paint_Command= 128  bytes, node+display capacity= 4096  bytes
+Alicorn retained record sizes: Node= 2032  bytes, Description= 768  bytes, Paint_Command= 128  bytes
+
+Finished 253 tests in 118.7786ms. All tests were successful.
+
+[INFO ] --- [2026-10-28 02:14:00] Starting test runner with 1 thread. Set with -define:ODIN_TEST_THREADS=n.
+[INFO ] --- [2026-10-28 02:14:00] The random seed sent to every test is: 218826775020984. Set with -define:ODIN_TEST_RANDOM_SEED=n.
+[INFO ] --- [2026-10-28 02:14:00] Memory tracking is enabled. Tests will log their memory usage if there's an issue.
+[INFO ] --- [2026-10-28 02:14:00] < Final Mem/ Total Mem> <  Peak Mem> (#Free/Alloc) :: [package.test_name]
+
+Finished 1 test in 281.4µs. The test was successful.
+
+[INFO ] --- [2026-10-28 02:14:01] Starting test runner with 12 threads. Set with -define:ODIN_TEST_THREADS=n.
+[INFO ] --- [2026-10-28 02:14:01] The random seed sent to every test is: 218830461428973. Set with -define:ODIN_TEST_RANDOM_SEED=n.
+[INFO ] --- [2026-10-28 02:14:01] Memory tracking is enabled. Tests will log their memory usage if there's an issue.
+[INFO ] --- [2026-10-28 02:14:01] < Final Mem/ Total Mem> <  Peak Mem> (#Free/Alloc) :: [package.test_name]
+
+Finished 12 tests in 29.4378ms. All tests were successful.
+
+[INFO ] --- [2026-10-28 02:14:01] Starting test runner with 12 threads. Set with -define:ODIN_TEST_THREADS=n.
+[INFO ] --- [2026-10-28 02:14:01] The random seed sent to every test is: 218833057390642. Set with -define:ODIN_TEST_RANDOM_SEED=n.
+[INFO ] --- [2026-10-28 02:14:01] Memory tracking is enabled. Tests will log their memory usage if there's an issue.
+[INFO ] --- [2026-10-28 02:14:01] < Final Mem/ Total Mem> <  Peak Mem> (#Free/Alloc) :: [package.test_name]
+
+Finished 35 tests in 2.2205ms. All tests were successful.
+
+valid theme: theme\testdata\minimal.json
+schema 1, contract 0.2; 2 color tokens, 1 length tokens, 0 materials, 0 button recipes
+core roles: 1 source bindings; unbound roles use DEFAULT_STYLE_THEME
+button recipes: 0 sparse overrides; omitted fields resolve from DEFAULT_STYLE_THEME.button_recipes
+extensions: 1 explicit roles; undeclared roles remain unresolved
+materials: 0 named definitions; flat surfaces use STYLE_MATERIAL_FLAT
+valid theme: theme\testdata\extends_base.json
+schema 1, contract 0.2; 19 color tokens, 0 length tokens, 0 materials, 0 button recipes
+base: alicorn.base (typed built-in layer; no filesystem lookup)
+core roles: 18 source bindings; unbound roles use DEFAULT_STYLE_THEME
+button recipes: 0 sparse overrides; omitted fields resolve from DEFAULT_STYLE_THEME.button_recipes
+extensions: 0 explicit roles; undeclared roles remain unresolved
+materials: 0 named definitions; flat surfaces use STYLE_MATERIAL_FLAT
+compiled theme source theme\testdata\minimal.json -> out\theme_codegen_smoke\generated.odin (TEST_THEME)
+token: color.primary
+kind: color
+value: linear-srgb(0.2140411, 0.05087609, 0, alpha=1)
+provenance:
+  color.primary defined at theme\testdata\minimal.json:13:5
+    aliases to color.source
+  color.source defined at theme\testdata\minimal.json:5:5
+representation: JSON source sRGB channels use the sRGB EOTF; alpha is unchanged
+theme\testdata\invalid.json:7:38: error: only dimension unit 'px' is supported and maps to logical units
+[INFO ] --- [2026-10-28 02:14:03] Starting test runner with 12 threads. Set with -define:ODIN_TEST_THREADS=n.
+[INFO ] --- [2026-10-28 02:14:03] The random seed sent to every test is: 218842026139861. Set with -define:ODIN_TEST_RANDOM_SEED=n.
+[INFO ] --- [2026-10-28 02:14:03] Memory tracking is enabled. Tests will log their memory usage if there's an issue.
+[INFO ] --- [2026-10-28 02:14:03] < Final Mem/ Total Mem> <  Peak Mem> (#Free/Alloc) :: [package.test_name]
+alicorn_diagnostics capture_failed path C:\Users\saman\AppData\Local\Temp\alicorn-diagnostics-failure-test-4832311082/capture-root-file error create capture bundle: Not_Exist
+
+Finished 149 tests in 125.6269ms. All tests were successful.
+
+[INFO ] --- [2026-10-28 02:14:04] Starting test runner with 6 threads. Set with -define:ODIN_TEST_THREADS=n.
+[INFO ] --- [2026-10-28 02:14:04] The random seed sent to every test is: 218847299129316. Set with -define:ODIN_TEST_RANDOM_SEED=n.
+[INFO ] --- [2026-10-28 02:14:04] Memory tracking is enabled. Tests will log their memory usage if there's an issue.
+[INFO ] --- [2026-10-28 02:14:04] < Final Mem/ Total Mem> <  Peak Mem> (#Free/Alloc) :: [package.test_name]
+
+Finished 6 tests in 3.7919ms. All tests were successful.
+
+Alicorn foundation tests: PASS
+restart --read: ok=true scroll=8400.0 range=350..361 outcome=Applied
+restart --narrow: ok=true scroll=8400.0 range=350..361 outcome=Applied
+restart --short: ok=true scroll=0.0 range=0..2 outcome=Clamped
+restart --defaults: ok=true scroll=0.0 range=0..11 outcome=None
+restart --defaults: ok=true scroll=0.0 range=0..11 outcome=None
+restart --defaults: ok=true scroll=0.0 range=0..11 outcome=None
+restart --defaults: ok=true scroll=0.0 range=0..11 outcome=None
+Alicorn generic text-input/navigation/paint-span and native ownership host contract: PASS
