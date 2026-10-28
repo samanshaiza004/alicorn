@@ -72,6 +72,11 @@ change to that historical baseline.
 
 ## Release build and GPU buffer experiments
 
+These native profile and capacity experiments were built from baseline source
+`550e0c2`, before the semantic runtime changes in this report. They isolate
+build-setting and initial-capacity tradeoffs; they are not measurements of
+the candidate's native executable.
+
 Seven native `01_hello` runs per profile compared Odin `-o:speed` with
 `-o:size`. The size profile reduced the executable from 6,586,368 bytes to
 6,180,864 bytes (405,504 bytes, or 6.2%). With the same 2,790,400-byte SDL3
