@@ -103,3 +103,33 @@ changes and multi-command paint updates are intentionally checked through the
 full-display fallback, while ordinary single-command sibling paint changes
 retain the local path. The rechecked raw samples are [default profile](raw/retained-locality-macos-m1-2026-10-28-combined-default.txt)
 and [`-o:speed`](raw/retained-locality-macos-m1-2026-10-28-combined-speed.txt).
+
+## Verification on merged master `4816a1c`
+
+The maintainer reran both profiles on macOS 27.2 (arm64) with Odin
+`dev-2026-09-nightly:a2fb372`, using three alternating fresh-process samples
+per revision. Both comparison runs reported `RETAINED LOCALITY PASS`.
+
+| Profile | Workload | Older baseline | Regressed | `4816a1c` |
+| --- | --- | ---: | ---: | ---: |
+| Default | 10,000-descendant region reuse | 0.312 ms | 12.613 ms | 0.048 ms |
+| Default | Initial 10,000-node tree | 56.815 ms | 153.757 ms | 153.833 ms |
+| Default | Unchanged 10,000-node root | 22.207 ms | 45.239 ms | 39.176 ms |
+| `-o:speed` | 10,000-descendant region reuse | 0.117 ms | 3.438 ms | 0.030 ms |
+| `-o:speed` | Initial 10,000-node tree | 21.848 ms | 48.998 ms | 51.507 ms |
+| `-o:speed` | Unchanged 10,000-node root | 8.886 ms | 15.610 ms | 15.569 ms |
+
+The current-head region-reuse measurements closely match the preceding Mac
+capture: 0.048 ms versus 0.050 ms in the default profile, and 0.030 ms versus
+0.043 ms with `-o:speed`. This is about 263× and 115× faster than the
+regressed revision, respectively. The locality counters remained
+`measure_examined=0`, `measure_executed=0`, `display_finalized=1`,
+`display_full_passes=0`, `semantic_order_examined=0`, and
+`global_fallbacks=0`.
+
+Initial construction is about 2.7× the older baseline in the default profile
+and 2.36× with `-o:speed`; the latter ratio is not 2.7×. This remains a
+separate performance concern from the restored post-construction locality.
+The supplied summary JSON and raw samples remain in the maintainer's local
+`out/retained-locality-comparison/{default,speed}/` directories and were not
+available in this checkout; the table records the reported medians.
