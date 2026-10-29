@@ -13,6 +13,7 @@ NATIVE_DIAGNOSTIC_FRAME_SAMPLES :: 240
 
 Native_Diagnostics_Options :: struct {
 	enabled:             bool,
+	breadcrumbs_enabled: bool,
 	debug_bounds:        bool,
 	capture_requested:   bool,
 	capture_after_ns:    u64,
@@ -188,6 +189,11 @@ native_parse_diagnostics_options :: proc() -> Native_Diagnostics_Options {
 	for argument in os.args {
 		if argument == "--diagnostics" {
 			options.enabled = true
+			options.breadcrumbs_enabled = true
+			continue
+		}
+		if argument == "--diagnostic-events" {
+			options.breadcrumbs_enabled = true
 			continue
 		}
 		if argument == "--debug-bounds" {
@@ -207,6 +213,7 @@ native_parse_diagnostics_options :: proc() -> Native_Diagnostics_Options {
 	if override, overridden := native_diagnostics_capture_dir_override(os.args, options.capture_dir); overridden {
 		options.enabled = true
 		options.capture_dir = override
+		options.breadcrumbs_enabled = true
 	}
 	return options
 }

@@ -5,6 +5,12 @@ import "core:os"
 
 main :: proc() {
 	for argument in os.args {
+		if argument == "--dialog-fixture" {
+			host.RunDialogFixture()
+			return
+		}
+	}
+	for argument in os.args {
 		if argument == "--accessibility-virtualization" {
 			host.RunSemanticVirtualizationFixture()
 			return

@@ -84,8 +84,25 @@ Dialog_Service_Backend :: enum {
 	Fake,
 }
 
+// Application_Diagnostics lets an application write a small named breadcrumb
+// into the host's opt-in postmortem event log. Event names are limited to
+// lowercase ASCII letters, digits, periods, underscores, and hyphens. Do not
+// include paths or user data; the host records timestamps, thread IDs, and the
+// supplied request ID.
+Application_Diagnostic_Event_Proc :: proc(data: rawptr, event: string, request_id: u64)
+
+Application_Diagnostics :: struct {
+	data:   rawptr,
+	record: Application_Diagnostic_Event_Proc,
+}
+
+application_diagnostic_event :: proc(service: Application_Diagnostics, event: string, request_id: u64 = 0) {
+	if service.record != nil { service.record(service.data, event, request_id) }
+}
+
 Application_Services :: struct {
 	dialogs:   Dialog_Service,
+	diagnostics: Application_Diagnostics,
 	clipboard: Clipboard_Service,
 	scheduler: Application_Scheduler,
 	quit:      Application_Quit_Request,
@@ -149,10 +166,12 @@ Native_Dialog_Bridge :: struct {
 	window:          ^sdl3.Window,
 	waker:           Application_Waker,
 	active:          bool,
+	active_id:       Dialog_ID,
 	accepting:       bool,
 	wakes_in_flight: int,
 	next_id:         u64,
 	refs:            int,
+	diagnostics:     ^Native_Breadcrumb_Recorder,
 }
 
 native_dialog_string_make :: proc(value: string, allocator: mem.Allocator) -> (Native_Dialog_String, bool) {
@@ -169,7 +188,11 @@ native_dialog_string_destroy :: proc(value: ^Native_Dialog_String, allocator: me
 	value^ = {}
 }
 
-native_dialog_bridge_make :: proc(window: ^sdl3.Window, waker: Application_Waker) -> ^Native_Dialog_Bridge {
+native_dialog_bridge_make :: proc(
+	window: ^sdl3.Window,
+	waker: Application_Waker,
+	diagnostics: ^Native_Breadcrumb_Recorder = nil,
+) -> ^Native_Dialog_Bridge {
 	bridge := new(Native_Dialog_Bridge, allocator=context.allocator)
 	bridge.allocator = context.allocator
 	bridge.completions = make([dynamic]File_Dialog_Result, 0, allocator=bridge.allocator)
@@ -177,6 +200,8 @@ native_dialog_bridge_make :: proc(window: ^sdl3.Window, waker: Application_Waker
 	bridge.waker = waker
 	bridge.accepting = true
 	bridge.refs = 1 // host ownership; each in-flight SDL callback owns another.
+	bridge.diagnostics = diagnostics
+	native_breadcrumbs_retain(diagnostics)
 	return bridge
 }
 
@@ -196,6 +221,7 @@ native_dialog_bridge_destroy :: proc(bridge: ^Native_Dialog_Bridge) {
 		native_dialog_result_destroy(&result, bridge.allocator)
 	}
 	delete(bridge.completions)
+	native_breadcrumbs_release(bridge.diagnostics)
 	free(bridge, allocator=bridge.allocator)
 }
 
@@ -212,16 +238,22 @@ native_dialog_bridge_release :: proc(bridge: ^Native_Dialog_Bridge) {
 native_dialog_bridge_shutdown :: proc(bridge: ^Native_Dialog_Bridge) {
 	if bridge == nil { return }
 	sync.mutex_lock(&bridge.mutex)
+	active_id := bridge.active_id
 	bridge.accepting = false
 	bridge.active = false
+	bridge.active_id = 0
 	bridge.waker = {}
 	sync.cond_broadcast(&bridge.wake_cond)
+	sync.mutex_unlock(&bridge.mutex)
+	native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.shutdown.begin", u64(active_id))
+	sync.mutex_lock(&bridge.mutex)
 	// A callback may have copied the waker before accepting was cleared. Keep
 	// the host's stack-owned waker alive until those calls have returned.
 	for bridge.wakes_in_flight > 0 {
 		sync.cond_wait(&bridge.wake_cond, &bridge.mutex)
 	}
 	sync.mutex_unlock(&bridge.mutex)
+	native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.shutdown.complete", u64(active_id))
 }
 
 native_dialog_bridge_finish_wake :: proc(bridge: ^Native_Dialog_Bridge) {
@@ -264,6 +296,7 @@ native_dialog_file_callback :: proc "c" (userdata: rawptr, filelist: [^]cstring,
 	request := cast(^Native_Dialog_Request)userdata
 	if request == nil || request.bridge == nil { return }
 	bridge := request.bridge
+	native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.enter", u64(request.id))
 	result := File_Dialog_Result{id=request.id, selected_filter=int(filter)}
 	result.paths = make([dynamic]string, 0, allocator=bridge.allocator)
 	if filelist == nil {
@@ -286,25 +319,36 @@ native_dialog_file_callback :: proc "c" (userdata: rawptr, filelist: [^]cstring,
 			result.error, _ = strings.clone("native file dialog returned no paths", bridge.allocator)
 		}
 	}
+	switch result.status {
+	case .Accepted:   native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.accepted", u64(request.id))
+	case .Cancelled:  native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.cancelled", u64(request.id))
+	case .Error:      native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.error", u64(request.id))
+	}
 
 	should_wake := false
 	waker: Application_Waker
 	sync.mutex_lock(&bridge.mutex)
 	bridge.active = false
+	bridge.active_id = 0
 	if bridge.accepting {
 		append(&bridge.completions, result)
 		waker = bridge.waker
 		bridge.wakes_in_flight += 1
 		should_wake = true
-	} else {
-		native_dialog_result_destroy(&result, bridge.allocator)
 	}
 	sync.mutex_unlock(&bridge.mutex)
+	if should_wake {
+		native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.queued", u64(request.id))
+	} else {
+		native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.dropped_shutdown", u64(request.id))
+		native_dialog_result_destroy(&result, bridge.allocator)
+	}
 	native_dialog_request_destroy(request)
 	if should_wake {
 		application_wake(waker)
 		native_dialog_bridge_finish_wake(bridge)
 	}
+	native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.completed", u64(request.id))
 	native_dialog_bridge_release(bridge)
 }
 
@@ -386,29 +430,45 @@ ShowFileDialog :: proc(service: Dialog_Service, request: File_Dialog_Request) ->
 	}
 	bridge := cast(^Native_Dialog_Bridge)service.handle
 	if bridge == nil { return false }
+	effective_request := request
 	sync.mutex_lock(&bridge.mutex)
-	if !bridge.accepting || bridge.active {
-		sync.mutex_unlock(&bridge.mutex)
+	if effective_request.id == 0 {
+		bridge.next_id += 1
+		effective_request.id = Dialog_ID(bridge.next_id)
+	} else if u64(effective_request.id) > bridge.next_id {
+		bridge.next_id = u64(effective_request.id)
+	}
+	accepted := bridge.accepting && !bridge.active
+	if accepted {
+		bridge.active = true
+		bridge.active_id = effective_request.id
+		bridge.refs += 1
+	}
+	sync.mutex_unlock(&bridge.mutex)
+	native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.request.received", u64(effective_request.id))
+	if !accepted {
+		native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.request.rejected", u64(effective_request.id))
 		return false
 	}
-	bridge.active = true
-	bridge.refs += 1
-	sync.mutex_unlock(&bridge.mutex)
-	native, ok := native_dialog_build_request(bridge, request)
+	native, ok := native_dialog_build_request(bridge, effective_request)
 	if !ok {
 		sync.mutex_lock(&bridge.mutex)
 		bridge.active = false
+		bridge.active_id = 0
 		bridge.refs -= 1
 		sync.mutex_unlock(&bridge.mutex)
+		native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.request.rejected", u64(effective_request.id))
 		return false
 	}
 	type: sdl3.FileDialogType
-	switch request.kind {
+	switch effective_request.kind {
 	case .Open_File: type = .OPENFILE
 	case .Save_File: type = .SAVEFILE
 	case .Open_Folder: type = .OPENFOLDER
 	}
+	native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.invoke", u64(native.id))
 	sdl3.ShowFileDialogWithProperties(type, native_dialog_file_callback, rawptr(native), native.props)
+	native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.invoke_return", u64(native.id))
 	return true
 }
 
@@ -461,7 +521,9 @@ native_dialog_dispatch :: proc(bridge: ^Native_Dialog_Bridge, application: ^Appl
 		sync.mutex_unlock(&bridge.mutex)
 		if !have_result { break }
 		cause := alicorn.cause_begin(rt, .Async_Wake, "native file dialog completed")
+		native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.result.dispatched", u64(result.id))
 		application.on_dialog(application.state, rt, &result)
+		native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.result.dispatch_completed", u64(result.id))
 		alicorn.cause_end(rt, cause)
 		native_dialog_result_destroy(&result, bridge.allocator)
 	}

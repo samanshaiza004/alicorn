@@ -56,6 +56,8 @@ run_application_loop :: proc(
 	submitted := 0
 	timing := Native_Host_Timing{}
 	diagnostics := native_parse_diagnostics_options()
+	breadcrumbs := native_breadcrumbs_start(diagnostics)
+	defer native_breadcrumbs_release(breadcrumbs)
 	inspector: Native_Inspector_Overlay
 	if !native_inspector_init(&inspector, device, sdl3.GetGPUSwapchainTextureFormat(device, window), rt.viewport) {
 		fail("visual inspector initialization failed")
@@ -104,13 +106,18 @@ run_application_loop :: proc(
 	secondary_windows := Native_Secondary_Window_Manager{
 		device=device, primary_window=window,
 		text_input_coordinator=&text_input_coordinator,
+		diagnostics=breadcrumbs,
 	}
 	defer native_secondary_window_manager_destroy(&secondary_windows)
-	dialog_bridge := native_dialog_bridge_make(window, application_waker)
+	dialog_bridge := native_dialog_bridge_make(window, application_waker, breadcrumbs)
 	defer native_dialog_bridge_release(dialog_bridge)
 	if application_instance.on_services != nil {
 		application_instance.on_services(application_instance.state, Application_Services{
 			dialogs=Dialog_Service{handle=rawptr(dialog_bridge)},
+			diagnostics=Application_Diagnostics{
+				data=rawptr(breadcrumbs),
+				record=native_breadcrumb_application_event,
+			},
 			clipboard=native_clipboard_service(),
 			scheduler=application_scheduler,
 			quit=Application_Quit_Request{data=rawptr(&quit_requested), request=native_application_request_quit},
@@ -807,7 +814,9 @@ run_application_loop :: proc(
 		// Stop worker threads while the host-owned waker state is still alive.
 		// This prevents a late worker completion from calling through a stack
 		// address after run_application_loop returns.
+		native_breadcrumb_event(breadcrumbs, "alicorn", "application.stop.begin")
 		application_instance.on_stop(application_instance.state)
+		native_breadcrumb_event(breadcrumbs, "alicorn", "application.stop.completed")
 	}
 	native_appearance_monitor_destroy(&appearance_monitor)
 	scheduler_state.active = false
@@ -820,6 +829,7 @@ run_application_loop :: proc(
 		retired += 1
 	}
 	clear(&in_flight)
+	native_breadcrumb_event(breadcrumbs, "alicorn", "session.ended")
 	elapsed_ns := time.duration_nanoseconds(time.since(start))
 	fmt.println(
 		"SDL application PASS",

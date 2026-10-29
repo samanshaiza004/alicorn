@@ -71,6 +71,7 @@ Native_Secondary_Window :: struct {
 Native_Secondary_Window_Manager :: struct {
 	device: ^sdl3.GPUDevice,
 	primary_window: ^sdl3.Window,
+	diagnostics: ^Native_Breadcrumb_Recorder,
 	text_input_coordinator: ^Native_Text_Input_Coordinator,
 	child: ^Native_Secondary_Window,
 	pending: bool,
@@ -304,12 +305,16 @@ native_secondary_window_create :: proc(manager: ^Native_Secondary_Window_Manager
 			request_redraw=false,
 		)
 	}
-	child.dialog_bridge = native_dialog_bridge_make(window, child.application_waker)
+	child.dialog_bridge = native_dialog_bridge_make(window, child.application_waker, manager.diagnostics)
 	child.callbacks_started = true
 	callbacks_started = true
 	if application.on_services != nil {
 		application.on_services(application.state, Application_Services{
 			dialogs=Dialog_Service{handle=rawptr(child.dialog_bridge)},
+		diagnostics=Application_Diagnostics{
+			data=rawptr(manager.diagnostics),
+			record=native_breadcrumb_application_event,
+		},
 			clipboard=native_clipboard_service(),
 			scheduler=child.application_scheduler,
 			quit=Application_Quit_Request{data=rawptr(&child.quit_requested), request=native_application_request_quit},

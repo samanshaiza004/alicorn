@@ -212,6 +212,26 @@ and sequence make repeated captures
 distinct, and the JSON records the capture ID and frame. Treat these as
 investigation artifacts, not golden-image compatibility promises.
 
+The native host also supports a lightweight opt-in JSONL breadcrumb recorder.
+It writes only fixed event names and correlation metadata (UTC and monotonic
+timestamps, thread ID, source, and request ID); it does not record file paths or
+event payloads. `--diagnostic-events` enables this recorder without enabling
+the inspector HUD or automatic F12 capture. `--diagnostics` and
+`--capture-dir=...` enable it alongside the existing diagnostics.
+
+```powershell
+.\tools\native_sdl_gpu.ps1 -DialogFixture -DialogInitialLocation none -DiagnosticEvents
+```
+
+The isolated folder-dialog fixture has no Caliber or application filesystem
+code. Repeat with `-DialogInitialLocation ordinary` and `extended`; use Cancel,
+choose a folder, reopen the dialog, and close the app while the dialog is open.
+The host prints the `events.jsonl` path. Dialog events mark request receipt,
+native invocation/return, callback entry/status/completion, UI-thread result
+dispatch, and shutdown. The recorder flushes each rare event so a process
+termination preserves the preceding boundary. This is lifecycle evidence, not
+a substitute for a platform crash dump or symbols matching the crashed binary.
+
 `tools/validate_images.ps1` on Windows or `sh tools/validate_images.sh` on
 macOS builds a small SDL_GPU readback probe. It samples a decoded QOI image,
 checks source-over RGB and alpha blending against a transparent-aware target,
