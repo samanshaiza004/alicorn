@@ -1,24 +1,28 @@
 # #109 completion proposal: retained sizing with Scratchpad and Punks
 
-Status: correctness fixes and initial two-app dogfooding are complete. Keep
+Status: correctness fixes and two-app dogfooding are complete. Keep
 [#109](https://github.com/samanshaiza004/alicorn/issues/109) open until the
-performance and native acceptance evidence below is collected.
+remaining consumer-side native acceptance and release-level measurements are
+recorded. Percentage width remains a narrow opt-in capability; do not expand
+the sizing algebra based on this evidence.
 
-Research date: 2026-10-29, America/Guatemala.
+Research date: 2026-10-29, America/Guatemala. Measurement update: Windows
+sidecar benchmark and consumer validation follow-up.
 
 ## Recommendation
 
-Finish the existing small vocabulary, repair two demonstrated correctness
-gaps, and evaluate Scratchpad's font picker plus Punks' results/deck layout.
-The intended outcome is a narrow GO for typed local sizing and retained
-definite-parent percentage width. Percentage height, intrinsic fit width,
-arbitrary allocated-parent percentages, and aspect-ratio syntax should receive
-an explicit deferred/NO-GO decision for this iteration.
+Retain the corrected helper-default normalization and the narrow,
+definite-parent percentage-width capability. Keep percentage width opt-in for
+the demonstrated Scratchpad case; the synthetic cost profile shows that
+per-dependent work becomes significant at high cardinality. Punks validates
+content-driven deck measurement but does not establish a need for more typed
+sizing syntax. Keep #109 open for consumer-level release measurements and
+native acceptance rather than expanding the vocabulary.
 
-This is a research decision gate, not a promise that every constructor inspired
-by another layout library will ship. If the second app does not benefit over a
-simplified legacy implementation, report that result and close the broader
-adoption experiment as NO-GO instead of manufacturing a second success.
+Defer percentage height, intrinsic fit width, arbitrary allocated-parent
+percentages, `allocated()`, and aspect-ratio syntax. This is a research decision
+record, not a commitment to ship every constructor inspired by another layout
+library.
 
 ## Implementation and dogfood update — 2026-10-30
 
@@ -79,38 +83,91 @@ same-update negotiation; by itself it does not prove a material advantage for
 the typed constructor. The main browser still uses the clear legacy
 `height=-1, grow=1` form. No `allocated()` constructor was added.
 
+Punks was subsequently advanced to `1fa568d`, adding a volume slider and
+separate Start/Pause and Stop controls. Test-only follow-up `0895b26` adds a
+narrow-window, 140%-text-scale retained-layout regression and a playback
+pause/resume/stop-position regression. All five Odin UI tests, 12 core/Caliber
+tests, and 55 audio tests passed. Three additional audio tests could not create
+temporary WAV files on this Windows host (`Access is denied`); these are
+environmental failures, not passing tests. The release executable built at
+`target/windows-x86_64/release/punks.exe`. Native interactive testing could not
+be completed because the desktop capture helper timed out, so real device/text
+scale behavior, transport interaction, and focus retention remain unverified.
+
 ### Scratchpad font-picker dogfood
 
-Scratchpad's working tree is at `c8a70be` and its local dependency lock points
-to Alicorn `974baf8`. Its ordinary Go package checks passed. The full Alicorn
-frontend run completed 200 tests: 197 passed and three connected-titlebar /
-sidebar-width geometry tests failed in pre-existing uncommitted changes to
-`app_layout.odin`, `connected_titlebar_test.odin`, and `main_test.odin`. The
-font-picker tests were among the passing tests. Those unrelated working-tree
-changes were preserved. Because the frontend run is not fully green, this is
-not a final Scratchpad acceptance pass.
+Scratchpad's clean `main` checkout is at `9e34426`, pinned to Alicorn
+`974baf86`. The focused five connected-titlebar tests pass against the current
+Alicorn checkout, including the narrow overflow and shared-split cases. A full
+frontend run is not established: the direct test harness could not start its
+staged backend (`backend is already running`), and an initial run lacked the
+required backend library. Treat that as incomplete harness validation, not as
+three confirmed product regressions. The width-cap regression covers 312, 900,
+then 852 logical units. Native font-picker focus/theme/scale acceptance remains
+unrecorded.
+
+### Percentage sidecar cost profile
+
+The new optimized Windows x64 headless benchmark compares fixed-width controls
+with the same retained tree using definite-parent percentage widths. It runs
+100 warmup and 2,000 measured frames per case, in five fresh processes, at 1,
+8, 32, 128, and 256 dependent children. Cached-region reuse is measured at a
+steady parent width; the resize trace alternates between 800 and 960 units and
+includes the real affected-child layout work. Results below are the median of
+the five process-level p95 values. Per-process ranges are retained in the raw
+capture linked from `benchmarks/diagnostics/README.md`.
+
+| Dependents | Same-width p95, fixed / percentage | Resize p95, fixed / percentage | Settled sidecar bytes | Same-width warm allocation calls, fixed / percentage |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 2.2 / 2.3 µs | 4.7 / 6.4 µs | 1,216 B | 10,000 / 10,000 |
+| 8 | 2.2 / 2.5 µs | 6.2 / 19.5 µs | 2,112 B | 10,000 / 10,000 |
+| 32 | 2.2 / 3.4 µs | 15.6 / 63.9 µs | 7,488 B | 10,000 / 10,000 |
+| 128 | 2.2 / 7.0 µs | 30.4 / 228.7 µs | 28,992 B | 10,000 / 10,000 |
+| 256 | 2.2 / 11.4 µs | 60.6 / 425.1 µs | 57,664 B | 10,000 / 10,000 |
+
+At one relationship, the steady cached-region overhead is small and process
+ranges overlap; resizing costs about 1.7 µs more at the median, including the
+dependent child's layout work. Cost grows materially with dependent count. At
+128 and 256 relationships, percentage invalidation and recomputation are
+measurable and expensive in this synthetic stress case. Keep percentage users
+sparse and opt-in; this result does not justify broad use on high-cardinality
+trees.
+
+No extra warm allocator calls were observed in the same-width trace. At 256
+children, both fixed and percentage variants gained exactly 20,480,000 bytes
+of live requested storage during resize traces and reached nearly identical
+post-trace peaks (44,572,964 / 44,630,628 bytes). This points to common layout
+growth in the stress fixture rather than storage attributable to the sidecar,
+but the large peak still limits conclusions about pathological trees and
+should be profiled separately. This benchmark is headless and does not measure
+complete native frame p95, GPU work, DPI changes, or consumer interaction.
 
 ### Decision and remaining closure gate
 
 The two correctness defects are resolved, and both consumers now exercise the
-intended sizing behavior. The evidence supports retaining the narrow typed
-fixed/fit declarations and continuing the definite-parent percentage-width
-prototype. It does not yet satisfy #109's full decision gate:
+intended sizing behavior. The Punks transition demonstrates same-update
+content-driven deck measurement; the Scratchpad font picker demonstrates
+parent-relative width and a releasing cap. The percentage cost profile supports
+keeping the feature for sparse, real relationships, while discouraging broad
+high-cardinality use. It does not yet satisfy #109's full decision gate:
 
-- No five-process release comparison has measured p95 layout/description,
-  warm allocations, sidecar capacity/peak bytes, cache hits/misses, or idle
-  work for the Scratchpad percentage case and ordinary nonpercentage trees.
-- The Punks candidate has deterministic geometry evidence but no native
-  DPI/text-scale/theme interaction record or complete-frame p95 comparison.
-- Scratchpad's full frontend suite needs a green rerun after its existing
-  connected-titlebar work is resolved; native font-picker focus/theme/scale
-  acceptance also remains unrecorded here.
+- The five-process headless profile is synthetic. A representative Scratchpad
+  release comparison still needs complete-frame p95, description/layout work,
+  cache behavior, and idle-work evidence for percentage and zero-percentage
+  trees.
+- Punks' latest narrow/text-scale layout and transport tests pass, but native
+  Windows interaction and a complete-frame p95 comparison remain outstanding.
+- Scratchpad's five focused titlebar tests pass, but its full frontend suite
+  could not start the staged backend in this environment. Native font-picker
+  focus/theme/scale acceptance also remains unrecorded.
 
 Do not add `allocated()`, percentage height, aspect ratio, or a general solver
 to close this evidence gap. The current decision is: retain the corrected
-fixed/fit normalization, keep percentage width experimental pending cost and
-native evidence, and defer `allocated()` unless another real consumer shows
-that `height=-1, grow=1` is unclear enough to justify the extra syntax.
+fixed/fit normalization; keep definite-parent percentage width as a narrow,
+opt-in feature for demonstrated cases; and defer `allocated()` unless another
+real consumer shows that `height=-1, grow=1` is unclear enough to justify the
+extra syntax. #109 remains open pending the consumer-level performance and
+native acceptance evidence above.
 
 ## Source baseline
 

@@ -36,3 +36,26 @@ $ProbeAccessKit = Get-AlicornAccessKit
 odin build benchmarks\diagnostics\issue109_sizing_probe.odin -file -collection:alicorn=. "-extra-linker-flags:$($ProbeAccessKit.LinkerFlags)" -out:out\issue109_sizing_probe.exe
 .\out\issue109_sizing_probe.exe
 ```
+
+`issue109_percent_sidecar_benchmark.odin` compares the optional retained
+percentage-width sidecar with the same retained tree using fixed child widths.
+It measures unchanged cached-region reuse and alternating parent-width changes
+at 1, 8, 32, 128, and 256 relationships, including p95, requested persistent
+bytes, allocator calls, and layout updates. Build with `-o:speed`; collect five
+fresh processes and retain each raw capture. The synthetic resize trace includes
+the layout work caused by changing child widths, so it is a cost profile rather
+than an isolated map-iteration microbenchmark.
+
+```powershell
+. .\tools\common.ps1
+$ProbeAccessKit = Get-AlicornAccessKit
+$Odin = Resolve-AlicornOdin
+& $Odin build benchmarks\diagnostics\issue109_percent_sidecar_benchmark.odin `
+    -file -o:speed -collection:alicorn=. `
+    "-extra-linker-flags:$($ProbeAccessKit.LinkerFlags)" `
+    -out:out\issue109_percent_sidecar_benchmark.exe
+1..5 | ForEach-Object { .\out\issue109_percent_sidecar_benchmark.exe }
+```
+
+The Windows capture from 2026-10-30 is in
+[`raw/issue109-percent-sidecar-windows-2026-10-30.txt`](raw/issue109-percent-sidecar-windows-2026-10-30.txt).
