@@ -1,5 +1,7 @@
 package alicorn
 
+import "core:sync"
+
 // Retained motion binds analytic responses to a live retained identity. The
 // runtime owns only targets and sampled presentation values; application
 // state and geometry negotiation remain authoritative outside this sidecar.
@@ -10,7 +12,11 @@ MOTION_F32_MAX :: f64(3.4028234663852886e38)
 // owner count so a fully nested path remains finite in f32 composition.
 MOTION_TRANSLATION_COMPONENT_MAX :: MOTION_F32_MAX / f64(MOTION_RETAINED_MAX_OWNERS*2)
 
+@(private)
+motion_runtime_identity_sequence: u64
+
 Motion_Owner_Handle :: struct {
+	runtime_identity: u64,
 	node: Node_ID,
 	generation: u64,
 }
@@ -22,6 +28,7 @@ Motion_Runtime_Status :: enum {
 	Owner_Not_Retained,
 	Stale_Owner,
 	Owner_Limit,
+	Runtime_Identity_Limit,
 	Invalid_Value,
 	Invalid_Configuration,
 	Time_Rewound,
@@ -82,17 +89,41 @@ motion_runtime_status :: proc(status: Motion_Status) -> Motion_Runtime_Status {
 	return .Invalid_Value
 }
 
+// Each runtime lifetime receives one process-unique identity, assigned lazily
+// when it first creates a motion owner. Relaxed atomic ordering is sufficient:
+// the counter only allocates distinct scalar IDs and publishes no other state.
+motion_runtime_identity_next :: proc() -> (identity: u64, valid: bool) {
+	current := sync.atomic_load_explicit(&motion_runtime_identity_sequence, .Relaxed)
+	for {
+		if current == u64(0xffffffffffffffff) { return 0, false }
+		previous, exchanged := sync.atomic_compare_exchange_strong_explicit(
+			&motion_runtime_identity_sequence,
+			current,
+			current+1,
+			.Relaxed,
+			.Relaxed,
+		)
+		if exchanged { return current+1, true }
+		current = previous
+	}
+}
+
 motion_owner_begin :: proc(rt: ^Runtime, owner: Node_ID) -> (handle: Motion_Owner_Handle, status: Motion_Runtime_Status) {
 	if rt == nil { return {}, .Invalid_Runtime }
 	if owner == 0 { return {}, .Invalid_Owner }
 	if node, found := rt.nodes[owner]; !found || node == nil || !node.active {
 		return {}, .Owner_Not_Retained
 	}
+	if rt.motion_runtime_identity == 0 {
+		identity, valid := motion_runtime_identity_next()
+		if !valid { return {}, .Runtime_Identity_Limit }
+		rt.motion_runtime_identity = identity
+	}
 	if rt.motion_owners == nil {
 		rt.motion_owners = make(map[Node_ID]Motion_Retained_Owner, allocator=rt.persistent_allocator)
 	}
 	if current, found := rt.motion_owners[owner]; found {
-		return Motion_Owner_Handle{owner, current.generation}, .Ok
+		return Motion_Owner_Handle{rt.motion_runtime_identity, owner, current.generation}, .Ok
 	}
 	if len(rt.motion_owners) >= MOTION_RETAINED_MAX_OWNERS || rt.motion_generation_sequence == u64(0xffffffffffffffff) {
 		return {}, .Owner_Limit
@@ -106,11 +137,14 @@ motion_owner_begin :: proc(rt: ^Runtime, owner: Node_ID) -> (handle: Motion_Owne
 		translation_deadline_established=true,
 	}
 	rt.motion_owners[owner] = state
-	return Motion_Owner_Handle{owner, state.generation}, .Ok
+	return Motion_Owner_Handle{rt.motion_runtime_identity, owner, state.generation}, .Ok
 }
 
 motion_owner_is_current :: proc(rt: ^Runtime, handle: Motion_Owner_Handle) -> bool {
-	if rt == nil || rt.motion_owners == nil || handle.node == 0 || handle.generation == 0 { return false }
+	if rt == nil || rt.motion_owners == nil || rt.motion_runtime_identity == 0 ||
+		handle.runtime_identity != rt.motion_runtime_identity || handle.node == 0 || handle.generation == 0 {
+		return false
+	}
 	state, found := rt.motion_owners[handle.node]
 	if !found || state.generation != handle.generation { return false }
 	node, node_found := rt.nodes[handle.node]
@@ -409,6 +443,21 @@ motion_tick :: proc(rt: ^Runtime, at: Motion_Time) -> Motion_Tick_Result {
 motion_retire_owner :: proc(rt: ^Runtime, owner: Node_ID) {
 	if rt == nil || rt.motion_owners == nil { return }
 	delete_key(&rt.motion_owners, owner)
+}
+
+// motion_owner_release cancels an owner's current motion, removes its sidecar
+// record, and leaves the retained node alive. Releasing resets its presentation
+// to the neutral transform and opacity on the next composition; callers that
+// need another resting presentation should commit that state before releasing.
+motion_owner_release :: proc(rt: ^Runtime, handle: Motion_Owner_Handle) -> Motion_Runtime_Status {
+	if rt == nil { return .Invalid_Runtime }
+	if !motion_owner_is_current(rt, handle) { return .Stale_Owner }
+	state := rt.motion_owners[handle.node]
+	visible_change := state.presented_translation != [2]f32{} ||
+		(state.has_opacity && state.presented_opacity != 1)
+	delete_key(&rt.motion_owners, handle.node)
+	if visible_change { motion_request_presentation(rt, "retained motion owner released") }
+	return .Ok
 }
 
 // Motion geometry is paint-only. Ancestor translation is accumulated through

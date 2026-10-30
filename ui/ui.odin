@@ -76,6 +76,14 @@ motion_owner_begin :: proc(ctx: ^UI, owner: Node_ID) -> (Motion_Owner_Handle, Mo
 	return alicorn.motion_owner_begin(ctx.runtime, owner)
 }
 
+// motion_owner_release cancels an owner's motion and releases its sparse
+// sidecar record. The retained node remains; its motion presentation resets to
+// the neutral transform and opacity on the next composition.
+motion_owner_release :: proc(ctx: ^UI, handle: Motion_Owner_Handle) -> Motion_Runtime_Status {
+	if ctx == nil || ctx.runtime == nil { return .Invalid_Runtime }
+	return alicorn.motion_owner_release(ctx.runtime, handle)
+}
+
 // motion_opacity retargets the owner's compositor opacity using the analytic
 // response policy. Opacity is clamped to [0,1] when presented.
 motion_opacity :: proc(

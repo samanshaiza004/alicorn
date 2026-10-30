@@ -1158,8 +1158,13 @@ system file drops or arbitrary MIME payloads.
 - `Runtime_Config` optionally configures persistent and scratch backing
   allocators when calling `new_runtime`.
 - Opt-in retained motion is bound to a live `Node_ID` through
-  `motion_owner_begin`; the returned handle includes a runtime-local generation
-  so retirement and identity reuse invalidate old handles. `motion_opacity`
+  `motion_owner_begin`; the returned handle carries a process-unique runtime
+  lifetime identity and runtime-local owner generation, so cross-runtime use,
+  retirement, release, and identity reuse invalidate old handles.
+  `motion_owner_release` cancels and removes an owner's sidecar while keeping
+  the node alive; it resets presentation to neutral translation and opacity on
+  the next composition. Commit a different resting presentation before release
+  if snapping back to neutral is not appropriate. `motion_opacity`
   and `motion_translation` accept typed targets, a `Motion_Config`, an
   explicit `Settle` / `Direct` / `Snap` mode, and an injected `Motion_Time`.
   The first `Settle` starts from neutral presentation (opacity 1, translation

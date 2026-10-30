@@ -114,13 +114,78 @@ test_retained_motion_sidecar_enforces_global_owner_bound :: proc(t: ^testing.T) 
 	container_end(&ui)
 	end_frame(&ui)
 	last_status := Motion_Runtime_Status.Ok
+	first_handle: Motion_Owner_Handle
 	for index in 0..<MOTION_RETAINED_MAX_OWNERS+1 {
-		_, status := motion_owner_begin(&rt, owners[index])
+		handle, status := motion_owner_begin(&rt, owners[index])
+		if index == 0 { first_handle = handle }
 		if index == MOTION_RETAINED_MAX_OWNERS { last_status = status }
 		else { testing.expect(t, status == .Ok, "every owner below the explicit global bound should be accepted") }
 	}
 	testing.expect(t, last_status == .Owner_Limit && len(rt.motion_owners) == MOTION_RETAINED_MAX_OWNERS,
 		"the sparse sidecar should reject excess retained owners without growing unboundedly")
+	testing.expect(t, motion_owner_release(&rt, first_handle) == .Ok && rt.nodes[owners[0]].active &&
+		len(rt.motion_owners) == MOTION_RETAINED_MAX_OWNERS-1,
+		"releasing an owner should free its sidecar slot without retiring the retained node")
+	_, replacement_status := motion_owner_begin(&rt, owners[MOTION_RETAINED_MAX_OWNERS])
+	testing.expect(t, replacement_status == .Ok && len(rt.motion_owners) == MOTION_RETAINED_MAX_OWNERS &&
+		motion_presentation(&rt, first_handle).status == .Stale_Owner,
+		"a released slot should be reusable while the old generation remains invalid")
+}
+
+@(test)
+test_retained_motion_handles_are_isolated_between_runtimes :: proc(t: ^testing.T) {
+	rt_a := new_runtime(Rect{0, 0, 240, 120})
+	defer destroy_runtime(&rt_a)
+	rt_b := new_runtime(Rect{0, 0, 240, 120})
+	defer destroy_runtime(&rt_b)
+	_, node_a, _ := motion_retained_test_build(&rt_a, true)
+	_, node_b, _ := motion_retained_test_build(&rt_b, true)
+	testing.expect(t, node_a == node_b, "independent runtimes should reproduce the same retained Node_ID for this fixture")
+	handle_a, status_a := motion_owner_begin(&rt_a, node_a)
+	handle_b, status_b := motion_owner_begin(&rt_b, node_b)
+	if status_a != .Ok || status_b != .Ok {
+		testing.expect(t, false, "both runtimes should register their corresponding live nodes")
+		return
+	}
+	testing.expect(t, handle_a.runtime_identity != 0 && handle_b.runtime_identity != 0 &&
+		handle_a.runtime_identity != handle_b.runtime_identity && handle_a.generation == handle_b.generation,
+		"runtime lifetime identity should distinguish handles even when node and local generation match")
+	config := Motion_Config{omega=10, position_tolerance=0.001, velocity_tolerance=0.001}
+	testing.expect(t, motion_target_translation(&rt_a, handle_b, Motion_Vector2{8, 0}, config, .Snap, Motion_Time(0)) == .Stale_Owner &&
+		motion_target_translation(&rt_b, handle_a, Motion_Vector2{8, 0}, config, .Snap, Motion_Time(0)) == .Stale_Owner &&
+		motion_presentation(&rt_a, handle_b).status == .Stale_Owner && motion_presentation(&rt_b, handle_a).status == .Stale_Owner,
+		"neither runtime should accept another runtime's motion handle for the same retained identity")
+}
+
+@(test)
+test_retained_motion_release_resets_presentation_without_retiring_node :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 120})
+	defer destroy_runtime(&rt)
+	_, child, _ := motion_retained_test_build(&rt, true)
+	handle, status := motion_owner_begin(&rt, child)
+	if status != .Ok { testing.expect(t, false, "fixture node should acquire a motion owner"); return }
+	config := Motion_Config{omega=10, position_tolerance=0.001, velocity_tolerance=0.001}
+	testing.expect(t, motion_target_translation(&rt, handle, Motion_Vector2{12, -3}, config, .Snap, Motion_Time(0)) == .Ok &&
+		motion_target_opacity(&rt, handle, 0.4, config, .Snap, Motion_Time(0)) == .Ok,
+		"fixture motion should establish a non-neutral presentation")
+	ui, ready := begin_presentation_frame(&rt)
+	if ready { end_presentation_frame(&ui) }
+	command, found := motion_retained_test_find_command(&rt, child)
+	testing.expect(t, ready && found && command.translation == [2]f32{12, -3} && command.opacity == 0.4,
+		"the fixture should first display its committed motion values")
+	testing.expect(t, motion_owner_release(&rt, handle) == .Ok && rt.nodes[child].active && rt.presentation_pending,
+		"releasing non-neutral motion should retain the node and request one composition to reset it")
+	new_ui, reset_ready := begin_presentation_frame(&rt)
+	if reset_ready { end_presentation_frame(&new_ui) }
+	reset, reset_found := motion_retained_test_find_command(&rt, child)
+	_, record_found := rt.motion_owners[child]
+	testing.expect(t, reset_ready && reset_found && reset.translation == [2]f32{} && reset.opacity == 1 && !record_found &&
+		motion_owner_release(&rt, handle) == .Stale_Owner,
+		"release should reset only the paint presentation, remove the record, and invalidate the old handle")
+	new_handle, new_status := motion_owner_begin(&rt, child)
+	testing.expect(t, new_status == .Ok && new_handle.generation != handle.generation &&
+		new_handle.runtime_identity == handle.runtime_identity,
+		"re-registering the still-live node should preserve runtime identity and issue a new owner generation")
 }
 
 @(test)
@@ -148,10 +213,14 @@ test_retained_motion_samples_and_retires_without_history_dependent_work :: proc(
 		"at the certified deadline the target is exact and no active motion work remains")
 	ui, ready := begin_presentation_frame(&rt)
 	if ready { end_presentation_frame(&ui) }
-	unchanged := motion_tick(&rt, Motion_Time(i64(deadline)+100_000_000))
-	testing.expect(t, unchanged.status == .Ok && unchanged.changed_owners == 0 && unchanged.active_properties == 0 &&
-		!rt.presentation_pending,
-		"settled motion returns to zero scheduled presentation work")
+	for opportunity in 0..<5 {
+		at := Motion_Time(i64(deadline)+100_000_000+i64(opportunity)*100_000_000)
+		unchanged := motion_tick(&rt, at)
+		_, ready := begin_presentation_frame(&rt)
+		testing.expect(t, unchanged.status == .Ok && unchanged.changed_owners == 0 && unchanged.active_properties == 0 &&
+			unchanged.active_owners == 0 && unchanged.unestablished_deadlines == 0 && !rt.presentation_pending && !ready,
+			"repeated presentation opportunities after settlement should produce no active motion or scheduled frame")
+	}
 }
 
 @(test)
