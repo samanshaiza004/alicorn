@@ -33,6 +33,11 @@ Alicorn, and run the native starter.
 - [Native application packaging](packaging.md).
 - [Performance evidence](performance.md) and the [benchmark index](benchmarks/README.md).
 
+## Active research
+
+- [#109 sizing completion proposal](research/issue-109-completion-plan.md) —
+  retained percentage dependencies and the Scratchpad/Punks adoption gate.
+
 ## Platform status and validation
 
 - [Current validation records and runbooks](validation/README.md).
