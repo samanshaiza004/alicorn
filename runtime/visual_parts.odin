@@ -254,9 +254,6 @@ visual_part_label_color :: proc(rt: ^Runtime, node_id: Node_ID) -> (color: Color
 	if !tagged || !part.defined || !visual_part_has_core_role(rt, node_id, part.owner, .Label) { return }
 	owner, exists := rt.nodes[part.owner]
 	if !exists || !owner.active || owner.kind != .Button { return }
-	if surface, connected := rt.semantic_surfaces[owner.id]; connected && surface.shape.kind == .Connected_Tab && owner.selected {
-		return owner.color, true
-	}
 	hovered := visual_part_owner_hovered(rt, owner.id)
 	resolved := style_button_resolve_retained(rt, owner, Button_Visual_State{
 		selected=owner.selected,
@@ -264,6 +261,10 @@ visual_part_label_color :: proc(rt: ^Runtime, node_id: Node_ID) -> (color: Color
 		pressed=owner.pressed,
 		disabled=owner.disabled,
 	}, owner.drop_position == .On)
+	if surface, connected := rt.semantic_surfaces[owner.id]; connected && surface.shape.kind == .Connected_Tab {
+		_, text := connected_tab_visual_colors(rt, owner, resolved, hovered, owner.pressed, owner.drop_position == .On)
+		return text, true
+	}
 	return resolved.text, true
 }
 

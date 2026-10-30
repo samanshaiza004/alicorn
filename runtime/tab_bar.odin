@@ -59,6 +59,54 @@ DEFAULT_TAB_BAR_STYLE :: Layout_Style{
 	clip=true,
 }
 
+// Connected tabs share one contour; selection changes their paint treatment
+// and visual depth without changing their retained bounds or hit targets.
+CONNECTED_TAB_INACTIVE_DROP :: f32(3)
+
+connected_tab_visual_bounds :: proc(bounds: Rect, selected: bool) -> Rect {
+	if selected { return bounds }
+	drop := minf(CONNECTED_TAB_INACTIVE_DROP, maxf(bounds.h, 0))
+	return Rect{bounds.x, bounds.y+drop, bounds.w, maxf(bounds.h-drop, 0)}
+}
+
+connected_tab_visual_colors :: proc(
+	rt: ^Runtime,
+	node: ^Node,
+	resolved: Button_Resolved_Style,
+	hovered: bool,
+	pressed: bool,
+	drop_target_on: bool,
+) -> (fill, text: Color) {
+	if rt == nil || node == nil { return }
+	fill = style_color_mix(
+		style_environment_color(rt, node.style_environment, .Window_Background),
+		resolved.surface,
+		0.68,
+	)
+	// Tab's shared recipe intentionally keeps a transparent surface. Use its
+	// themed workbench channels for the contour, then add only a small state
+	// cue so inactive tabs stay recessed without becoming indistinguishable.
+	fill.a = 1
+	if hovered { fill = style_color_mix(fill, style_environment_color(rt, node.style_environment, .Border), 0.12) }
+	if pressed { fill = style_color_mix(fill, style_environment_color(rt, node.style_environment, .Border), 0.28) }
+	if drop_target_on { fill = style_color_mix(fill, style_environment_color(rt, node.style_environment, .Success), 0.32) }
+	text = resolved.text
+	if node.selected {
+		if surface, exists := rt.semantic_surfaces[node.id]; exists && surface.shape.kind == .Connected_Tab {
+			if surface.fill_override_set {
+				fill = surface.fill_override
+			} else if role_color, role_ok := semantic_surface_role_resolve(rt, node.style_environment, surface.role); role_ok {
+				fill = role_color
+			}
+		}
+		text = node.color
+	}
+	if node.style_environment.accessibility.increased_contrast {
+		text = style_contrast_fallback(text, fill, 4.5)
+	}
+	return
+}
+
 Tab_Bar_Action :: enum { None, Select, Close }
 
 Tab_Bar_Result :: struct {
@@ -288,22 +336,28 @@ tab_bar :: proc(
 		pending.paint_value |= 1 << 5 // selected underline is a composed surface part
 		if item.closable { pending.paint_value |= 1 << 3 }
 		if item.dirty { pending.paint_value |= 1 << 4 }
-		connected := opts.appearance == .Connected && item.selected
-		connected_ink := style_color(ui, .Text)
-		if connected {
+		connected_shape := connected_appearance
+		selected_connected := connected_shape && item.selected
+		connected_ink := style_color(ui, .Muted_Text)
+		if connected_shape {
 			fill := style_color(ui, .Surface)
 			ink := style_color(ui, .Text)
-			if opts.selected_fill_set && semantic_surface_color_is_valid(opts.selected_fill) && semantic_surface_color_is_valid(opts.selected_text) {
+			fill_override_set := false
+			if selected_connected && opts.selected_fill_set && semantic_surface_color_is_valid(opts.selected_fill) && semantic_surface_color_is_valid(opts.selected_text) {
 				fill, ink = opts.selected_fill, opts.selected_text
+				fill_override_set = true
 			}
-			if rt.style_environment.accessibility.increased_contrast { ink = style_contrast_fallback(ink, fill, 4.5) }
 			rt.pending[len(rt.pending)-1].semantic_surface_style = Semantic_Surface_Style{
 				defined=true, role=surface_core_color_role(.Surface),
-				fill_override=fill, fill_override_set=true,
+				fill_override=fill, fill_override_set=fill_override_set,
 				shape=Surface_Shape{kind=.Connected_Tab},
 			}
-			pending.color = ink
-			connected_ink = ink
+			if selected_connected {
+				if !fill_override_set { fill, ink = style_color(ui, .Surface), style_color(ui, .Text) }
+				if rt.style_environment.accessibility.increased_contrast { ink = style_contrast_fallback(ink, fill, 4.5) }
+				pending.color = ink
+				connected_ink = ink
+			}
 		}
 		item_semantic_id := item.semantic_id
 		if !semantic_id_is_valid(item_semantic_id) { item_semantic_id = semantic_visual_id(tab_id) }
@@ -359,7 +413,7 @@ tab_bar :: proc(
 			append(&italic_span, Text_Style_Span{start=0, end=len(item.label), italic=true, italic_set=true})
 			_ = text_style_spans(ui, label_id, italic_span[:])
 		}
-		if item.label_muted && !connected && len(item.label) > 0 {
+		if item.label_muted && !selected_connected && len(item.label) > 0 {
 			muted_span := make([dynamic]Text_Paint_Span, 0, 1, allocator=context.temp_allocator)
 			append(&muted_span, Text_Paint_Span{
 				start=0,
@@ -413,7 +467,7 @@ tab_bar :: proc(
 				}
 				close_id, close_activated := button_begin(
 					ui,
-					"×" if !dirty_close_reveal && !connected else "",
+					"×" if !dirty_close_reveal && !connected_shape else "",
 					key=key_u64(5),
 					style=layout_style(.Row, width=close_width, height=TAB_CLOSE_CONTROL_SIZE, align=.Center),
 					text_style=DEFAULT_BUTTON_TEXT_STYLE,
@@ -428,7 +482,7 @@ tab_bar :: proc(
 				_ = visual_part_attach(ui, close_id, tab_id, visual_part_core(.Overlay), close_visibility,
 					reveal_on_direct_hover=dirty_close_reveal)
 				if close_activated && result.action == .None { result.action, result.item_index = .Close, index }
-				if connected && !dirty_close_reveal {
+				if connected_shape && !dirty_close_reveal {
 					glyph := text(ui, "×", key=key_u64(1), style=layout_style(.Row, width=close_width, height=TAB_CLOSE_CONTROL_SIZE, align=.Center), text_style=DEFAULT_BUTTON_TEXT_STYLE)
 					_ = visual_part_attach(ui, glyph, tab_id, visual_part_core(.Label))
 				}
@@ -454,7 +508,7 @@ tab_bar :: proc(
 						style=layout_style(.Row, width=TAB_CLOSE_CONTROL_SIZE, height=TAB_CLOSE_CONTROL_SIZE, align=.Center),
 						text_style=DEFAULT_BUTTON_TEXT_STYLE)
 					_ = visual_part_attach(ui, glyph_id, close_id, visual_part_core(.Label), .Owner_Hovered)
-					if connected {
+					if selected_connected {
 						span := [1]Text_Paint_Span{{start=0,end=2,color=connected_ink,color_set=true}}
 						_ = text_paint_spans(ui,glyph_id,span[:])
 					}
@@ -469,7 +523,7 @@ tab_bar :: proc(
 			ui,
 			surface_core_color_role(.Accent),
 			key=key_u64(6),
-			style=layout_style(.Row, height=track_height if item.selected && !connected else 0),
+			style=layout_style(.Row, height=track_height if item.selected && !selected_connected else 0),
 			label="tab-selected-indicator",
 		)
 		_ = visual_part_attach(ui, indicator_id, tab_id, visual_part_core(.Selected_Indicator))

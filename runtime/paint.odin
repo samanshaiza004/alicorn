@@ -427,7 +427,8 @@ update_paint :: proc(rt: ^Runtime) {
 				text_clip := rect_intersection(node.clip, content_bounds)
 				text_color := style_environment_color(rt, node.style_environment, .Text)
 				connected_style, connected := rt.semantic_surfaces[node.id]
-				connected = connected && connected_style.shape.kind == .Connected_Tab && node.selected
+				connected = connected && connected_style.shape.kind == .Connected_Tab
+				selected_connected := connected && node.selected
 				parent_is_context_menu := false
 				if parent, ok := rt.nodes[node.parent]; ok {
 					parent_is_context_menu = parent.kind == .Context_Menu_Panel
@@ -456,8 +457,12 @@ update_paint :: proc(rt: ^Runtime) {
 					}, node.drop_position == .On)
 					text_color = resolved_style.text
 					if connected {
-						text_color = node.color
-						append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, connected_style.fill_override, shape=connected_style.shape))
+						connected_fill, connected_text := connected_tab_visual_colors(
+							rt, node, resolved_style, hovered, node.pressed, node.drop_position == .On,
+						)
+						text_color = connected_text
+						decoration_bounds := connected_tab_visual_bounds(node.bounds, node.selected)
+						append(&node.paint, paint_surface_command(node.id, decoration_bounds, node.clip, connected_fill, shape=connected_style.shape))
 					} else if resolved_style.surface.a > 0 {
 						append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, resolved_style.surface, shape=resolved_style.shape, material=resolved_style.material, physical_height=resolved_style.physical_height))
 					}
@@ -467,7 +472,7 @@ update_paint :: proc(rt: ^Runtime) {
 						append(&node.paint, paint_surface_command(node.id, indicator, node.clip, resolved_style.selected_indicator_color))
 					}
 					if node.semantic_active { append_focus_outline(node, resolved_style.semantic_active, style_structural_border_thickness(node.style_environment), resolved_style.shape) }
-					if connected && (node.style_environment.accessibility.increased_contrast || node.style_environment.accessibility.differentiate_without_color) {
+					if selected_connected && (node.style_environment.accessibility.increased_contrast || node.style_environment.accessibility.differentiate_without_color) {
 						// Keep a non-color selection cue above the seam rather than
 						// reinstating the underline across the paper connection.
 						marker := Rect{node.bounds.x+24, node.bounds.y+5, maxf(node.bounds.w-48, 0), 2}
