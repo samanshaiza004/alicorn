@@ -93,17 +93,18 @@ motion :: proc(
 	target: Motion_Target,
 	intent: Motion_Intent = .Settle,
 	reveal_offset: Motion_Vector2 = {},
+	loc := #caller_location,
 ) -> Motion_Runtime_Status {
 	if ctx == nil || ctx.runtime == nil { return .Invalid_Runtime }
-	return alicorn.motion_intent_queue(ctx.runtime, owner, target, intent, reveal_offset)
+	return alicorn.motion_intent_queue(ctx.runtime, owner, target, intent, reveal_offset, loc=loc)
 }
 
 // motion_owner_release cancels an owner's motion and releases its sparse
 // sidecar record. The retained node remains; its motion presentation resets to
 // the neutral transform and opacity on the next composition.
-motion_owner_release :: proc(ctx: ^UI, handle: Motion_Owner_Handle) -> Motion_Runtime_Status {
+motion_owner_release :: proc(ctx: ^UI, handle: Motion_Owner_Handle, loc := #caller_location) -> Motion_Runtime_Status {
 	if ctx == nil || ctx.runtime == nil { return .Invalid_Runtime }
-	return alicorn.motion_owner_release(ctx.runtime, handle)
+	return alicorn.motion_owner_release(ctx.runtime, handle, loc=loc)
 }
 
 // motion_opacity retargets the owner's compositor opacity using the analytic

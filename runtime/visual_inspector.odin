@@ -7,7 +7,7 @@ INSPECTOR_CAUSE_LIMIT :: 20
 INSPECTOR_ROW_HEIGHT :: f32(28)
 INSPECTOR_LINE_HEIGHT :: f32(24)
 
-Inspector_Tab :: enum { Tree, Focus, Work, Causes }
+Inspector_Tab :: enum { Tree, Focus, Work, Causes, Motion }
 
 // The host owns this state and a separate Runtime used to describe the panel.
 // IDs in selected/collapsed belong to the inspected Runtime; they are never
@@ -35,6 +35,15 @@ Inspector_Host_Summary :: struct {
 	build_ms: f64,
 	encode_ms: f64,
 	submit_ms: f64,
+	motion_samples: u64,
+	motion_timer_wakes: u64,
+	motion_restore_samples: u64,
+	motion_coalesced_owners: u64,
+	motion_bounded_snaps: u64,
+	motion_sample_ns: u64,
+	motion_sample_max_ns: u64,
+	motion_max_active_owners: u64,
+	motion_max_lateness_ns: u64,
 }
 
 Inspector_Tree_Row :: struct {
@@ -94,6 +103,7 @@ inspector_overlay_source_fingerprint :: proc(inspected: ^Runtime) -> u64 {
 	h = hash_mix(h, inspected.submitted_revision)
 	h = hash_mix(h, inspected.stats.gpu_submits)
 	h = hash_mix(h, inspected.trace.sequence)
+	if inspected.motion_diagnostics != nil { h = hash_mix(h, inspected.motion_diagnostics.revision) }
 	h = hash_mix(h, inspected.stats.frames_built)
 	h = hash_mix(h, u64(inspected.focused))
 	h = hash_mix(h, u64(inspected.selected))
@@ -376,6 +386,20 @@ inspector_overlay_work :: proc(ui: ^UI, inspected: ^Runtime, host: ^Inspector_Ho
 	append(&lines,fmt.tprintf("Nodes: created=%d retired=%d adjacency=%d",stats.nodes_created,stats.nodes_retired,stats.adjacency_rebuilds))
 	append(&lines,fmt.tprintf("Pointer events=%d hover transitions=%d",stats.pointer_events,stats.hover_target_transitions))
 	append(&lines,fmt.tprintf("GPU submits=%d surface updates=%d",stats.gpu_submits,stats.surface_updates))
+	activity := motion_activity(inspected)
+	motion_stats := motion_diagnostics_stats(inspected)
+	append(&lines,fmt.tprintf("Motion retained=%d active owners=%d properties=%d unestablished deadlines=%d",
+		len(inspected.motion_owners), activity.active_owners, activity.active_properties, activity.unestablished_deadlines))
+	append(&lines,fmt.tprintf("Motion trace=%d/%d evictions=%d declarations=%d coalesced=%d no-op=%d",
+		motion_diagnostics_event_count(inspected), MOTION_DIAGNOSTIC_EVENT_CAPACITY, motion_stats.trace_evictions,
+		motion_stats.intent_declarations, motion_stats.declarations_coalesced, motion_stats.unchanged_target_noops))
+	append(&lines,fmt.tprintf("Motion retargets=%d mode changes=%d settled=%d failures=%d",
+		motion_stats.retargets, motion_stats.mode_changes, motion_stats.settlements, motion_stats.failures))
+	append(&lines,fmt.tprintf("Motion headless samples=%d owner visits=%d property samples=%d",
+		motion_stats.sample_ticks, motion_stats.owner_visits, motion_stats.property_samples))
+	append(&lines,fmt.tprintf("Motion frames requested=%d coalesced=%d acknowledged=%d",
+		motion_stats.presentation_requests, motion_stats.presentation_requests_coalesced,
+		motion_stats.presentation_submissions))
 	append(&lines,fmt.tprintf("Invalidation: %s",inspected.last_invalidation_reason))
 	if allocation := inspected.allocation_stats; allocation != nil {
 		append(&lines,fmt.tprintf("Persistent bytes: live=%d peak=%d",allocation.persistent_requested_bytes_live,allocation.persistent_requested_bytes_peak))
@@ -387,9 +411,115 @@ inspector_overlay_work :: proc(ui: ^UI, inspected: ^Runtime, host: ^Inspector_Ho
 		append(&lines,fmt.tprintf("App submits=%d inspector submits=%d",host.application_submits,host.overlay_submits))
 		append(&lines,fmt.tprintf("Total event=%.3f ms build=%.3f ms",host.event_ms,host.build_ms))
 		append(&lines,fmt.tprintf("Total encode=%.3f ms submit=%.3f ms",host.encode_ms,host.submit_ms))
+		append(&lines,fmt.tprintf("Motion host samples=%d timer wakes=%d restore samples=%d",
+			host.motion_samples, host.motion_timer_wakes, host.motion_restore_samples))
+		append(&lines,fmt.tprintf("Motion coalesced owners=%d bounded snaps=%d max active=%d",
+			host.motion_coalesced_owners, host.motion_bounded_snaps, host.motion_max_active_owners))
+		append(&lines,fmt.tprintf("Motion sampling total=%.3f ms max=%.3f ms max lateness=%.3f ms",
+			f64(host.motion_sample_ns)/1_000_000, f64(host.motion_sample_max_ns)/1_000_000,
+			f64(host.motion_max_lateness_ns)/1_000_000))
 	}
 	if inspected.hard_error { append(&lines,"",fmt.tprintf("HARD ERROR: %s",inspected.diagnostic)) }
 	inspector_overlay_lines(ui,lines[:],"inspector-work",height)
+}
+
+inspector_overlay_motion_property_lines :: proc(
+	lines: ^[dynamic]string,
+	name: string,
+	property: Motion_Property_Snapshot,
+	units: string,
+) {
+	if !property.has_value { append(lines, fmt.tprintf("%s: not declared", name)); return }
+	append(lines, fmt.tprintf("%s: mode=%v active=%t", name, property.mode, property.active))
+	if units == "opacity" {
+		append(lines, fmt.tprintf("  target=%.6f presented=%.6f residual=%.6f velocity=%.6f %s/s",
+			property.target.x, property.presented.x, property.residual.x, property.velocity.x, units))
+		append(lines, fmt.tprintf("  tolerances: position ε=%.6g %s; velocity ε=%.6g %s/s",
+			property.config.position_tolerance, units, property.config.velocity_tolerance, units))
+	} else {
+		append(lines, fmt.tprintf("  target=(%.4f, %.4f) presented=(%.4f, %.4f)",
+			property.target.x, property.target.y, property.presented.x, property.presented.y))
+		append(lines, fmt.tprintf("  residual=(%.4f, %.4f) velocity=(%.4f, %.4f) %s/s",
+			property.residual.x, property.residual.y, property.velocity.x, property.velocity.y, units))
+		append(lines, fmt.tprintf("  tolerances: position ε=%.4g %s; velocity ε=%.4g %s/s",
+			property.config.position_tolerance, units, property.config.velocity_tolerance, units))
+	}
+	if property.active {
+		if property.deadline_established {
+			append(lines, fmt.tprintf("  settle upper bound: t=%d + %d ns", i64(property.start_time), property.settle_after_ns))
+		} else { append(lines, "  settle upper bound: not established; native host applies its bounded snap policy") }
+	} else { append(lines, "  settled: yes") }
+}
+
+inspector_overlay_motion :: proc(ui: ^UI, inspected: ^Runtime, selected: Node_ID, host: ^Inspector_Host_Summary, height: f32) {
+	lines := make([dynamic]string, 0, allocator=ui.runtime.scratch_allocator)
+	append(&lines, "Motion snapshots are passive; they never sample, wake, or mutate the inspected runtime.")
+	append(&lines, fmt.tprintf("Clock: %v at %d ns", inspected.motion_clock_source, i64(inspected.motion_time)))
+	if selected == 0 {
+		append(&lines, "Select a retained owner in Tree to inspect its target and presented state.")
+	} else {
+		snapshot := motion_diagnostics_owner_snapshot(inspected, selected)
+		if !snapshot.valid {
+			append(&lines, fmt.tprintf("Selected node #%d has no retained motion owner.", selected))
+		} else {
+			append(&lines, fmt.tprintf("Owner node=%d generation=%d intent=%v", snapshot.owner, snapshot.generation, snapshot.intent))
+			append(&lines, fmt.tprintf("Declaration: %s:%d:%d (%s)", snapshot.source.file, snapshot.source.line, snapshot.source.column, snapshot.source.component))
+			if snapshot.cause.id == 0 {
+				append(&lines, "Triggering cause: unassigned (no one-to-one cause was established)")
+			} else {
+				append(&lines, fmt.tprintf("Triggering cause: #%d %v action=%d", snapshot.cause.id, snapshot.cause.kind, u32(snapshot.cause.action_id)))
+			}
+			append(&lines, "Translation coordinate space: parent-local logical units")
+			inspector_overlay_motion_property_lines(&lines, "Translation", snapshot.translation, "logical units")
+			inspector_overlay_motion_property_lines(&lines, "Opacity", snapshot.opacity, "opacity")
+		}
+	}
+	append(&lines, "", "Input and accessibility policy")
+	append(&lines, "Hit tests use target geometry; paint translation does not move hit regions.")
+	append(&lines, fmt.tprintf("Pointer-down capture=%d activation/latch=%d", inspected.captured_node, inspected.activation_node))
+	append(&lines, "Semantic and accessibility bounds follow logical target geometry; motion is paint-only.")
+	append(&lines, "Hit testing uses retained order traversal; motion performs no hit-index update.")
+	stats := motion_diagnostics_stats(inspected)
+	append(&lines, "", fmt.tprintf("Aggregate: ticks=%d owner visits=%d property samples=%d", stats.sample_ticks, stats.owner_visits, stats.property_samples))
+	append(&lines, fmt.tprintf("Presentation work: requests=%d coalesced=%d acknowledged app submissions=%d",
+		stats.presentation_requests, stats.presentation_requests_coalesced, stats.presentation_submissions))
+	if host != nil {
+		append(&lines, fmt.tprintf("Native host: samples=%d timer wakes=%d restore samples=%d bounded snaps=%d",
+			host.motion_samples, host.motion_timer_wakes, host.motion_restore_samples, host.motion_bounded_snaps))
+		append(&lines, fmt.tprintf("Native motion sampling: total=%.3f ms max=%.3f ms max lateness=%.3f ms",
+			f64(host.motion_sample_ns)/1_000_000, f64(host.motion_sample_max_ns)/1_000_000,
+			f64(host.motion_max_lateness_ns)/1_000_000))
+	}
+	append(&lines, fmt.tprintf("Transitions: retarget=%d no-op=%d mode=%d reveal=%d reduce-motion=%d", stats.retargets, stats.unchanged_target_noops, stats.mode_changes, stats.reveals, stats.reduced_motion_rewrites))
+	append(&lines, fmt.tprintf("Lifecycle: release=%d retired=%d settled=%d hidden gaps=%d snaps=%d failures=%d evicted=%d",
+		stats.releases, stats.owners_retired, stats.settlements, stats.hidden_gap_fast_forwards, stats.bounded_snaps, stats.failures, stats.trace_evictions))
+	append(&lines, "", "Recent motion transitions (bounded; sampled frames are aggregated above)")
+	count := min(motion_diagnostics_event_count(inspected), 64)
+	if count == 0 { append(&lines, "No motion transitions recorded.") }
+	for offset in 0..<count {
+		event, found := motion_diagnostics_event_recent(inspected, offset)
+		if !found { continue }
+		cause_text := "unassigned"
+		if event.owner.cause.id != 0 { cause_text = fmt.tprintf("#%d/%v", event.owner.cause.id, event.owner.cause.kind) }
+		owner_text := "host"
+		if event.owner.owner != 0 { owner_text = fmt.tprintf("node=%d gen=%d", event.owner.owner, event.owner.generation) }
+		source_text := "host/runtime"
+		if event.owner.source.file != "" { source_text = fmt.tprintf("%s:%d:%d", event.owner.source.file, event.owner.source.line, event.owner.source.column) }
+		append(&lines, fmt.tprintf("#%d t=%d(%v) %v %s cause=%s source=%s status=%v repeats=%d gap=%d ns",
+			event.sequence, i64(event.time), event.clock_source, event.kind, owner_text, cause_text, source_text, event.status, event.repeat_count, event.elapsed_ns))
+		if event.kind == .Opacity_Clamp { append(&lines, fmt.tprintf("  raw opacity sample=%g; presented value was clamped to [0,1]", event.detail_value.x)) }
+		if event.reason == .Reduced_Opacity_Fade_Exceeded_Bound {
+			append(&lines, fmt.tprintf("  reduced-motion opacity fade exceeded %d ms; response snapped",
+				MOTION_REDUCED_OPACITY_MAX_NS/1_000_000))
+		}
+		if event.owner.translation.has_value {
+			append(&lines, fmt.tprintf("  translation target=(%.3f, %.3f) presented=(%.3f, %.3f) velocity=(%.3f, %.3f)",
+				event.owner.translation.target.x, event.owner.translation.target.y,
+				event.owner.translation.presented.x, event.owner.translation.presented.y,
+				event.owner.translation.velocity.x, event.owner.translation.velocity.y))
+		}
+	}
+	inspector_overlay_lines(ui, lines[:], "inspector-motion", height)
 }
 
 inspector_overlay_causes :: proc(ui: ^UI, inspected: ^Runtime, height: f32) {
@@ -482,6 +612,7 @@ inspector_overlay_build :: proc(ui: ^UI, state: ^Inspector_Overlay, inspected: ^
 	case .Focus: inspector_overlay_focus(ui,inspected,height)
 	case .Work: inspector_overlay_work(ui,inspected,host,height)
 	case .Causes: inspector_overlay_causes(ui,inspected,height)
+	case .Motion: inspector_overlay_motion(ui,inspected,state.selected,host,height)
 	}
 	container_end(ui)
 	container_end(ui)

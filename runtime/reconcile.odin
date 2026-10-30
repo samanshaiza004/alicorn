@@ -1109,6 +1109,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	}
 	delete(rt.nodes)
 	if rt.motion_owners != nil { delete(rt.motion_owners) }
+	if rt.motion_diagnostics != nil { free(rt.motion_diagnostics, allocator=rt.persistent_allocator) }
 	for _, state in rt.controlled_text_fields {
 		if len(state.model_text) > 0 { delete(state.model_text, rt.persistent_allocator) }
 	}

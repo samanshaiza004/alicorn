@@ -130,6 +130,9 @@ MOTION_MAX_SETTLE_NS :: u64(9_000_000_000_000_000_000)
 MOTION_NS_PER_SECOND :: f64(1_000_000_000)
 MOTION_MAX_SETTLE_SECONDS :: f64(9_000_000_000)
 MOTION_LOG_F64_MAX :: f64(709.782712893384)
+// Under Reduce Motion, an explicitly opted-in opacity fade must remain brief.
+// Longer or uncertified responses are rewritten to Snap by the retained layer.
+MOTION_REDUCED_OPACITY_MAX_NS :: u64(250_000_000)
 
 motion_finite :: proc(value: f64) -> bool {
 	return !math.is_nan(value) && !math.is_inf(value)

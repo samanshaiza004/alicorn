@@ -158,6 +158,7 @@ test_inspector_ui_is_virtualized_and_independent_of_app_hard_error :: proc(t: ^t
 		node := panel.nodes[id]
 		if strings.contains(node.text,"intentional app fixture hard error") { found_diagnostic = true }
 	}
+	inspector_overlay_open(&state)
 	state.tab = .Work
 	inspector_test_build(&panel,&state,&app)
 	for id in panel.order { if strings.contains(panel.nodes[id].text,"App hard error") { found_diagnostic = true } }
@@ -170,13 +171,97 @@ test_inspector_source_fingerprint_tracks_app_acknowledgements_only :: proc(t: ^t
 	panel := new_runtime(app.viewport,Runtime_Config{trace_capacity=64})
 	defer destroy_runtime(&app)
 	defer destroy_runtime(&panel)
-	_ = inspector_test_describe(&app)
+	nodes := inspector_test_describe(&app)
+	_ = motion_clock_set_time(&app, Motion_Time(0), .Injected)
+	target := Motion_Target{translation=Motion_Vector2{24, 0}, has_translation=true}
+	_ = motion_apply_intent(&app, nodes.sibling, target, .Settle,
+		source=Source_Site{"fingerprint_fixture.odin", 15, 3, "marker"},
+		cause=Cause_Context{id=301, kind=.Keyboard})
+	_ = motion_apply_intent(&app, nodes.sibling, target, .Settle,
+		source=Source_Site{"fingerprint_fixture.odin", 15, 3, "marker"},
+		cause=Cause_Context{id=301, kind=.Keyboard})
 	before := inspector_overlay_source_fingerprint(&app)
+	coalesced_sequence := app.motion_diagnostics.sequence
+	_ = motion_apply_intent(&app, nodes.sibling, target, .Settle,
+		source=Source_Site{"fingerprint_fixture.odin", 15, 3, "marker"},
+		cause=Cause_Context{id=301, kind=.Keyboard})
+	after_coalesced_noop := inspector_overlay_source_fingerprint(&app)
+	testing.expect(t, app.motion_diagnostics.sequence == coalesced_sequence && before != after_coalesced_noop,
+		"coalesced diagnostic counts should refresh the inspector even when the transition sequence stays fixed")
 	frame_submission_succeeded(&app)
 	after_app_submit := inspector_overlay_source_fingerprint(&app)
 	testing.expect(t,before!=after_app_submit,"actual app acknowledgements must refresh submitted revision and cause truth")
 	frame_submission_succeeded(&panel)
 	testing.expect(t,inspector_overlay_source_fingerprint(&app)==after_app_submit,"a separate inspector acknowledgement must not schedule another inspector rebuild")
+}
+
+@(test)
+test_inspector_motion_snapshot_is_passive_and_explains_the_transition :: proc(t: ^testing.T) {
+	app := new_runtime(Rect{0, 0, 1024, 1400}, Runtime_Config{trace_capacity=64})
+	panel := new_runtime(app.viewport, Runtime_Config{trace_capacity=64})
+	defer destroy_runtime(&app)
+	defer destroy_runtime(&panel)
+	nodes := inspector_test_describe(&app)
+	source := Source_Site{"inspector_fixture.odin", 123, 7, "fixture motion"}
+	cause := Cause_Context{id=222, kind=.Keyboard, action_id=Action_ID(9)}
+	testing.expect(t, motion_clock_set_time(&app, Motion_Time(0), .Injected) == .Ok,
+		"the motion fixture should establish its virtual clock")
+	target := Motion_Target{translation=Motion_Vector2{120, 12}, has_translation=true}
+	testing.expect(t, motion_apply_intent(&app, nodes.sibling, target, .Settle, source=source, cause=cause) == .Ok,
+		"the selected app node should acquire a declarative retained motion")
+	testing.expect(t, motion_tick(&app, Motion_Time(25_000_000)).status == .Ok,
+		"the fixture should establish an active, partially presented sample")
+
+	state := inspector_overlay_make()
+	defer inspector_overlay_destroy(&state)
+	inspector_overlay_open(&state)
+	state.tab = .Motion
+	state.selected = nodes.sibling
+	app_before := inspect(&app)
+	defer delete(app_before)
+	stats_before := app.stats
+	allocation_before := app.allocation_stats^
+	diagnostic_stats_before := motion_diagnostics_stats(&app)
+	activity_before := motion_activity(&app)
+	snapshot_before := motion_diagnostics_owner_snapshot(&app, nodes.sibling)
+	fingerprint_before := inspector_overlay_source_fingerprint(&app)
+	motion_time_before := app.motion_time
+	trace_sequence_before := app.trace.sequence
+	diagnostic_sequence_before := app.motion_diagnostics.sequence
+	presentation_pending_before := app.presentation_pending
+	inspector_test_build(&panel, &state, &app)
+
+	found_target := false
+	found_presentation := false
+	found_declaration := false
+	found_cause := false
+	found_tolerances := false
+	found_policy := false
+	found_transition := false
+	for id in panel.order {
+		if node, ok := panel.nodes[id]; ok && node != nil {
+			found_target = found_target || strings.contains(node.text, "target=(120.0000, 12.0000)")
+			found_presentation = found_presentation || strings.contains(node.text, "presented=(")
+			found_declaration = found_declaration || strings.contains(node.text, "inspector_fixture.odin:123:7")
+			found_cause = found_cause || strings.contains(node.text, "Triggering cause: #222")
+			found_tolerances = found_tolerances || strings.contains(node.text, "tolerances: position")
+			found_policy = found_policy || strings.contains(node.text, "Hit tests use target geometry")
+			found_transition = found_transition || strings.contains(node.text, "Target_Declared")
+		}
+	}
+	app_after := inspect(&app)
+	defer delete(app_after)
+	snapshot_after := motion_diagnostics_owner_snapshot(&app, nodes.sibling)
+	testing.expect(t, found_target && found_presentation && found_declaration && found_cause && found_tolerances && found_policy && found_transition,
+		"the Motion tab should explain its selected target, presentation, declaration, cause, tolerances, input policy, and transition")
+	testing.expect(t, app_before == app_after && app.stats == stats_before && app.allocation_stats^ == allocation_before,
+		"building the Motion tab must leave application state, work counters, and allocation counters untouched")
+	testing.expect(t, diagnostic_stats_before == motion_diagnostics_stats(&app) && activity_before == motion_activity(&app) &&
+		snapshot_before == snapshot_after && fingerprint_before == inspector_overlay_source_fingerprint(&app) &&
+		motion_time_before == app.motion_time && trace_sequence_before == app.trace.sequence &&
+		diagnostic_sequence_before == app.motion_diagnostics.sequence &&
+		presentation_pending_before == app.presentation_pending,
+		"reading motion details must not sample, mutate diagnostics, advance the clock, or request application presentation")
 }
 
 @(test)

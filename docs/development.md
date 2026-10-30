@@ -116,6 +116,16 @@ The Focus tab shows keyboard focus, semantic identity, its durable owner, and
 its currently realized node. Work shows retained stage counters, presentation
 and submission revisions, and host timings. Causes shows bounded recent
 transactions with actions, invalidations, stage work, and submissions.
+Motion shows the selected owner's captured declaration site and cause,
+response intent, target and last presented values, residual velocity,
+per-property tolerances, settlement bound, clock source, and retained
+input/accessibility geometry policy. Its fixed 128-event ring records state
+transitions, not every sample; the tab displays the latest 64 and reports
+evictions. Sampling and owner visits are aggregated. Presentation requests,
+coalesced requests, acknowledged app submissions, native timer wakes, restore
+samples, and measured sampling time are shown separately from inspector-only
+work. Reading or freezing this view never samples, wakes, or mutates the
+application runtime.
 
 The inspector is an Alicorn UI in its own retained runtime, composited above
 the application. Pointer and wheel input over its panel belongs to the

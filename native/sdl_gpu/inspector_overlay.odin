@@ -107,6 +107,15 @@ native_inspector_host_summary :: proc(timing: ^Native_Host_Timing, rt: ^alicorn.
 		build_ms=f64(timing.application_build_ns)/1_000_000,
 		encode_ms=f64(timing.application_gpu_encode_ns)/1_000_000,
 		submit_ms=f64(timing.gpu_submit_ns)/1_000_000,
+		motion_samples=timing.motion_samples,
+		motion_timer_wakes=timing.motion_timer_wakes,
+		motion_restore_samples=timing.motion_restore_samples,
+		motion_coalesced_owners=timing.motion_coalesced_owners,
+		motion_bounded_snaps=timing.motion_bounded_snaps,
+		motion_sample_ns=timing.motion_sample_ns,
+		motion_sample_max_ns=timing.motion_sample_max_ns,
+		motion_max_active_owners=timing.motion_max_active_owners,
+		motion_max_lateness_ns=timing.motion_max_lateness_ns,
 	}
 }
 

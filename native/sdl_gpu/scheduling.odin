@@ -33,6 +33,7 @@ Native_Motion_Scheduler_Stats :: struct {
 Native_Motion_Scheduler_State :: struct {
 	active: bool,
 	suspended: bool,
+	suspended_since_ns: u64,
 	next_deadline_ns: u64,
 	uncertified_since_ns: u64,
 	stats: Native_Motion_Scheduler_Stats,
@@ -68,6 +69,13 @@ native_motion_scheduler_prepare :: proc(
 ) -> bool {
 	if state == nil { return false }
 	if !window_renderable {
+		if active_owners > 0 {
+			if !state.suspended || state.suspended_since_ns == 0 {
+				state.suspended_since_ns = now_ns if now_ns != 0 else 1
+			}
+		} else {
+			state.suspended_since_ns = 0
+		}
 		state.active = active_owners > 0
 		state.suspended = true
 		state.next_deadline_ns = 0
@@ -78,6 +86,7 @@ native_motion_scheduler_prepare :: proc(
 		state.suspended = false
 		state.active = active_owners > 0
 		state.next_deadline_ns = 0
+		state.suspended_since_ns = 0
 		if active_owners <= 0 { state.uncertified_since_ns = 0 }
 		if active_owners > 0 {
 			state.stats.restore_samples += 1
@@ -176,9 +185,16 @@ native_motion_scheduler_advance :: proc(
 		return Native_Motion_Update_Result{status=.Invalid_Runtime}
 	}
 	activity := alicorn.motion_activity(rt)
+	had_active_motion := activity.active_owners > 0
+	was_suspended := state.suspended
+	had_suspension_origin := state.suspended_since_ns != 0
+	suspended_since_ns := state.suspended_since_ns
 	should_sample := native_motion_scheduler_prepare(
 		state, activity.active_owners, window_renderable, now_ns,
 	)
+	if !window_renderable && activity.active_owners > 0 && (!was_suspended || !had_suspension_origin) {
+		alicorn.motion_diagnostic_host_event(rt, .Host_Suspended, alicorn.Motion_Time(i64(now_ns)))
+	}
 	result := Native_Motion_Update_Result{
 		active_properties=activity.active_properties,
 		active_owners=activity.active_owners,
@@ -205,6 +221,10 @@ native_motion_scheduler_advance :: proc(
 		state.stats.bounded_snaps += 1
 		result.bounded_snap = true
 		activity = alicorn.motion_activity(rt)
+	}
+	if was_suspended && window_renderable && had_active_motion {
+		gap_ns := now_ns-suspended_since_ns if suspended_since_ns != 0 && now_ns >= suspended_since_ns else 0
+		alicorn.motion_diagnostic_host_event(rt, .Hidden_Gap_Fast_Forward, alicorn.Motion_Time(i64(now_ns)), gap_ns)
 	}
 	finished_ns := u64(sdl3.GetTicksNS())
 	sample_elapsed := finished_ns-started_ns if finished_ns >= started_ns else 0

@@ -1178,9 +1178,12 @@ system file drops or arbitrary MIME payloads.
   for translation and opacity. An unset policy resolves to the library default
   without animating any node implicitly; applications still opt in with
   `ui.motion`. Reduce Motion snaps spatial changes by default. A theme may opt
-  into a short opacity-only response; the preference is reevaluated on each
-  description, so enabling Reduce Motion mid-flight snaps spatial motion (or
-  uses the opted-in opacity response) deterministically.
+  into an opacity-only response; while Reduce Motion is active, Alicorn accepts
+  it only when its conservative settlement bound is established and no longer
+  than 250 ms. A slower or uncertified fade snaps and records the rewrite. The
+  preference is reevaluated on each description, so enabling Reduce Motion
+  mid-flight snaps spatial motion (or uses the bounded opacity response)
+  deterministically.
 - Low-level retained motion remains available. It is bound to a live `Node_ID` through
   `motion_owner_begin`; the returned handle carries a process-unique runtime
   lifetime identity and runtime-local owner generation, so cross-runtime use,
@@ -1188,7 +1191,10 @@ system file drops or arbitrary MIME payloads.
   `motion_owner_release` cancels and removes an owner's sidecar while keeping
   the node alive; it resets presentation to neutral translation and opacity on
   the next composition. Commit a different resting presentation before release
-  if snapping back to neutral is not appropriate. `motion_opacity`
+  if snapping back to neutral is not appropriate. Omitting a motion declaration
+  from a later description leaves a still-retained owner moving toward its last
+  target; omission is not cancellation. Retiring its node removes the record.
+  `motion_opacity`
   and `motion_translation` accept typed targets, a `Motion_Config`, an
   explicit `Settle` / `Direct` / `Snap` mode, and an injected `Motion_Time`.
   The first `Settle` starts from neutral presentation (opacity 1, translation
@@ -1197,6 +1203,9 @@ system file drops or arbitrary MIME payloads.
   Translation accumulates through painted descendants in parent-local logical
   units; opacity multiplies through the subtree. Target layout, clips, hit
   regions, and accessibility bounds remain unchanged in this initial policy.
+  Reveal is limited to structurally noninteractive subtrees. Visual opacity
+  does not defer semantic or accessibility exposure, so reveal must not hide
+  essential instructions or controls.
   `motion_tick` samples the retained responses and requests a presentation-only
   frame when visible values change. A custom host can flush that work with
   `begin_presentation_frame` / `end_presentation_frame`; these frames do not
@@ -1215,6 +1224,19 @@ system file drops or arbitrary MIME payloads.
   responses active at expiry are snapped together. The requested cadence is
   not a claim about compositor present timestamps.
   Unopted nodes retain their existing behavior.
+- The inspector Motion tab reads a passive copy of retained owner state. It
+  reports declaration source, triggering cause, intent, target, last presented
+  values, residual and velocity, tolerances, clock source, and certified settle
+  bound. A bounded transition ring records retargets, no-ops, mode changes,
+  Reveal, reduced-motion rewrites, release, retirement, settlement, host
+  suspension/restore, bounded snaps, opacity clamping, and failures; routine
+  samples are represented by aggregate work counters instead of individual
+  trace entries. The inspector does not sample or schedule the inspected
+  runtime. Work counters distinguish motion presentation requests and
+  coalescing from acknowledged app submissions, host timer wakes, and separate
+  inspector submissions. `odin test runtime` includes deterministic virtual
+  replay at uneven sample cadences and verifies that opening the Motion tab
+  changes no application state or work counters.
 - `inspect(runtime)` and `trace_snapshot(runtime)` expose retained state and
   recent invalidation/stage events for diagnostics.
 - The native `Run` host accepts `--inspector` (enable `F9`) and

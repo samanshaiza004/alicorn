@@ -367,6 +367,12 @@ note_submission_cause :: proc(rt: ^Runtime, cause: Cause_Context) {
 // acknowledgement: the revision remains pending so the host can retry.
 frame_submission_succeeded :: proc(rt: ^Runtime) {
 	rt.submitted_revision = rt.presentation_revision
+	if rt.motion_frame_pending {
+		if diagnostics := rt.motion_diagnostics; diagnostics != nil {
+			diagnostics.stats.presentation_submissions += 1
+		}
+		rt.motion_frame_pending = false
+	}
 	cause := rt.submission_cause if !rt.submission_cause_mixed else Cause_Context{}
 	record_trace_with_cause(rt, .Submit, 0, "GPU frame submission acknowledged", cause)
 	rt.submission_cause = Cause_Context{}

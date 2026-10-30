@@ -1861,6 +1861,9 @@ Runtime :: struct {
 	// runtime-local, while handles also carry a process-unique runtime lifetime
 	// identity to prevent cross-runtime aliasing. Records leave with their owner.
 	motion_owners: map[Node_ID]Motion_Retained_Owner,
+	// Motion diagnostics are allocated only for motion-enabled runtimes. Their
+	// fixed-capacity event ring records transitions, never sampled frames.
+	motion_diagnostics: ^Motion_Diagnostics,
 	// Declarative ui.motion requests are sparse and allocated only when an
 	// application opts in; they are applied after each description reconciles.
 	motion_intent_requests: [dynamic]Motion_Intent_Request,
@@ -1869,6 +1872,7 @@ Runtime :: struct {
 	motion_generation_sequence: u64,
 	motion_time: Motion_Time,
 	motion_clock_initialized: bool,
+	motion_clock_source: Motion_Clock_Source,
 	controlled_text_fields: map[Node_ID]Controlled_Text_Field_State,
 	measure_states: map[Node_ID]Measure_State,
 	percent_width_dependencies: map[Node_ID]Percent_Width_Dependency,
@@ -1982,6 +1986,9 @@ Runtime :: struct {
 	// deliberately separate from invalidated so hover can repaint without
 	// re-running application code.
 	presentation_pending: bool,
+	// motion_frame_pending marks a successful app submission that includes a
+	// retained motion presentation request; acknowledgement clears it.
+	motion_frame_pending: bool,
 	// presentation_revision identifies the newest retained display state. A
 	// native host acknowledges it only after a successful GPU submission;
 	// keeping the two generations separate preserves pending work when a

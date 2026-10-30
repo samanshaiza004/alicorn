@@ -2,7 +2,11 @@ package alicorn
 
 import "core:testing"
 
-motion_retained_test_build :: proc(rt: ^Runtime, include_child: bool) -> (outer, child, sibling: Node_ID) {
+motion_retained_test_build :: proc(
+	rt: ^Runtime,
+	include_child: bool,
+	include_outer_semantic: bool = false,
+) -> (outer, child, sibling: Node_ID) {
 	ui, ready := begin_frame(rt)
 	if !ready { return }
 	container_begin_simple(&ui, .Root, key="motion-root", style=layout_style(.Column))
@@ -13,6 +17,9 @@ motion_retained_test_build :: proc(rt: ^Runtime, include_child: bool) -> (outer,
 		style=layout_style(.Column, width=180, height=80),
 		fill=Color{0.2, 0.2, 0.2, 1},
 	)
+	if include_outer_semantic {
+		_ = semantic_description(&ui, .Group, "Decorative reveal content")
+	}
 	if include_child {
 		child = surface_begin(
 			&ui,
@@ -443,7 +450,7 @@ test_reduced_motion_theme_policy_only_allows_opted_in_opacity_fade :: proc(t: ^t
 		translation=DEFAULT_MOTION_THEME_POLICY.translation,
 		opacity=DEFAULT_MOTION_THEME_POLICY.opacity,
 		reduced_motion=.Opacity_Fade,
-		reduced_opacity=Motion_Config{omega=30, position_tolerance=0.005, velocity_tolerance=0.02},
+		reduced_opacity=Motion_Config{omega=100, position_tolerance=0.005, velocity_tolerance=0.02},
 	}
 	theme_id := style_theme_register(&rt, theme)
 	if node, found := rt.nodes[child]; found {
@@ -464,15 +471,51 @@ test_reduced_motion_theme_policy_only_allows_opted_in_opacity_fade :: proc(t: ^t
 	opacity_sample := motion_scalar_sample(state.opacity, Motion_Time(0))
 	testing.expect(t, translation_sample.status == .Ok && !translation_sample.active &&
 		translation_sample.value == target.translation && opacity_sample.status == .Ok && opacity_sample.active &&
-		state.opacity.config == theme.motion_policy.reduced_opacity,
+		state.opacity.config == theme.motion_policy.reduced_opacity &&
+		state.opacity.deadline_established && state.opacity.settle_after_ns <= MOTION_REDUCED_OPACITY_MAX_NS,
 		"the reduced-motion policy must snap spatial changes while using only the explicitly configured opacity response")
+}
+
+@(test)
+test_reduced_motion_opacity_fade_over_250ms_is_snapped_and_explained :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 120})
+	defer destroy_runtime(&rt)
+	_, child, _ := motion_retained_test_build(&rt, true)
+	theme := DEFAULT_STYLE_THEME
+	theme.motion_policy = Motion_Theme_Policy{
+		defined=true,
+		translation=DEFAULT_MOTION_THEME_POLICY.translation,
+		opacity=DEFAULT_MOTION_THEME_POLICY.opacity,
+		reduced_motion=.Opacity_Fade,
+		reduced_opacity=Motion_Config{omega=1, position_tolerance=0.001, velocity_tolerance=0.001},
+	}
+	theme_id := style_theme_register(&rt, theme)
+	if node, found := rt.nodes[child]; found {
+		node.style_environment.theme = theme_id
+		node.style_environment.accessibility.reduce_motion = true
+	}
+	_ = motion_clock_set_time(&rt, Motion_Time(0))
+	target := Motion_Target{opacity=0.25, has_opacity=true}
+	cause := Cause_Context{id=551, kind=.Keyboard, action_id=Action_ID(5)}
+	source := Source_Site{"slow_motion_theme.odin", 44, 9, "toast opacity"}
+	testing.expect(t, motion_apply_intent(&rt, child, target, source=source, cause=cause) == .Ok,
+		"a theme with a very slow reduced-motion fade should still apply safely")
+	handle, handle_status := motion_owner_begin(&rt, child)
+	presentation := motion_presentation(&rt, handle)
+	event, found_event := motion_diagnostics_event_recent(&rt, 0)
+	testing.expect(t, handle_status == .Ok && presentation.status == .Ok && !presentation.active &&
+		presentation.presented_opacity == f32(target.opacity) && presentation.target_opacity == target.opacity,
+		"a reduced-motion opacity response whose certified bound exceeds 250 ms must snap to the requested target")
+	testing.expect(t, found_event && event.kind == .Reduced_Motion_Rewrite &&
+		event.reason == .Reduced_Opacity_Fade_Exceeded_Bound && event.owner.source == source && event.owner.cause == cause,
+		"the motion trace should explain the reduced-opacity snap and retain its declaration site and cause")
 }
 
 @(test)
 test_motion_reveal_is_paint_only_and_rejects_interactive_subtrees :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 240, 120})
 	defer destroy_runtime(&rt)
-	outer, child, _ := motion_retained_test_build(&rt, true)
+	outer, child, _ := motion_retained_test_build(&rt, true, true)
 	_ = motion_clock_set_time(&rt, Motion_Time(0))
 	reveal := Motion_Target{
 		translation=Motion_Vector2{0, 0}, opacity=1,
@@ -483,9 +526,12 @@ test_motion_reveal_is_paint_only_and_rejects_interactive_subtrees :: proc(t: ^te
 		"a decorative container and inert surface descendants may use the paint-only Reveal intent")
 	if handle, handle_status := motion_owner_begin(&rt, outer); handle_status == .Ok {
 		presentation := motion_presentation(&rt, handle)
+		semantic, semantic_found := semantic_node_lookup(&rt, semantic_visual_id(outer))
 		testing.expect(t, presentation.active && presentation.presented_opacity == 0 &&
 			presentation.presented_translation == [2]f32{0, 8},
 			"Reveal should start at its declared hidden/offset presentation and settle toward authoritative layout")
+		testing.expect(t, semantic_found && semantic.role == .Group && semantic.label == "Decorative reveal content",
+			"Reveal changes paint presentation only; its semantic content is exposed immediately")
 	}
 	if child_node, found := rt.nodes[child]; found { child_node.kind = .Button }
 	_ = motion_clock_set_time(&rt, Motion_Time(20_000_000))
@@ -514,4 +560,145 @@ test_retained_motion_generation_changes_when_node_identity_is_recreated :: proc(
 	testing.expect(t, motion_target_opacity(&rt, old_handle, 0.25,
 		Motion_Config{omega=8, position_tolerance=0.01, velocity_tolerance=0.01}, .Snap, Motion_Time(0)) == .Stale_Owner,
 		"an old owner handle must not mutate a newly created retained node with the same identity")
+}
+
+@(test)
+test_motion_diagnostics_trace_causal_targets_noop_and_settlement_without_frame_records :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 280, 140}, Runtime_Config{trace_capacity=64})
+	defer destroy_runtime(&rt)
+	_, child, _ := motion_retained_test_build(&rt, true)
+	config := Motion_Config{omega=12, position_tolerance=0.01, velocity_tolerance=0.05}
+	target := Motion_Target{translation=Motion_Vector2{40, 4}, has_translation=true}
+	first_cause := Cause_Context{id=401, kind=.Pointer, action_id=Action_ID(41)}
+	first_source := Source_Site{"fixture.odin", 12, 8, "tab indicator"}
+	_ = motion_clock_set_time(&rt, Motion_Time(0))
+	testing.expect(t, motion_apply_intent(&rt, child, target, .Settle, source=first_source, cause=first_cause) == .Ok,
+		"an accepted target should start a retained response")
+	declared, found := motion_diagnostics_event_recent(&rt, 0)
+	testing.expect(t, found && declared.kind == .Target_Declared && declared.owner.owner == child &&
+		declared.owner.source == first_source && declared.owner.cause == first_cause &&
+		declared.owner.translation.target == target.translation && declared.owner.translation.active &&
+		declared.owner.translation.deadline_established,
+		"the bounded trace should preserve source, cause, target, mode state and settle bound")
+	after_seq := rt.motion_diagnostics.sequence
+	_ = motion_tick(&rt, Motion_Time(80_000_000))
+	second_cause := Cause_Context{id=402, kind=.Keyboard, action_id=Action_ID(42)}
+	retarget := Motion_Target{translation=Motion_Vector2{80, 0}, has_translation=true}
+	testing.expect(t, motion_apply_intent(&rt, child, retarget, .Settle, source=first_source, cause=second_cause) == .Ok,
+		"an interrupted target should retarget from the current analytic presentation")
+	latest, retarget_found := motion_diagnostics_event_recent(&rt, 0)
+	testing.expect(t, retarget_found && latest.kind == .Retarget && latest.owner.cause == second_cause &&
+		latest.owner.translation.target == retarget.translation,
+		"the trace should distinguish interruption and carry the new triggering cause")
+	change_seq := rt.motion_diagnostics.sequence
+	_ = motion_clock_set_time(&rt, Motion_Time(90_000_000))
+	testing.expect(t, motion_apply_intent(&rt, child, retarget, .Settle, source=first_source, cause=second_cause) == .Ok,
+		"an unchanged target should be a safe no-op")
+	noop, noop_found := motion_diagnostics_event_recent(&rt, 0)
+	first_noop_seq := rt.motion_diagnostics.sequence
+	_ = motion_clock_set_time(&rt, Motion_Time(100_000_000))
+	_ = motion_apply_intent(&rt, child, retarget, .Settle, source=first_source, cause=second_cause)
+	coalesced, found_coalesced := motion_diagnostics_event_recent(&rt, 0)
+	testing.expect(t, noop_found && found_coalesced && noop.kind == .Unchanged_Target &&
+		coalesced.sequence == first_noop_seq && coalesced.repeat_count == 2 &&
+		rt.motion_diagnostics.sequence == first_noop_seq,
+		"repeated no-op declarations should aggregate without a per-frame transition history")
+	testing.expect(t, after_seq < change_seq && motion_diagnostics_stats(&rt).unchanged_target_noops == 2,
+		"transition sequence and aggregate no-op counts should remain independently observable")
+	state := rt.motion_owners[child]
+	deadline := Motion_Time(i64(state.translation.x.start_time) + i64(state.translation.x.settle_after_ns))
+	settled := motion_tick(&rt, deadline)
+	settled_event, found_settled := motion_diagnostics_event_recent(&rt, 0)
+	testing.expect(t, settled.status == .Ok && settled.active_owners == 0 && found_settled &&
+		settled_event.kind == .Settled && settled_event.owner.translation.presented == retarget.translation,
+		"settlement should be one transition event at the deterministic target endpoint")
+	stats := motion_diagnostics_stats(&rt)
+	testing.expect(t, stats.settlements == 1 && stats.owner_visits > 0 && stats.property_samples > 0,
+		"sampling work should be aggregated rather than stored as frame-by-frame events")
+}
+
+@(test)
+test_motion_diagnostics_report_invalid_ids_and_owner_cap :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 280, 140})
+	defer destroy_runtime(&rt)
+	_, child, _ := motion_retained_test_build(&rt, true)
+	_, invalid_status := motion_owner_begin(&rt, Node_ID(0xfedcba9876543210))
+	invalid, invalid_found := motion_diagnostics_event_recent(&rt, 0)
+	testing.expect(t, invalid_status == .Owner_Not_Retained && invalid_found &&
+		invalid.kind == .Failure && invalid.status == .Owner_Not_Retained,
+		"an invalid retained-node identity should be visible in diagnostics")
+	delete(rt.motion_owners)
+	rt.motion_owners = make(map[Node_ID]Motion_Retained_Owner, allocator=rt.persistent_allocator)
+	for index in 0..<MOTION_RETAINED_MAX_OWNERS {
+		id := Node_ID(0x100000+u64(index))
+		if id == child { id += Node_ID(0x100000000) }
+		rt.motion_owners[id] = Motion_Retained_Owner{generation=u64(index+1)}
+	}
+	_, limit_status := motion_owner_begin(&rt, child)
+	limit, limit_found := motion_diagnostics_event_recent(&rt, 0)
+	testing.expect(t, limit_status == .Owner_Limit && limit_found && limit.kind == .Failure &&
+		limit.status == .Owner_Limit && motion_diagnostics_stats(&rt).failures >= 2,
+		"the retained-owner cap should be logged with its explicit failure status")
+}
+
+@(test)
+test_motion_diagnostic_ring_bounds_events_and_accounts_for_presentation_work :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 280, 140})
+	defer destroy_runtime(&rt)
+	_, child, _ := motion_retained_test_build(&rt, true)
+	_ = motion_clock_set_time(&rt, Motion_Time(0))
+	handle, handle_status := motion_owner_begin(&rt, child)
+	testing.expect(t, handle_status == .Ok, "the work-count fixture should acquire one retained owner")
+	if handle_status != .Ok { return }
+	config := Motion_Config{omega=20, position_tolerance=0.01, velocity_tolerance=0.05}
+	for index in 0..<MOTION_DIAGNOSTIC_EVENT_CAPACITY+12 {
+		x := f64(12) if index%2 == 0 else f64(24)
+		testing.expect(t, motion_target_translation(&rt, handle, Motion_Vector2{x, 0}, config, .Snap, Motion_Time(0)) == .Ok,
+			"valid snap transitions should enter the bounded event ring")
+	}
+	stats_before_ack := motion_diagnostics_stats(&rt)
+	testing.expect(t, motion_diagnostics_event_count(&rt) == MOTION_DIAGNOSTIC_EVENT_CAPACITY &&
+		stats_before_ack.trace_evictions == 12 && stats_before_ack.presentation_requests == u64(MOTION_DIAGNOSTIC_EVENT_CAPACITY+12) &&
+		stats_before_ack.presentation_requests_coalesced == u64(MOTION_DIAGNOSTIC_EVENT_CAPACITY+11) &&
+		stats_before_ack.presentation_submissions == 0 && rt.motion_frame_pending,
+		"transition history should stay bounded while recording coalesced presentation requests before acknowledgement")
+	oldest, oldest_found := motion_diagnostics_event_recent(&rt, MOTION_DIAGNOSTIC_EVENT_CAPACITY-1)
+	newest, newest_found := motion_diagnostics_event_recent(&rt, 0)
+	testing.expect(t, oldest_found && newest_found && oldest.sequence == 13 && newest.sequence == 140,
+		"the circular trace should return the bounded sequence in newest-first order")
+	frame_submission_succeeded(&rt)
+	stats_after_ack := motion_diagnostics_stats(&rt)
+	testing.expect(t, !rt.motion_frame_pending && stats_after_ack.presentation_submissions == 1,
+		"only successful app-frame acknowledgement should count a motion-associated submission")
+	invalid_source := Source_Site{"bad_motion.odin", 9, 3, "test control"}
+	invalid_cause := Cause_Context{id=777, kind=.Pointer}
+	status := motion_target_opacity(&rt, handle, 0.5,
+		Motion_Config{omega=0, position_tolerance=0.01, velocity_tolerance=0.01},
+		.Settle, Motion_Time(0), source=invalid_source, cause=invalid_cause)
+	failure, failure_found := motion_diagnostics_event_recent(&rt, 0)
+	testing.expect(t, status == .Invalid_Configuration && failure_found && failure.kind == .Failure &&
+		failure.status == .Invalid_Configuration && failure.owner.source == invalid_source && failure.owner.cause == invalid_cause,
+		"invalid response configuration should be diagnosed with its source and cause")
+}
+
+@(test)
+test_motion_diagnostics_report_opacity_clamp_once_per_excursion :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 280, 140})
+	defer destroy_runtime(&rt)
+	_, child, _ := motion_retained_test_build(&rt, true)
+	_ = motion_clock_set_time(&rt, Motion_Time(0))
+	config := Motion_Config{omega=10, position_tolerance=0.001, velocity_tolerance=0.001}
+	handle, _ := motion_owner_begin(&rt, child)
+	_ = motion_target_opacity(&rt, handle, 0.5, config, .Settle, Motion_Time(0))
+	state := rt.motion_owners[child]
+	state.opacity.residual_0 = -2
+	state.opacity.presented_0 = -1.5
+	rt.motion_owners[child] = state
+	_ = motion_tick(&rt, Motion_Time(0))
+	clamp_event, found := motion_diagnostics_event_recent(&rt, 0)
+	_ = motion_tick(&rt, Motion_Time(1_000_000))
+	still_one := motion_diagnostics_stats(&rt).opacity_clamps == 1
+	testing.expect(t, found && clamp_event.kind == .Opacity_Clamp && clamp_event.detail_value.x < 0 &&
+		still_one && rt.motion_owners[child].presented_opacity == 0,
+		"alpha clamp diagnostics should record the raw sample once while presentation remains bounded")
 }

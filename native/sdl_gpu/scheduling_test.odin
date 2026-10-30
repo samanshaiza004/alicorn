@@ -2,6 +2,7 @@ package alicorn_sdl_gpu
 
 import "core:testing"
 import "vendor:sdl3"
+import alicorn "../../runtime"
 
 @(test)
 test_event_wait_timeout_keeps_earliest_deadline :: proc(t: ^testing.T) {
@@ -81,16 +82,73 @@ test_native_motion_suspend_and_restore_samples_current_time_once :: proc(t: ^tes
 	_ = native_motion_scheduler_prepare(&state, 2, true, now)
 	should_sample := native_motion_scheduler_prepare(&state, 2, false, now+5_000_000)
 	_, found := native_motion_scheduler_next_deadline(&state)
-	testing.expect(t, !should_sample && state.suspended && !found,
-		"a hidden or minimized window should drop its presentation deadline")
+	testing.expect(t, !should_sample && state.suspended && !found && state.suspended_since_ns == now+5_000_000,
+		"a hidden or minimized window should drop its deadline and retain the first suspended timestamp")
 	should_sample = native_motion_scheduler_prepare(&state, 2, true, now+10_000_000_000)
-	testing.expect(t, should_sample && state.stats.restore_samples == 1,
-		"restoring should request one sample at the current clock rather than replay missed frames")
+	testing.expect(t, should_sample && state.stats.restore_samples == 1 && !state.suspended && state.suspended_since_ns == 0,
+		"restoring should request one current-time sample, clear the gap origin, and avoid replaying missed frames")
 	native_motion_scheduler_finish_sample(&state, 2, 0, now+10_000_000_000)
 	next_deadline, found_after_restore := native_motion_scheduler_next_deadline(&state)
 	testing.expect(t, found_after_restore && next_deadline == now+10_000_000_000+NATIVE_MOTION_SAMPLE_INTERVAL_NS &&
 		state.stats.timer_wakes == 0,
 		"the restored motion should continue from now with one future deadline")
+}
+
+@(test)
+test_native_motion_suspension_clock_starts_with_active_work :: proc(t: ^testing.T) {
+	state := Native_Motion_Scheduler_State{}
+	_ = native_motion_scheduler_prepare(&state, 0, false, 1_000)
+	testing.expect(t, state.suspended && state.suspended_since_ns == 0,
+		"an idle hidden window should not start a motion-gap interval")
+	_ = native_motion_scheduler_prepare(&state, 2, false, 4_000)
+	testing.expect(t, state.suspended_since_ns == 4_000,
+		"motion first observed in an already hidden window should start its own gap interval")
+	_ = native_motion_scheduler_prepare(&state, 0, false, 8_000)
+	testing.expect(t, state.suspended_since_ns == 0,
+		"retiring all motion while hidden should clear the old gap origin")
+	_ = native_motion_scheduler_prepare(&state, 1, false, 12_000)
+	testing.expect(t, state.suspended_since_ns == 12_000,
+		"later hidden motion should be measured from its own first observed active time")
+}
+
+@(test)
+test_native_motion_suspend_and_restore_are_recorded_with_the_clock_gap :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 240, 120})
+	defer alicorn.destroy_runtime(&rt)
+	ui, build := alicorn.begin_frame(&rt)
+	if !build { testing.expect(t, false, "the native motion fixture should describe once"); return }
+	alicorn.container_begin(&ui, .Root, key=alicorn.key_string("suspend-motion-root"), style=alicorn.layout_style())
+	owner, _ := alicorn.button_ex(&ui, "Motion", key="suspend-motion-owner", explicit_key=true,
+		style=alicorn.layout_style(.Row, width=120, height=30))
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	start_ns := u64(1_000_000_000)
+	_ = alicorn.motion_clock_set_time(&rt, alicorn.Motion_Time(i64(start_ns)), .Native_Monotonic)
+	target := alicorn.Motion_Target{translation=alicorn.Motion_Vector2{80, 0}, has_translation=true}
+	testing.expect(t, alicorn.motion_apply_intent(&rt, owner, target) == .Ok,
+		"the selected native owner should have an active motion response")
+	state := Native_Motion_Scheduler_State{}
+	_ = native_motion_scheduler_advance(&state, &rt, true, start_ns)
+	hide_ns := start_ns+5_000_000
+	hidden := native_motion_scheduler_advance(&state, &rt, false, hide_ns)
+	restore_ns := start_ns+900_000_000
+	restored := native_motion_scheduler_advance(&state, &rt, true, restore_ns)
+	testing.expect(t, !hidden.sampled && restored.sampled && state.suspended_since_ns == 0,
+		"the hidden interval should suspend one window and restore with a current-time sample")
+	found_suspend, found_gap := false, false
+	for offset in 0..<alicorn.motion_diagnostics_event_count(&rt) {
+		event, found := alicorn.motion_diagnostics_event_recent(&rt, offset)
+		if !found { continue }
+		if event.kind == .Host_Suspended {
+			found_suspend = event.time == alicorn.Motion_Time(i64(hide_ns)) && event.clock_source == .Native_Monotonic
+		}
+		if event.kind == .Hidden_Gap_Fast_Forward {
+			found_gap = event.time == alicorn.Motion_Time(i64(restore_ns)) &&
+				event.elapsed_ns == restore_ns-hide_ns && event.clock_source == .Native_Monotonic
+		}
+	}
+	testing.expect(t, found_suspend && found_gap,
+		"the motion trace should record the first suspend time and exact hidden gap using the native monotonic clock")
 }
 
 @(test)
