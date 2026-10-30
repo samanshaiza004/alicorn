@@ -1,8 +1,8 @@
 # #109 completion proposal: retained sizing with Scratchpad and Punks
 
-Status: researched implementation proposal; no production sizing changes in
-this document's commit. Keep [#109](https://github.com/samanshaiza004/alicorn/issues/109)
-open until the evidence below is collected.
+Status: correctness fixes and initial two-app dogfooding are complete. Keep
+[#109](https://github.com/samanshaiza004/alicorn/issues/109) open until the
+performance and native acceptance evidence below is collected.
 
 Research date: 2026-10-29, America/Guatemala.
 
@@ -20,9 +20,102 @@ by another layout library will ship. If the second app does not benefit over a
 simplified legacy implementation, report that result and close the broader
 adoption experiment as NO-GO instead of manufacturing a second success.
 
+## Implementation and dogfood update — 2026-10-30
+
+### Correctness fixes
+
+The two reproduced failures are fixed on current Alicorn `master`:
+
+- `21a91a9` lets a typed panel size override an implicit helper default while
+  preserving errors for conflicting non-default legacy values.
+- `075e517` retains definite-parent percentage-width dependencies through
+  cached-region reuse and host viewport resizing. It refreshes effective
+  measurement inputs before layout, preserves `Node_ID`, removes relationships
+  on replacement/retirement, and diagnoses parents that lose definiteness.
+- Current tested library head: `974baf86dffa3b9732fa4a6ee45fb1e97c33a8af`.
+  It includes both fixes plus the subsequent connected-tab work.
+
+The standalone reproduction now reports `200 -> 300` for a cached 50% child
+when its fixed parent changes from 400 to 600, matching a fresh runtime. The
+typed 120-unit panel opens and measures 120 without a hard error. Regression
+coverage includes multiple percentage children in a cached region, a nested
+text child, an unrelated cached sibling, a parent losing definiteness, removal
+and retirement, and fresh-runtime geometry equivalence.
+
+`tools/test.ps1` passed on `974baf8`: 269 runtime, 37 UI, 35 theme, and 156
+native tests, plus the AccessKit ABI/consumer, host foundation, restart, and
+text-input checks. Reported retained sizes remain `Node=2048`,
+`Description=768`, and `Paint_Command=128` bytes. These results establish
+correctness and stable record sizes; they are not a p95 or allocation benchmark
+for the percentage sidecar.
+
+### Punks results/deck dogfood
+
+Punks commit [`b6ba297`](https://github.com/samanshaiza004/punks/commit/b6ba297)
+pins Alicorn `974baf8`. Its audition deck now uses explicit
+`ui.sizing(height=ui.fit_content())`; metadata and transport rows, transport
+buttons, and the seek slider use measured/theme control metrics. The waveform
+keeps its intentional 56-unit inspection height, and the results panel keeps
+the remaining-space allocation and fixed virtual-row contract.
+
+The retained-runtime regression starts without a seek control, then adopts a
+waveform and duration in one application description. The deck grows, the
+results panel and virtual-list viewport shrink in that same update, and the
+viewport remains at least 140 units at 960x720. All four Punks UI tests passed
+against the pinned Alicorn revision; the Windows executable and runtime folder
+also built successfully.
+
+| Punks version | Explicit height declarations | Authoring/result |
+| --- | ---: | --- |
+| Existing source at `77ee32a` | 8 | Fixed 186-unit deck, fixed metadata/transport/button/slider heights, intentional 56-unit waveform |
+| Simplified legacy candidate | 1 | Omit panel height because `ui.panel` already defaults to fit-content; keep the 56-unit waveform |
+| Typed candidate at `b6ba297` | 2 | Name fit-content explicitly and keep the intentional waveform extent |
+
+The visual correction comes from removing the fixed deck and duplicated control
+heights. The typed fit declaration makes the deck's intent explicit, but is
+more syntax than the simplified legacy call and resolves to the same style as
+the panel helper's default. This dogfood validates intrinsic measurement and
+same-update negotiation; by itself it does not prove a material advantage for
+the typed constructor. The main browser still uses the clear legacy
+`height=-1, grow=1` form. No `allocated()` constructor was added.
+
+### Scratchpad font-picker dogfood
+
+Scratchpad's working tree is at `c8a70be` and its local dependency lock points
+to Alicorn `974baf8`. Its ordinary Go package checks passed. The full Alicorn
+frontend run completed 200 tests: 197 passed and three connected-titlebar /
+sidebar-width geometry tests failed in pre-existing uncommitted changes to
+`app_layout.odin`, `connected_titlebar_test.odin`, and `main_test.odin`. The
+font-picker tests were among the passing tests. Those unrelated working-tree
+changes were preserved. Because the frontend run is not fully green, this is
+not a final Scratchpad acceptance pass.
+
+### Decision and remaining closure gate
+
+The two correctness defects are resolved, and both consumers now exercise the
+intended sizing behavior. The evidence supports retaining the narrow typed
+fixed/fit declarations and continuing the definite-parent percentage-width
+prototype. It does not yet satisfy #109's full decision gate:
+
+- No five-process release comparison has measured p95 layout/description,
+  warm allocations, sidecar capacity/peak bytes, cache hits/misses, or idle
+  work for the Scratchpad percentage case and ordinary nonpercentage trees.
+- The Punks candidate has deterministic geometry evidence but no native
+  DPI/text-scale/theme interaction record or complete-frame p95 comparison.
+- Scratchpad's full frontend suite needs a green rerun after its existing
+  connected-titlebar work is resolved; native font-picker focus/theme/scale
+  acceptance also remains unrecorded here.
+
+Do not add `allocated()`, percentage height, aspect ratio, or a general solver
+to close this evidence gap. The current decision is: retain the corrected
+fixed/fit normalization, keep percentage width experimental pending cost and
+native evidence, and defer `allocated()` unless another real consumer shows
+that `height=-1, grow=1` is unclear enough to justify the extra syntax.
+
 ## Source baseline
 
-The connected GitHub default-branch heads matched the local source inspected:
+The connected GitHub default-branch heads matched the local source inspected
+when this proposal was written on 2026-10-29:
 
 | Repository | Revision | Relevant source |
 | --- | --- | --- |
@@ -30,8 +123,8 @@ The connected GitHub default-branch heads matched the local source inspected:
 | Scratchpad | `bafffe62e3bd9ef7ae49a412cf63d5ad54608c5f` | font picker, settings, command palette, quick open, workbench, editor/image views |
 | Punks | `77ee32abf22e6aa8ef1199a3c455a1694e127928` | `punks-standalone/odin/library_view.odin`, layout tests, appearance |
 
-Scratchpad currently pins Alicorn `835b832`; Punks pins `829e463`. The eventual
-consumer changes must pin the same tested Alicorn implementation commit.
+At this initial snapshot, Scratchpad pinned Alicorn `835b832` and Punks pinned
+`829e463`. The dogfood update above records the later matching `974baf8` pins.
 
 The first Scratchpad conversion is already documented in
 [its sizing report](https://github.com/samanshaiza004/scratchpad/blob/bafffe62e3bd9ef7ae49a412cf63d5ad54608c5f/docs/research/ui-sizing-dogfood.md).
