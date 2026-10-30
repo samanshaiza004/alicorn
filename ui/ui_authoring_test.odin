@@ -151,6 +151,48 @@ test_typed_sizing_lowers_to_legacy_layout_style_and_rejects_ambiguity :: proc(t:
 }
 
 @(test)
+test_panel_typed_height_replaces_implicit_fit_default_but_not_explicit_legacy_height :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 360, 240})
+	defer alicorn.destroy_runtime(&rt)
+	ctx, build := alicorn.begin_frame(&rt)
+	if !build { testing.expect(t, false, "the panel default normalization fixture should build"); return }
+	alicorn.container_begin(&ctx, .Root, key="panel-default-normalization-root",
+		style=alicorn.layout_style(.Column, width=360, height=240))
+	opened := false
+	panel_id := alicorn.Node_ID(0)
+	if panel(&ctx, key="typed-panel-height",
+		sizing=sizing(height=logical(120)), label="typed panel height") {
+		opened = true
+		panel_id = ctx.runtime.pending[len(ctx.runtime.pending)-1].description.id
+	}
+	alicorn.container_end(&ctx)
+	alicorn.end_frame(&ctx)
+	node, found := rt.nodes[panel_id]
+	testing.expect(t, opened, "a typed height should replace panel's implicit fit-content default")
+	testing.expect(t, found, "the typed panel should be retained")
+	testing.expect(t, found && node.bounds.h == 120,
+		"the panel should lay out at the requested 120-unit extent")
+	testing.expect(t, !rt.hard_error, rt.diagnostic)
+
+	conflict := alicorn.new_runtime(alicorn.Rect{0, 0, 360, 240})
+	defer alicorn.destroy_runtime(&conflict)
+	conflict_ctx, conflict_build := alicorn.begin_frame(&conflict)
+	if !conflict_build { testing.expect(t, false, "the conflicting panel fixture should build"); return }
+	alicorn.container_begin(&conflict_ctx, .Root, key="panel-default-conflict-root",
+		style=alicorn.layout_style(.Column, width=360, height=240))
+	conflict_opened := false
+	if panel(&conflict_ctx, key="conflicting-panel-height", height=80,
+		sizing=sizing(height=logical(120)), label="conflicting panel height") {
+		conflict_opened = true
+	}
+	alicorn.container_end(&conflict_ctx)
+	alicorn.end_frame(&conflict_ctx)
+	testing.expect(t, !conflict_opened && conflict.hard_error &&
+		strings.contains(conflict.diagnostic, "conflicting") && strings.contains(conflict.diagnostic, "ui_authoring_test.odin:"),
+		"a typed height must still reject a conflicting non-default legacy height with a source-located diagnostic")
+}
+
+@(test)
 test_percentage_width_resolves_from_definite_parent_and_matches_fresh_layout :: proc(t: ^testing.T) {
 	incremental := alicorn.new_runtime(alicorn.Rect{0, 0, 600, 200})
 	defer alicorn.destroy_runtime(&incremental)

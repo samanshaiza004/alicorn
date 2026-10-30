@@ -91,6 +91,41 @@ resolve_size_input :: proc(input: Size_Input, current, default_value, fit_value:
 	return current, false
 }
 
+// resolve_sizing_with_defaults normalizes a typed declaration over a helper's
+// implicit defaults. This lets a typed slot replace a convenience default
+// (such as panel's fit-content height) while still rejecting a conflicting
+// non-default legacy argument. The low-level resolve_sizing API keeps exact
+// Layout_Style conflict semantics.
+resolve_sizing_with_defaults :: proc(
+	base: Layout_Style,
+	defaults: Layout_Style,
+	declaration: Sizing,
+) -> (Layout_Style, bool) {
+	result := base
+	valid: bool
+	result.width, valid = resolve_size_input(declaration.width, base.width, defaults.width, alicorn.LAYOUT_SIZE_FIT_CONTENT, false)
+	if !valid { return base, false }
+	result.height, valid = resolve_size_input(declaration.height, base.height, defaults.height, alicorn.LAYOUT_SIZE_FIT_CONTENT, true)
+	if !valid { return base, false }
+	result.min_width, valid = resolve_size_input(declaration.min_width, base.min_width, defaults.min_width, alicorn.LAYOUT_SIZE_FIT_CONTENT, false)
+	if !valid { return base, false }
+	result.max_width, valid = resolve_size_input(declaration.max_width, base.max_width, defaults.max_width, alicorn.LAYOUT_SIZE_FIT_CONTENT, false)
+	if !valid { return base, false }
+	result.min_height, valid = resolve_size_input(declaration.min_height, base.min_height, defaults.min_height, alicorn.LAYOUT_SIZE_FIT_CONTENT, false)
+	if !valid { return base, false }
+	result.max_height, valid = resolve_size_input(declaration.max_height, base.max_height, defaults.max_height, alicorn.LAYOUT_SIZE_FIT_CONTENT, false)
+	if !valid { return base, false }
+	if declaration.grow.defined {
+		weight := declaration.grow.weight
+		if math.is_nan(weight) || math.is_inf(weight) || weight <= 0 { return base, false }
+		if base.grow != defaults.grow && base.grow != weight { return base, false }
+		result.grow = weight
+	}
+	if result.max_width >= 0 && result.min_width > result.max_width { return base, false }
+	if result.max_height >= 0 && result.min_height > result.max_height { return base, false }
+	return result, true
+}
+
 // resolve_sizing lowers fixed declarations to the existing style fields.
 // Supplying a second, conflicting value in the base style is rejected; callers
 // can use base for padding, gap, direction and alignment without maintaining
@@ -98,29 +133,8 @@ resolve_size_input :: proc(input: Size_Input, current, default_value, fit_value:
 // Percentage declarations need a description-time parent and are handled by
 // the scoped layout_sized UI helper instead.
 resolve_sizing :: proc(base: Layout_Style, declaration: Sizing) -> (Layout_Style, bool) {
-	result := base
-	valid: bool
-	result.width, valid = resolve_size_input(declaration.width, base.width, -1, alicorn.LAYOUT_SIZE_FIT_CONTENT, false)
-	if !valid { return base, false }
-	result.height, valid = resolve_size_input(declaration.height, base.height, -1, alicorn.LAYOUT_SIZE_FIT_CONTENT, true)
-	if !valid { return base, false }
-	result.min_width, valid = resolve_size_input(declaration.min_width, base.min_width, 0, alicorn.LAYOUT_SIZE_FIT_CONTENT, false)
-	if !valid { return base, false }
-	result.max_width, valid = resolve_size_input(declaration.max_width, base.max_width, -1, alicorn.LAYOUT_SIZE_FIT_CONTENT, false)
-	if !valid { return base, false }
-	result.min_height, valid = resolve_size_input(declaration.min_height, base.min_height, 0, alicorn.LAYOUT_SIZE_FIT_CONTENT, false)
-	if !valid { return base, false }
-	result.max_height, valid = resolve_size_input(declaration.max_height, base.max_height, -1, alicorn.LAYOUT_SIZE_FIT_CONTENT, false)
-	if !valid { return base, false }
-	if declaration.grow.defined {
-		weight := declaration.grow.weight
-		if math.is_nan(weight) || math.is_inf(weight) || weight <= 0 { return base, false }
-		if base.grow > 0 && base.grow != weight { return base, false }
-		result.grow = weight
-	}
-	if result.max_width >= 0 && result.min_width > result.max_width { return base, false }
-	if result.max_height >= 0 && result.min_height > result.max_height { return base, false }
-	return result, true
+	defaults := alicorn.layout_style(base.direction)
+	return resolve_sizing_with_defaults(base, defaults, declaration)
 }
 
 // sizing_layout builds an ordinary Layout_Style from a typed declaration and

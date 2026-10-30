@@ -222,6 +222,7 @@ resolve_sizing_for_ui :: proc(
 	ui: ^UI,
 	base: alicorn.Layout_Style,
 	declaration: Sizing,
+	defaults: alicorn.Layout_Style,
 	loc: odin_runtime.Source_Code_Location,
 ) -> (alicorn.Layout_Style, bool) {
 	lowered_declaration := declaration
@@ -234,7 +235,7 @@ resolve_sizing_for_ui :: proc(
 		}
 		lowered_declaration.width = {}
 	}
-	style, valid := resolve_sizing(base, lowered_declaration)
+	style, valid := resolve_sizing_with_defaults(base, defaults, lowered_declaration)
 	if !valid {
 		alicorn.layout_sizing_report_invalid(ui.runtime,
 			"unsupported, conflicting, nonfinite, or out-of-range typed sizing input", loc)
@@ -261,7 +262,8 @@ layout_sized :: proc(
 	label: string = "layout",
 	loc := #caller_location,
 ) -> bool {
-	style, valid := resolve_sizing_for_ui(ui, base, declaration, loc)
+	defaults := alicorn.layout_style(base.direction)
+	style, valid := resolve_sizing_for_ui(ui, base, declaration, defaults, loc)
 	if !valid { return false }
 	return alicorn.container_begin(ui, .Container, label=label, key=key, style=style, loc=loc) != 0
 }
@@ -317,7 +319,8 @@ panel :: proc(
 	resolved_shape := shape
 	if radius != 0 { resolved_shape = alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=radius} }
 	style := alicorn.layout_style(.Column, width=width, height=height, grow=grow, padding=padding, gap=gap, align=align, justify=justify, clip=clip)
-	resolved_style, valid := resolve_sizing_for_ui(ui, style, sizing, loc)
+	defaults := alicorn.layout_style(.Column, width=-1, height=alicorn.LAYOUT_SIZE_FIT_CONTENT)
+	resolved_style, valid := resolve_sizing_for_ui(ui, style, sizing, defaults, loc)
 	if !valid { return false }
 	id := alicorn.surface_begin(
 		ui,
