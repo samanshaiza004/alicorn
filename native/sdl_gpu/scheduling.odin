@@ -8,7 +8,10 @@ SCHEDULED_WAKE_MAX_U64 :: u64(0xffff_ffff_ffff_ffff)
 
 // Native motion is sampled at a bounded display-like cadence. SDL's event
 // wait has millisecond granularity, so this is a requested opportunity rate,
-// not a promise about the compositor's actual present timestamp.
+// not a promise about the compositor's actual present timestamp. The
+// uncertified grace period below is a per-window motion-work budget: once its
+// first uncertified response is observed, all uncertified responses active at
+// expiry are snapped together, even if some started later.
 NATIVE_MOTION_SAMPLE_INTERVAL_NS :: u64(16_666_667)
 NATIVE_MOTION_UNCERTIFIED_LIMIT_NS :: u64(5_000_000_000)
 

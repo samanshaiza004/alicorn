@@ -6,6 +6,7 @@ package main
 // this application description.
 
 import "core:fmt"
+import "core:os"
 import alicorn "alicorn:runtime"
 import host "alicorn:native/sdl_gpu"
 import ui "alicorn:ui"
@@ -21,8 +22,14 @@ App :: struct {
 	selected: int,
 	logical_width: int,
 	clock: host.Application_Motion_Clock,
+	scheduler: host.Application_Scheduler,
+	diagnostics: host.Application_Diagnostics,
 	services_ready: bool,
+	validation_mode: bool,
+	validation_phase: Motion_Validation_Phase,
 }
+
+Motion_Validation_Phase :: enum { None, Retarget, Settled_Check, Idle_Check, Done }
 
 build_app :: proc(
 	state: rawptr,
@@ -96,11 +103,60 @@ build_app :: proc(
 services_app :: proc(state: rawptr, services: host.Application_Services) {
 	app := cast(^App)state
 	app.clock = services.motion_clock
+	app.scheduler = services.scheduler
+	app.diagnostics = services.diagnostics
 	app.services_ready = app.clock.now != nil
+	if app.validation_mode {
+		app.validation_phase = .Retarget
+		_ = host.application_schedule_after(app.scheduler, .Frequent, 100_000_000)
+		host.application_diagnostic_event(app.diagnostics, "motion.validation.ready")
+	}
+}
+
+scheduled_wake_app :: proc(state: rawptr, rt: ^alicorn.Runtime, _class: host.Scheduled_Wake_Class) {
+	app := cast(^App)state
+	switch app.validation_phase {
+	case .Retarget:
+		app.selected = 2
+		app.validation_phase = .Settled_Check
+		alicorn.invalidate_root(rt, "motion validation retarget")
+		host.application_diagnostic_event(app.diagnostics, "motion.validation.retargeted")
+		_ = host.application_schedule_after(app.scheduler, .Frequent, 1_500_000_000)
+	case .Settled_Check:
+		activity := alicorn.motion_activity(rt)
+		fmt.println("motion_validation", "settled_checkpoint", "active_owners", activity.active_owners,
+			"active_properties", activity.active_properties, "unestablished_deadlines", activity.unestablished_deadlines)
+		host.application_diagnostic_event(app.diagnostics, "motion.validation.settled_checkpoint")
+		if activity.active_owners == 0 {
+			app.validation_phase = .Idle_Check
+			_ = host.application_schedule_after(app.scheduler, .Frequent, 1_000_000_000)
+		} else {
+			_ = host.application_schedule_after(app.scheduler, .Frequent, 250_000_000)
+		}
+	case .Idle_Check:
+		activity := alicorn.motion_activity(rt)
+		fmt.println("motion_validation", "idle_checkpoint", "active_owners", activity.active_owners,
+			"active_properties", activity.active_properties, "unestablished_deadlines", activity.unestablished_deadlines)
+		host.application_diagnostic_event(app.diagnostics, "motion.validation.idle_checkpoint")
+		app.validation_phase = .Done
+	case .None, .Done:
+		// Ordinary applications don't install this callback. In validation mode,
+		// it only advances the bounded retarget/settlement/idle checkpoints.
+	}
 }
 
 main :: proc() {
 	app := App{}
+	validation_smoke := false
+	for argument in os.args {
+		if argument == "--motion-validation" {
+			// Make one delayed logical selection change, then observe the retained
+			// response settle and leave an idle interval before bounded shutdown.
+			// Run with --diagnostics to capture native scheduler counters.
+			app.validation_mode = true
+			validation_smoke = true
+		}
+	}
 	host.Run(host.Application{
 		state=rawptr(&app),
 		title="Alicorn · Retained Motion",
@@ -109,5 +165,6 @@ main :: proc() {
 		interaction_update_policy=.Correct_After_Interaction,
 		build=build_app,
 		on_services=services_app,
-	})
+		on_scheduled_wake=scheduled_wake_app,
+	}, smoke=validation_smoke)
 }

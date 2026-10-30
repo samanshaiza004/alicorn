@@ -72,7 +72,9 @@ build. Program arguments follow the example name on the shell runner and use
    between selections. Leave the window alone after it settles; no motion timer
    or presentation should continue. Minimize and restore during movement to
    verify that restore samples the current position once without replaying
-   missed frames.
+   missed frames. Run `--motion-validation --diagnostics` for an initial
+   selection retarget, a bounded smoke exit, and an automatic diagnostics
+   capture after the marker has settled.
 
 ## Build and validation
 

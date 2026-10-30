@@ -127,6 +127,23 @@ test_native_motion_uncertified_deadline_has_bounded_policy :: proc(t: ^testing.T
 }
 
 @(test)
+test_native_motion_uncertified_grace_is_a_window_wide_work_budget :: proc(t: ^testing.T) {
+	state := Native_Motion_Scheduler_State{}
+	first_started_ns := u64(1_000_000_000)
+	second_started_ns := first_started_ns+4_900_000_000
+	native_motion_scheduler_finish_sample(&state, 1, 1, first_started_ns)
+	native_motion_scheduler_finish_sample(&state, 2, 2, second_started_ns)
+	testing.expect(t, state.uncertified_since_ns == first_started_ns,
+		"a later uncertified response shares the existing window grace-period origin")
+	testing.expect(t, !native_motion_scheduler_uncertified_limit_reached(
+		&state, 2, first_started_ns+NATIVE_MOTION_UNCERTIFIED_LIMIT_NS-1,
+	), "the first response retains nearly the full five-second window budget")
+	testing.expect(t, native_motion_scheduler_uncertified_limit_reached(
+		&state, 2, first_started_ns+NATIVE_MOTION_UNCERTIFIED_LIMIT_NS,
+	), "at expiry, the window budget bounds all currently active uncertified responses")
+}
+
+@(test)
 test_native_motion_visibility_ignores_hidden_minimized_and_occluded_windows :: proc(t: ^testing.T) {
 	testing.expect(t, native_motion_window_renderable(sdl3.WindowFlags{}) &&
 		!native_motion_window_renderable(sdl3.WindowFlags{.HIDDEN}) &&

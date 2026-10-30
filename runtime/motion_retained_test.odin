@@ -211,6 +211,39 @@ test_uncertified_motion_can_be_bounded_to_an_exact_target :: proc(t: ^testing.T)
 }
 
 @(test)
+test_bounded_uncertified_snap_retires_all_current_window_responses :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 120})
+	defer destroy_runtime(&rt)
+	_, first_node, second_node := motion_retained_test_build(&rt, true)
+	first_handle, first_status := motion_owner_begin(&rt, first_node)
+	second_handle, second_status := motion_owner_begin(&rt, second_node)
+	if first_status != .Ok || second_status != .Ok {
+		testing.expect(t, false, "both retained nodes should acquire motion owners")
+		return
+	}
+	config := Motion_Config{omega=1e-20, position_tolerance=1e-12, velocity_tolerance=1e-12}
+	if motion_target_opacity(&rt, first_handle, 0.25, config, .Settle, Motion_Time(1_000_000_000)) != .Ok {
+		testing.expect(t, false, "the first slow response should be accepted")
+		return
+	}
+	if motion_target_opacity(&rt, second_handle, 0.5, config, .Settle, Motion_Time(5_900_000_000)) != .Ok {
+		testing.expect(t, false, "a later slow response should be accepted in the same window")
+		return
+	}
+	activity := motion_activity(&rt)
+	_ = motion_tick(&rt, Motion_Time(6_000_000_000))
+	bounded := motion_snap_unestablished(&rt, Motion_Time(6_000_000_000))
+	first := motion_presentation(&rt, first_handle)
+	second := motion_presentation(&rt, second_handle)
+	testing.expect(t, activity.active_owners == 2 && activity.unestablished_deadlines == 2,
+		"both the older and later response should be active when the window budget expires")
+	testing.expect(t, bounded.status == .Ok && bounded.active_owners == 0 &&
+		!first.active && first.presented_opacity == 0.25 &&
+		!second.active && second.presented_opacity == 0.5,
+		"the window-wide bounded fallback should snap every currently active uncertified response")
+}
+
+@(test)
 test_retained_motion_release_resets_presentation_without_retiring_node :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 240, 120})
 	defer destroy_runtime(&rt)

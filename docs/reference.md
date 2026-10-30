@@ -1184,9 +1184,12 @@ system file drops or arbitrary MIME payloads.
   so tests and replay can inject their own values. The native scheduler drops
   missed intervals, suspends deadlines while a window is hidden, minimized, or
   occluded, and samples once at current time after restore. A response whose
-  settlement deadline remains uncertified is snapped to its exact target after
-  a five-second host grace period, preventing unbounded animation work. The
-  requested cadence is not a claim about compositor present timestamps.
+  settlement deadline remains uncertified is snapped to its exact target when
+  the window's five-second motion-work budget expires. This is deliberately a
+  per-window budget, not a five-second guarantee for every response: the first
+  observed uncertified response starts the budget, and all uncertified
+  responses active at expiry are snapped together. The requested cadence is
+  not a claim about compositor present timestamps.
   Unopted nodes retain their existing behavior.
 - `inspect(runtime)` and `trace_snapshot(runtime)` expose retained state and
   recent invalidation/stage events for diagnostics.
