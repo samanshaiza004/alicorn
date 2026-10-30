@@ -68,6 +68,7 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 	rt.order = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.top_level = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.pending = make([dynamic]Pending_Item, 0, allocator=rt.persistent_allocator)
+	rt.motion_intent_requests = make([dynamic]Motion_Intent_Request, 0, allocator=rt.persistent_allocator)
 	rt.scroll_visibility_requests = make([dynamic]Scroll_Visibility_Request, 0, allocator=rt.persistent_allocator)
 	rt.seen = make(map[Node_ID]Identity_Declaration, allocator=rt.persistent_allocator)
 	rt.identity_scopes = make(map[Node_ID]Identity_Declaration, allocator=rt.persistent_allocator)

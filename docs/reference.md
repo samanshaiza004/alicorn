@@ -1157,7 +1157,31 @@ system file drops or arbitrary MIME payloads.
   menu shortcuts are checked before generic text keys.
 - `Runtime_Config` optionally configures persistent and scratch backing
   allocators when calling `new_runtime`.
-- Opt-in retained motion is bound to a live `Node_ID` through
+- The beginner-facing `ui.motion` declaration queues a target and response
+  intent during the node's description; Alicorn applies it after reconciliation
+  has the complete current subtree and style environment. The application
+  doesn't acquire a motion handle, query the current presentation, or read a
+  clock. The native host injects its monotonic timestamp before each
+  description; deterministic/custom hosts can use `motion_clock_set_time`.
+  `Motion_Intent.Settle` preserves presentation velocity while retargeting,
+  `Direct` tracks the declared target without residual velocity, and `Snap`
+  commits immediately. `Reveal` initializes a newly retained decorative owner
+  from an optional translation offset and/or zero opacity, then settles toward
+  its target. Reveal is accepted only for structurally noninteractive subtrees:
+  layout, hit testing, focus, drag/drop, and accessibility remain authoritative
+  from the first description, so don't reveal controls or focusable/navigation
+  content.
+  A repeated `ui.motion` declaration for the same node in one description uses
+  the last target. Failed deferred applications are reported in runtime
+  diagnostics.
+- `Style_Theme.motion_policy` controls default settling responses separately
+  for translation and opacity. An unset policy resolves to the library default
+  without animating any node implicitly; applications still opt in with
+  `ui.motion`. Reduce Motion snaps spatial changes by default. A theme may opt
+  into a short opacity-only response; the preference is reevaluated on each
+  description, so enabling Reduce Motion mid-flight snaps spatial motion (or
+  uses the opted-in opacity response) deterministically.
+- Low-level retained motion remains available. It is bound to a live `Node_ID` through
   `motion_owner_begin`; the returned handle carries a process-unique runtime
   lifetime identity and runtime-local owner generation, so cross-runtime use,
   retirement, release, and identity reuse invalidate old handles.

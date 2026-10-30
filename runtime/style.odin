@@ -278,6 +278,7 @@ style_theme_is_valid :: proc(theme: Style_Theme) -> bool {
 			}
 		}
 	}
+	if !motion_theme_policy_valid(theme.motion_policy) { return false }
 	return true
 }
 
@@ -377,6 +378,20 @@ style_theme_register :: proc(rt: ^Runtime, theme: Style_Theme) -> Style_Theme_ID
 	}
 	append(&rt.style_themes, registered)
 	return Style_Theme_ID(u32(len(rt.style_themes)))
+}
+
+// style_theme_motion_policy resolves the optional intent defaults for one
+// node's current theme. Older custom themes with no motion policy inherit the
+// library defaults, but no node animates unless its application opts in.
+style_theme_motion_policy :: proc(rt: ^Runtime, theme_id: Style_Theme_ID) -> Motion_Theme_Policy {
+	if rt == nil { return DEFAULT_MOTION_THEME_POLICY }
+	resolved_id := theme_id
+	if resolved_id == 0 { resolved_id = DEFAULT_STYLE_THEME_ID }
+	index := u64(u32(resolved_id))
+	if index == 0 || index > u64(len(rt.style_themes)) { return DEFAULT_MOTION_THEME_POLICY }
+	policy := rt.style_themes[index-1].motion_policy
+	if policy.defined { return policy }
+	return DEFAULT_MOTION_THEME_POLICY
 }
 
 style_theme_color :: proc(rt: ^Runtime, theme: Style_Theme_ID, role: Style_Color_Role) -> Color {

@@ -21,6 +21,38 @@ Motion_Config :: struct {
 	velocity_tolerance: f64,
 }
 
+// Motion_Intent is a small authoring vocabulary for paint-only retained
+// motion. Settle preserves continuity toward a discrete target; Direct tracks
+// a supplied target without residual velocity; Snap commits immediately;
+// Reveal initializes a newly retained owner from a hidden/offset presentation
+// and then settles toward its declared target.
+Motion_Intent :: enum { Settle, Direct, Snap, Reveal }
+
+// Reduced_Motion_Policy keeps the safe default explicit. Opacity_Fade is an
+// opt-in theme policy and applies only to paint opacity; spatial movement
+// still snaps when the user requests reduced motion.
+Motion_Reduced_Motion_Policy :: enum { Snap, Opacity_Fade }
+
+// Motion_Theme_Policy stores property-specific tolerances in the units of the
+// animated property: logical units for translation and [0,1] for opacity.
+// A zero/undefined policy on an older custom theme resolves to the library
+// default, so existing themes gain no implicit motion behavior.
+Motion_Theme_Policy :: struct {
+	defined: bool,
+	translation: Motion_Config,
+	opacity: Motion_Config,
+	reduced_motion: Motion_Reduced_Motion_Policy,
+	reduced_opacity: Motion_Config,
+}
+
+DEFAULT_MOTION_THEME_POLICY :: Motion_Theme_Policy{
+	defined=true,
+	translation=Motion_Config{omega=18, position_tolerance=0.1, velocity_tolerance=0.5},
+	opacity=Motion_Config{omega=18, position_tolerance=0.001, velocity_tolerance=0.01},
+	reduced_motion=.Snap,
+	reduced_opacity=Motion_Config{omega=18, position_tolerance=0.001, velocity_tolerance=0.01},
+}
+
 Motion_Mode :: enum {
 	// Analytically converge on a discrete target, preserving position and
 	// velocity when a new target is supplied.
@@ -71,6 +103,15 @@ Motion_Vector2 :: struct {
 	x, y: f64,
 }
 
+// Motion_Target declares only the properties the caller wants to animate.
+// It intentionally contains values rather than a retained owner/handle.
+Motion_Target :: struct {
+	translation: Motion_Vector2,
+	opacity: f64,
+	has_translation: bool,
+	has_opacity: bool,
+}
+
 // The two components share the same config, mode, and timestamps. They keep
 // the scalar representation so evaluation and retargeting have one formula.
 Motion_Translation_Response :: struct {
@@ -98,6 +139,16 @@ motion_config_valid :: proc(config: Motion_Config) -> bool {
 	return motion_finite(config.omega) && config.omega > 0 &&
 		motion_finite(config.position_tolerance) && config.position_tolerance > 0 &&
 		motion_finite(config.velocity_tolerance) && config.velocity_tolerance > 0
+}
+
+motion_theme_policy_valid :: proc(policy: Motion_Theme_Policy) -> bool {
+	if !policy.defined { return true }
+	if (policy.reduced_motion != .Snap && policy.reduced_motion != .Opacity_Fade) ||
+		!motion_config_valid(policy.translation) || !motion_config_valid(policy.opacity) ||
+		!motion_config_valid(policy.reduced_opacity) {
+		return false
+	}
+	return true
 }
 
 // motion_log_sum_positive returns log(exp(log_a)+exp(log_b)) without forming

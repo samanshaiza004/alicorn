@@ -917,6 +917,7 @@ Style_Theme :: struct {
 	text_field_recipe:      Text_Field_Recipe,
 	scrollbar_recipe:       Scrollbar_Recipe,
 	control_metrics:        Control_Metrics,
+	motion_policy:          Motion_Theme_Policy,
 	color_tokens:           []Color,
 	length_tokens:          []Style_Length,
 	core_color_tokens:      [STYLE_COLOR_ROLE_COUNT]Style_Color_Token_ID,
@@ -947,7 +948,7 @@ DEFAULT_STYLE_THEME :: Style_Theme{colors={
 	Color{0.17, 0.39, 0.34, 1},
 	Color{0.08, 0.10, 0.14, 1},
 	Color{0.38, 0.48, 0.62, 1},
-}, button_recipes=DEFAULT_BUTTON_RECIPES, checkbox_recipe=DEFAULT_CHECKBOX_RECIPE, slider_recipe=DEFAULT_SLIDER_RECIPE, text_field_recipe=DEFAULT_TEXT_FIELD_RECIPE, scrollbar_recipe=DEFAULT_SCROLLBAR_RECIPE, control_metrics=DEFAULT_CONTROL_METRICS}
+}, button_recipes=DEFAULT_BUTTON_RECIPES, checkbox_recipe=DEFAULT_CHECKBOX_RECIPE, slider_recipe=DEFAULT_SLIDER_RECIPE, text_field_recipe=DEFAULT_TEXT_FIELD_RECIPE, scrollbar_recipe=DEFAULT_SCROLLBAR_RECIPE, control_metrics=DEFAULT_CONTROL_METRICS, motion_policy=DEFAULT_MOTION_THEME_POLICY}
 
 DEFAULT_STYLE_THEME_ID :: Style_Theme_ID(1)
 
@@ -1860,6 +1861,10 @@ Runtime :: struct {
 	// runtime-local, while handles also carry a process-unique runtime lifetime
 	// identity to prevent cross-runtime aliasing. Records leave with their owner.
 	motion_owners: map[Node_ID]Motion_Retained_Owner,
+	// Declarative ui.motion requests are sparse and allocated only when an
+	// application opts in; they are applied after each description reconciles.
+	motion_intent_requests: [dynamic]Motion_Intent_Request,
+	motion_intent_request_indices: map[Node_ID]int,
 	motion_runtime_identity: u64,
 	motion_generation_sequence: u64,
 	motion_time: Motion_Time,

@@ -584,3 +584,67 @@ test_text_buffer_helpers_create_update_and_destroy_owned_text :: proc(t: ^testin
 	text_buffer_destroy(&buffer)
 	testing.expect(t, !buffer.initialized, "text_buffer_destroy should release and clear the buffer")
 }
+
+@(test)
+test_ui_motion_intent_is_deferred_until_reconciliation :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 180})
+	defer alicorn.destroy_runtime(&rt)
+	testing.expect(t, alicorn.motion_clock_set_time(&rt, alicorn.Motion_Time(0)) == .Ok,
+		"a deterministic host can inject motion time before describing the UI")
+
+	ctx, build := alicorn.begin_frame(&rt)
+	if !build { testing.expect(t, false, "the initial description should build"); return }
+	root := alicorn.container_begin(&ctx, .Root, key="motion-intent-root", style=alicorn.layout_style(.Column, width=320, height=180))
+	owner := alicorn.container_begin(&ctx, .Container, key="motion-intent-owner", style=alicorn.layout_style(.Column, width=160, height=60))
+	alicorn.text(&ctx, "Decorative content", key="motion-intent-text")
+	queued := motion(
+		&ctx,
+		owner,
+		Motion_Target{translation=Motion_Vector2{64, 0}, has_translation=true},
+	)
+	testing.expect(t, queued == .Ok,
+		"the ordinary UI API should accept a target while its node is still in the current description")
+	replaced := motion(
+		&ctx,
+		owner,
+		Motion_Target{translation=Motion_Vector2{80, 0}, has_translation=true},
+	)
+	testing.expect(t, replaced == .Ok,
+		"a second declaration for one node should replace the first without retaining duplicate work")
+	alicorn.container_end(&ctx)
+	alicorn.container_end(&ctx)
+	alicorn.end_frame(&ctx)
+
+	handle, handle_status := alicorn.motion_owner_begin(&rt, owner)
+	presentation := alicorn.motion_presentation(&rt, handle)
+	testing.expect(t, root != 0 && handle_status == .Ok && presentation.status == .Ok &&
+		presentation.active && presentation.target_translation == alicorn.Motion_Vector2{80, 0},
+		"end_frame should apply the queued target after reconciling its node and subtree, without an app-owned motion handle")
+	testing.expect(t, len(rt.motion_intent_requests) == 0 && len(rt.diagnostic) == 0,
+		"successfully applied motion intents should clear the sparse request queue without diagnostics")
+}
+
+@(test)
+test_ui_motion_reveal_checks_new_interactive_descendants_after_reconciliation :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 180})
+	defer alicorn.destroy_runtime(&rt)
+	_ = alicorn.motion_clock_set_time(&rt, alicorn.Motion_Time(0))
+	ctx, build := alicorn.begin_frame(&rt)
+	if !build { testing.expect(t, false, "the initial description should build"); return }
+	alicorn.container_begin(&ctx, .Root, key="motion-reveal-root", style=alicorn.layout_style(.Column, width=320, height=180))
+	owner := alicorn.container_begin(&ctx, .Container, key="motion-reveal-owner", style=alicorn.layout_style(.Column, width=220, height=80))
+	button(&ctx, "Interactive child", key="motion-reveal-button")
+	queued := motion(
+		&ctx,
+		owner,
+		Motion_Target{opacity=1, has_opacity=true},
+		.Reveal,
+	)
+	alicorn.container_end(&ctx)
+	alicorn.container_end(&ctx)
+	alicorn.end_frame(&ctx)
+	testing.expect(t, queued == .Ok,
+		"Reveal must wait until reconciliation because this call is made before its button child is attached")
+	testing.expect(t, rt.hard_error && strings.contains(rt.diagnostic, "Interactive_Reveal_Unsupported") && rt.motion_owners == nil,
+		"after reconciliation Alicorn should reject interactive Reveal and avoid allocating a motion owner")
+}

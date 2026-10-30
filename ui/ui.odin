@@ -32,6 +32,10 @@ Virtual_List :: alicorn.Virtual_List_Handle
 Motion_Time :: alicorn.Motion_Time
 Motion_Config :: alicorn.Motion_Config
 Motion_Mode :: alicorn.Motion_Mode
+Motion_Intent :: alicorn.Motion_Intent
+Motion_Target :: alicorn.Motion_Target
+Motion_Theme_Policy :: alicorn.Motion_Theme_Policy
+Motion_Reduced_Motion_Policy :: alicorn.Motion_Reduced_Motion_Policy
 Motion_Owner_Handle :: alicorn.Motion_Owner_Handle
 Motion_Runtime_Status :: alicorn.Motion_Runtime_Status
 Motion_Presentation :: alicorn.Motion_Presentation
@@ -74,6 +78,24 @@ key_scope :: proc(ui: ^UI, key: UI_Key, loc := #caller_location) -> bool {
 motion_owner_begin :: proc(ctx: ^UI, owner: Node_ID) -> (Motion_Owner_Handle, Motion_Runtime_Status) {
 	if ctx == nil || ctx.runtime == nil { return {}, .Invalid_Runtime }
 	return alicorn.motion_owner_begin(ctx.runtime, owner)
+}
+
+// motion declares a retained node's presentation target and response intent.
+// Call during the node's description. Alicorn applies it after reconciliation,
+// when current theme, accessibility state, and the complete subtree are known.
+// Ordinary applications don't keep a handle, query presentation, or obtain a
+// clock; native hosts inject monotonic time before each description. Reveal is
+// paint-only and accepts decorative subtrees only. Layout, input, and
+// accessibility state are authoritative immediately.
+motion :: proc(
+	ctx: ^UI,
+	owner: Node_ID,
+	target: Motion_Target,
+	intent: Motion_Intent = .Settle,
+	reveal_offset: Motion_Vector2 = {},
+) -> Motion_Runtime_Status {
+	if ctx == nil || ctx.runtime == nil { return .Invalid_Runtime }
+	return alicorn.motion_intent_queue(ctx.runtime, owner, target, intent, reveal_offset)
 }
 
 // motion_owner_release cancels an owner's motion and releases its sparse

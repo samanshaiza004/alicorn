@@ -1039,6 +1039,10 @@ reconcile :: proc(rt: ^Runtime) {
 	semantic_keyboard_focus_refresh(rt)
 	semantic_prune_touched_collections(rt)
 	semantic_commit(rt)
+	// Declarative motion is applied only after the complete current subtree has
+	// been reconciled, so Reveal can enforce its decorative-only contract and
+	// initial presentation is included in this frame's paint output.
+	motion_intent_requests_apply(rt)
 	update_paint(rt)
 	clear(&rt.scroll_visibility_requests)
 	rt.frame_open = false
@@ -1139,6 +1143,8 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.order)
 	delete(rt.top_level)
 	delete(rt.pending)
+	delete(rt.motion_intent_requests)
+	delete(rt.motion_intent_request_indices)
 	delete(rt.scroll_visibility_requests)
 	delete(rt.seen)
 	delete(rt.identity_scopes)

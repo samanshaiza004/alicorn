@@ -188,6 +188,8 @@ test_native_host_corrects_action_updates_independent_of_widget_order :: proc(t: 
 
 		alicorn.invalidate_root(&rt, "simple interaction test initial description")
 		initial := native_application_build_until_stable(&application, &rt, &metrics, &timing)
+		testing.expect(t, rt.motion_clock_initialized,
+			"the native host should inject its monotonic presentation clock before ordinary application descriptions")
 		button_id: alicorn.Node_ID
 		for id in rt.order {
 			if node, found := rt.nodes[id]; found && node.kind == .Button && node.label == "Increment" { button_id = id }

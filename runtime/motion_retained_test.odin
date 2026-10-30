@@ -352,6 +352,148 @@ test_retained_motion_retarget_is_continuous_and_mode_change_is_not_ignored :: pr
 }
 
 @(test)
+test_motion_intent_retargets_and_reduce_motion_snaps_midflight :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 120})
+	defer destroy_runtime(&rt)
+	_, child, _ := motion_retained_test_build(&rt, true)
+	testing.expect(t, motion_clock_set_time(&rt, Motion_Time(0)) == .Ok,
+		"the host/test clock should be injectable before a declarative motion request")
+	target := Motion_Target{translation=Motion_Vector2{80, 0}, has_translation=true}
+	testing.expect(t, motion_apply_intent(&rt, child, target) == .Ok,
+		"the small intent API should create and retarget its own retained owner")
+	handle, handle_status := motion_owner_begin(&rt, child)
+	first := motion_presentation(&rt, handle)
+	testing.expect(t, handle_status == .Ok && first.active && first.target_translation == target.translation,
+		"a settled target should be visible through the low-level diagnostic query without requiring apps to use it")
+	if handle_status != .Ok { return }
+
+	_ = motion_clock_set_time(&rt, Motion_Time(100_000_000))
+	second_target := Motion_Target{translation=Motion_Vector2{120, 6}, has_translation=true}
+	testing.expect(t, motion_apply_intent(&rt, child, second_target, .Settle) == .Ok,
+		"retargeting should preserve sampled position and velocity without an application handle")
+	retargeted := motion_presentation(&rt, handle)
+	testing.expect(t, retargeted.active && retargeted.target_translation == second_target.translation &&
+		retargeted.presented_translation != first.presented_translation,
+		"the new target should be committed from the latest sampled presentation")
+
+	if node, found := rt.nodes[child]; found { node.style_environment.accessibility.reduce_motion = true }
+	testing.expect(t, motion_apply_intent(&rt, child, second_target, .Settle) == .Ok,
+		"the current accessibility motion preference should be reevaluated on each intent declaration")
+	reduced := motion_presentation(&rt, handle)
+	testing.expect(t, !reduced.active && reduced.presented_translation == [2]f32{120, 6},
+		"enabling Reduce Motion during a response should deterministically snap spatial presentation to its target")
+	if node, found := rt.nodes[child]; found { node.style_environment.accessibility.reduce_motion = false }
+	direct_target := Motion_Target{translation=Motion_Vector2{32, -3}, has_translation=true}
+	testing.expect(t, motion_apply_intent(&rt, child, direct_target, .Direct) == .Ok,
+		"Direct intent should commit the declared position without residual velocity")
+	direct := motion_presentation(&rt, handle)
+	testing.expect(t, !direct.active && direct.presented_translation == [2]f32{32, -3},
+		"Direct presentation should equal its authoritative target immediately")
+	if node, found := rt.nodes[child]; found { node.disabled = true }
+	settle_target := Motion_Target{translation=Motion_Vector2{48, 2}, has_translation=true}
+	testing.expect(t, motion_apply_intent(&rt, child, settle_target) == .Ok,
+		"disabled motion owners should continue to accept target declarations")
+	disabled := motion_presentation(&rt, handle)
+	testing.expect(t, !disabled.active && disabled.presented_translation == [2]f32{48, 2},
+		"disabled owners should snap rather than animate interactive content")
+}
+
+@(test)
+test_motion_intent_uses_new_theme_policy_without_changing_owner_identity :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 120})
+	defer destroy_runtime(&rt)
+	_, child, _ := motion_retained_test_build(&rt, true)
+	_ = motion_clock_set_time(&rt, Motion_Time(0))
+	target := Motion_Target{translation=Motion_Vector2{75, 0}, has_translation=true}
+	testing.expect(t, motion_apply_intent(&rt, child, target) == .Ok,
+		"the default theme should support explicit motion intent")
+	handle, _ := motion_owner_begin(&rt, child)
+	old_state := rt.motion_owners[child]
+
+	theme := DEFAULT_STYLE_THEME
+	theme.motion_policy = Motion_Theme_Policy{
+		defined=true,
+		translation=Motion_Config{omega=7, position_tolerance=0.02, velocity_tolerance=0.04},
+		opacity=DEFAULT_MOTION_THEME_POLICY.opacity,
+		reduced_motion=.Snap,
+		reduced_opacity=DEFAULT_MOTION_THEME_POLICY.reduced_opacity,
+	}
+	theme_id := style_theme_register(&rt, theme)
+	testing.expect(t, theme_id != 0, "a theme may provide its own explicit response policy")
+	if node, found := rt.nodes[child]; found { node.style_environment.theme = theme_id }
+	_ = motion_clock_set_time(&rt, Motion_Time(50_000_000))
+	testing.expect(t, motion_apply_intent(&rt, child, target) == .Ok,
+		"the intent helper should re-resolve the current node theme while motion is active")
+	new_state := rt.motion_owners[child]
+	presentation := motion_presentation(&rt, handle)
+	testing.expect(t, presentation.status == .Ok && presentation.active &&
+		new_state.generation == old_state.generation &&
+		new_state.translation.x.config == theme.motion_policy.translation,
+		"theme policy changes should retarget the same owner from its sampled presentation with the new configuration")
+}
+
+@(test)
+test_reduced_motion_theme_policy_only_allows_opted_in_opacity_fade :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 120})
+	defer destroy_runtime(&rt)
+	_, child, _ := motion_retained_test_build(&rt, true)
+	theme := DEFAULT_STYLE_THEME
+	theme.motion_policy = Motion_Theme_Policy{
+		defined=true,
+		translation=DEFAULT_MOTION_THEME_POLICY.translation,
+		opacity=DEFAULT_MOTION_THEME_POLICY.opacity,
+		reduced_motion=.Opacity_Fade,
+		reduced_opacity=Motion_Config{omega=30, position_tolerance=0.005, velocity_tolerance=0.02},
+	}
+	theme_id := style_theme_register(&rt, theme)
+	if node, found := rt.nodes[child]; found {
+		node.style_environment.theme = theme_id
+		node.style_environment.accessibility.reduce_motion = true
+	}
+	_ = motion_clock_set_time(&rt, Motion_Time(0))
+	target := Motion_Target{
+		translation=Motion_Vector2{24, 0},
+		opacity=0,
+		has_translation=true,
+		has_opacity=true,
+	}
+	testing.expect(t, motion_apply_intent(&rt, child, target) == .Ok,
+		"a theme may opt into a short opacity transition under reduced motion")
+	state := rt.motion_owners[child]
+	translation_sample := motion_translation_sample(state.translation, Motion_Time(0))
+	opacity_sample := motion_scalar_sample(state.opacity, Motion_Time(0))
+	testing.expect(t, translation_sample.status == .Ok && !translation_sample.active &&
+		translation_sample.value == target.translation && opacity_sample.status == .Ok && opacity_sample.active &&
+		state.opacity.config == theme.motion_policy.reduced_opacity,
+		"the reduced-motion policy must snap spatial changes while using only the explicitly configured opacity response")
+}
+
+@(test)
+test_motion_reveal_is_paint_only_and_rejects_interactive_subtrees :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 120})
+	defer destroy_runtime(&rt)
+	outer, child, _ := motion_retained_test_build(&rt, true)
+	_ = motion_clock_set_time(&rt, Motion_Time(0))
+	reveal := Motion_Target{
+		translation=Motion_Vector2{0, 0}, opacity=1,
+		has_translation=true, has_opacity=true,
+	}
+	status := motion_apply_intent(&rt, outer, reveal, .Reveal, Motion_Vector2{0, 8})
+	testing.expect(t, status == .Ok,
+		"a decorative container and inert surface descendants may use the paint-only Reveal intent")
+	if handle, handle_status := motion_owner_begin(&rt, outer); handle_status == .Ok {
+		presentation := motion_presentation(&rt, handle)
+		testing.expect(t, presentation.active && presentation.presented_opacity == 0 &&
+			presentation.presented_translation == [2]f32{0, 8},
+			"Reveal should start at its declared hidden/offset presentation and settle toward authoritative layout")
+	}
+	if child_node, found := rt.nodes[child]; found { child_node.kind = .Button }
+	_ = motion_clock_set_time(&rt, Motion_Time(20_000_000))
+	testing.expect(t, motion_apply_intent(&rt, outer, reveal, .Reveal, Motion_Vector2{0, 8}) == .Interactive_Reveal_Unsupported,
+		"Reveal must reject interactive descendants because input and accessibility are ready immediately")
+}
+
+@(test)
 test_retained_motion_generation_changes_when_node_identity_is_recreated :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 260, 120})
 	defer destroy_runtime(&rt)

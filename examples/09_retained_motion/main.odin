@@ -1,9 +1,8 @@
 package main
 
-// 09 · Retained Motion demonstrates a decorative selection marker. Selecting
-// another tab changes the retained translation target once; the native host
-// samples the analytic response at display-like intervals without rebuilding
-// this application description.
+// 09 · Retained Motion demonstrates intent-based decorative motion. The app
+// declares targets during ordinary UI description; the host injects time and
+// Alicorn retains, retargets, samples, and schedules presentation independently.
 
 import "core:fmt"
 import "core:os"
@@ -12,19 +11,12 @@ import host "alicorn:native/sdl_gpu"
 import ui "alicorn:ui"
 
 TAB_COUNT :: 3
-MOTION_CONFIG :: ui.Motion_Config{
-	omega=18,
-	position_tolerance=0.001,
-	velocity_tolerance=0.01,
-}
 
 App :: struct {
 	selected: int,
 	logical_width: int,
-	clock: host.Application_Motion_Clock,
 	scheduler: host.Application_Scheduler,
 	diagnostics: host.Application_Diagnostics,
-	services_ready: bool,
 	validation_mode: bool,
 	validation_phase: Motion_Validation_Phase,
 }
@@ -69,31 +61,41 @@ build_app :: proc(
 				style=ui.layout_style(.Row, width=tab_width, height=4),
 				color=alicorn.Color{0.30, 0.62, 0.98, 1},
 			)
-			if app.services_ready {
-				handle, owner_status := ui.motion_owner_begin(&ctx, indicator)
-				if owner_status == .Ok {
-					at := host.application_motion_time_now(app.clock)
-					target_x := f64(app.selected)*f64(tab_width+8)
-					current := ui.motion_presentation(&ctx, handle)
-					if current.status == .Ok && current.target_translation.x != target_x {
-						status := ui.motion_translation(
-							&ctx,
-							handle,
-							ui.Motion_Vector2{target_x, 0},
-							MOTION_CONFIG,
-							.Settle,
-							at,
-						)
-						if status != .Ok {
-							ui.text(&ctx, fmt.tprintf("Motion target rejected: %v", status))
-						}
-					}
-				}
+			target_x := f64(app.selected)*f64(tab_width+8)
+			status := ui.motion(
+				&ctx,
+				indicator,
+				ui.Motion_Target{translation=ui.Motion_Vector2{target_x, 0}, has_translation=true},
+			)
+			if status != .Ok {
+				ui.text(&ctx, fmt.tprintf("Motion target rejected: %v", status))
 			}
 			alicorn.container_end(&ctx)
 		}
 		ui.text(&ctx, fmt.tprintf("Selected tab: %s", tab_labels[app.selected]))
 		ui.text(&ctx, "The native scheduler coalesces all active motion records into one per-window presentation demand.")
+		if app.selected == 2 {
+			if ui.panel(&ctx, key="settings-reveal", padding=12, gap=6, fill=ui.rgb(0x1B2430)) {
+				panel := ctx.runtime.stack[len(ctx.runtime.stack)-1]
+				ui.text(&ctx, "Settings preview", size=18)
+				ui.text(&ctx, "A decorative panel reveals without changing target layout or input geometry.")
+				status := ui.motion(
+					&ctx,
+					panel,
+					ui.Motion_Target{
+						translation=ui.Motion_Vector2{0, 0},
+						opacity=1,
+						has_translation=true,
+						has_opacity=true,
+					},
+					.Reveal,
+					ui.Motion_Vector2{0, 8},
+				)
+				if status != .Ok {
+					ui.text(&ctx, fmt.tprintf("Panel reveal rejected: %v", status))
+				}
+			}
+		}
 	}
 	alicorn.container_end(&ctx)
 	alicorn.end_frame(&ctx)
@@ -102,10 +104,8 @@ build_app :: proc(
 
 services_app :: proc(state: rawptr, services: host.Application_Services) {
 	app := cast(^App)state
-	app.clock = services.motion_clock
 	app.scheduler = services.scheduler
 	app.diagnostics = services.diagnostics
-	app.services_ready = app.clock.now != nil
 	if app.validation_mode {
 		app.validation_phase = .Retarget
 		_ = host.application_schedule_after(app.scheduler, .Frequent, 100_000_000)

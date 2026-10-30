@@ -1,5 +1,6 @@
 package alicorn
 
+import "core:fmt"
 import "core:sync"
 
 // Retained motion binds analytic responses to a live retained identity. The
@@ -35,6 +36,10 @@ Motion_Runtime_Status :: enum {
 	Invalid_Value,
 	Invalid_Configuration,
 	Time_Rewound,
+	Clock_Unavailable,
+	Interactive_Reveal_Unsupported,
+	Description_Required,
+	Owner_Not_Described,
 	Numeric_Overflow,
 }
 
@@ -84,6 +89,16 @@ Motion_Retained_Owner :: struct {
 	opacity_deadline_established: bool,
 }
 
+// Motion_Intent_Request keeps the ordinary UI wrapper declarative: a request
+// made during description is applied after reconciliation, when the retained
+// owner and its complete subtree have their current interaction/style state.
+Motion_Intent_Request :: struct {
+	owner: Node_ID,
+	target: Motion_Target,
+	intent: Motion_Intent,
+	reveal_offset: Motion_Vector2,
+}
+
 Motion_Composition_Values :: struct {
 	translation: [2]f32,
 	opacity: f32,
@@ -120,6 +135,82 @@ motion_runtime_identity_next :: proc() -> (identity: u64, valid: bool) {
 	}
 }
 
+// motion_clock_set_time is the host bridge for intent-based authoring. It
+// records a monotonic timestamp without sampling or requesting presentation;
+// native hosts call it immediately before an application description, while
+// deterministic tests may inject their own value.
+motion_clock_set_time :: proc(rt: ^Runtime, at: Motion_Time) -> Motion_Runtime_Status {
+	if rt == nil { return .Invalid_Runtime }
+	if rt.motion_clock_initialized && i64(at) < i64(rt.motion_time) { return .Time_Rewound }
+	rt.motion_time = at
+	rt.motion_clock_initialized = true
+	return .Ok
+}
+
+// motion_intent_queue accepts one declarative motion request for a node emitted
+// in the current description. A repeated request for the same node replaces
+// the earlier request; intent application is deferred until end_frame has
+// reconciled the current subtree.
+motion_intent_queue :: proc(
+	rt: ^Runtime,
+	owner: Node_ID,
+	target: Motion_Target,
+	intent: Motion_Intent = .Settle,
+	reveal_offset: Motion_Vector2 = {},
+) -> Motion_Runtime_Status {
+	if rt == nil { return .Invalid_Runtime }
+	if !rt.frame_open { return .Description_Required }
+	if owner == 0 { return .Invalid_Owner }
+	if intent != .Settle && intent != .Direct && intent != .Snap && intent != .Reveal {
+		return .Invalid_Value
+	}
+	if !motion_finite(reveal_offset.x) || !motion_finite(reveal_offset.y) ||
+		abs(reveal_offset.x) > MOTION_TRANSLATION_COMPONENT_MAX ||
+		abs(reveal_offset.y) > MOTION_TRANSLATION_COMPONENT_MAX {
+		return .Invalid_Value
+	}
+	if target.has_opacity && (!motion_finite(target.opacity) || target.opacity < 0 || target.opacity > 1) {
+		return .Invalid_Value
+	}
+	if target.has_translation && (!motion_finite(target.translation.x) || !motion_finite(target.translation.y) ||
+		abs(target.translation.x) > MOTION_TRANSLATION_COMPONENT_MAX ||
+		abs(target.translation.y) > MOTION_TRANSLATION_COMPONENT_MAX) {
+		return .Invalid_Value
+	}
+	if !target.has_translation && !target.has_opacity { return .Ok }
+	if _, described := rt.seen[owner]; !described { return .Owner_Not_Described }
+	if rt.motion_intent_request_indices == nil {
+		rt.motion_intent_request_indices = make(map[Node_ID]int, allocator=rt.persistent_allocator)
+	}
+	request := Motion_Intent_Request{owner, target, intent, reveal_offset}
+	if index, exists := rt.motion_intent_request_indices[owner]; exists {
+		rt.motion_intent_requests[index] = request
+	} else {
+		append(&rt.motion_intent_requests, request)
+		rt.motion_intent_request_indices[owner] = len(rt.motion_intent_requests)-1
+	}
+	return .Ok
+}
+
+motion_intent_requests_apply :: proc(rt: ^Runtime) {
+	if rt == nil || len(rt.motion_intent_requests) == 0 { return }
+	for request in rt.motion_intent_requests {
+		status := motion_apply_intent(rt, request.owner, request.target, request.intent, request.reveal_offset)
+		if status != .Ok {
+			file, line, column := "", 0, 0
+			if node, found := rt.nodes[request.owner]; found && node != nil {
+				file, line, column = node.site.file, node.site.line, node.site.column
+			}
+			append_diagnostic(rt, fmt.tprintf(
+				"motion intent for node %d declared at %s:%d:%d was not applied: %v",
+				request.owner, file, line, column, status,
+			))
+		}
+	}
+	clear(&rt.motion_intent_requests)
+	clear(&rt.motion_intent_request_indices)
+}
+
 motion_owner_begin :: proc(rt: ^Runtime, owner: Node_ID) -> (handle: Motion_Owner_Handle, status: Motion_Runtime_Status) {
 	if rt == nil { return {}, .Invalid_Runtime }
 	if owner == 0 { return {}, .Invalid_Owner }
@@ -150,6 +241,63 @@ motion_owner_begin :: proc(rt: ^Runtime, owner: Node_ID) -> (handle: Motion_Owne
 	}
 	rt.motion_owners[owner] = state
 	return Motion_Owner_Handle{rt.motion_runtime_identity, owner, state.generation}, .Ok
+}
+
+@(private)
+motion_reveal_subtree_is_noninteractive :: proc(rt: ^Runtime, owner: Node_ID) -> bool {
+	if rt == nil { return false }
+	MOTION_REVEAL_SUBTREE_SCAN_LIMIT :: 4096
+	stack: [MOTION_REVEAL_SUBTREE_SCAN_LIMIT]Node_ID
+	stack[0] = owner
+	count := 1
+	for count > 0 {
+		count -= 1
+		id := stack[count]
+		node, found := rt.nodes[id]
+		if !found || node == nil || !node.active { return false }
+		if node.focusable || node.text_input_target || node.surface_interaction != .Inert ||
+			node.drag_source_type != Drag_Type(0) || node.drop_target_type != Drag_Type(0) {
+			return false
+		}
+		// Disabled controls and currently unfocusable navigation containers can
+		// still become interactive while an opacity reveal is active. Restrict
+		// Reveal to structurally passive node kinds, not just current focus flags.
+		switch node.kind {
+		case .Root, .Container, .Grid, .Text, .Image:
+		case .Custom_Surface:
+			if node.surface_interaction != .Inert { return false }
+		case .Modal_Overlay, .Context_Menu_Overlay, .Context_Menu_Panel,
+			.Button, .Tab, .Tab_Close, .Checkbox, .Slider, .Text_Field,
+			.Text_Composition, .Virtual_List, .Virtual_Row, .Scroll_Region,
+			.Split, .Split_Handle:
+			return false
+		}
+		if len(node.children) > MOTION_REVEAL_SUBTREE_SCAN_LIMIT-count { return false }
+		for child in node.children {
+			stack[count] = child
+			count += 1
+		}
+	}
+	return true
+}
+
+@(private)
+motion_intent_mode_resolve :: proc(
+	intent: Motion_Intent,
+	reduced_motion, disabled, opacity_property: bool,
+	policy: Motion_Theme_Policy,
+) -> (mode: Motion_Mode, config: Motion_Config) {
+	config = policy.translation
+	if opacity_property { config = policy.opacity }
+	if disabled || intent == .Snap { return .Snap, config }
+	if intent == .Direct { return .Direct, config }
+	if reduced_motion {
+		if opacity_property && policy.reduced_motion == .Opacity_Fade {
+			return .Settle, policy.reduced_opacity
+		}
+		return .Snap, config
+	}
+	return .Settle, config
 }
 
 motion_owner_is_current :: proc(rt: ^Runtime, handle: Motion_Owner_Handle) -> bool {
@@ -373,6 +521,88 @@ motion_target_translation :: proc(
 	state.translation_deadline_established = sample.deadline_established
 	rt.motion_owners[handle.node] = state
 	motion_request_presentation(rt, "retained motion translation target changed")
+	return .Ok
+}
+
+// motion_apply_intent is the ordinary application path: logical selection or
+// visibility changes once, and the runtime owns the retained record, clock,
+// retargeting and presentation policy. Reveal initializes only fresh retained
+// properties. Target layout, hit testing and accessibility remain authoritative
+// immediately; therefore interactive descendants are rejected for Reveal.
+motion_apply_intent :: proc(
+	rt: ^Runtime,
+	owner: Node_ID,
+	target: Motion_Target,
+	intent: Motion_Intent = .Settle,
+	reveal_offset: Motion_Vector2 = {},
+) -> Motion_Runtime_Status {
+	if rt == nil { return .Invalid_Runtime }
+	if intent != .Settle && intent != .Direct && intent != .Snap && intent != .Reveal {
+		return .Invalid_Value
+	}
+	if !motion_finite(reveal_offset.x) || !motion_finite(reveal_offset.y) ||
+		abs(reveal_offset.x) > MOTION_TRANSLATION_COMPONENT_MAX ||
+		abs(reveal_offset.y) > MOTION_TRANSLATION_COMPONENT_MAX {
+		return .Invalid_Value
+	}
+	if target.has_opacity && (!motion_finite(target.opacity) || target.opacity < 0 || target.opacity > 1) {
+		return .Invalid_Value
+	}
+	if target.has_translation && (!motion_finite(target.translation.x) || !motion_finite(target.translation.y) ||
+		abs(target.translation.x) > MOTION_TRANSLATION_COMPONENT_MAX ||
+		abs(target.translation.y) > MOTION_TRANSLATION_COMPONENT_MAX) {
+		return .Invalid_Value
+	}
+	if !target.has_translation && !target.has_opacity { return .Ok }
+	if !rt.motion_clock_initialized { return .Clock_Unavailable }
+	node, found := rt.nodes[owner]
+	if !found || node == nil || !node.active { return .Owner_Not_Retained }
+	if intent == .Reveal && !motion_reveal_subtree_is_noninteractive(rt, owner) {
+		return .Interactive_Reveal_Unsupported
+	}
+	policy := style_theme_motion_policy(rt, node.style_environment.theme)
+	if !motion_theme_policy_valid(policy) { return .Invalid_Configuration }
+	handle, owner_status := motion_owner_begin(rt, owner)
+	if owner_status != .Ok { return owner_status }
+	current := motion_presentation(rt, handle)
+	if current.status != .Ok { return current.status }
+	reduced := node.style_environment.accessibility.reduce_motion
+	translation_mode, translation_config := motion_intent_mode_resolve(
+		intent, reduced, node.disabled, false, policy,
+	)
+	opacity_mode, opacity_config := motion_intent_mode_resolve(
+		intent, reduced, node.disabled, true, policy,
+	)
+	if intent == .Reveal {
+		// The fresh frame is paint-only hidden/offset before the response starts.
+		// Reduced motion skips spatial displacement; an opted-in opacity fade may
+		// still begin at zero and converge under its shorter theme policy.
+		if target.has_translation && !current.has_translation && !reduced && !node.disabled {
+			initial := Motion_Vector2{
+				target.translation.x+reveal_offset.x,
+				target.translation.y+reveal_offset.y,
+			}
+			if status := motion_target_translation(rt, handle, initial, policy.translation, .Snap, rt.motion_time); status != .Ok {
+				return status
+			}
+		}
+		if target.has_opacity && !current.has_opacity && !node.disabled &&
+			(!reduced || policy.reduced_motion == .Opacity_Fade) {
+			if status := motion_target_opacity(rt, handle, 0, policy.opacity, .Snap, rt.motion_time); status != .Ok {
+				return status
+			}
+		}
+	}
+	if target.has_translation {
+		if status := motion_target_translation(rt, handle, target.translation, translation_config, translation_mode, rt.motion_time); status != .Ok {
+			return status
+		}
+	}
+	if target.has_opacity {
+		if status := motion_target_opacity(rt, handle, target.opacity, opacity_config, opacity_mode, rt.motion_time); status != .Ok {
+			return status
+		}
+	}
 	return .Ok
 }
 
