@@ -158,6 +158,59 @@ test_retained_motion_handles_are_isolated_between_runtimes :: proc(t: ^testing.T
 }
 
 @(test)
+test_retained_motion_activity_and_sampling_scale_to_one_thousand_owners :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 120})
+	defer destroy_runtime(&rt)
+	response, status := motion_scalar_create(
+		1, 0, 0,
+		Motion_Config{omega=10, position_tolerance=0.001, velocity_tolerance=0.001},
+		Motion_Time(0),
+	)
+	if status != .Ok { testing.expect(t, false, "the fixture response should be valid"); return }
+	rt.motion_owners = make(map[Node_ID]Motion_Retained_Owner, allocator=rt.persistent_allocator)
+	for index in 0..<1000 {
+		rt.motion_owners[Node_ID(index+1)] = Motion_Retained_Owner{
+			generation=u64(index+1),
+			has_opacity=true,
+			opacity=response,
+			presented_opacity=1,
+			opacity_active=true,
+			opacity_deadline_established=response.deadline_established,
+		}
+	}
+	activity := motion_activity(&rt)
+	tick := motion_tick(&rt, Motion_Time(16_666_667))
+	testing.expect(t, len(rt.motion_owners) == 1000 && activity.active_owners == 1000 &&
+		activity.active_properties == 1000,
+		"the bounded sidecar should represent one thousand active owner records")
+	testing.expect(t, tick.status == .Ok && tick.active_owners == 1000 && tick.active_properties == 1000,
+		"one injected sample should advance all one thousand active records together")
+}
+
+@(test)
+test_uncertified_motion_can_be_bounded_to_an_exact_target :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 120})
+	defer destroy_runtime(&rt)
+	_, child, _ := motion_retained_test_build(&rt, true)
+	handle, owner_status := motion_owner_begin(&rt, child)
+	if owner_status != .Ok { testing.expect(t, false, "the retained node should acquire a motion owner"); return }
+	config := Motion_Config{omega=1e-20, position_tolerance=1e-12, velocity_tolerance=1e-12}
+	if motion_target_opacity(&rt, handle, 0.25, config, .Settle, Motion_Time(0)) != .Ok {
+		testing.expect(t, false, "the valid but extremely slow response should be accepted")
+		return
+	}
+	activity := motion_activity(&rt)
+	testing.expect(t, activity.active_owners == 1 && activity.unestablished_deadlines == 1,
+		"an unestablished deadline should remain visible to the host policy")
+	bounded := motion_snap_unestablished(&rt, Motion_Time(5_000_000_000))
+	presentation := motion_presentation(&rt, handle)
+	testing.expect(t, bounded.status == .Ok && bounded.active_owners == 0 &&
+		bounded.unestablished_deadlines == 0 && !presentation.active &&
+		presentation.presented_opacity == 0.25,
+		"bounded retirement should snap only the uncertified response to its exact target")
+}
+
+@(test)
 test_retained_motion_release_resets_presentation_without_retiring_node :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 240, 120})
 	defer destroy_runtime(&rt)

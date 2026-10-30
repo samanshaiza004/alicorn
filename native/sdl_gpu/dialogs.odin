@@ -105,8 +105,19 @@ Application_Services :: struct {
 	diagnostics: Application_Diagnostics,
 	clipboard: Clipboard_Service,
 	scheduler: Application_Scheduler,
+	motion_clock: Application_Motion_Clock,
 	quit:      Application_Quit_Request,
 	windows:   Application_Window_Service,
+}
+
+// Application_Motion_Clock supplies the same monotonic nanosecond domain the
+// native host uses when it samples retained motion. Values are still passed
+// explicitly into motion APIs, so tests and replay can inject their own time.
+Application_Motion_Time_Now_Proc :: proc(data: rawptr) -> alicorn.Motion_Time
+
+Application_Motion_Clock :: struct {
+	data: rawptr,
+	now: Application_Motion_Time_Now_Proc,
 }
 
 // Application_Quit_Request lets an application complete a previously deferred

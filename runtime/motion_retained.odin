@@ -6,7 +6,10 @@ import "core:sync"
 // runtime owns only targets and sampled presentation values; application
 // state and geometry negotiation remain authoritative outside this sidecar.
 
-MOTION_RETAINED_MAX_OWNERS :: 256
+// The first native scheduler prototype deliberately exercises the runtime at
+// 1, 100, and 1,000 simultaneously active retained records. Keep that capacity
+// bounded, but large enough to cover the 1,000-record acceptance workload.
+MOTION_RETAINED_MAX_OWNERS :: 1024
 MOTION_F32_MAX :: f64(3.4028234663852886e38)
 // Divide the representable GPU translation range across the maximum retained
 // owner count so a fully nested path remains finite in f32 composition.
@@ -56,6 +59,15 @@ Motion_Tick_Result :: struct {
 	unestablished_deadlines: int,
 	changed_owners: int,
 	status: Motion_Runtime_Status,
+}
+
+// Motion_Activity is a read-only view used by the native host to decide
+// whether a window needs another presentation opportunity. It does not sample
+// responses or request work.
+Motion_Activity :: struct {
+	active_properties: int,
+	active_owners: int,
+	unestablished_deadlines: int,
 }
 
 Motion_Retained_Owner :: struct {
@@ -437,6 +449,94 @@ motion_tick :: proc(rt: ^Runtime, at: Motion_Time) -> Motion_Tick_Result {
 	if result.changed_owners > 0 {
 		motion_request_presentation(rt, "retained motion presentation sampled")
 	}
+	return result
+}
+
+motion_activity :: proc(rt: ^Runtime) -> Motion_Activity {
+	result := Motion_Activity{}
+	if rt == nil || rt.motion_owners == nil { return result }
+	for _, state in rt.motion_owners {
+		owner_active := false
+		if state.opacity_active {
+			result.active_properties += 1
+			owner_active = true
+			if !state.opacity_deadline_established { result.unestablished_deadlines += 1 }
+		}
+		if state.translation_active {
+			result.active_properties += 1
+			owner_active = true
+			if !state.translation_deadline_established { result.unestablished_deadlines += 1 }
+		}
+		if owner_active { result.active_owners += 1 }
+	}
+	return result
+}
+
+// motion_snap_unestablished applies the host's bounded policy to active
+// responses whose conservative settlement deadline could not be certified.
+// Certified responses are untouched. The operation preflights all affected
+// values before mutation and requests at most one presentation update.
+motion_snap_unestablished :: proc(rt: ^Runtime, at: Motion_Time) -> Motion_Tick_Result {
+	if rt == nil { return Motion_Tick_Result{status=.Invalid_Runtime} }
+	if rt.motion_clock_initialized && i64(at) < i64(rt.motion_time) {
+		return Motion_Tick_Result{status=.Time_Rewound}
+	}
+	if rt.motion_owners == nil {
+		rt.motion_time = at
+		rt.motion_clock_initialized = true
+		return Motion_Tick_Result{status=.Ok}
+	}
+	for _, state in rt.motion_owners {
+		if state.opacity_active && !state.opacity_deadline_established {
+			if status := motion_sample_validate(state, at); status != .Ok {
+				return Motion_Tick_Result{status=status}
+			}
+		}
+		if state.translation_active && !state.translation_deadline_established {
+			if status := motion_sample_validate(state, at); status != .Ok {
+				return Motion_Tick_Result{status=status}
+			}
+		}
+	}
+	result := Motion_Tick_Result{status=.Ok}
+	for owner, &state in rt.motion_owners {
+		changed := false
+		if state.opacity_active && !state.opacity_deadline_established {
+			next, status := motion_scalar_snap(state.opacity, state.opacity.target, at)
+			if status != .Ok { return Motion_Tick_Result{status=motion_runtime_status(status)} }
+			presented := motion_clamp_opacity(next.target)
+			changed = changed || presented != state.presented_opacity
+			state.opacity = next
+			state.presented_opacity = presented
+			state.opacity_active = false
+			state.opacity_deadline_established = true
+		}
+		if state.translation_active && !state.translation_deadline_established {
+			target := Motion_Vector2{state.translation.x.target, state.translation.y.target}
+			next, status := motion_translation_snap(state.translation, target, at)
+			if status != .Ok { return Motion_Tick_Result{status=motion_runtime_status(status)} }
+			x, x_ok := motion_value_to_f32(target.x)
+			y, y_ok := motion_value_to_f32(target.y)
+			if !x_ok || !y_ok { return Motion_Tick_Result{status=.Numeric_Overflow} }
+			presented := [2]f32{x, y}
+			changed = changed || presented != state.presented_translation
+			state.translation = next
+			state.presented_translation = presented
+			state.translation_active = false
+			state.translation_deadline_established = true
+		}
+		if changed { result.changed_owners += 1 }
+		_ = owner
+	}
+	rt.motion_time = at
+	rt.motion_clock_initialized = true
+	if result.changed_owners > 0 {
+		motion_request_presentation(rt, "uncertified retained motion reached host duration limit")
+	}
+	activity := motion_activity(rt)
+	result.active_properties = activity.active_properties
+	result.active_owners = activity.active_owners
+	result.unestablished_deadlines = activity.unestablished_deadlines
 	return result
 }
 

@@ -45,6 +45,7 @@ Native_Secondary_Window :: struct {
 	wake_state: Native_Application_Waker,
 	host_wake_state: Native_Host_Event_Waker,
 	scheduler_state: Native_Scheduled_Wake_State,
+	motion_scheduler: Native_Motion_Scheduler_State,
 	application_waker: Application_Waker,
 	application_scheduler: Application_Scheduler,
 	dialog_bridge: ^Native_Dialog_Bridge,
@@ -317,6 +318,7 @@ native_secondary_window_create :: proc(manager: ^Native_Secondary_Window_Manager
 		},
 			clipboard=native_clipboard_service(),
 			scheduler=child.application_scheduler,
+			motion_clock=native_motion_clock_service(),
 			quit=Application_Quit_Request{data=rawptr(&child.quit_requested), request=native_application_request_quit},
 			windows=Application_Window_Service{
 				data=rawptr(manager),
@@ -608,6 +610,13 @@ native_secondary_window_render :: proc(
 		// Keep the unsubmitted frame for restore, but let the event loop sleep
 		// while a minimized/hidden window has no drawable swapchain.
 		child.presentation_suspended = true
+		activity := alicorn.motion_activity(child.runtime)
+		_ = native_motion_scheduler_prepare(
+			&child.motion_scheduler,
+			activity.active_owners,
+			false,
+			u64(sdl3.GetTicksNS()),
+		)
 		return true
 	}
 	child.presentation_suspended = false

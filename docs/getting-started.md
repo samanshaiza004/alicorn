@@ -113,6 +113,8 @@ controls expose their accessibility semantics by default; use
 The app source is [`examples/02_form/main.odin`](../examples/02_form/main.odin).
 Browse icons and named icon buttons in the
 [Control Gallery](../examples/08_control_gallery/main.odin).
+The [Retained Motion example](../examples/09_retained_motion/main.odin) shows a
+decorative retained indicator driven by the native motion clock and scheduler.
 Continue through the [numbered example progression](../examples/README.md) for
 worker-backed virtualization, custom GPU surfaces, and the built-in inspector.
 Step 3 keeps the same typed render procedure and `alicorn:ui` import, adding

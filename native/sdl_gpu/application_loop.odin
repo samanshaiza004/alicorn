@@ -96,6 +96,7 @@ run_application_loop :: proc(
 	defer native_accessibility_host_destroy(&accessibility_host)
 	if native_menu != nil { native_menu.host_waker = &host_wake_state }
 	scheduler_state := Native_Scheduled_Wake_State{active=true}
+	motion_scheduler := Native_Motion_Scheduler_State{}
 	application_scheduler := Application_Scheduler{
 		data=rawptr(&scheduler_state),
 		schedule=native_application_schedule_after,
@@ -120,6 +121,7 @@ run_application_loop :: proc(
 			},
 			clipboard=native_clipboard_service(),
 			scheduler=application_scheduler,
+			motion_clock=native_motion_clock_service(),
 			quit=Application_Quit_Request{data=rawptr(&quit_requested), request=native_application_request_quit},
 			windows=Application_Window_Service{
 				data=rawptr(&secondary_windows),
@@ -209,6 +211,7 @@ run_application_loop :: proc(
 	wait_for_event := false
 	drag_autoscroll_deadline_ns: u64 = 0
 	swapchain_retry_pending := false
+	primary_drawable_unavailable := false
 	last_user_interaction_ns: u64 = 0
 	devtools_last_cause: alicorn.Cause_Context
 	event_waits: u64 = 0
@@ -226,7 +229,7 @@ run_application_loop :: proc(
 			// the window is minimized or the swapchain is temporarily unavailable.
 			// Keep the presentation revision pending, but sleep between retries and
 			// let SDL events wake us as soon as the window can be presented again.
-			if swapchain_retry_pending {
+			if swapchain_retry_pending && native_motion_window_renderable(sdl3.GetWindowFlags(window)) {
 				wait_timeout_ms = native_event_wait_timeout_min(wait_timeout_ms, 100)
 			}
 			// Tick-driven applications still need their regular callback while a
@@ -240,6 +243,12 @@ run_application_loop :: proc(
 				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, tick_timeout_ms))
 			}
 			current_ns := u64(sdl3.GetTicksNS())
+			if !primary_drawable_unavailable && native_motion_window_renderable(sdl3.GetWindowFlags(window)) {
+				if motion_deadline, found := native_motion_scheduler_next_deadline(&motion_scheduler); found {
+					motion_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(motion_deadline, current_ns))
+					wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, motion_timeout_ms))
+				}
+			}
 			if drag_autoscroll_deadline_ns != 0 {
 				drag_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(drag_autoscroll_deadline_ns, current_ns))
 				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, drag_timeout_ms))
@@ -261,6 +270,12 @@ run_application_loop :: proc(
 				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, hud_timeout_ms))
 			}
 			if child := secondary_windows.child; child != nil && child.active {
+				if !child.presentation_suspended && native_motion_window_renderable(sdl3.GetWindowFlags(child.window)) {
+					if motion_deadline, found := native_motion_scheduler_next_deadline(&child.motion_scheduler); found {
+						motion_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(motion_deadline, current_ns))
+						wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, motion_timeout_ms))
+					}
+				}
 				if child.application.on_tick != nil {
 					elapsed_ns := i64(current_ns-child.last_tick_ns)
 					remaining_ns := i64(16_666_667)-elapsed_ns
@@ -444,6 +459,15 @@ run_application_loop :: proc(
 			if child.runtime.invalidated {
 				_ = native_application_build_until_stable(&child.application, child.runtime, &child.metrics, &child.timing)
 			}
+			motion_now_ns := u64(sdl3.GetTicksNS())
+			motion_update := native_motion_scheduler_advance(
+				&child.motion_scheduler,
+				child.runtime,
+				!child.presentation_suspended && native_motion_window_renderable(sdl3.GetWindowFlags(child.window)),
+				motion_now_ns,
+			)
+			if motion_update.status != .Ok { fail("secondary retained motion sampling failed") }
+			native_motion_scheduler_sync_timing(&child.motion_scheduler, &child.timing, motion_update.active_owners)
 			if child.native_menu.application != nil {
 				when ODIN_OS == .Windows {
 					_ = win32_menu_refresh_text_if_needed(&child.native_menu, child.runtime)
@@ -518,6 +542,15 @@ run_application_loop :: proc(
 		if rt.invalidated && (!inspector.enabled || !rt.hard_error) {
 			_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing, stop_on_hard_error=inspector.enabled)
 		}
+		motion_now_ns := u64(sdl3.GetTicksNS())
+		motion_update := native_motion_scheduler_advance(
+			&motion_scheduler,
+			rt,
+			!primary_drawable_unavailable && native_motion_window_renderable(sdl3.GetWindowFlags(window)),
+			motion_now_ns,
+		)
+		if motion_update.status != .Ok { fail("retained motion sampling failed") }
+		native_motion_scheduler_sync_timing(&motion_scheduler, &timing, motion_update.active_owners)
 		if alicorn.drag_is_active(rt) && !rt.invalidated && !native_inspector_visible(&inspector) {
 			alicorn.drag_refresh_target(rt)
 			_ = native_dispatch_drag_event(&application_instance, rt)
@@ -625,6 +658,9 @@ run_application_loop :: proc(
 			if swapchain == nil || swap_w == 0 || swap_h == 0 {
 				_ = sdl3.CancelGPUCommandBuffer(command)
 				swapchain_retry_pending = true
+				primary_drawable_unavailable = true
+				activity := alicorn.motion_activity(rt)
+				_ = native_motion_scheduler_prepare(&motion_scheduler, activity.active_owners, false, u64(sdl3.GetTicksNS()))
 				wait_for_event = true
 				native_devtools_record_wake(&devtools_recorder, &devtools_cursor, rt, &timing, &text_events,
 					devtools_cause, devtools_sample_time_ns, devtools_preview.host_wakes)
@@ -633,6 +669,26 @@ run_application_loop :: proc(
 					devtools_hud_deadline_ns = native_devtools_hud_next_wake_ns(&devtools_recorder, u64(sdl3.GetTicksNS()))
 				}
 				continue
+			}
+			was_drawable_unavailable := primary_drawable_unavailable
+			primary_drawable_unavailable = false
+			if was_drawable_unavailable {
+				resume_motion_now_ns := u64(sdl3.GetTicksNS())
+				resume_motion := native_motion_scheduler_advance(
+					&motion_scheduler,
+					rt,
+					native_motion_window_renderable(sdl3.GetWindowFlags(window)),
+					resume_motion_now_ns,
+				)
+				if resume_motion.status != .Ok { fail("retained motion restore sampling failed") }
+				native_motion_scheduler_sync_timing(&motion_scheduler, &timing, resume_motion.active_owners)
+				if !rt.invalidated && alicorn.presentation_needs_frame(rt) {
+					presentation_ui, ready := alicorn.begin_presentation_frame(rt)
+					if ready { alicorn.end_presentation_frame(&presentation_ui) }
+				}
+				was_pending := application_submission_pending
+				application_submission_pending = alicorn.frame_needs_submission(rt)
+				if !was_pending && application_submission_pending { devtools_preview.gpu_submissions += 1 }
 			}
 			metrics.pixel_width = int(swap_w)
 			metrics.pixel_height = int(swap_h)

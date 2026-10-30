@@ -1176,10 +1176,18 @@ system file drops or arbitrary MIME payloads.
   `motion_tick` samples the retained responses and requests a presentation-only
   frame when visible values change. A custom host can flush that work with
   `begin_presentation_frame` / `end_presentation_frame`; these frames do not
-  call application description, reconciliation, measurement, or layout. This
-  stage has no automatic frame scheduler: callers inject time, and a future
-  scheduler must apply a bounded policy to active responses whose settlement
-  deadline is unestablished. Unopted nodes retain their existing behavior.
+  call application description, reconciliation, measurement, or layout. The
+  SDL host schedules one coalesced presentation deadline per native window and
+  samples at a bounded display-like cadence using its monotonic nanosecond
+  clock. `Application_Services.motion_clock` supplies that same clock through
+  `application_motion_time_now`; callers still pass the timestamp explicitly,
+  so tests and replay can inject their own values. The native scheduler drops
+  missed intervals, suspends deadlines while a window is hidden, minimized, or
+  occluded, and samples once at current time after restore. A response whose
+  settlement deadline remains uncertified is snapped to its exact target after
+  a five-second host grace period, preventing unbounded animation work. The
+  requested cadence is not a claim about compositor present timestamps.
+  Unopted nodes retain their existing behavior.
 - `inspect(runtime)` and `trace_snapshot(runtime)` expose retained state and
   recent invalidation/stage events for diagnostics.
 - The native `Run` host accepts `--inspector` (enable `F9`) and

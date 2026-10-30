@@ -19,6 +19,7 @@ Install Odin and the native prerequisites from
 | 6 | [Secondary Windows](06_secondary_windows/main.odin) | Opening and closing a tool window with independent application state |
 | 7 | [Appearance](07_simple_appearance/main.odin) | Direct colors, panels, borders, rounded surfaces, and fixed-size boxes |
 | 8 | [Control Gallery](08_control_gallery/main.odin) | Font-independent icons and named icon buttons |
+| 9 | [Retained Motion](09_retained_motion/main.odin) | Native per-window demand scheduling and paint-only analytic translation |
 
 Run a lesson from the repository root. The runner resolves Odin and native
 linker dependencies, builds the selected program, and launches it:
@@ -66,6 +67,12 @@ build. Program arguments follow the example name on the shell runner and use
 7. In `07_simple_appearance`, change panel fill, border, or swatch colors.
 8. In `08_control_gallery`, browse the built-in icon assets and activate the
    named icon button.
+9. In `09_retained_motion`, select **Editor** and **Settings** repeatedly.
+   The marker should retarget smoothly while ordinary app builds remain idle
+   between selections. Leave the window alone after it settles; no motion timer
+   or presentation should continue. Minimize and restore during movement to
+   verify that restore samples the current position once without replaying
+   missed frames.
 
 ## Build and validation
 
