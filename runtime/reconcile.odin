@@ -168,7 +168,7 @@ description_hash :: proc(
 	return h
 }
 
-measure_input_hash :: proc(d: Description) -> u64 {
+measure_input_hash_base :: proc(d: Description) -> (u64, bool) {
 	h: u64 = 1469598103934665603
 	h = hash_mix(h, u64(d.kind))
 	#partial switch d.kind {
@@ -177,10 +177,10 @@ measure_input_hash :: proc(d: Description) -> u64 {
 	case .Text, .Text_Field:
 		h = hash_mix(h, hash_string(d.text))
 	case .Scroll_Region:
-		if !layout_size_is_fit_content(d.style.height) { return h }
+		if !layout_size_is_fit_content(d.style.height) { return h, false }
 		h = hash_mix(h, u64(transmute(u32)d.scroll_content_height))
 	case:
-		return h
+		return h, false
 	}
 	h = hash_mix(h, hash_text_style_spans(d.text_style_spans))
 	h = hash_mix(h, u64(d.font))
@@ -191,7 +191,6 @@ measure_input_hash :: proc(d: Description) -> u64 {
 	// affect the measured product. Inherited metric/typography changes are
 	// represented by typed dependency generations, not duplicated here.
 	// Paint-only state is intentionally omitted.
-	h = hash_mix(h, u64(transmute(u32)d.style.width))
 	h = hash_mix(h, u64(transmute(u32)d.style.height))
 	h = hash_mix(h, u64(transmute(u32)d.style.min_width))
 	h = hash_mix(h, u64(transmute(u32)d.style.max_width))
@@ -200,6 +199,12 @@ measure_input_hash :: proc(d: Description) -> u64 {
 	if d.kind == .Button {
 		h = hash_mix(h, hash_button_content_style(d.button_content_style))
 	}
+	return h, true
+}
+
+measure_input_hash :: proc(d: Description) -> u64 {
+	h, width_is_input := measure_input_hash_base(d)
+	if width_is_input { h = hash_mix(h, u64(transmute(u32)d.style.width)) }
 	return h
 }
 
@@ -736,6 +741,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	if rt.tooltip.target == id { tooltip_dismiss(rt) }
 	controlled_text_field_state_clear(rt, id)
 	delete_key(&rt.computed_styles, id)
+	if rt.percent_width_sidecar_initialized { delete_key(&rt.percent_width_dependencies, id) }
 	gpu_surface_image_layers_destroy(rt, id)
 	delete_key(&rt.semantic_surfaces, id)
 	delete_key(&rt.surface_top_edge_links, id)
@@ -845,6 +851,7 @@ reconcile :: proc(rt: ^Runtime) {
 	for item in rt.pending {
 		if item.kind != .Description { continue }
 		d := item.description
+		layout_percent_width_commit_description(rt, d, item)
 		rt.stats.reconcile_nodes_visited += 1
 		rt.stats.stage_visits[.Reconcile] += 1
 		node, exists := rt.nodes[d.id]
@@ -866,7 +873,7 @@ reconcile :: proc(rt: ^Runtime) {
 				next_style_environment, style_changes)
 			grid_tracks_copy_retained(rt, node, item)
 			node.description_hash = description_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
-			node.layout_hash = layout_hash_pending(d, item)
+			node.layout_hash = layout_percent_width_pending_hash(rt, d, item)
 			rt.measure_states[d.id] = Measure_State{
 				input_hash=measure_input_hash(d),
 				input_revision=1,
@@ -880,7 +887,7 @@ reconcile :: proc(rt: ^Runtime) {
 			record_trace(rt, .Reconcile, d.id, "new retained node")
 		} else {
 			new_desc_hash := description_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
-			new_layout_hash := layout_hash_pending(d, item)
+			new_layout_hash := layout_percent_width_pending_hash(rt, d, item)
 			new_measure_input_hash := measure_input_hash(d)
 			new_paint_hash := paint_hash(d, new_desc_hash)
 			was_selected := node.selected
@@ -920,6 +927,9 @@ reconcile :: proc(rt: ^Runtime) {
 		node.present = adaptive_default_presentation(rt, node.id)
 		if d.region { node.region_cached = true } else { node.region_cached = false }
 	}
+	layout_percent_width_prune_explicit(rt, desired)
+	layout_percent_width_update_retained(rt)
+	layout_percent_width_pending_clear(rt)
 
 	structure_changed := false
 	desired_roots: []Node_ID
@@ -1100,6 +1110,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	for _, state in rt.restore_controls { free(state, allocator=rt.persistent_allocator) }
 	delete(rt.restore_controls)
 	delete(rt.measure_states)
+	layout_percent_width_destroy(rt)
 	delete(rt.measure_queue)
 	delete(rt.finalized_geometry)
 	delete(rt.computed_styles)

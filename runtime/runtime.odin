@@ -1276,6 +1276,22 @@ Pending_Item :: struct {
 	grid_gap_x, grid_gap_y: f32,
 }
 
+// Percentage width relationships live in an optional sparse Runtime sidecar.
+// Ordinary retained Nodes and Pending_Items pay no per-node field cost.
+Percent_Width_Declaration :: struct {
+	parent: Node_ID,
+	fraction: f32,
+}
+
+Percent_Width_Dependency :: struct {
+	parent: Node_ID,
+	fraction: f32,
+	layout_hash_base: u64,
+	measure_input_hash_base: u64,
+	measure_input_has_width: bool,
+	parent_invalid_reported: bool,
+}
+
 Node :: struct {
 	id:          Node_ID,
 	parent:      Node_ID,
@@ -1842,6 +1858,9 @@ Runtime :: struct {
 	nodes:       map[Node_ID]^Node,
 	controlled_text_fields: map[Node_ID]Controlled_Text_Field_State,
 	measure_states: map[Node_ID]Measure_State,
+	percent_width_dependencies: map[Node_ID]Percent_Width_Dependency,
+	pending_percent_widths: map[Node_ID]Percent_Width_Declaration,
+	percent_width_sidecar_initialized: bool,
 	measure_queue: [dynamic]Measure_Queue_Entry,
 	measure_queue_sequence: u64,
 	finalized_geometry: map[Node_ID]Finalized_Geometry,

@@ -452,6 +452,7 @@ begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
 	rt.invalidated = false
 	rt.frame_open = true
 	rt.context_menu.described = false
+	layout_percent_width_pending_clear(rt)
 	clear(&rt.pending)
 	clear(&rt.scroll_visibility_requests)
 	clear(&rt.semantic_collection_touched)

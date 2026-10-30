@@ -89,6 +89,65 @@ ui_percent_test_describe_fixed_parent :: proc(rt: ^alicorn.Runtime) -> (parent, 
 	return
 }
 
+ui_percent_test_cached_item :: proc(
+	ctx: ^UI,
+	key: string,
+	fraction: f32,
+	fixed_width: f32,
+	percentage: bool,
+	with_text: bool = false,
+) -> (item, text_node: alicorn.Node_ID) {
+	declaration := sizing(width=logical(fixed_width))
+	if percentage { declaration = sizing(width=percent(fraction)) }
+	if layout_sized(ctx, alicorn.layout_style(.Column, height=alicorn.LAYOUT_SIZE_FIT_CONTENT),
+		declaration, key=key, label=key) {
+		item = ctx.runtime.pending[len(ctx.runtime.pending)-1].description.id
+		if with_text {
+			text_node = text(ctx,
+				"Retained percentage width changes must update text wrapping and measured layout instead of keeping a result derived from the earlier parent width.",
+				key="cached-percent-first-text")
+		}
+	}
+	return
+}
+
+ui_percent_test_cached_region_frame :: proc(
+	rt: ^alicorn.Runtime,
+	parent_width: f32,
+	parent_grow: f32,
+	parent_revision: u64,
+	include_percent_children: bool,
+	replace_first_with_fixed: bool = false,
+) -> (parent, sibling: alicorn.Node_ID) {
+	rt.viewport = alicorn.Rect{0, 0, 800, 400}
+	alicorn.invalidate_root(rt, "cached percentage parent description")
+	ctx, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin(&ctx, .Root, key="cached-percent-test-root", style=alicorn.layout_style(.Column))
+	parent_style := alicorn.layout_style(.Column, width=parent_width, height=160, grow=parent_grow)
+	parent_id, parent_reused := alicorn.region_begin(&ctx, "cached-percent-parent", parent_revision, style=parent_style)
+	parent = parent_id
+	if !parent_reused {
+		if include_percent_children {
+			_, _ = ui_percent_test_cached_item(&ctx, "cached-percent-first", 0.5, 0, true, with_text=true)
+			_, _ = ui_percent_test_cached_item(&ctx, "cached-percent-second", 0.25, 0, true)
+		} else if replace_first_with_fixed {
+			_, _ = ui_percent_test_cached_item(&ctx, "cached-percent-first", 0, 84, false)
+		}
+		alicorn.region_end(&ctx, parent, parent_reused, 0)
+	}
+	sibling_id, sibling_reused := alicorn.region_begin(&ctx, "cached-percent-sibling", 1,
+		style=alicorn.layout_style(.Column, width=120, height=60))
+	sibling = sibling_id
+	if !sibling_reused {
+		_, _ = ui_percent_test_cached_item(&ctx, "cached-percent-sibling-child", 0, 64, false)
+		alicorn.region_end(&ctx, sibling, sibling_reused, 0)
+	}
+	alicorn.container_end(&ctx)
+	alicorn.end_frame(&ctx)
+	return
+}
+
 ui_percent_test_describe_modal_panel :: proc(rt: ^alicorn.Runtime, viewport_width, viewport_height: f32) -> (overlay, panel_id: alicorn.Node_ID) {
 	rt.viewport = alicorn.Rect{0, 0, viewport_width, viewport_height}
 	alicorn.invalidate_root(rt, "modal percentage panel fixture")
@@ -238,6 +297,137 @@ test_percentage_width_resolves_from_definite_parent_and_matches_fresh_layout :: 
 	testing.expect(t, incremental.nodes[first].bounds.w == 200 && second_bounds.x == 236 &&
 		second_bounds.x+second_bounds.w == 436 && second_bounds.x+second_bounds.w > root_bounds.x+root_bounds.w-20,
 		"two 50% widths in a 400-unit inner row request 200 each; their 16-unit gap overflows the inner extent by 16")
+}
+
+@(test)
+test_cached_region_percentage_dependencies_follow_parent_resize_and_replay_freshly :: proc(t: ^testing.T) {
+	incremental := alicorn.new_runtime(alicorn.Rect{0, 0, 800, 400})
+	defer alicorn.destroy_runtime(&incremental)
+	parent, sibling := ui_percent_test_cached_region_frame(&incremental, 400, 0, 1, true)
+	first, first_found := alicorn.node_by_key(&incremental, alicorn.key_string("cached-percent-first"), .Container)
+	second, second_found := alicorn.node_by_key(&incremental, alicorn.key_string("cached-percent-second"), .Container)
+	text_id, text_found := alicorn.node_by_key(&incremental, alicorn.key_string("cached-percent-first-text"), .Text)
+	sibling_child, sibling_child_found := alicorn.node_by_key(&incremental, alicorn.key_string("cached-percent-sibling-child"), .Container)
+	if parent == 0 || !first_found || !second_found || !text_found || sibling == 0 || !sibling_child_found {
+		testing.expect(t, false, "the cached percentage fixture should create both percentage children and an independent sibling")
+		return
+	}
+	first_id, second_id, text_node_id := first, second, text_id
+	first_description_hash := incremental.nodes[first].description_hash
+	first_layout_hash := incremental.nodes[first].layout_hash
+	sibling_bounds := incremental.nodes[sibling_child].bounds
+	sibling_layout_hash := incremental.nodes[sibling_child].layout_hash
+	text_constraints_before := incremental.measure_states[text_id].cache_key.constraints.width.max
+	measure_misses_before := incremental.stats.measure_cache_misses
+	visits_before := incremental.stats.reconcile_nodes_visited
+	skipped_before := incremental.stats.regions_skipped
+
+	parent, sibling = ui_percent_test_cached_region_frame(&incremental, 600, 0, 1, true)
+	first, first_found = alicorn.node_by_key(&incremental, alicorn.key_string("cached-percent-first"), .Container)
+	second, second_found = alicorn.node_by_key(&incremental, alicorn.key_string("cached-percent-second"), .Container)
+	text_id, text_found = alicorn.node_by_key(&incremental, alicorn.key_string("cached-percent-first-text"), .Text)
+	sibling_child, sibling_child_found = alicorn.node_by_key(&incremental, alicorn.key_string("cached-percent-sibling-child"), .Container)
+	if !first_found || !second_found || !text_found || !sibling_child_found {
+		testing.expect(t, false, "reusing the region should retain its percentage children and independent sibling")
+		return
+	}
+	text_constraints_after := incremental.measure_states[text_id].cache_key.constraints.width.max
+	measure_misses_after := incremental.stats.measure_cache_misses
+	testing.expect(t, parent != 0 && sibling != 0 && first == first_id && second == second_id && text_id == text_node_id,
+		"a cached subtree resize must preserve all retained identities")
+	testing.expect(t, incremental.stats.regions_skipped-skipped_before == 2 &&
+		incremental.stats.reconcile_nodes_visited-visits_before == 3,
+		"the parent basis change should update retained descendants without rebuilding either region body")
+	testing.expect(t, incremental.nodes[first].style.width == 300 && incremental.nodes[second].style.width == 150 &&
+		incremental.nodes[first].bounds.w == 300 && incremental.nodes[second].bounds.w == 150,
+		"multiple cached percentage children should each follow the new definite parent width")
+	testing.expect(t, incremental.nodes[first].description_hash == first_description_hash &&
+		incremental.nodes[first].layout_hash != first_layout_hash,
+		"the retained percentage update should change layout inputs without changing description identity")
+	testing.expect(t, text_constraints_after != text_constraints_before,
+		"a changed percentage basis should update the retained text measurement constraint")
+	testing.expect(t, measure_misses_after > measure_misses_before,
+		"a changed retained text constraint should miss its prior measurement cache entry")
+	testing.expect(t, incremental.nodes[sibling_child].bounds == sibling_bounds &&
+		incremental.nodes[sibling_child].layout_hash == sibling_layout_hash &&
+		!alicorn.dirty_has(incremental.nodes[sibling_child].dirty, .Layout),
+		"an unrelated cached sibling should keep its geometry and remain clean")
+
+	fresh := alicorn.new_runtime(alicorn.Rect{0, 0, 800, 400})
+	defer alicorn.destroy_runtime(&fresh)
+	_, _ = ui_percent_test_cached_region_frame(&fresh, 600, 0, 1, true)
+	fresh_first, fresh_first_found := alicorn.node_by_key(&fresh, alicorn.key_string("cached-percent-first"), .Container)
+	fresh_second, fresh_second_found := alicorn.node_by_key(&fresh, alicorn.key_string("cached-percent-second"), .Container)
+	fresh_text, fresh_text_found := alicorn.node_by_key(&fresh, alicorn.key_string("cached-percent-first-text"), .Text)
+	testing.expect(t, fresh_first_found && fresh_second_found && fresh_text_found &&
+		incremental.nodes[first].bounds == fresh.nodes[fresh_first].bounds &&
+		incremental.nodes[second].bounds == fresh.nodes[fresh_second].bounds &&
+		incremental.nodes[text_id].bounds == fresh.nodes[fresh_text].bounds &&
+		incremental.measure_states[text_id].cache_key.constraints.width == fresh.measure_states[fresh_text].cache_key.constraints.width,
+		"cached-region percentage resize should match a fresh runtime's child geometry and text constraints")
+}
+
+@(test)
+test_percentage_width_tracks_viewport_resize_during_retained_only_layout :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 600, 200})
+	defer alicorn.destroy_runtime(&rt)
+	root, first, second := ui_percent_test_describe_root_children(&rt, 600, 0.75)
+	if root == 0 || first == 0 || second == 0 { testing.expect(t, false, "the root-relative percentage fixture should build"); return }
+	first_id, second_id := first, second
+	viewport_before := rt.nodes[first].bounds.w
+	visits_before := rt.stats.reconcile_nodes_visited
+	frames_before := rt.stats.frames_built
+	rt.viewport = alicorn.Rect{0, 0, 800, 200}
+	rt.layout_pending = true
+	rt.frame_open = true
+	ctx := alicorn.UI{runtime=&rt}
+	alicorn.end_presentation_frame(&ctx)
+	testing.expect(t, viewport_before == 420 && rt.nodes[first].bounds.w == 570 && rt.nodes[second].bounds.w == 570,
+		"percentage children of Root should follow the new viewport basis without an application description")
+	testing.expect(t, first == first_id && second == second_id &&
+		rt.stats.reconcile_nodes_visited == visits_before && rt.stats.frames_built == frames_before,
+		"retained-only viewport resizing should preserve identities and avoid rebuilding application descriptions")
+	fresh := alicorn.new_runtime(alicorn.Rect{0, 0, 800, 200})
+	defer alicorn.destroy_runtime(&fresh)
+	_, fresh_first, fresh_second := ui_percent_test_describe_root_children(&fresh, 800, 0.75)
+	testing.expect(t, rt.nodes[first].bounds == fresh.nodes[fresh_first].bounds &&
+		rt.nodes[second].bounds == fresh.nodes[fresh_second].bounds,
+		"retained-only Root percentage reflow should match the fresh-runtime geometry")
+}
+
+@(test)
+test_cached_percentage_parent_that_loses_definiteness_reports_and_drops_stale_width :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 800, 400})
+	defer alicorn.destroy_runtime(&rt)
+	_, _ = ui_percent_test_cached_region_frame(&rt, 400, 0, 1, true)
+	first, found := alicorn.node_by_key(&rt, alicorn.key_string("cached-percent-first"), .Container)
+	if !found { testing.expect(t, false, "the percentage child should exist before its parent changes"); return }
+	_, _ = ui_percent_test_cached_region_frame(&rt, -1, 1, 1, true)
+	testing.expect(t, rt.hard_error && strings.contains(rt.diagnostic, "no longer has an independently definite width") &&
+		strings.contains(rt.diagnostic, "cached-percent-parent"),
+		"a reused percentage relationship whose parent becomes growing must report the changed definiteness")
+	testing.expect(t, rt.nodes[first].style.width == -1,
+		"an invalidated parent relationship must discard the previous resolved width instead of keeping stale geometry")
+}
+
+@(test)
+test_percent_sidecar_is_removed_when_declaration_changes_or_node_retires :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 800, 400})
+	defer alicorn.destroy_runtime(&rt)
+	_, _ = ui_percent_test_cached_region_frame(&rt, 400, 0, 1, true)
+	first, first_found := alicorn.node_by_key(&rt, alicorn.key_string("cached-percent-first"), .Container)
+	second, second_found := alicorn.node_by_key(&rt, alicorn.key_string("cached-percent-second"), .Container)
+	if !first_found || !second_found { testing.expect(t, false, "the percentage declarations should be retained before replacement"); return }
+	_, _ = ui_percent_test_cached_region_frame(&rt, 600, 0, 2, false, replace_first_with_fixed=true)
+	_, first_found = alicorn.node_by_key(&rt, alicorn.key_string("cached-percent-first"), .Container)
+	_, second_found = alicorn.node_by_key(&rt, alicorn.key_string("cached-percent-second"), .Container)
+	_, first_dependency_found := rt.percent_width_dependencies[first]
+	_, second_dependency_found := rt.percent_width_dependencies[second]
+	testing.expect(t, first_found && !second_found && !first_dependency_found && !second_dependency_found,
+		"replacing one declaration with fixed sizing and retiring another node must remove both old sidecar relationships")
+	_, _ = ui_percent_test_cached_region_frame(&rt, 700, 0, 2, false, replace_first_with_fixed=true)
+	testing.expect(t, rt.nodes[first].style.width == 84,
+		"later parent resizes must not overwrite the fixed replacement after its percentage sidecar was removed")
 }
 
 @(test)

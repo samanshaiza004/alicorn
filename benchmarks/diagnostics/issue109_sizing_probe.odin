@@ -1,7 +1,6 @@
-// Standalone observational probe for #109, researched at 829e463.
-// This deliberately prints known gaps; exit success is NOT sizing acceptance.
-// Convert these observations into regression assertions when implementing the
-// corrections proposed in docs/research/issue-109-completion-plan.md.
+// Standalone regression probe for the #109 correctness cases, first captured
+// at 829e463. Equivalent assertions live in ui/ui_authoring_test.odin; this
+// executable remains a quick, inspectable reproduction of the old failures.
 package main
 
 import "core:fmt"
@@ -36,7 +35,7 @@ main :: proc() {
 	fresh := alicorn.new_runtime({0, 0, 1000, 200})
 	defer alicorn.destroy_runtime(&fresh)
 	clean := describe_cached_percentage(&fresh, 600)
-	fmt.printf("parent=400 child=%.0f; parent=600 cached-child=%.0f fresh-child=%.0f regions_skipped=%d\n",
+	fmt.printf("parent=400 child=%.0f; parent=600 cached-child=%.0f fresh-child=%.0f regions_skipped=%d expected=200/300/300\n",
 		first, second, clean, incremental.stats.regions_skipped)
 
 	panel_runtime := alicorn.new_runtime({0, 0, 600, 300})
@@ -44,8 +43,15 @@ main :: proc() {
 	ctx, _ := alicorn.begin_frame(&panel_runtime)
 	alicorn.container_begin(&ctx, .Root, key="fixed-height-root")
 	opened := false
-	if gui.panel(&ctx, key="typed-fixed-height", sizing=gui.sizing(height=gui.logical(120))) { opened = true }
+	panel_id := alicorn.Node_ID(0)
+	if gui.panel(&ctx, key="typed-fixed-height", sizing=gui.sizing(height=gui.logical(120))) {
+		opened = true
+		panel_id = ctx.runtime.pending[len(ctx.runtime.pending)-1].description.id
+	}
 	alicorn.container_end(&ctx)
 	alicorn.end_frame(&ctx)
-	fmt.printf("panel typed height=120 opened=%v diagnostic=%s\n", opened, panel_runtime.diagnostic)
+	panel, found := alicorn.node_info(&panel_runtime, panel_id)
+	actual_height := f32(-1) if !found else panel.bounds.h
+	fmt.printf("panel typed height=120 opened=%v actual=%.0f error=%v expected=true/120/false\n",
+		opened, actual_height, panel_runtime.hard_error)
 }

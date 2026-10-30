@@ -1039,6 +1039,10 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 }
 
 layout_tree :: proc(rt: ^Runtime) {
+	// A host resize or another retained-only layout update can change a definite
+	// parent's basis without invoking application description code. Update only
+	// the optional sparse percentage sidecar before traversing retained layout.
+	layout_percent_width_update_retained(rt)
 	for id in rt.top_level {
 		node, ok := rt.nodes[id]
 		if !ok || !node.active { continue }

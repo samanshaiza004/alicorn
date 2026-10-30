@@ -251,8 +251,9 @@ resolve_sizing_for_ui :: proc(
 // layout_sized is the low-level percentage-width scope. Fixed, fit-height,
 // and grow inputs lower to ordinary Layout_Style values. A percentage width is
 // resolved against the current parent's definite inner width before emission;
-// invalid declarations produce source-located diagnostics and do not open a
-// scope. This adds no percentage fields to retained nodes.
+// its relationship is retained in an optional sparse Runtime sidecar so cached
+// regions and retained-only resizes can update it. Invalid declarations produce
+// source-located diagnostics and do not open a scope.
 @(deferred_in_out=layout_sized_end)
 layout_sized :: proc(
 	ui: ^UI,
@@ -265,7 +266,11 @@ layout_sized :: proc(
 	defaults := alicorn.layout_style(base.direction)
 	style, valid := resolve_sizing_for_ui(ui, base, declaration, defaults, loc)
 	if !valid { return false }
-	return alicorn.container_begin(ui, .Container, label=label, key=key, style=style, loc=loc) != 0
+	id := alicorn.container_begin(ui, .Container, label=label, key=key, style=style, loc=loc)
+	if id != 0 && declaration.width.kind == .Percentage {
+		alicorn.layout_percent_width_register(ui, id, declaration.width.value)
+	}
+	return id != 0
 }
 
 @(private)
@@ -336,6 +341,9 @@ panel :: proc(
 		label=label,
 		loc=loc,
 	)
+	if id != 0 && sizing.width.kind == .Percentage {
+		alicorn.layout_percent_width_register(ui, id, sizing.width.value)
+	}
 	return id != 0
 }
 

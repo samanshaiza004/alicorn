@@ -5,8 +5,8 @@ import alicorn "alicorn:runtime"
 
 // Size_Input is a bounded authoring declaration. Fixed and fit-content
 // dimensions lower to the existing Layout_Style representation. Percentage
-// width is a separate description-time prototype; it adds no retained-node or
-// solver state.
+// width resolves during description and retains its relationship in an
+// optional sparse Runtime sidecar; it adds no per-node fields or solver pass.
 Size_Input_Kind :: enum { Unspecified, Fixed, Fit_Content, Percentage }
 
 Size_Input :: struct {

@@ -119,8 +119,9 @@ layout_sizing_report_invalid :: proc(rt: ^Runtime, message: string, loc := #call
 // layout_percent_width_resolve accepts only an independently definite parent
 // width: the host-assigned Root viewport or a fixed, non-growing, non-compressible
 // parent width already present in this description. A maximum constraint alone
-// is intentionally insufficient. The result is an ordinary logical width, so
-// the existing allocator, layout hash, and text-measurement dependencies apply.
+// is intentionally insufficient. The result is an ordinary logical width for
+// the allocator; the UI layer retains the fraction in a sparse Runtime sidecar
+// so cached subtrees can follow later changes to this parent basis.
 layout_percent_width_resolve :: proc(ui: ^UI, fraction: f32, loc := #caller_location) -> (f32, bool) {
 	if ui == nil || ui.runtime == nil || !ui.runtime.frame_open {
 		if ui != nil { layout_sizing_report_invalid(ui.runtime, "percentage width requires an open description frame", loc) }
