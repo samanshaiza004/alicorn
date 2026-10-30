@@ -1,13 +1,12 @@
-# #109 completion proposal: retained sizing with Scratchpad and Punks
+# #109 final decision: retained sizing with Scratchpad and Punks
 
-Status: correctness fixes and two-app dogfooding are complete. Keep
-[#109](https://github.com/samanshaiza004/alicorn/issues/109) open until the
-remaining consumer-side native acceptance and release-level measurements are
-recorded. Percentage width remains a narrow opt-in capability; do not expand
-the sizing algebra based on this evidence.
+Status: completed research experiment with partial adoption. Keep the
+correctness fixes and narrow definite-parent percentage width; do not declare
+the broader sizing algebra successful. Track production acceptance separately
+in [#158](https://github.com/samanshaiza004/alicorn/issues/158).
 
-Research date: 2026-10-29, America/Guatemala. Measurement update: Windows
-sidecar benchmark and consumer validation follow-up.
+Decision date: 2026-10-29, America/Guatemala. The Windows sidecar benchmark and
+consumer validation follow-up are recorded below.
 
 ## Recommendation
 
@@ -108,7 +107,7 @@ unrecorded.
 
 ### Percentage sidecar cost profile
 
-The new optimized Windows x64 headless benchmark compares fixed-width controls
+The optimized Windows x64 headless benchmark compares fixed-width controls
 with the same retained tree using definite-parent percentage widths. It runs
 100 warmup and 2,000 measured frames per case, in five fresh processes, at 1,
 8, 32, 128, and 256 dependent children. Cached-region reuse is measured at a
@@ -127,47 +126,71 @@ capture linked from `benchmarks/diagnostics/README.md`.
 
 At one relationship, the steady cached-region overhead is small and process
 ranges overlap; resizing costs about 1.7 µs more at the median, including the
-dependent child's layout work. Cost grows materially with dependent count. At
-128 and 256 relationships, percentage invalidation and recomputation are
-measurable and expensive in this synthetic stress case. Keep percentage users
-sparse and opt-in; this result does not justify broad use on high-cardinality
-trees.
+dependent child's layout work. Cost grows materially with dependent count.
+However, the resize comparison is not behavior-equivalent: the fixed-width
+children do not change size when their parent resizes, while the percentage
+children do. The p95 difference therefore measures additional legitimate
+layout work as well as sidecar work; it does not establish a 7x sidecar
+overhead. Keep percentage users sparse and opt-in, and use an equivalent
+Scratchpad trace before drawing a production-performance conclusion.
 
-No extra warm allocator calls were observed in the same-width trace. At 256
-children, both fixed and percentage variants gained exactly 20,480,000 bytes
-of live requested storage during resize traces and reached nearly identical
-post-trace peaks (44,572,964 / 44,630,628 bytes). This points to common layout
-growth in the stress fixture rather than storage attributable to the sidecar,
-but the large peak still limits conclusions about pathological trees and
-should be profiled separately. This benchmark is headless and does not measure
-complete native frame p95, GPU work, DPI changes, or consumer interaction.
+No extra warm allocator calls were observed in the same-width trace. During the
+2,000-frame 256-dependent resize trace, the percentage case recorded 3,616,000
+persistent allocation calls versus 30,000 for fixed widths. The benchmark
+updates ancestor invalidation separately for each dependent sibling, so this
+high-fanout signal may include redundant propagation and needs an equivalent
+real-consumer workload before optimization is justified. Both 256-child
+variants gained exactly 20,480,000 bytes of live requested storage during
+resize traces and reached nearly identical post-trace peaks (44,572,964 /
+44,630,628 bytes). This points to common layout growth in the stress fixture
+rather than storage attributable to the sidecar, but the large peak should be
+profiled separately. The benchmark is headless and does not measure complete
+native frame p95, GPU work, DPI changes, or consumer interaction.
 
 ### Decision and remaining closure gate
 
-The two correctness defects are resolved, and both consumers now exercise the
-intended sizing behavior. The Punks transition demonstrates same-update
-content-driven deck measurement; the Scratchpad font picker demonstrates
-parent-relative width and a releasing cap. The percentage cost profile supports
-keeping the feature for sparse, real relationships, while discouraging broad
-high-cardinality use. It does not yet satisfy #109's full decision gate:
+The two correctness defects are resolved, and both consumers exercise useful
+retained sizing behavior. The Punks transition demonstrates same-update
+content-driven deck measurement using existing defaults; the Scratchpad font
+picker demonstrates parent-relative width and a releasing cap. This is a
+partial adoption, not a GO for a general typed sizing algebra. The original
+two-materially-improved-layout gate is not met: Punks' simpler legacy
+implementation is shorter than its typed candidate. The research question is
+answered, and no further API expansion is justified by these consumers.
 
-- The five-process headless profile is synthetic. A representative Scratchpad
-  release comparison still needs complete-frame p95, description/layout work,
-  cache behavior, and idle-work evidence for percentage and zero-percentage
-  trees.
+| Area | Evidence | Decision |
+| --- | --- | --- |
+| Helper defaults and control metrics | Typed panel height no longer conflicts with helper defaults; theme metrics negotiate geometry | Keep |
+| Fixed/fit declarations | Correct normalization; Punks does not show a material authoring win from spelling out its existing fit default | Keep the correctness behavior; no broad algebra GO |
+| Definite-parent percentage width | Useful Scratchpad relationship; cache-correct; high-fanout cost needs equivalent production measurement | Keep narrowly opt-in; validate under #158 |
+| Content-sized Punks deck | Existing content sizing grows the deck and shrinks results in one update | Keep existing layout semantics |
+| `allocated()` | No demonstrated clarity gain over `height=-1, grow=1` | Defer |
+| Percentage height and aspect ratio | No compelling consumer need | Defer |
+| General constraint solver | Unnecessary for demonstrated workloads | Reject |
+
+The remaining production validation belongs in focused consumer work, not in
+this completed experiment:
+
+- [#158](https://github.com/samanshaiza004/alicorn/issues/158) tracks an
+  apples-to-apples Scratchpad release comparison, cache correctness, native
+  resize/focus/theme/DPI acceptance, zero-percentage idle behavior, and
+  evidence-driven handling of high fanout.
 - Punks' latest narrow/text-scale layout and transport tests pass, but native
-  Windows interaction and a complete-frame p95 comparison remain outstanding.
+  interaction remains unverified. The three temporary-WAV permission failures
+  are recorded as a Punks test-environment issue; neither finding blocks the
+  sizing research decision.
 - Scratchpad's five focused titlebar tests pass, but its full frontend suite
-  could not start the staged backend in this environment. Native font-picker
-  focus/theme/scale acceptance also remains unrecorded.
+  could not start the staged backend in this environment. That harness issue
+  and native font-picker acceptance remain in Scratchpad's own validation.
 
 Do not add `allocated()`, percentage height, aspect ratio, or a general solver
-to close this evidence gap. The current decision is: retain the corrected
-fixed/fit normalization; keep definite-parent percentage width as a narrow,
-opt-in feature for demonstrated cases; and defer `allocated()` unless another
-real consumer shows that `height=-1, grow=1` is unclear enough to justify the
-extra syntax. #109 remains open pending the consumer-level performance and
-native acceptance evidence above.
+to close this experiment. Final decision: keep corrected fixed/fit
+normalization; keep definite-parent percentage width narrowly opt-in for
+demonstrated cases; defer `allocated()` unless another real consumer shows that
+`height=-1, grow=1` is unclear enough to justify the extra syntax; reject a
+general constraint solver for the demonstrated workloads. Close #109 as a
+completed research experiment with a broader sizing-algebra NO-GO. Production
+acceptance of the retained percentage feature continues under #158.
 
 ## Source baseline
 
