@@ -212,33 +212,47 @@ append_scrollbar_display :: proc(rt: ^Runtime, node: ^Node) {
 	}
 }
 
-compose_subtree :: proc(rt: ^Runtime, id: Node_ID) {
+compose_subtree :: proc(
+	rt: ^Runtime,
+	id: Node_ID,
+	inherited_translation: [2]f32,
+	inherited_opacity: f32,
+) {
 	node, ok := rt.nodes[id]
 	if !ok || !node.active || !node.present { return }
 	if !visual_part_is_visible(rt, id) { return }
+	presentation := motion_compose_subtree(rt, id, inherited_translation, inherited_opacity)
 
 	node.display_index = -1
 	for cached_command in node.paint {
 		command := cached_command
-		command.opacity *= drag_source_opacity(rt, node.id)
+		command.opacity *= presentation.opacity * drag_source_opacity(rt, node.id)
+		command.translation[0] += presentation.translation[0]
+		command.translation[1] += presentation.translation[1]
 		if node.display_index < 0 { node.display_index = len(rt.display_target) }
 		append(&rt.display_target, command)
 		rt.stats.composition_nodes_visited += 1
 		rt.stats.stage_visits[.Composite] += 1
 	}
 	for child in node.children {
-		compose_subtree(rt, child)
+		compose_subtree(rt, child, presentation.translation, presentation.opacity)
 	}
 	// Scrollbars are local retained chrome: they paint above their scroll
 	// region's descendants, but remain below later siblings and top-level
 	// overlays such as modal command palettes.
+	scrollbar_start := len(rt.display_target)
 	append_scrollbar_display(rt, node)
+	for index := scrollbar_start; index < len(rt.display_target); index += 1 {
+		rt.display_target[index].opacity *= presentation.opacity
+		rt.display_target[index].translation[0] += presentation.translation[0]
+		rt.display_target[index].translation[1] += presentation.translation[1]
+	}
 }
 
 rebuild_display :: proc(rt: ^Runtime) {
 	clear(&rt.display_target)
 	for id in rt.top_level {
-		compose_subtree(rt, id)
+		compose_subtree(rt, id, {}, 1)
 	}
 	rt.transient_overlay_kind = .None
 	append_drag_preview(rt)

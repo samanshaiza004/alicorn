@@ -1856,6 +1856,12 @@ Runtime :: struct {
 	persistent_allocator_state: ^Runtime_Allocator_State,
 	scratch_allocator_state:    ^Runtime_Allocator_State,
 	nodes:       map[Node_ID]^Node,
+	// Retained motion is an opt-in sparse sidecar. Its generation counter is
+	// runtime-local, while records are removed with their retained owner.
+	motion_owners: map[Node_ID]Motion_Retained_Owner,
+	motion_generation_sequence: u64,
+	motion_time: Motion_Time,
+	motion_clock_initialized: bool,
 	controlled_text_fields: map[Node_ID]Controlled_Text_Field_State,
 	measure_states: map[Node_ID]Measure_State,
 	percent_width_dependencies: map[Node_ID]Percent_Width_Dependency,

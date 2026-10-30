@@ -1157,6 +1157,24 @@ system file drops or arbitrary MIME payloads.
   menu shortcuts are checked before generic text keys.
 - `Runtime_Config` optionally configures persistent and scratch backing
   allocators when calling `new_runtime`.
+- Opt-in retained motion is bound to a live `Node_ID` through
+  `motion_owner_begin`; the returned handle includes a runtime-local generation
+  so retirement and identity reuse invalidate old handles. `motion_opacity`
+  and `motion_translation` accept typed targets, a `Motion_Config`, an
+  explicit `Settle` / `Direct` / `Snap` mode, and an injected `Motion_Time`.
+  The first `Settle` starts from neutral presentation (opacity 1, translation
+  zero); use `Snap` for an initial state that should already be at its target.
+  `motion_presentation` reports target and last-presented values separately.
+  Translation accumulates through painted descendants in parent-local logical
+  units; opacity multiplies through the subtree. Target layout, clips, hit
+  regions, and accessibility bounds remain unchanged in this initial policy.
+  `motion_tick` samples the retained responses and requests a presentation-only
+  frame when visible values change. A custom host can flush that work with
+  `begin_presentation_frame` / `end_presentation_frame`; these frames do not
+  call application description, reconciliation, measurement, or layout. This
+  stage has no automatic frame scheduler: callers inject time, and a future
+  scheduler must apply a bounded policy to active responses whose settlement
+  deadline is unestablished. Unopted nodes retain their existing behavior.
 - `inspect(runtime)` and `trace_snapshot(runtime)` expose retained state and
   recent invalidation/stage events for diagnostics.
 - The native `Run` host accepts `--inspector` (enable `F9`) and

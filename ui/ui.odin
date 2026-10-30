@@ -29,6 +29,14 @@ Icon_ID :: alicorn.Icon_ID
 Text_Buffer :: alicorn.Text_Field_Buffer
 Text_Field_Response :: alicorn.Text_Field_Response
 Virtual_List :: alicorn.Virtual_List_Handle
+Motion_Time :: alicorn.Motion_Time
+Motion_Config :: alicorn.Motion_Config
+Motion_Mode :: alicorn.Motion_Mode
+Motion_Owner_Handle :: alicorn.Motion_Owner_Handle
+Motion_Runtime_Status :: alicorn.Motion_Runtime_Status
+Motion_Presentation :: alicorn.Motion_Presentation
+Motion_Tick_Result :: alicorn.Motion_Tick_Result
+Motion_Vector2 :: alicorn.Motion_Vector2
 
 @(private)
 DEFAULT_CHECKBOX_STYLE :: Layout_Style{
@@ -58,6 +66,56 @@ key_scope_end :: proc(ui: ^UI, _key: UI_Key, _loc: odin_runtime.Source_Code_Loca
 @(deferred_in_out=key_scope_end)
 key_scope :: proc(ui: ^UI, key: UI_Key, loc := #caller_location) -> bool {
 	return alicorn.key_scope_begin(ui, key, loc=loc)
+}
+
+// motion_owner_begin opts one live retained node into presentation motion.
+// The returned generation rejects stale handles after node retirement and
+// identity reuse. Motion values do not change target layout or hit geometry.
+motion_owner_begin :: proc(ctx: ^UI, owner: Node_ID) -> (Motion_Owner_Handle, Motion_Runtime_Status) {
+	if ctx == nil || ctx.runtime == nil { return {}, .Invalid_Runtime }
+	return alicorn.motion_owner_begin(ctx.runtime, owner)
+}
+
+// motion_opacity retargets the owner's compositor opacity using the analytic
+// response policy. Opacity is clamped to [0,1] when presented.
+motion_opacity :: proc(
+	ctx: ^UI,
+	handle: Motion_Owner_Handle,
+	target: f64,
+	config: Motion_Config,
+	mode: Motion_Mode,
+	at: Motion_Time,
+) -> Motion_Runtime_Status {
+	if ctx == nil || ctx.runtime == nil { return .Invalid_Runtime }
+	return alicorn.motion_target_opacity(ctx.runtime, handle, target, config, mode, at)
+}
+
+// motion_translation retargets a node in parent-local logical coordinates.
+// Painted descendants inherit the translation; target layout, hit testing and
+// accessibility bounds remain stationary in this initial policy.
+motion_translation :: proc(
+	ctx: ^UI,
+	handle: Motion_Owner_Handle,
+	target: Motion_Vector2,
+	config: Motion_Config,
+	mode: Motion_Mode,
+	at: Motion_Time,
+) -> Motion_Runtime_Status {
+	if ctx == nil || ctx.runtime == nil { return .Invalid_Runtime }
+	return alicorn.motion_target_translation(ctx.runtime, handle, target, config, mode, at)
+}
+
+// motion_tick samples opted-in properties at an injected monotonic timestamp.
+// It requests retained presentation work only when a painted value changes;
+// the caller can use active/deadline counts to bound a future scheduler.
+motion_tick :: proc(ctx: ^UI, at: Motion_Time) -> Motion_Tick_Result {
+	if ctx == nil || ctx.runtime == nil { return Motion_Tick_Result{status=.Invalid_Runtime} }
+	return alicorn.motion_tick(ctx.runtime, at)
+}
+
+motion_presentation :: proc(ctx: ^UI, handle: Motion_Owner_Handle) -> Motion_Presentation {
+	if ctx == nil || ctx.runtime == nil { return Motion_Presentation{status=.Invalid_Runtime} }
+	return alicorn.motion_presentation(ctx.runtime, handle)
 }
 
 layout_style :: proc(

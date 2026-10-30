@@ -734,6 +734,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	if desired[id] { return }
 	node, ok := rt.nodes[id]
 	if !ok { return }
+	motion_retire_owner(rt, id)
 	restore_release_node(rt, id)
 	if rt.semantic_focus.owner == id {
 		_ = restore_cancel_pending(rt, .Semantic_Focus, id, .Target_Retired)
@@ -1103,6 +1104,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		free(node, allocator=rt.persistent_allocator)
 	}
 	delete(rt.nodes)
+	if rt.motion_owners != nil { delete(rt.motion_owners) }
 	for _, state in rt.controlled_text_fields {
 		if len(state.model_text) > 0 { delete(state.model_text, rt.persistent_allocator) }
 	}

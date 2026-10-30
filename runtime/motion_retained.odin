@@ -1,0 +1,431 @@
+package alicorn
+
+// Retained motion binds analytic responses to a live retained identity. The
+// runtime owns only targets and sampled presentation values; application
+// state and geometry negotiation remain authoritative outside this sidecar.
+
+MOTION_RETAINED_MAX_OWNERS :: 256
+MOTION_F32_MAX :: f64(3.4028234663852886e38)
+// Divide the representable GPU translation range across the maximum retained
+// owner count so a fully nested path remains finite in f32 composition.
+MOTION_TRANSLATION_COMPONENT_MAX :: MOTION_F32_MAX / f64(MOTION_RETAINED_MAX_OWNERS*2)
+
+Motion_Owner_Handle :: struct {
+	node: Node_ID,
+	generation: u64,
+}
+
+Motion_Runtime_Status :: enum {
+	Ok,
+	Invalid_Runtime,
+	Invalid_Owner,
+	Owner_Not_Retained,
+	Stale_Owner,
+	Owner_Limit,
+	Invalid_Value,
+	Invalid_Configuration,
+	Time_Rewound,
+	Numeric_Overflow,
+}
+
+// Motion_Presentation is the compositor-facing snapshot for a retained
+// owner. Translation is in parent-local logical units. Hit testing,
+// accessibility bounds and target layout continue to use target geometry.
+Motion_Presentation :: struct {
+	target_translation: Motion_Vector2,
+	presented_translation: [2]f32,
+	target_opacity: f64,
+	presented_opacity: f32,
+	has_translation: bool,
+	has_opacity: bool,
+	active: bool,
+	deadline_established: bool,
+	status: Motion_Runtime_Status,
+}
+
+Motion_Tick_Result :: struct {
+	active_properties: int,
+	active_owners: int,
+	unestablished_deadlines: int,
+	changed_owners: int,
+	status: Motion_Runtime_Status,
+}
+
+Motion_Retained_Owner :: struct {
+	generation: u64,
+	has_translation: bool,
+	translation: Motion_Translation_Response,
+	presented_translation: [2]f32,
+	translation_active: bool,
+	translation_deadline_established: bool,
+	has_opacity: bool,
+	opacity: Motion_Scalar_Response,
+	presented_opacity: f32,
+	opacity_active: bool,
+	opacity_deadline_established: bool,
+}
+
+Motion_Composition_Values :: struct {
+	translation: [2]f32,
+	opacity: f32,
+}
+
+motion_runtime_status :: proc(status: Motion_Status) -> Motion_Runtime_Status {
+	switch status {
+	case .Ok: return .Ok
+	case .Invalid_Response: return .Invalid_Owner
+	case .Invalid_Configuration: return .Invalid_Configuration
+	case .Invalid_Value: return .Invalid_Value
+	case .Time_Rewound: return .Time_Rewound
+	case .Numeric_Overflow: return .Numeric_Overflow
+	}
+	return .Invalid_Value
+}
+
+motion_owner_begin :: proc(rt: ^Runtime, owner: Node_ID) -> (handle: Motion_Owner_Handle, status: Motion_Runtime_Status) {
+	if rt == nil { return {}, .Invalid_Runtime }
+	if owner == 0 { return {}, .Invalid_Owner }
+	if node, found := rt.nodes[owner]; !found || node == nil || !node.active {
+		return {}, .Owner_Not_Retained
+	}
+	if rt.motion_owners == nil {
+		rt.motion_owners = make(map[Node_ID]Motion_Retained_Owner, allocator=rt.persistent_allocator)
+	}
+	if current, found := rt.motion_owners[owner]; found {
+		return Motion_Owner_Handle{owner, current.generation}, .Ok
+	}
+	if len(rt.motion_owners) >= MOTION_RETAINED_MAX_OWNERS || rt.motion_generation_sequence == u64(0xffffffffffffffff) {
+		return {}, .Owner_Limit
+	}
+	rt.motion_generation_sequence += 1
+	if rt.motion_generation_sequence == 0 { return {}, .Owner_Limit }
+	state := Motion_Retained_Owner{
+		generation=rt.motion_generation_sequence,
+		presented_opacity=1,
+		opacity_deadline_established=true,
+		translation_deadline_established=true,
+	}
+	rt.motion_owners[owner] = state
+	return Motion_Owner_Handle{owner, state.generation}, .Ok
+}
+
+motion_owner_is_current :: proc(rt: ^Runtime, handle: Motion_Owner_Handle) -> bool {
+	if rt == nil || rt.motion_owners == nil || handle.node == 0 || handle.generation == 0 { return false }
+	state, found := rt.motion_owners[handle.node]
+	if !found || state.generation != handle.generation { return false }
+	node, node_found := rt.nodes[handle.node]
+	return node_found && node != nil && node.active
+}
+
+motion_request_presentation :: proc(rt: ^Runtime, reason: string) {
+	rt.presentation_pending = true
+	rt.composition_rebuild = true
+	when APP_MUTATION_DIAGNOSTICS_ENABLED {
+		application_mutation_note_request(rt, .Presentation)
+	}
+	record_trace_literal(rt, .Invalidation, 0, reason)
+	note_pending_work_cause(rt, trace_current_cause(rt))
+}
+
+motion_clamp_opacity :: proc(value: f64) -> f32 {
+	return f32(clamp(value, f64(0), f64(1)))
+}
+
+motion_value_to_f32 :: proc(value: f64) -> (result: f32, ok: bool) {
+	if !motion_finite(value) || abs(value) > MOTION_F32_MAX { return 0, false }
+	result = f32(value)
+	return result, motion_finite(f64(result))
+}
+
+motion_mode_valid :: proc(mode: Motion_Mode) -> bool {
+	return mode == .Settle || mode == .Direct || mode == .Snap
+}
+
+motion_composition_values :: proc(rt: ^Runtime, owner: Node_ID) -> Motion_Composition_Values {
+	result := Motion_Composition_Values{opacity=1}
+	if rt == nil || rt.motion_owners == nil { return result }
+	state, found := rt.motion_owners[owner]
+	if !found { return result }
+	if state.has_translation { result.translation = state.presented_translation }
+	if state.has_opacity { result.opacity = state.presented_opacity }
+	return result
+}
+
+motion_presentation :: proc(rt: ^Runtime, handle: Motion_Owner_Handle) -> Motion_Presentation {
+	if rt == nil { return Motion_Presentation{status=.Invalid_Runtime} }
+	if !motion_owner_is_current(rt, handle) { return Motion_Presentation{status=.Stale_Owner} }
+	state := rt.motion_owners[handle.node]
+	active := state.translation_active || state.opacity_active
+	deadline_established := (!state.translation_active || state.translation_deadline_established) &&
+		(!state.opacity_active || state.opacity_deadline_established)
+	return Motion_Presentation{
+		target_translation=Motion_Vector2{
+			state.translation.x.target if state.has_translation else 0,
+			state.translation.y.target if state.has_translation else 0,
+		},
+		presented_translation=state.presented_translation,
+		target_opacity=state.opacity.target if state.has_opacity else 1,
+		presented_opacity=state.presented_opacity if state.has_opacity else 1,
+		has_translation=state.has_translation,
+		has_opacity=state.has_opacity,
+		active=active,
+		deadline_established=deadline_established,
+		status=.Ok,
+	}
+}
+
+motion_scalar_set_target :: proc(
+	response: Motion_Scalar_Response,
+	initialized: bool,
+	base, target: f64,
+	config: Motion_Config,
+	mode: Motion_Mode,
+	at: Motion_Time,
+) -> (next: Motion_Scalar_Response, status: Motion_Status) {
+	if !motion_finite(target) { return response, .Invalid_Value }
+	if !motion_config_valid(config) { return response, .Invalid_Configuration }
+	if !motion_mode_valid(mode) { return response, .Invalid_Value }
+	if !initialized {
+		next, status = motion_scalar_create(base, target, 0, config, at)
+		if status != .Ok { return response, status }
+		switch mode {
+		case .Settle:
+			return next, .Ok
+		case .Direct:
+			return motion_scalar_direct(next, target, at)
+		case .Snap:
+			return motion_scalar_snap(next, target, at)
+		}
+	}
+	if response.config != config {
+		// A configuration change is a response replacement. Preserve the
+		// currently presented position and velocity under the new policy.
+		current := motion_scalar_sample(response, at)
+		if current.status != .Ok { return response, current.status }
+		next, status = motion_scalar_create(current.value, target, current.velocity, config, at)
+		if status != .Ok { return response, status }
+		switch mode {
+		case .Settle: return next, .Ok
+		case .Direct: return motion_scalar_direct(next, target, at)
+		case .Snap: return motion_scalar_snap(next, target, at)
+		}
+	}
+	switch mode {
+	case .Settle: return motion_scalar_settle(response, target, at)
+	case .Direct: return motion_scalar_direct(response, target, at)
+	case .Snap: return motion_scalar_snap(response, target, at)
+	}
+	return response, .Invalid_Value
+}
+
+motion_translation_set_target :: proc(
+	response: Motion_Translation_Response,
+	initialized: bool,
+	base, target: Motion_Vector2,
+	config: Motion_Config,
+	mode: Motion_Mode,
+	at: Motion_Time,
+) -> (next: Motion_Translation_Response, status: Motion_Status) {
+	if !motion_finite(target.x) || !motion_finite(target.y) { return response, .Invalid_Value }
+	if !motion_config_valid(config) { return response, .Invalid_Configuration }
+	if !motion_mode_valid(mode) { return response, .Invalid_Value }
+	if !initialized {
+		next, status = motion_translation_create(base, target, {}, config, at)
+		if status != .Ok { return response, status }
+		switch mode {
+		case .Settle: return next, .Ok
+		case .Direct: return motion_translation_direct(next, target, at)
+		case .Snap: return motion_translation_snap(next, target, at)
+		}
+	}
+	if response.x.config != config {
+		current := motion_translation_sample(response, at)
+		if current.status != .Ok { return response, current.status }
+		next, status = motion_translation_create(current.value, target, current.velocity, config, at)
+		if status != .Ok { return response, status }
+		switch mode {
+		case .Settle: return next, .Ok
+		case .Direct: return motion_translation_direct(next, target, at)
+		case .Snap: return motion_translation_snap(next, target, at)
+		}
+	}
+	switch mode {
+	case .Settle: return motion_translation_settle(response, target, at)
+	case .Direct: return motion_translation_direct(response, target, at)
+	case .Snap: return motion_translation_snap(response, target, at)
+	}
+	return response, .Invalid_Value
+}
+
+motion_target_opacity :: proc(
+	rt: ^Runtime,
+	handle: Motion_Owner_Handle,
+	target: f64,
+	config: Motion_Config,
+	mode: Motion_Mode,
+	at: Motion_Time,
+) -> Motion_Runtime_Status {
+	if rt == nil { return .Invalid_Runtime }
+	if target < 0 || target > 1 || !motion_finite(target) { return .Invalid_Value }
+	if !motion_config_valid(config) { return .Invalid_Configuration }
+	if !motion_mode_valid(mode) { return .Invalid_Value }
+	if !motion_owner_is_current(rt, handle) { return .Stale_Owner }
+	if rt.motion_clock_initialized && i64(at) < i64(rt.motion_time) { return .Time_Rewound }
+	preflight := motion_tick(rt, at)
+	if preflight.status != .Ok { return preflight.status }
+	state := rt.motion_owners[handle.node]
+	next, kernel_status := motion_scalar_set_target(
+		state.opacity, state.has_opacity, 1, target, config, mode, at,
+	)
+	if kernel_status != .Ok { return motion_runtime_status(kernel_status) }
+	changed := !state.has_opacity || state.opacity != next
+	if !changed { return .Ok }
+	sample := motion_scalar_sample(next, at)
+	if sample.status != .Ok { return motion_runtime_status(sample.status) }
+	state.opacity = next
+	state.has_opacity = true
+	state.presented_opacity = motion_clamp_opacity(sample.value)
+	state.opacity_active = sample.active
+	state.opacity_deadline_established = sample.deadline_established
+	rt.motion_owners[handle.node] = state
+	motion_request_presentation(rt, "retained motion opacity target changed")
+	return .Ok
+}
+
+motion_target_translation :: proc(
+	rt: ^Runtime,
+	handle: Motion_Owner_Handle,
+	target: Motion_Vector2,
+	config: Motion_Config,
+	mode: Motion_Mode,
+	at: Motion_Time,
+) -> Motion_Runtime_Status {
+	if rt == nil { return .Invalid_Runtime }
+	if !motion_finite(target.x) || !motion_finite(target.y) { return .Invalid_Value }
+	if abs(target.x) > MOTION_TRANSLATION_COMPONENT_MAX || abs(target.y) > MOTION_TRANSLATION_COMPONENT_MAX { return .Invalid_Value }
+	if !motion_config_valid(config) { return .Invalid_Configuration }
+	if !motion_mode_valid(mode) { return .Invalid_Value }
+	if !motion_owner_is_current(rt, handle) { return .Stale_Owner }
+	if rt.motion_clock_initialized && i64(at) < i64(rt.motion_time) { return .Time_Rewound }
+	preflight := motion_tick(rt, at)
+	if preflight.status != .Ok { return preflight.status }
+	state := rt.motion_owners[handle.node]
+	next, kernel_status := motion_translation_set_target(
+		state.translation, state.has_translation, {}, target, config, mode, at,
+	)
+	if kernel_status != .Ok { return motion_runtime_status(kernel_status) }
+	if state.has_translation && state.translation == next { return .Ok }
+	sample := motion_translation_sample(next, at)
+	if sample.status != .Ok { return motion_runtime_status(sample.status) }
+	x, x_ok := motion_value_to_f32(sample.value.x)
+	y, y_ok := motion_value_to_f32(sample.value.y)
+	if !x_ok || !y_ok { return .Numeric_Overflow }
+	state.translation = next
+	state.has_translation = true
+	state.presented_translation = [2]f32{x, y}
+	state.translation_active = sample.active
+	state.translation_deadline_established = sample.deadline_established
+	rt.motion_owners[handle.node] = state
+	motion_request_presentation(rt, "retained motion translation target changed")
+	return .Ok
+}
+
+motion_sample_validate :: proc(state: Motion_Retained_Owner, at: Motion_Time) -> Motion_Runtime_Status {
+	if state.has_opacity {
+		sample := motion_scalar_sample(state.opacity, at)
+		if sample.status != .Ok { return motion_runtime_status(sample.status) }
+	}
+	if state.has_translation {
+		sample := motion_translation_sample(state.translation, at)
+		if sample.status != .Ok { return motion_runtime_status(sample.status) }
+		_, x_ok := motion_value_to_f32(sample.value.x)
+		_, y_ok := motion_value_to_f32(sample.value.y)
+		if !x_ok || !y_ok { return .Numeric_Overflow }
+	}
+	return .Ok
+}
+
+// motion_tick samples every active retained response at one injected time.
+// It is all-or-nothing on errors, schedules a presentation-only frame when a
+// visible value changes, and reports active responses without certified
+// deadlines so a future scheduler can apply an explicit bounded policy.
+motion_tick :: proc(rt: ^Runtime, at: Motion_Time) -> Motion_Tick_Result {
+	if rt == nil { return Motion_Tick_Result{status=.Invalid_Runtime} }
+	if rt.motion_clock_initialized && i64(at) < i64(rt.motion_time) {
+		return Motion_Tick_Result{status=.Time_Rewound}
+	}
+	if rt.motion_owners == nil {
+		rt.motion_time = at
+		rt.motion_clock_initialized = true
+		return Motion_Tick_Result{status=.Ok}
+	}
+	for _, state in rt.motion_owners {
+		status := motion_sample_validate(state, at)
+		if status != .Ok { return Motion_Tick_Result{status=status} }
+	}
+	result := Motion_Tick_Result{status=.Ok}
+	for owner, &state in rt.motion_owners {
+		changed := false
+		owner_active := false
+		if state.has_opacity {
+			sample := motion_scalar_sample(state.opacity, at)
+			presented := motion_clamp_opacity(sample.value)
+			if presented != state.presented_opacity { changed = true }
+			state.presented_opacity = presented
+			state.opacity_active = sample.active
+			state.opacity_deadline_established = sample.deadline_established
+			if sample.active {
+				result.active_properties += 1
+				owner_active = true
+				if !sample.deadline_established { result.unestablished_deadlines += 1 }
+			}
+		}
+		if state.has_translation {
+			sample := motion_translation_sample(state.translation, at)
+			x, _ := motion_value_to_f32(sample.value.x)
+			y, _ := motion_value_to_f32(sample.value.y)
+			presented := [2]f32{x, y}
+			if presented != state.presented_translation { changed = true }
+			state.presented_translation = presented
+			state.translation_active = sample.active
+			state.translation_deadline_established = sample.deadline_established
+			if sample.active {
+				result.active_properties += 1
+				owner_active = true
+				if !sample.deadline_established { result.unestablished_deadlines += 1 }
+			}
+		}
+		if owner_active { result.active_owners += 1 }
+		if changed { result.changed_owners += 1 }
+	}
+	rt.motion_time = at
+	rt.motion_clock_initialized = true
+	if result.changed_owners > 0 {
+		motion_request_presentation(rt, "retained motion presentation sampled")
+	}
+	return result
+}
+
+motion_retire_owner :: proc(rt: ^Runtime, owner: Node_ID) {
+	if rt == nil || rt.motion_owners == nil { return }
+	delete_key(&rt.motion_owners, owner)
+}
+
+// Motion geometry is paint-only. Ancestor translation is accumulated through
+// retained hierarchy; clips, hit regions and accessibility target bounds stay
+// at their logical target geometry by design in this first integration.
+motion_compose_subtree :: proc(
+	rt: ^Runtime,
+	owner: Node_ID,
+	inherited_translation: [2]f32,
+	inherited_opacity: f32,
+) -> Motion_Composition_Values {
+	local := motion_composition_values(rt, owner)
+	return Motion_Composition_Values{
+		translation=[2]f32{
+			inherited_translation[0]+local.translation[0],
+			inherited_translation[1]+local.translation[1],
+		},
+		opacity=clamp(inherited_opacity*local.opacity, f32(0), f32(1)),
+	}
+}
