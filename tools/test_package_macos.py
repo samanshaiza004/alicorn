@@ -26,6 +26,40 @@ from package_macos import (
 
 
 class PackageDependencyAuditTests(unittest.TestCase):
+    def test_accesskit_notices_include_wrapper_and_all_upstream_texts_with_spaces(self):
+        with tempfile.TemporaryDirectory(prefix="Alicorn notices with spaces ") as directory:
+            root = pathlib.Path(directory)
+            sources = {
+                "accesskit_license_apache": "LICENSE-APACHE",
+                "accesskit_license_mit": "LICENSE-MIT",
+                "accesskit_license_chromium": "LICENSE.chromium",
+                "accesskit_authors": "AUTHORS",
+                "accesskit_binding_license": "wrapper LICENSE",
+            }
+            for name in sources.values():
+                (root / name).write_text(name, encoding="utf-8")
+            inputs = package_macos.accesskit_notice_inputs(SimpleNamespace(**{
+                field: root / name for field, name in sources.items()
+            }))
+            self.assertEqual(list(inputs), [
+                "AccessKit-LICENSE-APACHE.txt", "AccessKit-LICENSE-MIT.txt",
+                "AccessKit-LICENSE.chromium.txt", "AccessKit-AUTHORS.txt", "odin-accesskit-LICENSE.txt",
+            ])
+            self.assertEqual(inputs["odin-accesskit-LICENSE.txt"].read_text(), "wrapper LICENSE")
+            self.assertTrue(all(source.is_absolute() for source in inputs.values()))
+            (root / "AUTHORS").unlink()
+            with self.assertRaises(FileNotFoundError):
+                package_macos.accesskit_notice_inputs(SimpleNamespace(**{
+                    field: root / name for field, name in sources.items()
+                }))
+
+    def test_accesskit_supplemental_notices_require_core_license_inputs(self):
+        with self.assertRaisesRegex(ValueError, "require the Apache and MIT"):
+            package_macos.accesskit_notice_inputs(SimpleNamespace(
+                accesskit_license_apache=None, accesskit_license_mit=None,
+                accesskit_binding_license=pathlib.Path("wrapper LICENSE"),
+            ))
+
     contents = pathlib.Path("App.app") / "Contents"
     frameworks = contents / "Frameworks"
     macos = contents / "MacOS"

@@ -110,6 +110,9 @@ try {
         'licenses/SDL-LICENSE.txt' = 'SDL license'
         'licenses/AccessKit-LICENSE-APACHE.txt' = 'AccessKit Apache license'
         'licenses/AccessKit-LICENSE-MIT.txt' = 'AccessKit MIT license'
+        'licenses/AccessKit-LICENSE.chromium.txt' = 'AccessKit Chromium notice'
+        'licenses/AccessKit-AUTHORS.txt' = 'AccessKit authors'
+        'licenses/odin-accesskit-LICENSE.txt' = 'odin-accesskit wrapper license'
         'payload.lib' = 'valid artifact'
     }
     $artifactRecords = [Collections.Generic.List[object]]::new()

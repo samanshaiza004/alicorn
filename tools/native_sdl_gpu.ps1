@@ -29,7 +29,7 @@ if ($MillionRowAccessibility) {
     $Entry = 'native\semantic_virtualization_entry'
     $Executable = '.\out\alicorn_semantic_virtualization.exe'
 }
-& $Odin build $Entry -debug -pdb-name:out\alicorn_sdl_gpu.pdb "-extra-linker-flags:$($AccessKit.LinkerFlags)" -out:$Executable
+& $Odin build $Entry -debug -pdb-name:out\alicorn_sdl_gpu.pdb @($AccessKit.CompilerArguments) -out:$Executable
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # The Odin SDK vendor directory carries the SDL3 DLL used by this fixture.

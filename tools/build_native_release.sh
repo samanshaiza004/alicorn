@@ -45,6 +45,7 @@ SDL_REQUIRED_VERSION=3.4.18
 mkdir -p "$SDL_ROOT"
 ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
 ACCESSKIT_ROOT="$REPO_ROOT/.deps/accesskit/accesskit-c-0.23.1"
+ACCESSKIT_BINDING_ROOT=$(alicorn_accesskit_binding_root)
 
 for tool in cmake tar shasum python3; do
 	command -v "$tool" >/dev/null 2>&1 || { echo "Required packaging tool not found: $tool" >&2; exit 127; }
@@ -113,6 +114,9 @@ PACKAGE_ARGS=(
 	--sdl-license "$SDL_LICENSE"
 	--accesskit-license-apache "$ACCESSKIT_ROOT/LICENSE-APACHE"
 	--accesskit-license-mit "$ACCESSKIT_ROOT/LICENSE-MIT"
+	--accesskit-license-chromium "$ACCESSKIT_ROOT/LICENSE.chromium"
+	--accesskit-authors "$ACCESSKIT_ROOT/AUTHORS"
+	--accesskit-binding-license "$ACCESSKIT_BINDING_ROOT/LICENSE"
 )
 case "$OUTPUT" in
 	/*) PACKAGE_ARGS+=(--output "$OUTPUT") ;;

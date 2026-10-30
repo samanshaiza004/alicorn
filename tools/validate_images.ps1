@@ -7,7 +7,7 @@ Push-Location $RepoRoot
 try {
     New-Item -ItemType Directory -Force out | Out-Null
     $AccessKit = Get-AlicornAccessKit
-    & $Odin build native\image_validation_entry "-extra-linker-flags:$($AccessKit.LinkerFlags)" -out:out\alicorn_image_validation.exe
+    & $Odin build native\image_validation_entry @($AccessKit.CompilerArguments) -out:out\alicorn_image_validation.exe
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     $SDL3 = Join-Path (Split-Path -Parent $Odin) 'vendor\sdl3\SDL3.dll'
     if (-not (Test-Path out\SDL3.dll)) { Copy-Item -LiteralPath $SDL3 -Destination out\SDL3.dll }

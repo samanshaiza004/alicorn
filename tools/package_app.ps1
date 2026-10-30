@@ -8,6 +8,9 @@ param(
     [Parameter(Mandatory)][string]$SDLLicense,
     [string]$AccessKitLicenseApache,
     [string]$AccessKitLicenseMIT,
+    [string]$AccessKitLicenseChromium,
+    [string]$AccessKitAuthors,
+    [string]$AccessKitBindingLicense,
     [switch]$SmokeTest
 )
 
@@ -22,6 +25,16 @@ if ([string]::IsNullOrWhiteSpace($AccessKitLicenseApache) -ne [string]::IsNullOr
 if (-not [string]::IsNullOrWhiteSpace($AccessKitLicenseApache)) {
     $AccessKitLicenseApache = (Resolve-Path -LiteralPath $AccessKitLicenseApache).Path
     $AccessKitLicenseMIT = (Resolve-Path -LiteralPath $AccessKitLicenseMIT).Path
+}
+$AccessKitNotices = [ordered]@{}
+foreach ($Notice in @(
+    @{ Source=$AccessKitLicenseChromium; Name='AccessKit-LICENSE.chromium.txt' },
+    @{ Source=$AccessKitAuthors; Name='AccessKit-AUTHORS.txt' },
+    @{ Source=$AccessKitBindingLicense; Name='odin-accesskit-LICENSE.txt' }
+)) {
+    if ([string]::IsNullOrWhiteSpace($Notice.Source)) { continue }
+    if ([string]::IsNullOrWhiteSpace($AccessKitLicenseApache)) { throw 'AccessKit notices require the Apache and MIT license inputs.' }
+    $AccessKitNotices[$Notice.Name] = (Resolve-Path -LiteralPath $Notice.Source).Path
 }
 if ($SDLLinkage -eq 'Shared') {
     if ([string]::IsNullOrWhiteSpace($SDLRuntime)) { throw 'Shared SDL packaging requires -SDLRuntime.' }
@@ -108,6 +121,7 @@ Copy-PackageFile (Join-Path $RepoRoot 'third_party/windows_caption/LICENSE') (Jo
 if (-not [string]::IsNullOrWhiteSpace($AccessKitLicenseApache)) {
     Copy-PackageFile $AccessKitLicenseApache (Join-Path $PackageRoot 'AccessKit-LICENSE-APACHE.txt')
     Copy-PackageFile $AccessKitLicenseMIT (Join-Path $PackageRoot 'AccessKit-LICENSE-MIT.txt')
+    foreach ($Name in $AccessKitNotices.Keys) { Copy-PackageFile $AccessKitNotices[$Name] (Join-Path $PackageRoot $Name) }
 }
 if ($SDLLinkage -eq 'Shared') {
     if ((Split-Path -Leaf $SDLRuntime) -ine 'SDL3.dll') { throw 'The shared SDL runtime must be named SDL3.dll.' }
@@ -327,6 +341,9 @@ $Manifest = [ordered]@{
                     [ordered]@{ path='AccessKit-LICENSE-APACHE.txt'; sha256=(Get-FileHash -LiteralPath (Join-Path $PackageRoot 'AccessKit-LICENSE-APACHE.txt') -Algorithm SHA256).Hash.ToLowerInvariant() },
                     [ordered]@{ path='AccessKit-LICENSE-MIT.txt'; sha256=(Get-FileHash -LiteralPath (Join-Path $PackageRoot 'AccessKit-LICENSE-MIT.txt') -Algorithm SHA256).Hash.ToLowerInvariant() }
                 )
+                notices=@(foreach ($Name in $AccessKitNotices.Keys) {
+                    [ordered]@{ path=$Name; sha256=(Get-FileHash -LiteralPath (Join-Path $PackageRoot $Name) -Algorithm SHA256).Hash.ToLowerInvariant() }
+                })
             }
         } else { $null })
     }

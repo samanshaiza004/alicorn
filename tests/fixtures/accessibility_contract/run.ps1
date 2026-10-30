@@ -11,7 +11,7 @@ $Executable = Join-Path $OutputDirectory 'accessibility_contract.exe'
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 
 & $Odin build (Join-Path $Fixture '.') "-collection:alicorn=$RepoRoot" `
-	"-extra-linker-flags:$($AccessKit.LinkerFlags)" "-out:$Executable"
+	@($AccessKit.CompilerArguments) "-out:$Executable"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # Match the native fixture runner's SDL staging behavior.

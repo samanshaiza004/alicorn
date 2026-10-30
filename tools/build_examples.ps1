@@ -17,7 +17,7 @@ try {
 	foreach ($Example in $Examples) {
 		$Output = Join-Path $OutputRoot ($Example.Name + '.exe')
 		Write-Host "Building example $($Example.Name)"
-		& $Odin build (Join-Path 'examples' $Example.Name) "-collection:alicorn=$RepoRoot" "-extra-linker-flags:$($AccessKit.LinkerFlags)" "-out:$Output"
+		& $Odin build (Join-Path 'examples' $Example.Name) "-collection:alicorn=$RepoRoot" @($AccessKit.CompilerArguments) "-out:$Output"
 		if ($LASTEXITCODE -ne 0) { throw "Example build failed: $($Example.Name) (exit $LASTEXITCODE)" }
 	}
 }

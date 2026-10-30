@@ -63,7 +63,9 @@ python3 tools/validate_macos_package_desktop.py \
 ```
 
 The default output is under `out/native-package/`. It includes the app,
-`SDL-LICENSE.txt`, the AccessKit Apache-2.0 and MIT license texts, and
+`SDL-LICENSE.txt`, the AccessKit Apache-2.0 and MIT license texts,
+`AccessKit-LICENSE.chromium.txt`, `AccessKit-AUTHORS.txt`, the standalone
+wrapper's `odin-accesskit-LICENSE.txt`, and
 `alicorn-package.json` with the app/build identity, target architecture,
 SDL/AccessKit versions and licenses, system dependencies, and hashes for the
 executable and bundled native libraries. The result is unsigned.
@@ -98,6 +100,9 @@ Rust, or another toolchain. Windows:
   -SDLLicense path\to\SDL-LICENSE.txt `
   -AccessKitLicenseApache path\to\LICENSE-APACHE `
   -AccessKitLicenseMIT path\to\LICENSE-MIT `
+  -AccessKitLicenseChromium path\to\LICENSE.chromium `
+  -AccessKitAuthors path\to\AUTHORS `
+  -AccessKitBindingLicense path\to\odin-accesskit\LICENSE `
   -OutputDirectory out\package\windows-x86_64
 ```
 
@@ -113,6 +118,9 @@ python3 tools/package_macos.py \
   --sdl-license path/to/SDL-LICENSE.txt \
   --accesskit-license-apache path/to/LICENSE-APACHE \
   --accesskit-license-mit path/to/LICENSE-MIT \
+  --accesskit-license-chromium path/to/LICENSE.chromium \
+  --accesskit-authors path/to/AUTHORS \
+  --accesskit-binding-license path/to/odin-accesskit/LICENSE \
   --output out/package/macos
 ```
 
@@ -121,6 +129,14 @@ refuse to overwrite a non-empty output, assemble into a staging directory, and
 publish the completed package only after verification succeeds. Shared macOS
 packages also require `--sdl-version major.minor.patch` so the manifest records
 the exact runtime version rather than the statically pinned release.
+
+Release helpers forward all AccessKit notices automatically. For an existing
+binary, pass all five notice inputs shown above. The wrapper's zlib text is
+separate from upstream AccessKit's notices; source redistributions must retain
+it. Alicorn also includes it in binary packages and records supplemental notice
+hashes under `host.accesskit.notices`. The static native-link recipe exposes
+the three supplemental paths under `artifacts.accesskit.notices`, while its
+existing two-entry `licenses` array remains Apache/MIT.
 
 ## What verification checks
 

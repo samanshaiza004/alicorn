@@ -49,6 +49,8 @@ Primary and secondary windows use their own application state and runtime.
 Installing capture schedules no ticks, polling or automatic invalidation.
 
 Focused headless regressions live in `native/scroll_capture_tests`; run
-`odin test native/scroll_capture_tests` with the usual native linker flags.
+`odin test native/scroll_capture_tests` with the standalone binding collection
+and native linker flags described in
+[dependency usage](../dependencies/README.md#external-native-applications).
 That package serializes its SDL fixtures so Odin's parallel test runner cannot
 interleave process-wide event queues or modifier state.

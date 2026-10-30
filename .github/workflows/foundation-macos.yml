@@ -51,11 +51,10 @@ jobs:
         run: |
           REPO_ROOT=$PWD
           . tools/common.sh
-          . tools/accesskit.sh
           ODIN=$(alicorn_resolve_odin)
           ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
-          "$ODIN" test native/sdl_gpu \
-            "-extra-linker-flags:$ACCESSKIT_LINK_FLAGS" \
+          alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+            test native/sdl_gpu \
             -define:ODIN_TEST_NAMES=test_secondary_window_wakers_remain_live_until_application_stop \
             -sanitize:thread
 

@@ -3,7 +3,7 @@ package alicorn_sdl_gpu
 import "core:testing"
 import "core:c/libc"
 import alicorn "../../runtime"
-import ak "../../accesskit"
+import ak "accesskit:accesskit"
 
 when ODIN_OS == .Windows || ODIN_OS == .Darwin {
 @(test)

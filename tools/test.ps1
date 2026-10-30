@@ -9,23 +9,12 @@ $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 New-Item -ItemType Directory -Force -Path 'out' | Out-Null
 $AccessKit = Get-AlicornAccessKit
 
-& "$PSScriptRoot\check_accesskit_abi_contract.ps1"
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-$AccessKitAbiProbeFlags = & "$PSScriptRoot\build_accesskit_abi_probe.ps1" -OutputDirectory 'out\accesskit_abi_probe'
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-$AccessKitTestLinkFlags = "$($AccessKit.LinkerFlags) $AccessKitAbiProbeFlags"
-& $Odin check accesskit -no-entry-point
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $Odin test accesskit "-extra-linker-flags:$AccessKitTestLinkFlags" -out:out\alicorn_accesskit_tests.exe
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $Odin build accesskit\consumer "-collection:accesskit=$RepoRoot" "-extra-linker-flags:$($AccessKit.LinkerFlags)" -out:out\accesskit_external_consumer.exe
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& .\out\accesskit_external_consumer.exe
+& (Join-Path $AccessKit.BindingRoot 'tools\check.ps1') -Odin $Odin -CacheRoot (Join-Path $RepoRoot '.deps\accesskit')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & $Odin build tests -out:out\alicorn_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $Odin build native\sdl_gpu_entry "-extra-linker-flags:$($AccessKit.LinkerFlags)" -out:out\alicorn_sdl_gpu.exe
+& $Odin build native\sdl_gpu_entry @($AccessKit.CompilerArguments) -out:out\alicorn_sdl_gpu.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # Native tests and the text-input contract executable link SDL3 even when they
@@ -46,15 +35,15 @@ $AccessibilityFixture = Join-Path $RepoRoot 'tests\fixtures\accessibility_contra
 $AccessibilityFixtureOutput = Join-Path $RepoRoot 'out\fixtures\accessibility_contract.exe'
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $AccessibilityFixtureOutput) | Out-Null
 & $Odin build $AccessibilityFixture "-collection:alicorn=$RepoRoot" `
-	"-extra-linker-flags:$($AccessKit.LinkerFlags)" "-out:$AccessibilityFixtureOutput"
+	@($AccessKit.CompilerArguments) "-out:$AccessibilityFixtureOutput"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & $Odin test runtime
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test tests\fixtures\accessibility_contract "-collection:alicorn=$RepoRoot" `
-	"-extra-linker-flags:$($AccessKit.LinkerFlags)" -out:out\accessibility_contract_tests.exe
+	@($AccessKit.CompilerArguments) -out:out\accessibility_contract_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $Odin test ui "-collection:alicorn=$RepoRoot" "-extra-linker-flags:$($AccessKit.LinkerFlags)" -out:out\alicorn_ui_tests.exe
+& $Odin test ui "-collection:alicorn=$RepoRoot" @($AccessKit.CompilerArguments) -out:out\alicorn_ui_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test theme
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -73,9 +62,9 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & .\out\alicorn_theme.exe check theme\testdata\invalid.json
 if ($LASTEXITCODE -eq 0) { throw "Theme CLI accepted an unsupported length unit." }
-& $Odin test native\sdl_gpu "-extra-linker-flags:$($AccessKit.LinkerFlags)" -out:out\alicorn_native_tests.exe
+& $Odin test native\sdl_gpu @($AccessKit.CompilerArguments) -out:out\alicorn_native_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $Odin test native\scroll_capture_tests "-extra-linker-flags:$($AccessKit.LinkerFlags)" -out:out\alicorn_scroll_capture_tests.exe
+& $Odin test native\scroll_capture_tests @($AccessKit.CompilerArguments) -out:out\alicorn_scroll_capture_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & .\out\alicorn_tests.exe

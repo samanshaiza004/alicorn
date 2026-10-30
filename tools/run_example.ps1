@@ -18,7 +18,7 @@ $AccessKit = Get-AlicornAccessKit
 New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
 Push-Location $RepoRoot
 try {
-    $BuildArgs = @('build', (Join-Path 'examples' $Example), "-collection:alicorn=$RepoRoot", "-extra-linker-flags:$($AccessKit.LinkerFlags)", "-out:$Executable")
+    $BuildArgs = @('build', (Join-Path 'examples' $Example), "-collection:alicorn=$RepoRoot", "-out:$Executable") + @($AccessKit.CompilerArguments)
     if ($Speed) { $BuildArgs += '-o:speed' }
     & $Odin @BuildArgs
     if ($LASTEXITCODE -ne 0) { throw "Example build failed: $Example (exit $LASTEXITCODE)" }

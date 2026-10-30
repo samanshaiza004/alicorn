@@ -1,80 +1,59 @@
 #!/bin/sh
 
-# Shared AccessKit C dependency bootstrap for Alicorn shell build scripts.
-alicorn_accesskit_linker_flags() {
-	version=0.23.1
-	url="https://github.com/AccessKit/accesskit-c/releases/download/$version/accesskit-c-$version.zip"
-	sha='35b7ca8a6f1e038b5da35e1e9e5a0adaed9bfcf21e1496d29598fbbadcc7043f'
-	cache_root="$REPO_ROOT/.deps/accesskit"
-	archive="$cache_root/accesskit-c-$version.zip"
-	distribution="$cache_root/accesskit-c-$version"
-	case "$(uname -s)" in
-		Linux)
-			platform=linux
-			case "$(uname -m)" in
-				x86_64|amd64) arch=x86_64 ;;
-				i386|i486|i586|i686) arch=x86 ;;
-				*) echo "AccessKit $version Linux static library does not support architecture '$(uname -m)'." >&2; return 1 ;;
-			esac
-			;;
-		Darwin)
-			platform=macos
-			case "$(uname -m)" in
-				arm64|aarch64) arch=arm64 ;;
-				x86_64) arch=x86_64 ;;
-				*) echo "AccessKit $version macOS static library does not support architecture '$(uname -m)'." >&2; return 1 ;;
-			esac
-			;;
-		*) echo "AccessKit $version static bootstrap does not support this OS in this helper (got $(uname -s))." >&2; return 1 ;;
-	esac
-	mkdir -p "$cache_root"
-	if [ ! -f "$archive" ]; then
-		command -v curl >/dev/null 2>&1 || { echo 'AccessKit bootstrap requires curl.' >&2; return 127; }
-		curl --fail --location --silent --show-error "$url" -o "$archive" || {
-			echo "AccessKit $version download failed: $url" >&2
-			return 1
-		}
-	fi
-	if command -v shasum >/dev/null 2>&1; then
-		actual_sha=$(shasum -a 256 "$archive" | awk '{print $1}') || return 1
-	elif command -v sha256sum >/dev/null 2>&1; then
-		actual_sha=$(sha256sum "$archive" | awk '{print $1}') || return 1
-	else
-		echo 'AccessKit bootstrap requires shasum or sha256sum.' >&2
-		return 127
-	fi
-	if [ "$actual_sha" != "$sha" ]; then
-		echo "AccessKit $version archive SHA-256 mismatch. Expected $sha; got $actual_sha. Cached archive: $archive" >&2
-		return 1
-	fi
+# Resolve only the immutable commit recorded in Alicorn's dependency pin.
+# A subshell keeps bootstrap variables and lock traps out of callers.
+alicorn_accesskit_binding_root() (
+    pin="$REPO_ROOT/dependencies/odin-accesskit.json"
+    repository=$(sed -n 's/^[[:space:]]*"repository":[[:space:]]*"\([^"]*\)".*/\1/p' "$pin") || exit 1
+    commit=$(sed -n 's/^[[:space:]]*"commit":[[:space:]]*"\([^"]*\)".*/\1/p' "$pin") || exit 1
+    if [ "${#commit}" -ne 40 ]; then
+        echo 'dependencies/odin-accesskit.json must pin a full standalone commit SHA; PENDING_STANDALONE_SHA cannot be built.' >&2
+        exit 1
+    fi
+    case "$commit" in *[!0-9a-f]*) echo 'Invalid odin-accesskit commit SHA.' >&2; exit 1 ;; esac
+    [ -n "$repository" ] || { echo 'Missing odin-accesskit repository in dependency pin.' >&2; exit 1; }
+    checkout="$REPO_ROOT/.deps/odin-accesskit"
+    mkdir -p "$REPO_ROOT/.deps" || exit 1
+    lock="$REPO_ROOT/.deps/odin-accesskit.checkout-lock"
+    attempts=0
+    until mkdir "$lock" 2>/dev/null; do
+        attempts=$((attempts + 1))
+        if [ "$attempts" -ge 600 ]; then
+            echo "Timed out waiting for binding checkout lock: $lock" >&2
+            exit 1
+        fi
+        sleep 1
+    done
+    trap 'rmdir "$lock"' 0
+    trap 'exit 1' HUP INT TERM
+    if [ ! -d "$checkout/.git" ]; then
+        if [ -d "$checkout" ] && [ -n "$(ls -A "$checkout")" ]; then
+            echo "Refusing to initialize a nonempty binding checkout: $checkout" >&2
+            exit 1
+        fi
+        git init --quiet "$checkout" || exit 1
+        git -C "$checkout" remote add origin "$repository" || exit 1
+    fi
+    remote=$(git -C "$checkout" remote get-url origin) || exit 1
+    [ "$remote" = "$repository" ] || { echo "Binding checkout origin does not match the pin: $checkout" >&2; exit 1; }
+    changes=$(git -C "$checkout" status --porcelain --untracked-files=normal) || exit 1
+    [ -z "$changes" ] || { echo "Binding checkout must be clean: $checkout" >&2; exit 1; }
+    head=$(git -C "$checkout" rev-parse --verify --quiet HEAD) || head=
+    if [ "$head" != "$commit" ]; then
+        git -C "$checkout" fetch --quiet --depth 1 origin "$commit" || exit 1
+        git -C "$checkout" -c advice.detachedHead=false checkout --quiet --detach "$commit" || exit 1
+    fi
+    head=$(git -C "$checkout" rev-parse --verify HEAD) || exit 1
+    [ "$head" = "$commit" ] || { echo 'Standalone binding HEAD does not match the pin.' >&2; exit 1; }
+    (CDPATH='' cd -- "$checkout" && pwd -P)
+)
 
-	relative_library="lib/$platform/$arch/static/libaccesskit.a"
-	library="$distribution/$relative_library"
-	if [ ! -f "$library" ]; then
-		if [ -d "$distribution" ]; then
-			echo "AccessKit $version cache exists but required library is missing: $library. Remove only that versioned cache directory and retry." >&2
-			return 1
-		fi
-		command -v unzip >/dev/null 2>&1 || { echo 'AccessKit bootstrap requires unzip.' >&2; return 127; }
-		stage=$(mktemp -d "$cache_root/.extract.XXXXXX") || return 1
-		if ! unzip -q "$archive" -d "$stage"; then
-			rm -r "$stage"
-			echo "AccessKit $version archive extraction failed: $archive" >&2
-			return 1
-		fi
-		staged_distribution="$stage/accesskit-c-$version"
-		if [ ! -f "$staged_distribution/$relative_library" ]; then
-			rm -r "$stage"
-			echo "Verified AccessKit archive does not contain expected $platform $arch static library: $relative_library" >&2
-			return 1
-		fi
-		mv "$staged_distribution" "$distribution"
-		rm -r "$stage"
-	fi
-	library_directory=".deps/accesskit/accesskit-c-$version/lib/$platform/$arch/static"
-	if [ "$platform" = linux ]; then
-		printf '%s\n' "-L$library_directory -laccesskit"
-	else
-		printf '%s\n' "-L$library_directory -framework AppKit -framework Foundation -framework CoreFoundation -lobjc -lc++"
-	fi
-}
+alicorn_accesskit_linker_flags() (
+    binding_root=$(alicorn_accesskit_binding_root) || exit 1
+    sh "$binding_root/tools/bootstrap.sh" --cache-root "$REPO_ROOT/.deps/accesskit"
+)
+
+alicorn_accesskit_library_directory() (
+    binding_root=$(alicorn_accesskit_binding_root) || exit 1
+    sh "$binding_root/tools/bootstrap.sh" --cache-root "$REPO_ROOT/.deps/accesskit" --library-directory
+)

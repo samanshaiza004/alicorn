@@ -235,13 +235,16 @@ request one bounded host wake. Real platform assistive-technology navigation
 remains an explicit validation gate.
 
 The pinned AccessKit C ABI, typed node/tree-update ownership helpers, and
-Windows/macOS subclassing adapter bindings live in the standalone Odin package
-[`accesskit/`](../accesskit/). It has no Alicorn semantic or SDL dependency.
+Windows/macOS subclassing adapter bindings live in the standalone repository
+[odin-accesskit](https://github.com/samanshaiza004/odin-accesskit). It has no
+Alicorn semantic or SDL dependency. Alicorn imports `accesskit:accesskit` from
+the exact commit in [`dependencies/odin-accesskit.json`](../dependencies/odin-accesskit.json).
 The SDL host maps Alicorn's semantic projection into that package's tree
 updates, discovers and owns native window integration, and routes resulting
-actions back through Alicorn's existing semantic request path. The C-header
-contract probe checks the package's ABI mirrors against pinned AccessKit 0.23.1
-headers; this boundary does not imply screen-reader acceptance.
+actions back through Alicorn's existing semantic request path. The standalone
+repository owns the binding tests, external consumer example, and C-header ABI
+contract probes; Alicorn's checks invoke its check scripts. This boundary does
+not imply screen-reader acceptance.
 
 ## Native and text boundaries
 

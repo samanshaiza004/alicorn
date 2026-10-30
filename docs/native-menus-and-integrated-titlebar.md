@@ -160,7 +160,9 @@ the native titlebar. No native handle appears in this API.
 The fixture is available from the native entry point:
 
 ```powershell
-odin build native/sdl_gpu_entry -out:out/menu_fixture.exe
+. .\tools\common.ps1
+$AccessKit = Get-AlicornAccessKit
+odin build native/sdl_gpu_entry @($AccessKit.CompilerArguments) -out:out/menu_fixture.exe
 Copy-Item <odin-root>\vendor\sdl3\SDL3.dll out\SDL3.dll
 out\menu_fixture.exe --menu-fixture
 out\menu_fixture.exe --menu-fixture --integrated-title-bar

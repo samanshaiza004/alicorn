@@ -25,6 +25,8 @@ ODIN=$(alicorn_resolve_odin "$ODIN_ARG")
 cd "$REPO_ROOT"
 mkdir -p "$OUT_DIR"
 ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
+ACCESSKIT_BINDING_ROOT=$(alicorn_accesskit_binding_root)
+sh "$ACCESSKIT_BINDING_ROOT/tools/check.sh" --odin "$ODIN" --cache-root "$REPO_ROOT/.deps/accesskit"
 
 "$ODIN" build tests "-out:$OUT_DIR/alicorn_tests"
 "$OUT_DIR/alicorn_tests"

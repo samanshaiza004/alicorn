@@ -58,8 +58,9 @@ modal boundaries, and bounded virtualized content. Linux has no platform
 adapter, and this is not comprehensive accessibility conformance; see the
 [final acceptance matrix](docs/validation/issue-103-final.md) and the guide's
 [accessibility status](docs/guide.md#accessibility-status).
-The reusable Odin binding is in [`accesskit/`](accesskit/); it is separate from
-Alicorn's semantic projection and SDL window integration.
+The reusable Odin binding lives in [odin-accesskit](https://github.com/samanshaiza004/odin-accesskit);
+Alicorn pins it in [`dependencies/odin-accesskit.json`](dependencies/odin-accesskit.json).
+It is separate from Alicorn's semantic projection and SDL window integration.
 
 For live debugging, the native host includes an opt-in
 [visual inspector](docs/development.md#native-diagnostics): retained tree,

@@ -6,7 +6,8 @@ $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\common.ps1"
 $Odin = Resolve-AlicornOdin -Requested $Odin
 New-Item -ItemType Directory -Force -Path 'out' | Out-Null
-& $Odin build benchmarks/native_material -o:speed -out:out\alicorn_material_benchmark.exe
+$AccessKit = Get-AlicornAccessKit
+& $Odin build benchmarks/native_material @($AccessKit.CompilerArguments) -o:speed -out:out\alicorn_material_benchmark.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # The renderer package imports SDL3 for its normal host path. The benchmark
@@ -19,7 +20,7 @@ if (Test-Path -LiteralPath $SDL3 -PathType Leaf) {
 }
 & .\out\alicorn_material_benchmark.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $Odin build benchmarks/native_material_budget -o:speed -out:out\alicorn_material_budget.exe
+& $Odin build benchmarks/native_material_budget @($AccessKit.CompilerArguments) -o:speed -out:out\alicorn_material_budget.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & .\out\alicorn_material_budget.exe
 exit $LASTEXITCODE

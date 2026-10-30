@@ -66,9 +66,9 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS" "$FRAMEWORKS"
 cp "$REPO_ROOT/native/macos_titlebar_fixture_entry/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 
 cd "$REPO_ROOT"
-"$ODIN" build native/macos_titlebar_fixture_entry \
-	"-out:$EXECUTABLE" \
-	"-extra-linker-flags:$ACCESSKIT_LINK_FLAGS -L$SDL3_PREFIX/lib -Wl,-rpath,@executable_path/../Frameworks"
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS -L$SDL3_PREFIX/lib -Wl,-rpath,@executable_path/../Frameworks" \
+	build native/macos_titlebar_fixture_entry \
+	"-out:$EXECUTABLE"
 cp -L "$SDL3_LIBRARY" "$FRAMEWORKS/SDL3.dylib"
 install_name_tool -id @rpath/SDL3.dylib "$FRAMEWORKS/SDL3.dylib"
 SDL3_DEPENDENCY=$(otool -L "$EXECUTABLE" | awk '$1 ~ /libSDL3.*dylib/ { print $1; exit }')

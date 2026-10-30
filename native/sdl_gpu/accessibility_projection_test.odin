@@ -4,7 +4,7 @@ import "core:testing"
 import "core:c"
 import base_runtime "base:runtime"
 import alicorn "../../runtime"
-import ak "../../accesskit"
+import ak "accesskit:accesskit"
 
 @(test)
 test_native_appearance_snapshot_merges_only_known_fields :: proc(t: ^testing.T) {

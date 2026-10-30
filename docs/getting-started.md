@@ -25,11 +25,16 @@ Also install the native platform tools:
   [Linux acceptance matrix](validation/linux-native-acceptance.md) uses a
   temporary shell so the system profile is not changed.
 
-The Windows/macOS build helpers also fetch the pinned AccessKit C `0.23.1`
-static library on first use into the ignored `.deps/accesskit/` cache. They
-verify the release archive checksum and do not modify the Odin installation.
-Network access is needed only for this initial download (or when the cache is
-removed). The native AccessKit adapter is currently Windows/macOS only.
+Native build helpers check out [odin-accesskit](https://github.com/samanshaiza004/odin-accesskit)
+at the exact commit in [`dependencies/odin-accesskit.json`](../dependencies/odin-accesskit.json)
+into the ignored `.deps/odin-accesskit/` directory. They invoke its native
+bootstrap with Alicorn's existing `.deps/accesskit/` cache, preserving the
+AccessKit C `0.23.1` release archive and checksum verification. Network access
+is needed on first use, after removing a cache, or when the pin changes. The
+helpers pass the binding collection to Odin and do not modify the Odin
+installation. The native AccessKit adapter is currently Windows/macOS only.
+See [dependency and external consumer usage](../dependencies/README.md) for
+manual builds.
 
 Put the directory containing `odin` on `PATH`. In a new terminal, verify it:
 

@@ -23,7 +23,7 @@ try {
         $stderrPath = Join-Path $TempRoot "recipe-$index.log"
         $argumentLine = @('-NoLogo', '-NoProfile', '-File', ('"{0}"' -f $RecipeCommand), '-Odin', ('"{0}"' -f $Odin), '-Target', 'windows-x86_64') -join ' '
         $process = Start-Process -FilePath $PowerShell -ArgumentList $argumentLine -WorkingDirectory $TempRoot `
-            -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
+            -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru -WindowStyle Hidden
         $PreparationProcesses.Add($process)
         $recipeRuns.Add([pscustomobject]@{ process=$process; stdout=$stdoutPath; stderr=$stderrPath })
     }
@@ -54,7 +54,12 @@ try {
     if (-not [IO.Directory]::Exists($recipe.environment.ODIN_ROOT)) { throw "Recipe ODIN_ROOT does not exist: '$($recipe.environment.ODIN_ROOT)'." }
     if (-not (Test-Path -LiteralPath $recipe.artifacts.sdl.library -PathType Leaf)) { throw 'Recipe SDL artifact is missing.' }
     if (-not (Test-Path -LiteralPath $recipe.artifacts.accesskit.library -PathType Leaf)) { throw 'Recipe AccessKit artifact is missing.' }
-    if (@($recipe.odin.compilerArguments).Count -ne 1 -or $recipe.odin.compilerArguments[0] -notlike '-extra-linker-flags:*') {
+    if (@($recipe.odin.compilerArguments).Count -ne 3 -or
+        $recipe.odin.compilerArguments[0] -cne "-collection:accesskit=$($recipe.odin.collections.accesskit)" -or
+        $recipe.odin.compilerArguments[1] -cne "-collection:accesskit_c=$($recipe.odin.collections.accesskit_c)" -or
+        $recipe.odin.compilerArguments[2] -notlike '-extra-linker-flags:*' -or
+        -not (Test-Path -LiteralPath (Join-Path $recipe.odin.collections.accesskit 'accesskit\accesskit.odin') -PathType Leaf) -or
+        (Join-Path $recipe.odin.collections.accesskit_c 'accesskit.lib') -cne $recipe.artifacts.accesskit.library) {
         throw 'Recipe compiler arguments must be an Odin argument array, not a shell command.'
     }
 
@@ -97,12 +102,22 @@ try {
         SDLLicense=$recipe.artifacts.sdl.license
         AccessKitLicenseApache=$recipe.artifacts.accesskit.licenses[0]
         AccessKitLicenseMIT=$recipe.artifacts.accesskit.licenses[1]
+        AccessKitLicenseChromium=$recipe.artifacts.accesskit.notices.chromium
+        AccessKitAuthors=$recipe.artifacts.accesskit.notices.authors
+        AccessKitBindingLicense=$recipe.artifacts.accesskit.notices.bindingLicense
         OutputDirectory=(Join-Path $TempRoot 'package')
         SmokeTest=$true
     }
     & (Join-Path $PSScriptRoot 'package_app.ps1') @packageArgs
     if ($LASTEXITCODE -ne 0) { throw "External consumer package audit/smoke failed (exit $LASTEXITCODE)." }
     $packageManifest = Get-Content -LiteralPath (Join-Path $TempRoot 'package\alicorn-package.json') -Raw | ConvertFrom-Json
+    if (@($packageManifest.host.accesskit.notices).Count -ne 3) { throw 'External consumer package omitted AccessKit binding or upstream notices.' }
+    foreach ($notice in $packageManifest.host.accesskit.notices) {
+        $noticePath = Join-Path (Join-Path $TempRoot 'package') $notice.path
+        if ((Get-FileHash -LiteralPath $noticePath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $notice.sha256) {
+            throw "External consumer notice hash mismatch: '$($notice.path)'."
+        }
+    }
     if ($packageManifest.dependencies.bundled.Count -ne 0) { throw 'The external static SDL fixture unexpectedly requires bundled private DLLs.' }
     Write-Host "External static Alicorn consumer passed from '$TempRoot'."
     $measurements = @"

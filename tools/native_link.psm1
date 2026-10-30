@@ -1,7 +1,7 @@
 Set-StrictMode -Version Latest
 
 $script:NativeLinkSchemaVersion = 1
-$script:PreparationVersion = 1
+$script:PreparationVersion = 2
 $script:SDLVersion = '3.4.18'
 $script:SDLURL = 'https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz'
 $script:SDLSHA256 = '9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3'
@@ -281,7 +281,7 @@ function Test-AlicornNativeLinkGeneration {
             if (-not [IO.File]::Exists($path)) { throw "Prepared artifact is missing: '$($artifact.path)'." }
             if ((Get-AlicornFileHash $path) -ne $artifact.sha256) { throw "Prepared artifact hash mismatch: '$($artifact.path)'." }
         }
-        foreach ($requiredArtifact in @('recipe.json', 'odin/vendor/sdl3/SDL3.lib', 'accesskit/lib/accesskit.lib', 'licenses/SDL-LICENSE.txt', 'licenses/AccessKit-LICENSE-APACHE.txt', 'licenses/AccessKit-LICENSE-MIT.txt')) {
+        foreach ($requiredArtifact in @('recipe.json', 'odin/vendor/sdl3/SDL3.lib', 'accesskit/lib/accesskit.lib', 'licenses/SDL-LICENSE.txt', 'licenses/AccessKit-LICENSE-APACHE.txt', 'licenses/AccessKit-LICENSE-MIT.txt', 'licenses/AccessKit-LICENSE.chromium.txt', 'licenses/AccessKit-AUTHORS.txt', 'licenses/odin-accesskit-LICENSE.txt')) {
             if (-not $recordedArtifacts.Contains($requiredArtifact)) { throw "Manifest does not validate required artifact '$requiredArtifact'." }
         }
         $actualArtifacts = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -361,7 +361,10 @@ function New-AlicornWindowsStaticLinkRecipe {
     $accessKitLibrary = $accessKit.Library
     $accessKitLicenseApache = Join-Path $accessKit.Root 'LICENSE-APACHE'
     $accessKitLicenseMIT = Join-Path $accessKit.Root 'LICENSE-MIT'
-    foreach ($path in @($accessKitLibrary, $accessKitArchive, $accessKitLicenseApache, $accessKitLicenseMIT)) {
+    $accessKitLicenseChromium = Join-Path $accessKit.Root 'LICENSE.chromium'
+    $accessKitAuthors = Join-Path $accessKit.Root 'AUTHORS'
+    $accessKitBindingLicense = Join-Path $accessKit.BindingRoot 'LICENSE'
+    foreach ($path in @($accessKitLibrary, $accessKitArchive, $accessKitLicenseApache, $accessKitLicenseMIT, $accessKitLicenseChromium, $accessKitAuthors, $accessKitBindingLicense)) {
         if (-not [IO.File]::Exists($path)) { throw "AccessKit static input is missing: '$path'." }
     }
 
@@ -397,7 +400,15 @@ function New-AlicornWindowsStaticLinkRecipe {
         sdl = [ordered]@{ version=$script:SDLVersion; url=$script:SDLURL; sourceSha256=$actualSDLHash; options=@('Release', 'SDL_SHARED=OFF', 'SDL_STATIC=ON', 'SDL_TEST_LIBRARY=OFF', 'SDL_TESTS=OFF', 'SDL_INSTALL_TESTS=OFF', 'SDL_DISABLE_INSTALL_DOCS=ON', 'SDL_FRAMEWORK=OFF', 'CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded') }
         cmake = [ordered]@{ executable=(Get-AlicornFullPath $cmake); executableSha256=(Get-AlicornFileHash $cmake); version=$cmakeVersion; generatorArguments=@($generatorArguments); toolchain=$toolchain }
         odin = [ordered]@{ executable=(Get-AlicornFullPath $Odin); executableSha256=(Get-AlicornFileHash $Odin); fileVersion=$odinVersion.FileVersion; version=$odinVersionOutput; sdkRoot=(Get-AlicornFullPath $OdinRoot); vendorSdl=$sdkSdlInventory }
-        accesskit = [ordered]@{ version='0.23.1'; archiveSha256=(Get-AlicornFileHash $accessKitArchive); librarySha256=(Get-AlicornFileHash $accessKitLibrary) }
+        accesskit = [ordered]@{
+            binding = [ordered]@{
+                repository=$accessKit.BindingRepository; commit=$accessKit.BindingCommit; root=$accessKit.BindingRoot
+                inventory=(Get-AlicornTreeInventory (Join-Path $accessKit.BindingRoot 'accesskit'))
+                licenseSha256=(Get-AlicornFileHash $accessKitBindingLicense)
+            }
+            version='0.23.1'; archiveSha256=(Get-AlicornFileHash $accessKitArchive); librarySha256=(Get-AlicornFileHash $accessKitLibrary)
+            linkerFlags=$accessKit.LinkerFlags
+        }
         environment = [ordered]@{ windowsSdkVersion=$toolchain.windowsSdkVersion; vcToolsInstallDir=$env:VCToolsInstallDir; generatorInstance=$env:CMAKE_GENERATOR_INSTANCE }
     }
     $fingerprint = Get-AlicornObjectHash $inputs
@@ -472,13 +483,22 @@ function New-AlicornWindowsStaticLinkRecipe {
             Copy-Item -LiteralPath $accessKitLibrary -Destination (Join-Path $accessKitDirectory 'accesskit.lib')
             Copy-Item -LiteralPath $accessKitLicenseApache -Destination (Join-Path $licenseDirectory 'AccessKit-LICENSE-APACHE.txt')
             Copy-Item -LiteralPath $accessKitLicenseMIT -Destination (Join-Path $licenseDirectory 'AccessKit-LICENSE-MIT.txt')
+            Copy-Item -LiteralPath $accessKitLicenseChromium -Destination (Join-Path $licenseDirectory 'AccessKit-LICENSE.chromium.txt')
+            Copy-Item -LiteralPath $accessKitAuthors -Destination (Join-Path $licenseDirectory 'AccessKit-AUTHORS.txt')
+            Copy-Item -LiteralPath $accessKitBindingLicense -Destination (Join-Path $licenseDirectory 'odin-accesskit-LICENSE.txt')
             Copy-Item -LiteralPath $sdlLicenseSource -Destination (Join-Path $licenseDirectory 'SDL-LICENSE.txt')
 
             $finalOverlay = Join-Path $generationRoot 'odin'
             $finalAccessKitDirectory = Join-Path $generationRoot 'accesskit\lib'
-            $accessKitFlags = @((ConvertTo-AlicornMsvcPathArgument '/LIBPATH:' $finalAccessKitDirectory), 'bcrypt.lib', 'ntdll.lib', 'propsys.lib', 'runtimeobject.lib', 'uiautomationcore.lib', 'userenv.lib', 'ws2_32.lib')
+            # Odin resolves the archive through a collection so paths containing
+            # spaces never require nested quotes in -extra-linker-flags.
+            $accessKitFlags = @($accessKit.LinkerFlags -split '\s+' | Where-Object { $_ })
             $extraLinkerFlags = (@($accessKitFlags) + @($linkRequirements.arguments)) -join ' '
-            $compilerArguments = @("-extra-linker-flags:$extraLinkerFlags")
+            $compilerArguments = @(
+                "-collection:accesskit=$($accessKit.BindingRoot)",
+                "-collection:accesskit_c=$finalAccessKitDirectory",
+                "-extra-linker-flags:$extraLinkerFlags"
+            )
             $sdlLibraryRelative = 'odin/vendor/sdl3/SDL3.lib'
             $accessKitLibraryRelative = 'accesskit/lib/accesskit.lib'
             $sdlLicenseRelative = 'licenses/SDL-LICENSE.txt'
@@ -491,6 +511,7 @@ function New-AlicornWindowsStaticLinkRecipe {
                 environment = [ordered]@{ ODIN_ROOT=$finalOverlay }
                 odin = [ordered]@{
                     executable=(Get-AlicornFullPath $Odin)
+                    collections=[ordered]@{ accesskit=$accessKit.BindingRoot; accesskit_c=$finalAccessKitDirectory }
                     compilerArguments=@($compilerArguments)
                     extraLinkerFlags=$extraLinkerFlags
                 }
@@ -500,7 +521,16 @@ function New-AlicornWindowsStaticLinkRecipe {
                 }
                 artifacts = [ordered]@{
                     sdl=[ordered]@{ version=$script:SDLVersion; sourceUrl=$script:SDLURL; sourceSha256=$actualSDLHash; library=(Join-Path $generationRoot $sdlLibraryRelative); sha256=(Get-AlicornFileHash (Join-Path $stage $sdlLibraryRelative)); license=(Join-Path $generationRoot $sdlLicenseRelative) }
-                    accesskit=[ordered]@{ version='0.23.1'; library=(Join-Path $generationRoot $accessKitLibraryRelative); sha256=(Get-AlicornFileHash (Join-Path $stage $accessKitLibraryRelative)); licenses=@((Join-Path $generationRoot $accessKitApacheRelative), (Join-Path $generationRoot $accessKitMitRelative)) }
+                    accesskit=[ordered]@{
+                        version='0.23.1'; library=(Join-Path $generationRoot $accessKitLibraryRelative)
+                        sha256=(Get-AlicornFileHash (Join-Path $stage $accessKitLibraryRelative))
+                        licenses=@((Join-Path $generationRoot $accessKitApacheRelative), (Join-Path $generationRoot $accessKitMitRelative))
+                        notices=[ordered]@{
+                            chromium=(Join-Path $generationRoot 'licenses/AccessKit-LICENSE.chromium.txt')
+                            authors=(Join-Path $generationRoot 'licenses/AccessKit-AUTHORS.txt')
+                            bindingLicense=(Join-Path $generationRoot 'licenses/odin-accesskit-LICENSE.txt')
+                        }
+                    }
                 }
                 provenance = [ordered]@{ fingerprint=$fingerprint; manifest=(Join-Path $generationRoot 'manifest.json'); odinVersion=$odinVersionOutput }
             }

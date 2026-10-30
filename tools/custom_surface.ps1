@@ -11,7 +11,7 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 Push-Location $RepoRoot
 try {
 	$AccessKit = Get-AlicornAccessKit
-	& $Odin build examples\04_custom_surface "-collection:alicorn=$RepoRoot" "-extra-linker-flags:$($AccessKit.LinkerFlags)" "-out:$Executable"
+	& $Odin build examples\04_custom_surface "-collection:alicorn=$RepoRoot" @($AccessKit.CompilerArguments) "-out:$Executable"
 	if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 	$OdinRoot = Split-Path -Parent $Odin
 	$SDL3 = Join-Path $OdinRoot 'vendor\sdl3\SDL3.dll'

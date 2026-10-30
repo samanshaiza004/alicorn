@@ -23,25 +23,47 @@ to stderr. The JSON is a versioned build contract containing:
 
 - `environment.ODIN_ROOT`, the prepared Odin overlay for this generation.
 - `odin.executable` and `odin.compilerArguments`, which the caller passes as
-  ordinary process arguments without a shell.
+  ordinary process arguments without a shell. The argument array includes both
+  `-collection:accesskit=<pinned checkout>`,
+  `-collection:accesskit_c=<prepared library directory>`, and the native linker flags.
+- `odin.collections.accesskit` and `odin.collections.accesskit_c`, the absolute
+  binding checkout and prepared native library directory.
 - `linkRequirements`, the evaluated SDL directories, options, and ordered
   library inputs plus AccessKit's native system libraries.
 - `artifacts`, including absolute library and license paths and SHA-256 hashes.
+  `artifacts.accesskit.licenses` retains Apache/MIT order; the additional
+  `artifacts.accesskit.notices` object supplies `chromium`, `authors`, and
+  `bindingLicense` paths for packaging. All five texts are staged in the
+  prepared generation and checked by its manifest.
 - `provenance.fingerprint` and `provenance.manifest`, identifying the
   validated prepared generation.
 
 An Odin build driver should set `ODIN_ROOT` only in the Odin child process,
 append `recipe.odin.compilerArguments` to its own argument array, and retain
-its own working directory and collection arguments. No Alicorn command-line
-string needs to be parsed or evaluated.
+its own working directory and collection arguments, including
+`-collection:alicorn=<Alicorn checkout>`. Scratchpad and other external native
+consumers must forward the entire compiler argument array: forwarding only
+`odin.extraLinkerFlags` omits the required binding and native library collections. No Alicorn
+command-line string needs to be parsed or evaluated. The binding checkout must
+remain available while compiling; it is prepared automatically from
+[`dependencies/odin-accesskit.json`](../dependencies/odin-accesskit.json).
+
+Consumer validators must accept both collection arguments and the linker argument.
+Scratchpad's `cmd/alicorn-dev/native_link_recipe.go` currently requires exactly
+one linker argument and therefore needs updating before adopting this
+extraction. Its static frontend builder already appends the complete argument
+array without splitting strings. Shared-SDL consumers must also prepare both
+collections even when the native C library is already cached, and add
+them to every native build and test invocation.
 
 ## Prepared generations
 
 Outputs are stored under `out/native-link/generations/<fingerprint>`. Each
 generation records the pinned SDL source hash, SDL options, CMake and MSVC
 toolchain identity, target architecture and CRT, Odin executable and SDL
-binding identity, AccessKit archive and library hashes, and preparation code
-identity. The recipe includes validated artifact hashes and the intended
+binding identity, standalone odin-accesskit repository, commit, collection path
+and package file hashes, AccessKit archive and library hashes, and preparation
+code identity. The recipe includes validated artifact hashes and the intended
 targets of its Odin SDK junctions.
 
 Preparation uses a per-fingerprint lock, builds into a unique staging

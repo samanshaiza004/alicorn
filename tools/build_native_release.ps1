@@ -25,6 +25,9 @@ $NativeRecipe = $null
 $AccessKit = $null
 $AccessKitLicenseApache = $null
 $AccessKitLicenseMIT = $null
+$AccessKitLicenseChromium = $null
+$AccessKitAuthors = $null
+$AccessKitBindingLicense = $null
 $PreviousOdinRoot = $env:ODIN_ROOT
 try {
     if ($SDLLinkage -eq 'Static') {
@@ -34,11 +37,17 @@ try {
         $SDLLicense = $NativeRecipe.artifacts.sdl.license
         $AccessKitLicenseApache = $NativeRecipe.artifacts.accesskit.licenses[0]
         $AccessKitLicenseMIT = $NativeRecipe.artifacts.accesskit.licenses[1]
+        $AccessKitLicenseChromium = $NativeRecipe.artifacts.accesskit.notices.chromium
+        $AccessKitAuthors = $NativeRecipe.artifacts.accesskit.notices.authors
+        $AccessKitBindingLicense = $NativeRecipe.artifacts.accesskit.notices.bindingLicense
         $env:ODIN_ROOT = $NativeRecipe.environment.ODIN_ROOT
     } else {
         $AccessKit = Get-AlicornAccessKit
         $AccessKitLicenseApache = Join-Path $AccessKit.Root 'LICENSE-APACHE'
         $AccessKitLicenseMIT = Join-Path $AccessKit.Root 'LICENSE-MIT'
+        $AccessKitLicenseChromium = Join-Path $AccessKit.Root 'LICENSE.chromium'
+        $AccessKitAuthors = Join-Path $AccessKit.Root 'AUTHORS'
+        $AccessKitBindingLicense = Join-Path $AccessKit.BindingRoot 'LICENSE'
         $SDLRuntime = Join-Path (Split-Path -Parent $Odin) 'vendor\sdl3\SDL3.dll'
         if (-not (Test-Path -LiteralPath $SDLRuntime -PathType Leaf)) { throw "SDL3.dll not found at '$SDLRuntime'." }
         if ((Get-Item -LiteralPath $SDLRuntime).Length -lt 100000) { throw 'SDK SDL3.dll is a Git LFS pointer, not a runtime.' }
@@ -54,8 +63,8 @@ try {
         $BuildArgs = @('build', $AppPackage, "-collection:alicorn=$RepoRoot", "-out:$BuiltExecutable", '-o:speed')
         if ($SDLLinkage -eq 'Static') {
             $BuildArgs += @($NativeRecipe.odin.compilerArguments)
-        } elseif ($AccessKit.LinkerFlags) {
-            $BuildArgs += "-extra-linker-flags:$($AccessKit.LinkerFlags)"
+        } else {
+            $BuildArgs += @($AccessKit.CompilerArguments)
         }
         & $Odin @BuildArgs
         if ($LASTEXITCODE -ne 0) { throw "Odin release build failed (exit $LASTEXITCODE)." }
@@ -69,6 +78,9 @@ try {
             SDLLicense = $SDLLicense
             AccessKitLicenseApache = $AccessKitLicenseApache
             AccessKitLicenseMIT = $AccessKitLicenseMIT
+            AccessKitLicenseChromium = $AccessKitLicenseChromium
+            AccessKitAuthors = $AccessKitAuthors
+            AccessKitBindingLicense = $AccessKitBindingLicense
         }
         if ($SDLRuntime) { $PackageArgs['SDLRuntime'] = $SDLRuntime }
         if (-not $SkipSmokeTest) { $PackageArgs['SmokeTest'] = $true }

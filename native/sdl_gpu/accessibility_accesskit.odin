@@ -4,7 +4,7 @@ import libc "core:c/libc"
 import "base:runtime"
 import "core:strings"
 import alicorn "../../runtime"
-import ak "../../accesskit"
+import ak "accesskit:accesskit"
 import "vendor:sdl3"
 
 // Alicorn keeps semantic projection and action routing; C ABI declarations,

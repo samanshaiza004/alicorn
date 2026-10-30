@@ -47,16 +47,18 @@ EOF
 	printf '%s\n' "$resolved"
 }
 
-# Odin rejects an empty -extra-linker-flags argument. Linux has no AccessKit
-# linker flags, so keep the optional argument out of the process argv entirely.
+# Native callers need the standalone binding collection even when no native
+# linker flags are required. Keep each compiler argument separate.
 alicorn_odin_with_linker_flags() {
 	alicorn_odin_executable=$1
 	alicorn_linker_flags=$2
 	shift 2
+	alicorn_binding_root=$(alicorn_accesskit_binding_root) || return $?
+	alicorn_c_library_directory=$(alicorn_accesskit_library_directory) || return $?
 	if [ -n "$alicorn_linker_flags" ]; then
-		"$alicorn_odin_executable" "$@" "-extra-linker-flags:$alicorn_linker_flags"
+		"$alicorn_odin_executable" "$@" "-collection:accesskit=$alicorn_binding_root" "-collection:accesskit_c=$alicorn_c_library_directory" "-extra-linker-flags:$alicorn_linker_flags"
 	else
-		"$alicorn_odin_executable" "$@"
+		"$alicorn_odin_executable" "$@" "-collection:accesskit=$alicorn_binding_root" "-collection:accesskit_c=$alicorn_c_library_directory"
 	fi
 }
 

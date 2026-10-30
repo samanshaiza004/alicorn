@@ -99,93 +99,66 @@ Then add the Odin directory to PATH, or set ALICORN_ODIN to the compiler executa
     throw "Odin executable '$candidate' was not found (from $source)."
 }
 
-function Get-AlicornAccessKit {
-    $version = '0.23.1'
-    $url = "https://github.com/AccessKit/accesskit-c/releases/download/$version/accesskit-c-$version.zip"
-    $sha256 = '35b7ca8a6f1e038b5da35e1e9e5a0adaed9bfcf21e1496d29598fbbadcc7043f'
+function Get-AlicornAccessKitBinding {
+    $ErrorActionPreference = 'Stop'
     $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
-    $cacheRoot = Join-Path $repoRoot '.deps\accesskit'
-    $archive = Join-Path $cacheRoot "accesskit-c-$version.zip"
-    $distribution = Join-Path $cacheRoot "accesskit-c-$version"
-
-    # Windows PowerShell on .NET Framework may expose RuntimeInformation
-    # without ProcessArchitecture. The process environment remains available
-    # there, so use it as the portable fallback and normalize AMD64 to .NET's
-    # X64 spelling.
-    $architecture = $env:PROCESSOR_ARCHITECTURE
-    if ([string]::IsNullOrWhiteSpace($architecture)) {
-        try { $architecture = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString() }
-        catch { $architecture = '' }
+    $pin = Get-Content -LiteralPath (Join-Path $repoRoot 'dependencies\odin-accesskit.json') -Raw | ConvertFrom-Json
+    if ($pin.commit -cnotmatch '^[0-9a-f]{40}$') {
+        throw 'dependencies/odin-accesskit.json must pin a full standalone commit SHA; PENDING_STANDALONE_SHA cannot be built.'
     }
-    if ($architecture -eq 'AMD64') { $architecture = 'X64' }
-    if ($env:OS -ne 'Windows_NT') { throw "AccessKit static bootstrap does not support this OS in PowerShell: '$env:OS'." }
-    if ($architecture -ne 'X64') { throw "AccessKit $version Windows static library is only configured here for x86_64 MSVC; process architecture is '$architecture'." }
-
-    if (-not [IO.Directory]::Exists($cacheRoot)) {
-        New-Item -ItemType Directory -Path $cacheRoot -Force | Out-Null
-    }
-    if (-not [IO.File]::Exists($archive)) {
-        $curl = Get-Command curl.exe -CommandType Application -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-        if (-not $curl) { throw 'AccessKit bootstrap requires curl.exe to download the pinned release archive.' }
-        $download = Join-Path $cacheRoot ('.download-' + [guid]::NewGuid().ToString('N') + '.zip')
-        try {
-            & $curl.Source --fail --location --silent --show-error --output $download $url
-            if ($LASTEXITCODE -ne 0) { throw "AccessKit $version download failed (curl exit $LASTEXITCODE): $url" }
-            $downloadHash = (Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($downloadHash -ne $sha256) { throw "AccessKit $version archive SHA-256 mismatch. Expected $sha256; got $downloadHash." }
-            try { [IO.File]::Move($download, $archive) }
-            catch {
-                if (-not [IO.File]::Exists($archive) -or (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sha256) { throw }
-            }
-        } finally {
-            if ([IO.File]::Exists($download)) { Remove-Item -LiteralPath $download -Force }
+    if ([string]::IsNullOrWhiteSpace($pin.repository)) { throw 'Missing odin-accesskit repository in dependency pin.' }
+    $depsRoot = Join-Path $repoRoot '.deps'
+    $checkout = Join-Path $depsRoot 'odin-accesskit'
+    New-Item -ItemType Directory -Path $depsRoot -Force | Out-Null
+    $lockPath = Join-Path $depsRoot 'odin-accesskit.checkout.lock'
+    $lock = $null
+    $deadline = [DateTime]::UtcNow.AddMinutes(10)
+    while (-not $lock) {
+        try { $lock = [IO.File]::Open($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) }
+        catch [IO.IOException] {
+            if ([DateTime]::UtcNow -ge $deadline) { throw "Timed out waiting for the binding checkout lock: '$lockPath'." }
+            Start-Sleep -Milliseconds 250
         }
     }
-
-    $sha256Hasher = [Security.Cryptography.SHA256]::Create()
     try {
-        $archiveStream = [IO.File]::OpenRead($archive)
-        try {
-            $actualHash = [BitConverter]::ToString($sha256Hasher.ComputeHash($archiveStream)).Replace('-', '').ToLowerInvariant()
-        } finally {
-            $archiveStream.Dispose()
-        }
-    } finally {
-        $sha256Hasher.Dispose()
-    }
-    if ($actualHash -ne $sha256) {
-        throw "AccessKit $version archive SHA-256 mismatch. Expected $sha256; got $actualHash. Cached archive: '$archive'."
-    }
-
-    $relativeLibrary = 'lib\windows\x86_64\msvc\static\accesskit.lib'
-    $library = Join-Path $distribution $relativeLibrary
-    if (-not [IO.File]::Exists($library)) {
-        if ([IO.Directory]::Exists($distribution)) {
-            if (-not [IO.File]::Exists($library)) {
-                throw "AccessKit $version cache exists but the required library is missing: '$library'. Remove only that versioned cache directory and retry."
+        if (-not (Test-Path -LiteralPath (Join-Path $checkout '.git') -PathType Container)) {
+            if ((Test-Path -LiteralPath $checkout) -and @(Get-ChildItem -LiteralPath $checkout -Force).Count) {
+                throw "Refusing to initialize a nonempty binding checkout: '$checkout'."
             }
-        } else {
-            $stage = Join-Path $cacheRoot ('.extract-' + [guid]::NewGuid().ToString('N'))
-            try {
-                Expand-Archive -LiteralPath $archive -DestinationPath $stage
-                $stagedDistribution = Join-Path $stage "accesskit-c-$version"
-                $stagedLibrary = Join-Path $stagedDistribution $relativeLibrary
-                if (-not [IO.File]::Exists($stagedLibrary)) {
-                    throw "Verified AccessKit archive does not contain the expected Windows x86_64 MSVC static library: '$relativeLibrary'."
-                }
-                try { [IO.Directory]::Move($stagedDistribution, $distribution) }
-                catch {
-                    if (-not [IO.File]::Exists($library)) { throw }
-                }
-            } finally {
-                if ([IO.Directory]::Exists($stage)) { Remove-Item -LiteralPath $stage -Recurse -Force }
-            }
+            & git init --quiet $checkout
+            if ($LASTEXITCODE -ne 0) { throw 'Could not initialize the standalone binding checkout.' }
+            & git -C $checkout remote add origin $pin.repository
+            if ($LASTEXITCODE -ne 0) { throw 'Could not set the standalone binding remote.' }
         }
-    }
+        $remote = & git -C $checkout remote get-url origin
+        if ($LASTEXITCODE -ne 0 -or $remote -cne $pin.repository) { throw "Binding checkout origin does not match the pin: '$checkout'." }
+        $changes = & git -C $checkout status --porcelain --untracked-files=normal
+        if ($LASTEXITCODE -ne 0 -or $changes) { throw "Binding checkout must be clean: '$checkout'." }
+        $head = & git -C $checkout rev-parse --verify --quiet HEAD
+        if ($LASTEXITCODE -ne 0 -or $head -cne $pin.commit) {
+            & git -C $checkout fetch --quiet --depth 1 origin $pin.commit
+            if ($LASTEXITCODE -ne 0) { throw "Could not fetch pinned odin-accesskit commit '$($pin.commit)'." }
+            & git -C $checkout -c advice.detachedHead=false checkout --quiet --detach $pin.commit
+            if ($LASTEXITCODE -ne 0) { throw 'Could not check out the pinned standalone binding.' }
+        }
+        $head = & git -C $checkout rev-parse --verify HEAD
+        if ($LASTEXITCODE -ne 0 -or $head -cne $pin.commit) { throw 'Standalone binding HEAD does not match the pin.' }
+        return [pscustomobject]@{ Root = $checkout; Repository = $pin.repository; Commit = $pin.commit }
+    } finally { $lock.Dispose() }
+}
 
-    $libraryDirectory = Join-Path $distribution 'lib\windows\x86_64\msvc\static'
-    $quotedLibraryDirectory = if ($libraryDirectory -match '\s') { "`"$libraryDirectory`"" } else { $libraryDirectory }
-    $linkerFlags = "/LIBPATH:$quotedLibraryDirectory bcrypt.lib ntdll.lib propsys.lib runtimeobject.lib uiautomationcore.lib userenv.lib ws2_32.lib"
-    return [pscustomobject]@{ Root = $distribution; Archive = $archive; Library = $library; LinkerFlags = $linkerFlags }
+function Get-AlicornAccessKit {
+    $ErrorActionPreference = 'Stop'
+    $binding = Get-AlicornAccessKitBinding
+    $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+    $native = & (Join-Path $binding.Root 'tools\bootstrap.ps1') -CacheRoot (Join-Path $repoRoot '.deps\accesskit')
+    if (-not $native -or -not $native.Root -or -not $native.Archive -or -not $native.Library -or
+        -not $native.LibraryDirectory -or -not $native.CompilerArguments) {
+        throw 'Standalone AccessKit bootstrap must return Root, Archive, Library, LibraryDirectory, LinkerFlags, and CompilerArguments.'
+    }
+    $native | Add-Member -NotePropertyName BindingRoot -NotePropertyValue $binding.Root
+    $native | Add-Member -NotePropertyName BindingRepository -NotePropertyValue $binding.Repository
+    $native | Add-Member -NotePropertyName BindingCommit -NotePropertyValue $binding.Commit
+    $native.CompilerArguments = @("-collection:accesskit=$($binding.Root)") + @($native.CompilerArguments)
+    return $native
 }

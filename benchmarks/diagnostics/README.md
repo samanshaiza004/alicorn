@@ -33,7 +33,7 @@ On Windows, stage SDL3.dll in `out` using the normal native build tools, then:
 ```powershell
 . .\tools\common.ps1
 $ProbeAccessKit = Get-AlicornAccessKit
-odin build benchmarks\diagnostics\issue109_sizing_probe.odin -file -collection:alicorn=. "-extra-linker-flags:$($ProbeAccessKit.LinkerFlags)" -out:out\issue109_sizing_probe.exe
+odin build benchmarks\diagnostics\issue109_sizing_probe.odin -file -collection:alicorn=. @($ProbeAccessKit.CompilerArguments) -out:out\issue109_sizing_probe.exe
 .\out\issue109_sizing_probe.exe
 ```
 

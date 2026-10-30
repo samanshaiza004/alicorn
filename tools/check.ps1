@@ -30,7 +30,7 @@ foreach ($Fixture in $FixturePackages) {
     $Main = Join-Path $Fixture.FullName 'main.odin'
     if (-not (Test-Path -LiteralPath $Main -PathType Leaf)) { continue }
     $Output = Join-Path $FixtureOutput ($Fixture.Name + '.exe')
-    & $Odin build $Fixture.FullName "-collection:alicorn=$RepoRoot" "-extra-linker-flags:$($AccessKit.LinkerFlags)" "-out:$Output"
+    & $Odin build $Fixture.FullName "-collection:alicorn=$RepoRoot" @($AccessKit.CompilerArguments) "-out:$Output"
     if ($LASTEXITCODE -ne 0) { throw "Fixture build failed: $($Fixture.Name)" }
 }
 

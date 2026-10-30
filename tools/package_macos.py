@@ -183,6 +183,24 @@ def validate_bundle_rpath(
         raise RuntimeError(f"LC_RPATH escapes application bundle in {image}: {rpath}") from error
 
 
+
+def accesskit_notice_inputs(args: argparse.Namespace) -> dict[str, pathlib.Path]:
+    apache = args.accesskit_license_apache
+    mit = args.accesskit_license_mit
+    if (apache is None) != (mit is None):
+        raise ValueError("AccessKit distribution requires both --accesskit-license-apache and --accesskit-license-mit")
+    inputs = {
+        "AccessKit-LICENSE-APACHE.txt": apache,
+        "AccessKit-LICENSE-MIT.txt": mit,
+        "AccessKit-LICENSE.chromium.txt": getattr(args, "accesskit_license_chromium", None),
+        "AccessKit-AUTHORS.txt": getattr(args, "accesskit_authors", None),
+        "odin-accesskit-LICENSE.txt": getattr(args, "accesskit_binding_license", None),
+    }
+    if apache is None and any(value is not None for value in inputs.values()):
+        raise ValueError("AccessKit notices require the Apache and MIT license inputs")
+    return {name: source.resolve(strict=True) for name, source in inputs.items() if source is not None}
+
+
 def package(args: argparse.Namespace) -> None:
     if sys.platform != "darwin":
         raise RuntimeError("macOS app packaging must run on macOS")
@@ -193,14 +211,7 @@ def package(args: argparse.Namespace) -> None:
     executable = args.executable.resolve(strict=True)
     metadata_path = args.metadata.resolve(strict=True)
     license_path = args.sdl_license.resolve(strict=True)
-    if (args.accesskit_license_apache is None) != (args.accesskit_license_mit is None):
-        raise ValueError("AccessKit distribution requires both --accesskit-license-apache and --accesskit-license-mit")
-    accesskit_licenses = None
-    if args.accesskit_license_apache is not None:
-        accesskit_licenses = (
-            args.accesskit_license_apache.resolve(strict=True),
-            args.accesskit_license_mit.resolve(strict=True),
-        )
+    accesskit_notices = accesskit_notice_inputs(args)
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     for field in ("name", "version", "bundleIdentifier", "executableName"):
         if not metadata.get(field):
@@ -233,14 +244,12 @@ def package(args: argparse.Namespace) -> None:
     shutil.copy2(executable, app_executable)
     shutil.copy2(license_path, resources / "SDL-LICENSE.txt")
     shutil.copy2(pathlib.Path(__file__).resolve().parents[1] / "assets/icons/reicon/LICENSE", resources / "Reicon-LICENSE.txt")
-    if accesskit_licenses is not None:
-        shutil.copy2(accesskit_licenses[0], resources / "AccessKit-LICENSE-APACHE.txt")
-        shutil.copy2(accesskit_licenses[1], resources / "AccessKit-LICENSE-MIT.txt")
+    for name, source in accesskit_notices.items():
+        shutil.copy2(source, resources / name)
 
     source_dir = metadata_path.parent
     resource_names: set[str] = {"sdl-license.txt", "reicon-license.txt"}
-    if accesskit_licenses is not None:
-        resource_names.update({"accesskit-license-apache.txt", "accesskit-license-mit.txt"})
+    resource_names.update(name.casefold() for name in accesskit_notices)
 
     def copy_resource(relative: str) -> None:
         source = (source_dir / relative).resolve(strict=True)
@@ -398,17 +407,16 @@ def package(args: argparse.Namespace) -> None:
                 {
                     "version": "0.23.1",
                     "licenses": [
-                        {
-                            "path": "Contents/Resources/AccessKit-LICENSE-APACHE.txt",
-                            "sha256": sha256(resources / "AccessKit-LICENSE-APACHE.txt"),
-                        },
-                        {
-                            "path": "Contents/Resources/AccessKit-LICENSE-MIT.txt",
-                            "sha256": sha256(resources / "AccessKit-LICENSE-MIT.txt"),
-                        },
+                        {"path": f"Contents/Resources/{name}", "sha256": sha256(resources / name)}
+                        for name in ("AccessKit-LICENSE-APACHE.txt", "AccessKit-LICENSE-MIT.txt")
+                    ],
+                    "notices": [
+                        {"path": f"Contents/Resources/{name}", "sha256": sha256(resources / name)}
+                        for name in accesskit_notices
+                        if name not in ("AccessKit-LICENSE-APACHE.txt", "AccessKit-LICENSE-MIT.txt")
                     ],
                 }
-                if accesskit_licenses is not None
+                if accesskit_notices
                 else None
             ),
         },
@@ -462,6 +470,9 @@ def main() -> None:
     parser.add_argument("--sdl-license", type=pathlib.Path, required=True)
     parser.add_argument("--accesskit-license-apache", type=pathlib.Path)
     parser.add_argument("--accesskit-license-mit", type=pathlib.Path)
+    parser.add_argument("--accesskit-license-chromium", type=pathlib.Path)
+    parser.add_argument("--accesskit-authors", type=pathlib.Path)
+    parser.add_argument("--accesskit-binding-license", type=pathlib.Path)
     parser.add_argument("--sdl-runtime", type=pathlib.Path)
     parser.add_argument(
         "--sdl-runtime-provider",
