@@ -70,8 +70,45 @@ The folder also contains `SDL3.dll` and `punks_caliber.dll` for running the exec
 
 On Alicorn `e93ac0d`, `tools/test.ps1` passed: 302 runtime tests, 39 UI tests, 35 theme tests, 164 native SDL tests, 8 AccessKit contract tests, and 6 scroll-capture tests. Theme checks, generated-theme compilation, and the restoration restart harness also passed.
 
-Hosted CI for `e93ac0d` is unverified in this report. The connected combined-status query returned no entries, and the local GitHub Actions query was blocked by the environment's network proxy. The local test pass is not being represented as hosted CI evidence.
+The connected combined-status query returned no entries when this report was prepared. A subsequent maintainer review reported that all five hosted workflows passed for both `e93ac0d` and documentation head `d9e3c88`. Current status queries still return no entries in this session, so those hosted results are recorded as maintainer-reported rather than independently verified here. The local test pass is not being represented as hosted CI evidence.
+
+At the time of the October 30 evidence, native zero-work acceptance had not been measured. The Windows run below adds a first bounded native sample.
+
+## Windows native validation (2026-10-31)
+
+**Source revision:** `772ac45` (`test(motion): cover native interrupted settling`). The executable was built from this source tree using Odin `dev-2026-09-nightly:a2fb372`, `-o:speed`, and the bundled SDL 3.4.2. SDL selected Direct3D 12. The host is Windows 10 Home, build 19045, on the same AMD Ryzen 5 7600X system recorded above. The run used a 720 × 360 logical window at 1.0 display scale. The GPU adapter name was not exposed by the captured diagnostics.
+
+The validation mode in Example 09 now applies three scheduled target changes, 80 ms apart after the first 100 ms delay, interrupting the decorative response twice. It then checks motion activity after 1.5 seconds and again after a one-second quiet interval. The sequence is headless with respect to user input, but it exercises the real Windows window, SDL event loop, D3D12 swapchain, motion scheduler, and diagnostics capture.
+
+Reproduce from the Alicorn repository root:
+
+```powershell
+.\tools\run_example.ps1 -Example 09_retained_motion `
+  -Odin 'C:\Users\saman\Documents\odin\dist\odin.exe' `
+  -Speed -AppArgs @('--motion-validation','--diagnostics',
+    '--capture-dir=out/issue-146/windows-interrupted-2026-10-31')
+
+.\tools\run_example.ps1 -Example 09_retained_motion `
+  -Odin 'C:\Users\saman\Documents\odin\dist\odin.exe' `
+  -Speed -AppArgs @('--idle-validation-seconds=3','--diagnostics',
+    '--capture-after=1',
+    '--capture-dir=out/issue-146/windows-idle-captured-2026-10-31')
+```
+
+The first run completed with `SDL application PASS`, 52 total GPU submissions, 50 motion samples/timer wakes, a maximum of two active owners, zero application tick callbacks, and zero native host-only wake events. Its first settled checkpoint reported 0 active owners, 0 active properties, and 0 unestablished deadlines. The second checkpoint, about one second later, reported the same. The flight-recorder timeline ends with a no-op sample (0 presentation updates and 0 GPU submissions) after settlement; there are no later motion samples or GPU submissions before the idle checkpoint. Application builds and text shaping occur only during initial/target descriptions, not during the motion samples. The run's aggregate frame p95 was 2.1 µs; this is dominated by no-op/event-loop samples and is not a presentation-latency figure.
+
+The separate idle-only run completed after 3.12 seconds with one initial GPU submission, one event wait, zero application tick calls, and zero native host-only wake events. The requested automatic capture did not fire because the idle event loop remained blocked until its validation timeout; this is why the run's final host counters are recorded from its `SDL application PASS` line rather than a diagnostic bundle.
+
+### Limits and follow-up
+
+- The interrupted run counted 7,269 `WaitEvent` calls (`event_waits`) in roughly 3.03 seconds, versus one in the idle-only run. The `native_host_wake_events` counter tracks Alicorn's dedicated host-only wake event; it is not a count of all Win32/SDL wakeups. The event-wait count is unexpectedly high and has not been attributed, so this evidence does **not** establish zero operating-system wakes during motion or prove that every wait was a timer wake. Add event-source attribution before making a stronger wake-rate claim.
+- The checked-in JSONL breadcrumb formatter emitted malformed records before this validation. The formatter now escapes literal braces, and the regression checks an intact JSON object. The new Windows run produced valid JSONL; its event sequence records session start, three retargets, settled and idle checkpoints, and shutdown without paths.
+- No physical minimize/restore, mixed-DPI, secondary-window, accessibility, or shutdown-during-motion session was performed. The UI automation helper did not expose the Example 09 window for manual interaction, so these remain release-gate items.
+- The 1x D3D12 smoke is not evidence for macOS/Metal or Linux/Vulkan, alternate DPI scales, nor GPU-adapter coverage. The Punks physical playback-state pass remains as previously recorded; it did not exercise the new #144 snapshot on its older pinned Alicorn revision.
+- Maintainer review reports five hosted workflows green for `e93ac0d` and `d9e3c88`. The local connected status query returned no entries for these commits or `772ac45`; fresh hosted checks for `772ac45` are therefore not verified in this report.
+
+Captured artifacts are in the ignored local `out/issue-146/windows-interrupted-2026-10-31/` directory, including `diagnostics.json`, `timeline.json`, `windows.json`, `inspector.txt`, `screenshot.ppm`, and valid `events.jsonl`. The idle-only run's bundle directory is empty because automatic capture was not reached.
 
 ## Still outstanding for #146
 
-This report does not claim native zero-work acceptance. It does not measure host timer wakes, native presentation visits, D3D12/Metal submissions, minimized-window suspension/restore, DPI changes, secondary-window lifecycle, or shutdown during motion. The Punks UI fixture is headless; the produced Windows executable is available for physical interaction checks, but this report does not claim a new physical UI session. Cross-platform native evidence and any agreed accessibility sessions remain separate release-gate work.
+The Windows run supports retained stage isolation and shows that D3D12 submissions stop after settlement in this fixture. It is not enough to close #146. A native wake-source audit, manual minimize/restore and secondary-window acceptance, alternate DPI configurations, cross-platform native evidence, and agreed accessibility sessions remain release-gate work. Keep the issue open.
