@@ -21,7 +21,7 @@ App :: struct {
 	validation_phase: Motion_Validation_Phase,
 }
 
-Motion_Validation_Phase :: enum { None, Retarget, Settled_Check, Idle_Check, Done }
+Motion_Validation_Phase :: enum { None, Retarget_A, Retarget_B, Retarget_C, Settled_Check, Idle_Check, Done }
 
 build_app :: proc(
 	state: rawptr,
@@ -107,7 +107,7 @@ services_app :: proc(state: rawptr, services: host.Application_Services) {
 	app.scheduler = services.scheduler
 	app.diagnostics = services.diagnostics
 	if app.validation_mode {
-		app.validation_phase = .Retarget
+		app.validation_phase = .Retarget_A
 		_ = host.application_schedule_after(app.scheduler, .Frequent, 100_000_000)
 		host.application_diagnostic_event(app.diagnostics, "motion.validation.ready")
 	}
@@ -116,11 +116,23 @@ services_app :: proc(state: rawptr, services: host.Application_Services) {
 scheduled_wake_app :: proc(state: rawptr, rt: ^alicorn.Runtime, _class: host.Scheduled_Wake_Class) {
 	app := cast(^App)state
 	switch app.validation_phase {
-	case .Retarget:
+	case .Retarget_A:
+		app.selected = 1
+		app.validation_phase = .Retarget_B
+		alicorn.invalidate_root(rt, "motion validation retarget")
+		host.application_diagnostic_event(app.diagnostics, "motion.validation.retarget_a")
+		_ = host.application_schedule_after(app.scheduler, .Frequent, 80_000_000)
+	case .Retarget_B:
 		app.selected = 2
+		app.validation_phase = .Retarget_C
+		alicorn.invalidate_root(rt, "motion validation retarget")
+		host.application_diagnostic_event(app.diagnostics, "motion.validation.retarget_b")
+		_ = host.application_schedule_after(app.scheduler, .Frequent, 80_000_000)
+	case .Retarget_C:
+		app.selected = 0
 		app.validation_phase = .Settled_Check
 		alicorn.invalidate_root(rt, "motion validation retarget")
-		host.application_diagnostic_event(app.diagnostics, "motion.validation.retargeted")
+		host.application_diagnostic_event(app.diagnostics, "motion.validation.retarget_c")
 		_ = host.application_schedule_after(app.scheduler, .Frequent, 1_500_000_000)
 	case .Settled_Check:
 		activity := alicorn.motion_activity(rt)
@@ -150,8 +162,9 @@ main :: proc() {
 	validation_smoke := false
 	for argument in os.args {
 		if argument == "--motion-validation" {
-			// Make one delayed logical selection change, then observe the retained
-			// response settle and leave an idle interval before bounded shutdown.
+			// Make three rapid logical selection changes to interrupt the retained
+			// response twice, then observe settlement and an idle interval before
+			// bounded shutdown.
 			// Run with --diagnostics to capture native scheduler counters.
 			app.validation_mode = true
 			validation_smoke = true

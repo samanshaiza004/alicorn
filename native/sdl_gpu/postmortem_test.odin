@@ -21,6 +21,9 @@ test_postmortem_event_names_are_bounded_and_path_free :: proc(t: ^testing.T) {
 @(test)
 test_postmortem_event_line_has_correlation_and_no_payload_fields :: proc(t: ^testing.T) {
 	line := native_breadcrumb_json_line("2026-10-29T12:00:00.000Z", 1234, 77, "application", "directory.open.requested", 9)
+	testing.expect(t, strings.has_prefix(line, `{"schema":1,`), "breadcrumb line should be valid JSON without formatter diagnostics")
+	testing.expect(t, strings.has_suffix(line, "}\n"), "breadcrumb line should end with one complete JSON object")
+	testing.expect(t, !strings.contains(line, "%!("), "breadcrumb line should not contain formatter diagnostics")
 	testing.expect(t, strings.contains(line, `"timestamp_utc":"2026-10-29T12:00:00.000Z"`), "breadcrumb line should include UTC time")
 	testing.expect(t, strings.contains(line, `"monotonic_ns":1234`), "breadcrumb line should include monotonic time")
 	testing.expect(t, strings.contains(line, `"thread_id":77`), "breadcrumb line should include its thread")

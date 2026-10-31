@@ -38,7 +38,7 @@ native_breadcrumb_json_line :: proc(
 ) -> string {
 	if !native_breadcrumb_event_name_valid(name) { return "" }
 	return fmt.tprintf(
-		`{"schema":1,"timestamp_utc":"%s","monotonic_ns":%d,"thread_id":%d,"source":"%s","event":"%s","request_id":%d}` + "\n",
+		`{{"schema":1,"timestamp_utc":"%s","monotonic_ns":%d,"thread_id":%d,"source":"%s","event":"%s","request_id":%d}}` + "\n",
 		timestamp_utc, monotonic_ns, thread_id, source, name, request_id,
 	)
 }
