@@ -117,8 +117,9 @@ its currently realized node. Work shows retained stage counters, presentation
 and submission revisions, and host timings. Causes shows bounded recent
 transactions with actions, invalidations, stage work, and submissions.
 Motion shows the selected owner's captured declaration site and cause,
-response intent, target and last presented values, residual velocity,
-per-property tolerances, settlement bound, clock source, and retained
+response intent, target and last presented values with per-property sample
+timestamps, residual velocity, per-property tolerances, settlement bound, and
+the current runtime clock/source, plus retained
 input/accessibility geometry policy. Its fixed 128-event ring records state
 transitions, not every sample; the tab displays the latest 64 and reports
 evictions. Sampling and owner visits are aggregated. Presentation requests,

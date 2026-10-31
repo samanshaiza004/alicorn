@@ -1226,8 +1226,10 @@ system file drops or arbitrary MIME payloads.
   Unopted nodes retain their existing behavior.
 - The inspector Motion tab reads a passive copy of retained owner state. It
   reports declaration source, triggering cause, intent, target, last presented
-  values, residual and velocity, tolerances, clock source, and certified settle
-  bound. A bounded transition ring records retargets, no-ops, mode changes,
+  values, residual and velocity evaluated at each property's last sample time,
+  tolerances, clock source, and certified settle bound. The current injected
+  clock and the last presentation sample timestamp are shown separately. A
+  bounded transition ring records retargets, no-ops, mode changes,
   Reveal, reduced-motion rewrites, release, retirement, settlement, host
   suspension/restore, bounded snaps, opacity clamping, and failures; routine
   samples are represented by aggregate work counters instead of individual

@@ -238,6 +238,8 @@ test_inspector_motion_snapshot_is_passive_and_explains_the_transition :: proc(t:
 	found_tolerances := false
 	found_policy := false
 	found_transition := false
+	found_sample_time := false
+	found_clock_time := false
 	for id in panel.order {
 		if node, ok := panel.nodes[id]; ok && node != nil {
 			found_target = found_target || strings.contains(node.text, "target=(120.0000, 12.0000)")
@@ -247,13 +249,15 @@ test_inspector_motion_snapshot_is_passive_and_explains_the_transition :: proc(t:
 			found_tolerances = found_tolerances || strings.contains(node.text, "tolerances: position")
 			found_policy = found_policy || strings.contains(node.text, "Hit tests use target geometry")
 			found_transition = found_transition || strings.contains(node.text, "Target_Declared")
+			found_sample_time = found_sample_time || strings.contains(node.text, "last sampled at 25000000 ns")
+			found_clock_time = found_clock_time || strings.contains(node.text, "Runtime clock: 25000000 ns")
 		}
 	}
 	app_after := inspect(&app)
 	defer delete(app_after)
 	snapshot_after := motion_diagnostics_owner_snapshot(&app, nodes.sibling)
-	testing.expect(t, found_target && found_presentation && found_declaration && found_cause && found_tolerances && found_policy && found_transition,
-		"the Motion tab should explain its selected target, presentation, declaration, cause, tolerances, input policy, and transition")
+	testing.expect(t, found_target && found_presentation && found_declaration && found_cause && found_tolerances && found_policy && found_transition && found_sample_time && found_clock_time,
+		"the Motion tab should explain target, presentation timestamp, declaration, cause, tolerances, input policy, and transition")
 	testing.expect(t, app_before == app_after && app.stats == stats_before && app.allocation_stats^ == allocation_before,
 		"building the Motion tab must leave application state, work counters, and allocation counters untouched")
 	testing.expect(t, diagnostic_stats_before == motion_diagnostics_stats(&app) && activity_before == motion_activity(&app) &&

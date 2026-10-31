@@ -81,6 +81,10 @@ Motion_Property_Snapshot :: struct {
 	presented: Motion_Vector2,
 	residual: Motion_Vector2,
 	velocity: Motion_Vector2,
+	// sampled_at identifies the retained position sample shown above. Velocity
+	// in the same snapshot is evaluated at this timestamp, not the runtime's
+	// possibly newer clock-only value.
+	sampled_at: Motion_Time,
 	start_time: Motion_Time,
 	settle_after_ns: u64,
 }
@@ -96,6 +100,7 @@ Motion_Diagnostic_Owner_Snapshot :: struct {
 	source: Source_Site,
 	cause: Cause_Context,
 	clock_source: Motion_Clock_Source,
+	clock_time: Motion_Time,
 	translation: Motion_Property_Snapshot,
 	opacity: Motion_Property_Snapshot,
 }
@@ -187,11 +192,13 @@ Motion_Retained_Owner :: struct {
 	has_translation: bool,
 	translation: Motion_Translation_Response,
 	presented_translation: [2]f32,
+	translation_sampled_at: Motion_Time,
 	translation_active: bool,
 	translation_deadline_established: bool,
 	has_opacity: bool,
 	opacity: Motion_Scalar_Response,
 	presented_opacity: f32,
+	opacity_sampled_at: Motion_Time,
 	opacity_active: bool,
 	opacity_deadline_established: bool,
 	opacity_clamped: bool,
@@ -246,9 +253,10 @@ motion_diagnostics_owner_snapshot :: proc(rt: ^Runtime, owner: Node_ID) -> Motio
 		source=state.source,
 		cause=state.cause,
 		clock_source=rt.motion_clock_source,
+		clock_time=rt.motion_time,
 	}
 	if state.has_translation {
-		sample := motion_translation_sample(state.translation, rt.motion_time)
+		sample := motion_translation_sample(state.translation, state.translation_sampled_at)
 		target := Motion_Vector2{state.translation.x.target, state.translation.y.target}
 		presented := Motion_Vector2{f64(state.presented_translation[0]), f64(state.presented_translation[1])}
 		snapshot.translation = Motion_Property_Snapshot{
@@ -261,12 +269,13 @@ motion_diagnostics_owner_snapshot :: proc(rt: ^Runtime, owner: Node_ID) -> Motio
 			presented=presented,
 			residual=Motion_Vector2{presented.x-target.x, presented.y-target.y},
 			velocity=sample.velocity,
+			sampled_at=state.translation_sampled_at,
 			start_time=state.translation.x.start_time,
 			settle_after_ns=state.translation.x.settle_after_ns,
 		}
 	}
 	if state.has_opacity {
-		sample := motion_scalar_sample(state.opacity, rt.motion_time)
+		sample := motion_scalar_sample(state.opacity, state.opacity_sampled_at)
 		target := Motion_Vector2{state.opacity.target, 0}
 		presented := Motion_Vector2{f64(state.presented_opacity), 0}
 		snapshot.opacity = Motion_Property_Snapshot{
@@ -279,6 +288,7 @@ motion_diagnostics_owner_snapshot :: proc(rt: ^Runtime, owner: Node_ID) -> Motio
 			presented=presented,
 			residual=Motion_Vector2{presented.x-target.x, 0},
 			velocity=Motion_Vector2{sample.velocity, 0},
+			sampled_at=state.opacity_sampled_at,
 			start_time=state.opacity.start_time,
 			settle_after_ns=state.opacity.settle_after_ns,
 		}
@@ -866,6 +876,7 @@ motion_target_opacity :: proc(
 	state.opacity = next
 	state.has_opacity = true
 	state.presented_opacity = motion_clamp_opacity(sample.value)
+	state.opacity_sampled_at = at
 	state.opacity_active = sample.active
 	state.opacity_deadline_established = sample.deadline_established
 	if record_diagnostics {
@@ -956,6 +967,7 @@ motion_target_translation :: proc(
 	state.translation = next
 	state.has_translation = true
 	state.presented_translation = [2]f32{x, y}
+	state.translation_sampled_at = at
 	state.translation_active = sample.active
 	state.translation_deadline_established = sample.deadline_established
 	if record_diagnostics {
@@ -1077,6 +1089,7 @@ motion_apply_intent :: proc(
 			state.opacity = snapped
 			state.has_opacity = true
 			state.presented_opacity = motion_clamp_opacity(target.opacity)
+			state.opacity_sampled_at = rt.motion_time
 			state.opacity_active = false
 			state.opacity_deadline_established = true
 			rt.motion_owners[owner] = state
@@ -1184,6 +1197,7 @@ motion_tick :: proc(rt: ^Runtime, at: Motion_Time) -> Motion_Tick_Result {
 			presented := motion_clamp_opacity(sample.value)
 			if presented != state.presented_opacity { changed = true }
 			state.presented_opacity = presented
+			state.opacity_sampled_at = at
 			state.opacity_active = sample.active
 			state.opacity_deadline_established = sample.deadline_established
 			if sample.active {
@@ -1203,6 +1217,7 @@ motion_tick :: proc(rt: ^Runtime, at: Motion_Time) -> Motion_Tick_Result {
 			presented := [2]f32{x, y}
 			if presented != state.presented_translation { changed = true }
 			state.presented_translation = presented
+			state.translation_sampled_at = at
 			state.translation_active = sample.active
 			state.translation_deadline_established = sample.deadline_established
 			if sample.active {
@@ -1282,6 +1297,7 @@ motion_snap_unestablished :: proc(rt: ^Runtime, at: Motion_Time) -> Motion_Tick_
 			changed = changed || presented != state.presented_opacity
 			state.opacity = next
 			state.presented_opacity = presented
+			state.opacity_sampled_at = at
 			state.opacity_active = false
 			state.opacity_deadline_established = true
 			snapped = true
@@ -1297,6 +1313,7 @@ motion_snap_unestablished :: proc(rt: ^Runtime, at: Motion_Time) -> Motion_Tick_
 			changed = changed || presented != state.presented_translation
 			state.translation = next
 			state.presented_translation = presented
+			state.translation_sampled_at = at
 			state.translation_active = false
 			state.translation_deadline_established = true
 			snapped = true

@@ -431,6 +431,7 @@ inspector_overlay_motion_property_lines :: proc(
 ) {
 	if !property.has_value { append(lines, fmt.tprintf("%s: not declared", name)); return }
 	append(lines, fmt.tprintf("%s: mode=%v active=%t", name, property.mode, property.active))
+	append(lines, fmt.tprintf("  last sampled at %d ns", i64(property.sampled_at)))
 	if units == "opacity" {
 		append(lines, fmt.tprintf("  target=%.6f presented=%.6f residual=%.6f velocity=%.6f %s/s",
 			property.target.x, property.presented.x, property.residual.x, property.velocity.x, units))
@@ -463,6 +464,7 @@ inspector_overlay_motion :: proc(ui: ^UI, inspected: ^Runtime, selected: Node_ID
 			append(&lines, fmt.tprintf("Selected node #%d has no retained motion owner.", selected))
 		} else {
 			append(&lines, fmt.tprintf("Owner node=%d generation=%d intent=%v", snapshot.owner, snapshot.generation, snapshot.intent))
+			append(&lines, fmt.tprintf("Runtime clock: %d ns (%v)", i64(snapshot.clock_time), snapshot.clock_source))
 			append(&lines, fmt.tprintf("Declaration: %s:%d:%d (%s)", snapshot.source.file, snapshot.source.line, snapshot.source.column, snapshot.source.component))
 			if snapshot.cause.id == 0 {
 				append(&lines, "Triggering cause: unassigned (no one-to-one cause was established)")

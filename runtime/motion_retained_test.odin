@@ -702,3 +702,39 @@ test_motion_diagnostics_report_opacity_clamp_once_per_excursion :: proc(t: ^test
 		still_one && rt.motion_owners[child].presented_opacity == 0,
 		"alpha clamp diagnostics should record the raw sample once while presentation remains bounded")
 }
+
+@(test)
+test_motion_diagnostic_velocity_matches_last_presented_sample_time :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 280, 140})
+	defer destroy_runtime(&rt)
+	_, child, _ := motion_retained_test_build(&rt, true)
+	_ = motion_clock_set_time(&rt, Motion_Time(0), .Injected)
+	handle, handle_status := motion_owner_begin(&rt, child)
+	config := Motion_Config{omega=12, position_tolerance=0.001, velocity_tolerance=0.001}
+	testing.expect(t, handle_status == .Ok && motion_target_translation(
+		&rt, handle, Motion_Vector2{160, 0}, config, .Settle, Motion_Time(0),
+	) == .Ok && motion_target_opacity(
+		&rt, handle, 0.2, config, .Settle, Motion_Time(0),
+	) == .Ok, "the sample-time fixture should start valid translation and opacity responses")
+	_ = motion_tick(&rt, Motion_Time(50_000_000))
+	at_present := motion_diagnostics_owner_snapshot(&rt, child)
+	_ = motion_clock_set_time(&rt, Motion_Time(80_000_000), .Injected)
+	after_clock_advance := motion_diagnostics_owner_snapshot(&rt, child)
+	current_analytic := motion_translation_sample(rt.motion_owners[child].translation, Motion_Time(80_000_000))
+	current_analytic_opacity := motion_scalar_sample(rt.motion_owners[child].opacity, Motion_Time(80_000_000))
+	testing.expect(t, at_present.translation.sampled_at == Motion_Time(50_000_000) &&
+		after_clock_advance.translation.sampled_at == at_present.translation.sampled_at &&
+		after_clock_advance.translation.presented == at_present.translation.presented &&
+		after_clock_advance.translation.velocity == at_present.translation.velocity,
+		"a clock-only advance must preserve the last presented position and report velocity at its sample timestamp")
+	testing.expect(t, at_present.opacity.sampled_at == Motion_Time(50_000_000) &&
+		after_clock_advance.opacity.sampled_at == at_present.opacity.sampled_at &&
+		after_clock_advance.opacity.presented == at_present.opacity.presented &&
+		after_clock_advance.opacity.velocity == at_present.opacity.velocity,
+		"opacity velocity must also remain paired with the last presented sample timestamp")
+	testing.expect(t, current_analytic.status == .Ok &&
+		current_analytic.velocity.x != after_clock_advance.translation.velocity.x &&
+		current_analytic_opacity.status == .Ok &&
+		current_analytic_opacity.velocity != after_clock_advance.opacity.velocity.x,
+		"the regression must distinguish both presentation velocities from newer analytic clock samples")
+}
