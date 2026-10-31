@@ -216,6 +216,18 @@ run_application_loop :: proc(
 	last_user_interaction_ns: u64 = 0
 	devtools_last_cause: alicorn.Cause_Context
 	event_waits: u64 = 0
+	event_wait_event_returns: u64 = 0
+	event_wait_timeouts: u64 = 0
+	event_wait_timeout_zero_ms: u64 = 0
+	event_wait_timeout_one_ms: u64 = 0
+	event_wait_timeout_two_plus_ms: u64 = 0
+	event_wait_indefinite: u64 = 0
+	event_wait_elapsed_ns: u64 = 0
+	event_wait_elapsed_max_ns: u64 = 0
+	event_wait_elapsed_under_100us: u64 = 0
+	event_wait_elapsed_under_500us: u64 = 0
+	event_wait_elapsed_under_1ms: u64 = 0
+	event_wait_deadline_sources: [NATIVE_EVENT_WAIT_DEADLINE_SOURCE_COUNT]u64
 	wake_events: u64 = 0
 	for !quit_requested {
 		native_host_scratch_reset(&host_scratch)
@@ -225,13 +237,16 @@ run_application_loop :: proc(
 		validation_timeout_expired := false
 		smoke_timeout := false
 		wait_timeout_ms: sdl3.Sint32 = -1
+		wait_timeout_source: Native_Event_Wait_Deadline_Source = .None
+		wait_timeout_source_output := &wait_timeout_source if diagnostics.enabled else nil
 		if wait_for_event {
 			// A successful swapchain acquisition can still return no drawable while
 			// the window is minimized or the swapchain is temporarily unavailable.
 			// Keep the presentation revision pending, but sleep between retries and
 			// let SDL events wake us as soon as the window can be presented again.
 			if swapchain_retry_pending && native_motion_window_renderable(sdl3.GetWindowFlags(window)) {
-				wait_timeout_ms = native_event_wait_timeout_min(wait_timeout_ms, 100)
+				wait_timeout_ms = native_event_wait_timeout_min(wait_timeout_ms, 100,
+					wait_timeout_source_output, .Swapchain_Retry)
 			}
 			// Tick-driven applications still need their regular callback while a
 			// drawable is unavailable. Wait only until the next tick rather than
@@ -241,40 +256,56 @@ run_application_loop :: proc(
 				remaining_ns := i64(16_666_667) - elapsed_ns
 				if remaining_ns < 0 { remaining_ns = 0 }
 				tick_timeout_ms := sdl3.Sint32((remaining_ns + 999_999) / 1_000_000)
-				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, tick_timeout_ms))
+				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(
+					wait_timeout_ms, tick_timeout_ms, wait_timeout_source_output, .Primary_Tick,
+				))
 			}
 			current_ns := u64(sdl3.GetTicksNS())
 			if !primary_drawable_unavailable && native_motion_window_renderable(sdl3.GetWindowFlags(window)) {
 				if motion_deadline, found := native_motion_scheduler_next_deadline(&motion_scheduler); found {
 					motion_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(motion_deadline, current_ns))
-					wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, motion_timeout_ms))
+					wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(
+						wait_timeout_ms, motion_timeout_ms, wait_timeout_source_output, .Primary_Motion,
+					))
 				}
 			}
 			if drag_autoscroll_deadline_ns != 0 {
 				drag_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(drag_autoscroll_deadline_ns, current_ns))
-				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, drag_timeout_ms))
+				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(
+					wait_timeout_ms, drag_timeout_ms, wait_timeout_source_output, .Drag_Autoscroll,
+				))
 			}
 			if tooltip_deadline := alicorn.tooltip_next_deadline(rt); tooltip_deadline != 0 {
 				tooltip_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(tooltip_deadline, current_ns))
-				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, tooltip_timeout_ms))
+				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(
+					wait_timeout_ms, tooltip_timeout_ms, wait_timeout_source_output, .Tooltip,
+				))
 			}
 			if notice_deadline := alicorn.notice_next_deadline(rt); notice_deadline != 0 {
 				notice_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(notice_deadline, current_ns))
-				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, notice_timeout_ms))
+				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(
+					wait_timeout_ms, notice_timeout_ms, wait_timeout_source_output, .Notice,
+				))
 			}
 			if next_deadline, found := scheduled_wake_next_deadline(&scheduler_state); found {
 				scheduled_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(next_deadline, current_ns))
-				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, scheduled_timeout_ms))
+				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(
+					wait_timeout_ms, scheduled_timeout_ms, wait_timeout_source_output, .Application_Scheduled,
+				))
 			}
 			if devtools_hud.visible && devtools_hud_deadline_ns != 0 {
 				hud_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(devtools_hud_deadline_ns, current_ns))
-				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, hud_timeout_ms))
+				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(
+					wait_timeout_ms, hud_timeout_ms, wait_timeout_source_output, .Devtools_Hud,
+				))
 			}
 			if child := secondary_windows.child; child != nil && child.active {
 				if !child.presentation_suspended && native_motion_window_renderable(sdl3.GetWindowFlags(child.window)) {
 					if motion_deadline, found := native_motion_scheduler_next_deadline(&child.motion_scheduler); found {
 						motion_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(motion_deadline, current_ns))
-						wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, motion_timeout_ms))
+						wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(
+							wait_timeout_ms, motion_timeout_ms, wait_timeout_source_output, .Child_Motion,
+						))
 					}
 				}
 				if child.application.on_tick != nil {
@@ -282,20 +313,28 @@ run_application_loop :: proc(
 					remaining_ns := i64(16_666_667)-elapsed_ns
 					if remaining_ns < 0 { remaining_ns = 0 }
 					child_tick_timeout_ms := sdl3.Sint32((remaining_ns+999_999)/1_000_000)
-					wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, child_tick_timeout_ms))
+					wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(
+						wait_timeout_ms, child_tick_timeout_ms, wait_timeout_source_output, .Child_Tick,
+					))
 				}
 				if child_deadline, found := scheduled_wake_next_deadline(&child.scheduler_state); found {
 					child_schedule_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(child_deadline, current_ns))
-					wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, child_schedule_timeout_ms))
+					wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(
+						wait_timeout_ms, child_schedule_timeout_ms, wait_timeout_source_output, .Child_Scheduled,
+					))
 				}
 				if child.runtime != nil {
 					if child_tooltip_deadline := alicorn.tooltip_next_deadline(child.runtime); child_tooltip_deadline != 0 {
 						child_timeout := sdl3.Sint32(scheduled_wake_timeout_ms(child_tooltip_deadline, current_ns))
-						wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, child_timeout))
+						wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(
+							wait_timeout_ms, child_timeout, wait_timeout_source_output, .Child_Tooltip,
+						))
 					}
 					if child_notice_deadline := alicorn.notice_next_deadline(child.runtime); child_notice_deadline != 0 {
 						child_timeout := sdl3.Sint32(scheduled_wake_timeout_ms(child_notice_deadline, current_ns))
-						wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(wait_timeout_ms, child_timeout))
+						wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(
+							wait_timeout_ms, child_timeout, wait_timeout_source_output, .Child_Notice,
+						))
 					}
 				}
 			}
@@ -307,8 +346,12 @@ run_application_loop :: proc(
 					continue
 				}
 				smoke_timeout_ms := u64((remaining + 999_999) / 1_000_000)
-				if wait_timeout_ms < 0 || smoke_timeout_ms < u64(wait_timeout_ms) {
-					wait_timeout_ms = sdl3.Sint32(min(smoke_timeout_ms, u64(0x7fff_ffff)))
+				smoke_candidate_ms := sdl3.Sint32(min(smoke_timeout_ms, u64(0x7fff_ffff)))
+				previous_timeout_ms := wait_timeout_ms
+				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(
+					wait_timeout_ms, smoke_candidate_ms, wait_timeout_source_output, .Smoke_Exit,
+				))
+				if wait_timeout_ms != previous_timeout_ms {
 					smoke_timeout = true
 				}
 			}
@@ -320,13 +363,21 @@ run_application_loop :: proc(
 					continue
 				}
 				idle_timeout_ms := u64((remaining + 999_999) / 1_000_000)
-				if wait_timeout_ms < 0 || idle_timeout_ms < u64(wait_timeout_ms) {
-					wait_timeout_ms = sdl3.Sint32(min(idle_timeout_ms, u64(0x7fff_ffff)))
+				idle_candidate_ms := sdl3.Sint32(min(idle_timeout_ms, u64(0x7fff_ffff)))
+				previous_timeout_ms := wait_timeout_ms
+				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(
+					wait_timeout_ms, idle_candidate_ms, wait_timeout_source_output, .Validation_Exit,
+				))
+				if wait_timeout_ms != previous_timeout_ms {
 					validation_timeout_expired = true
 					smoke_timeout = false
 				}
 			}
+			when ODIN_OS == .Windows {
+				wait_timeout_ms = native_event_wait_windows_timeout_ms(wait_timeout_ms)
+			}
 			swapchain_retry_pending = false
+			if diagnostics.enabled { event_wait_deadline_sources[int(wait_timeout_source)] += 1 }
 		}
 		pump_events(
 			window, rt, metrics, &quit_requested,
@@ -343,6 +394,17 @@ run_application_loop :: proc(
 			host_wake_event_enabled=true,
 			wait_for_event=wait_for_event,
 			event_waits=&event_waits,
+			event_wait_event_returns=&event_wait_event_returns if diagnostics.enabled else nil,
+			event_wait_timeouts=&event_wait_timeouts if diagnostics.enabled else nil,
+			event_wait_timeout_zero_ms=&event_wait_timeout_zero_ms if diagnostics.enabled else nil,
+			event_wait_timeout_one_ms=&event_wait_timeout_one_ms if diagnostics.enabled else nil,
+			event_wait_timeout_two_plus_ms=&event_wait_timeout_two_plus_ms if diagnostics.enabled else nil,
+			event_wait_indefinite=&event_wait_indefinite if diagnostics.enabled else nil,
+			event_wait_elapsed_ns=&event_wait_elapsed_ns if diagnostics.enabled else nil,
+			event_wait_elapsed_max_ns=&event_wait_elapsed_max_ns if diagnostics.enabled else nil,
+			event_wait_elapsed_under_100us=&event_wait_elapsed_under_100us if diagnostics.enabled else nil,
+			event_wait_elapsed_under_500us=&event_wait_elapsed_under_500us if diagnostics.enabled else nil,
+			event_wait_elapsed_under_1ms=&event_wait_elapsed_under_1ms if diagnostics.enabled else nil,
 			wake_events=&wake_events,
 			native_host_wake_events=&timing.native_host_wake_events,
 			wait_timeout_ms=wait_timeout_ms,
@@ -925,7 +987,32 @@ run_application_loop :: proc(
 		"application_build_max_ns", timing.application_build_max_ns,
 		"application_stabilization_rebuilds", timing.application_stabilization_rebuilds,
 		"application_stabilization_limit_hits", timing.application_stabilization_limit_hits,
-		"event_waits", event_waits,
+		"event_waits", event_waits, "event_wait_event_returns", event_wait_event_returns,
+		"event_wait_timeouts", event_wait_timeouts, "event_wait_timeout_zero_ms", event_wait_timeout_zero_ms,
+		"event_wait_timeout_one_ms", event_wait_timeout_one_ms,
+		"event_wait_timeout_two_plus_ms", event_wait_timeout_two_plus_ms,
+		"event_wait_indefinite", event_wait_indefinite,
+		"event_wait_elapsed_ns", event_wait_elapsed_ns,
+		"event_wait_elapsed_max_ns", event_wait_elapsed_max_ns,
+		"event_wait_elapsed_under_100us", event_wait_elapsed_under_100us,
+		"event_wait_elapsed_under_500us", event_wait_elapsed_under_500us,
+		"event_wait_elapsed_under_1ms", event_wait_elapsed_under_1ms,
+		"wait_deadline_none", event_wait_deadline_sources[int(Native_Event_Wait_Deadline_Source.None)],
+		"wait_deadline_swapchain_retry", event_wait_deadline_sources[int(Native_Event_Wait_Deadline_Source.Swapchain_Retry)],
+		"wait_deadline_primary_tick", event_wait_deadline_sources[int(Native_Event_Wait_Deadline_Source.Primary_Tick)],
+		"wait_deadline_primary_motion", event_wait_deadline_sources[int(Native_Event_Wait_Deadline_Source.Primary_Motion)],
+		"wait_deadline_drag_autoscroll", event_wait_deadline_sources[int(Native_Event_Wait_Deadline_Source.Drag_Autoscroll)],
+		"wait_deadline_tooltip", event_wait_deadline_sources[int(Native_Event_Wait_Deadline_Source.Tooltip)],
+		"wait_deadline_notice", event_wait_deadline_sources[int(Native_Event_Wait_Deadline_Source.Notice)],
+		"wait_deadline_application_scheduled", event_wait_deadline_sources[int(Native_Event_Wait_Deadline_Source.Application_Scheduled)],
+		"wait_deadline_devtools_hud", event_wait_deadline_sources[int(Native_Event_Wait_Deadline_Source.Devtools_Hud)],
+		"wait_deadline_child_motion", event_wait_deadline_sources[int(Native_Event_Wait_Deadline_Source.Child_Motion)],
+		"wait_deadline_child_tick", event_wait_deadline_sources[int(Native_Event_Wait_Deadline_Source.Child_Tick)],
+		"wait_deadline_child_scheduled", event_wait_deadline_sources[int(Native_Event_Wait_Deadline_Source.Child_Scheduled)],
+		"wait_deadline_child_tooltip", event_wait_deadline_sources[int(Native_Event_Wait_Deadline_Source.Child_Tooltip)],
+		"wait_deadline_child_notice", event_wait_deadline_sources[int(Native_Event_Wait_Deadline_Source.Child_Notice)],
+		"wait_deadline_smoke_exit", event_wait_deadline_sources[int(Native_Event_Wait_Deadline_Source.Smoke_Exit)],
+		"wait_deadline_validation_exit", event_wait_deadline_sources[int(Native_Event_Wait_Deadline_Source.Validation_Exit)],
 		"application_wake_events", wake_events,
 		"native_host_wake_events", timing.native_host_wake_events,
 		"native_chrome_encode_ns", timing.native_chrome_encode_ns,

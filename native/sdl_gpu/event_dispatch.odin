@@ -55,6 +55,17 @@ pump_events :: proc(
 	host_wake_event_enabled := false,
 	wait_for_event := false,
 	event_waits: ^u64 = nil,
+	event_wait_event_returns: ^u64 = nil,
+	event_wait_timeouts: ^u64 = nil,
+	event_wait_timeout_zero_ms: ^u64 = nil,
+	event_wait_timeout_one_ms: ^u64 = nil,
+	event_wait_timeout_two_plus_ms: ^u64 = nil,
+	event_wait_indefinite: ^u64 = nil,
+	event_wait_elapsed_ns: ^u64 = nil,
+	event_wait_elapsed_max_ns: ^u64 = nil,
+	event_wait_elapsed_under_100us: ^u64 = nil,
+	event_wait_elapsed_under_500us: ^u64 = nil,
+	event_wait_elapsed_under_1ms: ^u64 = nil,
 	wake_events: ^u64 = nil,
 	native_host_wake_events: ^u64 = nil,
 	wait_timeout_ms: sdl3.Sint32 = -1,
@@ -91,13 +102,37 @@ pump_events :: proc(
 	}
 	has_event := false
 	if wait_for_event {
+		wait_started_ns: u64 = 0
+		if event_wait_elapsed_ns != nil { wait_started_ns = u64(sdl3.GetTicksNS()) }
 		if event_waits != nil { event_waits^ += 1 }
 		if wait_timeout_ms >= 0 {
+			if wait_timeout_ms == 0 && event_wait_timeout_zero_ms != nil { event_wait_timeout_zero_ms^ += 1 }
+			else if wait_timeout_ms == 1 && event_wait_timeout_one_ms != nil { event_wait_timeout_one_ms^ += 1 }
+			else if wait_timeout_ms >= 2 && event_wait_timeout_two_plus_ms != nil { event_wait_timeout_two_plus_ms^ += 1 }
 			has_event = sdl3.WaitEventTimeout(&event, wait_timeout_ms)
 		} else {
+			if event_wait_indefinite != nil { event_wait_indefinite^ += 1 }
 			has_event = sdl3.WaitEvent(&event)
 		}
-		if !has_event && wait_timed_out != nil { wait_timed_out^ = true }
+		if has_event {
+			if event_wait_event_returns != nil { event_wait_event_returns^ += 1 }
+		} else {
+			if wait_timeout_ms >= 0 && event_wait_timeouts != nil { event_wait_timeouts^ += 1 }
+			if wait_timed_out != nil { wait_timed_out^ = true }
+		}
+		if event_wait_elapsed_ns != nil {
+			wait_finished_ns := u64(sdl3.GetTicksNS())
+			wait_elapsed_ns := wait_finished_ns-wait_started_ns if wait_finished_ns >= wait_started_ns else 0
+			event_wait_elapsed_ns^ += wait_elapsed_ns
+			if event_wait_elapsed_max_ns != nil { event_wait_elapsed_max_ns^ = max(event_wait_elapsed_max_ns^, wait_elapsed_ns) }
+			if wait_elapsed_ns < 100_000 && event_wait_elapsed_under_100us != nil {
+				event_wait_elapsed_under_100us^ += 1
+			} else if wait_elapsed_ns < 500_000 && event_wait_elapsed_under_500us != nil {
+				event_wait_elapsed_under_500us^ += 1
+			} else if wait_elapsed_ns < 1_000_000 && event_wait_elapsed_under_1ms != nil {
+				event_wait_elapsed_under_1ms^ += 1
+			}
+		}
 	} else {
 		has_event = native_event_next(&event, secondary_child, replay_secondary_events)
 	}

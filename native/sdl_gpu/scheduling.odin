@@ -264,12 +264,52 @@ Native_Scheduled_Wake_State :: struct {
 	stats:        Application_Scheduler_Stats,
 }
 
+Native_Event_Wait_Deadline_Source :: enum {
+	None,
+	Swapchain_Retry,
+	Primary_Tick,
+	Primary_Motion,
+	Drag_Autoscroll,
+	Tooltip,
+	Notice,
+	Application_Scheduled,
+	Devtools_Hud,
+	Child_Motion,
+	Child_Tick,
+	Child_Scheduled,
+	Child_Tooltip,
+	Child_Notice,
+	Smoke_Exit,
+	Validation_Exit,
+}
+
+NATIVE_EVENT_WAIT_DEADLINE_SOURCE_COUNT :: 16
+
 // SDL event waits use a negative timeout for an indefinite wait. Merge a new
 // nonnegative deadline without accidentally replacing an earlier retry/tick.
-native_event_wait_timeout_min :: proc(current_ms, candidate_ms: i32) -> i32 {
+// The optional source output is diagnostic-only and records which candidate
+// supplied the shortest timeout for the upcoming event wait.
+native_event_wait_timeout_min :: proc(
+	current_ms, candidate_ms: i32,
+	selected_source: ^Native_Event_Wait_Deadline_Source = nil,
+	candidate_source: Native_Event_Wait_Deadline_Source = .None,
+) -> i32 {
 	if candidate_ms < 0 { return current_ms }
-	if current_ms < 0 || candidate_ms < current_ms { return candidate_ms }
+	if current_ms < 0 || candidate_ms < current_ms {
+		if selected_source != nil { selected_source^ = candidate_source }
+		return candidate_ms
+	}
 	return current_ms
+}
+
+// SDL's Windows backend converts the remaining nanosecond timeout to a Win32
+// millisecond wait by truncating it. Near a deadline, SDL can therefore
+// return early after a zero-millisecond OS wait, leaving the host to retry in
+// a tight loop for the final fraction of a millisecond. One millisecond of
+// slack keeps deadline waits event-driven while allowing a bounded late wake.
+native_event_wait_windows_timeout_ms :: proc(timeout_ms: i32) -> i32 {
+	if timeout_ms <= 0 || timeout_ms >= 0x7fff_ffff { return timeout_ms }
+	return timeout_ms+1
 }
 
 scheduled_wake_class_index :: proc(class: Scheduled_Wake_Class) -> int {

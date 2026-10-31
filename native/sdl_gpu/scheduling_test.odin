@@ -15,6 +15,20 @@ test_event_wait_timeout_keeps_earliest_deadline :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_windows_event_wait_timeout_adds_rounding_slack :: proc(t: ^testing.T) {
+	testing.expect(t, native_event_wait_windows_timeout_ms(-1) == -1,
+		"an indefinite event wait should remain indefinite")
+	testing.expect(t, native_event_wait_windows_timeout_ms(0) == 0,
+		"an already-due deadline should keep requesting an immediate event-loop turn")
+	testing.expect(t, native_event_wait_windows_timeout_ms(1) == 2,
+		"positive Windows deadlines should retain one millisecond for SDL's truncated sub-millisecond remainder")
+	testing.expect(t, native_event_wait_windows_timeout_ms(250) == 251,
+		"the bounded slack should be independent of the requested deadline")
+	testing.expect(t, native_event_wait_windows_timeout_ms(0x7fff_ffff) == 0x7fff_ffff,
+		"timeout padding must not overflow the largest supported SDL wait")
+}
+
+@(test)
 test_scheduled_wake_deadlines_replace_coalesce_and_select_nearest :: proc(t: ^testing.T) {
 	state := Native_Scheduled_Wake_State{active=true}
 	testing.expect(t, scheduled_wake_schedule(&state, .Frequent, 1_000, 250_000_000), "frequent deadline should schedule")
