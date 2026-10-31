@@ -70,7 +70,7 @@ The folder also contains `SDL3.dll` and `punks_caliber.dll` for running the exec
 
 On Alicorn `e93ac0d`, `tools/test.ps1` passed: 302 runtime tests, 39 UI tests, 35 theme tests, 164 native SDL tests, 8 AccessKit contract tests, and 6 scroll-capture tests. Theme checks, generated-theme compilation, and the restoration restart harness also passed.
 
-The connected combined-status query returned no entries when this report was prepared. A subsequent maintainer review reported that all five hosted workflows passed for both `e93ac0d` and documentation head `d9e3c88`. Current status queries still return no entries in this session, so those hosted results are recorded as maintainer-reported rather than independently verified here. The local test pass is not being represented as hosted CI evidence.
+The connected combined-status query returned no entries when this report was first prepared. GitHub check-run queries now independently confirm all five hosted checks passed for `e93ac0d`, `d9e3c88`, and the native-fixture source revision `772ac45` (regeneration, macOS SDL, Windows static SDL, and both headless jobs). The earlier local test pass remains separate from this hosted CI evidence.
 
 At the time of the October 30 evidence, native zero-work acceptance had not been measured. The Windows run below adds a first bounded native sample.
 
@@ -105,7 +105,7 @@ The separate idle-only run completed after 3.12 seconds with one initial GPU sub
 - The checked-in JSONL breadcrumb formatter emitted malformed records before this validation. The formatter now escapes literal braces, and the regression checks an intact JSON object. The new Windows run produced valid JSONL; its event sequence records session start, three retargets, settled and idle checkpoints, and shutdown without paths.
 - No physical minimize/restore, mixed-DPI, secondary-window, accessibility, or shutdown-during-motion session was performed. The UI automation helper did not expose the Example 09 window for manual interaction, so these remain release-gate items.
 - The 1x D3D12 smoke is not evidence for macOS/Metal or Linux/Vulkan, alternate DPI scales, nor GPU-adapter coverage. The Punks physical playback-state pass remains as previously recorded; it did not exercise the new #144 snapshot on its older pinned Alicorn revision.
-- Maintainer review reports five hosted workflows green for `e93ac0d` and `d9e3c88`. The local connected status query returned no entries for these commits or `772ac45`; fresh hosted checks for `772ac45` are therefore not verified in this report.
+- All five hosted checks passed for the source revision `772ac45`: [Windows/macOS SDL](https://github.com/samanshaiza004/alicorn/actions/runs/41228759044), [headless job 1](https://github.com/samanshaiza004/alicorn/actions/runs/41228758919), [headless job 2](https://github.com/samanshaiza004/alicorn/actions/runs/41228758951), and [regeneration](https://github.com/samanshaiza004/alicorn/actions/runs/41228758921). GitHub also reports all five checks passed for `e93ac0d` and `d9e3c88`.
 
 Captured artifacts are in the ignored local `out/issue-146/windows-interrupted-2026-10-31/` directory, including `diagnostics.json`, `timeline.json`, `windows.json`, `inspector.txt`, `screenshot.ppm`, and valid `events.jsonl`. The idle-only run's bundle directory is empty because automatic capture was not reached.
 
