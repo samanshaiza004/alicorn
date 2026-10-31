@@ -120,6 +120,7 @@ run_application_loop :: proc(
 				record=native_breadcrumb_application_event,
 			},
 			clipboard=native_clipboard_service(),
+			file_drag=native_file_drag_service(),
 			scheduler=application_scheduler,
 			motion_clock=native_motion_clock_service(),
 			quit=Application_Quit_Request{data=rawptr(&quit_requested), request=native_application_request_quit},

@@ -122,6 +122,19 @@ to do. Optional callbacks handle text changes, keys, pointer/scroll input,
 drag/drop transitions, scheduled wakes, dialogs, worker wakeups, and lifecycle
 events.
 
+`Application.on_file_drop` receives one path for each native SDL file-drop
+event. The path is borrowed only for the callback; copy it before retaining it
+or passing it to asynchronous work. File-drop events are also copied when the
+host queues input for a secondary window.
+
+`Application_Services.file_drag` can start a native drag that offers one
+filesystem path to another application. The Windows SDL host currently
+implements this through OLE as a `CF_HDROP` file transfer. The drag operation
+runs synchronously inside the initiating UI-thread pointer callback and ends
+when the user drops or cancels it. Hosts without a native source implementation
+return `false`; SDL file drops into an Alicorn window remain a separate,
+cross-platform input path.
+
 `Application_Waker` is borrowed host state. You may copy it to worker threads
 while `Run` is active, but `on_stop` must stop and join every worker that can
 call it before returning. Do not call a copied waker after `on_stop` returns;

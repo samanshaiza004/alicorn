@@ -692,6 +692,14 @@ pump_events :: proc(
 		}
 
 		#partial switch event.type {
+		case .DROP_FILE:
+			if application != nil && application.on_file_drop != nil && event.drop.data != nil {
+				drop_cause := alicorn.cause_begin(rt, .Host_Event, "SDL file drop")
+				if devtools_last_cause != nil { devtools_last_cause^ = drop_cause.cause }
+				application.on_file_drop(application.state, rt, string(event.drop.data))
+				alicorn.invalidate_root(rt, "application file drop")
+				alicorn.cause_end(rt, drop_cause)
+			}
 		case .WINDOW_HIT_TEST:
 			when ODIN_OS == .Darwin {
 				if native_menu != nil {

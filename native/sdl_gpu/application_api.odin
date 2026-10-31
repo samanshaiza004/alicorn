@@ -225,6 +225,11 @@ Application_Pointer_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: ali
 
 Application_Drag_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Drag_Event)
 
+// Application_File_Drop_Proc receives one path from an SDL file-drop event.
+// The path is borrowed from SDL's event storage and is valid only for the
+// duration of the callback. Copy it if the application needs to retain it.
+Application_File_Drop_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, path: string)
+
 // Optional interception after host input blocking and before retained scrolling.
 // target is the modal-aware scroll region under the pointer, including nested
 // regions; the callback is never called with target=0. Return true to claim the
@@ -361,6 +366,7 @@ Application :: struct {
 	on_key:             Application_Key_Proc,
 	on_pointer:         Application_Pointer_Proc,
 	on_drag:            Application_Drag_Proc,
+	on_file_drop:       Application_File_Drop_Proc,
 	on_scroll_capture:  Application_Scroll_Capture_Proc,
 	on_scroll:          Application_Scroll_Proc,
 	on_tick:            Application_Tick_Proc,

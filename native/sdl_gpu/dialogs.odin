@@ -104,6 +104,7 @@ Application_Services :: struct {
 	dialogs:   Dialog_Service,
 	diagnostics: Application_Diagnostics,
 	clipboard: Clipboard_Service,
+	file_drag: File_Drag_Service,
 	scheduler: Application_Scheduler,
 	motion_clock: Application_Motion_Clock,
 	quit:      Application_Quit_Request,

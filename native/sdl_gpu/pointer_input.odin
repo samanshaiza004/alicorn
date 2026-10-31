@@ -170,6 +170,8 @@ native_event_window_id :: proc(event: sdl3.Event) -> sdl3.WindowID {
 		return event.button.windowID
 	case .MOUSE_WHEEL:
 		return event.wheel.windowID
+	case .DROP_FILE, .DROP_TEXT, .DROP_BEGIN, .DROP_COMPLETE, .DROP_POSITION:
+		return event.drop.windowID
 	case:
 		return 0
 	}

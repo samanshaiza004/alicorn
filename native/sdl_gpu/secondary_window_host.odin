@@ -17,6 +17,8 @@ Native_Secondary_Window_Queued_Event :: struct {
 	event: sdl3.Event,
 	allocator: mem.Allocator,
 	owned_text: cstring,
+	owned_drop_source: cstring,
+	owned_drop_data: cstring,
 	owned_candidates: []cstring,
 }
 
@@ -317,6 +319,7 @@ native_secondary_window_create :: proc(manager: ^Native_Secondary_Window_Manager
 			record=native_breadcrumb_application_event,
 		},
 			clipboard=native_clipboard_service(),
+			file_drag=native_file_drag_service(),
 			scheduler=child.application_scheduler,
 			motion_clock=native_motion_clock_service(),
 			quit=Application_Quit_Request{data=rawptr(&child.quit_requested), request=native_application_request_quit},
@@ -449,6 +452,8 @@ native_secondary_window_manager_destroy :: proc(manager: ^Native_Secondary_Windo
 native_secondary_window_queued_event_destroy :: proc(queued: ^Native_Secondary_Window_Queued_Event) {
 	if queued == nil { return }
 	if queued.owned_text != nil { delete(queued.owned_text, queued.allocator) }
+	if queued.owned_drop_source != nil { delete(queued.owned_drop_source, queued.allocator) }
+	if queued.owned_drop_data != nil { delete(queued.owned_drop_data, queued.allocator) }
 	for candidate in queued.owned_candidates {
 		if candidate != nil { _ = mem.delete_cstring(candidate, queued.allocator) }
 	}
@@ -473,6 +478,22 @@ native_secondary_window_queued_event_copy :: proc(event: sdl3.Event) -> (queued:
 			if err != nil { return {}, false }
 			queued.owned_text = owned_text
 			queued.event.edit.text = owned_text
+		}
+	case .DROP_FILE, .DROP_TEXT, .DROP_BEGIN, .DROP_COMPLETE, .DROP_POSITION:
+		if event.drop.source != nil {
+			owned_source, err := strings.clone_to_cstring(string(event.drop.source), context.allocator)
+			if err != nil { return {}, false }
+			queued.owned_drop_source = owned_source
+			queued.event.drop.source = owned_source
+		}
+		if event.drop.data != nil {
+			owned_data, err := strings.clone_to_cstring(string(event.drop.data), context.allocator)
+			if err != nil {
+				native_secondary_window_queued_event_destroy(&queued)
+				return {}, false
+			}
+			queued.owned_drop_data = owned_data
+			queued.event.drop.data = owned_data
 		}
 	case .TEXT_EDITING_CANDIDATES:
 		count := int(event.edit_candidates.num_candidates)
