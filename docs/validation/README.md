@@ -7,6 +7,7 @@ the current project status.
 
 ## Current acceptance and platform limits
 
+- [Issue #146 motion diagnostics and Punks dogfood progress (2026-10-30)](issue-146-progress-2026-10-30.md) — closed-inspector headless overhead and application integration evidence; native scheduler acceptance remains open.
 - [macOS static/shared desktop launch matrix (2026-10-28)](macos-desktop-launch-2026-10-28.md) — current integrated-revision evidence for direct and Launch Services launches.
 - [Final Windows/macOS acceptance matrix](issue-103-final.md) — maintainer
   confirmed physical input, IME, mixed-DPI, appearance, and screen-reader checks,
