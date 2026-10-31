@@ -70,6 +70,8 @@ The folder also contains `SDL3.dll` and `punks_caliber.dll` for running the exec
 
 On Alicorn `e93ac0d`, `tools/test.ps1` passed: 302 runtime tests, 39 UI tests, 35 theme tests, 164 native SDL tests, 8 AccessKit contract tests, and 6 scroll-capture tests. Theme checks, generated-theme compilation, and the restoration restart harness also passed.
 
+Hosted CI for `e93ac0d` is unverified in this report. The connected combined-status query returned no entries, and the local GitHub Actions query was blocked by the environment's network proxy. The local test pass is not being represented as hosted CI evidence.
+
 ## Still outstanding for #146
 
 This report does not claim native zero-work acceptance. It does not measure host timer wakes, native presentation visits, D3D12/Metal submissions, minimized-window suspension/restore, DPI changes, secondary-window lifecycle, or shutdown during motion. The Punks UI fixture is headless; the produced Windows executable is available for physical interaction checks, but this report does not claim a new physical UI session. Cross-platform native evidence and any agreed accessibility sessions remain separate release-gate work.
