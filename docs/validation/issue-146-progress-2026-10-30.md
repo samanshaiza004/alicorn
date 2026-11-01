@@ -203,6 +203,26 @@ Reproduce from the Alicorn repository root with:
 
 The script builds the fixture, then runs restore and close scenarios. Local captures are ignored under `out/issue-146/secondary-windows/`. On `c01c149`, `tools/test.ps1 -Odin 'C:\Users\saman\Documents\odin\dist\odin.exe'` passed: 302 runtime tests, 8 AccessKit ABI tests, 39 UI tests, 35 theme tests, 166 native SDL tests, and 6 scroll-capture tests. Theme validation/code generation, the restart-restoration harness, and native text-input/ownership host contract also passed. At report time, regeneration had passed and the other four hosted checks for `c01c149` were still in progress; check the commit status before treating this evidence update as fully cross-platform validated.
 
+### Windows titlebar move-loop motion presentation (2026-10-31)
+
+**Implementation revision:** [`7f697c5`](https://github.com/samanshaiza004/alicorn/commit/7f697c5d4761eebfc439da7bbf5f0bc3a1dcdcfb), based on the secondary-window lifecycle work above. The Windows native host now advances the same per-window motion scheduler before composing frames in the existing SDL live-redraw path. A minimal SDL Windows-message hook observes move/size-loop entry and exit; while a pointer drag has an active motion deadline, a per-HWND 17 ms timer offers bounded presentation opportunities inside the Windows modal loop. Each opportunity redraws only when the existing scheduler deadline is due. The hook does not render from position messages, and the timer callback does not pump SDL events or run an application description. The primary and secondary windows use their own scheduler/runtime, and secondary teardown kills an outstanding timer before destroying the HWND.
+
+The live-redraw summary now counts exposed events and live-resize/move samples and submissions. Windows counters also include enter/exit messages, timer wakes, move/position-change messages, redraw attempts, motion samples, and GPU submissions. The fixture accepts `--validation-mode=move`, labels the primary window for titlebar-drag acceptance, and keeps its diagnostic idle checkpoints.
+
+Local verification on this implementation passed `tools/test.ps1 -Odin 'C:\Users\saman\Documents\odin\dist\odin.exe'`: 302 runtime tests, 8 AccessKit ABI tests, 39 UI tests, 35 theme tests, 167 native SDL tests, and 6 scroll-capture tests. Theme validation/code generation, restoration restart checks, and native text-input/ownership host contracts also passed. `tests/fixtures/secondary_motion` rebuilt successfully with `-o:speed`; the executable and its SDL dependency are at `out/window-move-motion-validation/`.
+
+**Physical titlebar drag remains unverified.** Tool-driven fixture startup did not yield a confirmed native drag, so no zero counters from that attempt are treated as evidence. This change is compiled and covered by the host test suite, but the key OS modal-loop behavior still needs direct observation on this Windows machine. The current candidate uses Windows 10 Home build 19045, SDL 3.4.2, D3D12, and a Ryzen 5 7600X as its available environment; this is not cross-platform evidence.
+
+Run the fixture from the repository root in PowerShell:
+
+```powershell
+.\out\window-move-motion-validation\AlicornWindowMoveMotionValidation.exe `
+  --validation-mode=move --diagnostic-events `
+  --capture-dir=out\issue-146\windows-window-move
+```
+
+During the active response, drag the primary titlebar continuously, then hold it still for about a second before releasing. Repeat with the secondary window. Confirm timer wakes and move-loop counters increase, motion samples and GPU submissions continue at a bounded cadence, there is no catch-up burst on release, and all motion samples/submissions stop after settlement. Also compare `live_resize_expose_events` with `windows_move_timer_wakes` to see whether SDL exposes supplied redraw opportunities during the drag. This validation should separately note the longest visible presentation gap; a successful GPU submission is not proof of monitor presentation.
+
 ## Still outstanding for #146
 
-The Windows runs support retained stage isolation, per-window suspension and restore, and show that D3D12 submissions stop after settlement in these fixtures. The event-wait attribution isolated and corrected a Windows SDL timeout retry loop, but it does not count every OS-level wake. Still outstanding are alternate DPI configurations, cross-platform native evidence, native input responsiveness, accessibility sessions, GPU loss, and shutdown during active motion. Keep #146 open.
+The Windows runs support retained stage isolation, per-window suspension and restore, and show that D3D12 submissions stop after settlement in these fixtures. The event-wait attribution isolated and corrected a Windows SDL timeout retry loop, but it does not count every OS-level wake. Still outstanding are physical titlebar-move presentation, alternate DPI configurations, cross-platform native evidence, native input responsiveness, accessibility sessions, GPU loss, and shutdown during active motion. Keep #146 open.
