@@ -18,7 +18,7 @@ IDLE_PROBE_DELAY_NS   :: u64(12_000_000_000)
 POST_CLOSE_CHECK_DELAY_NS :: u64(500_000_000)
 MOTION_TARGET_X        :: f64(220)
 
-Validation_Mode :: enum { Restore_Secondary, Close_Secondary }
+Validation_Mode :: enum { Restore_Secondary, Close_Secondary, Move_Primary }
 Validation_Phase :: enum { Retarget, Ready_Check, Hidden_Check, Done }
 
 Shared_State :: struct {
@@ -76,7 +76,7 @@ build_window :: proc(
 	ctx, should_build := alicorn.begin_frame(rt)
 	if !should_build { return 0 }
 	role := window_role(app)
-	title := "Primary window · active motion continues independently" if !app.is_secondary else "Secondary window · minimize or close me during motion"
+	title := "Primary window · drag the title bar while motion is active" if !app.is_secondary && app.shared != nil && app.shared.mode == .Move_Primary else "Primary window · active motion continues independently" if !app.is_secondary else "Secondary window · minimize or close me during motion"
 	root := alicorn.container_begin(
 		&ctx,
 		.Root,
@@ -238,7 +238,7 @@ scheduled_wake_window :: proc(state: rawptr, rt: ^alicorn.Runtime, _class: host.
 		app.phase = .Done
 		if !app.is_secondary && app.shared.mode == .Close_Secondary {
 			_ = host.application_schedule_after(app.services.scheduler, .Frequent, POST_CLOSE_CHECK_DELAY_NS)
-		} else if app.shared.mode == .Restore_Secondary {
+		} else if app.shared.mode == .Restore_Secondary || app.shared.mode == .Move_Primary {
 			// Motion reports its idle transition on the next host-loop visit after
 			// the final presentation. This one application-owned wake makes that
 			// passive snapshot observable even when both windows are then quiet.
@@ -252,7 +252,7 @@ scheduled_wake_window :: proc(state: rawptr, rt: ^alicorn.Runtime, _class: host.
 			if alicorn.motion_activity(rt).active_owners > 0 {
 				_ = host.application_schedule_after(app.services.scheduler, .Frequent, POST_CLOSE_CHECK_DELAY_NS)
 			}
-		} else if app.shared.mode == .Restore_Secondary {
+		} else if app.shared.mode == .Restore_Secondary || app.shared.mode == .Move_Primary {
 			record_checkpoint(app, rt, "idle_probe")
 			if alicorn.motion_activity(rt).active_owners > 0 {
 				_ = host.application_schedule_after(app.services.scheduler, .Frequent, POST_CLOSE_CHECK_DELAY_NS)
@@ -277,6 +277,7 @@ main :: proc() {
 	mode := Validation_Mode.Restore_Secondary
 	for argument in os.args {
 		if argument == "--validation-mode=close" { mode = .Close_Secondary }
+		if argument == "--validation-mode=move" { mode = .Move_Primary }
 	}
 	shared := Shared_State{mode=mode}
 	primary := Window_State{shared=&shared, phase=.Retarget}

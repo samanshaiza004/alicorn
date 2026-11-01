@@ -309,6 +309,34 @@ native_motion_scheduler_advance :: proc(
 	return result
 }
 
+// native_live_resize_motion_advance shares the ordinary window scheduler with
+// SDL's main-thread live-redraw callback. It does not build or reconcile the
+// application; a due response only requests a retained presentation frame.
+native_live_resize_motion_advance :: proc(
+	scheduler: ^Native_Motion_Scheduler_State,
+	rt: ^alicorn.Runtime,
+	timing: ^Native_Host_Timing,
+	window_renderable: bool,
+	now_ns: u64,
+	window_flags: sdl3.WindowFlags = {},
+	window_id: sdl3.WindowID = 0,
+	native_minimized := false,
+	breadcrumbs: ^Native_Breadcrumb_Recorder = nil,
+) -> Native_Motion_Update_Result {
+	if scheduler == nil || rt == nil {
+		return Native_Motion_Update_Result{status=.Invalid_Runtime}
+	}
+	gpu_submissions := u64(timing.gpu_submissions) if timing != nil else 0
+	update := native_motion_scheduler_advance(
+		scheduler, rt, window_renderable, now_ns,
+		window_flags, window_id, native_minimized, gpu_submissions, breadcrumbs,
+	)
+	if update.status == .Ok && timing != nil {
+		native_motion_scheduler_sync_timing(scheduler, timing, update.active_owners)
+	}
+	return update
+}
+
 native_motion_scheduler_sync_timing :: proc(
 	state: ^Native_Motion_Scheduler_State,
 	timing: ^Native_Host_Timing,

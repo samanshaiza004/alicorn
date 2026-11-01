@@ -168,6 +168,21 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 		stabilization := native_application_build_until_stable(state.application, state.rt, state.metrics, state.timing, stop_on_hard_error=inspector_enabled)
 		if !stabilization.stable { return }
 	}
+	if state.motion_scheduler_state != nil {
+		window_flags := sdl3.GetWindowFlags(state.window)
+		motion_update := native_live_resize_motion_advance(
+			state.motion_scheduler_state,
+			state.rt,
+			state.timing,
+			native_motion_window_renderable_for_window(state.window, window_flags),
+			u64(sdl3.GetTicksNS()),
+			window_flags,
+			state.window_id,
+			native_motion_window_native_minimized(state.window),
+			state.motion_breadcrumbs,
+		)
+		if motion_update.status != .Ok { fail("retained motion sampling during live resize failed") }
+	}
 	inspector_summary := native_inspector_host_summary(state.timing, state.rt, state.timing.frames)
 	native_inspector_update(state.inspector, state.rt,
 		alicorn.Rect{0, 0, f32(current_metrics.logical_width), f32(current_metrics.logical_height)}, &inspector_summary)
@@ -325,13 +340,28 @@ native_live_resize_event_watch :: proc "c" (userdata: rawptr, event: ^sdl3.Event
 	context = runtime.default_context()
 	switch native_live_resize_target(state, event.window.windowID) {
 	case .Primary:
+		state.live_resize_expose_events += 1
+		before_samples := state.motion_scheduler_state.stats.samples if state.motion_scheduler_state != nil else 0
+		before_submissions := state.timing.gpu_submissions
 		if state.rendering {
 			state.pending = true
 			return true
 		}
 		native_live_resize_redraw(state)
+		if state.motion_scheduler_state != nil {
+			state.live_resize_motion_samples += state.motion_scheduler_state.stats.samples-before_samples
+		}
+		state.live_resize_gpu_submissions += state.timing.gpu_submissions-before_submissions
 	case .Secondary:
-		native_secondary_window_live_resize_redraw(state.secondary_manager, state.secondary_manager.child)
+		child := state.secondary_manager.child if state.secondary_manager != nil else nil
+		if child != nil {
+			state.live_resize_expose_events += 1
+			before_samples := child.motion_scheduler.stats.samples
+			before_submissions := child.timing.gpu_submissions
+			native_secondary_window_live_resize_redraw(state.secondary_manager, child)
+			state.live_resize_motion_samples += child.motion_scheduler.stats.samples-before_samples
+			state.live_resize_gpu_submissions += child.timing.gpu_submissions-before_submissions
+		}
 	case .None:
 		return true
 	}
@@ -390,6 +420,23 @@ Native_Live_Resize_State :: struct {
 	query_after_wait_true: ^int,
 	wait_count: ^int,
 	submitted: ^int,
+	motion_scheduler_state: ^Native_Motion_Scheduler_State,
+	motion_breadcrumbs: ^Native_Breadcrumb_Recorder,
+	live_resize_expose_events: u64,
+	live_resize_motion_samples: u64,
+	live_resize_gpu_submissions: u64,
+	windows_move_enter_messages: u64,
+	windows_move_exit_messages: u64,
+	windows_move_timer_wakes: u64,
+	windows_move_position_messages: u64,
+	windows_move_position_changed_messages: u64,
+	windows_move_redraws: u64,
+	windows_move_motion_samples: u64,
+	windows_move_gpu_submissions: u64,
+	move_active: bool,
+	move_timer_active: bool,
+	move_hwnd: rawptr,
+	move_last_redraw_ns: u64,
 	text_events: ^Native_Text_Event_Telemetry,
 	devtools_recorder: ^Native_Flight_Recorder,
 	devtools_cursor: ^Native_DevTools_Cursor,

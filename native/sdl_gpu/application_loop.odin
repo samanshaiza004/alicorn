@@ -177,6 +177,8 @@ run_application_loop :: proc(
 		window=window,
 		window_id=sdl3.GetWindowID(window),
 		secondary_manager=&secondary_windows,
+		motion_scheduler_state=&motion_scheduler,
+		motion_breadcrumbs=breadcrumbs,
 		text_input_coordinator=&text_input_coordinator,
 		device=device,
 		rt=rt,
@@ -206,6 +208,11 @@ run_application_loop :: proc(
 	if !sdl3.AddEventWatch(native_live_resize_event_watch, rawptr(&live_resize_state)) {
 		fail("SDL live-resize event watch registration failed")
 	}
+	when ODIN_OS == .Windows {
+		if !native_live_resize_windows_hook_install(&live_resize_state) {
+			fmt.println("motion", "Windows live-move presentation hook unavailable")
+		}
+	}
 
 	last_tick := time.now()
 	last_focus_log := start
@@ -230,6 +237,7 @@ run_application_loop :: proc(
 	event_wait_deadline_sources: [NATIVE_EVENT_WAIT_DEADLINE_SOURCE_COUNT]u64
 	wake_events: u64 = 0
 	for !quit_requested {
+		when ODIN_OS == .Windows { native_live_resize_windows_move_reconcile(&live_resize_state) }
 		native_host_scratch_reset(&host_scratch)
 		frame_start := time.now()
 		event_start := time.now()
@@ -965,6 +973,7 @@ run_application_loop :: proc(
 		}
 	}
 
+	when ODIN_OS == .Windows { native_live_resize_windows_hook_remove(&live_resize_state) }
 	live_resize_state.active = false
 	sdl3.RemoveEventWatch(native_live_resize_event_watch, rawptr(&live_resize_state))
 	// Secondary workers and Runtime resources are retired before application-owned
@@ -1020,6 +1029,17 @@ run_application_loop :: proc(
 		"motion_hidden_active_observations", timing.motion_hidden_active_observations,
 		"motion_missed_intervals", timing.motion_missed_intervals,
 		"motion_max_lateness_ns", timing.motion_max_lateness_ns,
+		"live_resize_expose_events", live_resize_state.live_resize_expose_events,
+		"live_resize_motion_samples", live_resize_state.live_resize_motion_samples,
+		"live_resize_gpu_submissions", live_resize_state.live_resize_gpu_submissions,
+		"windows_move_enter_messages", live_resize_state.windows_move_enter_messages,
+		"windows_move_exit_messages", live_resize_state.windows_move_exit_messages,
+		"windows_move_timer_wakes", live_resize_state.windows_move_timer_wakes,
+		"windows_move_position_messages", live_resize_state.windows_move_position_messages,
+		"windows_move_position_changed_messages", live_resize_state.windows_move_position_changed_messages,
+		"windows_move_redraws", live_resize_state.windows_move_redraws,
+		"windows_move_motion_samples", live_resize_state.windows_move_motion_samples,
+		"windows_move_gpu_submissions", live_resize_state.windows_move_gpu_submissions,
 		"logical_resize_events", logical_resize_events,
 		"pixel_resize_events", pixel_resize_events,
 		"scale_events", scale_events,

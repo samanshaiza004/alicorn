@@ -109,6 +109,51 @@ test_native_motion_suspend_and_restore_samples_current_time_once :: proc(t: ^tes
 }
 
 @(test)
+test_live_resize_motion_sample_uses_retained_path_without_rebuilding_application :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 240, 120})
+	defer alicorn.destroy_runtime(&rt)
+	ui, build := alicorn.begin_frame(&rt)
+	if !build { testing.expect(t, false, "the live-resize motion fixture should describe once"); return }
+	alicorn.container_begin(&ui, .Root, key=alicorn.key_string("live-resize-motion-root"), style=alicorn.layout_style())
+	owner, _ := alicorn.button_ex(&ui, "Motion", key="live-resize-motion-owner", explicit_key=true,
+		style=alicorn.layout_style(.Row, width=120, height=30))
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	theme := alicorn.DEFAULT_STYLE_THEME
+	theme.motion_policy = alicorn.DEFAULT_MOTION_THEME_POLICY
+	theme.motion_policy.translation.omega = 1.5
+	theme_id := alicorn.style_theme_register(&rt, theme)
+	if node, found := rt.nodes[owner]; found { node.style_environment.theme = theme_id }
+	start_ns := u64(4_000_000_000)
+	_ = alicorn.motion_clock_set_time(&rt, alicorn.Motion_Time(i64(start_ns)), .Native_Monotonic)
+	target := alicorn.Motion_Target{translation=alicorn.Motion_Vector2{80, 0}, has_translation=true}
+	if alicorn.motion_apply_intent(&rt, owner, target) != .Ok {
+		testing.expect(t, false, "the decorative owner should accept a retained target")
+		return
+	}
+	scheduler := Native_Motion_Scheduler_State{}
+	timing := Native_Host_Timing{}
+	first := native_live_resize_motion_advance(&scheduler, &rt, &timing, true, start_ns)
+	stats_before_sample := rt.stats
+	due_ns := start_ns+NATIVE_MOTION_SAMPLE_INTERVAL_NS
+	update := native_live_resize_motion_advance(&scheduler, &rt, &timing, true, due_ns)
+	stats_after_sample := rt.stats
+	testing.expect(t, first.status == .Ok && !first.sampled,
+		"the first visible visit should arm one per-window motion deadline")
+	testing.expect(t, update.status == .Ok && update.sampled && scheduler.stats.samples == 1 && timing.motion_samples == 1,
+		"a live-redraw opportunity at the due time should sample through the existing per-window scheduler")
+	testing.expect(t, alicorn.presentation_needs_frame(&rt),
+		"a changed retained pose should request presentation from the live-redraw path")
+	testing.expect(t,
+		stats_after_sample.frames_built == stats_before_sample.frames_built &&
+		stats_after_sample.reconcile_nodes_visited == stats_before_sample.reconcile_nodes_visited &&
+		stats_after_sample.measure_requests == stats_before_sample.measure_requests &&
+		stats_after_sample.text_shape_requests == stats_before_sample.text_shape_requests &&
+		stats_after_sample.layout_nodes_visited == stats_before_sample.layout_nodes_visited,
+		"motion sampling during a native move/resize redraw must not rebuild, reconcile, measure, shape text, or layout")
+}
+
+@(test)
 test_native_motion_suspension_clock_starts_with_active_work :: proc(t: ^testing.T) {
 	state := Native_Motion_Scheduler_State{}
 	_ = native_motion_scheduler_prepare(&state, 0, false, 1_000)

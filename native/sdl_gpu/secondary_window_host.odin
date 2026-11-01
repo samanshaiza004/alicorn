@@ -66,6 +66,10 @@ Native_Secondary_Window :: struct {
 	last_user_interaction_ns: u64,
 	drag_autoscroll_deadline_ns: u64,
 	last_tick_ns: u64,
+	move_active: bool,
+	move_timer_active: bool,
+	move_hwnd: rawptr,
+	move_last_redraw_ns: u64,
 	timing: Native_Host_Timing,
 	flight_recorder: Native_Flight_Recorder,
 	host_scratch: Native_Host_Scratch,
@@ -390,6 +394,9 @@ native_secondary_window_gpu_release_safe :: proc(
 native_secondary_window_destroy :: proc(manager: ^Native_Secondary_Window_Manager, wait_for_gpu := true) {
 	if manager == nil || manager.child == nil { return }
 	child := manager.child
+	when ODIN_OS == .Windows {
+		native_live_resize_windows_secondary_destroy(child)
+	}
 	if child.runtime != nil && child.window != nil && child.motion_scheduler.active {
 		activity := alicorn.motion_activity(child.runtime)
 		native_breadcrumb_motion_window_state(
@@ -722,6 +729,19 @@ native_secondary_window_live_resize_redraw_once :: proc(
 		stabilization := native_application_build_until_stable(&child.application, child.runtime, &child.metrics, &child.timing)
 		if !stabilization.stable { return }
 	}
+	window_flags := sdl3.GetWindowFlags(child.window)
+	motion_update := native_live_resize_motion_advance(
+		&child.motion_scheduler,
+		child.runtime,
+		&child.timing,
+		!child.presentation_suspended && native_motion_window_renderable_for_window(child.window, window_flags),
+		u64(sdl3.GetTicksNS()),
+		window_flags,
+		child.window_id,
+		native_motion_window_native_minimized(child.window),
+		manager.diagnostics,
+	)
+	if motion_update.status != .Ok { fail("retained motion sampling during secondary live resize failed") }
 	when ODIN_OS == .Windows {
 		if child.native_menu.application != nil {
 			native_menu_sync_chrome_layout(&child.native_menu)
