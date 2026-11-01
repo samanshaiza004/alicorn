@@ -177,6 +177,10 @@ native_live_resize_windows_present_if_due :: proc(
 	state.windows_move_redraws += 1
 	state.windows_move_motion_samples += after_samples-before_samples
 	state.windows_move_gpu_submissions += after_submissions-before_submissions
+	rt := native_live_resize_windows_runtime(state, target, child)
+	if rt == nil || alicorn.motion_activity(rt).active_owners <= 0 {
+		native_live_resize_windows_stop(state, target, child)
+	}
 }
 
 native_live_resize_windows_stop :: proc(
