@@ -715,8 +715,12 @@ retarget `ui.motion` translations on neighboring roots when the proposed
 insertion slot changes, then commit the authoritative order on drop. These
 translations affect paint only: layout, close targets, semantic bounds, focus,
 and native caption hit regions continue to use their immediate logical
-geometry. The slice is valid only through the current frame and should not be
-retained. Ordinary tab bars allocate and return no item-node slice.
+geometry. Set `Motion_Target.clip_policy` to
+`Motion_Clip_Policy.Follow_Visual` when translated descendants have local clips
+that should move with them. Clips outside the animated subtree, including its
+scroll viewport and window bounds, remain fixed. The slice is valid only
+through the current frame and should not be retained. Ordinary tab bars
+allocate and return no item-node slice.
 
 `tab_bar_navigate(item_count, selected_index, navigation) -> (index, found)`
 computes a navigation target using `Next`, `Previous`, `Index_1` through
@@ -1202,6 +1206,12 @@ system file drops or arbitrary MIME payloads.
   layout, hit testing, focus, drag/drop, and accessibility remain authoritative
   from the first description, so don't reveal controls or focusable/navigation
   content.
+  `Motion_Target.clip_policy` defaults to `Motion_Clip_Policy.Static`, which
+  keeps the existing logical clip geometry. `Follow_Visual` translates clips
+  inside the motion subtree with their visual owners while retaining stationary
+  clipping from ancestors outside that subtree. This is useful for animated
+  tab slots and other translated content inside a clipped viewport; it does not
+  change hit testing or accessibility bounds.
   A repeated `ui.motion` declaration for the same node in one description uses
   the last target. Failed deferred applications are reported in runtime
   diagnostics.

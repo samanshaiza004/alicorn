@@ -325,6 +325,131 @@ blend_validation_cases :: proc(renderers: ^Blend_Validation_Renderers, rt: ^alic
 	return stats.failed == 0 && case_counts_ok
 }
 
+blend_validation_motion_clip_case :: proc(
+	renderers: ^Blend_Validation_Renderers,
+	rt: ^alicorn.Runtime,
+	target: ^sdl3.GPUTexture,
+	download: ^sdl3.GPUTransferBuffer,
+	pixels: []u8,
+) -> bool {
+	alicorn.invalidate_root(rt, "motion clip GPU regression")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { fmt.println("motion_clip_gpu_fixture", "begin_frame_failed"); return false }
+	alicorn.container_begin_simple(&ui, .Root, key="motion-clip-gpu-root",
+		style=alicorn.layout_style(.Column, width=64, height=64, clip=true))
+	alicorn.container_begin_simple(&ui, .Container, key="motion-clip-gpu-viewport",
+		style=alicorn.layout_style(.Row, width=64, height=48, clip=true))
+	moving := alicorn.container_begin_simple(&ui, .Container, key="motion-clip-gpu-tab",
+		style=alicorn.layout_style(.Row, width=18, height=32, clip=true))
+	label := alicorn.text(&ui, "O", key="motion-clip-gpu-label",
+		style=alicorn.layout_style(.Row, width=48, height=32), color=alicorn.Color{1, 1, 1, 1})
+	alicorn.container_end(&ui)
+	alicorn.container_end(&ui)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	if moving == 0 || label == 0 { fmt.println("motion_clip_gpu_fixture", "missing_nodes"); return false }
+
+	if status := alicorn.motion_clock_set_time(rt, alicorn.Motion_Time(0)); status != .Ok {
+		fmt.println("motion_clip_gpu_fixture", "clock_failed", status); return false
+	}
+	target_motion := alicorn.Motion_Target{
+		translation=alicorn.Motion_Vector2{24, 0},
+		clip_policy=.Follow_Visual,
+		has_translation=true,
+	}
+	if status := alicorn.motion_apply_intent(rt, moving, target_motion, .Snap); status != .Ok {
+		fmt.println("motion_clip_gpu_fixture", "initial_motion_failed", status); return false
+	}
+	present_ui, ready := alicorn.begin_presentation_frame(rt)
+	if !ready { fmt.println("motion_clip_gpu_fixture", "presentation_not_requested"); return false }
+	alicorn.end_presentation_frame(&present_ui)
+
+	text_command, found := alicorn.Paint_Command{}, false
+	for command in rt.display {
+		if command.owner == label && alicorn.paint_command_is_text(command) {
+			text_command, found = command, true
+			break
+		}
+	}
+	expected_clip := alicorn.Rect{24, 0, 18, 32}
+	expected_translation := [2]f32{24, 0}
+	if !found || text_command.clip != expected_clip || text_command.translation != expected_translation {
+		fmt.println("motion_clip_gpu_fixture", "composed_clip_mismatch", text_command.clip,
+			"expected", expected_clip, "translation", text_command.translation)
+		return false
+	}
+	background := sdl3.FColor{0, 0, 0, 1}
+	scales := [3]f32{1, 1.5, 2}
+	for scale in scales {
+		if !blend_validation_readback(renderers, target, download, rt.display[:], scale, background, pixels) {
+			fmt.println("motion_clip_gpu_fixture", "initial_readback_failed", "scale", scale, "SDL_error", sdl3.GetError())
+			return false
+		}
+		samples, ok := blend_validation_text_samples(&renderers.text)
+		text_paint, paint_ok := text_command.payload.(alicorn.Text_Paint)
+		sample := samples[0]
+		sample.x += int(math.round(text_command.translation[0]*scale))
+		sample.y += int(math.round(text_command.translation[1]*scale))
+		if !ok || !paint_ok || !blend_validation_expect("motion_followed_tab_text", scale, background, pixels,
+			sample.x, sample.y,
+			blend_validation_over(blend_validation_background(background), text_paint.color, sample.coverage)) {
+			fmt.println("motion_clip_gpu_fixture", "translated_glyph_readback_failed", "scale", scale)
+			return false
+		}
+	}
+
+	if status := alicorn.motion_clock_set_time(rt, alicorn.Motion_Time(300_000_000)); status != .Ok {
+		fmt.println("motion_clip_gpu_fixture", "edge_clock_failed", status); return false
+	}
+	edge_target := alicorn.Motion_Target{
+		translation=alicorn.Motion_Vector2{55, 0},
+		clip_policy=.Follow_Visual,
+		has_translation=true,
+	}
+	if status := alicorn.motion_apply_intent(rt, moving, edge_target, .Snap); status != .Ok {
+		fmt.println("motion_clip_gpu_fixture", "edge_motion_failed", status); return false
+	}
+	present_ui, ready = alicorn.begin_presentation_frame(rt)
+	if !ready { fmt.println("motion_clip_gpu_fixture", "edge_presentation_not_requested"); return false }
+	alicorn.end_presentation_frame(&present_ui)
+	for command in rt.display {
+		if command.owner == label && alicorn.paint_command_is_text(command) {
+			text_command = command
+			break
+		}
+	}
+	if text_command.clip.x != 55 || text_command.clip.x+text_command.clip.w != 64 {
+		fmt.println("motion_clip_gpu_fixture", "viewport_clip_mismatch", text_command.clip)
+		return false
+	}
+	edge_scale := f32(1.5)
+	if !blend_validation_readback(renderers, target, download, rt.display[:], edge_scale, background, pixels) {
+		fmt.println("motion_clip_gpu_fixture", "edge_readback_failed", "SDL_error", sdl3.GetError())
+		return false
+	}
+	visible_pixels := 0
+	for y in 0..<int(48*edge_scale) {
+		for x in int(55*edge_scale)..<int(64*edge_scale) {
+			pixel := blend_validation_pixel(pixels, x, y)
+			if pixel[0] > 8 || pixel[1] > 8 || pixel[2] > 8 { visible_pixels += 1 }
+		}
+	}
+	outside_pixels := 0
+	for y in 0..<int(48*edge_scale) {
+		for x in int(64*edge_scale)..<int(BLEND_VALIDATION_SIZE) {
+			pixel := blend_validation_pixel(pixels, x, y)
+			if pixel[0] > 8 || pixel[1] > 8 || pixel[2] > 8 { outside_pixels += 1 }
+		}
+	}
+	if visible_pixels == 0 || outside_pixels != 0 {
+		fmt.println("motion_clip_gpu_fixture", "stationary_viewport_readback_failed",
+			"visible", visible_pixels, "outside", outside_pixels)
+		return false
+	}
+	fmt.println("motion_clip_gpu_validation", "scales", "1,1.5,2", "local_clip_follows", true, "outer_viewport_fixed", true)
+	return true
+}
+
 blend_validation_device :: proc() -> bool {
 	driver: cstring = nil
 	when ODIN_OS == .Darwin { driver = "metal" }
@@ -360,7 +485,8 @@ blend_validation_device :: proc() -> bool {
 	defer sdl3.ReleaseGPUTransferBuffer(device, download)
 	pixels := make([]u8, BLEND_VALIDATION_SIZE*BLEND_VALIDATION_SIZE*4)
 	defer delete(pixels)
-	return blend_validation_cases(&renderers, &rt, target, download, pixels)
+	if !blend_validation_cases(&renderers, &rt, target, download, pixels) { return false }
+	return blend_validation_motion_clip_case(&renderers, &rt, target, download, pixels)
 }
 
 // Real GPU source-over regression probe; a device/setup failure is never a skip.

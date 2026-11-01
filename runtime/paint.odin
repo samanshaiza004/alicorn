@@ -217,12 +217,15 @@ compose_subtree :: proc(
 	id: Node_ID,
 	inherited_translation: [2]f32,
 	inherited_opacity: f32,
+	stationary_clip, translated_clip: Rect,
+	inherited_clip_follow: bool,
 ) {
 	node, ok := rt.nodes[id]
 	if !ok || !node.active || !node.present { return }
 	if !visual_part_is_visible(rt, id) { return }
 	presentation := motion_compose_subtree(rt, id, inherited_translation, inherited_opacity)
 	presentation.opacity *= drag_source_opacity(rt, node.id)
+	clip_follow := inherited_clip_follow || presentation.clip_policy == .Follow_Visual
 
 	node.display_index = -1
 	for cached_command in node.paint {
@@ -230,13 +233,33 @@ compose_subtree :: proc(
 		command.opacity *= presentation.opacity
 		command.translation[0] += presentation.translation[0]
 		command.translation[1] += presentation.translation[1]
+		if clip_follow {
+			command.clip = rect_intersection(stationary_clip, translated_clip)
+			if paint_command_is_text(command) {
+				command.clip = rect_intersection(command.clip,
+					paint_rect_translate(command.bounds, presentation.translation))
+			}
+		}
 		if node.display_index < 0 { node.display_index = len(rt.display_target) }
 		append(&rt.display_target, command)
 		rt.stats.composition_nodes_visited += 1
 		rt.stats.stage_visits[.Composite] += 1
 	}
+	child_stationary_clip := stationary_clip
+	child_translated_clip := translated_clip
+	if node.kind == .Scroll_Region || node.style.clip {
+		local_clip := node.bounds
+		if node.kind == .Scroll_Region { local_clip = node.scroll_viewport_bounds }
+		if clip_follow {
+			child_translated_clip = rect_intersection(child_translated_clip,
+				paint_rect_translate(local_clip, presentation.translation))
+		} else {
+			child_stationary_clip = rect_intersection(child_stationary_clip, local_clip)
+		}
+	}
 	for child in node.children {
-		compose_subtree(rt, child, presentation.translation, presentation.opacity)
+		compose_subtree(rt, child, presentation.translation, presentation.opacity,
+			child_stationary_clip, child_translated_clip, clip_follow)
 	}
 	// Scrollbars are local retained chrome: they paint above their scroll
 	// region's descendants, but remain below later siblings and top-level
@@ -247,13 +270,20 @@ compose_subtree :: proc(
 		rt.display_target[index].opacity *= presentation.opacity
 		rt.display_target[index].translation[0] += presentation.translation[0]
 		rt.display_target[index].translation[1] += presentation.translation[1]
+		if clip_follow {
+			rt.display_target[index].clip = rect_intersection(stationary_clip, translated_clip)
+		}
 	}
+}
+
+paint_rect_translate :: proc(rect: Rect, translation: [2]f32) -> Rect {
+	return Rect{rect.x+translation[0], rect.y+translation[1], rect.w, rect.h}
 }
 
 rebuild_display :: proc(rt: ^Runtime) {
 	clear(&rt.display_target)
 	for id in rt.top_level {
-		compose_subtree(rt, id, {}, 1)
+		compose_subtree(rt, id, {}, 1, rt.viewport, rt.viewport, false)
 	}
 	rt.transient_overlay_kind = .None
 	append_drag_preview(rt)

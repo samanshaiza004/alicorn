@@ -34,6 +34,7 @@ Motion_Config :: alicorn.Motion_Config
 Motion_Mode :: alicorn.Motion_Mode
 Motion_Intent :: alicorn.Motion_Intent
 Motion_Target :: alicorn.Motion_Target
+Motion_Clip_Policy :: alicorn.Motion_Clip_Policy
 Motion_Theme_Policy :: alicorn.Motion_Theme_Policy
 Motion_Reduced_Motion_Policy :: alicorn.Motion_Reduced_Motion_Policy
 Motion_Owner_Handle :: alicorn.Motion_Owner_Handle

@@ -187,6 +187,7 @@ Motion_Activity :: struct {
 Motion_Retained_Owner :: struct {
 	generation: u64,
 	intent: Motion_Intent,
+	clip_policy: Motion_Clip_Policy,
 	source: Source_Site,
 	cause: Cause_Context,
 	has_translation: bool,
@@ -219,6 +220,7 @@ Motion_Intent_Request :: struct {
 Motion_Composition_Values :: struct {
 	translation: [2]f32,
 	opacity: f32,
+	clip_policy: Motion_Clip_Policy,
 }
 
 motion_runtime_status :: proc(status: Motion_Status) -> Motion_Runtime_Status {
@@ -506,7 +508,11 @@ motion_intent_queue :: proc(
 		motion_diagnostic_record(rt, .Failure, owner, .Invalid_Value, source, cause, coalesce=true)
 		return .Invalid_Value
 	}
-	if !target.has_translation && !target.has_opacity { return .Ok }
+	if target.clip_policy != .Static && target.clip_policy != .Follow_Visual {
+		motion_diagnostic_record(rt, .Failure, owner, .Invalid_Value, source, cause, coalesce=true)
+		return .Invalid_Value
+	}
+	if !target.has_translation && !target.has_opacity && target.clip_policy == .Static { return .Ok }
 	if _, described := rt.seen[owner]; !described {
 		motion_diagnostic_record(rt, .Failure, owner, .Owner_Not_Described, source, cause, coalesce=true)
 		return .Owner_Not_Described
@@ -701,6 +707,7 @@ motion_composition_values :: proc(rt: ^Runtime, owner: Node_ID) -> Motion_Compos
 	if !found { return result }
 	if state.has_translation { result.translation = state.presented_translation }
 	if state.has_opacity { result.opacity = state.presented_opacity }
+	result.clip_policy = state.clip_policy
 	return result
 }
 
@@ -1018,7 +1025,10 @@ motion_apply_intent :: proc(
 		abs(target.translation.y) > MOTION_TRANSLATION_COMPONENT_MAX) {
 		return .Invalid_Value
 	}
-	if !target.has_translation && !target.has_opacity { return .Ok }
+	if target.clip_policy != .Static && target.clip_policy != .Follow_Visual {
+		return .Invalid_Value
+	}
+	if !target.has_translation && !target.has_opacity && target.clip_policy == .Static { return .Ok }
 	if !rt.motion_clock_initialized { return .Clock_Unavailable }
 	event_source := source
 	node, found := rt.nodes[owner]
@@ -1102,10 +1112,12 @@ motion_apply_intent :: proc(
 		(!before.has_translation || before.translation != state.translation)
 	opacity_changed := target.has_opacity &&
 		(!before.has_opacity || before.opacity != state.opacity)
+	clip_policy_changed := before.clip_policy != target.clip_policy
+	state.clip_policy = target.clip_policy
 	translation_mode_changed := before.has_translation && target.has_translation &&
 		before.translation.x.mode != state.translation.x.mode
 	opacity_mode_changed := before.has_opacity && target.has_opacity && before.opacity.mode != state.opacity.mode
-	if translation_changed || opacity_changed {
+	if translation_changed || opacity_changed || clip_policy_changed {
 		state.intent = intent
 		state.source = event_source
 		state.cause = cause
@@ -1123,6 +1135,9 @@ motion_apply_intent :: proc(
 		}
 	} else {
 		motion_diagnostic_record(rt, .Unchanged_Target, owner, source=event_source, cause=cause, coalesce=true)
+	}
+	if clip_policy_changed && !translation_changed && !opacity_changed {
+		motion_request_presentation(rt, "motion clip policy changed")
 	}
 	if intent == .Reveal && ((!before.has_translation && target.has_translation) || (!before.has_opacity && target.has_opacity)) {
 		motion_diagnostic_record(rt, .Reveal, owner, source=event_source, cause=cause, coalesce=true)
@@ -1378,5 +1393,6 @@ motion_compose_subtree :: proc(
 			inherited_translation[1]+local.translation[1],
 		},
 		opacity=clamp(inherited_opacity*local.opacity, f32(0), f32(1)),
+		clip_policy=local.clip_policy,
 	}
 }

@@ -103,11 +103,20 @@ Motion_Vector2 :: struct {
 	x, y: f64,
 }
 
+// Motion_Clip_Policy controls whether clipping boundaries inside a translated
+// subtree follow its visual presentation. Ancestor clips outside that subtree
+// remain fixed, so a moving child still respects scroll and window viewports.
+Motion_Clip_Policy :: enum u8 {
+	Static,
+	Follow_Visual,
+}
+
 // Motion_Target declares only the properties the caller wants to animate.
 // It intentionally contains values rather than a retained owner/handle.
 Motion_Target :: struct {
 	translation: Motion_Vector2,
 	opacity: f64,
+	clip_policy: Motion_Clip_Policy,
 	has_translation: bool,
 	has_opacity: bool,
 }

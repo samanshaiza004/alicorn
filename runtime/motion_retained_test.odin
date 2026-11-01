@@ -51,6 +51,74 @@ motion_retained_test_find_command :: proc(rt: ^Runtime, owner: Node_ID) -> (comm
 	return
 }
 
+motion_clip_test_build :: proc(rt: ^Runtime) -> (outer, moving, label: Node_ID) {
+	ui, ready := begin_frame(rt)
+	if !ready { return }
+	container_begin_simple(&ui, .Root, key="motion-clip-root",
+		style=layout_style(.Column, width=64, height=64, clip=true))
+	outer = container_begin_simple(&ui, .Container, key="motion-clip-viewport",
+		style=layout_style(.Row, width=64, height=48, clip=true))
+	moving = container_begin_simple(&ui, .Container, key="motion-clip-tab",
+		style=layout_style(.Row, width=18, height=32, clip=true))
+	label = text(&ui, "O", key="motion-clip-label",
+		style=layout_style(.Row, width=48, height=32), color=Color{1, 1, 1, 1})
+	container_end(&ui)
+	container_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+	return
+}
+
+@(test)
+test_motion_follow_visual_clips_translate_local_bounds_and_keep_viewport_fixed :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 64, 64})
+	defer destroy_runtime(&rt)
+	outer, moving, label := motion_clip_test_build(&rt)
+	if outer == 0 || moving == 0 || label == 0 {
+		testing.expect(t, false, "the clipped moving-label fixture should build")
+		return
+	}
+	old_outer_clip := rt.nodes[outer].bounds
+	old_moving_clip := rt.nodes[moving].bounds
+	old_label_bounds := rt.nodes[label].bounds
+	old_hit_bounds := rt.nodes[label].hit_bounds
+	old_layout_visits := rt.stats.layout_nodes_visited
+	_ = motion_clock_set_time(&rt, Motion_Time(0))
+	target := Motion_Target{
+		translation=Motion_Vector2{24, 0},
+		clip_policy=.Follow_Visual,
+		has_translation=true,
+	}
+	status := motion_apply_intent(&rt, moving, target, .Snap)
+	ui, ready := begin_presentation_frame(&rt)
+	if ready { end_presentation_frame(&ui) }
+	label_command, found := motion_retained_test_find_command(&rt, label)
+	expected_clip := rect_intersection(old_outer_clip,
+		Rect{old_moving_clip.x+24, old_moving_clip.y, old_moving_clip.w, old_moving_clip.h})
+	expected_clip = rect_intersection(expected_clip,
+		Rect{old_label_bounds.x+24, old_label_bounds.y, old_label_bounds.w, old_label_bounds.h})
+	testing.expect(t, status == .Ok && ready && found && label_command.translation == [2]f32{24, 0} &&
+		label_command.clip == expected_clip,
+		"the animated tab and label clips should move together, then intersect the stationary outer viewport")
+	testing.expect(t, rt.nodes[moving].clip == old_outer_clip && rt.nodes[label].hit_bounds == old_hit_bounds &&
+		rt.stats.layout_nodes_visited == old_layout_visits,
+		"presentation clipping must not change retained target clips, hit geometry, or layout work")
+
+	_ = motion_clock_set_time(&rt, Motion_Time(1))
+	edge_target := Motion_Target{
+		translation=Motion_Vector2{55, 0},
+		clip_policy=.Follow_Visual,
+		has_translation=true,
+	}
+	status = motion_apply_intent(&rt, moving, edge_target, .Snap)
+	ui, ready = begin_presentation_frame(&rt)
+	if ready { end_presentation_frame(&ui) }
+	label_command, found = motion_retained_test_find_command(&rt, label)
+	testing.expect(t, status == .Ok && ready && found && label_command.clip.x == 55 &&
+		label_command.clip.x+label_command.clip.w == rt.viewport.x+rt.viewport.w,
+		"a translated local clip must remain bounded by the unmoving outer viewport at its edge")
+}
+
 @(test)
 test_retained_motion_composes_parent_and_child_without_description_or_layout :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 320, 180})
