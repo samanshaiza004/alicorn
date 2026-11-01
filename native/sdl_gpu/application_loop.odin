@@ -376,6 +376,32 @@ run_application_loop :: proc(
 			when ODIN_OS == .Windows {
 				wait_timeout_ms = native_event_wait_windows_timeout_ms(wait_timeout_ms)
 			}
+			if diagnostics.enabled && wait_timeout_ms < 0 {
+				primary_activity := alicorn.motion_activity(rt)
+				if primary_activity.active_owners > 0 {
+					primary_flags := sdl3.GetWindowFlags(window)
+					native_breadcrumb_motion_window_state(
+						breadcrumbs, "motion.window.wait_indefinite", sdl3.GetWindowID(window),
+						primary_flags,
+						!primary_drawable_unavailable && native_motion_window_renderable_for_window(window, primary_flags),
+						native_motion_window_native_minimized(window), timing.gpu_submissions,
+						&motion_scheduler, rt, primary_activity,
+					)
+				}
+				if child := secondary_windows.child; child != nil && child.active && child.runtime != nil {
+					child_activity := alicorn.motion_activity(child.runtime)
+					if child_activity.active_owners > 0 {
+						child_flags := sdl3.GetWindowFlags(child.window)
+						native_breadcrumb_motion_window_state(
+							secondary_windows.diagnostics, "motion.window.wait_indefinite", child.window_id,
+							child_flags,
+							!child.presentation_suspended && native_motion_window_renderable_for_window(child.window, child_flags),
+							native_motion_window_native_minimized(child.window),
+							child.timing.gpu_submissions, &child.motion_scheduler, child.runtime, child_activity,
+						)
+					}
+				}
+			}
 			swapchain_retry_pending = false
 			if diagnostics.enabled { event_wait_deadline_sources[int(wait_timeout_source)] += 1 }
 		}
@@ -424,7 +450,7 @@ run_application_loop :: proc(
 			flight_recorder=&devtools_recorder,
 			secondary_manager=&secondary_windows,
 			motion_scheduler_state=&motion_scheduler,
-			motion_host_gpu_submissions=u64(submitted),
+			motion_host_gpu_submissions=timing.gpu_submissions,
 			motion_breadcrumbs=breadcrumbs,
 		)
 		_ = alicorn.tooltip_advance(rt, u64(sdl3.GetTicksNS()))
@@ -480,7 +506,7 @@ run_application_loop :: proc(
 				flight_recorder=&child.flight_recorder,
 				diagnostics_capture_requested=&diagnostics.capture_requested,
 				motion_scheduler_state=&child.motion_scheduler,
-				motion_host_gpu_submissions=u64(submitted),
+				motion_host_gpu_submissions=u64(child.timing.gpu_submissions),
 				motion_breadcrumbs=secondary_windows.diagnostics,
 			)
 			// The primary pump may defer child events through its bounded queue.
@@ -538,7 +564,7 @@ run_application_loop :: proc(
 				child_window_flags,
 				child.window_id,
 				native_motion_window_native_minimized(child.window),
-				u64(submitted),
+				u64(child.timing.gpu_submissions),
 				secondary_windows.diagnostics,
 			)
 			if motion_update.status != .Ok { fail("secondary retained motion sampling failed") }
@@ -627,7 +653,7 @@ run_application_loop :: proc(
 			primary_window_flags,
 			sdl3.GetWindowID(window),
 			native_motion_window_native_minimized(window),
-			u64(submitted),
+			timing.gpu_submissions,
 			breadcrumbs,
 		)
 		if motion_update.status != .Ok { fail("retained motion sampling failed") }
@@ -747,7 +773,7 @@ run_application_loop :: proc(
 				_ = native_motion_scheduler_prepare(&motion_scheduler, activity.active_owners, false, suspend_now_ns)
 				native_motion_scheduler_record_suspension(
 					&motion_scheduler, rt, activity, suspend_now_ns, suspend_window_flags,
-					suspend_native_minimized, sdl3.GetWindowID(window), u64(submitted), false, breadcrumbs,
+					suspend_native_minimized, sdl3.GetWindowID(window), timing.gpu_submissions, false, breadcrumbs,
 				)
 				wait_for_event = true
 				native_devtools_record_wake(&devtools_recorder, &devtools_cursor, rt, &timing, &text_events,
@@ -771,7 +797,7 @@ run_application_loop :: proc(
 					resume_window_flags,
 					sdl3.GetWindowID(window),
 					native_motion_window_native_minimized(window),
-					u64(submitted),
+					timing.gpu_submissions,
 					breadcrumbs,
 				)
 				if resume_motion.status != .Ok { fail("retained motion restore sampling failed") }
@@ -984,6 +1010,7 @@ run_application_loop :: proc(
 	fmt.println(
 		"SDL application PASS",
 		"submissions", submitted,
+		"primary_gpu_submissions", timing.gpu_submissions,
 		"retired", retired,
 		"max_frames_in_flight", max_in_flight,
 		"wall_ns", elapsed_ns,

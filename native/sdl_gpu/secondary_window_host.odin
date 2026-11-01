@@ -390,6 +390,16 @@ native_secondary_window_gpu_release_safe :: proc(
 native_secondary_window_destroy :: proc(manager: ^Native_Secondary_Window_Manager, wait_for_gpu := true) {
 	if manager == nil || manager.child == nil { return }
 	child := manager.child
+	if child.runtime != nil && child.window != nil && child.motion_scheduler.active {
+		activity := alicorn.motion_activity(child.runtime)
+		native_breadcrumb_motion_window_state(
+			manager.diagnostics, "motion.window.closed", child.window_id,
+			sdl3.GetWindowFlags(child.window), false,
+			native_motion_window_native_minimized(child.window),
+			child.timing.gpu_submissions, &child.motion_scheduler,
+			child.runtime, activity,
+		)
+	}
 	child.active = false
 	child.scheduler_state.active = false
 	for &pending in child.scheduler_state.pending { pending = false }
