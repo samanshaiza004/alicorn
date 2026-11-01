@@ -168,6 +168,11 @@ main :: proc() {
 			// Run with --diagnostics to capture native scheduler counters.
 			app.validation_mode = true
 			validation_smoke = true
+		} else if argument == "--motion-validation-long" {
+			// Use the same deterministic target sequence without the three-second
+			// smoke exit, so native visibility/lifecycle checks can suspend the
+			// window and restore it after the original settling deadline.
+			app.validation_mode = true
 		}
 	}
 	host.Run(host.Application{
