@@ -244,7 +244,7 @@ run_application_loop :: proc(
 			// the window is minimized or the swapchain is temporarily unavailable.
 			// Keep the presentation revision pending, but sleep between retries and
 			// let SDL events wake us as soon as the window can be presented again.
-			if swapchain_retry_pending && native_motion_window_renderable(sdl3.GetWindowFlags(window)) {
+			if swapchain_retry_pending && native_motion_window_renderable_for_window(window, sdl3.GetWindowFlags(window)) {
 				wait_timeout_ms = native_event_wait_timeout_min(wait_timeout_ms, 100,
 					wait_timeout_source_output, .Swapchain_Retry)
 			}
@@ -261,7 +261,7 @@ run_application_loop :: proc(
 				))
 			}
 			current_ns := u64(sdl3.GetTicksNS())
-			if !primary_drawable_unavailable && native_motion_window_renderable(sdl3.GetWindowFlags(window)) {
+			if !primary_drawable_unavailable && native_motion_window_renderable_for_window(window, sdl3.GetWindowFlags(window)) {
 				if motion_deadline, found := native_motion_scheduler_next_deadline(&motion_scheduler); found {
 					motion_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(motion_deadline, current_ns))
 					wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(
@@ -300,7 +300,7 @@ run_application_loop :: proc(
 				))
 			}
 			if child := secondary_windows.child; child != nil && child.active {
-				if !child.presentation_suspended && native_motion_window_renderable(sdl3.GetWindowFlags(child.window)) {
+				if !child.presentation_suspended && native_motion_window_renderable_for_window(child.window, sdl3.GetWindowFlags(child.window)) {
 					if motion_deadline, found := native_motion_scheduler_next_deadline(&child.motion_scheduler); found {
 						motion_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(motion_deadline, current_ns))
 						wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(
@@ -423,6 +423,9 @@ run_application_loop :: proc(
 			appearance_monitor=&appearance_monitor,
 			flight_recorder=&devtools_recorder,
 			secondary_manager=&secondary_windows,
+			motion_scheduler_state=&motion_scheduler,
+			motion_host_gpu_submissions=u64(submitted),
+			motion_breadcrumbs=breadcrumbs,
 		)
 		_ = alicorn.tooltip_advance(rt, u64(sdl3.GetTicksNS()))
 		_ = alicorn.notice_advance(rt, u64(sdl3.GetTicksNS()))
@@ -476,6 +479,9 @@ run_application_loop :: proc(
 				replay_secondary_events=true,
 				flight_recorder=&child.flight_recorder,
 				diagnostics_capture_requested=&diagnostics.capture_requested,
+				motion_scheduler_state=&child.motion_scheduler,
+				motion_host_gpu_submissions=u64(submitted),
+				motion_breadcrumbs=secondary_windows.diagnostics,
 			)
 			// The primary pump may defer child events through its bounded queue.
 			// Refresh once at the child safe point as well, so rendering never
@@ -523,11 +529,17 @@ run_application_loop :: proc(
 				_ = native_application_build_until_stable(&child.application, child.runtime, &child.metrics, &child.timing)
 			}
 			motion_now_ns := u64(sdl3.GetTicksNS())
+			child_window_flags := sdl3.GetWindowFlags(child.window)
 			motion_update := native_motion_scheduler_advance(
 				&child.motion_scheduler,
 				child.runtime,
-				!child.presentation_suspended && native_motion_window_renderable(sdl3.GetWindowFlags(child.window)),
+				!child.presentation_suspended && native_motion_window_renderable_for_window(child.window, child_window_flags),
 				motion_now_ns,
+				child_window_flags,
+				child.window_id,
+				native_motion_window_native_minimized(child.window),
+				u64(submitted),
+				secondary_windows.diagnostics,
 			)
 			if motion_update.status != .Ok { fail("secondary retained motion sampling failed") }
 			native_motion_scheduler_sync_timing(&child.motion_scheduler, &child.timing, motion_update.active_owners)
@@ -606,11 +618,17 @@ run_application_loop :: proc(
 			_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing, stop_on_hard_error=inspector.enabled)
 		}
 		motion_now_ns := u64(sdl3.GetTicksNS())
+		primary_window_flags := sdl3.GetWindowFlags(window)
 		motion_update := native_motion_scheduler_advance(
 			&motion_scheduler,
 			rt,
-			!primary_drawable_unavailable && native_motion_window_renderable(sdl3.GetWindowFlags(window)),
+			!primary_drawable_unavailable && native_motion_window_renderable_for_window(window, primary_window_flags),
 			motion_now_ns,
+			primary_window_flags,
+			sdl3.GetWindowID(window),
+			native_motion_window_native_minimized(window),
+			u64(submitted),
+			breadcrumbs,
 		)
 		if motion_update.status != .Ok { fail("retained motion sampling failed") }
 		native_motion_scheduler_sync_timing(&motion_scheduler, &timing, motion_update.active_owners)
@@ -723,7 +741,14 @@ run_application_loop :: proc(
 				swapchain_retry_pending = true
 				primary_drawable_unavailable = true
 				activity := alicorn.motion_activity(rt)
-				_ = native_motion_scheduler_prepare(&motion_scheduler, activity.active_owners, false, u64(sdl3.GetTicksNS()))
+				suspend_now_ns := u64(sdl3.GetTicksNS())
+				suspend_window_flags := sdl3.GetWindowFlags(window)
+				suspend_native_minimized := native_motion_window_native_minimized(window)
+				_ = native_motion_scheduler_prepare(&motion_scheduler, activity.active_owners, false, suspend_now_ns)
+				native_motion_scheduler_record_suspension(
+					&motion_scheduler, rt, activity, suspend_now_ns, suspend_window_flags,
+					suspend_native_minimized, sdl3.GetWindowID(window), u64(submitted), false, breadcrumbs,
+				)
 				wait_for_event = true
 				native_devtools_record_wake(&devtools_recorder, &devtools_cursor, rt, &timing, &text_events,
 					devtools_cause, devtools_sample_time_ns, devtools_preview.host_wakes)
@@ -737,11 +762,17 @@ run_application_loop :: proc(
 			primary_drawable_unavailable = false
 			if was_drawable_unavailable {
 				resume_motion_now_ns := u64(sdl3.GetTicksNS())
+				resume_window_flags := sdl3.GetWindowFlags(window)
 				resume_motion := native_motion_scheduler_advance(
 					&motion_scheduler,
 					rt,
-					native_motion_window_renderable(sdl3.GetWindowFlags(window)),
+					native_motion_window_renderable_for_window(window, resume_window_flags),
 					resume_motion_now_ns,
+					resume_window_flags,
+					sdl3.GetWindowID(window),
+					native_motion_window_native_minimized(window),
+					u64(submitted),
+					breadcrumbs,
 				)
 				if resume_motion.status != .Ok { fail("retained motion restore sampling failed") }
 				native_motion_scheduler_sync_timing(&motion_scheduler, &timing, resume_motion.active_owners)
@@ -956,6 +987,12 @@ run_application_loop :: proc(
 		"retired", retired,
 		"max_frames_in_flight", max_in_flight,
 		"wall_ns", elapsed_ns,
+		"motion_samples", timing.motion_samples,
+		"motion_timer_wakes", timing.motion_timer_wakes,
+		"motion_restore_samples", timing.motion_restore_samples,
+		"motion_hidden_active_observations", timing.motion_hidden_active_observations,
+		"motion_missed_intervals", timing.motion_missed_intervals,
+		"motion_max_lateness_ns", timing.motion_max_lateness_ns,
 		"logical_resize_events", logical_resize_events,
 		"pixel_resize_events", pixel_resize_events,
 		"scale_events", scale_events,

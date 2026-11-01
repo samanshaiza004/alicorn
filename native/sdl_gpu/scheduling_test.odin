@@ -136,6 +136,11 @@ test_native_motion_suspend_and_restore_are_recorded_with_the_clock_gap :: proc(t
 		style=alicorn.layout_style(.Row, width=120, height=30))
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
+	theme := alicorn.DEFAULT_STYLE_THEME
+	theme.motion_policy = alicorn.DEFAULT_MOTION_THEME_POLICY
+	theme.motion_policy.translation.omega = 1.5
+	theme_id := alicorn.style_theme_register(&rt, theme)
+	if node, found := rt.nodes[owner]; found { node.style_environment.theme = theme_id }
 	start_ns := u64(1_000_000_000)
 	_ = alicorn.motion_clock_set_time(&rt, alicorn.Motion_Time(i64(start_ns)), .Native_Monotonic)
 	target := alicorn.Motion_Target{translation=alicorn.Motion_Vector2{80, 0}, has_translation=true}
@@ -145,10 +150,14 @@ test_native_motion_suspend_and_restore_are_recorded_with_the_clock_gap :: proc(t
 	_ = native_motion_scheduler_advance(&state, &rt, true, start_ns)
 	hide_ns := start_ns+5_000_000
 	hidden := native_motion_scheduler_advance(&state, &rt, false, hide_ns)
+	samples_at_hide := state.stats.samples
 	restore_ns := start_ns+900_000_000
 	restored := native_motion_scheduler_advance(&state, &rt, true, restore_ns)
 	testing.expect(t, !hidden.sampled && restored.sampled && state.suspended_since_ns == 0,
 		"the hidden interval should suspend one window and restore with a current-time sample")
+	testing.expect(t, state.stats.hidden_active_observations == 1 && samples_at_hide == 0 &&
+		state.stats.samples == samples_at_hide+1 && state.stats.restore_samples == 1,
+		"hidden active motion should not be sampled, and restore should consume exactly one current-time sample")
 	found_suspend, found_gap := false, false
 	for offset in 0..<alicorn.motion_diagnostics_event_count(&rt) {
 		event, found := alicorn.motion_diagnostics_event_recent(&rt, offset)
@@ -163,6 +172,20 @@ test_native_motion_suspend_and_restore_are_recorded_with_the_clock_gap :: proc(t
 	}
 	testing.expect(t, found_suspend && found_gap,
 		"the motion trace should record the first suspend time and exact hidden gap using the native monotonic clock")
+	settle_now_ns := restore_ns+10_000_000_000
+	settled := native_motion_scheduler_advance(&state, &rt, true, settle_now_ns)
+	samples_at_settlement := state.stats.samples
+	idle_snapshot_pending_at_settlement := state.idle_breadcrumb_pending
+	idle := native_motion_scheduler_advance(&state, &rt, true, settle_now_ns+1)
+	testing.expect(t, settled.sampled,
+		"a far-future host visit should sample the active response")
+	testing.expect(t, settled.active_owners == 0 && !state.active && state.next_deadline_ns == 0,
+		"the far-future response should be settled and have no scheduled deadline")
+	testing.expect(t, idle_snapshot_pending_at_settlement,
+		"the first post-settlement host visit should retain one pending idle snapshot after its final presentation sample")
+	testing.expect(t, !idle.sampled && idle.active_owners == 0 && state.stats.samples == samples_at_settlement &&
+		!state.idle_breadcrumb_pending,
+		"the following idle host visit should record the settled scheduler state without sampling motion again")
 }
 
 @(test)

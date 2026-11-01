@@ -18,10 +18,13 @@ App :: struct {
 	scheduler: host.Application_Scheduler,
 	diagnostics: host.Application_Diagnostics,
 	validation_mode: bool,
+	lifecycle_validation: bool,
+	hidden_checkpoint_pending: bool,
+	motion_theme: alicorn.Style_Theme_ID,
 	validation_phase: Motion_Validation_Phase,
 }
 
-Motion_Validation_Phase :: enum { None, Retarget_A, Retarget_B, Retarget_C, Settled_Check, Idle_Check, Done }
+Motion_Validation_Phase :: enum { None, Retarget_A, Retarget_B, Retarget_C, Visibility_Armed, Settled_Check, Idle_Check, Done }
 
 build_app :: proc(
 	state: rawptr,
@@ -53,6 +56,12 @@ build_app :: proc(
 			}
 		}
 		if ui.row(&ctx, height=4, label="motion-indicator-track") {
+			motion_scope := alicorn.Style_Environment_Scope{}
+			if app.motion_theme != 0 {
+				motion_scope = alicorn.style_environment_push(
+					&ctx, alicorn.Style_Environment{theme=app.motion_theme},
+				)
+			}
 			indicator := alicorn.container_begin(
 				&ctx,
 				.Container,
@@ -71,6 +80,7 @@ build_app :: proc(
 				ui.text(&ctx, fmt.tprintf("Motion target rejected: %v", status))
 			}
 			alicorn.container_end(&ctx)
+			if motion_scope.active { alicorn.style_environment_pop(&ctx, motion_scope) }
 		}
 		ui.text(&ctx, fmt.tprintf("Selected tab: %s", tab_labels[app.selected]))
 		ui.text(&ctx, "The native scheduler coalesces all active motion records into one per-window presentation demand.")
@@ -102,6 +112,15 @@ build_app :: proc(
 	return root
 }
 
+initialize_app :: proc(state: rawptr, rt: ^alicorn.Runtime) {
+	app := cast(^App)state
+	if !app.lifecycle_validation { return }
+	long_response_theme := alicorn.DEFAULT_STYLE_THEME
+	long_response_theme.motion_policy = alicorn.DEFAULT_MOTION_THEME_POLICY
+	long_response_theme.motion_policy.translation.omega = 1.5
+	app.motion_theme = alicorn.style_theme_register(rt, long_response_theme)
+}
+
 services_app :: proc(state: rawptr, services: host.Application_Services) {
 	app := cast(^App)state
 	app.scheduler = services.scheduler
@@ -130,15 +149,37 @@ scheduled_wake_app :: proc(state: rawptr, rt: ^alicorn.Runtime, _class: host.Sch
 		_ = host.application_schedule_after(app.scheduler, .Frequent, 80_000_000)
 	case .Retarget_C:
 		app.selected = 0
-		app.validation_phase = .Settled_Check
 		alicorn.invalidate_root(rt, "motion validation retarget")
 		host.application_diagnostic_event(app.diagnostics, "motion.validation.retarget_c")
-		_ = host.application_schedule_after(app.scheduler, .Frequent, 1_500_000_000)
+		if app.lifecycle_validation {
+			app.validation_phase = .Visibility_Armed
+			_ = host.application_schedule_after(app.scheduler, .Frequent, 120_000_000)
+		} else {
+			app.validation_phase = .Settled_Check
+			_ = host.application_schedule_after(app.scheduler, .Frequent, 1_500_000_000)
+		}
+	case .Visibility_Armed:
+		activity := alicorn.motion_activity(rt)
+		fmt.println("motion_validation", "active_for_visibility", "active_owners", activity.active_owners,
+			"active_properties", activity.active_properties, "unestablished_deadlines", activity.unestablished_deadlines)
+		host.application_diagnostic_event(app.diagnostics, "motion.validation.active_for_visibility", u64(max(activity.active_owners, 0)))
+		app.validation_phase = .Settled_Check
+		app.hidden_checkpoint_pending = app.lifecycle_validation
+		_ = host.application_schedule_after(app.scheduler, .Frequent, 2_000_000_000)
 	case .Settled_Check:
 		activity := alicorn.motion_activity(rt)
-		fmt.println("motion_validation", "settled_checkpoint", "active_owners", activity.active_owners,
+		checkpoint_name := "settled_checkpoint"
+		if app.hidden_checkpoint_pending {
+			checkpoint_name = "hidden_checkpoint"
+			app.hidden_checkpoint_pending = false
+		}
+		fmt.println("motion_validation", checkpoint_name, "active_owners", activity.active_owners,
 			"active_properties", activity.active_properties, "unestablished_deadlines", activity.unestablished_deadlines)
-		host.application_diagnostic_event(app.diagnostics, "motion.validation.settled_checkpoint")
+		host.application_diagnostic_event(
+			app.diagnostics,
+			fmt.tprintf("motion.validation.%s", checkpoint_name),
+			u64(max(activity.active_owners, 0)),
+		)
 		if activity.active_owners == 0 {
 			app.validation_phase = .Idle_Check
 			_ = host.application_schedule_after(app.scheduler, .Frequent, 1_000_000_000)
@@ -168,6 +209,11 @@ main :: proc() {
 			// Run with --diagnostics to capture native scheduler counters.
 			app.validation_mode = true
 			validation_smoke = true
+		} else if argument == "--motion-lifecycle-validation" {
+			// Use a slower certified response and hold the native window hidden
+			// across a scheduled activity checkpoint, then restore before settlement.
+			app.validation_mode = true
+			app.lifecycle_validation = true
 		} else if argument == "--motion-validation-long" {
 			// Use the same deterministic target sequence without the three-second
 			// smoke exit, so native visibility/lifecycle checks can suspend the
@@ -181,6 +227,7 @@ main :: proc() {
 		width=720,
 		height=360,
 		interaction_update_policy=.Correct_After_Interaction,
+		on_initialize=initialize_app,
 		build=build_app,
 		on_services=services_app,
 		on_scheduled_wake=scheduled_wake_app,

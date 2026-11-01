@@ -86,6 +86,9 @@ pump_events :: proc(
 	secondary_manager: ^Native_Secondary_Window_Manager = nil,
 	secondary_child: ^Native_Secondary_Window = nil,
 	replay_secondary_events := false,
+	motion_scheduler_state: ^Native_Motion_Scheduler_State = nil,
+	motion_host_gpu_submissions: u64 = 0,
+	motion_breadcrumbs: ^Native_Breadcrumb_Recorder = nil,
 ) {
 	if replay_secondary_events {
 		defer native_secondary_window_replay_event_clear(secondary_child)
@@ -727,6 +730,25 @@ pump_events :: proc(
 		}
 
 		#partial switch event.type {
+		case .WINDOW_HIDDEN, .WINDOW_MINIMIZED:
+			if motion_scheduler_state != nil && event.window.windowID == sdl3.GetWindowID(window) {
+				activity := alicorn.motion_activity(rt)
+				now_ns := u64(sdl3.GetTicksNS())
+				flags := sdl3.GetWindowFlags(window)
+				native_minimized := native_motion_window_native_minimized(window)
+				_ = native_motion_scheduler_prepare(motion_scheduler_state, activity.active_owners, false, now_ns)
+				native_motion_scheduler_record_suspension(
+					motion_scheduler_state, rt, activity, now_ns, flags, native_minimized, event.window.windowID,
+					motion_host_gpu_submissions, false, motion_breadcrumbs,
+				)
+				if event.type == .WINDOW_MINIMIZED {
+					native_breadcrumb_motion_window_state(
+						motion_breadcrumbs, "motion.window.minimized", event.window.windowID,
+						flags, false, native_minimized, motion_host_gpu_submissions,
+						motion_scheduler_state, rt, activity,
+					)
+				}
+			}
 		case .DROP_FILE:
 			if application != nil && application.on_file_drop != nil && event.drop.data != nil {
 				drop_cause := alicorn.cause_begin(rt, .Host_Event, "SDL file drop")

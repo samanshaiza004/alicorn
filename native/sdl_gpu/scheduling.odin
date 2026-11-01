@@ -19,6 +19,7 @@ Native_Motion_Scheduler_Stats :: struct {
 	samples: u64,
 	timer_wakes: u64,
 	restore_samples: u64,
+	hidden_active_observations: u64,
 	coalesced_owners: u64,
 	bounded_snaps: u64,
 	missed_intervals: u64,
@@ -33,6 +34,8 @@ Native_Motion_Scheduler_Stats :: struct {
 Native_Motion_Scheduler_State :: struct {
 	active: bool,
 	suspended: bool,
+	suspension_breadcrumb_recorded: bool,
+	idle_breadcrumb_pending: bool,
 	suspended_since_ns: u64,
 	next_deadline_ns: u64,
 	uncertified_since_ns: u64,
@@ -57,6 +60,15 @@ native_motion_window_renderable :: proc(flags: sdl3.WindowFlags) -> bool {
 	return (flags & unavailable) == sdl3.WindowFlags{}
 }
 
+native_motion_window_native_minimized :: proc(window: ^sdl3.Window) -> bool {
+	when ODIN_OS == .Windows { return native_motion_window_windows_minimized(window) }
+	return false
+}
+
+native_motion_window_renderable_for_window :: proc(window: ^sdl3.Window, flags: sdl3.WindowFlags) -> bool {
+	return native_motion_window_renderable(flags) && !native_motion_window_native_minimized(window)
+}
+
 // native_motion_scheduler_prepare consumes a due demand exactly once. Missed
 // opportunities are dropped: the caller samples at now_ns rather than replaying
 // intermediate poses. A hidden/minimized/occluded window loses its deadline;
@@ -70,11 +82,13 @@ native_motion_scheduler_prepare :: proc(
 	if state == nil { return false }
 	if !window_renderable {
 		if active_owners > 0 {
+			state.stats.hidden_active_observations += 1
 			if !state.suspended || state.suspended_since_ns == 0 {
 				state.suspended_since_ns = now_ns if now_ns != 0 else 1
 			}
 		} else {
 			state.suspended_since_ns = 0
+			state.suspension_breadcrumb_recorded = false
 		}
 		state.active = active_owners > 0
 		state.suspended = true
@@ -84,6 +98,7 @@ native_motion_scheduler_prepare :: proc(
 	}
 	if state.suspended {
 		state.suspended = false
+		state.suspension_breadcrumb_recorded = false
 		state.active = active_owners > 0
 		state.next_deadline_ns = 0
 		state.suspended_since_ns = 0
@@ -116,6 +131,27 @@ native_motion_scheduler_prepare :: proc(
 	state.stats.missed_intervals += lateness/NATIVE_MOTION_SAMPLE_INTERVAL_NS
 	state.next_deadline_ns = 0
 	return true
+}
+
+native_motion_scheduler_record_suspension :: proc(
+	state: ^Native_Motion_Scheduler_State,
+	rt: ^alicorn.Runtime,
+	activity: alicorn.Motion_Activity,
+	now_ns: u64,
+	window_flags: sdl3.WindowFlags,
+	native_minimized: bool,
+	window_id: sdl3.WindowID,
+	gpu_submissions: u64,
+	window_renderable: bool,
+	breadcrumbs: ^Native_Breadcrumb_Recorder,
+) {
+	if state == nil || rt == nil || activity.active_owners <= 0 || state.suspension_breadcrumb_recorded { return }
+	state.suspension_breadcrumb_recorded = true
+	alicorn.motion_diagnostic_host_event(rt, .Host_Suspended, alicorn.Motion_Time(i64(now_ns)))
+	native_breadcrumb_motion_window_state(
+		breadcrumbs, "motion.window.suspended", window_id, window_flags,
+		window_renderable, native_minimized, gpu_submissions, state, rt, activity,
+	)
 }
 
 native_motion_scheduler_uncertified_limit_reached :: proc(
@@ -180,20 +216,28 @@ native_motion_scheduler_advance :: proc(
 	rt: ^alicorn.Runtime,
 	window_renderable: bool,
 	now_ns: u64,
+	window_flags: sdl3.WindowFlags = {},
+	window_id: sdl3.WindowID = 0,
+	native_minimized: bool = false,
+	gpu_submissions: u64 = 0,
+	breadcrumbs: ^Native_Breadcrumb_Recorder = nil,
 ) -> Native_Motion_Update_Result {
 	if state == nil || rt == nil {
 		return Native_Motion_Update_Result{status=.Invalid_Runtime}
 	}
 	activity := alicorn.motion_activity(rt)
 	had_active_motion := activity.active_owners > 0
+	if had_active_motion { state.idle_breadcrumb_pending = false }
 	was_suspended := state.suspended
-	had_suspension_origin := state.suspended_since_ns != 0
 	suspended_since_ns := state.suspended_since_ns
 	should_sample := native_motion_scheduler_prepare(
 		state, activity.active_owners, window_renderable, now_ns,
 	)
-	if !window_renderable && activity.active_owners > 0 && (!was_suspended || !had_suspension_origin) {
-		alicorn.motion_diagnostic_host_event(rt, .Host_Suspended, alicorn.Motion_Time(i64(now_ns)))
+	if !window_renderable && activity.active_owners > 0 {
+		native_motion_scheduler_record_suspension(
+			state, rt, activity, now_ns, window_flags, native_minimized, window_id,
+			gpu_submissions, window_renderable, breadcrumbs,
+		)
 	}
 	result := Native_Motion_Update_Result{
 		active_properties=activity.active_properties,
@@ -201,7 +245,22 @@ native_motion_scheduler_advance :: proc(
 		unestablished_deadlines=activity.unestablished_deadlines,
 		status=.Ok,
 	}
-	if !should_sample { return result }
+	if !should_sample {
+		if state.idle_breadcrumb_pending && activity.active_owners <= 0 && window_renderable {
+			native_breadcrumb_motion_window_state(
+				breadcrumbs, "motion.window.idle", window_id, window_flags,
+				window_renderable, native_minimized, gpu_submissions, state, rt, activity,
+			)
+			state.idle_breadcrumb_pending = false
+		}
+		if was_suspended && window_renderable {
+			native_breadcrumb_motion_window_state(
+				breadcrumbs, "motion.window.restored", window_id, window_flags,
+				window_renderable, native_minimized, gpu_submissions, state, rt, activity,
+			)
+		}
+		return result
+	}
 	result.sampled = true
 	started_ns := u64(sdl3.GetTicksNS())
 	tick := alicorn.motion_tick(rt, alicorn.Motion_Time(i64(now_ns)))
@@ -233,6 +292,17 @@ native_motion_scheduler_advance :: proc(
 	native_motion_scheduler_finish_sample(
 		state, activity.active_owners, activity.unestablished_deadlines, now_ns,
 	)
+	if had_active_motion && activity.active_owners <= 0 {
+		// Record the settled state on the next host-loop visit, after any final
+		// presentation submission caused by this sample has been accounted for.
+		state.idle_breadcrumb_pending = true
+	}
+	if was_suspended && window_renderable {
+		native_breadcrumb_motion_window_state(
+			breadcrumbs, "motion.window.restored", window_id, window_flags,
+			window_renderable, native_minimized, gpu_submissions, state, rt, activity,
+		)
+	}
 	result.active_properties = activity.active_properties
 	result.active_owners = activity.active_owners
 	result.unestablished_deadlines = activity.unestablished_deadlines
@@ -248,6 +318,7 @@ native_motion_scheduler_sync_timing :: proc(
 	timing.motion_samples = state.stats.samples
 	timing.motion_timer_wakes = state.stats.timer_wakes
 	timing.motion_restore_samples = state.stats.restore_samples
+	timing.motion_hidden_active_observations = state.stats.hidden_active_observations
 	timing.motion_coalesced_owners = state.stats.coalesced_owners
 	timing.motion_bounded_snaps = state.stats.bounded_snaps
 	timing.motion_missed_intervals = state.stats.missed_intervals
