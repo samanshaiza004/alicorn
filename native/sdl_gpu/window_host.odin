@@ -183,7 +183,9 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 		)
 		if motion_update.status != .Ok { fail("retained motion sampling during live resize failed") }
 	}
-	inspector_summary := native_inspector_host_summary(state.timing, state.rt, state.timing.frames)
+	inspector_summary := native_inspector_host_summary(
+		state.timing, state.rt, state.timing.frames, state.motion_scheduler_state,
+	)
 	native_inspector_update(state.inspector, state.rt,
 		alicorn.Rect{0, 0, f32(current_metrics.logical_width), f32(current_metrics.logical_height)}, &inspector_summary)
 	if state.text_input_state != nil {
@@ -314,7 +316,9 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	if state.submitted != nil { state.submitted^ += 1 }
 	state.timing.gpu_submissions += 1
 	if application_submission_pending {
-		post_submit_summary := native_inspector_host_summary(state.timing, state.rt, state.timing.frames)
+		post_submit_summary := native_inspector_host_summary(
+			state.timing, state.rt, state.timing.frames, state.motion_scheduler_state,
+		)
 		native_inspector_update(state.inspector, state.rt,
 			alicorn.Rect{0, 0, f32(current_metrics.logical_width), f32(current_metrics.logical_height)}, &post_submit_summary)
 	}

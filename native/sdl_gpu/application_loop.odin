@@ -154,7 +154,7 @@ run_application_loop :: proc(
 			_ = native_menu_sync_chrome_appearance(native_menu, request_redraw=false)
 		}
 	}
-	initial_summary := native_inspector_host_summary(&timing, rt, 0)
+	initial_summary := native_inspector_host_summary(&timing, rt, 0, &motion_scheduler)
 	native_inspector_update(&inspector, rt, rt.viewport, &initial_summary)
 	devtools_cursor := native_devtools_cursor_init(rt, &timing, &text_events)
 	sync_text_input_focus(window, rt, &text_input_state, &application_instance, &text_input_coordinator)
@@ -715,7 +715,7 @@ run_application_loop :: proc(
 		}
 		}
 
-		inspector_summary := native_inspector_host_summary(&timing, rt, event_waits+wake_events)
+		inspector_summary := native_inspector_host_summary(&timing, rt, event_waits+wake_events, &motion_scheduler)
 		native_inspector_update(&inspector, rt, alicorn.Rect{0, 0, f32(metrics.logical_width), f32(metrics.logical_height)}, &inspector_summary)
 		// A toolbar Close can be consumed during this description, after the
 		// native pump has already drained. Resume its preserved app owner now.
@@ -912,7 +912,7 @@ run_application_loop :: proc(
 			// resulting inspector-only submission never acknowledges the app,
 			// so this follow-up converges and leaves an event-driven app asleep.
 			if application_submission_pending {
-				post_submit_summary := native_inspector_host_summary(&timing, rt, event_waits+wake_events)
+				post_submit_summary := native_inspector_host_summary(&timing, rt, event_waits+wake_events, &motion_scheduler)
 				native_inspector_update(&inspector, rt, inspector.runtime.viewport, &post_submit_summary)
 			}
 		}

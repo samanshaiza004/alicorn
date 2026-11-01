@@ -76,12 +76,16 @@ test_native_inspector_requires_explicit_host_opt_in :: proc(t: ^testing.T) {
 	none := [?]string{"application", "--diagnostics"}
 	hidden := [?]string{"application", "--inspector"}
 	visible := [?]string{"application", "--inspector-open"}
+	motion_visible := [?]string{"application", "--inspector-motion"}
 	fixture := [?]string{"application", "--inspector-fixture"}
 	testing.expect(t, !native_inspector_options(none[:]).enabled, "diagnostics alone must not opt in to the visual inspector")
 	testing.expect(t, native_inspector_options(hidden[:]).enabled && !native_inspector_options(hidden[:]).start_visible,
 		"--inspector enables a hidden overlay with F9 ownership")
 	testing.expect(t, native_inspector_options(visible[:]).enabled && native_inspector_options(visible[:]).start_visible,
 		"--inspector-open opts in and starts visible")
+	motion_options := native_inspector_options(motion_visible[:])
+	testing.expect(t, motion_options.enabled && motion_options.start_visible && motion_options.start_motion,
+		"--inspector-motion opens directly to the passive Motion tab for reproducible captures")
 	testing.expect(t, native_inspector_options(fixture[:]).enabled, "the native inspector fixture must enable the same reusable host")
 	app := alicorn.new_runtime(alicorn.Rect{0, 0, 1000, 650})
 	defer alicorn.destroy_runtime(&app)
@@ -89,6 +93,12 @@ test_native_inspector_requires_explicit_host_opt_in :: proc(t: ^testing.T) {
 	native_inspector_runtime_init(&overlay, {}, app.viewport)
 	testing.expect(t, !overlay.runtime_ready && !native_inspector_route_event(&overlay, &app, native_inspector_test_key(sdl3.K_F9, .F9), {}),
 		"an ordinary Application neither allocates inspector retained state nor reserves F9")
+	hidden_overlay: Native_Inspector_Overlay
+	native_inspector_runtime_init(&hidden_overlay, Native_Inspector_Options{enabled=true}, app.viewport)
+	defer native_inspector_destroy(&hidden_overlay)
+	testing.expect(t, hidden_overlay.runtime_ready && !native_inspector_visible(&hidden_overlay) &&
+		!native_inspector_submission_pending(&hidden_overlay),
+		"an enabled but closed inspector must leave no presentation submission pending")
 }
 
 @(test)

@@ -44,6 +44,11 @@ Inspector_Host_Summary :: struct {
 	motion_sample_max_ns: u64,
 	motion_max_active_owners: u64,
 	motion_max_lateness_ns: u64,
+	motion_scheduler_observed: bool,
+	motion_scheduler_active: bool,
+	motion_scheduler_suspended: bool,
+	motion_deadline_available: bool,
+	motion_next_deadline_ns: u64,
 }
 
 Inspector_Tree_Row :: struct {
@@ -227,25 +232,25 @@ inspector_overlay_recent_causes :: proc(inspected: ^Runtime, allocator := contex
 	return causes
 }
 
-inspector_overlay_lines :: proc(ui: ^UI, lines: []string, key: string, height: f32) {
+inspector_overlay_lines :: proc(ui: ^UI, lines: []string, key: string, height: f32, font_size: f32 = 16, line_height: f32 = INSPECTOR_LINE_HEIGHT) {
 	content_width := f32(0)
 	for line in lines {
 		// Match prepare_text_run_node's logical text size and typography. A
 		// byte-width estimate can leave the final glyph beyond max_scroll_x.
-		run, measured := text_run_build(&ui.runtime.text_engine, line, 16,
+		run, measured := text_run_build(&ui.runtime.text_engine, line, font_size,
 			allocator=ui.runtime.scratch_allocator, scratch_allocator=ui.runtime.scratch_allocator,
 			font_role=.Monospace, font_weight=FONT_WEIGHT_REGULAR, overflow=.Clip)
-		width := f32(len(line))*16
+		width := f32(len(line))*font_size
 		if measured { width = run.width; text_run_destroy(&run) }
-		content_width = maxf(content_width, width+16)
+		content_width = maxf(content_width, width+font_size)
 	}
-	list := virtual_list_begin(ui, len(lines), INSPECTOR_LINE_HEIGHT, key=key_string(key),
+	list := virtual_list_begin(ui, len(lines), line_height, key=key_string(key),
 		style=layout_style(height=height, clip=true), content_width=content_width, axes=.Both,
 		label=key, focusable=true)
 	if list.scroll.id == 0 { return }
 	for index := list.first; index < list.last; index += 1 {
-		text(ui, lines[index], key=key_u64(u64(index)), style=layout_style(.Row, height=INSPECTOR_LINE_HEIGHT),
-			font=.Monospace, text_style=Text_Style{font_weight=FONT_WEIGHT_REGULAR, overflow=.Clip})
+		text(ui, lines[index], key=key_u64(u64(index)), style=layout_style(.Row, height=line_height),
+			font=.Monospace, text_style=Text_Style{font_weight=FONT_WEIGHT_REGULAR, font_size=font_size, overflow=.Clip})
 	}
 	virtual_list_end(ui, list)
 }
@@ -433,28 +438,42 @@ inspector_overlay_motion_property_lines :: proc(
 	append(lines, fmt.tprintf("%s: mode=%v active=%t", name, property.mode, property.active))
 	append(lines, fmt.tprintf("  last sampled at %d ns", i64(property.sampled_at)))
 	if units == "opacity" {
-		append(lines, fmt.tprintf("  target=%.6f presented=%.6f residual=%.6f velocity=%.6f %s/s",
-			property.target.x, property.presented.x, property.residual.x, property.velocity.x, units))
-		append(lines, fmt.tprintf("  tolerances: position ε=%.6g %s; velocity ε=%.6g %s/s",
-			property.config.position_tolerance, units, property.config.velocity_tolerance, units))
+		append(lines, fmt.tprintf("  target=%.6f presented=%.6f", property.target.x, property.presented.x))
+		append(lines, fmt.tprintf("  residual=%.6f velocity=%.6f %s/s", property.residual.x, property.velocity.x, units))
+		append(lines, fmt.tprintf("  tolerances: position ε=%.6g %s", property.config.position_tolerance, units))
+		append(lines, fmt.tprintf("  velocity tolerance ε=%.6g %s/s", property.config.velocity_tolerance, units))
 	} else {
-		append(lines, fmt.tprintf("  target=(%.4f, %.4f) presented=(%.4f, %.4f)",
-			property.target.x, property.target.y, property.presented.x, property.presented.y))
-		append(lines, fmt.tprintf("  residual=(%.4f, %.4f) velocity=(%.4f, %.4f) %s/s",
-			property.residual.x, property.residual.y, property.velocity.x, property.velocity.y, units))
-		append(lines, fmt.tprintf("  tolerances: position ε=%.4g %s; velocity ε=%.4g %s/s",
-			property.config.position_tolerance, units, property.config.velocity_tolerance, units))
+		append(lines, fmt.tprintf("  target=(%.4f, %.4f)", property.target.x, property.target.y))
+		append(lines, fmt.tprintf("  presented=(%.4f, %.4f)", property.presented.x, property.presented.y))
+		append(lines, fmt.tprintf("  residual=(%.4f, %.4f)", property.residual.x, property.residual.y))
+		append(lines, fmt.tprintf("  velocity=(%.4f, %.4f) %s/s", property.velocity.x, property.velocity.y, units))
+		append(lines, fmt.tprintf("  tolerances: position ε=%.4g %s", property.config.position_tolerance, units))
+		append(lines, fmt.tprintf("  velocity tolerance ε=%.4g %s/s", property.config.velocity_tolerance, units))
 	}
 	if property.active {
 		if property.deadline_established {
-			append(lines, fmt.tprintf("  settle upper bound: t=%d + %d ns", i64(property.start_time), property.settle_after_ns))
+			append(lines, fmt.tprintf("  settle upper bound: start t=%d ns + %d ns", i64(property.start_time), property.settle_after_ns))
 		} else { append(lines, "  settle upper bound: not established; native host applies its bounded snap policy") }
 	} else { append(lines, "  settled: yes") }
 }
 
+inspector_motion_source_label :: proc(file: string) -> string {
+	last_separator := -1
+	previous_separator := -1
+	for index in 0..<len(file) {
+		if file[index] == '/' || file[index] == '\\' {
+			previous_separator = last_separator
+			last_separator = index
+		}
+	}
+	if previous_separator >= 0 { return file[previous_separator+1:] }
+	if last_separator >= 0 { return file[last_separator+1:] }
+	return file
+}
+
 inspector_overlay_motion :: proc(ui: ^UI, inspected: ^Runtime, selected: Node_ID, host: ^Inspector_Host_Summary, height: f32) {
 	lines := make([dynamic]string, 0, allocator=ui.runtime.scratch_allocator)
-	append(&lines, "Motion snapshots are passive; they never sample, wake, or mutate the inspected runtime.")
+	append(&lines, "Passive snapshot: no sampling, wake, or inspected-runtime mutation.")
 	append(&lines, fmt.tprintf("Clock: %v at %d ns", inspected.motion_clock_source, i64(inspected.motion_time)))
 	if selected == 0 {
 		append(&lines, "Select a retained owner in Tree to inspect its target and presented state.")
@@ -463,9 +482,11 @@ inspector_overlay_motion :: proc(ui: ^UI, inspected: ^Runtime, selected: Node_ID
 		if !snapshot.valid {
 			append(&lines, fmt.tprintf("Selected node #%d has no retained motion owner.", selected))
 		} else {
-			append(&lines, fmt.tprintf("Owner node=%d generation=%d intent=%v", snapshot.owner, snapshot.generation, snapshot.intent))
+			append(&lines, fmt.tprintf("Owner node=%d generation=%d", snapshot.owner, snapshot.generation))
+			append(&lines, fmt.tprintf("Intent: %v", snapshot.intent))
 			append(&lines, fmt.tprintf("Runtime clock: %d ns (%v)", i64(snapshot.clock_time), snapshot.clock_source))
-			append(&lines, fmt.tprintf("Declaration: %s:%d:%d (%s)", snapshot.source.file, snapshot.source.line, snapshot.source.column, snapshot.source.component))
+			append(&lines, fmt.tprintf("Declaration: %s:%d:%d", inspector_motion_source_label(snapshot.source.file), snapshot.source.line, snapshot.source.column))
+			append(&lines, fmt.tprintf("Component: %s", snapshot.source.component))
 			if snapshot.cause.id == 0 {
 				append(&lines, "Triggering cause: unassigned (no one-to-one cause was established)")
 			} else {
@@ -478,23 +499,39 @@ inspector_overlay_motion :: proc(ui: ^UI, inspected: ^Runtime, selected: Node_ID
 	}
 	append(&lines, "", "Input and accessibility policy")
 	append(&lines, "Hit tests use target geometry; paint translation does not move hit regions.")
-	append(&lines, fmt.tprintf("Pointer-down capture=%d activation/latch=%d", inspected.captured_node, inspected.activation_node))
+	append(&lines, fmt.tprintf("Pointer capture=%d activation=%d", inspected.captured_node, inspected.activation_node))
 	append(&lines, "Semantic and accessibility bounds follow logical target geometry; motion is paint-only.")
-	append(&lines, "Hit testing uses retained order traversal; motion performs no hit-index update.")
+	append(&lines, "Retained-order hit testing; motion does not update the hit index.")
 	stats := motion_diagnostics_stats(inspected)
-	append(&lines, "", fmt.tprintf("Aggregate: ticks=%d owner visits=%d property samples=%d", stats.sample_ticks, stats.owner_visits, stats.property_samples))
-	append(&lines, fmt.tprintf("Presentation work: requests=%d coalesced=%d acknowledged app submissions=%d",
-		stats.presentation_requests, stats.presentation_requests_coalesced, stats.presentation_submissions))
+	append(&lines, "", fmt.tprintf("Motion ticks=%d owner visits=%d", stats.sample_ticks, stats.owner_visits))
+	append(&lines, fmt.tprintf("Property samples=%d", stats.property_samples))
+	append(&lines, fmt.tprintf("Presentation requests=%d coalesced=%d",
+		stats.presentation_requests, stats.presentation_requests_coalesced))
+	append(&lines, fmt.tprintf("Acknowledged app submissions=%d", stats.presentation_submissions))
 	if host != nil {
-		append(&lines, fmt.tprintf("Native host: samples=%d timer wakes=%d restore samples=%d bounded snaps=%d",
+		append(&lines, fmt.tprintf("Native samples=%d timer wakes=%d restores=%d snaps=%d",
 			host.motion_samples, host.motion_timer_wakes, host.motion_restore_samples, host.motion_bounded_snaps))
-		append(&lines, fmt.tprintf("Native motion sampling: total=%.3f ms max=%.3f ms max lateness=%.3f ms",
-			f64(host.motion_sample_ns)/1_000_000, f64(host.motion_sample_max_ns)/1_000_000,
-			f64(host.motion_max_lateness_ns)/1_000_000))
+		append(&lines, fmt.tprintf("Sampling total=%.3f ms max=%.3f ms",
+			f64(host.motion_sample_ns)/1_000_000, f64(host.motion_sample_max_ns)/1_000_000
+		))
+		append(&lines, fmt.tprintf("Max scheduler lateness=%.3f ms", f64(host.motion_max_lateness_ns)/1_000_000))
+		if host.motion_scheduler_observed {
+			if !host.motion_scheduler_active {
+				append(&lines, "Native presentation scheduler: idle (no next deadline)")
+			} else if host.motion_scheduler_suspended {
+				append(&lines, "Native presentation scheduler: suspended while window is unavailable")
+			} else if host.motion_deadline_available {
+				append(&lines, fmt.tprintf("Next native presentation deadline: t=%d ns", host.motion_next_deadline_ns))
+			} else {
+				append(&lines, "Next native presentation deadline: bounded policy (uncertified response)")
+			}
+		}
 	}
-	append(&lines, fmt.tprintf("Transitions: retarget=%d no-op=%d mode=%d reveal=%d reduce-motion=%d", stats.retargets, stats.unchanged_target_noops, stats.mode_changes, stats.reveals, stats.reduced_motion_rewrites))
-	append(&lines, fmt.tprintf("Lifecycle: release=%d retired=%d settled=%d hidden gaps=%d snaps=%d failures=%d evicted=%d",
-		stats.releases, stats.owners_retired, stats.settlements, stats.hidden_gap_fast_forwards, stats.bounded_snaps, stats.failures, stats.trace_evictions))
+	append(&lines, fmt.tprintf("Retarget=%d no-op=%d mode=%d", stats.retargets, stats.unchanged_target_noops, stats.mode_changes))
+	append(&lines, fmt.tprintf("Reveal=%d reduced-motion=%d", stats.reveals, stats.reduced_motion_rewrites))
+	append(&lines, fmt.tprintf("Release=%d retired=%d settled=%d", stats.releases, stats.owners_retired, stats.settlements))
+	append(&lines, fmt.tprintf("Hidden gaps=%d snaps=%d failures=%d", stats.hidden_gap_fast_forwards, stats.bounded_snaps, stats.failures))
+	append(&lines, fmt.tprintf("Trace evictions=%d", stats.trace_evictions))
 	append(&lines, "", "Recent motion transitions (bounded; sampled frames are aggregated above)")
 	count := min(motion_diagnostics_event_count(inspected), 64)
 	if count == 0 { append(&lines, "No motion transitions recorded.") }
@@ -506,22 +543,42 @@ inspector_overlay_motion :: proc(ui: ^UI, inspected: ^Runtime, selected: Node_ID
 		owner_text := "host"
 		if event.owner.owner != 0 { owner_text = fmt.tprintf("node=%d gen=%d", event.owner.owner, event.owner.generation) }
 		source_text := "host/runtime"
-		if event.owner.source.file != "" { source_text = fmt.tprintf("%s:%d:%d", event.owner.source.file, event.owner.source.line, event.owner.source.column) }
-		append(&lines, fmt.tprintf("#%d t=%d(%v) %v %s cause=%s source=%s status=%v repeats=%d gap=%d ns",
-			event.sequence, i64(event.time), event.clock_source, event.kind, owner_text, cause_text, source_text, event.status, event.repeat_count, event.elapsed_ns))
+		if event.owner.source.file != "" {
+			source_text = fmt.tprintf("%s:%d:%d", inspector_motion_source_label(event.owner.source.file), event.owner.source.line, event.owner.source.column)
+		}
+		intent_text := ""
+		if event.owner.valid { intent_text = fmt.tprintf(" intent=%v", event.owner.intent) }
+		append(&lines, fmt.tprintf("#%d t=%d %v %s", event.sequence, i64(event.time), event.clock_source, event.kind))
+		append(&lines, fmt.tprintf("  %s%s cause=%s", owner_text, intent_text, cause_text))
+		append(&lines, fmt.tprintf("  source=%s status=%v", source_text, event.status))
+		append(&lines, fmt.tprintf("  repeats=%d hidden-gap=%d ns", event.repeat_count, event.elapsed_ns))
 		if event.kind == .Opacity_Clamp { append(&lines, fmt.tprintf("  raw opacity sample=%g; presented value was clamped to [0,1]", event.detail_value.x)) }
 		if event.reason == .Reduced_Opacity_Fade_Exceeded_Bound {
 			append(&lines, fmt.tprintf("  reduced-motion opacity fade exceeded %d ms; response snapped",
 				MOTION_REDUCED_OPACITY_MAX_NS/1_000_000))
 		}
 		if event.owner.translation.has_value {
-			append(&lines, fmt.tprintf("  translation target=(%.3f, %.3f) presented=(%.3f, %.3f) velocity=(%.3f, %.3f)",
-				event.owner.translation.target.x, event.owner.translation.target.y,
-				event.owner.translation.presented.x, event.owner.translation.presented.y,
+			append(&lines, fmt.tprintf("  target=(%.3f, %.3f)",
+				event.owner.translation.target.x, event.owner.translation.target.y))
+			append(&lines, fmt.tprintf("  presented=(%.3f, %.3f)",
+				event.owner.translation.presented.x, event.owner.translation.presented.y))
+			append(&lines, fmt.tprintf("  residual=(%.3f, %.3f)",
+				event.owner.translation.residual.x, event.owner.translation.residual.y))
+			append(&lines, fmt.tprintf("  velocity=(%.3f, %.3f) units/s",
 				event.owner.translation.velocity.x, event.owner.translation.velocity.y))
+			append(&lines, fmt.tprintf("  %v active=%t pε=%.4g vε=%.4g/s",
+				event.owner.translation.mode, event.owner.translation.active,
+				event.owner.translation.config.position_tolerance,
+				event.owner.translation.config.velocity_tolerance))
+			if event.owner.translation.active && event.owner.translation.deadline_established {
+				append(&lines, fmt.tprintf("  settle bound: start %d + %d ns",
+					i64(event.owner.translation.start_time), event.owner.translation.settle_after_ns))
+			} else {
+				append(&lines, "  settled" if !event.owner.translation.active else "  settlement bound unestablished")
+			}
 		}
 	}
-	inspector_overlay_lines(ui, lines[:], "inspector-motion", height)
+	inspector_overlay_lines(ui, lines[:], "inspector-motion", height, font_size=14, line_height=20)
 }
 
 inspector_overlay_causes :: proc(ui: ^UI, inspected: ^Runtime, height: f32) {
@@ -583,8 +640,19 @@ inspector_overlay_build :: proc(ui: ^UI, state: ^Inspector_Overlay, inspected: ^
 		ui.runtime == inspected || !ui.runtime.frame_open { return }
 	context.temp_allocator = ui.runtime.scratch_allocator
 	inspector_overlay_prune(state,inspected,ui.runtime.scratch_allocator)
+	// Starting directly on Motion is useful for reproducible native captures.
+	// Select the first retained owner in tree order once, while leaving ordinary
+	// Tree navigation and explicit user selection unchanged.
+	if state.tab == .Motion && state.selected == 0 {
+		for id in inspected.order {
+			if motion_diagnostics_owner_snapshot(inspected, id).valid {
+				state.selected = id
+				break
+			}
+		}
+	}
 	viewport := ui.runtime.viewport
-	width := minf(480,viewport.w)
+	width := minf(720 if state.tab == .Motion else 480,viewport.w)
 	state.panel_bounds = Rect{viewport.x+viewport.w-width,viewport.y,width,viewport.h}
 	container_begin(ui,.Container,label="inspector-overlay",key=key_string("inspector-overlay"),style=layout_style(.Row,clip=true))
 	container_begin(ui,.Container,label="inspector-spacer",style=layout_style(grow=1)); container_end(ui)

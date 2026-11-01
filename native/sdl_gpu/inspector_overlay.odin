@@ -7,6 +7,7 @@ import "vendor:sdl3"
 Native_Inspector_Options :: struct {
 	enabled: bool,
 	start_visible: bool,
+	start_motion: bool,
 }
 
 native_inspector_options :: proc(arguments: []string) -> Native_Inspector_Options {
@@ -14,6 +15,9 @@ native_inspector_options :: proc(arguments: []string) -> Native_Inspector_Option
 	for argument in arguments {
 		if argument == "--inspector" || argument == "--inspector-fixture" { options.enabled = true }
 		if argument == "--inspector-open" { options.enabled, options.start_visible = true, true }
+		if argument == "--inspector-motion" {
+			options.enabled, options.start_visible, options.start_motion = true, true, true
+		}
 	}
 	return options
 }
@@ -51,6 +55,7 @@ native_inspector_runtime_init :: proc(overlay: ^Native_Inspector_Overlay, option
 	overlay.runtime = alicorn.new_runtime(viewport)
 	overlay.runtime_ready = true
 	overlay.state = alicorn.inspector_overlay_make()
+	if options.start_motion { overlay.state.tab = .Motion }
 	if options.start_visible { alicorn.inspector_overlay_open(&overlay.state) }
 	overlay.redraw_pending = options.start_visible
 }
@@ -97,8 +102,13 @@ native_application_has_pending_work :: proc(rt: ^alicorn.Runtime, suspend_hard_e
 	return rt != nil && ((rt.invalidated && (!suspend_hard_error || !rt.hard_error)) || alicorn.frame_needs_submission(rt))
 }
 
-native_inspector_host_summary :: proc(timing: ^Native_Host_Timing, rt: ^alicorn.Runtime, host_wakes: u64) -> alicorn.Inspector_Host_Summary {
-	return alicorn.Inspector_Host_Summary{
+native_inspector_host_summary :: proc(
+	timing: ^Native_Host_Timing,
+	rt: ^alicorn.Runtime,
+	host_wakes: u64,
+	motion_scheduler: ^Native_Motion_Scheduler_State = nil,
+) -> alicorn.Inspector_Host_Summary {
+	summary := alicorn.Inspector_Host_Summary{
 		host_wakes=host_wakes,
 		application_builds=rt.stats.frames_built,
 		application_submits=rt.stats.gpu_submits,
@@ -117,6 +127,15 @@ native_inspector_host_summary :: proc(timing: ^Native_Host_Timing, rt: ^alicorn.
 		motion_max_active_owners=timing.motion_max_active_owners,
 		motion_max_lateness_ns=timing.motion_max_lateness_ns,
 	}
+	if motion_scheduler != nil {
+		summary.motion_scheduler_observed = true
+		summary.motion_scheduler_active = motion_scheduler.active
+		summary.motion_scheduler_suspended = motion_scheduler.suspended
+		summary.motion_next_deadline_ns = motion_scheduler.next_deadline_ns
+		_, deadline_available := native_motion_scheduler_next_deadline(motion_scheduler)
+		summary.motion_deadline_available = deadline_available
+	}
+	return summary
 }
 
 native_inspector_update :: proc(overlay: ^Native_Inspector_Overlay, source: ^alicorn.Runtime, viewport: alicorn.Rect, summary: ^alicorn.Inspector_Host_Summary = nil) {

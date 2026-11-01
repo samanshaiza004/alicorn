@@ -29,10 +29,15 @@ inspector_test_describe :: proc(rt: ^Runtime, include_group := true, extra_rows 
 	return nodes
 }
 
-inspector_test_build :: proc(panel: ^Runtime,state: ^Inspector_Overlay,app: ^Runtime) {
+inspector_test_build :: proc(
+	panel: ^Runtime,
+	state: ^Inspector_Overlay,
+	app: ^Runtime,
+	host: ^Inspector_Host_Summary = nil,
+) {
 	invalidate_root(panel,"inspector test rebuild")
 	ui,build := begin_frame(panel)
-	if build { inspector_overlay_build(&ui,state,app); end_frame(&ui) }
+	if build { inspector_overlay_build(&ui,state,app,host); end_frame(&ui) }
 }
 
 @(test)
@@ -216,7 +221,9 @@ test_inspector_motion_snapshot_is_passive_and_explains_the_transition :: proc(t:
 	defer inspector_overlay_destroy(&state)
 	inspector_overlay_open(&state)
 	state.tab = .Motion
-	state.selected = nodes.sibling
+	// The native --inspector-motion path starts on this tab and auto-selects
+	// the first retained owner, which keeps captured diagnostics reproducible.
+	state.selected = 0
 	app_before := inspect(&app)
 	defer delete(app_before)
 	stats_before := app.stats
@@ -229,7 +236,6 @@ test_inspector_motion_snapshot_is_passive_and_explains_the_transition :: proc(t:
 	trace_sequence_before := app.trace.sequence
 	diagnostic_sequence_before := app.motion_diagnostics.sequence
 	presentation_pending_before := app.presentation_pending
-	inspector_test_build(&panel, &state, &app)
 
 	found_target := false
 	found_presentation := false
@@ -240,6 +246,15 @@ test_inspector_motion_snapshot_is_passive_and_explains_the_transition :: proc(t:
 	found_transition := false
 	found_sample_time := false
 	found_clock_time := false
+	found_next_deadline := false
+	found_scheduler_idle_wording := false
+	host := Inspector_Host_Summary{
+		motion_scheduler_observed=true,
+		motion_scheduler_active=true,
+		motion_deadline_available=true,
+		motion_next_deadline_ns=42_000_000,
+	}
+	inspector_test_build(&panel, &state, &app, &host)
 	for id in panel.order {
 		if node, ok := panel.nodes[id]; ok && node != nil {
 			found_target = found_target || strings.contains(node.text, "target=(120.0000, 12.0000)")
@@ -251,13 +266,17 @@ test_inspector_motion_snapshot_is_passive_and_explains_the_transition :: proc(t:
 			found_transition = found_transition || strings.contains(node.text, "Target_Declared")
 			found_sample_time = found_sample_time || strings.contains(node.text, "last sampled at 25000000 ns")
 			found_clock_time = found_clock_time || strings.contains(node.text, "Runtime clock: 25000000 ns")
+			found_next_deadline = found_next_deadline || strings.contains(node.text, "Next native presentation deadline: t=42000000 ns")
+			found_scheduler_idle_wording = found_scheduler_idle_wording || strings.contains(node.text, "Native presentation scheduler: idle")
 		}
 	}
 	app_after := inspect(&app)
 	defer delete(app_after)
 	snapshot_after := motion_diagnostics_owner_snapshot(&app, nodes.sibling)
-	testing.expect(t, found_target && found_presentation && found_declaration && found_cause && found_tolerances && found_policy && found_transition && found_sample_time && found_clock_time,
-		"the Motion tab should explain target, presentation timestamp, declaration, cause, tolerances, input policy, and transition")
+	testing.expect(t, state.selected == nodes.sibling && found_target && found_presentation && found_declaration && found_cause &&
+		found_tolerances && found_policy && found_transition && found_sample_time && found_clock_time && found_next_deadline &&
+		!found_scheduler_idle_wording,
+		"the Motion tab should auto-select the retained owner and explain target, presentation time, declaration, cause, tolerances, input policy, transition, and host deadline")
 	testing.expect(t, app_before == app_after && app.stats == stats_before && app.allocation_stats^ == allocation_before,
 		"building the Motion tab must leave application state, work counters, and allocation counters untouched")
 	testing.expect(t, diagnostic_stats_before == motion_diagnostics_stats(&app) && activity_before == motion_activity(&app) &&

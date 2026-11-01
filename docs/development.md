@@ -162,6 +162,41 @@ These two switches belong to the fixture;
 `--inspector` and `--inspector-open` work with any app using the reusable host,
 without application diagnostics code.
 
+### Motion inspector and virtual-clock replay
+
+The Motion tab is passive: it shows the selected retained owner's declaration,
+cause, intent, target, last presented pose and velocity, tolerances, settlement
+bound, and the native scheduler's next presentation deadline. Its bounded trace
+records transitions rather than every sample. The runtime replay regression
+drives the same A→B→C interruptions with sparse and irregular sample schedules,
+then checks no-op retargeting, reduced-motion rewriting, suspension, and a
+single current-time sample after a hidden gap.
+
+For a readable native capture of interrupted motion in Example 09, use:
+
+```powershell
+.\tools\run_example.ps1 -Example 09_retained_motion -Speed `
+  -AppArgs @('--motion-validation', '--motion-inspector-review', '--inspector-motion',
+    '--diagnostics', '--capture-after=1', '--capture-dir=out/issue-144/motion-inspector')
+```
+
+For the settled state and a bounded idle checkpoint, use:
+
+```powershell
+.\tools\run_example.ps1 -Example 09_retained_motion -Speed `
+  -AppArgs @('--motion-validation-long', '--motion-inspector-review', '--inspector-motion',
+    '--diagnostics', '--capture-after=8', '--idle-validation-seconds=10',
+    '--capture-dir=out/issue-144/motion-settled')
+```
+
+`--inspector-motion` opts into the native inspector and opens its Motion tab.
+The review flag gives the example a larger client area for captures. The
+validation report in `docs/validation/issue-144-motion-diagnostics.md` records
+the tested commands, screenshots, paired closed-inspector idle run, and its
+limits. Native hidden-window suspension remains a separate host lifecycle check;
+the virtual-clock replay verifies that inspection during suspension does not
+advance the last presented sample.
+
 For a real native accessibility working-set experiment with one million logical
 rows, run:
 

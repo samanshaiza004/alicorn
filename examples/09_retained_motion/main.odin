@@ -201,6 +201,7 @@ scheduled_wake_app :: proc(state: rawptr, rt: ^alicorn.Runtime, _class: host.Sch
 main :: proc() {
 	app := App{}
 	validation_smoke := false
+	inspector_review := false
 	for argument in os.args {
 		if argument == "--motion-validation" {
 			// Make three rapid logical selection changes to interrupt the retained
@@ -219,13 +220,21 @@ main :: proc() {
 			// smoke exit, so native visibility/lifecycle checks can suspend the
 			// window and restore it after the original settling deadline.
 			app.validation_mode = true
+		} else if argument == "--motion-inspector-review" {
+			// Pair with --motion-validation and --inspector-motion to produce a
+			// readable, repeatable native inspector capture of interrupted motion.
+			app.validation_mode = true
+			app.lifecycle_validation = true
+			inspector_review = true
 		}
 	}
+	width, height := 720, 360
+	if inspector_review { width, height = 1440, 960 }
 	host.Run(host.Application{
 		state=rawptr(&app),
 		title="Alicorn · Retained Motion",
-		width=720,
-		height=360,
+		width=width,
+		height=height,
 		interaction_update_policy=.Correct_After_Interaction,
 		on_initialize=initialize_app,
 		build=build_app,
