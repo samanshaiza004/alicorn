@@ -80,6 +80,14 @@ presentation state before and after building the Motion tab. The values remain
 unchanged. Native-host tests also confirm that an enabled but closed inspector
 has no pending inspector submission.
 
+The failure-path audit found existing coverage in
+`runtime/motion_retained_test.odin::test_motion_diagnostics_report_invalid_ids_and_owner_cap`:
+an invalid retained node ID produces a `.Failure` event with
+`.Owner_Not_Retained`, and reaching the owner cap produces a `.Failure` event
+with `.Owner_Limit`; both increment the aggregate failure counter. This case
+passed in the full Windows run below, so no additional failure-path test was
+needed.
+
 A paired Windows D3D12 idle run compared Example 09 with no inspector allocation
 against the same executable with the inspector allocated but hidden. Each run
 used a three-second idle-validation interval and `--diagnostics`:
