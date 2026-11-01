@@ -69,7 +69,6 @@ Native_Secondary_Window :: struct {
 	move_active: bool,
 	move_timer_active: bool,
 	move_hwnd: rawptr,
-	move_last_redraw_ns: u64,
 	timing: Native_Host_Timing,
 	flight_recorder: Native_Flight_Recorder,
 	host_scratch: Native_Host_Scratch,
@@ -698,6 +697,7 @@ native_secondary_window_render :: proc(
 native_secondary_window_live_resize_redraw :: proc(
 	manager: ^Native_Secondary_Window_Manager,
 	child: ^Native_Secondary_Window,
+	request_presentation := true,
 ) {
 	if manager == nil || child == nil || !child.active || child.runtime == nil { return }
 	if child.live_resize_rendering {
@@ -708,7 +708,7 @@ native_secondary_window_live_resize_redraw :: proc(
 	defer child.live_resize_rendering = false
 	for _ in 0..<2 {
 		child.live_resize_pending = false
-		native_secondary_window_live_resize_redraw_once(manager, child)
+		native_secondary_window_live_resize_redraw_once(manager, child, request_presentation)
 		if !child.live_resize_pending { return }
 	}
 }
@@ -716,6 +716,7 @@ native_secondary_window_live_resize_redraw :: proc(
 native_secondary_window_live_resize_redraw_once :: proc(
 	manager: ^Native_Secondary_Window_Manager,
 	child: ^Native_Secondary_Window,
+	request_presentation := true,
 ) {
 	if manager == nil || child == nil || !child.active || child.runtime == nil { return }
 	native_host_scratch_reset(&child.host_scratch)
@@ -752,7 +753,7 @@ native_secondary_window_live_resize_redraw_once :: proc(
 	if child.native_menu.application != nil && child.native_menu.chrome_redraw_pending {
 		// The window chrome may need a frame even when application content is clean.
 		alicorn.request_presentation(child.runtime, "secondary native chrome live resize")
-	} else {
+	} else if request_presentation {
 		alicorn.request_presentation(child.runtime, "SDL secondary live-resize expose")
 	}
 	if alicorn.presentation_needs_frame(child.runtime) {

@@ -198,6 +198,30 @@ native_motion_scheduler_next_deadline :: proc(state: ^Native_Motion_Scheduler_St
 	return state.next_deadline_ns, true
 }
 
+// native_motion_scheduler_service_due reports whether a host presentation
+// opportunity should advance this window: a due visible deadline, an initial
+// active response, a restore sample, or the first transition into suspension.
+// It is intentionally independent of which window owns a native modal loop.
+native_motion_scheduler_service_due :: proc(
+	state: ^Native_Motion_Scheduler_State,
+	active_owners: int,
+	window_renderable: bool,
+	now_ns: u64,
+) -> bool {
+	if state == nil || active_owners <= 0 { return false }
+	if !window_renderable { return !state.suspended }
+	if state.suspended || !state.active || state.next_deadline_ns == 0 { return true }
+	return now_ns >= state.next_deadline_ns
+}
+
+native_motion_scheduler_has_renderable_work :: proc(
+	state: ^Native_Motion_Scheduler_State,
+	active_owners: int,
+	window_renderable: bool,
+) -> bool {
+	return state != nil && active_owners > 0 && window_renderable
+}
+
 Native_Motion_Update_Result :: struct {
 	sampled: bool,
 	bounded_snap: bool,

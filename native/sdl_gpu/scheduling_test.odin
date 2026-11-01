@@ -154,6 +154,33 @@ test_live_resize_motion_sample_uses_retained_path_without_rebuilding_application
 }
 
 @(test)
+test_native_motion_service_due_is_independent_per_window :: proc(t: ^testing.T) {
+	primary := Native_Motion_Scheduler_State{}
+	secondary := Native_Motion_Scheduler_State{
+		active=true,
+		next_deadline_ns=500,
+	}
+	primary_owners := 0
+	secondary_owners := 1
+	primary_due := native_motion_scheduler_service_due(&primary, primary_owners, true, 500)
+	secondary_due_before := native_motion_scheduler_service_due(&secondary, secondary_owners, true, 499)
+	secondary_due_now := native_motion_scheduler_service_due(&secondary, secondary_owners, true, 500)
+	testing.expect(t, !primary_due && !secondary_due_before && secondary_due_now,
+		"the idle dragged window must not suppress a different window's due motion service")
+
+	secondary.suspended = true
+	testing.expect(t, !native_motion_scheduler_service_due(&secondary, secondary_owners, false, 600),
+		"a hidden suspended window must not request repeated move-loop samples")
+	testing.expect(t, native_motion_scheduler_service_due(&secondary, secondary_owners, true, 600),
+		"a visible restored window must receive one current-time service opportunity")
+	secondary.suspended = false
+	secondary.active = true
+	secondary.next_deadline_ns = 600+NATIVE_MOTION_SAMPLE_INTERVAL_NS
+	testing.expect(t, !native_motion_scheduler_service_due(&secondary, secondary_owners, true, 600),
+		"after the restore opportunity, the sibling should wait for its own next deadline")
+}
+
+@(test)
 test_native_motion_suspension_clock_starts_with_active_work :: proc(t: ^testing.T) {
 	state := Native_Motion_Scheduler_State{}
 	_ = native_motion_scheduler_prepare(&state, 0, false, 1_000)
