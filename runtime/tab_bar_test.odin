@@ -96,6 +96,33 @@ tab_bar_test_build_scoped_component :: proc(
 	component_end(ui)
 }
 
+@(test)
+test_tab_bar_exposes_opt_in_drag_preview_roots_without_changing_default_results :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 900, 120})
+	defer destroy_runtime(&rt)
+	items := tab_bar_test_items()
+	options := tab_bar_test_options()
+	options.animate_drag_reorder = true
+	options.drag_preview_mode = .Source_Subtree
+	result := tab_bar_test_build(&rt, items[:], 900, options)
+	testing.expect(t, len(result.item_nodes) == len(items),
+		"opted-in TabBar motion should expose one retained root per input item")
+	if len(result.item_nodes) == len(items) {
+		for node_id, index in result.item_nodes {
+			node, found := rt.nodes[node_id]
+			mode := rt.drag_preview_modes[node_id]
+			testing.expect(t, found && node != nil && node.drag_source_type == TAB_BAR_TEST_DRAG_TYPE &&
+				node.drag_source_id == items[index].semantic_id && mode == .Source_Subtree,
+				"each returned tab root should retain its stable drag identity and opted-in subtree preview mode")
+		}
+	}
+	default_options := tab_bar_test_options()
+	invalidate_root(&rt, "verify default TabBar result")
+	default_result := tab_bar_test_build(&rt, items[:], 900, default_options)
+	testing.expect(t, len(default_result.item_nodes) == 0,
+		"ordinary TabBar calls should not allocate or return per-item motion roots")
+}
+
 tab_bar_test_build_scoped_pair :: proc(
 	rt: ^Runtime,
 	first_selected_index, second_selected_index: int,

@@ -30,12 +30,19 @@ Tab_Bar_Options :: struct {
 	gap:           f32,
 	close_policy:  Tab_Close_Policy,
 	drag_type:     Drag_Type,
+	// drag_preview_mode is forwarded to each tab drag source. Source_Subtree
+	// lifts the complete painted tab into an inert runtime overlay.
+	drag_preview_mode: Drag_Preview_Mode,
 	presentation:  Tab_Bar_Presentation,
 	appearance:    Tab_Bar_Appearance,
 	// animate_selection_indicator reserves stable indicator geometry and returns
 	// each decorative indicator owner in Tab_Bar_Result.item_indicators. The
 	// caller can then opt those owners into ui.motion without moving the tabs.
 	animate_selection_indicator: bool,
+	// animate_drag_reorder returns each input item's retained tab root. Callers
+	// may apply parent-local ui.motion translations while the semantic order
+	// remains the application's authoritative order.
+	animate_drag_reorder: bool,
 	// Applications resolve their controlled surface's theme separately from
 	// the workbench environment containing the tabs.
 	selected_fill: Color,
@@ -122,6 +129,9 @@ Tab_Bar_Result :: struct {
 	// input item indices to passive indicator owners. It uses the frame scratch
 	// allocator and is valid only until end_frame.
 	item_indicators: []Node_ID,
+	// When animate_drag_reorder is enabled, this frame-local slice maps input
+	// indices to tab roots. Its lifetime also ends at end_frame.
+	item_nodes: []Node_ID,
 }
 
 Tab_Bar_Navigation :: enum {
@@ -169,6 +179,9 @@ tab_bar :: proc(
 	}
 	if opts.animate_selection_indicator {
 		result.item_indicators = make([]Node_ID, len(items), allocator=context.temp_allocator)
+	}
+	if opts.animate_drag_reorder {
+		result.item_nodes = make([]Node_ID, len(items), allocator=context.temp_allocator)
 	}
 
 	opts.min_tab_width = clampf(opts.min_tab_width, 48, 1024)
@@ -337,6 +350,7 @@ tab_bar :: proc(
 			variant=.Tab,
 		)
 		if tab_id == 0 { continue }
+		if opts.animate_drag_reorder { result.item_nodes[index] = tab_id }
 		if item.selected { result.selected_tab = tab_id }
 		if len(item.tooltip) > 0 { _ = tooltip(ui, item.tooltip) }
 		_ = visual_part_attach(ui, tab_id, tab_id, visual_part_core(.Surface))
@@ -384,7 +398,7 @@ tab_bar :: proc(
 		})
 		if item.selected { selected_semantic_id = item_semantic_id }
 		if opts.drag_type != Drag_Type(0) && semantic_id_is_valid(item.semantic_id) {
-			_ = drag_source(ui, opts.drag_type, item.semantic_id)
+			_ = drag_source(ui, opts.drag_type, item.semantic_id, opts.drag_preview_mode)
 			_ = drop_target(ui, opts.drag_type, item.semantic_id, .Between_Horizontal)
 		}
 		if tab_activated && result.action == .None { result.action, result.item_index = .Select, index }

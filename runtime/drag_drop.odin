@@ -4,11 +4,18 @@ DRAG_SOURCE_OPACITY :: f32(0.55)
 DRAG_PREVIEW_POINTER_OFFSET :: f32(12)
 DRAG_PREVIEW_MAX_WIDTH :: f32(280)
 DRAG_PREVIEW_MAX_LABEL_BYTES :: 256
+DRAG_PREVIEW_MAX_SUBTREE_COMMANDS :: 512
+DRAG_PREVIEW_MAX_SUBTREE_SPANS :: 2048
 
 // drag_source marks the most recently described node as a local drag source.
 // The application identity must remain meaningful if virtualization removes
 // the node while the drag is in progress.
-drag_source :: proc(ui: ^UI, drag_type: Drag_Type, identity: Semantic_ID) -> bool {
+drag_source :: proc(
+	ui: ^UI,
+	drag_type: Drag_Type,
+	identity: Semantic_ID,
+	preview_mode := Drag_Preview_Mode.Label,
+) -> bool {
 	if ui == nil || ui.runtime == nil || drag_type == Drag_Type(0) || !semantic_id_is_valid(identity) { return false }
 	if len(ui.runtime.pending) == 0 { return false }
 	last := len(ui.runtime.pending)-1
@@ -16,6 +23,14 @@ drag_source :: proc(ui: ^UI, drag_type: Drag_Type, identity: Semantic_ID) -> boo
 	description := &ui.runtime.pending[last].description
 	description.drag_source_type = drag_type
 	description.drag_source_id = identity
+	if preview_mode == .Source_Subtree {
+		if ui.runtime.drag_preview_modes == nil {
+			ui.runtime.drag_preview_modes = make(map[Node_ID]Drag_Preview_Mode, allocator=ui.runtime.persistent_allocator)
+		}
+		ui.runtime.drag_preview_modes[description.id] = preview_mode
+	} else {
+		delete_key(&ui.runtime.drag_preview_modes, description.id)
+	}
 	return true
 }
 
@@ -86,6 +101,15 @@ drag_preview_begin :: proc(rt: ^Runtime) {
 	if rt == nil || rt.drag.phase != .Dragging { return }
 	drag_preview_clear(rt)
 	if source, ok := rt.nodes[rt.drag.source_node]; ok && source.active {
+		preview_mode := rt.drag_preview_modes[source.id]
+		if preview_mode == .Source_Subtree && drag_preview_capture_subtree(rt, source.id) {
+			rt.drag_preview.mode = .Source_Subtree
+			rt.drag_preview.width = source.bounds.w
+			rt.drag_preview.height = source.bounds.h
+			rt.composition_rebuild = true
+			request_presentation(rt, "dragged subtree lifted")
+			return
+		}
 		label := source.label if source.label != "" else source.text
 		if len(label) > DRAG_PREVIEW_MAX_LABEL_BYTES {
 			label = label[:grapheme_floor_boundary(label, DRAG_PREVIEW_MAX_LABEL_BYTES)]
@@ -128,23 +152,82 @@ drag_preview_begin :: proc(rt: ^Runtime) {
 	request_presentation(rt, "drag preview started")
 }
 
+drag_preview_capture_subtree :: proc(rt: ^Runtime, source: Node_ID) -> bool {
+	if rt == nil || source == 0 || len(rt.display_target) == 0 { return false }
+	command_count, span_count := 0, 0
+	for command in rt.display_target {
+		if !drag_preview_owner_is_descendant(rt, command.owner, source) { continue }
+		command_count += 1
+		if text, ok := command.payload.(Text_Paint); ok { span_count += len(text.spans) }
+		if command_count > DRAG_PREVIEW_MAX_SUBTREE_COMMANDS || span_count > DRAG_PREVIEW_MAX_SUBTREE_SPANS { return false }
+	}
+	if command_count == 0 { return false }
+
+	preview := &rt.drag_preview
+	preview.commands = make([dynamic]Paint_Command, 0, command_count, allocator=rt.persistent_allocator)
+	preview.spans = make([dynamic]Text_Paint_Span, span_count, allocator=rt.persistent_allocator)
+	span_start := 0
+	for original in rt.display_target {
+		if !drag_preview_owner_is_descendant(rt, original.owner, source) { continue }
+		command := original
+		command.owner = 0
+		// The snapshot is an inert overlay. It follows the pointer outside the
+		// original tab and is clipped only by the native window viewport.
+		command.clip = rt.viewport
+		if text, ok := command.payload.(Text_Paint); ok {
+			count := len(text.spans)
+			if count > 0 {
+				copy(preview.spans[span_start:span_start+count], text.spans)
+				text.spans = preview.spans[span_start:span_start+count]
+				span_start += count
+			}
+			command.payload = text
+		}
+		append(&preview.commands, command)
+	}
+	return len(preview.commands) == command_count
+}
+
+drag_preview_owner_is_descendant :: proc(rt: ^Runtime, owner, ancestor: Node_ID) -> bool {
+	if rt == nil || owner == 0 || ancestor == 0 { return false }
+	current := owner
+	for current != 0 {
+		if current == ancestor { return true }
+		node, ok := rt.nodes[current]
+		if !ok || node == nil { return false }
+		current = node.parent
+	}
+	return false
+}
+
 // drag_preview_clear removes borrowed text commands before releasing the
 // shaped label they refer to. The pending presentation rebuild restores the
 // ordinary retained list without waking the application.
 drag_preview_clear :: proc(rt: ^Runtime) {
 	if rt == nil { return }
 	if rt.transient_overlay_kind == .Drag_Preview {
-		write_index := 0
-		for read_index := 0; read_index < len(rt.display_target); read_index += 1 {
-			command := rt.display_target[read_index]
-			if command.owner == 0 { continue }
-			rt.display_target[write_index] = command
-			write_index += 1
+		start := rt.drag_preview.display_start
+		count := len(rt.drag_preview.commands)
+		if rt.drag_preview.mode != .Source_Subtree { count = 0 }
+		if count == 0 && start >= 0 && start < len(rt.display_target) {
+			// The label preview occupies two surfaces and, if shaping succeeded,
+			// one text command. Remove only that bounded tail segment; unrelated
+			// runtime overlays such as tooltips remain intact.
+			count = 2
+			if rt.drag_preview.ready { count += 1 }
 		}
-		for len(rt.display_target) > write_index { _ = pop(&rt.display_target) }
+		if start >= 0 && start+count <= len(rt.display_target) {
+			new_len := len(rt.display_target)-count
+			for read_index := start+count; read_index < len(rt.display_target); read_index += 1 {
+				rt.display_target[read_index-count] = rt.display_target[read_index]
+			}
+			for len(rt.display_target) > new_len { _ = pop(&rt.display_target) }
+		}
 	}
 	if rt.transient_overlay_kind == .Drag_Preview { rt.transient_overlay_kind = .None }
 	if rt.drag_preview.ready { text_run_destroy(&rt.drag_preview.run) }
+	if len(rt.drag_preview.commands) > 0 { delete(rt.drag_preview.commands) }
+	if len(rt.drag_preview.spans) > 0 { delete(rt.drag_preview.spans) }
 	rt.drag_preview = Drag_Preview{}
 	rt.composition_rebuild = true
 	request_presentation(rt, "drag preview cleared")
@@ -156,7 +239,18 @@ drag_preview_clear :: proc(rt: ^Runtime) {
 append_drag_preview :: proc(rt: ^Runtime) {
 	if rt == nil || rt.drag.phase != .Dragging { return }
 	rt.transient_overlay_kind = .Drag_Preview
-	preview := rt.drag_preview
+	preview := &rt.drag_preview
+	preview.display_start = len(rt.display_target)
+	if preview.mode == .Source_Subtree && len(preview.commands) > 0 {
+		delta := drag_preview_translation(rt)
+		for base in preview.commands {
+			command := base
+			command.translation[0] += delta[0]
+			command.translation[1] += delta[1]
+			append(&rt.display_target, command)
+		}
+		return
+	}
 	shadow := Rect{2, 3, preview.width, preview.height}
 	card := Rect{0, 0, preview.width, preview.height}
 	append(&rt.display_target,
@@ -174,6 +268,9 @@ append_drag_preview :: proc(rt: ^Runtime) {
 
 drag_preview_translation :: proc(rt: ^Runtime) -> [2]f32 {
 	if rt == nil { return {} }
+	if rt.drag_preview.mode == .Source_Subtree {
+		return [2]f32{rt.drag.x-rt.drag.start_x, rt.drag.y-rt.drag.start_y}
+	}
 	return [2]f32{rt.drag.x+DRAG_PREVIEW_POINTER_OFFSET, rt.drag.y+DRAG_PREVIEW_POINTER_OFFSET}
 }
 
@@ -183,16 +280,47 @@ drag_preview_pointer_moved :: proc(rt: ^Runtime) {
 	// commands; retain its shaped mesh and do not recompose the app tree.
 	translation := drag_preview_translation(rt)
 	if rt.transient_overlay_kind == .Drag_Preview {
-		for &command in rt.display_target {
-			if command.owner == 0 { command.translation = translation }
+		if rt.drag_preview.mode == .Source_Subtree {
+			start := rt.drag_preview.display_start
+			count := len(rt.drag_preview.commands)
+			if start < 0 || start+count > len(rt.display_target) {
+				rt.composition_rebuild = true
+				request_presentation(rt, "dragged subtree overlay needs rebuilding")
+				return
+			}
+			for offset in 0..<count {
+				command := rt.drag_preview.commands[offset]
+				command.translation[0] += translation[0]
+				command.translation[1] += translation[1]
+				rt.display_target[start+offset] = command
+				rt.display[start+offset] = layout_finalize_paint_command(command, rt.presentation_scale_x, rt.presentation_scale_y)
+				rt.stats.display_commands_finalized += 1
+			}
+		} else {
+			count := 2
+			if rt.drag_preview.ready { count += 1 }
+			for index := rt.drag_preview.display_start; index < min(rt.drag_preview.display_start+count, len(rt.display_target)); index += 1 {
+				if rt.display_target[index].owner == 0 {
+					rt.display_target[index].translation = translation
+				}
+			}
+			layout_finalize_display(rt, .Display_Transient_Update)
+			request_presentation(rt, "drag preview followed pointer")
+			return
 		}
-		layout_finalize_display(rt, .Display_Transient_Update)
+		rt.stats.global_work_by_reason[.Display_Transient_Update] += 1
 	}
 	request_presentation(rt, "drag preview followed pointer")
 }
 
 drag_source_opacity :: proc(rt: ^Runtime, id: Node_ID) -> f32 {
-	if rt != nil && rt.drag.phase == .Dragging && rt.drag.source_node == id { return DRAG_SOURCE_OPACITY }
+	if rt != nil && rt.drag.phase == .Dragging && rt.drag.source_node == id {
+		// A lifted source subtree already has a full-contrast paint-only copy.
+		// Hide its original visual slot so displaced siblings don't overlap it;
+		// the retained node and its hit/semantic identity remain present.
+		if rt.drag_preview.mode == .Source_Subtree { return 0 }
+		return DRAG_SOURCE_OPACITY
+	}
 	return 1
 }
 

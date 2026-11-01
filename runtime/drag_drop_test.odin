@@ -1,5 +1,6 @@
 package alicorn
 
+import "core:fmt"
 import "core:testing"
 
 DRAG_TEST_TYPE :: Drag_Type(41)
@@ -9,14 +10,20 @@ DRAG_SCROLL_SOURCE :: Semantic_ID{namespace=702, value=1}
 DRAG_SCROLL_TARGET :: Semantic_ID{namespace=702, value=2}
 DRAG_TEST_UI_FONT_DATA :: #load("../assets/fonts/AtkinsonHyperlegibleNext-Variable.ttf")
 
-drag_test_build :: proc(rt: ^Runtime, include_source := true, target_width: f32 = 180, source_disabled := false) -> (source: Node_ID, target_container: Node_ID, target_button: Node_ID) {
+drag_test_build :: proc(
+	rt: ^Runtime,
+	include_source := true,
+	target_width: f32 = 180,
+	source_disabled := false,
+	preview_mode := Drag_Preview_Mode.Label,
+) -> (source: Node_ID, target_container: Node_ID, target_button: Node_ID) {
 	ui, should_build := begin_frame(rt)
 	if !should_build { return }
 	container_begin_simple(&ui, .Root, label="drag-test-root", key=key_string("drag-test-root"), style=layout_style(.Row, width=400, height=100, gap=20, padding=10))
 	if include_source {
 		source, _ = button_begin(&ui, "source", key=key_string("drag-test-source"), style=layout_style(width=80, height=50), state=Button_State{disabled=source_disabled})
 		_ = semantic_bind(&ui, DRAG_TEST_SOURCE)
-		_ = drag_source(&ui, DRAG_TEST_TYPE, DRAG_TEST_SOURCE)
+		_ = drag_source(&ui, DRAG_TEST_TYPE, DRAG_TEST_SOURCE, preview_mode)
 		button_end(&ui)
 	}
 	target_container = container_begin_simple(&ui, .Container, label="drop-group", key=key_string("drag-test-target-container"), style=layout_style(.Row, width=target_width, height=50))
@@ -26,6 +33,64 @@ drag_test_build :: proc(rt: ^Runtime, include_source := true, target_width: f32 
 	container_end(&ui)
 	end_frame(&ui)
 	return
+}
+
+@(test)
+test_drag_source_subtree_preview_tracks_pointer_without_full_display_pass :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 400, 100})
+	defer destroy_runtime(&rt)
+	testing.expect(t, text_engine_load_font(&rt.text_engine, DRAG_TEST_UI_FONT_DATA), "drag preview test UI font should load")
+	source, _, target_button := drag_test_build(&rt, preview_mode=.Source_Subtree)
+	if source == 0 || target_button == 0 { testing.expect(t, false, "subtree preview controls should be retained"); return }
+	source_node := rt.nodes[source]
+	target_node := rt.nodes[target_button]
+	sx := source_node.bounds.x+source_node.bounds.w*0.25
+	sy := source_node.bounds.y+source_node.bounds.h*0.5
+	target_x := target_node.bounds.x+target_node.bounds.w*0.5
+	target_y := target_node.bounds.y+target_node.bounds.h*0.5
+	_ = process_pointer(&rt, Pointer_Event{kind=.Down, x=sx, y=sy, button=POINTER_BUTTON_PRIMARY})
+	rt.invalidated = false
+	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=target_x, y=target_y})
+	started, started_ok := drag_event_take(&rt)
+	testing.expect(t, started_ok && started.kind == .Started && rt.drag_preview.mode == .Source_Subtree &&
+		len(rt.drag_preview.commands) >= 2 && !rt.drag_preview.ready,
+		"opted-in dragging should capture the full painted subtree without shaping a label card")
+	testing.expect(t, drag_source_opacity(&rt, source) == 0,
+		"a lifted subtree should hide its original visual slot while retaining the source node and hit identity")
+	if len(rt.drag_preview.commands) == 0 { return }
+	ui, presentation_ready := begin_presentation_frame(&rt)
+	if presentation_ready { end_presentation_frame(&ui) }
+	semantic_revision := rt.semantic_revision
+	semantic_entity_count := len(rt.semantic_entities)
+	start := rt.drag_preview.display_start
+	count := len(rt.drag_preview.commands)
+	text_preview_found := false
+	for index in start..<start+count {
+		if index >= len(rt.display) { continue }
+		command := rt.display[index]
+		testing.expect(t, command.owner == 0 && command.clip == rt.viewport,
+			fmt.tprintf("the lifted tab copy must be inert and viewport clipped: index=%d owner=%d clip=%v viewport=%v", index, command.owner, command.clip, rt.viewport))
+		if text_paint, ok := command.payload.(Text_Paint); ok {
+			if run, found := paint_text_run_resolve(&rt, text_paint.run); found && run.value == "source" { text_preview_found = true }
+		}
+	}
+	testing.expect(t, presentation_ready && count == len(rt.drag_preview.commands) && text_preview_found,
+		"the subtree overlay should contain the original tab surface and label as paint-only commands")
+	passes_before := rt.stats.display_finalization_full_passes
+	finalized_before := rt.stats.display_commands_finalized
+	first_before := rt.display_target[start].translation
+	drag_x_before, drag_y_before := rt.drag.x, rt.drag.y
+	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=drag_x_before+3, y=drag_y_before+2})
+	first_after := rt.display_target[start].translation
+	testing.expect(t, first_after == [2]f32{first_before[0]+3, first_before[1]+2},
+		fmt.tprintf("the captured tab must follow pointer deltas exactly: before=%v after=%v pointer=%f,%f", first_before, first_after, drag_x_before, drag_y_before))
+	testing.expect(t, rt.stats.display_finalization_full_passes == passes_before &&
+		rt.stats.display_commands_finalized-finalized_before == u64(count) &&
+		rt.stats.global_work_by_reason[.Display_Transient_Update] > 0,
+		fmt.tprintf("pointer movement should finalize bounded ghost commands only: passes=%d/%d commands=%d expected=%d transient=%d", rt.stats.display_finalization_full_passes, passes_before, rt.stats.display_commands_finalized-finalized_before, count, rt.stats.global_work_by_reason[.Display_Transient_Update]))
+	testing.expect(t, rt.semantic_revision == semantic_revision &&
+		len(rt.semantic_entities) == semantic_entity_count && rt.drag.source == DRAG_TEST_SOURCE,
+		"the inert visual copy must not duplicate or mutate the semantic source")
 }
 
 @(test)

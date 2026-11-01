@@ -1094,6 +1094,8 @@ end_presentation_frame :: proc(ui: ^UI) {
 
 destroy_runtime :: proc(rt: ^Runtime) {
 	if rt.drag_preview.ready { text_run_destroy(&rt.drag_preview.run) }
+	if len(rt.drag_preview.commands) > 0 { delete(rt.drag_preview.commands) }
+	if len(rt.drag_preview.spans) > 0 { delete(rt.drag_preview.spans) }
 	if rt.tooltip.run_ready { text_run_destroy(&rt.tooltip.run) }
 	for _, node in rt.nodes {
 		delete(node.paint)
@@ -1108,6 +1110,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		free(node, allocator=rt.persistent_allocator)
 	}
 	delete(rt.nodes)
+	delete(rt.drag_preview_modes)
 	if rt.motion_owners != nil { delete(rt.motion_owners) }
 	if rt.motion_diagnostics != nil { free(rt.motion_diagnostics, allocator=rt.persistent_allocator) }
 	for _, state in rt.controlled_text_fields {
@@ -1286,6 +1289,12 @@ end_frame :: proc(ui: ^UI) {
 		context_menu_close_internal(ui.runtime, false)
 	}
 	reconcile(ui.runtime)
+	for source_id in ui.runtime.drag_preview_modes {
+		node, found := ui.runtime.nodes[source_id]
+		if !found || node == nil || !node.active || node.drag_source_type == Drag_Type(0) {
+			delete_key(&ui.runtime.drag_preview_modes, source_id)
+		}
+	}
 	// A controlled-field submit belongs to the next application description.
 	// If its node was omitted or reused without being called, expire it here.
 	for id, &state in ui.runtime.controlled_text_fields {

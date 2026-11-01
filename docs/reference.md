@@ -700,6 +700,24 @@ drag is held near an overflowing edge; the application handles the events and
 changes its own item order. The widget does not mutate the supplied slice or
 own application data.
 
+For browser-style reorder previews, `drag_preview_mode = .Source_Subtree`
+captures the source tab's current paint commands when the drag threshold is
+crossed and moves that inert visual copy with the pointer. Its original visual
+slot is hidden during the drag, while its retained node, semantic identity,
+logical hit bounds, and drop targets remain in place. If the bounded snapshot
+cannot be captured, the runtime falls back to the ordinary label preview.
+Applications should use this only when the source subtree remains realized for
+the duration of the drag.
+
+`animate_drag_reorder = true` returns `Tab_Bar_Result.item_nodes`, a frame-local
+slice mapping each input item to its retained tab root. An application can
+retarget `ui.motion` translations on neighboring roots when the proposed
+insertion slot changes, then commit the authoritative order on drop. These
+translations affect paint only: layout, close targets, semantic bounds, focus,
+and native caption hit regions continue to use their immediate logical
+geometry. The slice is valid only through the current frame and should not be
+retained. Ordinary tab bars allocate and return no item-node slice.
+
 `tab_bar_navigate(item_count, selected_index, navigation) -> (index, found)`
 computes a navigation target using `Next`, `Previous`, `Index_1` through
 `Index_8`, or `Last`. When `found` is true, `index` identifies the target in

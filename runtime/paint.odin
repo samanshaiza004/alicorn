@@ -222,11 +222,12 @@ compose_subtree :: proc(
 	if !ok || !node.active || !node.present { return }
 	if !visual_part_is_visible(rt, id) { return }
 	presentation := motion_compose_subtree(rt, id, inherited_translation, inherited_opacity)
+	presentation.opacity *= drag_source_opacity(rt, node.id)
 
 	node.display_index = -1
 	for cached_command in node.paint {
 		command := cached_command
-		command.opacity *= presentation.opacity * drag_source_opacity(rt, node.id)
+		command.opacity *= presentation.opacity
 		command.translation[0] += presentation.translation[0]
 		command.translation[1] += presentation.translation[1]
 		if node.display_index < 0 { node.display_index = len(rt.display_target) }

@@ -502,11 +502,21 @@ Drag_Session :: struct {
 	target_mode: Drop_Target_Mode,
 }
 
+Drag_Preview_Mode :: enum {
+	Label = 0,
+	Source_Subtree,
+}
+
 // Drag_Preview is a small runtime-owned presentation snapshot. The shaped run
-// remains available while a virtualized source row is temporarily unrealized.
+// or copied source display remains available while a virtualized source row is
+// temporarily unrealized.
 Drag_Preview :: struct {
 	run: Text_Run,
 	run_generation: u64,
+	mode: Drag_Preview_Mode,
+	commands: [dynamic]Paint_Command,
+	spans: [dynamic]Text_Paint_Span,
+	display_start: int,
 	width, height: f32,
 	ready: bool,
 }
@@ -1968,6 +1978,7 @@ Runtime :: struct {
 	text_field_selection_drag: text_selection.Text_Selection_Drag_State,
 	drag: Drag_Session,
 	drag_preview: Drag_Preview,
+	drag_preview_modes: map[Node_ID]Drag_Preview_Mode,
 	drag_event: Drag_Event,
 	drag_event_pending: bool,
 	scrollbar_drag_node: Node_ID,
