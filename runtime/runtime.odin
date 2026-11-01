@@ -588,6 +588,10 @@ Scroll_Axis_Behavior :: enum {
 // Scrollbar_Policy controls the solid, layout-reserving bars retained by a
 // scroll region. Auto is the default and shows only bars needed by its content.
 Scrollbar_Policy :: enum { Hidden, Auto, Always }
+// Scroll_Focus_Visual controls only the generic scroll-region focus outline.
+// Content delegates visible focus indication (for example a caret or active
+// line) to the caller; keyboard, semantic, and accessibility focus are unchanged.
+Scroll_Focus_Visual :: enum { Outline, Content }
 Scroll_Axis :: enum { Horizontal, Vertical }
 SCROLLBAR_THICKNESS :: f32(12)
 SCROLLBAR_MIN_THUMB :: f32(24)
@@ -1922,6 +1926,11 @@ Runtime :: struct {
 	order:       [dynamic]Node_ID,
 	top_level:   [dynamic]Node_ID,
 	pending:     [dynamic]Pending_Item,
+	// Only Content declarations allocate these sparse scroll presentation maps.
+	// Omitted declarations mean Outline; cached subtree reuse keeps retained state.
+	scroll_focus_visuals: map[Node_ID]Scroll_Focus_Visual,
+	pending_scroll_focus_visuals: map[Node_ID]Scroll_Focus_Visual,
+	scroll_focus_visuals_initialized: bool,
 	scroll_visibility_requests: [dynamic]Scroll_Visibility_Request,
 	seen:        map[Node_ID]Identity_Declaration,
 	identity_scopes: map[Node_ID]Identity_Declaration,

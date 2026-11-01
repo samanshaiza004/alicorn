@@ -438,7 +438,7 @@ update_paint :: proc(rt: ^Runtime) {
 				if node.kind == .Context_Menu_Panel {
 					append_rect_outline(node, style_environment_color(rt, node.style_environment, .Border), style_structural_border_thickness(node.style_environment))
 				}
-				if node.kind == .Scroll_Region && semantic_focus_owner_needs_outline(rt, node.id) {
+				if node.kind == .Scroll_Region && rt.scroll_focus_visuals[node.id] == .Outline && semantic_focus_owner_needs_outline(rt, node.id) {
 					append_focus_outline(node, style_environment_color(rt, node.style_environment, .Focus), style_focus_indicator_thickness(node.style_environment))
 				}
 				if node.icon_id != .None {

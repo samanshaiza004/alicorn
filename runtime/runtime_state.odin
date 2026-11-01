@@ -459,6 +459,7 @@ begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
 	rt.frame_open = true
 	rt.context_menu.described = false
 	layout_percent_width_pending_clear(rt)
+	clear(&rt.pending_scroll_focus_visuals)
 	clear(&rt.pending)
 	clear(&rt.motion_intent_requests)
 	clear(&rt.motion_intent_request_indices)

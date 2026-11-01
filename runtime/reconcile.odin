@@ -295,14 +295,17 @@ layout_hash_pending :: proc(d: Description, item: Pending_Item) -> u64 {
 	return h
 }
 
-paint_hash :: proc(d: Description, retained_description_hash: u64) -> u64 {
-	// The description hash already covers every value used by paint. Reuse it
+paint_hash :: proc(d: Description, retained_description_hash: u64, scroll_focus_visual := Scroll_Focus_Visual.Outline) -> u64 {
+	// The description hash covers the common values used by paint. Reuse it
 	// here instead of hashing strings, spans, style inputs, and sidecars twice
 	// for each node during reconciliation.
 	h := retained_description_hash
 	h = hash_mix(h, u64(d.focusable ? 1 : 0))
 	h = hash_mix(h, u64(d.selected ? 1 : 0))
 	h = hash_mix(h, u64(d.disabled ? 1 : 0))
+	// This sparse presentation policy must not invalidate description, measure,
+	// or layout products when a retained region switches its focus indication.
+	if d.kind == .Scroll_Region { h = hash_mix(h, u64(scroll_focus_visual)) }
 	return h
 }
 
@@ -742,6 +745,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	if rt.tooltip.target == id { tooltip_dismiss(rt) }
 	controlled_text_field_state_clear(rt, id)
 	delete_key(&rt.computed_styles, id)
+	delete_key(&rt.scroll_focus_visuals, id)
 	if rt.percent_width_sidecar_initialized { delete_key(&rt.percent_width_dependencies, id) }
 	gpu_surface_image_layers_destroy(rt, id)
 	delete_key(&rt.semantic_surfaces, id)
@@ -853,6 +857,8 @@ reconcile :: proc(rt: ^Runtime) {
 		if item.kind != .Description { continue }
 		d := item.description
 		layout_percent_width_commit_description(rt, d, item)
+		focus_visual := Scroll_Focus_Visual.Outline
+		if d.kind == .Scroll_Region { focus_visual = rt.pending_scroll_focus_visuals[d.id] }
 		rt.stats.reconcile_nodes_visited += 1
 		rt.stats.stage_visits[.Reconcile] += 1
 		node, exists := rt.nodes[d.id]
@@ -880,7 +886,7 @@ reconcile :: proc(rt: ^Runtime) {
 				input_revision=1,
 				parent_layout_dependencies={.Width, .Height},
 			}
-			node.paint_hash = paint_hash(d, node.description_hash)
+			node.paint_hash = paint_hash(d, node.description_hash, focus_visual)
 			mark_dirty(node, "new retained node", true, true, true, true, rt.persistent_allocator)
 			layout_measure_mark_dirty(rt, node)
 			queue_paint(rt, d.id)
@@ -890,7 +896,7 @@ reconcile :: proc(rt: ^Runtime) {
 			new_desc_hash := description_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
 			new_layout_hash := layout_percent_width_pending_hash(rt, d, item)
 			new_measure_input_hash := measure_input_hash(d)
-			new_paint_hash := paint_hash(d, new_desc_hash)
+			new_paint_hash := paint_hash(d, new_desc_hash, focus_visual)
 			was_selected := node.selected
 			description_changed := node.description_hash != new_desc_hash
 			measure_state := rt.measure_states[d.id]
@@ -924,6 +930,12 @@ reconcile :: proc(rt: ^Runtime) {
 				rt.stats.descriptions_reused += 1
 			}
 		}
+		// Commit only explicitly described nodes. Reused descendants retain their
+		// policy; omission on a new description (or a kind change) restores Outline.
+		if rt.scroll_focus_visuals_initialized {
+			if focus_visual == .Outline { delete_key(&rt.scroll_focus_visuals, d.id) }
+			else { rt.scroll_focus_visuals[d.id] = focus_visual }
+		}
 		node.active = true
 		node.present = adaptive_default_presentation(rt, node.id)
 		if d.region { node.region_cached = true } else { node.region_cached = false }
@@ -931,6 +943,7 @@ reconcile :: proc(rt: ^Runtime) {
 	layout_percent_width_prune_explicit(rt, desired)
 	layout_percent_width_update_retained(rt)
 	layout_percent_width_pending_clear(rt)
+	clear(&rt.pending_scroll_focus_visuals)
 
 	structure_changed := false
 	desired_roots: []Node_ID
@@ -1147,6 +1160,8 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.order)
 	delete(rt.top_level)
 	delete(rt.pending)
+	delete(rt.scroll_focus_visuals)
+	delete(rt.pending_scroll_focus_visuals)
 	delete(rt.motion_intent_requests)
 	delete(rt.motion_intent_request_indices)
 	delete(rt.scroll_visibility_requests)

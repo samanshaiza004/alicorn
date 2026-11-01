@@ -182,6 +182,7 @@ scroll_region_begin :: proc(
 	scrollbars := Scrollbar_Policy.Auto,
 	focusable := false,
 	restore := Scroll_Restore_Request{},
+	focus_visual := Scroll_Focus_Visual.Outline,
 ) -> Scroll_Region_Handle {
 	rt := ui.runtime
 	resolved_source := resolve_source(Source_Site{}, "scroll_region", loc)
@@ -222,6 +223,14 @@ scroll_region_begin :: proc(
 	last := len(rt.pending)-1
 	if last >= 0 && rt.pending[last].kind == .Description && rt.pending[last].description.id == id {
 		rt.pending[last].description.scrollbar_policy = scrollbars
+		if focus_visual != .Outline {
+			if !rt.scroll_focus_visuals_initialized {
+				rt.scroll_focus_visuals = make(map[Node_ID]Scroll_Focus_Visual, allocator=rt.persistent_allocator)
+				rt.pending_scroll_focus_visuals = make(map[Node_ID]Scroll_Focus_Visual, allocator=rt.persistent_allocator)
+				rt.scroll_focus_visuals_initialized = true
+			}
+			rt.pending_scroll_focus_visuals[id] = focus_visual
+		}
 	}
 	// A description is emitted before layout resolves the new bounds. Reuse
 	// the previous retained offset so a rebuild does not jump to the top.

@@ -783,6 +783,16 @@ position-based identity.
 - `virtual_list_ensure_visible` scrolls a fixed-row item into view.
 - `scroll_region_begin/end` and `virtual_list_metrics` are lower-level tools
   for custom or variable-height scrolling layouts.
+  `scroll_region_begin(..., focus_visual=.Content)` opts one region out of the
+  generic rectangular focus outline. The public `Scroll_Focus_Visual` enum has
+  `Outline` (the default for every existing scroll region and list) and `Content`.
+  With `Content`, the caller must provide a visible focus indication within the
+  content, such as an editor caret or active line, and a visible fallback when
+  those cues are outside the viewport. This is presentation only:
+  focusability, keyboard focus and traversal, native text input, semantic focus,
+  and accessibility are unchanged. Changing the option rebuilds paint without
+  triggering measurement or layout. Cached subtree reuse retains the policy;
+  an explicit description that omits the option restores `Outline`.
 - `split_begin`, `split_first_begin/end`, `split_divider`,
   `split_second_begin/end`, and `split_end` compose a retained two-pane split.
   Nest splits for additional panes; nesting direction determines how resizing
