@@ -163,14 +163,46 @@ Local `tools/test.ps1 -Odin 'C:\Users\saman\Documents\odin\dist\odin.exe'` passe
 
 ### Remaining limits and follow-up
 
-- A physical Windows 1x run now covers an active response at minimization, restore before its settlement deadline, and a measured quiet interval after settlement. Still outstanding are simultaneous primary/secondary-window motion, mixed-DPI, accessibility, native input responsiveness, shutdown-during-motion, and cross-platform physical sessions.
+- A physical Windows 1x run now covers an active response at minimization, restore before its settlement deadline, and a measured quiet interval after settlement. Simultaneous primary/secondary-window motion, including secondary restore and close while minimized, is now recorded below. Mixed-DPI, accessibility, native input responsiveness, shutdown-during-motion, and cross-platform physical sessions remain outstanding.
 - The 1x D3D12 smoke is not evidence for macOS/Metal or Linux/Vulkan, alternate DPI scales, nor GPU-adapter coverage. The Punks physical playback-state pass remains as previously recorded; it did not exercise the new #144 snapshot on its older pinned Alicorn revision.
 - All five hosted checks passed for the earlier native fixture source revision `772ac45`: [Windows/macOS SDL](https://github.com/samanshaiza004/alicorn/actions/runs/41228759044), [headless job 1](https://github.com/samanshaiza004/alicorn/actions/runs/41228758919), [headless job 2](https://github.com/samanshaiza004/alicorn/actions/runs/41228758951), and [regeneration](https://github.com/samanshaiza004/alicorn/actions/runs/41228758921). GitHub also reports all five checks passed for `e93ac0d` and `d9e3c88`.
 
-The next checks are active-response restore-before-deadline and simultaneous primary/secondary-window motion on Windows. Capture p95/p99 scheduler lateness and exercise real input while a response is active to measure responsiveness with the added Windows margin. Then cover available DPI and cross-platform native configurations. The present results establish the retry-loop reduction and one post-deadline visibility case, not the complete lifecycle or latency matrix.
+The next checks are native input responsiveness, available DPI configurations, accessibility behavior under motion, shutdown/GPU-loss handling, and cross-platform physical sessions. Capture p95/p99 scheduler lateness and exercise real input while a response is active to measure responsiveness with the Windows timeout margin. The Windows results remain one tested machine/backend configuration, not the complete lifecycle or latency matrix.
 
 Captured artifacts are in the ignored local `out/issue-146/windows-interrupted-2026-10-31/` directory, including `diagnostics.json`, `timeline.json`, `windows.json`, `inspector.txt`, `screenshot.ppm`, and valid `events.jsonl`. The idle-only run's bundle directory is empty because automatic capture was not reached.
 
+### Windows simultaneous primary/secondary motion lifecycle (2026-10-31)
+
+**Source revision:** [`c01c149`](https://github.com/samanshaiza004/alicorn/commit/c01c149070616fa292c131a5f2295d9035ac5d4e), based on `ccc9a66`. The fixture was built with Odin `dev-2026-09-nightly:a2fb372`, `-o:speed`, SDL 3.4.2, and Direct3D 12 on the Windows 10 Home 19045 / Ryzen 5 7600X system described above. The two independently created windows were arranged side by side at their existing sizes. The runner uses Win32 window enumeration and messages; it does not use UI Automation.
+
+The new `tests/fixtures/secondary_motion` fixture gives the primary and secondary windows separate Alicorn runtimes, motion owners, scheduler state, and GPU-submission counters. The PowerShell runner executes two controlled scenarios: minimize and restore the secondary while both windows have active motion, then minimize and close the secondary while the primary continues. It records scheduler and runtime snapshots, native minimized state, per-window submission totals, restore samples, and idle transitions. The native snapshot plumbing now reads each window's own GPU-submission counter, and the host summary reports primary submissions separately from process-wide submissions. One low-frequency application-scheduled checkpoint makes the passive idle snapshot observable; the quiet interval begins only after both windows have reported idle.
+
+| Observation | Restore scenario | Close scenario |
+| --- | ---: | ---: |
+| Secondary active owners at minimize / close | 1 | 1 |
+| Secondary scheduler samples at minimize | 18 | 17 |
+| Secondary scheduler samples at restore / close | 19 | 17 |
+| Restore samples | 1 | 0 (closed while minimized) |
+| Secondary GPU submissions at minimize → restore / close | 20 → 20 | 19 → 19 |
+| Primary runtime `sample_ticks` at ready → hidden application checkpoint | 17 → 96 | 17 → 94 |
+| Primary idle samples / primary submissions | 470 / 474 | 450 / 454 |
+| Post-idle quiet interval | 2 s, no new breadcrumb | 2 s, no new breadcrumb |
+
+In the restore run, the secondary's scheduler sample count stayed at 18 while minimized and advanced once to 19 at restoration. Its submission total stayed at 20 through restoration, so no secondary GPU submission occurred while it was hidden. The primary continued sampling independently while the child was minimized. The secondary later settled with zero active owners/properties, no pending deadline, 391 scheduler samples, and 393 child-local GPU submissions. The primary idle snapshot matched the native host's final primary motion-sample total (470) and `primary_gpu_submissions` total (474).
+
+In the close run, the child was closed while still natively minimized, with one active owner retained and no additional scheduler sample or GPU submission after its suspension snapshot. It emitted no restore event. The surviving primary continued sampling after the child closed, then reached idle with zero active owners/properties and no pending deadline; its idle counters matched the final native host totals (450 motion samples and 454 primary GPU submissions). Both processes exited with `SDL application PASS` and exit code 0. The host recorded one indefinite event wait only after application work was quiet; no `motion.window.wait_indefinite` breadcrumb showed an active response paired with an indefinite wait.
+
+The fixtures observed maximum motion-sample lateness of 50.6 ms in the restore run and 62.2 ms in the close run. These are individual maxima from these runs, not percentiles or input-to-presentation latency measurements. The tests establish independent scheduling, active suspension, one current-time restore sample, safe close of a minimized animated child, and a quiet post-settlement interval on this Windows/D3D12 configuration. They do not establish behavior on macOS/Metal or Linux, alternate DPI scales, native input responsiveness, accessibility behavior under motion, GPU loss, or shutdown during active visible motion.
+
+Reproduce from the Alicorn repository root with:
+
+```powershell
+.\tools\secondary_motion_validation.ps1 `
+  -Odin 'C:\Users\saman\Documents\odin\dist\odin.exe'
+```
+
+The script builds the fixture, then runs restore and close scenarios. Local captures are ignored under `out/issue-146/secondary-windows/`. On `c01c149`, `tools/test.ps1 -Odin 'C:\Users\saman\Documents\odin\dist\odin.exe'` passed: 302 runtime tests, 8 AccessKit ABI tests, 39 UI tests, 35 theme tests, 166 native SDL tests, and 6 scroll-capture tests. Theme validation/code generation, the restart-restoration harness, and native text-input/ownership host contract also passed. At report time, regeneration had passed and the other four hosted checks for `c01c149` were still in progress; check the commit status before treating this evidence update as fully cross-platform validated.
+
 ## Still outstanding for #146
 
-The Windows run supports retained stage isolation and shows that D3D12 submissions stop after settlement in this fixture. The event-wait attribution isolated and corrected a Windows SDL timeout retry loop, but it does not count every OS-level wake. Manual minimize/restore and secondary-window acceptance, alternate DPI configurations, cross-platform native evidence, and agreed accessibility sessions remain release-gate work. Keep the issue open.
+The Windows runs support retained stage isolation, per-window suspension and restore, and show that D3D12 submissions stop after settlement in these fixtures. The event-wait attribution isolated and corrected a Windows SDL timeout retry loop, but it does not count every OS-level wake. Still outstanding are alternate DPI configurations, cross-platform native evidence, native input responsiveness, accessibility sessions, GPU loss, and shutdown during active motion. Keep #146 open.
