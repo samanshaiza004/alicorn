@@ -7,7 +7,8 @@ the current project status.
 
 ## Current acceptance and platform limits
 
-- [Issue #144 motion diagnostics and virtual-clock replay](issue-144-motion-diagnostics.md) — deterministic interrupted-motion replay, passive inspector screenshots, and paired Windows idle evidence.
+- [Issue #144 motion diagnostics and virtual-clock replay](issue-144-motion-diagnostics.md) — completed diagnostic and replay scope; broader native acceptance remains under #146.
+- [Issue #106 incremental-vs-fresh-runtime invalidation oracle](issue-106-invalidation-oracle.md) — bounded deterministic test oracle for retained invalidation misuse; follow-up corpus remains open.
 - [Issue #146 motion diagnostics and Punks dogfood progress (2026-10-30)](issue-146-progress-2026-10-30.md) — closed-inspector headless overhead and application integration evidence; native scheduler acceptance remains open.
 - [macOS static/shared desktop launch matrix (2026-10-28)](macos-desktop-launch-2026-10-28.md) — current integrated-revision evidence for direct and Launch Services launches.
 - [Final Windows/macOS acceptance matrix](issue-103-final.md) — maintainer

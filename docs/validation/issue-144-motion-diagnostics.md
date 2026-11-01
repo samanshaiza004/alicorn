@@ -1,7 +1,7 @@
 # Issue #144 — Causal motion inspector and virtual-clock replay
 
-Status: gap-closing implementation and Windows native evidence recorded. Issue
-#144 remains open for any broader release-gate or platform acceptance work.
+Status: complete. Issue #144 is closed. Broader native lifecycle and platform
+acceptance remains tracked separately under #146.
 
 ## Result
 
