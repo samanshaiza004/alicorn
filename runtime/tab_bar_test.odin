@@ -1137,6 +1137,53 @@ test_tab_bar_supports_muted_italic_labels_and_full_filename_tooltips :: proc(t: 
 }
 
 @(test)
+test_tab_bar_motion_indicators_have_stable_geometry_and_identity :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 520, 120})
+	defer destroy_runtime(&rt)
+	options := tab_bar_test_options()
+	options.presentation = .Compact
+	options.appearance = .Connected
+	options.animate_selection_indicator = true
+	items := tab_bar_test_items(0)
+	first := tab_bar_test_build(&rt, items[:], 480, options)
+	ids := first.item_indicators
+	testing.expect(t, len(ids) == len(items),
+		"animated tab bars should return one frame-local decoration owner per input item")
+	if len(ids) != len(items) { return }
+	for index in 0..<len(ids) {
+		id := ids[index]
+		node, found := rt.nodes[id]
+		tab_id, tab_count := tab_bar_test_item_node(&rt, items[index].semantic_id)
+		_, part_count := tab_bar_test_visual_part(&rt, tab_id, .Selected_Indicator)
+		testing.expect(t, id != 0 && found && tab_count == 1 && part_count == 1 &&
+			node.bounds.w == rt.nodes[tab_id].bounds.w && node.bounds.h == 1,
+			"connected tab indicator owners should be passive retained top-edge visuals with reserved geometry")
+	}
+	first_tab, _ := tab_bar_test_item_node(&rt, items[0].semantic_id)
+	first_close, _ := tab_bar_test_close_node(&rt, first_tab)
+	first_close_bounds := rt.nodes[first_close].bounds
+
+	items = tab_bar_test_items(1)
+	second := tab_bar_test_build(&rt, items[:], 480, options)
+	testing.expect(t, len(second.item_indicators) == len(ids),
+		"a selection change should keep the per-item indicator result shape stable")
+	if len(second.item_indicators) != len(ids) { return }
+	for index in 0..<len(second.item_indicators) {
+		id := second.item_indicators[index]
+		testing.expect(t, id == ids[index] && rt.nodes[id].bounds.h == 1,
+			"retargeting the selected tab should preserve each indicator identity and track geometry")
+	}
+	first_tab, _ = tab_bar_test_item_node(&rt, items[0].semantic_id)
+	first_close, _ = tab_bar_test_close_node(&rt, first_tab)
+	selected_tab, _ := tab_bar_test_item_node(&rt, items[1].semantic_id)
+	selected_close, _ := tab_bar_test_close_node(&rt, selected_tab)
+	testing.expect(t, rt.nodes[first_close].bounds == first_close_bounds &&
+		rt.nodes[selected_close].bounds.w >= TAB_CLOSE_CONTROL_SIZE &&
+		rt.nodes[selected_close].bounds.h == TAB_CLOSE_CONTROL_SIZE,
+		"decorative indicator retargeting must not move or resize close hit targets")
+}
+
+@(test)
 test_tab_bar_dirty_state_is_visible_without_a_close_action :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 320, 120})
 	defer destroy_runtime(&rt)

@@ -32,6 +32,10 @@ Tab_Bar_Options :: struct {
 	drag_type:     Drag_Type,
 	presentation:  Tab_Bar_Presentation,
 	appearance:    Tab_Bar_Appearance,
+	// animate_selection_indicator reserves stable indicator geometry and returns
+	// each decorative indicator owner in Tab_Bar_Result.item_indicators. The
+	// caller can then opt those owners into ui.motion without moving the tabs.
+	animate_selection_indicator: bool,
 	// Applications resolve their controlled surface's theme separately from
 	// the workbench environment containing the tabs.
 	selected_fill: Color,
@@ -114,6 +118,10 @@ Tab_Bar_Result :: struct {
 	item_index: int,
 	// Stable visual identity for a surface's optional open_top_edge link.
 	selected_tab: Node_ID,
+	// When animate_selection_indicator is enabled, this frame-local slice maps
+	// input item indices to passive indicator owners. It uses the frame scratch
+	// allocator and is valid only until end_frame.
+	item_indicators: []Node_ID,
 }
 
 Tab_Bar_Navigation :: enum {
@@ -158,6 +166,9 @@ tab_bar :: proc(
 	if selected_count > 1 {
 		append_diagnostic(rt, "tab_bar accepts at most one selected item")
 		return result
+	}
+	if opts.animate_selection_indicator {
+		result.item_indicators = make([]Node_ID, len(items), allocator=context.temp_allocator)
 	}
 
 	opts.min_tab_width = clampf(opts.min_tab_width, 48, 1024)
@@ -380,14 +391,27 @@ tab_bar :: proc(
 
 		// Equal top and selected-indicator tracks center the content in the tab.
 		track_height := f32(1 if compact else 2)
-		_ = container_begin_simple(
-			ui,
-			.Container,
-			label="tab-content-top-inset",
-			key=key_u64(7),
-			style=layout_style(.Row, height=track_height),
-		)
-		container_end(ui)
+		indicator_id: Node_ID
+		if opts.animate_selection_indicator && connected_appearance {
+			indicator_id = surface_begin(
+				ui,
+				surface_core_color_role(.Accent),
+				key=key_u64(9),
+				style=layout_style(.Row, height=track_height),
+				label="tab-selected-indicator",
+			)
+			_ = visual_part_attach(ui, indicator_id, tab_id, visual_part_core(.Selected_Indicator))
+			surface_end(ui)
+		} else {
+			_ = container_begin_simple(
+				ui,
+				.Container,
+				label="tab-content-top-inset",
+				key=key_u64(7),
+				style=layout_style(.Row, height=track_height),
+			)
+			container_end(ui)
+		}
 		content_height := maxf(opts.height-2*track_height, 0)
 		content_id := container_begin_simple(
 			ui,
@@ -519,15 +543,32 @@ tab_bar :: proc(
 			container_end(ui)
 		}
 		container_end(ui)
-		indicator_id := surface_begin(
-			ui,
-			surface_core_color_role(.Accent),
-			key=key_u64(6),
-			style=layout_style(.Row, height=track_height if item.selected && !selected_connected else 0),
-			label="tab-selected-indicator",
-		)
-		_ = visual_part_attach(ui, indicator_id, tab_id, visual_part_core(.Selected_Indicator))
-		surface_end(ui)
+		if opts.animate_selection_indicator && connected_appearance {
+			// Preserve the old bottom track as geometry only. The animated accent
+			// stays at the tab's top edge, so it never breaks the connected seam.
+			_ = surface_begin(
+				ui,
+				surface_core_color_role(.Accent),
+				key=key_u64(6),
+				style=layout_style(.Row, height=track_height),
+				fill=Color{0, 0, 0, 0},
+				label="tab-connected-bottom-track",
+			)
+			surface_end(ui)
+		} else {
+			indicator_id = surface_begin(
+				ui,
+				surface_core_color_role(.Accent),
+				key=key_u64(6),
+				style=layout_style(.Row, height=track_height if item.selected && !selected_connected else 0),
+				label="tab-selected-indicator",
+			)
+			_ = visual_part_attach(ui, indicator_id, tab_id, visual_part_core(.Selected_Indicator))
+			surface_end(ui)
+		}
+		if opts.animate_selection_indicator && len(result.item_indicators) == len(items) {
+			result.item_indicators[index] = indicator_id
+		}
 		button_end(ui)
 	}
 	container_end(ui)
