@@ -136,9 +136,34 @@ This fixture had no keyboard or pointer input during the active response, so it 
 
 Reproduce the long visibility run from the repository root with `tools/run_example.ps1`, `--motion-validation-long`, `--diagnostics`, and `--idle-validation-seconds=8`; minimize and restore the `09_retained_motion` top-level window during the first second, and leave it hidden until after the settled and idle checkpoints. The local controller and captures are kept under the ignored `out/issue-146/windows-lifecycle-afterdeadline-2026-10-31/` directory.
 
+### Windows active minimize/restore before settlement and post-idle quiet (2026-10-31)
+
+**Source revision:** [`4e6ac10`](https://github.com/samanshaiza004/alicorn/commit/4e6ac10d51e3746b3e84cae30d95a5c71f70666e), based on `cf3f0b4`. Built with Odin `dev-2026-09-nightly:a2fb372`, `-o:speed`, SDL 3.4.2, and Direct3D 12 on Windows 10 Home build 19045, Ryzen 5 7600X. The fixture used a 720 × 360 logical window at 1.0 display scale. The controller enumerated top-level windows for the fixture process and targeted its `SDL_app` HWND; it did not use the launching shell's main-window handle.
+
+This run uses `--motion-lifecycle-validation --diagnostics --capture-after=30 --idle-validation-seconds=12`. The response was certified and active when minimized. The controller kept the window hidden through the application's `hidden_checkpoint`, restored it before settlement, waited for the native motion-idle snapshot and the application idle checkpoint, then compared the idle snapshot's sample/submission counts with the final host summary.
+
+At minimization, Alicorn recorded one active owner and property, zero unestablished deadlines, no pending frame submission, and no motion deadline. The first suspension breadcrumb saw native `IsIconic(HWND)` true even though SDL's cached minimized flag was still false; the subsequent SDL `WINDOW_MINIMIZED` event recorded both SDL and native minimized state as true. This demonstrates why checking only SDL's cached flags was insufficient on this Windows path.
+
+| Checkpoint | Active owners | Motion samples | Restore samples | GPU submissions | Other result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Minimized, response active | 1 | 17 | 0 | 19 | SDL and native minimized; renderable=false; next deadline=0 |
+| Hidden application checkpoint (~2.0 s later) | 1 | — | — | — | Response remained active while hidden |
+| First restore sample | 1 | 18 | 1 | 19 | Exactly one sample; no catch-up; submissions unchanged while hidden |
+| Native settled/idle snapshot | 0 | 229 | 1 | 231 | Scheduler inactive; next deadline=0 |
+| Application idle checkpoint (~1.0 s later) | 0 | 229 | 1 | 231 | No active response |
+| Process exit (~12.0 s) | 0 | 229 | 1 | 231 | Sample and submission totals unchanged after the native idle snapshot |
+
+The window was restored about 2.43 seconds after the controller started, with one current-time restore sample. Four hidden active observations occurred. The run recorded four missed presentation intervals and 27.1 ms maximum motion-sample lateness; these are fixture observations, not input-latency measurements. Across the full run, the host reported 243 SDL event waits and 231 total GPU submissions. There were no additional motion samples or GPU submissions during the roughly 5.6-second interval from the native idle snapshot through shutdown. This does not count all Windows kernel wakeups.
+
+The implementation adds a Windows-only HWND minimized query to the per-window renderability decision, captures structured suspension/minimize/restore snapshots, and emits one passive `motion.window.idle` breadcrumb on the host-loop visit after the final settlement presentation. The final native summary now includes motion sample, wake, restore, hidden-observation, missed-interval, and maximum-lateness counters so the idle snapshot can be compared with process-exit totals. The regression suite covers both the structured snapshot fields and the one-shot idle-snapshot lifecycle without an extra motion sample.
+
+Artifacts are preserved under the ignored local `out/issue-146/windows-active-restore-final-2026-10-31/` directory. The controller record reports a pass for active-at-minimize, suspension through the application checkpoint, exactly one restore sample, zero GPU submissions while hidden, and stable motion/sample counters after idle.
+
+Local `tools/test.ps1 -Odin 'C:\Users\saman\Documents\odin\dist\odin.exe'` passed on `4e6ac10`: 302 runtime tests, 8 AccessKit contract tests, 39 UI tests, 35 theme tests, 166 native SDL tests, and 6 scroll-capture tests. Theme checks/code generation, restoration restart checks, the native text-input contract, and the Example 09 speed build also passed. Hosted checks for `4e6ac10` are not included in this local result and are tracked separately by GitHub Actions.
+
 ### Remaining limits and follow-up
 
-- A physical Windows 1x minimize/restore run now covers hiding during motion and restoring after the original settlement deadline. Still outstanding are an active-response restore-before-deadline native run, simultaneous primary/secondary-window motion, mixed-DPI, accessibility, and shutdown-during-motion sessions.
+- A physical Windows 1x run now covers an active response at minimization, restore before its settlement deadline, and a measured quiet interval after settlement. Still outstanding are simultaneous primary/secondary-window motion, mixed-DPI, accessibility, native input responsiveness, shutdown-during-motion, and cross-platform physical sessions.
 - The 1x D3D12 smoke is not evidence for macOS/Metal or Linux/Vulkan, alternate DPI scales, nor GPU-adapter coverage. The Punks physical playback-state pass remains as previously recorded; it did not exercise the new #144 snapshot on its older pinned Alicorn revision.
 - All five hosted checks passed for the earlier native fixture source revision `772ac45`: [Windows/macOS SDL](https://github.com/samanshaiza004/alicorn/actions/runs/41228759044), [headless job 1](https://github.com/samanshaiza004/alicorn/actions/runs/41228758919), [headless job 2](https://github.com/samanshaiza004/alicorn/actions/runs/41228758951), and [regeneration](https://github.com/samanshaiza004/alicorn/actions/runs/41228758921). GitHub also reports all five checks passed for `e93ac0d` and `d9e3c88`.
 
