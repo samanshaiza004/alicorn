@@ -32,7 +32,7 @@ source_build=0
 case "$(uname -m)" in
 	arm64|aarch64)
 		arch=arm64
-		sha=fa10eee280c878675e3ff0b8fdd9355e1c9447b1f0b8c72764e25ee4ebc3e22
+		sha=fa10eee280c8786758e3ff0b8fdd9355e1c9447b1f0b8c72764e25ee4ebc3e22
 		;;
 	x86_64)
 		source_build=1
