@@ -3,7 +3,8 @@
 package alicorn_sdl_gpu
 
 import "base:intrinsics"
-import NS "core:sys/darwin/Foundation"
+import Foundation "core:sys/darwin/Foundation"
+import NS "vendor:darwin/AppKit"
 import "core:mem"
 import "base:runtime"
 import "core:strings"
@@ -39,9 +40,11 @@ darwin_appearance_selector :: proc(value: string) -> NS.SEL {
 	utf8, err := strings.clone_to_cstring(value, context.temp_allocator)
 	if err != nil { return nil }
 	defer delete(utf8, context.temp_allocator)
-	name := NS.String_initWithCString(NS.String_alloc(), utf8, .UTF8)
+	name := Foundation.String_initWithCString_encoding(
+		NS.alloc(NS.String), utf8, Foundation.StringEncoding(Foundation.UTF8StringEncoding),
+	)
 	if name == nil { return nil }
-	defer NS.release(cast(^NS.Object)name)
+	defer darwin_objc_release(cast(^NS.Object)name)
 	return NS.SelectorFromString(name)
 }
 
@@ -85,15 +88,15 @@ native_appearance_monitor_init :: proc(
 	if workspace == nil { return false }
 	center := intrinsics.objc_send(^NS.NotificationCenter, workspace, "notificationCenter")
 	if center == nil { return false }
-	name := NS.String_initWithCString(
-		NS.String_alloc(),
+	name := Foundation.String_initWithCString_encoding(
+		NS.alloc(NS.String),
 		"NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification",
-		.UTF8,
+		Foundation.StringEncoding(Foundation.UTF8StringEncoding),
 	)
 	if name == nil { return false }
 	observer := NS.new(NS.Object)
 	if observer == nil {
-		NS.release(cast(^NS.Object)name)
+		darwin_objc_release(cast(^NS.Object)name)
 		return false
 	}
 	state := new(Darwin_Appearance_State, allocator=context.allocator)
@@ -107,7 +110,7 @@ native_appearance_monitor_init :: proc(
 	monitor.host_waker = host_waker
 	monitor.platform_data = rawptr(state)
 	darwin_active_appearance_monitor = monitor
-	NS.NotificationCenter_addObserver(center, observer, state.selector, name, workspace)
+	Foundation.NotificationCenter_addObserver(center, observer, state.selector, name, workspace)
 	state.registered = true
 	_ = native_appearance_monitor_apply_snapshot(monitor, rt, darwin_appearance_snapshot_read(workspace))
 	return true
@@ -125,9 +128,9 @@ native_appearance_monitor_destroy :: proc(monitor: ^Native_Appearance_Monitor) {
 	sync.atomic_store(&monitor.active, 0)
 	if monitor.platform_data != nil {
 		state := cast(^Darwin_Appearance_State)monitor.platform_data
-		if state.registered { NS.NotificationCenter_removeObserver(state.center, state.observer) }
-		if state.observer != nil { NS.release(state.observer) }
-		if state.name != nil { NS.release(cast(^NS.Object)state.name) }
+		if state.registered { Foundation.NotificationCenter_removeObserver(state.center, state.observer) }
+		if state.observer != nil { darwin_objc_release(state.observer) }
+		if state.name != nil { darwin_objc_release(cast(^NS.Object)state.name) }
 		free(state, allocator=state.allocator)
 		monitor.platform_data = nil
 	}

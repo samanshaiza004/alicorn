@@ -22,9 +22,12 @@ run_application_loop :: proc(
 	manual_log := false,
 	gpu_driver := "unknown",
 	validation_timeout_seconds := 0,
-	native_menu: ^Native_Menu_Runtime = nil,
+	native_menu: ^Native_Menu_Runtime,
 ) {
 	application_instance := application
+	if native_menu == nil {
+		fail("native menu bridge is required for application loop storage")
+	}
 	if rt != nil && metrics != nil && metrics.logical_width > 0 && metrics.window_logical_height > 0 {
 		_ = alicorn.set_presentation_scale(
 			rt,
@@ -58,12 +61,12 @@ run_application_loop :: proc(
 	diagnostics := native_parse_diagnostics_options()
 	breadcrumbs := native_breadcrumbs_start(diagnostics)
 	defer native_breadcrumbs_release(breadcrumbs)
-	inspector: Native_Inspector_Overlay
-	if !native_inspector_init(&inspector, device, sdl3.GetGPUSwapchainTextureFormat(device, window), rt.viewport) {
+	inspector := &native_menu.inspector_storage
+	if !native_inspector_init(inspector, device, sdl3.GetGPUSwapchainTextureFormat(device, window), rt.viewport) {
 		fail("visual inspector initialization failed")
 	}
-	defer native_inspector_destroy(&inspector)
-	if native_menu != nil { native_menu.inspector = &inspector }
+	defer native_inspector_destroy(inspector)
+	if native_menu != nil { native_menu.inspector = inspector }
 	debug_bounds := diagnostics.debug_bounds
 	host_scratch := native_host_scratch_make()
 	defer native_host_scratch_destroy(&host_scratch)
@@ -73,10 +76,11 @@ run_application_loop :: proc(
 	application_waker := Application_Waker{data=rawptr(&wake_state), wake=native_application_wake}
 	host_wake_event_id := sdl3.RegisterEvents(1)
 	if host_wake_event_id == 0 { fail("SDL_RegisterEvents failed for host redraw wakeups") }
-	host_wake_state := Native_Host_Event_Waker{event_type=sdl3.EventType(host_wake_event_id), active=true}
+	host_wake_state := &native_menu.host_waker_storage
+	host_wake_state^ = Native_Host_Event_Waker{event_type=sdl3.EventType(host_wake_event_id), active=true}
 	appearance_monitor: Native_Appearance_Monitor
 	when ODIN_OS == .Windows || ODIN_OS == .Darwin {
-		if !native_appearance_monitor_init(&appearance_monitor, window, &host_wake_state, rt) {
+		if !native_appearance_monitor_init(&appearance_monitor, window, host_wake_state, rt) {
 			fmt.println("appearance", "native preference notifications unavailable; using default appearance inputs")
 		}
 	}
@@ -90,11 +94,11 @@ run_application_loop :: proc(
 	accessibility_host: Native_Accessibility_Host
 	accessibility_host_ready := false
 	when ODIN_OS == .Windows || ODIN_OS == .Darwin {
-		accessibility_host_ready = native_accessibility_host_init(&accessibility_host, &host_wake_state)
+		accessibility_host_ready = native_accessibility_host_init(&accessibility_host, host_wake_state)
 		if !accessibility_host_ready { fmt.println("accessibility", "host queue initialization failed; native accessibility is unavailable") }
 	}
 	defer native_accessibility_host_destroy(&accessibility_host)
-	if native_menu != nil { native_menu.host_waker = &host_wake_state }
+	if native_menu != nil { native_menu.host_waker = host_wake_state }
 	scheduler_state := Native_Scheduled_Wake_State{active=true}
 	motion_scheduler := Native_Motion_Scheduler_State{}
 	application_scheduler := Application_Scheduler{
@@ -142,7 +146,7 @@ run_application_loop :: proc(
 	window_flags := sdl3.GetWindowFlags(window)
 	text_input_state := Native_Text_Input_State{window_focused=(window_flags & sdl3.WindowFlags{.INPUT_FOCUS}) != sdl3.WindowFlags{}}
 	if native_menu != nil { text_input_state.content_inset_top = native_menu.content_inset_top }
-	text_input_state.suspended = native_inspector_keyboard_owns_input(&inspector)
+	text_input_state.suspended = native_inspector_keyboard_owns_input(inspector)
 	pointer_modifier_state := sdl3.GetModState()
 	pointer_button_state := Native_Pointer_Button_State{}
 	alicorn.invalidate_root(rt, "SDL application initial frame")
@@ -155,7 +159,7 @@ run_application_loop :: proc(
 		}
 	}
 	initial_summary := native_inspector_host_summary(&timing, rt, 0, &motion_scheduler)
-	native_inspector_update(&inspector, rt, rt.viewport, &initial_summary)
+	native_inspector_update(inspector, rt, rt.viewport, &initial_summary)
 	devtools_cursor := native_devtools_cursor_init(rt, &timing, &text_events)
 	sync_text_input_focus(window, rt, &text_input_state, &application_instance, &text_input_coordinator)
 	when ODIN_OS == .Windows || ODIN_OS == .Darwin {
@@ -201,7 +205,7 @@ run_application_loop :: proc(
 		devtools_recorder=&devtools_recorder,
 		devtools_cursor=&devtools_cursor,
 		devtools_hud=&devtools_hud,
-		inspector=&inspector,
+		inspector=inspector,
 		debug_bounds=debug_bounds,
 		native_menu=native_menu,
 	}
@@ -452,7 +456,7 @@ run_application_loop :: proc(
 			devtools_hud=&devtools_hud,
 			devtools_hud_redraw_pending=&devtools_hud_redraw_pending,
 			devtools_last_cause=&devtools_last_cause,
-			inspector=&inspector,
+			inspector=inspector,
 			accessibility=&accessibility_host,
 			appearance_monitor=&appearance_monitor,
 			flight_recorder=&devtools_recorder,
@@ -666,7 +670,7 @@ run_application_loop :: proc(
 		)
 		if motion_update.status != .Ok { fail("retained motion sampling failed") }
 		native_motion_scheduler_sync_timing(&motion_scheduler, &timing, motion_update.active_owners)
-		if alicorn.drag_is_active(rt) && !rt.invalidated && !native_inspector_visible(&inspector) {
+		if alicorn.drag_is_active(rt) && !rt.invalidated && !native_inspector_visible(inspector) {
 			alicorn.drag_refresh_target(rt)
 			_ = native_dispatch_drag_event(&application_instance, rt)
 			if rt.invalidated {
@@ -716,14 +720,14 @@ run_application_loop :: proc(
 		}
 
 		inspector_summary := native_inspector_host_summary(&timing, rt, event_waits+wake_events, &motion_scheduler)
-		native_inspector_update(&inspector, rt, alicorn.Rect{0, 0, f32(metrics.logical_width), f32(metrics.logical_height)}, &inspector_summary)
+		native_inspector_update(inspector, rt, alicorn.Rect{0, 0, f32(metrics.logical_width), f32(metrics.logical_height)}, &inspector_summary)
 		// A toolbar Close can be consumed during this description, after the
 		// native pump has already drained. Resume its preserved app owner now.
-		native_inspector_finish_input_pump(&inspector, &text_input_state)
+		native_inspector_finish_input_pump(inspector, &text_input_state)
 		sync_text_input_focus(window, rt, &text_input_state, &application_instance, &text_input_coordinator)
 		application_submission_pending := alicorn.frame_needs_submission(rt)
 		native_chrome_submission_pending := native_menu != nil && native_menu.chrome_redraw_pending
-		inspector_submission_pending := native_inspector_submission_pending(&inspector)
+		inspector_submission_pending := native_inspector_submission_pending(inspector)
 		devtools_cause := devtools_last_cause
 		if devtools_cause.kind == .None { devtools_cause = rt.frame_cause }
 		if rt.pending_work_seen { devtools_cause = rt.pending_work_cause if !rt.pending_work_mixed else alicorn.Cause_Context{} }
@@ -870,13 +874,13 @@ run_application_loop :: proc(
 			hud_encode_elapsed := u64(time.duration_nanoseconds(time.since(hud_encode_start)))
 			if devtools_hud.visible { timing.devtools_hud_encode_ns += hud_encode_elapsed }
 			inspector_encode_start := time.now()
-			if !native_inspector_render(&inspector, surface_renderer, command, swapchain, swap_w, swap_h,
+			if !native_inspector_render(inspector, surface_renderer, command, swapchain, swap_w, swap_h,
 				logical_to_pixel_x, logical_to_pixel_y,
 				content_inset_top=content_inset_top, scratch_allocator=host_scratch.allocator) {
 				_ = sdl3.CancelGPUCommandBuffer(command)
 				fail("Alicorn visual inspector draw failed")
 			}
-			if native_inspector_visible(&inspector) {
+			if native_inspector_visible(inspector) {
 				timing.inspector_encode_ns += u64(time.duration_nanoseconds(time.since(inspector_encode_start)))
 			}
 			total_encode_elapsed := u64(time.duration_nanoseconds(time.since(encode_start)))
@@ -891,8 +895,8 @@ run_application_loop :: proc(
 			native_text_commit_submission(text_renderer)
 			native_surface_commit_submission(surface_renderer)
 			native_solid_commit_submission(solid_renderer)
-			native_inspector_submission_succeeded(&inspector)
-			if native_inspector_visible(&inspector) { timing.inspector_submissions += 1 }
+			native_inspector_submission_succeeded(inspector)
+			if native_inspector_visible(inspector) { timing.inspector_submissions += 1 }
 			if application_submission_pending {
 				alicorn.gpu_surface_frame_consumed(rt)
 				// A retained frame remains pending until this successful submit
@@ -913,12 +917,12 @@ run_application_loop :: proc(
 			// so this follow-up converges and leaves an event-driven app asleep.
 			if application_submission_pending {
 				post_submit_summary := native_inspector_host_summary(&timing, rt, event_waits+wake_events, &motion_scheduler)
-				native_inspector_update(&inspector, rt, inspector.runtime.viewport, &post_submit_summary)
+				native_inspector_update(inspector, rt, inspector.runtime.viewport, &post_submit_summary)
 			}
 		}
 		child_pending := secondary_windows.child != nil && native_secondary_window_has_work(&secondary_windows)
 		child_ticks := secondary_windows.child != nil && secondary_windows.child.application.on_tick != nil
-		if !child_pending && !native_application_has_pending_work(rt, suspend_hard_error=inspector.enabled) && !native_inspector_submission_pending(&inspector) && !devtools_hud_redraw_pending &&
+		if !child_pending && !native_application_has_pending_work(rt, suspend_hard_error=inspector.enabled) && !native_inspector_submission_pending(inspector) && !devtools_hud_redraw_pending &&
 			!(native_menu != nil && native_menu.chrome_redraw_pending) {
 			if application_instance.on_tick == nil && !child_ticks {
 				// Event-driven apps wait for either input, a worker wake, or their
@@ -959,7 +963,7 @@ run_application_loop :: proc(
 				f32(metrics.pixel_height) / f32(max(metrics.window_logical_height, 1)),
 				screenshot_path,
 				debug_bounds=debug_bounds,
-				inspector=&inspector,
+				inspector=inspector,
 				content_inset_top=native_menu.content_inset_top if native_menu != nil else 0,
 				native_menu=native_menu,
 			) {
@@ -997,8 +1001,8 @@ run_application_loop :: proc(
 	)
 	if application_instance.on_stop != nil {
 		// Stop worker threads while the host-owned waker state is still alive.
-		// This prevents a late worker completion from calling through a stack
-		// address after run_application_loop returns.
+		// The menu bridge keeps its storage alive through the callback, and the
+		// waker is marked inactive immediately afterward.
 		native_breadcrumb_event(breadcrumbs, "alicorn", "application.stop.begin")
 		application_instance.on_stop(application_instance.state)
 		native_breadcrumb_event(breadcrumbs, "alicorn", "application.stop.completed")

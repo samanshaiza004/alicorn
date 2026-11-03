@@ -6,7 +6,8 @@ import "base:runtime"
 import "base:intrinsics"
 import "core:strings"
 import "core:unicode/utf8"
-import NS "core:sys/darwin/Foundation"
+import Foundation "core:sys/darwin/Foundation"
+import NS "vendor:darwin/AppKit"
 import sdl3 "vendor:sdl3"
 
 Darwin_Menu_State :: struct {
@@ -35,13 +36,15 @@ darwin_menu_string :: proc(value: string) -> ^NS.String {
 	utf8, err := strings.clone_to_cstring(value, context.temp_allocator)
 	if err != nil { return nil }
 	defer delete(utf8, context.temp_allocator)
-	return NS.String_initWithCString(NS.String_alloc(), utf8, .UTF8)
+	return Foundation.String_initWithCString_encoding(
+		NS.alloc(NS.String), utf8, Foundation.StringEncoding(Foundation.UTF8StringEncoding),
+	)
 }
 
 darwin_menu_selector :: proc(value: string) -> NS.SEL {
 	name := darwin_menu_string(value)
 	if name == nil { return nil }
-	defer NS.release(cast(^NS.Object)name)
+	defer darwin_objc_release(cast(^NS.Object)name)
 	return NS.SelectorFromString(name)
 }
 
@@ -80,7 +83,7 @@ darwin_menu_update_callback :: proc "c" (unused: rawptr, selector: NS.SEL, sende
 }
 
 darwin_menu_retain_if_present :: proc(menu: ^NS.Menu) {
-	if menu != nil { NS.retain(cast(^NS.Object)menu) }
+	if menu != nil { darwin_objc_retain(cast(^NS.Object)menu) }
 }
 
 darwin_menu_key_string :: proc(key: rune) -> string {
@@ -115,7 +118,7 @@ darwin_menu_callback :: proc "c" (unused: rawptr, selector: NS.SEL, sender: ^NS.
 darwin_menu_add_item :: proc(menu: ^NS.Menu, item: ^NS.MenuItem) -> bool {
 	if menu == nil || item == nil { return false }
 	NS.Menu_addItem(menu, item)
-	NS.release(cast(^NS.Object)item)
+	darwin_objc_release(cast(^NS.Object)item)
 	return true
 }
 
@@ -129,13 +132,13 @@ darwin_menu_make_command_item :: proc(
 	title := darwin_menu_string(label)
 	key_string := darwin_menu_string(key)
 	if title == nil || key_string == nil {
-		if title != nil { NS.release(cast(^NS.Object)title) }
-		if key_string != nil { NS.release(cast(^NS.Object)key_string) }
+		if title != nil { darwin_objc_release(cast(^NS.Object)title) }
+		if key_string != nil { darwin_objc_release(cast(^NS.Object)key_string) }
 		return nil
 	}
-	defer NS.release(cast(^NS.Object)title)
-	defer NS.release(cast(^NS.Object)key_string)
-	item := NS.MenuItem_initWithTitle(NS.MenuItem_alloc(), title, action, key_string)
+	defer darwin_objc_release(cast(^NS.Object)title)
+	defer darwin_objc_release(cast(^NS.Object)key_string)
+	item := NS.MenuItem_initWithTitle(NS.alloc(NS.MenuItem), title, action, key_string)
 	if item == nil { return nil }
 	NS.MenuItem_setTarget(item, cast(NS.id)state.application)
 	NS.MenuItem_setKeyEquivalentModifierMask(item, modifiers)
@@ -160,16 +163,16 @@ darwin_menu_build_items :: proc(state: ^Darwin_Menu_State, menu: ^NS.Menu, items
 			submenu := darwin_menu_make_titled(description.label)
 			if submenu == nil { return false }
 			if !darwin_menu_build_items(state, submenu, description.items) {
-				NS.release(cast(^NS.Object)submenu)
+				darwin_objc_release(cast(^NS.Object)submenu)
 				return false
 			}
 			empty := darwin_menu_string("")
-			if empty == nil { NS.release(cast(^NS.Object)submenu); return false }
-			item := NS.MenuItem_initWithTitle(NS.MenuItem_alloc(), NS.Menu_title(submenu), nil, empty)
-			NS.release(cast(^NS.Object)empty)
-			if item == nil { NS.release(cast(^NS.Object)submenu); return false }
+			if empty == nil { darwin_objc_release(cast(^NS.Object)submenu); return false }
+			item := NS.MenuItem_initWithTitle(NS.alloc(NS.MenuItem), NS.Menu_title(submenu), nil, empty)
+			darwin_objc_release(cast(^NS.Object)empty)
+			if item == nil { darwin_objc_release(cast(^NS.Object)submenu); return false }
 			NS.MenuItem_setSubmenu(item, submenu)
-			NS.release(cast(^NS.Object)submenu)
+			darwin_objc_release(cast(^NS.Object)submenu)
 			NS.MenuItem_setEnabled(item, description.state.enabled)
 			if !darwin_menu_add_item(menu, item) { return false }
 		case .Command:
@@ -194,8 +197,8 @@ darwin_menu_build_items :: proc(state: ^Darwin_Menu_State, menu: ^NS.Menu, items
 darwin_menu_make_titled :: proc(title: string) -> ^NS.Menu {
 	value := darwin_menu_string(title)
 	if value == nil { return nil }
-	defer NS.release(cast(^NS.Object)value)
-	menu := NS.Menu_initWithTitle(NS.Menu_alloc(), value)
+	defer darwin_objc_release(cast(^NS.Object)value)
+	menu := NS.Menu_initWithTitle(NS.alloc(NS.Menu), value)
 	if menu != nil { NS.Menu_setAutoenablesItems(menu, false) }
 	return menu
 }
@@ -209,13 +212,13 @@ darwin_menu_build_application_menu :: proc(state: ^Darwin_Menu_State, title: str
 	services_title := darwin_menu_string("Services")
 	empty := darwin_menu_string("")
 	if services_menu == nil || services_title == nil || empty == nil { return nil }
-	services_item := NS.MenuItem_initWithTitle(NS.MenuItem_alloc(), services_title, nil, empty)
-	NS.release(cast(^NS.Object)services_title)
-	NS.release(cast(^NS.Object)empty)
+	services_item := NS.MenuItem_initWithTitle(NS.alloc(NS.MenuItem), services_title, nil, empty)
+	darwin_objc_release(cast(^NS.Object)services_title)
+	darwin_objc_release(cast(^NS.Object)empty)
 	if services_item == nil { return nil }
 	NS.MenuItem_setSubmenu(services_item, services_menu)
 	NS.Application_setServicesMenu(state.application, services_menu)
-	NS.release(cast(^NS.Object)services_menu)
+	darwin_objc_release(cast(^NS.Object)services_menu)
 	if !darwin_menu_add_item(menu, services_item) { return nil }
 	NS.Menu_addItem(menu, NS.MenuItem_separatorItem())
 	if !darwin_menu_add_native_action(menu, state, "Hide Alicorn", "hide:", "h", NS.EventModifierFlags{.Command}) { return nil }
@@ -266,12 +269,12 @@ native_menu_prepare :: proc(menu: ^Native_Menu_Runtime) -> bool {
 	app_title_string := darwin_menu_string(app_title)
 	empty := darwin_menu_string("")
 	if app_title_string == nil || empty == nil { return false }
-	app_item := NS.MenuItem_initWithTitle(NS.MenuItem_alloc(), app_title_string, nil, empty)
-	NS.release(cast(^NS.Object)app_title_string)
-	NS.release(cast(^NS.Object)empty)
+	app_item := NS.MenuItem_initWithTitle(NS.alloc(NS.MenuItem), app_title_string, nil, empty)
+	darwin_objc_release(cast(^NS.Object)app_title_string)
+	darwin_objc_release(cast(^NS.Object)empty)
 	if app_item == nil { return false }
 	NS.MenuItem_setSubmenu(app_item, app_menu)
-	NS.release(cast(^NS.Object)app_menu)
+	darwin_objc_release(cast(^NS.Object)app_menu)
 	if !darwin_menu_add_item(state.main_menu, app_item) { return false }
 
 	window_menu := darwin_menu_build_window_menu(state)
@@ -288,23 +291,23 @@ native_menu_prepare :: proc(menu: ^Native_Menu_Runtime) -> bool {
 		if !darwin_menu_build_items(state, submenu, description.items) { return false }
 		empty_key := darwin_menu_string("")
 		if empty_key == nil { return false }
-		item := NS.MenuItem_initWithTitle(NS.MenuItem_alloc(), NS.Menu_title(submenu), nil, empty_key)
-		NS.release(cast(^NS.Object)empty_key)
+		item := NS.MenuItem_initWithTitle(NS.alloc(NS.MenuItem), NS.Menu_title(submenu), nil, empty_key)
+		darwin_objc_release(cast(^NS.Object)empty_key)
 		if item == nil { return false }
 		NS.MenuItem_setSubmenu(item, submenu)
-		NS.release(cast(^NS.Object)submenu)
+		darwin_objc_release(cast(^NS.Object)submenu)
 		if !darwin_menu_add_item(state.main_menu, item) { return false }
 	}
 	window_title := darwin_menu_string("Window")
 	empty_key := darwin_menu_string("")
 	if window_title == nil || empty_key == nil { return false }
-	window_item := NS.MenuItem_initWithTitle(NS.MenuItem_alloc(), window_title, nil, empty_key)
-	NS.release(cast(^NS.Object)window_title)
-	NS.release(cast(^NS.Object)empty_key)
+	window_item := NS.MenuItem_initWithTitle(NS.alloc(NS.MenuItem), window_title, nil, empty_key)
+	darwin_objc_release(cast(^NS.Object)window_title)
+	darwin_objc_release(cast(^NS.Object)empty_key)
 	if window_item == nil { return false }
 	NS.MenuItem_setSubmenu(window_item, window_menu)
 	NS.Application_setWindowsMenu(state.application, window_menu)
-	NS.release(cast(^NS.Object)window_menu)
+	darwin_objc_release(cast(^NS.Object)window_menu)
 	if !darwin_menu_add_item(state.main_menu, window_item) { return false }
 	if help_menu_index >= 0 {
 		help := menu.application.menus[help_menu_index]
@@ -312,11 +315,11 @@ native_menu_prepare :: proc(menu: ^Native_Menu_Runtime) -> bool {
 		if submenu == nil || !darwin_menu_build_items(state, submenu, help.items) { return false }
 		empty_key = darwin_menu_string("")
 		if empty_key == nil { return false }
-		help_item := NS.MenuItem_initWithTitle(NS.MenuItem_alloc(), NS.Menu_title(submenu), nil, empty_key)
-		NS.release(cast(^NS.Object)empty_key)
+		help_item := NS.MenuItem_initWithTitle(NS.alloc(NS.MenuItem), NS.Menu_title(submenu), nil, empty_key)
+		darwin_objc_release(cast(^NS.Object)empty_key)
 		if help_item == nil { return false }
 		NS.MenuItem_setSubmenu(help_item, submenu)
-		NS.release(cast(^NS.Object)submenu)
+		darwin_objc_release(cast(^NS.Object)submenu)
 		if !darwin_menu_add_item(state.main_menu, help_item) { return false }
 	}
 	NS.Application_setMainMenu(state.application, state.main_menu)
@@ -334,11 +337,11 @@ native_menu_destroy :: proc(menu: ^Native_Menu_Runtime) {
 		NS.Application_setWindowsMenu(state.application, state.previous_windows_menu)
 		NS.Application_setServicesMenu(state.application, state.previous_services_menu)
 	}
-	if state.main_menu != nil { NS.release(cast(^NS.Object)state.main_menu) }
+	if state.main_menu != nil { darwin_objc_release(cast(^NS.Object)state.main_menu) }
 	if len(state.bindings) > 0 { delete(state.bindings) }
-	if state.previous_main_menu != nil { NS.release(cast(^NS.Object)state.previous_main_menu) }
-	if state.previous_windows_menu != nil { NS.release(cast(^NS.Object)state.previous_windows_menu) }
-	if state.previous_services_menu != nil { NS.release(cast(^NS.Object)state.previous_services_menu) }
+	if state.previous_main_menu != nil { darwin_objc_release(cast(^NS.Object)state.previous_main_menu) }
+	if state.previous_windows_menu != nil { darwin_objc_release(cast(^NS.Object)state.previous_windows_menu) }
+	if state.previous_services_menu != nil { darwin_objc_release(cast(^NS.Object)state.previous_services_menu) }
 	free(state)
 	menu.platform_data = nil
 }

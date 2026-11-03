@@ -8,8 +8,8 @@ project, run the starter app, change its UI, and run it again.
 Install Git and a **complete Odin distribution** from the
 [official Odin installation guide](https://odin-lang.org/docs/install/). Keep
 the compiler beside its `base`, `core`, and `vendor` directories; copying only
-`odin.exe` or `odin` is not enough. Alicorn was checked with Odin
-`dev-2026-09-nightly:a2fb372`.
+`odin.exe` or `odin` is not enough. Alicorn's supported compiler baseline is
+the official Odin [`dev-2026-11` release](https://github.com/odin-lang/Odin/releases/tag/dev-2026-11).
 
 Also install the native platform tools:
 
@@ -43,7 +43,9 @@ odin version
 ```
 
 For matching the tested toolchain, the output should identify
-`dev-2026-09-nightly:a2fb372`.
+`dev-2026-11`. The official Windows and Apple Silicon release archives report
+`dev-2026-11-nightly:9a69916`; the Intel macOS bootstrap builds the signed
+`dev-2026-11` source tag because Odin no longer publishes an Intel macOS binary.
 
 ## 2. Clone and check the project
 

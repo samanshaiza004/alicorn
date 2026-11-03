@@ -7,7 +7,7 @@ import "base:intrinsics"
 import "core:c"
 import "core:fmt"
 import "core:math"
-import NS "core:sys/darwin/Foundation"
+import NS "vendor:darwin/AppKit"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
@@ -422,8 +422,8 @@ native_darwin_titlebar_apply_style :: proc(
 ) -> bool {
 	if window == nil { return false }
 	style_mask := intrinsics.objc_send(NS.WindowStyleMask, window, "styleMask")
-	fullscreen := NS.WindowStyleFlag.FullScreen in style_mask
-	has_full_size_content_view := NS.WindowStyleFlag.FullSizeContentView in style_mask
+	fullscreen := NS.WindowStyleMaskFlag.FullScreen in style_mask
+	has_full_size_content_view := NS.WindowStyleMaskFlag.FullSizeContentView in style_mask
 	style_changed := darwin_titlebar_should_add_full_size_content_view(
 		has_full_size_content_view,
 		fullscreen,
@@ -472,7 +472,7 @@ native_darwin_titlebar_refresh :: proc(
 		fmt.println("macos_titlebar_style_reapplied", "count", state.titlebar.window_style_reapplies)
 	}
 	style_mask := intrinsics.objc_send(NS.WindowStyleMask, state.window, "styleMask")
-	fullscreen := NS.WindowStyleFlag.FullScreen in style_mask
+	fullscreen := NS.WindowStyleMaskFlag.FullScreen in style_mask
 	content_view := NS.Window_contentView(state.window)
 	if content_view == nil { return false }
 	content_bounds := NS.View_bounds(content_view)
@@ -572,7 +572,7 @@ native_darwin_titlebar_exit_fullscreen :: proc(menu: ^Native_Menu_Runtime) -> bo
 	state := cast(^Darwin_Menu_State)menu.platform_data
 	if !state.titlebar.active || state.window == nil { return false }
 	style_mask := intrinsics.objc_send(NS.WindowStyleMask, state.window, "styleMask")
-	if !(NS.WindowStyleFlag.FullScreen in style_mask) { return false }
+	if !(NS.WindowStyleMaskFlag.FullScreen in style_mask) { return false }
 	return sdl3.SetWindowFullscreen(menu.window, false)
 }
 

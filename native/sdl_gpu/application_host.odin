@@ -63,6 +63,10 @@ Native_Menu_Runtime :: struct {
 	application:     ^Application,
 	runtime:         ^alicorn.Runtime,
 	inspector:       ^Native_Inspector_Overlay,
+	// These host-owned objects share the native menu bridge's lifetime. The
+	// primary application loop publishes temporary access to them while it runs.
+	inspector_storage: Native_Inspector_Overlay,
+	host_waker_storage: Native_Host_Event_Waker,
 	platform_data:   rawptr,
 	// The window/client coordinate space includes this host-owned top chrome;
 	// application logical coordinates begin immediately below it.

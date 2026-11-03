@@ -68,16 +68,18 @@ physical input, IME, portals, accessibility clients, monitors, or Mango
 behavior. Complete the [Linux native acceptance matrix](validation/linux-native-acceptance.md)
 for those boundaries.
 
-### macOS CI toolchain
+### Odin `dev-2026-11` toolchain
 
-Both macOS workflows install the complete official
-[Odin `dev-2026-09` release](https://github.com/odin-lang/Odin/releases/tag/dev-2026-09),
-whose macOS archives contain `dev-2026-09-nightly:a2fb372` from September 1.
-This matches the supported compiler in [Getting Started](getting-started.md).
-`tools/setup_macos_odin.sh` pins each architecture's archive SHA-256, verifies it
-before extraction, and checks the SDK directories and compiler version. CI puts
-this SDK first on `PATH` and sets `ODIN_ROOT` and `ALICORN_ODIN` to the same
-installation, so an unrelated SDK cannot supply its libraries.
+Alicorn's supported baseline is the official
+[Odin `dev-2026-11` release](https://github.com/odin-lang/Odin/releases/tag/dev-2026-11).
+Windows CI pins that release through `laytan/setup-odin`; macOS CI uses
+`tools/setup_macos_odin.sh`, which verifies the official Apple Silicon archive
+against its pinned SHA-256 before checking the SDK directories and compiler
+version. The official release has no Intel macOS binary, so the bootstrap
+explicitly builds the signed source tag on `x86_64` using the documented
+Xcode/LLVM prerequisites. CI puts the selected SDK first on `PATH` and sets
+`ODIN_ROOT` and `ALICORN_ODIN` to the same installation, so an unrelated SDK
+cannot supply its libraries.
 
 To reproduce with a fresh installation (no Homebrew Odin changes):
 
@@ -96,11 +98,12 @@ python3 tools/test_package_macos.py
 The destination must not already exist; the bootstrap never reuses an installed
 SDK. Other native prerequisites, including SDL3 `3.4.18`, still apply.
 
-The pin avoids two failures observed with October compilers: Homebrew's
-`84bc3fc` asserts on missing `objc_lookUpClass` during `odin test native/sdl_gpu`,
-and the floating nightly's AppKit bindings no longer expose the `NS.Application`,
-`NS.Menu`, and `NS.Object` API used by Alicorn. Updating this pin requires running
-both macOS workflows and assessing any AppKit API migration first.
+The November migration updates Alicorn for the new Darwin framework bindings,
+escape analysis, and `core:image.Image.pixels` representation. Keep default
+atomic-order analysis enabled. Run `-vet-atomic-access` separately as an
+additional audit; it is stricter and is not part of the normal build flags.
+The native SDL version guard remains in place until the supported SDL 3.4.18
+runtime has passed native validation.
 
 ## Native diagnostics
 

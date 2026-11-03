@@ -3,7 +3,7 @@
 package alicorn_sdl_gpu
 
 import "core:testing"
-import NS "core:sys/darwin/Foundation"
+import NS "vendor:darwin/AppKit"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 

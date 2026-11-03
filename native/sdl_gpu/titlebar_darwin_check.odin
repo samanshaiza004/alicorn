@@ -4,7 +4,7 @@ package alicorn_sdl_gpu
 
 import "base:intrinsics"
 import "core:fmt"
-import NS "core:sys/darwin/Foundation"
+import NS "vendor:darwin/AppKit"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
@@ -131,5 +131,5 @@ native_darwin_titlebar_check_snapshot :: proc(
 		"root", root.bounds, "header", header.bounds, "body", body.bounds,
 		"interactive", state.titlebar.geometry.interactive[:state.titlebar.geometry.interactive_count],
 		"drag-regions", state.titlebar.geometry.drag_regions[:state.titlebar.geometry.drag_region_count])
-	return Darwin_Titlebar_Check_Layout{root.bounds, header.bounds, body.bounds, NS.WindowStyleFlag.FullScreen in style_mask}
+	return Darwin_Titlebar_Check_Layout{root.bounds, header.bounds, body.bounds, NS.WindowStyleMaskFlag.FullScreen in style_mask}
 }

@@ -521,19 +521,27 @@ visual_row_background :: proc(ui: ^UI, row, text: Node_ID, position: Text_Positi
 // text_paint_spans assigns the ordered span list to the just-emitted Text
 // description. Offsets are half-open UTF-8 byte offsets into its displayed
 // string. Later spans win for foreground and background; underline and strike
-// are additive. The runtime copies the borrowed slice during reconcile.
+// are additive. The input is copied to frame scratch so callers may pass local
+// arrays; reconciliation copies the spans into retained runtime storage.
 text_paint_spans :: proc(ui: ^UI, id: Node_ID, spans: []Text_Paint_Span) -> bool {
 	rt := ui.runtime
 	if rt == nil || !rt.frame_open || id == 0 || len(rt.pending) == 0 { return false }
 	item := &rt.pending[len(rt.pending)-1]
 	if item.kind != .Description || item.description.id != id || item.description.kind != .Text { return false }
-	item.description.text_paint_spans = spans
+	if len(spans) == 0 {
+		item.description.text_paint_spans = nil
+	} else {
+		owned_spans := make([]Text_Paint_Span, len(spans), allocator=rt.scratch_allocator)
+		copy(owned_spans, spans)
+		item.description.text_paint_spans = owned_spans
+	}
 	return true
 }
 
 // text_style_spans assigns shaping-aware typography ranges to the just-emitted
-// Text node. Byte offsets refer to its UTF-8 text; spans are retained until the
-// next frame and copied into runtime-owned storage during reconciliation.
+// Text node. Byte offsets refer to its UTF-8 text. The input is copied to frame
+// scratch so callers may pass local arrays; reconciliation copies the spans
+// into retained runtime storage.
 text_style_spans :: proc(ui: ^UI, id: Node_ID, spans: []Text_Style_Span) -> bool {
 	rt := ui.runtime
 	if rt == nil || !rt.frame_open || id == 0 || len(rt.pending) == 0 { return false }
@@ -541,7 +549,13 @@ text_style_spans :: proc(ui: ^UI, id: Node_ID, spans: []Text_Style_Span) -> bool
 	if item.kind != .Description || item.description.id != id || item.description.kind != .Text {
 		return false
 	}
-	item.description.text_style_spans = spans
+	if len(spans) == 0 {
+		item.description.text_style_spans = nil
+	} else {
+		owned_spans := make([]Text_Style_Span, len(spans), allocator=rt.scratch_allocator)
+		copy(owned_spans, spans)
+		item.description.text_style_spans = owned_spans
+	}
 	return true
 }
 

@@ -235,6 +235,7 @@ render_virtual_geometry :: proc(rt: ^alicorn.Runtime, scroll: f32) -> map[string
 
 render_virtual_data :: proc(rt: ^alicorn.Runtime, keys: []string, scroll: f32) -> map[string]alicorn.Node_ID {
 	virtual_keys = keys
+	defer virtual_keys = nil
 	alicorn.invalidate_root(rt, "test logical virtual data")
 	ui, build := alicorn.begin_frame(rt)
 	ids := make(map[string]alicorn.Node_ID)
