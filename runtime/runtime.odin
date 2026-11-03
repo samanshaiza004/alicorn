@@ -1034,6 +1034,15 @@ Text_Style :: struct {
 	overflow:    Text_Overflow,
 }
 
+// Text_Selection_Background controls the vertical extent of retained text
+// selection paint. Fill_Node_When_Single_Line is for editors whose individual
+// source rows occupy taller nodes than the shaped glyph line; it preserves the
+// shaped horizontal selection while filling that row's node bounds.
+Text_Selection_Background :: enum u8 {
+	Shaped_Line,
+	Fill_Node_When_Single_Line,
+}
+
 FONT_WEIGHT_REGULAR :: f32(400)
 FONT_WEIGHT_MEDIUM :: f32(500)
 FONT_WEIGHT_SEMIBOLD :: f32(600)
@@ -1228,6 +1237,7 @@ Description :: struct {
 	text_interaction_anchor: Text_Position,
 	text_interaction_focus: Text_Position,
 	text_interaction_show_caret: bool,
+	text_selection_background: Text_Selection_Background,
 	visual_row_text_node: Node_ID,
 	visual_row_position: Text_Position,
 	visual_row_color: Color,
@@ -1366,6 +1376,7 @@ Node :: struct {
 	text_interaction_anchor: Text_Position,
 	text_interaction_focus: Text_Position,
 	text_interaction_show_caret: bool,
+	text_selection_background: Text_Selection_Background,
 	visual_row_text_node: Node_ID,
 	visual_row_position: Text_Position,
 	visual_row_color: Color,

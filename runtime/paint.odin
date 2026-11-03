@@ -630,12 +630,17 @@ update_paint :: proc(rt: ^Runtime) {
 				}
 				append_text_paint_geometry(node, &paint_geometry, text_clip, true)
 				if node.kind == .Text && node.text_interaction && node.text_run_valid {
+					single_line_background_height: f32
+					if node.text_selection_background == .Fill_Node_When_Single_Line {
+						single_line_background_height = node.bounds.h
+					}
 					selection := text_run_selection_rects(
 						&node.text_run,
 						node.text_interaction_anchor,
 						node.text_interaction_focus,
 						allocator=rt.scratch_allocator,
 						scratch_allocator=rt.scratch_allocator,
+						single_line_background_height=single_line_background_height,
 					)
 					for selected in selection {
 						bounds := selected.rect

@@ -466,7 +466,15 @@ text_ex :: proc(ui: ^UI, value: string, source := Source_Site{}, key := "", expl
 // is preserved as supplied. The selection is painted regardless of keyboard
 // focus; show_caret independently controls whether a caret is painted at focus.
 // Geometry and both decorations use the Text node's one retained Runa run.
-text_interaction :: proc(ui: ^UI, id: Node_ID, anchor, focus: Text_Position, show_caret: bool) -> bool {
+// selection_background can fill a single-line text node's allocated row while
+// retaining the shaped horizontal range; multiline runs remain line-shaped.
+text_interaction :: proc(
+	ui: ^UI,
+	id: Node_ID,
+	anchor, focus: Text_Position,
+	show_caret: bool,
+	selection_background := Text_Selection_Background.Shaped_Line,
+) -> bool {
 	rt := ui.runtime
 	if rt == nil || !rt.frame_open || id == 0 || len(rt.pending) == 0 { return false }
 	item := &rt.pending[len(rt.pending)-1]
@@ -477,6 +485,7 @@ text_interaction :: proc(ui: ^UI, id: Node_ID, anchor, focus: Text_Position, sho
 	item.description.text_interaction_anchor = anchor
 	item.description.text_interaction_focus = focus
 	item.description.text_interaction_show_caret = show_caret
+	item.description.text_selection_background = selection_background
 	return true
 }
 

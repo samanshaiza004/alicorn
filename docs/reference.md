@@ -302,6 +302,12 @@ positions must first pass through an application-owned source map. The helpers
 use UTF-8 byte offsets with grapheme-safe boundaries; the application still
 owns hit-testing, source mapping, viewport scrolling, and edits.
 
+`text_interaction` paints selection by shaped-line bounds by default. Editors
+that allocate a taller node per source row can pass
+`selection_background=.Fill_Node_When_Single_Line` to extend a one-line
+selection vertically to that text node's bounds. Horizontal selection
+geometry remains shaped; multiline text keeps its shaped-line bounds.
+
 The default layout direction is column. Use `.Row` for horizontal children.
 Fixed and natural children keep their measured main-axis size. Positive `grow`
 shares surplus by weight, respecting each child's maximum; an ordinary grower

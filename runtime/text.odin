@@ -1423,7 +1423,13 @@ text_run_extreme_caret_point :: proc(points: []Text_Caret_Point, want_min: bool)
 	return
 }
 
-text_run_selection_rects :: proc(run: ^Text_Run, start, end: Text_Position, allocator := context.allocator, scratch_allocator := context.temp_allocator) -> [dynamic]Text_Selection_Rect {
+text_run_selection_rects :: proc(
+	run: ^Text_Run,
+	start, end: Text_Position,
+	allocator := context.allocator,
+	scratch_allocator := context.temp_allocator,
+	single_line_background_height: f32 = 0,
+) -> [dynamic]Text_Selection_Rect {
 	result := make([dynamic]Text_Selection_Rect, 0, 4, allocator)
 	if run == nil || len(run.lines) == 0 { return result }
 	normalized_start := text_position_normalize(run, start)
@@ -1445,7 +1451,12 @@ text_run_selection_rects :: proc(run: ^Text_Run, start, end: Text_Position, allo
 		}
 		if right < left { left, right = right, left }
 		if right > left {
-			append(&result, Text_Selection_Rect{line_index, Rect{left, line.y, right-left, line.height}})
+			rect := Rect{left, line.y, right-left, line.height}
+			if len(run.lines) == 1 && single_line_background_height > rect.h {
+				rect.y = 0
+				rect.h = single_line_background_height
+			}
+			append(&result, Text_Selection_Rect{line_index, rect})
 		}
 	}
 	return result

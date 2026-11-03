@@ -140,6 +140,7 @@ description_hash :: proc(
 		h = hash_mix(h, u64(d.text_interaction_focus.byte))
 		h = hash_mix(h, u64(d.text_interaction_focus.affinity))
 		h = hash_mix(h, u64(d.text_interaction_show_caret ? 1 : 0))
+		h = hash_mix(h, u64(d.text_selection_background))
 	}
 	h = hash_mix(h, u64(d.visual_row_enabled ? 1 : 0))
 	if d.visual_row_enabled {
@@ -543,6 +544,7 @@ copy_node_description :: proc(
 	node.text_interaction_anchor = d.text_interaction_anchor
 	node.text_interaction_focus = d.text_interaction_focus
 	node.text_interaction_show_caret = node.text_interaction && d.text_interaction_show_caret
+	node.text_selection_background = d.text_selection_background
 	node.visual_row_text_node = d.visual_row_text_node
 	node.visual_row_position = d.visual_row_position
 	node.visual_row_color = d.visual_row_color
