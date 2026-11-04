@@ -1,0 +1,35 @@
+Issue #111 retained-effects fixture, 2026-11-04 (America/Chicago)
+Baseline: fe8967f plus working-tree experiment
+Apple M1 MacBook Air, 8 GiB, macOS 27.2 (26B123)
+Odin dev-2026-11-nightly:9a69916, -o:speed; SDL 3.4.18
+Metal API Validation Enabled
+156 opt-in native unit tests passed before the GPU fixture.
+
+effects_gpu_validation driver metal sdl_version 3004018 format RGBA8_UNORM color_space encoded SDR (not linear-light blur)
+effects_readback scale 1 worst_rgba8_error 3 painter_order true
+effects_readback scale 1.25 worst_rgba8_error 3 painter_order true
+effects_readback scale 1.5 worst_rgba8_error 3 painter_order true
+effects_readback scale 2 worst_rgba8_error 3 painter_order true
+effects_unchanged attempts 100 new_passes 0 new_allocations 0 new_submissions 0
+effects_readback scale 2 worst_rgba8_error 3 painter_order true
+effects_retirement live_bytes 0
+effects_first_frame mode 0 encode_ns 2562000 submit_wait_ns 1650000 render_passes 15
+effects_warm mode 0 samples 40 encode_p95_ns 1514000 submit_wait_p95_ns 2154000 render_passes 15 allocations 0 filter_passes 0 live_bytes 0 peak_bytes 0 effect_upload_bytes_total 0
+effects_first_frame mode 1 encode_ns 1546000 submit_wait_ns 1273000 render_passes 16
+effects_warm mode 1 samples 40 encode_p95_ns 1626000 submit_wait_p95_ns 2656000 render_passes 16 allocations 0 filter_passes 0 live_bytes 0 peak_bytes 0 effect_upload_bytes_total 0
+effects_first_frame mode 2 encode_ns 3804000 submit_wait_ns 2204000 render_passes 29
+effects_warm mode 2 samples 40 encode_p95_ns 2880000 submit_wait_p95_ns 4107000 render_passes 29 allocations 8 filter_passes 82 live_bytes 404112 peak_bytes 404112 effect_upload_bytes_total 2376
+effects_first_frame mode 3 encode_ns 3210000 submit_wait_ns 2101000 render_passes 29
+effects_warm mode 3 samples 40 encode_p95_ns 1586000 submit_wait_p95_ns 2259000 render_passes 16 allocations 8 filter_passes 2 live_bytes 404112 peak_bytes 404112 effect_upload_bytes_total 2376
+effects_gpu_validation PASS kernel_reference_cases 5 cache_equals_fresh true budget_fallback true nesting_limit 1
+
+Vulkan availability probe (separate run):
+SDL validation FAILED: retained effects experiment failed SDL error: SDL_HINT_GPU_DRIVER vulkan unsupported!
+
+Default-renderer regression checks (separate runs):
+tools/test.sh: PASS (317 runtime, 152 native, 39 UI, 35 theme tests;
+AccessKit ABI/external consumer/macOS adapter, text-input contract, restoration)
+Metal blend validation: PASS, 156 cases, 0 failures, plus motion clipping.
+native_hello --idle-validation-seconds=3: PASS, submissions 1, retired 1,
+event_waits 2, application_wake_events 0, application_tick_max_ns 0,
+motion_timer_wakes 0.

@@ -40,6 +40,22 @@ jobs:
         shell: sh
         run: sh tools/validate_blending.sh
 
+      - name: Validate bounded retained-effects experiment through Metal readback
+        shell: bash
+        run: |
+          set -o pipefail
+          sh tools/validate_effects.sh | tee out/retained-effects-metal.txt
+
+      - name: Upload retained-effects Metal evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retained-effects-metal
+          path: |
+            out/retained-effects/**
+            out/retained-effects-metal.txt
+          retention-days: 7
+
       - name: Smoke-test example runners
         shell: sh
         run: |
