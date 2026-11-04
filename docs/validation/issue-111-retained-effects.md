@@ -25,6 +25,12 @@ Scratchpad integration now checks whether the same bounded compositor helps a
 real interaction. Neither the fixture measurements nor the integration build
 establish user preference or cross-platform product readiness.
 
+The blur-quality gate replaced the stretched five-tap binomial with a sampled
+discrete Gaussian. Metal readbacks now compare against an independent dense
+CPU convolution. The effect remains experimental: this fixes filter-kernel
+quality, but does not settle linear-light color treatment, consumer preference,
+or Windows/D3D12 parity.
+
 ## Run
 
 ```sh
@@ -49,13 +55,14 @@ a completed hosted result.
 
 The validation fixture's `Native_Effect_Request` contains one stable key,
 authoritative source generation, resolved output rectangle/ancestor clip,
-uniform DPI scale, finite kernel spacing, and depth. The fixture advances the
-source generation explicitly. In the opt-in application path, a paint-stream
-marker defines the boundary and the host hashes the commands before it together
-with bounds, clip, DPI scale, and effect parameters. Commands after the marker
-(including Quick Open query/results) do not invalidate the backdrop. This
-observes only the generic paint commands represented in that prefix; it is not
-a general dependency tracker for arbitrary GPU resources.
+uniform DPI scale, Gaussian standard deviation (`sigma`) in logical pixels,
+and depth. The fixture advances the source generation explicitly. In the
+opt-in application path, a paint-stream marker defines the boundary and the
+host hashes the commands before it together with bounds, clip, DPI scale, and
+effect parameters. Commands after the marker (including Quick Open
+query/results) do not invalidate the backdrop. This observes only the generic
+paint commands represented in that prefix; it is not a general dependency
+tracker for arbitrary GPU resources.
 
 The effect captures the specified paint prefix before foreground commands. It
 replays it through `draw_display_list`, translated into the input rectangle,
@@ -65,18 +72,25 @@ the filtered alpha-one result replaces the original backdrop at composition.
 Replaying a transparent prefix over itself would double-composite it and is
 not a valid general backdrop capture. Transparent isolated layers are tested
 separately by the readback cases.
-The input includes the complete two-tap halo on each side and rounds outward
-in physical pixels. The output is scissored to the resolved region/ancestor
-intersection. Nested effects are rejected; nested ordinary clips are retained.
+The input includes the complete three-sigma halo on each side and rounds
+outward in physical pixels. The output is scissored to the resolved
+region/ancestor intersection. Nested effects are rejected; nested ordinary
+clips are retained.
 
-The blur is a fixed separable five-tap binomial filter, `[1,4,6,4,1]/16` per
-axis, not a configurable Gaussian or an effect graph. Five weighted quads per
-axis reuse Alicorn's compiled image shader. The shader needs no new artifact,
-runtime compilation, or backend-specific effect implementation. Input, horizontal,
-and vertical stages use distinct RGBA8 textures. Two filter passes accumulate
-premultiplied RGBA additively; composition uses `ONE, ONE_MINUS_SRC_ALPHA` so
-alpha is not multiplied twice. The final palette and foreground retain painter
-order. All passes end before the next pass begins.
+The filter is a separable, discrete Gaussian truncated at
+`ceil(3 * sigma_physical_pixels)`. It computes normalized dense weights, then
+pairs adjacent weights on each side into fractional-offset samples. Linear
+texture filtering reconstructs the paired integer coefficients, reducing the
+number of shader draws without stretching a sparse fixed-tap kernel across a
+wider radius. The tap count grows with sigma and is bounded at 97 samples per
+axis. The same compiled image shader handles every tap; no new shader artifact,
+runtime compilation, or backend-specific effect implementation is needed.
+Capture uses RGBA8_UNORM; horizontal and vertical intermediates use
+RGBA16_FLOAT to avoid quantizing each weighted contribution to eight bits.
+Two filter passes accumulate premultiplied RGBA; composition uses
+`ONE, ONE_MINUS_SRC_ALPHA` so alpha is not multiplied twice. The final palette
+and foreground retain painter order. All passes end before the next pass
+begins.
 
 The color contract is **encoded SDR RGBA8**, matching the existing ordinary
 UNORM renderer. This is deliberately not a linear-light blur. HDR, sRGB render
@@ -88,9 +102,10 @@ those cases; changing the whole renderer's color contract is outside this probe.
 
 - The low-level fixture uses one slot. The opt-in primary application host uses
   two fence-tracked slots, each with three textures, maximum 2048 physical
-  pixels on either axis, spacing at most eight logical pixels, and depth one.
-  The app cache has a 48 MiB requested-storage budget across slots. There is no
-  unbounded cache or hidden full-window target.
+  pixels on either axis, sigma at most eight logical pixels (32 physical
+  pixels), radius at most 96 physical pixels, and depth one. The app cache has
+  a 48 MiB requested-storage budget across slots. There is no unbounded cache
+  or hidden full-window target.
 - The fixture uses a 16 MiB budget for requested texture and fixed vertex/transfer
   buffer bytes. Existing source-renderer buffers, final target/readback buffers,
   pipeline/sampler objects, and driver allocation overhead are excluded. This
@@ -115,15 +130,21 @@ those cases; changing the whole renderer's color contract is outside this probe.
 
 ## Validation and measurement boundaries
 
-The CPU reference independently performs both quantized RGBA8 filter passes
-over the generic renderer's downloaded source pixels, then computes
-premultiplied source-over and foreground ordering. This validates the filter
-and composition; the source renderer's correctness remains covered separately
-by the existing blend/readback suite. Source and destination never alias.
+The CPU reference directly convolves the generic renderer's downloaded source
+pixels with every normalized dense Gaussian coefficient, then computes
+premultiplied source-over and foreground ordering. This is independent of the
+GPU's bilinear-paired taps and half-float intermediates, and validates the
+filter and composition; the source renderer's correctness remains covered
+separately by the existing blend/readback suite. Source and destination never
+alias. A frequency-response regression also checks that the new Gaussian
+attenuates a six-pixel repeating pattern that the former spacing-six binomial
+filter passed unchanged.
 
 Readbacks cover transparent colored edges, text, ancestor clipping, input halo,
-foreground overlap, scales 1/1.25/1.5/2, source-generation changes, cache reuse,
-fresh rebuild equality, cancellation, reset/recreation, and direct fallback.
+foreground overlap, sigma values 1/4/8 at scales 1/1.5/2, source-generation
+changes, cache reuse, fresh rebuild equality, cancellation, reset/recreation,
+and direct fallback. The maximum supported physical sigma is also checked at
+the unit-test boundary (97 bounded paired samples per axis).
 Transfer rows are padded to the D3D12-compatible 256-byte alignment. The unit
 tests reject invalid numeric values, oversized regions, excess nesting, and
 missing source identity before allocation.
@@ -153,7 +174,7 @@ The opt-in Scratchpad build adds three controls to Quick Open:
 | --- | --- |
 | Flat | Existing opaque theme panel over the existing dim modal backdrop |
 | Tint | The same panel at 88% opacity, with no blur request |
-| Blur | The same tinted panel plus radius-4 retained backdrop blur |
+| Blur | The same tinted panel plus retained backdrop blur with sigma 4 logical pixels |
 
 The panel is bounded and has a fixed ten-row results viewport. Query, result
 text, and focus controls use the ordinary crisp paint path. The blur marker is
@@ -170,12 +191,12 @@ Open; Blur is selected by default. The comparison buttons switch to Flat and
 Tint without closing the palette. This is a local arm64 executable linked to
 Homebrew SDL 3.4.18, not a consumer package.
 
-Current source pins: Alicorn `dfed741` plus the opt-in working-tree changes,
-Scratchpad `6f60a79` plus the Quick Open working-tree changes, and Caliber
-`197cd96`. Verification on this working tree: 318 Alicorn runtime tests, 152
-default native tests, 159 opt-in native tests, 14 isolated Quick Open frontend
-tests, and Scratchpad `go test ./...` passed. `git diff --check` passed. The
-full Scratchpad frontend suite reports titlebar geometry/button assertions in
+The earlier Quick Open dogfood build used Alicorn `dfed741` plus its opt-in
+working-tree changes, Scratchpad `6f60a79` plus its local Quick Open changes,
+and Caliber `197cd96`. At that point, 318 Alicorn runtime tests, 152 default
+native tests, 159 opt-in native tests, 14 isolated Quick Open frontend tests,
+and Scratchpad `go test ./...` passed. `git diff --check` passed. The full
+Scratchpad frontend suite reports titlebar geometry/button assertions in
 `connected_titlebar_test.odin` and `main_test.odin`. The same assertions
 reproduced from clean Scratchpad `6f60a79` with its pinned Alicorn `fe8967f`
 (and the local macOS font-API cast required by this Odin toolchain), so they
@@ -183,16 +204,21 @@ predate the Issue #111 changes. Both full runs were interrupted after those
 same failures and did not produce a complete suite summary. The shell-launched
 native candidate could not enumerate a display (`The video driver did not add
 any displays`), so interactive Metal appearance, typing/resize feel, and user
-preference remain unverified. The local Quick Open candidate must be compared
-interactively before changing the no-go decision.
+preference remain unverified. The Gaussian API now names this parameter
+`sigma`; Scratchpad's local dogfood code still needs to sync its assertions and
+dependency pin before a fresh app build. Interactive consumer comparison
+remains open before changing the no-go decision.
 
-## Native results: Apple M1, macOS 27.2, Metal
+## Historical native results: five-tap prototype
 
-Odin `dev-2026-11-nightly:9a69916`, SDL 3.4.18; baseline commit `fe8967f` plus
-this working-tree experiment. Metal API validation was enabled. One run, 40
-warm samples per mode, 384×256 final target. The effect's resolved output is
-192×144 at 1×; its padded input is 208×160. These are small fixture results,
-not a product benchmark or a cross-framework comparison.
+These measurements are retained to document the original prototype. Its
+fixed-spaced binomial filter was visually inadequate at wide spacing and these
+numbers do not describe the Gaussian implementation below.
+
+Apple M1 MacBook Air, 8 GiB, macOS 27.2; Odin
+`dev-2026-11-nightly:9a69916`, SDL 3.4.18. One run, 40 warm samples per mode,
+384×256 final target. The resolved output is 192×144 at 1×; padded input is
+208×160. Metal API validation enabled.
 
 | Mode | First encode / submit-wait (ms) | Warm encode p95 (ms) | Warm submit-wait p95 (ms) | Warm render passes | Effect bytes live/peak |
 | --- | --- | --- | --- | --- | --- |
@@ -201,32 +227,60 @@ not a product benchmark or a cross-framework comparison.
 | Blur, source changed every frame | 3.804 / 2.204 | 2.880 | 4.107 | 29 | 404,112 |
 | Retained blur, forced ordinary repaint | 3.210 / 2.101 | 1.586 | 2.259 | 16 | 404,112 |
 
-The changing-source mode replayed the prefix and filtered each time (82 filter
-passes over 41 frames). The retained mode filtered once (two filter passes),
-then reused that texture for 40 repaints. Each effect mode created eight SDL
-objects initially and uploaded 2,376 effect vertex bytes total; source-only
-changes did not reupload the filter mesh. Repeated inactive/unchanged requests
-created no additional effect resources or submissions. Reset returned charged
-live bytes to zero. The reported 404,112 bytes are about 0.39 MiB, below the
-16 MiB requested-storage budget.
+This earlier filter used five taps per axis and RGBA8 intermediate targets.
+Its source-changing mode replayed and filtered every frame; retained mode
+filtered once then reused the result. See [the original raw run](raw/issue-111-metal-2026-11-04.txt).
 
-Readbacks passed five independent CPU-reference cases with maximum error
-three RGBA8 values, plus cached-versus-fresh equality and pixel-identical direct
-fallback. Five overlapping weighted quads accumulate into RGBA8 per axis, so
-rounding is not identical to one unquantized convolution write; the fixed
-tolerance accounts for those intermediate blend writes. No new shader binaries
-were added. The optimized standalone validation executable is 3,353,368 bytes;
-that is its whole size, not the incremental cost of effects in an application.
-The default host executable contains no `native_effect_*` symbols.
+## Gaussian native results: Apple M1, macOS 27.2, Metal
+
+Odin `dev-2026-11-nightly:9a69916`, SDL 3.4.18; baseline commit `fe8967f` plus
+the retained-effects branch merged with `origin/master` `067ff0c`, plus this
+Gaussian implementation. Metal API validation was enabled. One run, 40 warm
+samples per mode, 384×256 final target. The effect's resolved output is
+192×144 at 1×; at sigma 4 its padded input is 216×168. These are small fixture
+results, not a product benchmark or a cross-framework comparison.
+
+| Mode | First encode / submit-wait (ms) | Warm encode p95 (ms) | Warm submit-wait p95 (ms) | Warm render passes | Effect bytes live/peak |
+| --- | --- | --- | --- | --- | --- |
+| Flat palette | 2.807 / 5.493 | 1.564 | 4.756 | 15 | 0 |
+| Existing analytic shadow | 1.618 / 1.428 | 1.634 | 4.731 | 16 | 0 |
+| Blur, source changed every frame | 4.055 / 2.141 | 2.986 | 7.997 | 29 | 810,000 |
+| Retained blur, forced ordinary repaint | 3.503 / 1.822 | 1.673 | 7.810 | 16 | 810,000 |
+
+The Gaussian source-changing mode replayed the prefix and filtered each time
+(82 filter passes over 41 frames). The retained mode filtered once (two filter
+passes), then reused that texture for 40 repaints. Each effect mode created
+eight SDL objects and uploaded 42,120 effect vertex bytes; source-only changes
+did not reupload the filter mesh. Repeated inactive/unchanged requests created
+no additional effect resources or submissions. Reset returned charged live
+bytes to zero. The 810,000-byte charge is about 0.77 MiB, below the 16 MiB
+requested-storage budget. The extra storage reflects RGBA16_FLOAT filter
+targets and the full 3σ capture halo.
+
+Nine GPU readbacks (sigma 1/4/8 at scales 1/1.5/2) matched the independent
+dense Gaussian reference with worst error 1–2 RGBA8 channel values. The paired
+tap counts ranged from 5 to 49; the unit suite checks the maximum 97-tap bound.
+Cached-versus-fresh equality, direct fallback identity, and 100 unchanged-cache
+requests also passed. These checks establish that the native sampling matches
+the specified Gaussian. They do not establish linear-light perceptual output:
+the pipeline still filters encoded SDR values, and the sample panel tint remains
+strong.
+
+Submission-to-fence wall times in this run varied from 1.428 to 5.493 ms at
+first frame and had warm p95 values of 4.731–7.997 ms. These include queue,
+driver, and fence-wait costs; they are **not hardware GPU duration** and are
+noisy relative to the CPU encoding measurements. Warm encode p95 ranged from
+1.564 ms for the flat palette to 2.986 ms when the source changed every frame;
+retained blur measured 1.673 ms.
 
 | Check | Result |
 | --- | --- |
-| Runtime suite, default build | PASS, 317 tests; retained record sizes unchanged |
-| Complete `tools/test.sh`, default build | PASS, including 152 native tests, AccessKit contracts, UI/theme, text input, restoration |
-| Opt-in native suite | PASS, 156 tests (four new experiment tests) |
-| Metal effects readback | PASS, clipping/DPI/alpha/order/cache/invalidation/cancel/reset/fallback |
+| Complete `tools/test.sh`, default build | PASS on merged master: AccessKit ABI/external consumer, 321 foundation, 1 accessibility, 39 UI, 35 theme, 152 native, 6 scroll-capture tests, text-input contract, restoration |
+| Opt-in native suite | PASS, 163 tests including Gaussian normalization, tiny-sigma underflow, spectral suppression, max-radius, and allocation-bound checks |
+| Metal effects readback | PASS, nine dense-Gaussian comparisons; worst error ≤2/255, plus clipping/DPI/alpha/order/cache/invalidation/cancel/reset/fallback |
 | Existing Metal blend suite | PASS, 156/156 cases plus motion clip checks |
 | Default native-hello idle smoke | PASS, three seconds; one submission/retirement, two event waits, zero application wake events/ticks or motion timers |
+| Default binary effect-symbol audit | PASS; no `native_effect_*` symbols in the ordinary host build |
 | Vulkan availability on this Mac | UNAVAILABLE: `SDL_HINT_GPU_DRIVER vulkan unsupported!` |
 | D3D12 and hosted workflow executions | UNVERIFIED locally; reproducible runner and CI step added |
 | Actual device loss / hardware GPU timestamps / real dogfood interaction comparison | UNVERIFIED |
@@ -235,14 +289,16 @@ The sandbox cannot enumerate this Mac's displays. The successful Metal runs
 used the normal desktop session with elevated execution; this limitation was
 not bypassed using a dummy video driver.
 
-Raw measurement output: [Metal fixture run](raw/issue-111-metal-2026-11-04.txt).
+Raw Gaussian output: [Metal fixture and readbacks](raw/issue-111-gaussian-metal-2026-11-04.txt); [full foundation suite](raw/issue-111-gaussian-foundation-macos-2026-11-04.txt).
 
 ## Visual comparison
 
 These deterministic captures show the same static palette/content scene, not
-live dogfood screenshots. They were inspected locally after the opaque-prefix
-capture correction. The blurred background reduces competing text detail in
-this example; that alone does not establish a second useful application need.
+live dogfood screenshots. They were inspected locally after the Gaussian and
+opaque-prefix corrections. The Gaussian capture removes the sparse-sampling
+replicas seen in the prior version. This sample still uses encoded-SDR
+filtering and a strong panel tint; it does not establish a finished
+frosted-glass treatment or a second useful application need.
 
 | Flat palette | Direct analytic shadow | Retained backdrop blur |
 | --- | --- | --- |

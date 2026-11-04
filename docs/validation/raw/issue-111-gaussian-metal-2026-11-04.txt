@@ -1,0 +1,32 @@
+ld: warning: ignoring duplicate libraries: '-lobjc'
+[INFO ] --- [2026-11-04 19:35:36] Starting test runner with 8 threads. Set with -define:ODIN_TEST_THREADS=n.
+[INFO ] --- [2026-11-04 19:35:36] The random seed sent to every test is: 9636430417876. Set with -define:ODIN_TEST_RANDOM_SEED=n.
+[INFO ] --- [2026-11-04 19:35:36] Memory tracking is enabled. Tests will log their memory usage if there's an issue.
+[INFO ] --- [2026-11-04 19:35:36] < Final Mem/ Total Mem> <  Peak Mem> (#Free/Alloc) :: [package.test_name]
+alicorn_diagnostics capture_failed path /var/folders/cb/gkwz61217sx0y5ykhgb19bbh0000gn/T/alicorn-diagnostics-failure-test-2794149133/capture-root-file error create capture bundle: ENOTDIR
+
+Finished 163 tests in 26.692ms. All tests were successful.
+
+2026-11-04 13:35:52.524 alicorn_effects_validation[78192:6836389] Metal API Validation Enabled
+effects_gpu_validation driver metal sdl_version 3004018 source_format RGBA8_UNORM filter_format RGBA16_FLOAT color_space encoded SDR (not linear-light blur)
+effects_gaussian_readback scale 1 sigma_pixels 1 kernel_radius 3 paired_taps 5 worst_rgba8_error 1 painter_order true
+effects_gaussian_readback scale 1.5 sigma_pixels 1.5 kernel_radius 5 paired_taps 7 worst_rgba8_error 1 painter_order true
+effects_gaussian_readback scale 2 sigma_pixels 2 kernel_radius 6 paired_taps 7 worst_rgba8_error 1 painter_order true
+effects_gaussian_readback scale 1 sigma_pixels 4 kernel_radius 12 paired_taps 13 worst_rgba8_error 1 painter_order true
+effects_gaussian_readback scale 1.5 sigma_pixels 6 kernel_radius 18 paired_taps 19 worst_rgba8_error 2 painter_order true
+effects_gaussian_readback scale 2 sigma_pixels 8 kernel_radius 24 paired_taps 25 worst_rgba8_error 2 painter_order true
+effects_gaussian_readback scale 1 sigma_pixels 8 kernel_radius 24 paired_taps 25 worst_rgba8_error 1 painter_order true
+effects_gaussian_readback scale 1.5 sigma_pixels 12 kernel_radius 36 paired_taps 37 worst_rgba8_error 2 painter_order true
+effects_gaussian_readback scale 2 sigma_pixels 16 kernel_radius 48 paired_taps 49 worst_rgba8_error 2 painter_order true
+effects_unchanged attempts 100 new_passes 0 new_allocations 0 new_submissions 0
+effects_gaussian_readback scale 2 sigma_pixels 16 kernel_radius 48 paired_taps 49 worst_rgba8_error 2 painter_order true
+effects_retirement live_bytes 0
+effects_first_frame mode 0 encode_ns 2807000 submit_wait_ns 5493000 render_passes 15
+effects_warm mode 0 samples 40 encode_p95_ns 1564000 submit_wait_p95_ns 4756000 render_passes 15 allocations 0 filter_passes 0 live_bytes 0 peak_bytes 0 effect_upload_bytes_total 0
+effects_first_frame mode 1 encode_ns 1618000 submit_wait_ns 1428000 render_passes 16
+effects_warm mode 1 samples 40 encode_p95_ns 1634000 submit_wait_p95_ns 4731000 render_passes 16 allocations 0 filter_passes 0 live_bytes 0 peak_bytes 0 effect_upload_bytes_total 0
+effects_first_frame mode 2 encode_ns 4055000 submit_wait_ns 2141000 render_passes 29
+effects_warm mode 2 samples 40 encode_p95_ns 2986000 submit_wait_p95_ns 7997000 render_passes 29 allocations 8 filter_passes 82 live_bytes 810000 peak_bytes 810000 effect_upload_bytes_total 42120
+effects_first_frame mode 3 encode_ns 3503000 submit_wait_ns 1822000 render_passes 29
+effects_warm mode 3 samples 40 encode_p95_ns 1673000 submit_wait_p95_ns 7810000 render_passes 16 allocations 8 filter_passes 2 live_bytes 810000 peak_bytes 810000 effect_upload_bytes_total 42120
+effects_gpu_validation PASS dense_gaussian_reference_cases 9 cache_equals_fresh true budget_fallback true nesting_limit 1

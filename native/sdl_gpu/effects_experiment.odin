@@ -17,7 +17,8 @@ when ALICORN_RETAINED_EFFECTS_EXPERIMENT {
 // cache.source (translated by -plan.source_bounds.xy) -> encode -> composite ->
 // submit -> commit on success, abort on cancellation/failure. Cached skips source
 // capture and encode. All render/copy passes must be closed before these calls.
-// Filter targets use R8G8B8A8_UNORM; the composite pipeline matches the
+// The captured prefix uses RGBA8_UNORM; filter targets use RGBA16_FLOAT to
+// avoid quantizing every weighted tap. The composite pipeline matches the
 // owning window's actual swapchain format (for example BGRA8 on Metal).
 // Cancel/submit a command before preparing/resetting its cache again; a cache
 // belongs to one device and one caller, with at most one pending command.
@@ -31,16 +32,26 @@ when ALICORN_RETAINED_EFFECTS_EXPERIMENT {
 NATIVE_EFFECT_MAX_DIMENSION :: 2048
 NATIVE_EFFECT_MAX_COORD :: 1_048_576
 NATIVE_EFFECT_MAX_SCALE :: 64
-NATIVE_EFFECT_VERTEX_COUNT :: 66
+NATIVE_EFFECT_MAX_SIGMA_PIXELS :: 32.0
+NATIVE_EFFECT_MAX_GAUSSIAN_RADIUS_PIXELS :: 96
+NATIVE_EFFECT_MAX_GAUSSIAN_KERNEL_WIDTH :: 2*NATIVE_EFFECT_MAX_GAUSSIAN_RADIUS_PIXELS+1
+NATIVE_EFFECT_MAX_FILTER_TAPS :: 97
+NATIVE_EFFECT_VERTEX_COUNT :: NATIVE_EFFECT_MAX_FILTER_TAPS*12+6
 NATIVE_EFFECT_VERTEX_BYTES :: u64(NATIVE_EFFECT_VERTEX_COUNT * size_of(Native_Text_Vertex))
-NATIVE_EFFECT_FILTER_FORMAT :: sdl3.GPUTextureFormat.R8G8B8A8_UNORM
+NATIVE_EFFECT_SOURCE_FORMAT :: sdl3.GPUTextureFormat.R8G8B8A8_UNORM
+NATIVE_EFFECT_FILTER_FORMAT :: sdl3.GPUTextureFormat.R16G16B16A16_FLOAT
+
+Native_Effect_Tap :: struct {
+	offset_pixels: f32,
+	weight: f32,
+}
 
 Native_Effect_Request :: struct {
 	enabled: bool,
 	key, source_generation: u64,
 	region, clip: alicorn.Rect,
 	scale: f32,
-	spacing: f32, // logical pixels, [0,8]; zero bypasses
+	sigma: f32, // Gaussian standard deviation in logical pixels, [0,8]; zero bypasses
 	depth: int, // exactly one; nesting is unsupported
 }
 
@@ -49,7 +60,8 @@ Native_Effect_Plan :: struct {
 	source_bounds: alicorn.Rect,
 	output_clip: alicorn.Rect,
 	width, height: sdl3.Uint32,
-	scale, spacing_pixels: f32,
+	scale, sigma_pixels: f32,
+	filter_tap_count: int,
 	key, source_generation: u64,
 	bytes: u64,
 }
@@ -70,7 +82,7 @@ Native_Effect_Cache :: struct {
 	valid, pending, encoded: bool,
 	vertex_upload_pending, vertex_upload_encoded: bool,
 	pending_command: ^sdl3.GPUCommandBuffer,
-	texture_bytes: u64, // one texture, including during partial allocation
+	texture_bytes: [3]u64, // source, horizontal, and vertical texture charges
 	// Lifetime counters survive reset/deactivation. Allocations counts retained
 	// SDL objects (textures, pipelines, sampler, buffer, transfer), not shaders.
 	allocations, filter_passes, composites, cache_hits: u64,
@@ -221,7 +233,71 @@ native_effect_rect_bounded :: proc(rect: alicorn.Rect) -> bool {
 }
 
 native_effect_byte_size :: proc(width, height: sdl3.Uint32) -> u64 {
-	return u64(width)*u64(height)*4*3 + 2*NATIVE_EFFECT_VERTEX_BYTES
+	return u64(width)*u64(height)*(4+8+8) + 2*NATIVE_EFFECT_VERTEX_BYTES
+}
+
+native_effect_gaussian_radius :: proc(sigma_pixels: f32) -> (radius: int, ok: bool) {
+	if !native_effect_finite(sigma_pixels) || sigma_pixels <= 0 || sigma_pixels > NATIVE_EFFECT_MAX_SIGMA_PIXELS {
+		return 0, false
+	}
+	radius_f64 := math.ceil(3*f64(sigma_pixels))
+	if radius_f64 < 1 || radius_f64 > NATIVE_EFFECT_MAX_GAUSSIAN_RADIUS_PIXELS { return 0, false }
+	return int(radius_f64), true
+}
+
+native_effect_gaussian_tap_count :: proc(sigma_pixels: f32) -> (count: int, ok: bool) {
+	radius, valid := native_effect_gaussian_radius(sigma_pixels)
+	if !valid { return 0, false }
+	// Pair adjacent positive and negative texel weights into one bilinear
+	// sample per side, retaining the center sample and any unpaired edge tap.
+	return 1+2*((radius+1)/2), true
+}
+
+native_effect_gaussian_weights :: proc(sigma_pixels: f32) -> (weights: [NATIVE_EFFECT_MAX_GAUSSIAN_KERNEL_WIDTH]f32, radius: int, ok: bool) {
+	computed_radius, valid := native_effect_gaussian_radius(sigma_pixels)
+	if !valid { return weights, 0, false }
+
+	radius = computed_radius
+	count := radius*2+1
+	center := NATIVE_EFFECT_MAX_GAUSSIAN_RADIUS_PIXELS
+	unnormalized: [NATIVE_EFFECT_MAX_GAUSSIAN_KERNEL_WIDTH]f64
+	total := f64(0)
+	denominator := 2*f64(sigma_pixels)*f64(sigma_pixels)
+	for index in 0..<count {
+		offset := index-radius
+		x := f64(offset)
+		weight := math.exp(-(x*x)/denominator)
+		unnormalized[center+offset] = weight
+		total += weight
+	}
+	for index in 0..<count {
+		offset := index-radius
+		weights[center+offset] = f32(unnormalized[center+offset]/total)
+	}
+	return weights, radius, true
+}
+
+native_effect_gaussian_taps :: proc(sigma_pixels: f32) -> (taps: [NATIVE_EFFECT_MAX_FILTER_TAPS]Native_Effect_Tap, count: int, ok: bool) {
+	weights, radius, valid := native_effect_gaussian_weights(sigma_pixels)
+	if !valid { return taps, 0, false }
+	center := NATIVE_EFFECT_MAX_GAUSSIAN_RADIUS_PIXELS
+	taps[0] = Native_Effect_Tap{0, weights[center]}
+	count = 1
+	for distance := 1; distance <= radius; distance += 2 {
+		near_weight := f64(weights[center+distance])
+		far_weight := f64(0)
+		if distance < radius { far_weight = f64(weights[center+distance+1]) }
+		combined := near_weight+far_weight
+		offset := f64(distance)
+		if combined > 0 {
+			offset = (f64(distance)*near_weight+f64(distance+1)*far_weight)/combined
+		}
+		weight := f32(combined)
+		taps[count] = Native_Effect_Tap{-f32(offset), weight}
+		taps[count+1] = Native_Effect_Tap{f32(offset), weight}
+		count += 2
+	}
+	return taps, count, true
 }
 
 native_effect_plan :: proc(request: Native_Effect_Request) -> (plan: Native_Effect_Plan, ok: bool) {
@@ -229,14 +305,19 @@ native_effect_plan :: proc(request: Native_Effect_Request) -> (plan: Native_Effe
 	// a device, key, generation, scale or depth. Enabled requests are validated.
 	if !request.enabled { return plan, true }
 	if !native_effect_finite(request.scale) || request.scale <= 0 || request.scale > NATIVE_EFFECT_MAX_SCALE ||
-	   !native_effect_finite(request.spacing) || request.spacing < 0 || request.spacing > 8 ||
+	   !native_effect_finite(request.sigma) || request.sigma < 0 || request.sigma > 8 ||
 	   !native_effect_rect_bounded(request.region) || !native_effect_rect_bounded(request.clip) ||
 	   request.depth != 1 || request.key == 0 || request.source_generation == 0 { return plan, false }
 	output_clip := alicorn.rect_intersection(request.region, request.clip)
-	if request.spacing == 0 || request.region.w <= 0 || request.region.h <= 0 ||
+	if request.sigma == 0 || request.region.w <= 0 || request.region.h <= 0 ||
 	   request.clip.w <= 0 || request.clip.h <= 0 || output_clip.w <= 0 || output_clip.h <= 0 { return plan, true }
-	// Widen before arithmetic, cap before ANY float-to-integer conversion.
-	scale, halo := f64(request.scale), 2*f64(request.spacing)
+	sigma_pixels := request.sigma*request.scale
+	radius, radius_ok := native_effect_gaussian_radius(sigma_pixels)
+	tap_count, tap_count_ok := native_effect_gaussian_tap_count(sigma_pixels)
+	if !radius_ok || !tap_count_ok { return Native_Effect_Plan{}, false }
+	// Capture the complete finite 3-sigma Gaussian support and round outward in
+	// physical pixels before conversion back to logical layout coordinates.
+	scale, halo := f64(request.scale), f64(radius)/f64(request.scale)
 	left := math.floor((f64(request.region.x)-halo)*scale)
 	top := math.floor((f64(request.region.y)-halo)*scale)
 	right := math.ceil((f64(request.region.x)+f64(request.region.w)+halo)*scale)
@@ -251,7 +332,7 @@ native_effect_plan :: proc(request: Native_Effect_Request) -> (plan: Native_Effe
 	plan = Native_Effect_Plan{
 		active=true, source_bounds=source, output_clip=output_clip,
 		width=sdl3.Uint32(w), height=sdl3.Uint32(h),
-		scale=request.scale, spacing_pixels=request.spacing*request.scale,
+		scale=request.scale, sigma_pixels=sigma_pixels, filter_tap_count=tap_count,
 		key=request.key, source_generation=request.source_generation,
 	}
 	plan.bytes = native_effect_byte_size(plan.width, plan.height)
@@ -268,10 +349,12 @@ native_effect_plan_valid :: proc(plan: Native_Effect_Plan) -> bool {
 	if plan.key == 0 || plan.source_generation == 0 ||
 	   plan.width == 0 || plan.height == 0 || plan.width > NATIVE_EFFECT_MAX_DIMENSION || plan.height > NATIVE_EFFECT_MAX_DIMENSION ||
 	   !native_effect_finite(plan.scale) || plan.scale <= 0 || plan.scale > NATIVE_EFFECT_MAX_SCALE ||
-	   !native_effect_finite(plan.spacing_pixels) || plan.spacing_pixels <= 0 || plan.spacing_pixels > 8*plan.scale ||
+	   !native_effect_finite(plan.sigma_pixels) || plan.sigma_pixels <= 0 || plan.sigma_pixels > NATIVE_EFFECT_MAX_SIGMA_PIXELS ||
 	   !native_effect_rect_bounded(plan.source_bounds) || !native_effect_rect_bounded(plan.output_clip) ||
 	   plan.source_bounds.w <= 0 || plan.source_bounds.h <= 0 || plan.output_clip.w <= 0 || plan.output_clip.h <= 0 ||
 	   plan.bytes != native_effect_byte_size(plan.width, plan.height) { return false }
+	expected_taps, taps_ok := native_effect_gaussian_tap_count(plan.sigma_pixels)
+	if !taps_ok || plan.filter_tap_count != expected_taps { return false }
 	left, top := f64(plan.source_bounds.x)*f64(plan.scale), f64(plan.source_bounds.y)*f64(plan.scale)
 	w, h := f64(plan.source_bounds.w)*f64(plan.scale), f64(plan.source_bounds.h)*f64(plan.scale)
 	if abs(left) > NATIVE_EFFECT_MAX_COORD || abs(top) > NATIVE_EFFECT_MAX_COORD ||
@@ -301,14 +384,14 @@ native_effect_allocation :: proc(cache: ^Native_Effect_Cache, bytes: u64 = 0) {
 }
 
 native_effect_release_textures :: proc(cache: ^Native_Effect_Cache) {
-	for slot in ([3]^^sdl3.GPUTexture{&cache.source, &cache.ping, &cache.output}) {
+	for slot, index in ([3]^^sdl3.GPUTexture{&cache.source, &cache.ping, &cache.output}) {
 		if slot^ != nil {
 			sdl3.ReleaseGPUTexture(cache.device, slot^)
 			slot^ = nil
-			cache.live_bytes -= cache.texture_bytes
+			cache.live_bytes -= cache.texture_bytes[index]
 		}
+		cache.texture_bytes[index] = 0
 	}
-	cache.texture_bytes = 0
 }
 
 native_effect_has_resources :: proc(cache: ^Native_Effect_Cache) -> bool {
@@ -364,7 +447,7 @@ native_effect_create_fixed :: proc(cache: ^Native_Effect_Cache) -> bool {
 		{location=2, buffer_slot=0, format=.FLOAT2, offset=sdl3.Uint32(size_of([3]f32)+size_of([4]f32))},
 	}
 	// All sampled channels are already premultiplied from source rendering.
-	// Each binomial weight appears ONCE in all four vertex-color channels.
+	// Each Gaussian weight appears ONCE in all four vertex-color channels.
 	additive := sdl3.GPUColorTargetBlendState{
 		src_color_blendfactor=.ONE, dst_color_blendfactor=.ONE, color_blend_op=.ADD,
 		src_alpha_blendfactor=.ONE, dst_alpha_blendfactor=.ONE, alpha_blend_op=.ADD, enable_blend=true,
@@ -416,17 +499,18 @@ native_effect_quad :: proc(vertices: ^[NATIVE_EFFECT_VERTEX_COUNT]Native_Text_Ve
 
 native_effect_build_vertices :: proc(cache: ^Native_Effect_Cache) {
 	w, h := f32(cache.plan.width), f32(cache.plan.height)
-	weights := [5]f32{1.0/16, 4.0/16, 6.0/16, 4.0/16, 1.0/16}
-	for weight, tap in weights {
-		offset := f32(tap-2)*cache.plan.spacing_pixels
-		du, dv := offset/w, offset/h
-		native_effect_quad(&cache.vertices, tap*6, 0,0,w,h, du,0,1+du,1, weight)
-		native_effect_quad(&cache.vertices, 30+tap*6, 0,0,w,h, 0,dv,1,1+dv, weight)
+	taps, tap_count, ok := native_effect_gaussian_taps(cache.plan.sigma_pixels)
+	if !ok || tap_count != cache.plan.filter_tap_count { return }
+	for tap in 0..<tap_count {
+		sample := taps[tap]
+		du, dv := sample.offset_pixels/w, sample.offset_pixels/h
+		native_effect_quad(&cache.vertices, tap*6, 0,0,w,h, du,0,1+du,1, sample.weight)
+		native_effect_quad(&cache.vertices, tap_count*6+tap*6, 0,0,w,h, 0,dv,1,1+dv, sample.weight)
 	}
 	// Use the physical snapped origin, avoiding subpixel texture resampling.
 	x := f32(math.round(f64(cache.plan.source_bounds.x)*f64(cache.plan.scale)))
 	y := f32(math.round(f64(cache.plan.source_bounds.y)*f64(cache.plan.scale)))
-	native_effect_quad(&cache.vertices, 60, x,y,x+w,y+h, 0,0,1,1, 1)
+	native_effect_quad(&cache.vertices, tap_count*12, x,y,x+w,y+h, 0,0,1,1, 1)
 	cache.vertex_upload_pending = true
 }
 
@@ -444,7 +528,8 @@ native_effect_prepare :: proc(cache: ^Native_Effect_Cache, plan: Native_Effect_P
 	// Callers select this cache only after its last-use fence has retired. This
 	// permits bounded reuse without a device-wide wait on resize or repaint.
 	native_effect_abort(cache)
-	if !sdl3.GPUTextureSupportsFormat(cache.device, NATIVE_EFFECT_FILTER_FORMAT, .D2, {.SAMPLER, .COLOR_TARGET}) ||
+	if !sdl3.GPUTextureSupportsFormat(cache.device, NATIVE_EFFECT_SOURCE_FORMAT, .D2, {.SAMPLER, .COLOR_TARGET}) ||
+	   !sdl3.GPUTextureSupportsFormat(cache.device, NATIVE_EFFECT_FILTER_FORMAT, .D2, {.SAMPLER, .COLOR_TARGET}) ||
 	   !sdl3.GPUTextureSupportsFormat(cache.device, cache.composite_format, .D2, {.COLOR_TARGET}) {
 		native_effect_reset(cache)
 		return .Fallback
@@ -457,21 +542,23 @@ native_effect_prepare :: proc(cache: ^Native_Effect_Cache, plan: Native_Effect_P
 		// Release BEFORE allocating replacements: the budget covers the peak,
 		// including the unchanged fixed buffer and transfer buffer.
 		native_effect_release_textures(cache)
-		cache.texture_bytes = u64(plan.width)*u64(plan.height)*4
-		for slot in ([3]^^sdl3.GPUTexture{&cache.source, &cache.ping, &cache.output}) {
+		formats := [3]sdl3.GPUTextureFormat{NATIVE_EFFECT_SOURCE_FORMAT, NATIVE_EFFECT_FILTER_FORMAT, NATIVE_EFFECT_FILTER_FORMAT}
+		bytes_per_pixel := [3]u64{4, 8, 8}
+		for slot, index in ([3]^^sdl3.GPUTexture{&cache.source, &cache.ping, &cache.output}) {
 			slot^ = sdl3.CreateGPUTexture(cache.device, {
-			type=.D2, format=NATIVE_EFFECT_FILTER_FORMAT, usage={.SAMPLER, .COLOR_TARGET},
+			type=.D2, format=formats[index], usage={.SAMPLER, .COLOR_TARGET},
 				width=plan.width, height=plan.height, layer_count_or_depth=1, num_levels=1, sample_count=._1,
 			})
 			if slot^ == nil { native_effect_reset(cache); return .Fallback }
-			native_effect_allocation(cache, cache.texture_bytes)
+			cache.texture_bytes[index] = u64(plan.width)*u64(plan.height)*bytes_per_pixel[index]
+			native_effect_allocation(cache, cache.texture_bytes[index])
 		}
 	}
 	// Source/resource generations invalidate pixels, not the filter quad mesh.
 	// Keep geometry uploaded through a repaint with unchanged bounds/parameters.
 	changed := cache.plan.source_bounds != plan.source_bounds || cache.plan.width != plan.width ||
 	           cache.plan.height != plan.height || cache.plan.scale != plan.scale ||
-	           cache.plan.spacing_pixels != plan.spacing_pixels
+	           cache.plan.sigma_pixels != plan.sigma_pixels || cache.plan.filter_tap_count != plan.filter_tap_count
 	cache.plan = plan
 	if changed { native_effect_build_vertices(cache) }
 	cache.pending = true
@@ -525,8 +612,9 @@ native_effect_encode :: proc(cache: ^Native_Effect_Cache, command: ^sdl3.GPUComm
 		sdl3.BindGPUVertexBuffers(pass, 0, &binding, 1)
 		sampler := sdl3.GPUTextureSamplerBinding{texture=source, sampler=cache.sampler}
 		sdl3.BindGPUFragmentSamplers(pass, 0, &sampler, 1)
-		// Five overlapping sampled quads, each with a constant binomial weight.
-		sdl3.DrawGPUPrimitives(pass, 30, 1, sdl3.Uint32(axis*30), 0)
+		// Bilinear-paired Gaussian taps, accumulated into half-float targets.
+		first_vertex := axis*cache.plan.filter_tap_count*6
+		sdl3.DrawGPUPrimitives(pass, sdl3.Uint32(cache.plan.filter_tap_count*6), 1, sdl3.Uint32(first_vertex), 0)
 		sdl3.EndGPURenderPass(pass)
 		cache.filter_passes += 1
 	}
@@ -560,7 +648,7 @@ native_effect_composite :: proc(cache: ^Native_Effect_Cache, command: ^sdl3.GPUC
 	sdl3.BindGPUVertexBuffers(pass, 0, &binding, 1)
 	sampler := sdl3.GPUTextureSamplerBinding{texture=cache.output, sampler=cache.sampler}
 	sdl3.BindGPUFragmentSamplers(pass, 0, &sampler, 1)
-	sdl3.DrawGPUPrimitives(pass, 6, 1, 60, 0)
+	sdl3.DrawGPUPrimitives(pass, 6, 1, sdl3.Uint32(cache.plan.filter_tap_count*12), 0)
 	sdl3.EndGPURenderPass(pass)
 	cache.composites += 1
 	return true

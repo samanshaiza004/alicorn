@@ -15,18 +15,18 @@ Experimental_Backdrop_Effect_Kind :: enum u8 { None, Blur }
 Experimental_Backdrop_Fallback :: enum u8 { Direct }
 Experimental_Backdrop_Effect :: struct {
 	kind: Experimental_Backdrop_Effect_Kind,
-	radius: f32,
+	sigma: f32,
 	fallback: Experimental_Backdrop_Fallback,
 }
 
 EXPERIMENTAL_BACKDROP_NONE :: Experimental_Backdrop_Effect{}
 
-experimental_backdrop_blur :: proc(radius: f32, fallback := Experimental_Backdrop_Fallback.Direct) -> Experimental_Backdrop_Effect {
-	return Experimental_Backdrop_Effect{kind=.Blur, radius=radius, fallback=fallback}
+experimental_backdrop_blur :: proc(sigma: f32, fallback := Experimental_Backdrop_Fallback.Direct) -> Experimental_Backdrop_Effect {
+	return Experimental_Backdrop_Effect{kind=.Blur, sigma=sigma, fallback=fallback}
 }
 
 Backdrop_Effect_Paint :: struct {
-	radius: f32,
+	sigma: f32,
 	fallback: Experimental_Backdrop_Fallback,
 }
 
@@ -59,7 +59,7 @@ paint_backdrop_effect_command :: proc(owner: Node_ID, bounds, clip: Rect, effect
 		owner=owner,
 		bounds=bounds,
 		clip=clip,
-		payload=Backdrop_Effect_Paint{effect.radius, effect.fallback},
+		payload=Backdrop_Effect_Paint{effect.sigma, effect.fallback},
 	}
 }
 

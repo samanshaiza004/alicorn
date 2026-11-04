@@ -73,9 +73,9 @@ experimental_backdrop_effect_is_valid :: proc(effect: Experimental_Backdrop_Effe
 	if effect.fallback != .Direct { return false }
 	switch effect.kind {
 	case .None:
-		return effect.radius == 0
+		return effect.sigma == 0
 	case .Blur:
-		return effect.radius == effect.radius && abs(effect.radius) <= 8 && effect.radius > 0
+		return effect.sigma == effect.sigma && abs(effect.sigma) <= 8 && effect.sigma > 0
 	}
 	return false
 }
@@ -117,7 +117,7 @@ semantic_surface_style_hash :: proc(style: Semantic_Surface_Style) -> u64 {
 	h = hash_mix(h, u64(u32(style.material_group)))
 	h = hash_mix(h, u64(style.open_top_edge))
 	h = hash_mix(h, u64(style.backdrop_effect.kind))
-	h = hash_mix(h, u64(transmute(u32)style.backdrop_effect.radius))
+	h = hash_mix(h, u64(transmute(u32)style.backdrop_effect.sigma))
 	h = hash_mix(h, u64(style.backdrop_effect.fallback))
 	return h
 }

@@ -24,16 +24,16 @@ test_experimental_backdrop_is_an_ordered_surface_boundary :: proc(t: ^testing.T)
 	if len(node.paint) >= 2 {
 		marker, marker_ok := node.paint[0].payload.(Backdrop_Effect_Paint)
 		fill, fill_ok := paint_surface_color(node.paint[1])
-		testing.expect(t, marker_ok && marker.radius == 4 && marker.fallback == .Direct && fill_ok && fill.a == 0.88,
+		testing.expect(t, marker_ok && marker.sigma == 4 && marker.fallback == .Direct && fill_ok && fill.a == 0.88,
 			"the generic paint boundary should carry a bounded blur request and preserve the app-selected translucent fill")
 	}
 	style := rt.semantic_surfaces[id]
 	changed := style
-	changed.backdrop_effect.radius = 5
+	changed.backdrop_effect.sigma = 5
 	testing.expect(t, semantic_surface_style_hash(changed) != semantic_surface_style_hash(style),
 		"changing effect parameters should invalidate the retained surface description")
 	testing.expect(t, !experimental_backdrop_effect_is_valid(experimental_backdrop_blur(9)),
-		"effect radii beyond the fixed compositor bound must be rejected")
+		"blur sigma beyond the supported logical bound must be rejected")
 }
 
 @(test)

@@ -14,8 +14,9 @@ test_effect_composite_pipeline_tracks_window_swapchain_format :: proc(t:^testing
 	testing.expect(t, cache.composite_format == .B8G8R8A8_UNORM &&
 		effects.composite_format == .B8G8R8A8_UNORM &&
 		effects.slots[0].composite_format == .B8G8R8A8_UNORM &&
-		NATIVE_EFFECT_FILTER_FORMAT == .R8G8B8A8_UNORM,
-		"effect filtering stays RGBA8 while the final composite follows the actual window swapchain format")
+		NATIVE_EFFECT_SOURCE_FORMAT == .R8G8B8A8_UNORM &&
+		NATIVE_EFFECT_FILTER_FORMAT == .R16G16B16A16_FLOAT,
+		"capture remains RGBA8, Gaussian accumulation uses half-float, and composite follows the window swapchain format")
 }
 
 @(test)
@@ -49,7 +50,7 @@ test_effect_cache_identity_tracks_prefix_but_not_palette_query :: proc(t: ^testi
 }
 
 effect_test_request :: proc() -> Native_Effect_Request {
-    return {enabled=true,key=17,source_generation=4,region={10.25,20.25,100,50},clip={0,0,200,200},scale=1.5,spacing=2,depth=1}
+    return {enabled=true,key=17,source_generation=4,region={10.25,20.25,100,50},clip={0,0,200,200},scale=1.5,sigma=2,depth=1}
 }
 
 @(test)
@@ -58,9 +59,9 @@ test_effect_boundary_uses_resolved_clip_and_physical_halo :: proc(t:^testing.T) 
     plan,ok:=native_effect_plan(request)
     testing.expect(t,ok && plan.active,"a bounded opted-in region should have an executable plan")
     if !ok { return }
-    testing.expect(t,plan.source_bounds.x<=6.25 && plan.source_bounds.y<=16.25 &&
-        plan.source_bounds.x+plan.source_bounds.w>=114.25 && plan.source_bounds.y+plan.source_bounds.h>=74.25,
-        "the two-tap support halo must survive outward rounding at fractional DPI")
+    testing.expect(t,plan.source_bounds.x<=4.25 && plan.source_bounds.y<=14.25 &&
+        plan.source_bounds.x+plan.source_bounds.w>=116.25 && plan.source_bounds.y+plan.source_bounds.h>=76.25,
+        "the complete 3-sigma support halo must survive outward rounding at fractional DPI")
     testing.expect(t,abs(plan.source_bounds.x*plan.scale-math.round(plan.source_bounds.x*plan.scale))<0.001 &&
         abs(plan.source_bounds.y*plan.scale-math.round(plan.source_bounds.y*plan.scale))<0.001,
         "the input origin must be snapped in physical pixels")
@@ -71,8 +72,107 @@ test_effect_boundary_uses_resolved_clip_and_physical_halo :: proc(t:^testing.T) 
 }
 
 @(test)
+test_effect_gaussian_taps_reconstruct_normalized_dense_kernel :: proc(t:^testing.T) {
+	sigma := f32(12)
+	dense, radius, dense_ok := native_effect_gaussian_weights(sigma)
+	taps, tap_count, taps_ok := native_effect_gaussian_taps(sigma)
+	testing.expect(t, dense_ok && taps_ok && radius == 36 && tap_count == 37,
+		"sigma 12 should use a normalized 3-sigma kernel and 37 bilinear-paired samples")
+	if !dense_ok || !taps_ok { return }
+
+	center := NATIVE_EFFECT_MAX_GAUSSIAN_RADIUS_PIXELS
+	dense_sum, variance := f64(0), f64(0)
+	for offset in -radius..<(radius+1) {
+		weight := f64(dense[center+offset])
+		dense_sum += weight
+		variance += f64(offset*offset)*weight
+		if offset > 0 {
+			testing.expect(t, abs(dense[center+offset]-dense[center-offset]) < 0.000001,
+				"the dense Gaussian kernel must be symmetric")
+			testing.expect(t, dense[center+offset] <= dense[center+offset-1],
+				"the truncated Gaussian weights must decay monotonically away from the center")
+		}
+	}
+	sigma_squared := f64(sigma)*f64(sigma)
+	testing.expect(t, abs(dense_sum-1) < 0.00001 && variance > sigma_squared*0.9 && variance < sigma_squared*1.01,
+		"the truncated kernel must stay normalized and preserve the requested blur scale")
+
+	// A linear texture sample at each paired fractional offset must reconstruct
+	// the dense integer-tap kernel exactly, including the odd-radius edge pair.
+	reconstructed: [NATIVE_EFFECT_MAX_GAUSSIAN_KERNEL_WIDTH]f32
+	for tap in taps[:tap_count] {
+		low := int(math.floor(f64(tap.offset_pixels)))
+		fraction := f32(f64(tap.offset_pixels)-f64(low))
+		reconstructed[center+low] += tap.weight*(1-fraction)
+		reconstructed[center+low+1] += tap.weight*fraction
+	}
+	for offset in -radius..<(radius+1) {
+		testing.expect(t, abs(reconstructed[center+offset]-dense[center+offset]) < 0.00001,
+			"bilinear tap pairing must reproduce each dense Gaussian coefficient")
+	}
+}
+
+@(test)
+test_effect_gaussian_tiny_sigma_has_finite_identity_taps :: proc(t:^testing.T) {
+	taps, count, ok := native_effect_gaussian_taps(1e-20)
+	testing.expect(t, ok && count == 3,
+		"a positive sigma whose tail underflows should still produce a bounded kernel")
+	if !ok { return }
+	for tap in taps[:count] {
+		testing.expect(t, native_effect_finite(tap.offset_pixels) && native_effect_finite(tap.weight) && tap.weight >= 0,
+			"underflowed tail taps must remain finite zero-weight samples")
+	}
+	testing.expect(t, taps[0].offset_pixels == 0 && taps[0].weight == 1 &&
+		taps[1].weight == 0 && taps[2].weight == 0,
+		"a tiny sampled Gaussian should safely reduce to an identity kernel")
+}
+
+@(test)
+test_effect_gaussian_suppresses_checker_and_sparse_tap_passbands :: proc(t:^testing.T) {
+	sigma := f32(6)
+	weights, radius, ok := native_effect_gaussian_weights(sigma)
+	testing.expect(t, ok, "the checkerboard fixture needs a valid Gaussian kernel")
+	if !ok { return }
+	center := NATIVE_EFFECT_MAX_GAUSSIAN_RADIUS_PIXELS
+	period_six_response, checkerboard_response := f64(0), f64(0)
+	omega := 2*3.141592653589793/6
+	for offset in -radius..<(radius+1) {
+		weight := f64(weights[center+offset])
+		period_six_response += weight*math.cos(omega*f64(offset))
+		checker_sign := f64(1)
+		if offset%2 != 0 { checker_sign = -1 }
+		checkerboard_response += weight*checker_sign
+	}
+	// The previous spaced binomial has H(w)=cos^4(6w/2), which equals one
+	// for the period-six pattern. A sampled dense Gaussian should remove it.
+	legacy_cosine := math.cos(f64(6)*omega/2)
+	legacy_period_six_response := legacy_cosine*legacy_cosine*legacy_cosine*legacy_cosine
+	testing.expect(t, abs(legacy_period_six_response-1) < 0.000001 && abs(period_six_response) < 0.01,
+		"the Gaussian must suppress the repeating detail passed unchanged by a six-pixel-spaced five-tap kernel")
+	testing.expect(t, abs(checkerboard_response) < 0.01,
+		"the Gaussian impulse response must strongly attenuate alternating-pixel checker detail")
+}
+
+@(test)
+test_effect_gaussian_maximum_supported_physical_sigma :: proc(t:^testing.T) {
+	request := effect_test_request()
+	request.sigma = 8
+	request.scale = 4
+	plan, ok := native_effect_plan(request)
+	testing.expect(t, ok && plan.active && plan.sigma_pixels == 32 &&
+		plan.filter_tap_count == NATIVE_EFFECT_MAX_FILTER_TAPS,
+		"the maximum physical sigma must fit the bounded 97-tap vertex allocation")
+	if ok {
+		radius, radius_ok := native_effect_gaussian_radius(plan.sigma_pixels)
+		testing.expect(t, radius_ok && radius == NATIVE_EFFECT_MAX_GAUSSIAN_RADIUS_PIXELS &&
+			plan.bytes == native_effect_byte_size(plan.width, plan.height),
+			"the maximum supported kernel must retain its complete 3-sigma halo and charge half-float storage")
+	}
+}
+
+@(test)
 test_effect_boundary_rejects_unbounded_and_nested_requests :: proc(t:^testing.T) {
-    for i in 0..<8 {
+	for i in 0..<9 {
         request:=effect_test_request()
         switch i {
         case 0: request.scale=transmute(f32)u32(0x7FC00000)
@@ -81,8 +181,9 @@ test_effect_boundary_rejects_unbounded_and_nested_requests :: proc(t:^testing.T)
         case 3: request.source_generation=0
         case 4: request.key=0
         case 5: request.region.w=1_000_000
-        case 6: request.spacing=9
-        case 7: request.scale=0
+		case 6: request.sigma=9
+		case 7: request.scale=0
+		case 8: request.sigma=8; request.scale=64
         }
         _,ok:=native_effect_plan(request)
         testing.expect(t,!ok,"invalid requests must fail before a GPU allocation or integer cast")
@@ -101,7 +202,7 @@ test_effect_flat_path_never_creates_resources :: proc(t:^testing.T) {
     request.clip=alicorn.Rect{500,500,10,10}
     plan,ok:=native_effect_plan(request)
     testing.expect(t,ok && !plan.active,"a fully clipped region must retire its effect")
-    request=effect_test_request(); request.spacing=0
+	request=effect_test_request(); request.sigma=0
     plan,ok=native_effect_plan(request)
     testing.expect(t,ok && !plan.active,"zero blur should take the direct draw path")
     testing.expect(t,cache.allocations==0 && cache.live_bytes==0 && cache.filter_passes==0 && cache.output_generation==0,

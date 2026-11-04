@@ -90,14 +90,14 @@ native_effect_hash_command :: proc(hash: u64, draw: alicorn.Paint_Command) -> u6
 native_effect_prefix_generation :: proc(
 	display: []alicorn.Paint_Command,
 	region, clip: alicorn.Rect,
-	scale_x, scale_y, radius: f32,
+	scale_x, scale_y, sigma: f32,
 ) -> u64 {
 	hash := u64(1469598103934665603)
 	hash = native_effect_hash_rect(hash, region)
 	hash = native_effect_hash_rect(hash, clip)
 	hash = native_effect_hash_f32(hash, scale_x)
 	hash = native_effect_hash_f32(hash, scale_y)
-	hash = native_effect_hash_f32(hash, radius)
+	hash = native_effect_hash_f32(hash, sigma)
 	hash = native_effect_hash_mix(hash, u64(len(display)))
 	for draw in display { hash = native_effect_hash_command(hash, draw) }
 	if hash == 0 { return 1 }
@@ -156,7 +156,7 @@ native_effects_prepare_display_prefix :: proc(
 	payload, is_effect := marker.payload.(alicorn.Backdrop_Effect_Paint)
 	if !is_effect || marker.owner == 0 || abs(scale_x-scale_y) > 0.001 { return true }
 	key := u64(marker.owner)
-	generation := native_effect_prefix_generation(prefix, marker.bounds, marker.clip, scale_x, scale_y, payload.radius)
+	generation := native_effect_prefix_generation(prefix, marker.bounds, marker.clip, scale_x, scale_y, payload.sigma)
 	request := Native_Effect_Request{
 		enabled=true,
 		key=key,
@@ -164,7 +164,7 @@ native_effects_prepare_display_prefix :: proc(
 		region=marker.bounds,
 		clip=marker.clip,
 		scale=scale_x,
-		spacing=payload.radius,
+		sigma=payload.sigma,
 		depth=1,
 	}
 	plan, valid := native_effect_plan(request)

@@ -187,26 +187,28 @@ effect_probe_frame :: proc(
     return timing,true
 }
 
-// Independent CPU reference: two quantized RGBA8 binomial passes over the
-// generic renderer's source pixels, followed by premultiplied source-over.
+// Dense CPU Gaussian oracle. The GPU uses bilinear-paired taps and half-float
+// accumulation; this reference uses every integer kernel coefficient directly.
 effect_probe_reference :: proc(plan: Native_Effect_Plan, source, actual: []u8, overlay: bool) -> bool {
     w,h := int(plan.width),int(plan.height)
-    step := int(math.round(plan.spacing_pixels))
-    if abs(f32(step)-plan.spacing_pixels)>0.001 { return false }
-    ping := make([]u8,len(source),allocator=context.temp_allocator)
-    filtered := make([]u8,len(source),allocator=context.temp_allocator)
-    weights := [5]int{1,4,6,4,1}
+    weights, radius, weights_ok := native_effect_gaussian_weights(plan.sigma_pixels)
+    if !weights_ok { return false }
+    center := NATIVE_EFFECT_MAX_GAUSSIAN_RADIUS_PIXELS
+    normalized := make([]f32,len(source),allocator=context.temp_allocator)
+    ping := make([]f32,len(source),allocator=context.temp_allocator)
+    filtered := make([]f32,len(source),allocator=context.temp_allocator)
+    for value,index in source { normalized[index]=f32(value)/255 }
     for axis in 0..<2 {
-        input,output := source,ping
+        input,output := normalized,ping
         if axis==1 { input,output=ping,filtered }
         for y in 0..<h { for x in 0..<w { for c in 0..<4 {
-            sum := 0
-            for weight,tap in weights {
+            sum := f32(0)
+            for offset in -radius..<(radius+1) {
                 sx,sy := x,y
-                if axis==0 { sx=clamp(x+(tap-2)*step,0,w-1) } else { sy=clamp(y+(tap-2)*step,0,h-1) }
-                sum += int(input[(sy*w+sx)*4+c])*weight
+                if axis==0 { sx=clamp(x+offset,0,w-1) } else { sy=clamp(y+offset,0,h-1) }
+                sum += input[(sy*w+sx)*4+c]*weights[center+offset]
             }
-            output[(y*w+x)*4+c]=u8(math.round(f32(sum)/16))
+            output[(y*w+x)*4+c]=sum
         } } }
     }
     clip := plan.output_clip
@@ -216,10 +218,12 @@ effect_probe_reference :: proc(plan: Native_Effect_Plan, source, actual: []u8, o
     worst := 0
     for y in 0..<EFFECT_PROBE_HEIGHT { for x in 0..<EFFECT_PROBE_WIDTH {
         expected:=background
+        effect_index := -1
         if x>=x0 && x<x1 && y>=y0 && y<y1 {
             index:=((y-oy)*w+x-ox)*4
-            a:=f32(filtered[index+3])/255
-            for c in 0..<4 { expected[c]=f32(filtered[index+c])/255+background[c]*(1-a) }
+            effect_index = index
+            a:=filtered[index+3]
+            for c in 0..<4 { expected[c]=filtered[index+c]+background[c]*(1-a) }
         }
         if overlay && x>=int(40*plan.scale) && x<int(60*plan.scale) && y>=int(36*plan.scale) && y<int(52*plan.scale) {
             expected=blend_validation_over(expected,{1,0,0,0.5})
@@ -228,12 +232,20 @@ effect_probe_reference :: proc(plan: Native_Effect_Plan, source, actual: []u8, o
             delta:=abs(int(actual[(y*EFFECT_PROBE_WIDTH+x)*4+c])-int(math.round(expected[c]*255)))
             worst=max(worst,delta)
             if delta>3 {
-                fmt.println("effects_pixel_mismatch","scale",plan.scale,"pixel",x,y,"channel",c,"error",delta)
+                if effect_index >= 0 {
+                    fmt.println("effects_pixel_mismatch","scale",plan.scale,"pixel",x,y,"channel",c,"error",delta,
+                        "actual",actual[(y*EFFECT_PROBE_WIDTH+x)*4+c],"expected",expected[c],
+                        "expected_byte",math.round(expected[c]*255),"filtered_rgba",filtered[effect_index:effect_index+4])
+                } else {
+                    fmt.println("effects_pixel_mismatch","scale",plan.scale,"pixel",x,y,"channel",c,"error",delta,
+                        "actual",actual[(y*EFFECT_PROBE_WIDTH+x)*4+c],"expected",expected[c])
+                }
                 return false
             }
         }
     } }
-    fmt.println("effects_readback","scale",plan.scale,"worst_rgba8_error",worst,"painter_order",overlay)
+    fmt.println("effects_gaussian_readback","scale",plan.scale,"sigma_pixels",plan.sigma_pixels,
+        "kernel_radius",radius,"paired_taps",plan.filter_tap_count,"worst_rgba8_error",worst,"painter_order",overlay)
     return true
 }
 
@@ -250,7 +262,8 @@ effect_probe_device :: proc(driver: cstring) -> bool {
     device:=sdl3.CreateGPUDevice({.DXIL,.MSL,.SPIRV},true,driver)
     if device==nil { return false }
     defer sdl3.DestroyGPUDevice(device)
-    fmt.println("effects_gpu_validation","driver",sdl3.GetGPUDeviceDriver(device),"sdl_version",sdl3.GetVersion(),"format","RGBA8_UNORM","color_space","encoded SDR (not linear-light blur)")
+    fmt.println("effects_gpu_validation","driver",sdl3.GetGPUDeviceDriver(device),"sdl_version",sdl3.GetVersion(),
+        "source_format","RGBA8_UNORM","filter_format","RGBA16_FLOAT","color_space","encoded SDR (not linear-light blur)")
     rt:=alicorn.new_runtime({0,0,384,256})
     defer alicorn.destroy_runtime(&rt)
     renderers:Blend_Validation_Renderers
@@ -280,15 +293,18 @@ effect_probe_device :: proc(driver: cstring) -> bool {
     // Initial disabled scene never initializes an effect pipeline or texture.
     for _ in 0..<100 { if native_effect_prepare(&cache,{})!=.Inactive { return false } }
     if cache.allocations!=0 || cache.filter_passes!=0 || cache.live_bytes!=0 { return false }
-    request:=Native_Effect_Request{enabled=true,key=1,source_generation=1,region={16,16,128,96},clip={24,20,116,92},scale=1,spacing=4,depth=1}
+    request:=Native_Effect_Request{enabled=true,key=1,source_generation=1,region={16,16,128,96},clip={24,20,116,92},scale=1,sigma=4,depth=1}
     plan:Native_Effect_Plan
-    for scale in ([4]f32{1,1.25,1.5,2}) {
-        request.scale=scale
-        plan,ok=native_effect_plan(request)
-        if !ok { return false }
-        source:=make([]u8,int(plan.width*plan.height*4),allocator=context.temp_allocator)
-        _,ok=effect_probe_frame(&renderers,&cache,plan,display,target,download,pixels,source,true,true)
-        if !ok || !effect_probe_reference(plan,source,pixels,true) { return false }
+    for sigma in ([3]f32{1,4,8}) {
+        request.sigma=sigma
+        for scale in ([3]f32{1,1.5,2}) {
+            request.scale=scale
+            plan,ok=native_effect_plan(request)
+            if !ok { return false }
+            source:=make([]u8,int(plan.width*plan.height*4),allocator=context.temp_allocator)
+            _,ok=effect_probe_frame(&renderers,&cache,plan,display,target,download,pixels,source,true,true)
+            if !ok || !effect_probe_reference(plan,source,pixels,true) { return false }
+        }
     }
     generation,allocations,passes:=cache.output_generation,cache.allocations,cache.filter_passes
     uploads:=cache.vertex_upload_bytes
@@ -325,7 +341,7 @@ effect_probe_device :: proc(driver: cstring) -> bool {
     native_effect_abort(&cache)
     native_effect_reset(&cache)
     fmt.println("effects_retirement","live_bytes",cache.live_bytes)
-    request.scale=1; request.region={96,56,192,144}; request.clip=request.region
+    request.scale=1; request.sigma=4; request.region={96,56,192,144}; request.clip=request.region
     plan,ok=native_effect_plan(request)
     if !ok { return false }
     for mode in 0..<4 {
@@ -361,7 +377,7 @@ effect_probe_device :: proc(driver: cstring) -> bool {
     _,ok=effect_probe_frame(&renderers,&tiny,plan,display,target,download,pixels,nil,true,false)
     if !ok { return false }
     for value,i in pixels { if value!=previous[i] { return false } }
-    fmt.println("effects_gpu_validation PASS","kernel_reference_cases",5,"cache_equals_fresh",true,"budget_fallback",true,"nesting_limit",1)
+    fmt.println("effects_gpu_validation PASS","dense_gaussian_reference_cases",9,"cache_equals_fresh",true,"budget_fallback",true,"nesting_limit",1)
     return true
 }
 
