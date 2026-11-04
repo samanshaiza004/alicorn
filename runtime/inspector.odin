@@ -470,11 +470,18 @@ inspect :: proc(rt: ^Runtime) -> string {
 	return strings.to_string(sb)
 }
 
+// Returns a shallow copy of the bounded trace window in chronological order.
+// Structured layout reasons are formatted on first inspection and cached in
+// their ring entries. The returned event slice does not own reason strings;
+// ring-backed reasons remain valid only until their entry is overwritten or
+// the runtime is destroyed.
 trace_snapshot :: proc(rt: ^Runtime) -> []Trace_Event {
 	result := make([]Trace_Event, rt.trace.count)
 	start := (rt.trace.next - rt.trace.count + len(rt.trace.events)) % len(rt.trace.events)
 	for i := 0; i < rt.trace.count; i += 1 {
-		result[i] = rt.trace.events[(start+i)%len(rt.trace.events)]
+		index := (start+i)%len(rt.trace.events)
+		trace_materialize_layout_reason(rt, &rt.trace.events[index])
+		result[i] = rt.trace.events[index]
 	}
 	return result
 }

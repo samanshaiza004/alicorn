@@ -1298,6 +1298,10 @@ system file drops or arbitrary MIME payloads.
   changes no application state or work counters.
 - `inspect(runtime)` and `trace_snapshot(runtime)` expose retained state and
   recent invalidation/stage events for diagnostics.
+  `trace_snapshot` returns a shallow copy: callers own the event slice, not its
+  reason strings. Treat reasons as borrowed and clone them if they must outlive
+  the corresponding trace entry; ring-backed reasons are valid only until that
+  entry is overwritten or the runtime is destroyed.
 - The native `Run` host accepts `--inspector` (enable `F9`) and
   `--inspector-open` (enable and show immediately). Its built-in visual
   inspector uses a separate Alicorn runtime above the application, preserving

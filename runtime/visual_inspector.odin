@@ -205,7 +205,8 @@ inspector_overlay_recent_causes :: proc(inspected: ^Runtime, allocator := contex
 	if inspected == nil { return causes }
 	for offset := 0; offset < inspected.trace.count; offset += 1 {
 		index := (inspected.trace.next-1-offset+len(inspected.trace.events)) % len(inspected.trace.events)
-		event := inspected.trace.events[index]
+		event := &inspected.trace.events[index]
+		trace_materialize_layout_reason(inspected, event)
 		found := -1
 		for cause, cause_index in causes { if cause.id == event.cause_id { found = cause_index; break } }
 		if found < 0 {

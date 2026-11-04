@@ -70,7 +70,9 @@ layout_conformance_describe :: proc(rt: ^Runtime, width, scale: f32, value: stri
 LAYOUT_CONFORMANCE_PARAGRAPH :: "The width boundary keeps its assigned width while wrapped text changes height. The surrounding content parent and following sibling must use the newly measured height."
 
 layout_conformance_trace :: proc(rt: ^Runtime, after: u64, kind: Trace_Kind, node: Node_ID, fragment: string) -> bool {
-	for event in rt.trace.events {
+	events := trace_snapshot(rt)
+	defer delete(events)
+	for event in events {
 		if event.sequence > after && event.kind == kind && event.node == node && strings.contains(event.reason, fragment) { return true }
 	}
 	return false

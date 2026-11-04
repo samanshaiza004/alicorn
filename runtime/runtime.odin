@@ -1760,6 +1760,23 @@ Trace_Kind :: enum {
 	Mutation_Diagnostic,
 }
 
+Trace_Layout_Reason_Kind :: enum u8 {
+	None,
+	Start,
+	Propagate,
+	Boundary_Stop,
+	Boundary_Contains,
+	Boundary_Fit_Content,
+}
+
+Trace_Layout_Reason :: struct {
+	kind: Trace_Layout_Reason_Kind,
+	origin: Node_ID,
+	axes: Layout_Axes,
+	remaining_axes: Layout_Axes,
+	rejected_axis: Layout_Axis,
+}
+
 Trace_Event :: struct {
 	sequence: u64,
 	kind:     Trace_Kind,
@@ -1769,6 +1786,7 @@ Trace_Event :: struct {
 	node:     Node_ID,
 	reason:   string,
 	reason_owned: bool,
+	layout_reason: Trace_Layout_Reason,
 }
 
 Trace_Ring :: struct {
