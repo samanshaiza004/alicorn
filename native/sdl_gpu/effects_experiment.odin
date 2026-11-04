@@ -9,22 +9,23 @@ ALICORN_RETAINED_EFFECTS_EXPERIMENT :: #config(ALICORN_RETAINED_EFFECTS_EXPERIME
 
 when ALICORN_RETAINED_EFFECTS_EXPERIMENT {
 
-// INTERNAL #111 fixture experiment only. There is deliberately no Runtime,
-// Paint_Command, application API, or production compositor integration.
-// Filtering is in encoded SDR_UNORM space, NOT a linear-light blur.
+// Issue #111 application dogfood experiment. The narrow app-facing surface
+// marker is compiled into the native compositor only for explicit opt-in
+// builds. Filtering is encoded SDR_UNORM, not a linear-light blur.
 //
-// Caller protocol: prepare -> render the generic paint stream over transparent
+// Caller protocol: prepare -> capture the opaque generic paint prefix into
 // cache.source (translated by -plan.source_bounds.xy) -> encode -> composite ->
 // submit -> commit on success, abort on cancellation/failure. Cached skips source
-// rendering and encode. All render/copy passes must be closed before these calls.
-// Composite's target must be a single-sample R8G8B8A8_UNORM color target.
+// capture and encode. All render/copy passes must be closed before these calls.
+// Filter targets use R8G8B8A8_UNORM; the composite pipeline matches the
+// owning window's actual swapchain format (for example BGRA8 on Metal).
 // Cancel/submit a command before preparing/resetting its cache again; a cache
 // belongs to one device and one caller, with at most one pending command.
 //
-// This deliberately stalls with WaitForGPUIdle before reuse, resize or release.
-// No cycling, overlapping replacement textures or deferred-retirement queue is
-// used. This keeps one slot bounded; it is NOT a production scheduling proposal.
-// The byte budget counts exact requested texel + vertex + transfer bytes; SDL
+// The application integration uses two fence-tracked slots, matching the
+// primary host's two-frame submission limit. Ordinary replacement only uses a
+// slot after its last submission fence retires; it never drains the device.
+// The byte budget counts requested texel + vertex + transfer bytes; SDL
 // pipeline/sampler metadata and opaque driver allocation overhead are unknown.
 
 NATIVE_EFFECT_MAX_DIMENSION :: 2048
@@ -32,6 +33,7 @@ NATIVE_EFFECT_MAX_COORD :: 1_048_576
 NATIVE_EFFECT_MAX_SCALE :: 64
 NATIVE_EFFECT_VERTEX_COUNT :: 66
 NATIVE_EFFECT_VERTEX_BYTES :: u64(NATIVE_EFFECT_VERTEX_COUNT * size_of(Native_Text_Vertex))
+NATIVE_EFFECT_FILTER_FORMAT :: sdl3.GPUTextureFormat.R8G8B8A8_UNORM
 
 Native_Effect_Request :: struct {
 	enabled: bool,
@@ -57,6 +59,7 @@ Native_Effect_Status :: enum { Inactive, Cached, Render, Fallback }
 Native_Effect_Cache :: struct {
 	device: ^sdl3.GPUDevice,
 	budget_bytes: u64,
+	composite_format: sdl3.GPUTextureFormat,
 	plan: Native_Effect_Plan,
 	source, ping, output: ^sdl3.GPUTexture,
 	filter_pipeline, composite_pipeline: ^sdl3.GPUGraphicsPipeline,
@@ -68,12 +71,141 @@ Native_Effect_Cache :: struct {
 	vertex_upload_pending, vertex_upload_encoded: bool,
 	pending_command: ^sdl3.GPUCommandBuffer,
 	texture_bytes: u64, // one texture, including during partial allocation
-	idle_required: bool, // a failed idle wait must succeed before allocating again
 	// Lifetime counters survive reset/deactivation. Allocations counts retained
 	// SDL objects (textures, pipelines, sampler, buffer, transfer), not shaders.
 	allocations, filter_passes, composites, cache_hits: u64,
 	vertex_upload_bytes: u64,
 	output_generation, live_bytes, peak_bytes: u64,
+}
+
+NATIVE_RETAINED_EFFECT_SLOT_COUNT :: 2
+NATIVE_RETAINED_EFFECT_BUDGET_BYTES :: 48 * 1024 * 1024
+
+// One slot is read by the current frame while the other can be rebuilt. A
+// slot becomes writable only after the primary host retires its last-use
+// submission fence. This bounds in-flight effect storage without device-idle
+// waits during normal UI changes.
+Native_Retained_Effects :: struct {
+	slots: [NATIVE_RETAINED_EFFECT_SLOT_COUNT]Native_Effect_Cache,
+	slot_last_use_serial: [NATIVE_RETAINED_EFFECT_SLOT_COUNT]u64,
+	device: ^sdl3.GPUDevice,
+	budget_bytes: u64,
+	composite_format: sdl3.GPUTextureFormat,
+	completed_serial: u64,
+	pending_slot: int,
+	pending_status: Native_Effect_Status,
+	pending_key: u64,
+	direct_fallbacks: u64,
+}
+
+native_retained_effects_make :: proc(
+	device: ^sdl3.GPUDevice,
+	budget_bytes := u64(NATIVE_RETAINED_EFFECT_BUDGET_BYTES),
+	composite_format := sdl3.GPUTextureFormat.R8G8B8A8_UNORM,
+) -> Native_Retained_Effects {
+	result := Native_Retained_Effects{device=device, budget_bytes=budget_bytes, composite_format=composite_format, pending_slot=-1}
+	for &slot in result.slots { slot = native_effect_make(device, budget_bytes, composite_format) }
+	return result
+}
+
+native_retained_effects_note_completed :: proc(effects: ^Native_Retained_Effects, completed_serial: u64) {
+	if effects == nil { return }
+	effects.completed_serial = max(effects.completed_serial, completed_serial)
+}
+
+native_retained_effects_prepare :: proc(effects: ^Native_Retained_Effects, plan: Native_Effect_Plan) -> Native_Effect_Status {
+	if effects == nil || !plan.active || !native_effect_plan_valid(plan) || effects.pending_slot >= 0 {
+		if effects != nil { effects.direct_fallbacks += 1 }
+		return .Fallback
+	}
+	// Prefer an exact cached prefix even if its output is still referenced by
+	// older frames; sampling a retained texture is read-only and safe.
+	for &slot, index in effects.slots {
+		if slot.valid && slot.plan == plan {
+			effects.pending_slot = index
+			effects.pending_status = .Cached
+			effects.pending_key = plan.key
+			return .Cached
+		}
+	}
+	for &slot, index in effects.slots {
+		if effects.slot_last_use_serial[index] > effects.completed_serial { continue }
+		other_index := 1-index
+		other_bytes := effects.slots[other_index].live_bytes
+		available := u64(0)
+		if other_bytes < effects.budget_bytes { available = effects.budget_bytes-other_bytes }
+		if plan.bytes > available { continue }
+		slot.budget_bytes = available
+		status := native_effect_prepare(&slot, plan)
+		if status == .Render || status == .Cached {
+			effects.pending_slot = index
+			effects.pending_status = status
+			effects.pending_key = plan.key
+			return status
+		}
+	}
+	effects.direct_fallbacks += 1
+	return .Fallback
+}
+
+native_retained_effects_encode :: proc(effects: ^Native_Retained_Effects, command: ^sdl3.GPUCommandBuffer) -> bool {
+	if effects == nil || effects.pending_slot < 0 || effects.pending_status != .Render { return false }
+	return native_effect_encode(&effects.slots[effects.pending_slot], command)
+}
+
+native_retained_effects_composite :: proc(
+	effects: ^Native_Retained_Effects,
+	command: ^sdl3.GPUCommandBuffer,
+	target: ^sdl3.GPUTexture,
+	w, h: sdl3.Uint32,
+) -> bool {
+	if effects == nil || effects.pending_slot < 0 { return true }
+	return native_effect_composite(&effects.slots[effects.pending_slot], command, target, w, h)
+}
+
+native_retained_effects_composite_at :: proc(
+	effects: ^Native_Retained_Effects,
+	owner: alicorn.Node_ID,
+	command: ^sdl3.GPUCommandBuffer,
+	target: ^sdl3.GPUTexture,
+	w, h: sdl3.Uint32,
+) -> bool {
+	if effects == nil || effects.pending_slot < 0 || effects.pending_key != u64(owner) { return true }
+	return native_effect_composite(&effects.slots[effects.pending_slot], command, target, w, h)
+}
+
+native_retained_effects_commit :: proc(effects: ^Native_Retained_Effects, submission_serial: u64) {
+	if effects == nil || effects.pending_slot < 0 { return }
+	index := effects.pending_slot
+	if effects.pending_status == .Render { native_effect_commit(&effects.slots[index]) }
+	effects.slot_last_use_serial[index] = max(effects.slot_last_use_serial[index], submission_serial)
+	effects.pending_slot = -1
+	effects.pending_status = .Inactive
+	effects.pending_key = 0
+}
+
+native_retained_effects_abort :: proc(effects: ^Native_Retained_Effects) {
+	if effects == nil || effects.pending_slot < 0 { return }
+	if effects.pending_status == .Render { native_effect_abort(&effects.slots[effects.pending_slot]) }
+	effects.pending_slot = -1
+	effects.pending_status = .Inactive
+	effects.pending_key = 0
+}
+
+native_retained_effects_destroy :: proc(effects: ^Native_Retained_Effects, device_already_idle := false) {
+	if effects == nil { return }
+	if !device_already_idle {
+		for &slot in effects.slots {
+			if native_effect_has_resources(&slot) && effects.device != nil {
+				_ = sdl3.WaitForGPUIdle(effects.device)
+				break
+			}
+		}
+	}
+	for &slot in effects.slots { native_effect_reset(&slot) }
+	effects.pending_slot = -1
+	effects.pending_key = 0
+	effects.slot_last_use_serial = [NATIVE_RETAINED_EFFECT_SLOT_COUNT]u64{}
 }
 
 native_effect_finite :: proc(value: f32) -> bool {
@@ -153,9 +285,13 @@ native_effect_plan_valid :: proc(plan: Native_Effect_Plan) -> bool {
 	       f64(plan.output_clip.y)+f64(plan.output_clip.h) <= f64(plan.source_bounds.y)+f64(plan.source_bounds.h)+f64(epsilon)
 }
 
-native_effect_make :: proc(device: ^sdl3.GPUDevice, budget_bytes: u64) -> Native_Effect_Cache {
+native_effect_make :: proc(
+	device: ^sdl3.GPUDevice,
+	budget_bytes: u64,
+	composite_format := sdl3.GPUTextureFormat.R8G8B8A8_UNORM,
+) -> Native_Effect_Cache {
 	// Pure CPU construction, with no SDL calls and no dynamic allocation.
-	return Native_Effect_Cache{device=device, budget_bytes=budget_bytes}
+	return Native_Effect_Cache{device=device, budget_bytes=budget_bytes, composite_format=composite_format}
 }
 
 native_effect_allocation :: proc(cache: ^Native_Effect_Cache, bytes: u64 = 0) {
@@ -191,10 +327,6 @@ native_effect_abort :: proc(cache: ^Native_Effect_Cache) {
 native_effect_reset :: proc(cache: ^Native_Effect_Cache) {
 	if cache == nil { return }
 	native_effect_abort(cache)
-	if native_effect_has_resources(cache) {
-		// Dedicated fixture only: drain before releasing to bound retired memory.
-		cache.idle_required = !sdl3.WaitForGPUIdle(cache.device)
-	}
 	native_effect_release_textures(cache)
 	if cache.vertex_transfer != nil { sdl3.ReleaseGPUTransferBuffer(cache.device, cache.vertex_transfer) }
 	if cache.vertex_buffer != nil { sdl3.ReleaseGPUBuffer(cache.device, cache.vertex_buffer) }
@@ -208,7 +340,15 @@ native_effect_reset :: proc(cache: ^Native_Effect_Cache) {
 	cache.live_bytes = 0
 }
 
-native_effect_destroy :: native_effect_reset
+native_effect_destroy :: proc(cache: ^Native_Effect_Cache) {
+	if cache == nil { return }
+	if native_effect_has_resources(cache) && cache.device != nil {
+		// Shutdown is the only place the retained-effect cache may drain the
+		// device. The application loop already waits before calling this.
+		_ = sdl3.WaitForGPUIdle(cache.device)
+	}
+	native_effect_reset(cache)
+}
 
 native_effect_create_fixed :: proc(cache: ^Native_Effect_Cache) -> bool {
 	vertex := native_text_shader(cache.device, .VERTEX, false)
@@ -233,7 +373,7 @@ native_effect_create_fixed :: proc(cache: ^Native_Effect_Cache) -> bool {
 		src_color_blendfactor=.ONE, dst_color_blendfactor=.ONE_MINUS_SRC_ALPHA, color_blend_op=.ADD,
 		src_alpha_blendfactor=.ONE, dst_alpha_blendfactor=.ONE_MINUS_SRC_ALPHA, alpha_blend_op=.ADD, enable_blend=true,
 	}
-	targets := [1]sdl3.GPUColorTargetDescription{{format=.R8G8B8A8_UNORM, blend_state=additive}}
+	targets := [1]sdl3.GPUColorTargetDescription{{format=NATIVE_EFFECT_FILTER_FORMAT, blend_state=additive}}
 	info := sdl3.GPUGraphicsPipelineCreateInfo{
 		vertex_shader=vertex, fragment_shader=fragment,
 		vertex_input_state={vertex_buffer_descriptions=&vertex_buffers[0], num_vertex_buffers=1, vertex_attributes=&attributes[0], num_vertex_attributes=3},
@@ -244,6 +384,7 @@ native_effect_create_fixed :: proc(cache: ^Native_Effect_Cache) -> bool {
 	cache.filter_pipeline = sdl3.CreateGPUGraphicsPipeline(cache.device, info)
 	if cache.filter_pipeline == nil { return false }
 	native_effect_allocation(cache)
+	targets[0].format = cache.composite_format
 	targets[0].blend_state = premultiplied
 	cache.composite_pipeline = sdl3.CreateGPUGraphicsPipeline(cache.device, info)
 	if cache.composite_pipeline == nil { return false }
@@ -300,18 +441,11 @@ native_effect_prepare :: proc(cache: ^Native_Effect_Cache, plan: Native_Effect_P
 		cache.cache_hits += 1
 		return .Cached
 	}
-	// Reusing the fixed buffers/textures must not trigger hidden SDL cycling.
-	// Drain even for source-generation-only invalidation before caller repaint.
-	if native_effect_has_resources(cache) || cache.idle_required {
-		if !sdl3.WaitForGPUIdle(cache.device) {
-			native_effect_reset(cache)
-			cache.idle_required = true
-			return .Fallback
-		}
-		cache.idle_required = false
-	}
+	// Callers select this cache only after its last-use fence has retired. This
+	// permits bounded reuse without a device-wide wait on resize or repaint.
 	native_effect_abort(cache)
-	if !sdl3.GPUTextureSupportsFormat(cache.device, .R8G8B8A8_UNORM, .D2, {.SAMPLER, .COLOR_TARGET}) {
+	if !sdl3.GPUTextureSupportsFormat(cache.device, NATIVE_EFFECT_FILTER_FORMAT, .D2, {.SAMPLER, .COLOR_TARGET}) ||
+	   !sdl3.GPUTextureSupportsFormat(cache.device, cache.composite_format, .D2, {.COLOR_TARGET}) {
 		native_effect_reset(cache)
 		return .Fallback
 	}
@@ -326,7 +460,7 @@ native_effect_prepare :: proc(cache: ^Native_Effect_Cache, plan: Native_Effect_P
 		cache.texture_bytes = u64(plan.width)*u64(plan.height)*4
 		for slot in ([3]^^sdl3.GPUTexture{&cache.source, &cache.ping, &cache.output}) {
 			slot^ = sdl3.CreateGPUTexture(cache.device, {
-				type=.D2, format=.R8G8B8A8_UNORM, usage={.SAMPLER, .COLOR_TARGET},
+			type=.D2, format=NATIVE_EFFECT_FILTER_FORMAT, usage={.SAMPLER, .COLOR_TARGET},
 				width=plan.width, height=plan.height, layer_count_or_depth=1, num_levels=1, sample_count=._1,
 			})
 			if slot^ == nil { native_effect_reset(cache); return .Fallback }
@@ -443,4 +577,31 @@ native_effect_commit :: proc(cache: ^Native_Effect_Cache) {
 	cache.output_generation += 1
 }
 
+} else {
+	// Empty, zero-work host types preserve the ordinary direct renderer when
+	// the experimental build flag is absent.
+	Native_Retained_Effects :: struct {}
+
+	native_retained_effects_make :: proc(
+		device: ^sdl3.GPUDevice,
+		budget_bytes: u64 = 0,
+		composite_format: sdl3.GPUTextureFormat = sdl3.GPUTextureFormat.R8G8B8A8_UNORM,
+	) -> Native_Retained_Effects {
+		return {}
+	}
+
+	native_retained_effects_note_completed :: proc(effects: ^Native_Retained_Effects, completed_serial: u64) {}
+	native_retained_effects_abort :: proc(effects: ^Native_Retained_Effects) {}
+	native_retained_effects_commit :: proc(effects: ^Native_Retained_Effects, submission_serial: u64) {}
+	native_retained_effects_destroy :: proc(effects: ^Native_Retained_Effects, device_already_idle: bool = false) {}
+
+	native_retained_effects_composite_at :: proc(
+		effects: ^Native_Retained_Effects,
+		owner: alicorn.Node_ID,
+		command: ^sdl3.GPUCommandBuffer,
+		target: ^sdl3.GPUTexture,
+		w, h: sdl3.Uint32,
+	) -> bool {
+		return true
+	}
 } // ALICORN_RETAINED_EFFECTS_EXPERIMENT

@@ -302,7 +302,9 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	native_timing_accumulate(&state.timing.gpu_submit_ns, &state.timing.gpu_submit_max_ns,
 		u64(time.duration_nanoseconds(time.since(submit_start))))
 	if fence == nil { fail("SDL live-resize frame submission failed") }
-	append(state.in_flight, Native_In_Flight{fence})
+	flight := Native_In_Flight{fence=fence}
+	when ALICORN_RETAINED_EFFECTS_EXPERIMENT { flight.serial = state.timing.gpu_submissions+1 }
+	append(state.in_flight, flight)
 	native_text_commit_submission(state.text_renderer)
 	native_surface_commit_submission(state.surface_renderer)
 	native_solid_commit_submission(state.solid_renderer)

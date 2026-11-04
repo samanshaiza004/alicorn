@@ -51,6 +51,11 @@ run_application_loop :: proc(
 	devtools_hud_redraw_pending := false
 	devtools_hud_deadline_ns: u64 = 0
 	in_flight: [dynamic; 3]Native_In_Flight
+	completed_submission_serial: u64 = 0
+	retained_effects := native_retained_effects_make(
+		device,
+		composite_format=sdl3.GetGPUSwapchainTextureFormat(device, window),
+	)
 	retired := 0
 	max_in_flight := 0
 	query_before_wait_true := 0
@@ -760,9 +765,10 @@ run_application_loop :: proc(
 			inspector_submission_pending,
 		) {
 			if len(in_flight) >= 2 {
-				if !wait_and_retire_oldest(device, &in_flight, &query_before_wait_true, &query_after_wait_true, &wait_count, &timing) {
+				if !wait_and_retire_oldest(device, &in_flight, &query_before_wait_true, &query_after_wait_true, &wait_count, &timing, &completed_submission_serial) {
 					fail("SDL application fence retirement failed")
 				}
+				native_retained_effects_note_completed(&retained_effects, completed_submission_serial)
 				retired += 1
 			}
 			encode_start := time.now()
@@ -841,8 +847,10 @@ run_application_loop :: proc(
 				content_inset_top=content_inset_top,
 				native_menu=native_menu,
 				scratch_allocator=host_scratch.allocator,
+				retained_effects=&retained_effects,
 			) {
 				_ = sdl3.CancelGPUCommandBuffer(command)
+				native_retained_effects_abort(&retained_effects)
 				fail("SDL application display-list draw failed")
 			}
 			application_encode_elapsed := u64(time.duration_nanoseconds(time.since(encode_start)))
@@ -891,10 +899,13 @@ run_application_loop :: proc(
 			if fence == nil {
 				fail("SDL application submission failed")
 			}
-			append(&in_flight, Native_In_Flight{fence})
+			flight := Native_In_Flight{fence=fence}
+			when ALICORN_RETAINED_EFFECTS_EXPERIMENT { flight.serial = u64(submitted+1) }
+			append(&in_flight, flight)
 			native_text_commit_submission(text_renderer)
 			native_surface_commit_submission(surface_renderer)
 			native_solid_commit_submission(solid_renderer)
+			native_retained_effects_commit(&retained_effects, u64(submitted+1))
 			native_inspector_submission_succeeded(inspector)
 			if native_inspector_visible(inspector) { timing.inspector_submissions += 1 }
 			if application_submission_pending {
@@ -994,6 +1005,7 @@ run_application_loop :: proc(
 	native_accessibility_host_shutdown(&accessibility_host)
 	if native_menu != nil { native_menu.inspector = nil }
 	if !sdl3.WaitForGPUIdle(device) { fail("SDL application GPU idle wait failed") }
+	native_retained_effects_destroy(&retained_effects, device_already_idle=true)
 	native_dialog_bridge_shutdown(dialog_bridge)
 	native_text_input_coordinator_relinquish(
 		&text_input_coordinator, window, rt, &text_input_state, &application_instance,

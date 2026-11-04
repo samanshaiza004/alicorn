@@ -641,7 +641,9 @@ RunFoundation :: proc() {
 		if fence == nil {
 			fail("SDL_SubmitGPUCommandBufferAndAcquireFence failed")
 		}
-		append(&in_flight, Native_In_Flight{fence})
+		flight := Native_In_Flight{fence=fence}
+		when ALICORN_RETAINED_EFFECTS_EXPERIMENT { flight.serial = u64(submitted+1) }
+		append(&in_flight, flight)
 			native_text_commit_submission(&text_renderer)
 			native_surface_commit_submission(&surface_renderer)
 			if surface_stress { alicorn.gpu_surface_frame_consumed(&rt) }

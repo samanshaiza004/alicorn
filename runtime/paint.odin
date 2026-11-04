@@ -416,6 +416,9 @@ update_paint :: proc(rt: ^Runtime) {
 				// producing accidental rectangles in the compositor.
 				if semantic_surface_style, found := rt.semantic_surfaces[node.id]; found {
 					resolved_surface := style_semantic_surface_resolve_retained(rt, node, semantic_surface_style)
+					if semantic_surface_style.backdrop_effect.kind == .Blur {
+						append(&node.paint, paint_backdrop_effect_command(node.id, node.bounds, node.clip, semantic_surface_style.backdrop_effect))
+					}
 					if resolved_surface.fill.a > 0 || resolved_surface.stroke.width > 0 {
 						append(&node.paint, paint_surface_command(
 							node.id,

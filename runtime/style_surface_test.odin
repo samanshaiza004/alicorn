@@ -4,6 +4,39 @@ import "core:testing"
 import "core:strings"
 
 @(test)
+test_experimental_backdrop_is_an_ordered_surface_boundary :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 180, 100})
+	defer destroy_runtime(&rt)
+	effect := experimental_backdrop_blur(4, .Direct)
+	ui, build := begin_frame(&rt)
+	if !build { testing.expect(t, false, "backdrop boundary fixture should build"); return }
+	container_begin(&ui, .Root, key=key_string("backdrop-boundary-root"), style=layout_style(width=180, height=100))
+	id := surface_begin(&ui, surface_core_color_role(.Surface), key=key_string("backdrop-boundary"),
+		style=layout_style(width=120, height=60), fill=Color{0.2, 0.3, 0.4, 0.88}, backdrop_effect=effect)
+	text(&ui, "foreground remains ordinary text", key=key_string("backdrop-boundary-text"))
+	surface_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+
+	node := rt.nodes[id]
+	testing.expect(t, len(node.paint) == 2 && paint_command_is_backdrop_effect(node.paint[0]) && paint_command_is_surface(node.paint[1]),
+		"the backdrop marker should be ordered before its translucent surface, leaving child foreground paint afterward")
+	if len(node.paint) >= 2 {
+		marker, marker_ok := node.paint[0].payload.(Backdrop_Effect_Paint)
+		fill, fill_ok := paint_surface_color(node.paint[1])
+		testing.expect(t, marker_ok && marker.radius == 4 && marker.fallback == .Direct && fill_ok && fill.a == 0.88,
+			"the generic paint boundary should carry a bounded blur request and preserve the app-selected translucent fill")
+	}
+	style := rt.semantic_surfaces[id]
+	changed := style
+	changed.backdrop_effect.radius = 5
+	testing.expect(t, semantic_surface_style_hash(changed) != semantic_surface_style_hash(style),
+		"changing effect parameters should invalidate the retained surface description")
+	testing.expect(t, !experimental_backdrop_effect_is_valid(experimental_backdrop_blur(9)),
+		"effect radii beyond the fixed compositor bound must be rejected")
+}
+
+@(test)
 test_semantic_surface_composes_children_and_resolves_extension_role :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 240, 140})
 	defer destroy_runtime(&rt)

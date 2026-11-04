@@ -15,6 +15,7 @@ import "vendor:sdl3"
 
 Native_In_Flight :: struct {
 	fence: ^sdl3.GPUFence,
+	serial: u64,
 }
 
 Native_UI_Nodes :: struct {
@@ -66,6 +67,7 @@ draw_display_list :: proc(
 	content_inset_top: f32 = 0,
 	native_menu: ^Native_Menu_Runtime = nil,
 	scratch_allocator := context.temp_allocator,
+	retained_effects: ^Native_Retained_Effects = nil,
 ) -> bool {
 	render_display := display
 	chrome: []alicorn.Paint_Command
@@ -88,6 +90,13 @@ draw_display_list :: proc(
 		}
 		for overlay in chrome { append(&owned, overlay) }
 		render_display = owned[:]
+	}
+	when ALICORN_RETAINED_EFFECTS_EXPERIMENT {
+		if retained_effects != nil && !native_effects_prepare_display_prefix(
+			command, swap_w, swap_h, text_renderer, surface_renderer, solid_renderer,
+			render_display, logical_to_pixel_x, logical_to_pixel_y, retained_effects,
+			scratch_allocator,
+		) { return false }
 	}
 	if !native_text_rebuild_mesh(text_renderer, render_display, logical_to_pixel_x, logical_to_pixel_y, scratch_allocator) { return false }
 	if !native_text_sync_atlas(text_renderer, command, scratch_allocator) { return false }
@@ -149,6 +158,13 @@ draw_display_list :: proc(
 			display_index = run_end
 			continue
 		}
+		if run_kind == .Backdrop_Effect {
+			if retained_effects != nil && !native_retained_effects_composite_at(
+				retained_effects, draw.owner, command, swapchain, swap_w, swap_h,
+			) { return false }
+			display_index = run_end
+			continue
+		}
 		if !native_solid_render_batch(solid_renderer, command, swapchain, swap_w, swap_h, solid_renderer.draws[display_index:run_end]) {
 			return false
 		}
@@ -174,12 +190,13 @@ native_paint_command_apply_content_inset :: proc(command: alicorn.Paint_Command,
 	return result
 }
 
-Native_Paint_Run_Kind :: enum { Surface, Text, Geometry, Icon, Image }
+Native_Paint_Run_Kind :: enum { Surface, Text, Geometry, Icon, Image, Backdrop_Effect }
 
 // Adjacent surfaces, icons, and images may batch within their own pipeline.
 // Text and custom geometry remain barriers; no run crosses a different kind.
 native_paint_run :: proc(display: []alicorn.Paint_Command, start: int) -> (kind: Native_Paint_Run_Kind, end: int) {
     if start < 0 || start >= len(display) { return .Surface, len(display) }
+	if alicorn.paint_command_is_backdrop_effect(display[start]) { return .Backdrop_Effect, start+1 }
     if alicorn.paint_command_is_text(display[start]) { return .Text, start+1 }
     if alicorn.paint_command_is_geometry(display[start]) { return .Geometry, start+1 }
 	if alicorn.paint_command_is_image(display[start]) {
@@ -190,7 +207,7 @@ native_paint_run :: proc(display: []alicorn.Paint_Command, start: int) -> (kind:
 	kind = .Icon if alicorn.paint_command_is_icon(display[start]) else .Surface
     end = start+1
     for end < len(display) {
-		if alicorn.paint_command_is_text(display[end]) || alicorn.paint_command_is_geometry(display[end]) || alicorn.paint_command_is_image(display[end]) { break }
+		if alicorn.paint_command_is_text(display[end]) || alicorn.paint_command_is_geometry(display[end]) || alicorn.paint_command_is_image(display[end]) || alicorn.paint_command_is_backdrop_effect(display[end]) { break }
         next_kind := Native_Paint_Run_Kind.Icon if alicorn.paint_command_is_icon(display[end]) else .Surface
         if next_kind != kind { break }
         end += 1
@@ -203,6 +220,7 @@ wait_and_retire_oldest :: proc(
 	in_flight: ^[dynamic; 3]Native_In_Flight,
 	query_before_wait_true, query_after_wait_true, wait_count: ^int,
 	timing: ^Native_Host_Timing = nil,
+	completed_serial: ^u64 = nil,
 ) -> bool {
 	if len(in_flight) == 0 { return true }
 	old := in_flight[0]
@@ -224,6 +242,9 @@ wait_and_retire_oldest :: proc(
 	wait_count^ += 1
 	if sdl3.QueryGPUFence(device, old.fence) {
 		query_after_wait_true^ += 1
+	}
+	when ALICORN_RETAINED_EFFECTS_EXPERIMENT {
+		if completed_serial != nil { completed_serial^ = max(completed_serial^, old.serial) }
 	}
 	// The blocking wait is the authoritative completion point for this known
 	// oldest submission. Query behavior is recorded but not required for safe
