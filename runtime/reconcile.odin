@@ -679,14 +679,18 @@ mark_layout_ancestors :: proc(rt: ^Runtime, id: Node_ID, changed_axes: Layout_Ax
 	current := id
 	scope_root := Node_ID(0)
 	remaining_axes := changed_axes
-	record_trace(rt, .Invalidation, id, fmt.tprintf("layout invalidation starts on axes %v", remaining_axes))
+	record_trace_layout_invalidation(rt, id, Trace_Layout_Reason{kind=.Start, axes=remaining_axes})
 	for current != 0 {
 		node, ok := rt.nodes[current]
 		if !ok { break }
 		dirty_set(&node.dirty, .Layout, true)
 		dirty_set(&node.dirty, .Composite, true)
 		if current != id {
-			record_trace(rt, .Invalidation, current, fmt.tprintf("layout invalidation propagated from node %d on axes %v", id, remaining_axes))
+			record_trace_layout_invalidation(rt, current, Trace_Layout_Reason{
+				kind=.Propagate,
+				origin=id,
+				axes=remaining_axes,
+			})
 		}
 		boundary_axes := layout_boundary_stable_axes(node)
 		contained_axes := layout_axes_intersection(remaining_axes, boundary_axes)
@@ -694,14 +698,24 @@ mark_layout_ancestors :: proc(rt: ^Runtime, id: Node_ID, changed_axes: Layout_Ax
 			remaining_axes = layout_axes_difference(remaining_axes, contained_axes)
 			if remaining_axes == {} {
 				scope_root = current
-				record_trace(rt, .Invalidation, current, fmt.tprintf("layout boundary stops axes %v; its requested outer dimensions are stable", contained_axes))
+				record_trace_layout_invalidation(rt, current, Trace_Layout_Reason{
+					kind=.Boundary_Stop,
+					axes=contained_axes,
+				})
 				break
 			}
-			record_trace(rt, .Invalidation, current, fmt.tprintf("layout boundary contains axes %v; axes %v escape to ancestors", contained_axes, remaining_axes))
+			record_trace_layout_invalidation(rt, current, Trace_Layout_Reason{
+				kind=.Boundary_Contains,
+				axes=contained_axes,
+				remaining_axes=remaining_axes,
+			})
 		} else {
 			for axis in Layout_Axis {
 				if axis in remaining_axes && axis in node.layout_boundary_axes && !(axis in boundary_axes) {
-					record_trace(rt, .Invalidation, current, fmt.tprintf("layout boundary cannot contain %v because that outer dimension uses FIT_CONTENT", axis))
+					record_trace_layout_invalidation(rt, current, Trace_Layout_Reason{
+						kind=.Boundary_Fit_Content,
+						rejected_axis=axis,
+					})
 				}
 			}
 		}

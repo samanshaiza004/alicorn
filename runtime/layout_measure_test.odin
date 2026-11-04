@@ -494,7 +494,9 @@ test_fit_content_boundary_axis_is_not_claimed_stable :: proc(t: ^testing.T) {
 	root_dirty := dirty_has(root.dirty, .Layout)
 	boundary_queued := boundary.layout_root_queued
 	found_unstable_trace := false
-	for event in rt.trace.events {
+	events := trace_snapshot(&rt)
+	defer delete(events)
+	for event in events {
 		if event.kind == .Invalidation && strings.contains(event.reason, "cannot contain") && strings.contains(event.reason, "FIT_CONTENT") {
 			found_unstable_trace = true
 		}

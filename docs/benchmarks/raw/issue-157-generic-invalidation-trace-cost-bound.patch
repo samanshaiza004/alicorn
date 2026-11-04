@@ -1,0 +1,17 @@
+--- a/runtime/reconcile.odin
++++ b/runtime/reconcile.odin
+@@ -682 +682 @@
+-	record_trace(rt, .Invalidation, id, fmt.tprintf("layout invalidation starts on axes %v", remaining_axes))
++	record_trace_literal(rt, .Invalidation, id, "layout invalidation starts")
+@@ -689 +689 @@
+-			record_trace(rt, .Invalidation, current, fmt.tprintf("layout invalidation propagated from node %d on axes %v", id, remaining_axes))
++			record_trace_literal(rt, .Invalidation, current, "layout invalidation propagated")
+@@ -697 +697 @@
+-				record_trace(rt, .Invalidation, current, fmt.tprintf("layout boundary stops axes %v; its requested outer dimensions are stable", contained_axes))
++				record_trace_literal(rt, .Invalidation, current, "layout boundary stops")
+@@ -700 +700 @@
+-			record_trace(rt, .Invalidation, current, fmt.tprintf("layout boundary contains axes %v; axes %v escape to ancestors", contained_axes, remaining_axes))
++			record_trace_literal(rt, .Invalidation, current, "layout boundary contains axes")
+@@ -704 +704 @@
+-					record_trace(rt, .Invalidation, current, fmt.tprintf("layout boundary cannot contain %v because that outer dimension uses FIT_CONTENT", axis))
++					record_trace_literal(rt, .Invalidation, current, "layout boundary cannot contain axis")

@@ -6,9 +6,7 @@ trace_current_cause :: proc(rt: ^Runtime) -> Cause_Context {
 	return rt.frame_cause
 }
 
-record_trace_with_cause :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reason: string, cause: Cause_Context) {
-	rt.trace.sequence += 1
-	entry := Trace_Event{sequence=rt.trace.sequence, kind=kind, cause_id=cause.id, cause_kind=cause.kind, action_id=cause.action_id, node=node, reason=owned_with_allocator(reason, rt.persistent_allocator), reason_owned=true}
+trace_ring_store :: proc(rt: ^Runtime, entry: Trace_Event) {
 	old := &rt.trace.events[rt.trace.next]
 	if old.reason_owned && len(old.reason) > 0 { delete(old.reason, rt.persistent_allocator) }
 	rt.trace.events[rt.trace.next] = entry
@@ -16,6 +14,21 @@ record_trace_with_cause :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, r
 	if rt.trace.count < len(rt.trace.events) {
 		rt.trace.count += 1
 	}
+}
+
+record_trace_with_cause :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reason: string, cause: Cause_Context) {
+	rt.trace.sequence += 1
+	entry := Trace_Event{
+		sequence=rt.trace.sequence,
+		kind=kind,
+		cause_id=cause.id,
+		cause_kind=cause.kind,
+		action_id=cause.action_id,
+		node=node,
+		reason=owned_with_allocator(reason, rt.persistent_allocator),
+		reason_owned=true,
+	}
+	trace_ring_store(rt, entry)
 }
 
 record_trace :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reason: string) {
@@ -31,12 +44,60 @@ record_trace_literal :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reas
 
 record_trace_literal_with_cause :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reason: string, cause: Cause_Context) {
 	rt.trace.sequence += 1
-	entry := Trace_Event{sequence=rt.trace.sequence, kind=kind, cause_id=cause.id, cause_kind=cause.kind, action_id=cause.action_id, node=node, reason=reason, reason_owned=false}
-	old := &rt.trace.events[rt.trace.next]
-	if old.reason_owned && len(old.reason) > 0 { delete(old.reason, rt.persistent_allocator) }
-	rt.trace.events[rt.trace.next] = entry
-	rt.trace.next = (rt.trace.next + 1) % len(rt.trace.events)
-	if rt.trace.count < len(rt.trace.events) { rt.trace.count += 1 }
+	entry := Trace_Event{
+		sequence=rt.trace.sequence,
+		kind=kind,
+		cause_id=cause.id,
+		cause_kind=cause.kind,
+		action_id=cause.action_id,
+		node=node,
+		reason=reason,
+		reason_owned=false,
+	}
+	trace_ring_store(rt, entry)
+}
+
+record_trace_layout_invalidation :: proc(rt: ^Runtime, node: Node_ID, reason: Trace_Layout_Reason) {
+	cause := trace_current_cause(rt)
+	rt.trace.sequence += 1
+	trace_ring_store(rt, Trace_Event{
+		sequence=rt.trace.sequence,
+		kind=.Invalidation,
+		cause_id=cause.id,
+		cause_kind=cause.kind,
+		action_id=cause.action_id,
+		node=node,
+		layout_reason=reason,
+	})
+}
+
+trace_layout_reason_format :: proc(reason: Trace_Layout_Reason) -> string {
+	switch reason.kind {
+	case .Start:
+		return fmt.tprintf("layout invalidation starts on axes %v", reason.axes)
+	case .Propagate:
+		return fmt.tprintf("layout invalidation propagated from node %d on axes %v", reason.origin, reason.axes)
+	case .Boundary_Stop:
+		return fmt.tprintf("layout boundary stops axes %v; its requested outer dimensions are stable", reason.axes)
+	case .Boundary_Contains:
+		return fmt.tprintf("layout boundary contains axes %v; axes %v escape to ancestors", reason.axes, reason.remaining_axes)
+	case .Boundary_Fit_Content:
+		return fmt.tprintf("layout boundary cannot contain %v because that outer dimension uses FIT_CONTENT", reason.rejected_axis)
+	case .None:
+		return ""
+	}
+	return ""
+}
+
+trace_materialize_layout_reason :: proc(rt: ^Runtime, event: ^Trace_Event) {
+	if rt == nil || event == nil || event.layout_reason.kind == .None { return }
+	reason := trace_layout_reason_format(event.layout_reason)
+	if len(reason) == 0 { return }
+	owned_reason := owned_with_allocator(reason, rt.persistent_allocator)
+	if len(owned_reason) == 0 { return }
+	event.reason = owned_reason
+	event.reason_owned = true
+	event.layout_reason = {}
 }
 
 cause_begin :: proc(rt: ^Runtime, kind: Cause_Kind, reason: string, action_id: Action_ID = Action_ID(0)) -> Cause_Scope {
