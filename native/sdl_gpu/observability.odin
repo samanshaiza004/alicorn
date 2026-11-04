@@ -30,6 +30,7 @@ Native_Host_Timing :: struct {
 	frames:              u64,
 	event_pump_ns:       u64,
 	application_build_ns: u64,
+	first_application_submit_ns: u64,
 	application_gpu_encode_ns: u64,
 	native_chrome_encode_ns: u64,
 	devtools_hud_encode_ns: u64,
