@@ -3,14 +3,15 @@
 Date: 2026-11-04
 
 - Current Alicorn source: `fe8967f08fed8b29e7cd27d5989f52b7a85f405c`
+- Structured candidate: current source plus `issue-157-structured-invalidation-trace.patch` (SHA-256 `866b4200a6612fd8bc3cdaefc05aff101f17d3f6608a3936b926c52b5a0f7522`)
 - Historical baseline: `96461223cdbf43080acb957276c045ad704f4606`
 - Issue: [#157 — Attribute and reduce initial retained-tree construction overhead](https://github.com/samanshaiza004/alicorn/issues/157)
 
 ## Verdict
 
-The initial-construction slowdown is reproducible on this Mac and is primarily CPU work inside `end_frame`. A same-head cost-bound experiment shows that eagerly formatting and owning detailed invalidation trace reasons accounts for a meaningful portion of that work: replacing those formatted, owned reasons with generic borrowed literals reduced `end_frame` CPU by 17–26% across three workloads. The experiment intentionally loses diagnostic detail, so it identifies a promising hot path but is not a production fix. The full regression is not yet attributed to one behavior-preserving change, nor fully bisected to individual features.
+The initial-construction slowdown is reproducible on this Mac and is primarily CPU work inside `end_frame`. A behavior-preserving structured-trace candidate now defers formatting the five layout invalidation explanations until trace inspection. It preserves the exact historical strings and event order, and reduces optimized `end_frame` CPU by 15.6–24.6% across three synthetic workloads in an 11-process rerun. The full regression is not yet attributed to one behavior-preserving change, nor fully bisected to individual features.
 
-A prior trace-literal experiment reduced allocator traffic but had overlapping timing ranges. A later cost-bound experiment produced a clear timing reduction, at the cost of replacing detailed diagnostic reasons with generic text. No production runtime change was made in this investigation. The native Scratchpad smoke proves that a current Alicorn build can publish a frame and shut down, but it is one instrumented run from a temporary source snapshot, not a representative startup/high-water study.
+A prior trace-literal experiment reduced allocator traffic but had overlapping timing ranges. The generic-reason experiment established a cost bound while losing diagnostics. The structured candidate retains those details, adds 32 bytes per `Trace_Event`, and keeps `Trace_Event.reason` ring-owned with the existing snapshot lifetime. The native Scratchpad smoke proves that a current Alicorn build can publish a frame and shut down, but it is one instrumented run from a temporary source snapshot, not a representative startup/high-water study.
 
 **Recommendation: keep #157 open.** The cost is now better characterized, but the issue's representative Scratchpad measurement and deliberate acceptance of the remaining cost are still outstanding.
 
@@ -18,7 +19,7 @@ A prior trace-literal experiment reduced allocator traffic but had overlapping t
 
 - Host: Apple M1 MacBook Air (`MacBookAir10,1`), arm64, macOS 27.2 build 26B123.
 - Compiler: Odin `dev-2026-11-nightly:9a69916`, identical for both source revisions and profiles.
-- The benchmark tool made disposable `git archive` snapshots and built the same low-level Odin probe against each. Each observation was a fresh process; five alternating samples were captured per workload and profile.
+- The benchmark tool made disposable `git archive` snapshots and built the same low-level Odin probe against each. Each observation was a fresh process; the original audit used five alternating samples per workload and profile. The structured-trace comparison used seven samples, then an 11-sample repeat, with labels alternating order.
 - Both ordinary and `-o:speed` profiles were measured separately. The reported CPU time is Darwin process CPU time; the probe's `total` is description plus `end_frame`, excluding runtime initialization and destruction.
 - Workloads were 10,000 plain containers, 10,000 short text nodes, 10,000 requested wrapped-text nodes, and a 100-panel form (601 retained nodes). Retained-node counts and geometry checks matched across revisions.
 - The synthetic probe does not load a font. `prepare_text_run_node` returns early when the font role is unavailable, so the short/wrapped cases do **not** measure real glyph shaping or native font fallback. In the probe, `shape_requests` stayed at zero. The native Scratchpad smoke is reported separately.
@@ -116,7 +117,52 @@ A second, seven-process `-o:speed` A/B targeted all five dynamic-reason calls in
 | 10k short text | 63.001 → 54.514 ms | 53.270 → 44.118 ms | −17.2% |
 | 100 panels | 4.232 → 3.242 ms | 3.656 → 2.691 ms | −26.4% |
 
-The seven-process `end_frame` ranges did not overlap for these cases. This is strong evidence that the combined cost of per-node reason formatting and owned-string recording is material. Because the patch removes detail exposed by Alicorn's trace and inspector consumers, these numbers are a cost bound, not an acceptable user-facing tradeoff. They also do not separate temporary formatting from the persistent copy/allocation. A production candidate should retain the current reason content and event ordering, for example by storing a compact structured reason and formatting it at snapshot/inspection time; that candidate still needs its own CPU and diagnostic-equivalence comparison. The reproducible patch is checked in with the benchmark artifacts; generated binaries and timing output remain in ignored `out/issue157` paths. No production code changed.
+The seven-process `end_frame` ranges did not overlap for these cases. This is strong evidence that the combined cost of per-node reason formatting and owned-string recording is material. Because the patch removes detail exposed by Alicorn's trace and inspector consumers, these numbers are a cost bound, not an acceptable user-facing tradeoff. A second experiment below separates persistent string ownership from formatting.
+
+### Behavior-preserving structured invalidation traces
+
+The candidate replaces the five eager formatted reasons in `mark_layout_ancestors` with compact payloads containing the reason kind and historical axis/node values. `trace_snapshot` and the visual inspector materialize the exact previous message on first inspection and cache it in the bounded trace entry. Repeated snapshots reuse the same string. Events overwritten before inspection are never formatted. Trace sequence, causes, nodes, event ordering, and layout propagation are unchanged.
+
+The regression tests check all five messages byte-for-byte, partial boundary containment, FIT_CONTENT rejection, repeated invalidation, cause/node ordering, ring wrap, and that snapshot materialization adds no events or layout-root work. The existing runtime suite passes 320 tests.
+
+The benchmark used the same `fe8967f` source for every arm, Odin `dev-2026-11-nightly:9a69916`, `-o:speed`, and 10,000 containers, 10,000 short text nodes, or 100 panels. CPU is Darwin process CPU time. The latest 11-process sample ranges are shown in parentheses.
+
+| Workload | Original detailed trace | Format, skip persistent copy | Structured, lazy formatting | `end_frame` CPU reduction, original → structured |
+| --- | ---: | ---: | ---: | ---: |
+| 10k containers | 42.652 ms (39.696–47.044) | 38.686 ms (37.450–41.753) | 33.466 ms (31.497–38.662) | −21.5% |
+| 10k short text | 51.032 ms (50.714–54.734) | 49.357 ms (48.572–53.718) | 43.058 ms (42.640–44.284) | −15.6% |
+| 100 panels | 3.615 ms (3.545–4.202) | 3.354 ms (3.256–3.792) | 2.726 ms (2.646–2.853) | −24.6% |
+
+The format-without-copy arm still creates the formatted text but stores it as a transient borrowed string. It is a cost-isolation experiment only; its string lifetime is not safe for production snapshots. In both timing passes it remained close to the original, while structured formatting was consistently faster. This points to eager formatting as the larger CPU cost; skipping the persistent copy primarily reduces allocation traffic. The ranges for baseline versus structured did not overlap in the 11-run repeat.
+
+In a separate three-process allocation capture, original versus structured end-frame persistent allocation traffic was:
+
+| Workload | End-frame persistent allocation calls | End-frame requested bytes | Additional live/high-water bytes from larger event record |
+| --- | ---: | ---: | ---: |
+| 10k containers | 100,111 → 70,107 | 37,087,206 → 34,562,933 | +32 |
+| 10k short text | 130,133 → 100,129 | 56,351,718 → 53,827,445 | +32 |
+| 100 panels | 9,423 → 6,119 | 4,315,027 → 4,026,955 | +32 |
+
+`Trace_Event` grows from 72 to 104 bytes. The default trace capacity is one entry, so the measured runtime high-water increase is 32 bytes; a configured capacity of 512 adds 16 KiB for structured payload slots. Trace strings are still allocated only when inspected. The allocation-tracking runs are separate from the CPU timing runs and are not latency evidence.
+
+The exact structured production diff and the cost-isolation patch are [`issue-157-structured-invalidation-trace.patch.gz`](raw/issue-157-structured-invalidation-trace.patch.gz) and [`issue-157-formatted-borrowed-invalidation-trace.patch.gz`](raw/issue-157-formatted-borrowed-invalidation-trace.patch.gz). Their uncompressed SHA-256 hashes, compiler, per-process samples, and allocation records are in [`issue-157-structured-invalidation-trace-macos-m1-2026-11-04.json`](raw/issue-157-structured-invalidation-trace-macos-m1-2026-11-04.json). Reproduce the optimized comparison with:
+
+```sh
+mkdir -p out/issue157
+gzip -dc docs/benchmarks/raw/issue-157-formatted-borrowed-invalidation-trace.patch.gz > out/issue157/formatted-borrowed-invalidation-trace.patch
+gzip -dc docs/benchmarks/raw/issue-157-structured-invalidation-trace.patch.gz > out/issue157/structured-invalidation-trace.patch
+python3 tools/bench_construction.py \
+  --odin "$ODIN" \
+  --ref baseline=fe8967f08fed8b29e7cd27d5989f52b7a85f405c \
+  --ref formatted_no_copy=fe8967f08fed8b29e7cd27d5989f52b7a85f405c \
+  --patch formatted_no_copy=out/issue157/formatted-borrowed-invalidation-trace.patch \
+  --ref structured=fe8967f08fed8b29e7cd27d5989f52b7a85f405c \
+  --patch structured=out/issue157/structured-invalidation-trace.patch \
+  --runs 11 --speed --workloads containers:10000,short:10000,panel:100 \
+  --output out/issue157/structured-trace-speed
+```
+
+The candidate establishes a repeatable improvement for the tested synthetic construction workloads without losing trace detail. It does not establish the total construction regression's cause or the effect on representative Scratchpad startup.
 
 The source also confirms that ordinary measurement work now drains a deduplicated queue, with a deliberate full retained-order scan only when font generation changes ([`layout_measure_retained_dirty_nodes`](https://github.com/samanshaiza004/alicorn/blob/fe8967f/runtime/layout_measure.odin#L725-L769)). Display-slot updates have a local finalization path and full finalization remains for structural/scale changes ([`layout_finalize_display_slot`](https://github.com/samanshaiza004/alicorn/blob/fe8967f/runtime/layout_measure.odin#L841-L864)). These locality protections should not be bypassed to improve initial construction.
 
@@ -134,12 +180,12 @@ A synthetic `/usr/bin/time -l` RSS attempt was blocked by the sandbox's `sysctl 
 
 | #157 requirement | Result |
 | --- | --- |
-| Reproducible same-machine baseline/current CPU A/B | Complete for synthetic workloads: five alternating fresh processes per profile, same November compiler. |
-| Broad CPU attribution | Strongly narrowed: the controlled generic-reason variant cuts `end_frame` CPU 17–26%; per-node invalidation trace formatting/ownership is a material contributor. Other reconciliation/layout costs remain. |
+| Reproducible same-machine baseline/current CPU A/B | Complete for synthetic workloads: 7-run plus 11-run optimized captures, and a separate allocation capture, on the same November compiler. |
+| Broad CPU attribution | Strongly narrowed: the behavior-preserving structured-trace candidate cuts `end_frame` CPU 15.6–24.6% in the 11-run comparison. Other reconciliation/layout costs remain. |
 | Historical feature attribution | Partial: direct pairs show measurable intervals, but the full construction-only bisection is incomplete and some intervals contain multiple features. |
-| Measured improvement | A diagnostic-only cost bound shows a repeatable CPU reduction, but discards trace details and is not a production fix. No behavior-preserving runtime improvement has been established. |
+| Measured improvement | Behavior-preserving structured traces reduce synthetic `end_frame` CPU while retaining exact messages; representative application impact is not measured. |
 | Peak memory | Partial: one instrumented native Scratchpad maximum-RSS sample; synthetic RSS capture was blocked. |
 | Representative Scratchpad startup/high-water | Incomplete: smoke only; no normal-start distribution and no open/close/settings interaction sequence. |
-| Correctness | No production code changed in this audit. Existing benchmark guards verified retained counts/geometry; no new runtime correctness suite was run for this report. |
+| Correctness | 320 runtime tests pass, including exact trace-output, event/cause ordering, ring-wrap, and passive-snapshot checks. Benchmark guards verify retained counts and geometry. |
 
-To close #157, first compare a behavior-preserving trace representation against the current detailed-string path, including exact reason equivalence at inspection and unchanged trace ordering. Then decide whether the remaining construction cost is acceptable or needs another narrowly scoped change. Also collect a clean Scratchpad native startup distribution and process high-water over startup, opening/closing representative panels/documents, and changing settings. Use the normal compiler-compatible Scratchpad tree, disable diagnostic capture for timing runs, and report first presentation separately from host-loop/shutdown time. If a compatible historical app baseline cannot be built, record a current-only app budget and compare runtime changes with the synthetic A/B rather than presenting an unmatched app comparison.
+To close #157, profile the remaining construction cost only if it is still material after integrating this candidate, and complete any required historical attribution. Also collect a clean Scratchpad native startup distribution and process high-water over startup, opening/closing representative panels/documents, and changing settings. Use the normal compiler-compatible Scratchpad tree, disable diagnostic capture for timing runs, and report first presentation separately from host-loop/shutdown time. If a compatible historical app baseline cannot be built, record a current-only app budget and compare runtime changes with the synthetic A/B rather than presenting an unmatched app comparison.

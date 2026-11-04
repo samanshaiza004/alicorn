@@ -199,7 +199,8 @@ main :: proc() {
 		"destroy_ns", total.destroy_ns, "retained", total.retained,
 		"display", total.display_count, "geometry_sum", total.geometry_sum)
 	fmt.println("record_sizes", "pending", size_of(alicorn.Pending_Item),
-		"description", size_of(alicorn.Description), "node", size_of(alicorn.Node))
+		"description", size_of(alicorn.Description), "node", size_of(alicorn.Node),
+		"trace_event", size_of(alicorn.Trace_Event))
 	if tracked {
 		for phase in Construction_Phase {
 			fmt.println("allocations", phase, "calls", allocator.calls[phase], "requested_bytes", allocator.bytes[phase])
