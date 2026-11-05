@@ -2,18 +2,21 @@
 
 Date: 2026-11-04
 
-- Current Alicorn source: `fe8967f08fed8b29e7cd27d5989f52b7a85f405c`
-- Structured candidate: current source plus `issue-157-structured-invalidation-trace.patch` (SHA-256 `866b4200a6612fd8bc3cdaefc05aff101f17d3f6608a3936b926c52b5a0f7522`)
+- Final Alicorn source: `067ff0c73551821474c30fc12d0eea2dea4a3009` (structured trace change)
+- Pre-change comparison source: `fe8967f08fed8b29e7cd27d5989f52b7a85f405c`
+- Structured candidate used for the 11-run A/B: pre-change source plus `issue-157-structured-invalidation-trace.patch` (SHA-256 `866b4200a6612fd8bc3cdaefc05aff101f17d3f6608a3936b926c52b5a0f7522`); that implementation was committed as `067ff0c`
 - Historical baseline: `96461223cdbf43080acb957276c045ad704f4606`
 - Issue: [#157 — Attribute and reduce initial retained-tree construction overhead](https://github.com/samanshaiza004/alicorn/issues/157)
 
 ## Verdict
 
-The initial-construction slowdown is reproducible on this Mac and is primarily CPU work inside `end_frame`. A behavior-preserving structured-trace candidate now defers formatting the five layout invalidation explanations until trace inspection. It preserves the exact historical strings and event order, and reduces optimized `end_frame` CPU by 15.6–24.6% across three synthetic workloads in an 11-process rerun. The full regression is not yet attributed to one behavior-preserving change, nor fully bisected to individual features.
+The initial-construction slowdown is reproducible, primarily inside `end_frame`, and sufficiently attributed to close #157. The behavior-preserving structured-trace change is now on master at `067ff0c`. It defers formatting five layout invalidation explanations until trace inspection, preserves their exact historical strings and event order, and reduced optimized `end_frame` CPU by 15.6–24.6% across three synthetic workloads in an 11-process rerun.
 
-A prior trace-literal experiment reduced allocator traffic but had overlapping timing ranges. The generic-reason experiment established a cost bound while losing diagnostics. The structured candidate retains those details, adds 32 bytes per `Trace_Event`, and keeps `Trace_Event.reason` ring-owned with the existing snapshot lifetime. The native Scratchpad smoke proves that a current Alicorn build can publish a frame and shut down, but it is one instrumented run from a temporary source snapshot, not a representative startup/high-water study.
+A five-process historical parent/child comparison now shows that the added eager formatting and ownership in `3d10863` accounts for most of that commit's measured construction increase. A deliberately lossy diagnostic-only cost bound recovers nearly all of the increase; the production change obtains a repeatable improvement without losing details. Earlier direct measurements also identify the combined retained measurement/geometry introduction at `ac0a420` as a real construction cost. These are useful feature contracts, and the remaining cost is accepted rather than prompting a speculative allocator or data-layout rewrite.
 
-**Recommendation: keep #157 open.** The cost is now better characterized, but the issue's representative Scratchpad measurement and deliberate acceptance of the remaining cost are still outstanding.
+The Scratchpad A/B is now complete: first-frame submission and startup stayed effectively unchanged; opening/closing a 5,002-line document reduced cumulative application-build callback time by a paired median 8%, while total CPU and peak RSS stayed flat. The native results do not support another startup optimization campaign.
+
+**Disposition: close #157 as completed.** This accepts the measured construction cost of retained measurement/geometry and other retained capabilities. It does not claim that every millisecond has been assigned to an individual feature or that these machine-specific timings generalize to every host.
 
 ## Method
 
@@ -176,16 +179,67 @@ These are **one instrumented smoke**, not normal cold-start or first-visible-pix
 
 A synthetic `/usr/bin/time -l` RSS attempt was blocked by the sandbox's `sysctl kern.clockrate` restriction. No synthetic peak-RSS result is claimed. The single native max-RSS sample is process-level evidence, but not a high-water distribution.
 
-## Closure assessment and next evidence
+## Final historical attribution
+
+The earlier history table measured `7e85689` → `3d10863` as a direct parent/child pair but could not distinguish axis-aware invalidation, theme/layout/asset changes, and eager diagnostic formatting. This follow-up used five alternating fresh-process samples for the parent, full commit, and a disposable cost-bound patch against the full commit. Both Odin's default profile and `-o:speed` were measured separately on the same Apple M1 MacBook Air (`MacBookAir10,1`), macOS 27.2, arm64, with Odin `dev-2026-11-nightly:9a69916`.
+
+The cost-bound patch changes only the five formatted invalidation reasons in `mark_layout_ancestors` to generic literals. Event count, order, kind, node, cause, and layout behavior remain; axis and boundary details in `Trace_Event.reason` are intentionally lost. It is a diagnostic experiment, not an acceptable product change. Source snapshots needed the same unused image-decoder compatibility substitution noted earlier.
+
+Values are median process CPU milliseconds. The two delta columns are medians of paired per-run differences (full or cost-bound candidate minus parent); their ranges are the five observed paired differences. Since paired medians are calculated separately, they need not equal subtraction of the displayed medians.
+
+| Profile | Workload | Parent median | `3d10863` median | Cost-bound median | Full paired delta [range] | Cost-bound paired delta [range] |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Default | 10k containers | 88.155 | 111.354 | 88.907 | +20.552 [+20.030, +24.719] | +0.395 [-2.759, +2.305] |
+| Default | 10k short text | 101.529 | 121.054 | 101.734 | +21.748 [+17.688, +25.512] | +2.318 [-5.446, +7.656] |
+| Default | 100 panels | 5.807 | 8.417 | 6.025 | +2.539 [+2.200, +2.706] | +0.175 [-0.173, +0.274] |
+| `-o:speed` | 10k containers | 26.205 | 32.656 | 28.504 | +6.170 [+5.175, +7.380] | +1.436 [-4.015, +2.636] |
+| `-o:speed` | 10k short text | 34.289 | 39.406 | 34.772 | +4.509 [+3.575, +5.338] | -0.385 [-0.873, +1.049] |
+| `-o:speed` | 100 panels | 1.943 | 2.545 | 2.005 | +0.623 [+0.578, +0.737] | +0.042 [-0.029, +0.221] |
+
+Every full-commit paired range is positive. Every cost-bound paired range crosses zero, so this five-run experiment does not distinguish a material remaining construction delta after replacing those five trace reasons. Together with the earlier 11-run three-way comparison (where formatting without a persistent copy helped much less than deferred structured formatting), this identifies eager formatting as the dominant avoidable portion of the `3d10863` jump. It does not separate the CPU cost of formatting from the allocation/ownership path with perfect precision.
+
+The earlier five-sample optimized pair `927e74a` → `ac0a420` measured +12.845 ms for 10k short text and +5.372 ms for 10k containers. That commit combines retained measurement state, geometry storage, and pixel-finalized display geometry; the available evidence attributes cost to that feature boundary, not to each subfeature independently. The prior source-history audit maps other added contracts (style/environment, semantic descriptors, elastic layout and adaptive/grid support). No remaining profile identifies a comparable avoidable hot spot, and the native Scratchpad measurements show no meaningful startup or memory regression that warrants more optimization.
+
+The full raw observations are [`default profile`](raw/issue-157-historical-pair-default-2026-11-04.json), SHA-256 `8054b2682cdc37ee9ca93287ca69b2319b1d66be89388dee0f4d8bc8927452d2`, and [`-o:speed`](raw/issue-157-historical-pair-speed-2026-11-04.json), SHA-256 `74a2a88e5e707dc49083487cbf9305b48aca3453099a9c05c4f5c05f5f04b6c9`. The compressed cost-bound patch is [`issue-157-3d10863-generic-trace-cost-bound.patch.gz`](raw/issue-157-3d10863-generic-trace-cost-bound.patch.gz); its uncompressed SHA-256 is `7b12b3704f49d1b9cec8a497fbeb939649daddef8a2e77fbe1de554e3ecb7626`.
+
+Reproduce from the repository root with the same November Odin compiler. Decompress the cost-bound patch into the output directory before running the commands:
+
+```sh
+mkdir -p out/issue157
+gzip -dc docs/benchmarks/raw/issue-157-3d10863-generic-trace-cost-bound.patch.gz > out/issue157/generic-trace-cost-bound.patch
+
+python3 tools/bench_construction.py \
+  --odin "$ODIN" \
+  --ref parent=7e856892f16846ab2dbb15628d7c670db87efd33 \
+  --ref theme_layout_assets=3d1086318710969b2193c3047c3fa2d047396a72 \
+  --ref trace_cost_bound=3d1086318710969b2193c3047c3fa2d047396a72 \
+  --patch trace_cost_bound=out/issue157/generic-trace-cost-bound.patch \
+  --runs 5 --workloads containers:10000,short:10000,panel:100 \
+  --output out/issue157/historical-pair-default
+
+python3 tools/bench_construction.py \
+  --odin "$ODIN" \
+  --ref parent=7e856892f16846ab2dbb15628d7c670db87efd33 \
+  --ref theme_layout_assets=3d1086318710969b2193c3047c3fa2d047396a72 \
+  --ref trace_cost_bound=3d1086318710969b2193c3047c3fa2d047396a72 \
+  --patch trace_cost_bound=out/issue157/generic-trace-cost-bound.patch \
+  --runs 5 --speed --workloads containers:10000,short:10000,panel:100 \
+  --output out/issue157/historical-pair-speed
+```
+
+The benchmark emitted a November-Odin compatibility substitution for an unused historical image-decoder field in the disposable `3d10863` snapshot. The working repository was not modified by that adaptation.
+
+## Final acceptance and disposition
 
 | #157 requirement | Result |
 | --- | --- |
-| Reproducible same-machine baseline/current CPU A/B | Complete for synthetic workloads: 7-run plus 11-run optimized captures, and a separate allocation capture, on the same November compiler. |
-| Broad CPU attribution | Strongly narrowed: the behavior-preserving structured-trace candidate cuts `end_frame` CPU 15.6–24.6% in the 11-run comparison. Other reconciliation/layout costs remain. |
-| Historical feature attribution | Partial: direct pairs show measurable intervals, but the full construction-only bisection is incomplete and some intervals contain multiple features. |
-| Measured improvement | Behavior-preserving structured traces reduce synthetic `end_frame` CPU while retaining exact messages; representative application impact is not measured. |
-| Peak memory | Partial: one instrumented native Scratchpad maximum-RSS sample; synthetic RSS capture was blocked. |
-| Representative Scratchpad startup/high-water | Incomplete: smoke only; no normal-start distribution and no open/close/settings interaction sequence. |
-| Correctness | 320 runtime tests pass, including exact trace-output, event/cause ordering, ring-wrap, and passive-snapshot checks. Benchmark guards verify retained counts and geometry. |
+| Reproducible synthetic construction A/B | Complete: five-process historical/current comparisons by default and `-o:speed`, plus 11-process structured-trace comparisons and separate allocation captures. Raw samples and host/compiler identity are preserved. |
+| Historical attribution | Complete to an acceptance level: the `ac0a420` retained measurement/geometry feature boundary has a measured cost; a controlled `3d10863` cost bound shows eager invalidation formatting accounts for most of its jump. The cost of each component inside the retained geometry boundary and every other individual feature is not separately isolated. |
+| Behavior-preserving improvement | Complete: structured lazy trace formatting is on master at `067ff0c`, preserves exact output, passes the recorded 320 runtime tests, and improves synthetic `end_frame` CPU by 15.6–24.6%. |
+| Representative Scratchpad startup and interaction | Complete for the tested macOS workload: seven fresh processes per candidate, first successful frame submission, a nine-action sequence including a 5,002-line file, callback CPU, process CPU, and peak RSS. No meaningful startup/first-submit or memory regression was found; the large-document callback median improved 8%. |
+| Remaining construction cost | Accepted: retained measurement/geometry and other retained contracts add work to fresh-tree construction. The representative application comparison does not justify speculative follow-up optimization. |
+| Existing retained correctness | Preserved: deterministic retained-locality contracts remain in place; this work did not bypass them. The structured trace change's recorded 320-test runtime suite covers exact output, event/cause ordering, ring wrap, and passive snapshots. |
 
-To close #157, profile the remaining construction cost only if it is still material after integrating this candidate, and complete any required historical attribution. Also collect a clean Scratchpad native startup distribution and process high-water over startup, opening/closing representative panels/documents, and changing settings. Use the normal compiler-compatible Scratchpad tree, disable diagnostic capture for timing runs, and report first presentation separately from host-loop/shutdown time. If a compatible historical app baseline cannot be built, record a current-only app budget and compare runtime changes with the synthetic A/B rather than presenting an unmatched app comparison.
+The Scratchpad application report and per-run CSV are [here](https://github.com/samanshaiza004/scratchpad/blob/44a7829ba088fbcf295c53a48e3caaa6c67603a2/docs/validation/issue-157-scratchpad-startup-macos-2026-11-04.md) and [here](https://github.com/samanshaiza004/scratchpad/blob/44a7829ba088fbcf295c53a48e3caaa6c67603a2/docs/validation/issue-157-scratchpad-macos-2026-11-04.csv). It reports first GPU submission separately from visible presentation and process duration. This closes the representative-app requirement for the measured scenario, not a universal benchmark for all workspaces or hardware.
+
+**Close Issue #157 as completed.** The runtime already contains the behavior-preserving improvement; this report records the final bounded attribution and the deliberately accepted feature cost. Do not reopen construction optimization without a new representative profile identifying a material user-facing bottleneck.
