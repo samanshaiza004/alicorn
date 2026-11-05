@@ -6,6 +6,7 @@ without crowding the project’s user and contributor guides.
 
 ## Reports
 
+- [Initial retained-tree construction — Issue #157 (macOS, 2026-11-04)](issue-157-construction-cpu-macos-2026-11-04.md)
 - [Performance audit — Windows, 2026-10-27](performance-audit-windows-2026-10-27.md)
 - [Runtime performance audit — Windows, 2026-10-28](performance-audit-windows-2026-10-28.md)
 - [Final performance refresh — Windows, 2026-10-28](performance-final-windows-2026-10-28.md)

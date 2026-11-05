@@ -891,6 +891,11 @@ run_application_loop :: proc(
 			if fence == nil {
 				fail("SDL application submission failed")
 			}
+			if application_submission_pending && timing.first_application_submit_ns == 0 {
+				// Measure from the application-loop timing origin to the first
+				// successful GPU submission that consumes an application frame.
+				timing.first_application_submit_ns = u64(time.duration_nanoseconds(time.since(start)))
+			}
 			append(&in_flight, Native_In_Flight{fence})
 			native_text_commit_submission(text_renderer)
 			native_surface_commit_submission(surface_renderer)
@@ -1076,6 +1081,8 @@ run_application_loop :: proc(
 		"gpu_submit_ns", timing.gpu_submit_ns,
 		"fence_wait_ns", timing.fence_wait_ns,
 		"application_tick_max_ns", timing.application_tick_max_ns,
+		"first_application_submit_ns", timing.first_application_submit_ns,
+		"application_build_ns", timing.application_build_ns,
 		"application_build_max_ns", timing.application_build_max_ns,
 		"application_stabilization_rebuilds", timing.application_stabilization_rebuilds,
 		"application_stabilization_limit_hits", timing.application_stabilization_limit_hits,

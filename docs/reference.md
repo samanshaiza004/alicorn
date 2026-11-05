@@ -115,7 +115,14 @@ state alive until it returns. See the complete
 [native starter](../examples/01_hello/main.odin).
 
 The required callback is `build(state, runtime, logical_width,
-logical_height, dpi_scale) -> Node_ID`. A typical callback calls
+logical_height, dpi_scale) -> Node_ID`. The final `SDL application PASS` host
+summary includes `application_build_ns` (cumulative description-callback CPU
+work) and `first_application_submit_ns` (time from the host application-loop
+timing origin to the first successful GPU submission that consumes an
+application frame). Submission timing is not a measurement of when pixels
+become visible on screen.
+
+A typical callback calls
 `begin_frame`, emits a `.Root` container and its children, then calls
 `end_frame`. Return early if `begin_frame` says there is no application build
 to do. Optional callbacks handle text changes, keys, pointer/scroll input,
