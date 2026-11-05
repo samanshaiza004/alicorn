@@ -1,0 +1,1704 @@
+{
+  "compiler": "Odin dev-2026-11-nightly:9a69916",
+  "profile": "default",
+  "allocation_tracking": false,
+  "phase_instrumentation": false,
+  "phase_detail": false,
+  "rss": false,
+  "windows_process_metrics": true,
+  "probe_sha256": "a94b7e0a8927d88c666319d9f366032dabd90cecc08571d6c13a049b03816cce",
+  "refs": {
+    "v020": {
+      "commit": "24a881590b249c5c166c7864482886fb5aa41653",
+      "executable": "$ALICORN\\out\\release-v0.2.1-windows-2026-11-04\\construction-default\\v020.exe",
+      "compatibility": [
+        "runtime/image_assets.odin: decoded.pixels.buf -> decoded.pixels (unused image decoder SDK adaptation)"
+      ],
+      "instrumented_functions": {},
+      "patch_sha256": null
+    },
+    "v021": {
+      "commit": "736277f899b7777d0cf907a1b7c962370d7217b0",
+      "executable": "$ALICORN\\out\\release-v0.2.1-windows-2026-11-04\\construction-default\\v021.exe",
+      "compatibility": [],
+      "instrumented_functions": {},
+      "patch_sha256": null
+    }
+  },
+  "samples": [
+    {
+      "label": "v020",
+      "workload": "containers",
+      "run": 1,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 134500,
+      "description_ns": 17503300,
+      "end_frame_ns": 84313600,
+      "total_ns": 101816900,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 7752700,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 59822080,
+        "working_set_samples": 67,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "containers",
+      "run": 1,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 146600,
+      "description_ns": 19708000,
+      "end_frame_ns": 64552000,
+      "total_ns": 84260000,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 7801000,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 56242176,
+        "working_set_samples": 57,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "containers",
+      "run": 2,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 95800,
+      "description_ns": 18405700,
+      "end_frame_ns": 63969500,
+      "total_ns": 82375200,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 8114900,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 55975936,
+        "working_set_samples": 56,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v020",
+      "workload": "containers",
+      "run": 2,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 77800,
+      "description_ns": 16485000,
+      "end_frame_ns": 91556900,
+      "total_ns": 108041900,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 8915800,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 59539456,
+        "working_set_samples": 76,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v020",
+      "workload": "containers",
+      "run": 3,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 90500,
+      "description_ns": 16881400,
+      "end_frame_ns": 86416200,
+      "total_ns": 103297600,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 7859300,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 59576320,
+        "working_set_samples": 67,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "containers",
+      "run": 3,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 82600,
+      "description_ns": 18709100,
+      "end_frame_ns": 62194900,
+      "total_ns": 80904000,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 7843500,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 55984128,
+        "working_set_samples": 54,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "containers",
+      "run": 4,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 102300,
+      "description_ns": 23645500,
+      "end_frame_ns": 57997500,
+      "total_ns": 81643000,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 6865000,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 56008704,
+        "working_set_samples": 54,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v020",
+      "workload": "containers",
+      "run": 4,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 78000,
+      "description_ns": 15381900,
+      "end_frame_ns": 74809800,
+      "total_ns": 90191700,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 6719500,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 59543552,
+        "working_set_samples": 60,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v020",
+      "workload": "containers",
+      "run": 5,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 80100,
+      "description_ns": 16370300,
+      "end_frame_ns": 77806000,
+      "total_ns": 94176300,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 7310100,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 59559936,
+        "working_set_samples": 62,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "containers",
+      "run": 5,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 80700,
+      "description_ns": 15227200,
+      "end_frame_ns": 57838500,
+      "total_ns": 73065700,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 6727500,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 55975936,
+        "working_set_samples": 51,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v020",
+      "workload": "short",
+      "run": 1,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 94300,
+      "description_ns": 16924900,
+      "end_frame_ns": 110575900,
+      "total_ns": 127500800,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 12171200,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 75194368,
+        "working_set_samples": 86,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "short",
+      "run": 1,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 109500,
+      "description_ns": 16085700,
+      "end_frame_ns": 79973600,
+      "total_ns": 96059300,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 9895900,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 71790592,
+        "working_set_samples": 68,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "short",
+      "run": 2,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 91300,
+      "description_ns": 16456900,
+      "end_frame_ns": 78180900,
+      "total_ns": 94637800,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 10672000,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 71737344,
+        "working_set_samples": 66,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v020",
+      "workload": "short",
+      "run": 2,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 82800,
+      "description_ns": 16522100,
+      "end_frame_ns": 101316100,
+      "total_ns": 117838200,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 10097900,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 75251712,
+        "working_set_samples": 78,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v020",
+      "workload": "short",
+      "run": 3,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 76400,
+      "description_ns": 15947800,
+      "end_frame_ns": 96583900,
+      "total_ns": 112531700,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 9503000,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 75214848,
+        "working_set_samples": 78,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "short",
+      "run": 3,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 78200,
+      "description_ns": 16813200,
+      "end_frame_ns": 79710700,
+      "total_ns": 96523900,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 9698700,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 71745536,
+        "working_set_samples": 68,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "short",
+      "run": 4,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 81900,
+      "description_ns": 15589000,
+      "end_frame_ns": 76892500,
+      "total_ns": 92481500,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 9625100,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 71827456,
+        "working_set_samples": 64,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v020",
+      "workload": "short",
+      "run": 4,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 80500,
+      "description_ns": 17313000,
+      "end_frame_ns": 100449600,
+      "total_ns": 117762600,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 9712800,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 75227136,
+        "working_set_samples": 79,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v020",
+      "workload": "short",
+      "run": 5,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 78100,
+      "description_ns": 16006400,
+      "end_frame_ns": 112870900,
+      "total_ns": 128877300,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 14219000,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 75268096,
+        "working_set_samples": 88,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "short",
+      "run": 5,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 124100,
+      "description_ns": 16867100,
+      "end_frame_ns": 75654100,
+      "total_ns": 92521200,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 9765100,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 71737344,
+        "working_set_samples": 65,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v020",
+      "workload": "wrapped",
+      "run": 1,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 104200,
+      "description_ns": 17364900,
+      "end_frame_ns": 106925800,
+      "total_ns": 124290700,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 11451900,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1203322180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 77090816,
+        "working_set_samples": 85,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "wrapped",
+      "run": 1,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 100900,
+      "description_ns": 16565100,
+      "end_frame_ns": 86421200,
+      "total_ns": 102986300,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 12792200,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1203322180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 73449472,
+        "working_set_samples": 72,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "wrapped",
+      "run": 2,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 101500,
+      "description_ns": 17084300,
+      "end_frame_ns": 80043700,
+      "total_ns": 97128000,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 10574800,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1203322180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 73441280,
+        "working_set_samples": 69,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v020",
+      "workload": "wrapped",
+      "run": 2,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 77900,
+      "description_ns": 17149600,
+      "end_frame_ns": 102280500,
+      "total_ns": 119430100,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 10843700,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1203322180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 77082624,
+        "working_set_samples": 80,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v020",
+      "workload": "wrapped",
+      "run": 3,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 75500,
+      "description_ns": 16777500,
+      "end_frame_ns": 104645900,
+      "total_ns": 121423400,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 10548700,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1203322180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 77119488,
+        "working_set_samples": 80,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "wrapped",
+      "run": 3,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 79800,
+      "description_ns": 17115300,
+      "end_frame_ns": 84368800,
+      "total_ns": 101484100,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 11870400,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1203322180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 73428992,
+        "working_set_samples": 70,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "wrapped",
+      "run": 4,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 91600,
+      "description_ns": 17750700,
+      "end_frame_ns": 97787500,
+      "total_ns": 115538200,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 13812300,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1203322180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 73416704,
+        "working_set_samples": 81,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v020",
+      "workload": "wrapped",
+      "run": 4,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 87000,
+      "description_ns": 17341800,
+      "end_frame_ns": 108362400,
+      "total_ns": 125704200,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 10619000,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1203322180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 77172736,
+        "working_set_samples": 83,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v020",
+      "workload": "wrapped",
+      "run": 5,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 106600,
+      "description_ns": 18422900,
+      "end_frame_ns": 112873900,
+      "total_ns": 131296800,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 11179500,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1203322180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 77135872,
+        "working_set_samples": 86,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "wrapped",
+      "run": 5,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 77100,
+      "description_ns": 18246600,
+      "end_frame_ns": 94162900,
+      "total_ns": 112409500,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 11850600,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1203322180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 73478144,
+        "working_set_samples": 75,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v020",
+      "workload": "panel",
+      "run": 1,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 94700,
+      "description_ns": 889100,
+      "end_frame_ns": 8155200,
+      "total_ns": 9044300,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 447400,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 8888320,
+        "working_set_samples": 8,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "panel",
+      "run": 1,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 77100,
+      "description_ns": 720900,
+      "end_frame_ns": 5232800,
+      "total_ns": 5953700,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 469300,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 8622080,
+        "working_set_samples": 6,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "panel",
+      "run": 2,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 79500,
+      "description_ns": 767900,
+      "end_frame_ns": 5202400,
+      "total_ns": 5970300,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 480200,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 8630272,
+        "working_set_samples": 6,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v020",
+      "workload": "panel",
+      "run": 2,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 92300,
+      "description_ns": 991900,
+      "end_frame_ns": 7753500,
+      "total_ns": 8745400,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 497300,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 8921088,
+        "working_set_samples": 8,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v020",
+      "workload": "panel",
+      "run": 3,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 83400,
+      "description_ns": 1038400,
+      "end_frame_ns": 7614300,
+      "total_ns": 8652700,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 456400,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 8876032,
+        "working_set_samples": 9,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "panel",
+      "run": 3,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 89400,
+      "description_ns": 823800,
+      "end_frame_ns": 5165100,
+      "total_ns": 5988900,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 462900,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 8597504,
+        "working_set_samples": 7,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "panel",
+      "run": 4,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 75100,
+      "description_ns": 792000,
+      "end_frame_ns": 4889600,
+      "total_ns": 5681600,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 657300,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 8605696,
+        "working_set_samples": 6,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v020",
+      "workload": "panel",
+      "run": 4,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 76400,
+      "description_ns": 784900,
+      "end_frame_ns": 7966800,
+      "total_ns": 8751700,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 519700,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 8921088,
+        "working_set_samples": 9,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v020",
+      "workload": "panel",
+      "run": 5,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 86700,
+      "description_ns": 958600,
+      "end_frame_ns": 8299200,
+      "total_ns": 9257800,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 466400,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 8929280,
+        "working_set_samples": 9,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    },
+    {
+      "label": "v021",
+      "workload": "panel",
+      "run": 5,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 78800,
+      "description_ns": 820700,
+      "end_frame_ns": 5493800,
+      "total_ns": 6314500,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 478400,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [],
+      "process_metrics": {
+        "peak_working_set_bytes": 8613888,
+        "working_set_samples": 7,
+        "sampling_interval_ms": 1
+      },
+      "cpu_phases": {}
+    }
+  ],
+  "summary": [
+    {
+      "label": "v020",
+      "workload": "containers",
+      "init_ns": {
+        "median": 80100,
+        "min": 77800,
+        "max": 134500
+      },
+      "description_ns": {
+        "median": 16485000,
+        "min": 15381900,
+        "max": 17503300
+      },
+      "end_frame_ns": {
+        "median": 84313600,
+        "min": 74809800,
+        "max": 91556900
+      },
+      "total_ns": {
+        "median": 101816900,
+        "min": 90191700,
+        "max": 108041900
+      },
+      "destroy_ns": {
+        "median": 7752700,
+        "min": 6719500,
+        "max": 8915800
+      },
+      "peak_working_set_bytes": {
+        "median": 59559936,
+        "min": 59539456,
+        "max": 59822080
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "containers",
+      "init_ns": {
+        "median": 95800,
+        "min": 80700,
+        "max": 146600
+      },
+      "description_ns": {
+        "median": 18709100,
+        "min": 15227200,
+        "max": 23645500
+      },
+      "end_frame_ns": {
+        "median": 62194900,
+        "min": 57838500,
+        "max": 64552000
+      },
+      "total_ns": {
+        "median": 81643000,
+        "min": 73065700,
+        "max": 84260000
+      },
+      "destroy_ns": {
+        "median": 7801000,
+        "min": 6727500,
+        "max": 8114900
+      },
+      "peak_working_set_bytes": {
+        "median": 55984128,
+        "min": 55975936,
+        "max": 56242176
+      }
+    },
+    {
+      "label": "v020",
+      "workload": "short",
+      "init_ns": {
+        "median": 80500,
+        "min": 76400,
+        "max": 94300
+      },
+      "description_ns": {
+        "median": 16522100,
+        "min": 15947800,
+        "max": 17313000
+      },
+      "end_frame_ns": {
+        "median": 101316100,
+        "min": 96583900,
+        "max": 112870900
+      },
+      "total_ns": {
+        "median": 117838200,
+        "min": 112531700,
+        "max": 128877300
+      },
+      "destroy_ns": {
+        "median": 10097900,
+        "min": 9503000,
+        "max": 14219000
+      },
+      "peak_working_set_bytes": {
+        "median": 75227136,
+        "min": 75194368,
+        "max": 75268096
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "short",
+      "init_ns": {
+        "median": 91300,
+        "min": 78200,
+        "max": 124100
+      },
+      "description_ns": {
+        "median": 16456900,
+        "min": 15589000,
+        "max": 16867100
+      },
+      "end_frame_ns": {
+        "median": 78180900,
+        "min": 75654100,
+        "max": 79973600
+      },
+      "total_ns": {
+        "median": 94637800,
+        "min": 92481500,
+        "max": 96523900
+      },
+      "destroy_ns": {
+        "median": 9765100,
+        "min": 9625100,
+        "max": 10672000
+      },
+      "peak_working_set_bytes": {
+        "median": 71745536,
+        "min": 71737344,
+        "max": 71827456
+      }
+    },
+    {
+      "label": "v020",
+      "workload": "wrapped",
+      "init_ns": {
+        "median": 87000,
+        "min": 75500,
+        "max": 106600
+      },
+      "description_ns": {
+        "median": 17341800,
+        "min": 16777500,
+        "max": 18422900
+      },
+      "end_frame_ns": {
+        "median": 106925800,
+        "min": 102280500,
+        "max": 112873900
+      },
+      "total_ns": {
+        "median": 124290700,
+        "min": 119430100,
+        "max": 131296800
+      },
+      "destroy_ns": {
+        "median": 10843700,
+        "min": 10548700,
+        "max": 11451900
+      },
+      "peak_working_set_bytes": {
+        "median": 77119488,
+        "min": 77082624,
+        "max": 77172736
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "wrapped",
+      "init_ns": {
+        "median": 91600,
+        "min": 77100,
+        "max": 101500
+      },
+      "description_ns": {
+        "median": 17115300,
+        "min": 16565100,
+        "max": 18246600
+      },
+      "end_frame_ns": {
+        "median": 86421200,
+        "min": 80043700,
+        "max": 97787500
+      },
+      "total_ns": {
+        "median": 102986300,
+        "min": 97128000,
+        "max": 115538200
+      },
+      "destroy_ns": {
+        "median": 11870400,
+        "min": 10574800,
+        "max": 13812300
+      },
+      "peak_working_set_bytes": {
+        "median": 73441280,
+        "min": 73416704,
+        "max": 73478144
+      }
+    },
+    {
+      "label": "v020",
+      "workload": "panel",
+      "init_ns": {
+        "median": 86700,
+        "min": 76400,
+        "max": 94700
+      },
+      "description_ns": {
+        "median": 958600,
+        "min": 784900,
+        "max": 1038400
+      },
+      "end_frame_ns": {
+        "median": 7966800,
+        "min": 7614300,
+        "max": 8299200
+      },
+      "total_ns": {
+        "median": 8751700,
+        "min": 8652700,
+        "max": 9257800
+      },
+      "destroy_ns": {
+        "median": 466400,
+        "min": 447400,
+        "max": 519700
+      },
+      "peak_working_set_bytes": {
+        "median": 8921088,
+        "min": 8876032,
+        "max": 8929280
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "panel",
+      "init_ns": {
+        "median": 78800,
+        "min": 75100,
+        "max": 89400
+      },
+      "description_ns": {
+        "median": 792000,
+        "min": 720900,
+        "max": 823800
+      },
+      "end_frame_ns": {
+        "median": 5202400,
+        "min": 4889600,
+        "max": 5493800
+      },
+      "total_ns": {
+        "median": 5970300,
+        "min": 5681600,
+        "max": 6314500
+      },
+      "destroy_ns": {
+        "median": 478400,
+        "min": 462900,
+        "max": 657300
+      },
+      "peak_working_set_bytes": {
+        "median": 8613888,
+        "min": 8597504,
+        "max": 8630272
+      }
+    }
+  ]
+}

@@ -250,6 +250,54 @@ public static class SecondaryMotionWin32 {
                 $summary.outcome = 'minimized secondary closed during motion; primary continued to settle'
             }
 
+            # The fixture emits an application-thread idle checkpoint after
+            # its motion-idle snapshots. Wait for that separate scheduled wake
+            # before starting the quiet interval so the checkpoint itself
+            # cannot race the interval and look like continued motion work.
+            $quietCheckpointNames = @('motion.validation.primary.idle_probe.samples')
+            if ($Mode -eq 'restore') {
+                $quietCheckpointNames += 'motion.validation.secondary.idle_probe.samples'
+            } else {
+                # Close mode emits bounded post-close owner/sample checkpoints
+                # instead of scheduling the restore-mode idle probe.
+                $quietCheckpointNames = @('motion.validation.primary.post_close.owners')
+            }
+            $probeDeadline = [DateTime]::UtcNow.AddSeconds(15)
+            $quietCheckpointEvents = @()
+            $missingCheckpoints = @($quietCheckpointNames)
+            while ([DateTime]::UtcNow -lt $probeDeadline) {
+                $all = Read-Events $eventsPath
+                $quietCheckpointEvents = @($all | Where-Object {
+                    $_.source -eq 'application' -and $_.event -in $quietCheckpointNames
+                })
+                $missingCheckpoints = @($quietCheckpointNames | Where-Object {
+                    $checkpointName = $_
+                    @($quietCheckpointEvents | Where-Object { $_.event -eq $checkpointName }).Count -eq 0
+                })
+                if ($missingCheckpoints.Count -eq 0) {
+                    break
+                }
+                if ($process.HasExited) { throw 'Fixture exited before the application idle checkpoints completed.' }
+                Start-Sleep -Milliseconds 100
+            }
+            if ($missingCheckpoints.Count -gt 0) {
+                throw 'Application idle checkpoints were not recorded before the quiet interval.'
+            }
+            if ($Mode -eq 'restore') {
+                foreach ($probe in $quietCheckpointEvents) {
+                    $ownerName = $probe.event -replace '\.samples$', '.owners'
+                    $ownerValue = Get-AppValue $all $ownerName
+                    if ($null -eq $ownerValue -or $ownerValue -ne 0) {
+                        throw "Application idle checkpoint '$($probe.event)' still has active motion owners."
+                    }
+                }
+            } else {
+                $finalOwnerCheckpoint = Get-AppValue $all 'motion.validation.primary.post_close.owners'
+                if ($null -eq $finalOwnerCheckpoint -or $finalOwnerCheckpoint -ne 0) {
+                    throw 'The final post-close checkpoint still has active motion owners.'
+                }
+            }
+            $summary.quiet_checkpoint_events = @($quietCheckpointEvents | ForEach-Object { $_.event } | Select-Object -Unique)
             $eventCountBeforeQuiet = (Read-Events $eventsPath).Count
             Start-Sleep -Seconds $QuietSeconds
             $eventsBeforeClose = Read-Events $eventsPath

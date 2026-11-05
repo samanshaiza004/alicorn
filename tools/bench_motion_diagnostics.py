@@ -190,6 +190,7 @@ benchmark_source = (root / "benchmarks" / "motion_diagnostics" / "main.odin").re
 odin = str(Path(args.odin).resolve())
 refs = {"baseline": args.baseline, "candidate": args.candidate}
 executables = {}
+compatibility_adaptations = {}
 
 for name, ref in refs.items():
     commit = subprocess.check_output(
@@ -200,6 +201,23 @@ for name, ref in refs.items():
         if destination.exists():
             raise RuntimeError(f"incomplete snapshot already exists: {destination}; remove it and retry")
         commit = archive_ref(root, ref, destination)
+    # Odin dev-2026-11 changed core:image.Image.pixels from a slice wrapper to
+    # a dynamic array. The motion fixture is headless and never uses this
+    # decoder; adapt only the disposable historical archive so both revisions
+    # can be built with the same November compiler.
+    image = destination / "runtime" / "image_assets.odin"
+    if image.exists():
+        image_source = image.read_text(encoding="utf-8")
+        adaptation_marker = destination / ".odin-dev-2026-11-image-adaptation"
+        if "decoded.pixels.buf" in image_source:
+            image.write_text(image_source.replace("decoded.pixels.buf", "decoded.pixels"), encoding="utf-8")
+            adaptation_marker.write_text("runtime/image_assets.odin: decoded.pixels.buf -> decoded.pixels (unused image decoder SDK adaptation)\n", encoding="utf-8")
+        if adaptation_marker.exists():
+            compatibility_adaptations[name] = [
+                line for line in adaptation_marker.read_text(encoding="utf-8").splitlines() if line
+            ]
+        else:
+            compatibility_adaptations[name] = []
     bench_dir = destination / "benchmarks" / "motion_diagnostics"
     bench_dir.mkdir(parents=True, exist_ok=True)
     supports_diagnostics = name == "candidate"
@@ -232,7 +250,8 @@ with (work / "raw-runs.txt").open("w", encoding="utf-8") as raw:
             "process_cpu_cycles": process_cpu_cycles,
         })
 
-summary = {"odin": odin, "profile": "speed", "runs": args.runs, "refs": {}, "results": {}}
+summary = {"odin": odin, "profile": "speed", "runs": args.runs, "refs": {},
+           "compatibility_adaptations": compatibility_adaptations, "results": {}}
 for name, (commit, _executable) in executables.items():
     summary["refs"][name] = commit
     run_records = [record for record in records if record["name"] == name]

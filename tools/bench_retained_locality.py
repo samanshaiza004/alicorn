@@ -18,7 +18,7 @@ from pathlib import Path
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--odin", required=True, help="Path to the Odin compiler")
 parser.add_argument("--baseline", default="96461223cdbf43080acb957276c045ad704f4606")
-parser.add_argument("--regressed", default="3e31c743298f758b4cafd4f425e296a59cd95e34")
+parser.add_argument("--regressed", help="Optional middle revision for a three-way historical comparison")
 parser.add_argument("--candidate", default="HEAD")
 parser.add_argument("--speed", action="store_true", help="Build all snapshots with -o:speed")
 parser.add_argument("--runs", type=int, default=3, help="Fresh-process samples per snapshot (default: 3)")
@@ -31,7 +31,10 @@ profile = "speed" if args.speed else "default"
 work = root / "out" / "retained-locality-comparison" / profile
 work.mkdir(parents=True, exist_ok=True)
 odin = str(Path(args.odin).resolve())
-refs = {"baseline": args.baseline, "regressed": args.regressed, "fixed": args.candidate}
+refs = {"baseline": args.baseline}
+if args.regressed:
+    refs["regressed"] = args.regressed
+refs["fixed"] = args.candidate
 
 phase_probe = '''
 describe_tree_for_phase_probe :: proc(rt: ^alicorn.Runtime, count: int) -> (ui: alicorn.UI, build: bool) {
@@ -96,6 +99,7 @@ def run(command, **kwargs):
 
 
 executables = {}
+compatibility_adaptations = {}
 for name, ref in refs.items():
     commit = subprocess.check_output(
         ["git", "-C", str(root), "rev-parse", "--verify", f"{ref}^{{commit}}"], text=True
@@ -112,6 +116,19 @@ for name, ref in refs.items():
             archive.stdout.close()
         if archive.wait():
             raise RuntimeError(f"could not extract {name} snapshot {commit}")
+    # Odin dev-2026-11 changed core:image.Image.pixels from a slice wrapper to
+    # a dynamic array. This file is unused by the headless retained benchmark;
+    # adapt only the disposable historical source snapshot for compilation.
+    image = dest / "runtime" / "image_assets.odin"
+    if image.exists():
+        image_source = image.read_text()
+        if "decoded.pixels.buf" in image_source:
+            image.write_text(image_source.replace("decoded.pixels.buf", "decoded.pixels"))
+            compatibility_adaptations[name] = [
+                "runtime/image_assets.odin: decoded.pixels.buf -> decoded.pixels (unused image decoder SDK adaptation)"
+            ]
+        else:
+            compatibility_adaptations[name] = []
     probe = dest / "probe"
     probe.mkdir(exist_ok=True)
     source = (dest / "benchmarks" / "main.odin").read_text()
@@ -130,42 +147,47 @@ for name, ref in refs.items():
     executables[name] = (commit, executable)
 
 
-order = ["baseline", "regressed", "fixed"] * args.runs
+names = list(refs)
 records = []
 log = work / "matched.txt"
 with log.open("w") as output:
-    for index, name in enumerate(order, start=1):
-        commit, executable = executables[name]
-        result = subprocess.run([str(executable)], capture_output=True, text=True, check=True)
-        output.write(f"PROCESS {index} {name} {commit}\n{result.stdout}\n")
-        reuse_match = re.search(r"reused_for_unrelated_sibling wall_ns (\d+)", result.stdout)
-        tree_match = re.search(
-            r"tree 10000\n\s+initial wall_ns (\d+).*?\n\s+root_invalidated_unchanged wall_ns (\d+)",
-            result.stdout,
-            re.S,
-        )
-        if reuse_match is None or tree_match is None:
-            raise RuntimeError(f"could not parse benchmark results for {name}")
-        reuse_line = next(line for line in result.stdout.splitlines() if "reused_for_unrelated_sibling wall_ns" in line)
+    process_index = 0
+    for run in range(args.runs):
+        order = names if run % 2 == 0 else list(reversed(names))
+        for name in order:
+            process_index += 1
+            commit, executable = executables[name]
+            result = subprocess.run([str(executable)], capture_output=True, text=True, check=True)
+            output.write(f"PROCESS {process_index} {name} {commit}\n{result.stdout}\n")
+            reuse_match = re.search(r"reused_for_unrelated_sibling wall_ns (\d+)", result.stdout)
+            tree_match = re.search(
+                r"tree 10000\n\s+initial wall_ns (\d+).*?\n\s+root_invalidated_unchanged wall_ns (\d+)",
+                result.stdout,
+                re.S,
+            )
+            if reuse_match is None or tree_match is None:
+                raise RuntimeError(f"could not parse benchmark results for {name}")
+            reuse_line = next(line for line in result.stdout.splitlines() if "reused_for_unrelated_sibling wall_ns" in line)
 
-        def optional_counter(key):
-            match = re.search(rf"(?:^|\s){re.escape(key)} (\d+)(?:\s|$)", reuse_line)
-            return int(match.group(1)) if match else None
+            def optional_counter(key):
+                match = re.search(rf"(?:^|\s){re.escape(key)} (\d+)(?:\s|$)", reuse_line)
+                return int(match.group(1)) if match else None
 
-        records.append({
-            "name": name,
-            "commit": commit,
-            "region_reuse_ns": int(reuse_match.group(1)),
-            "initial_10k_ns": int(tree_match.group(1)),
-            "unchanged_10k_ns": int(tree_match.group(2)),
-            "measure_examined": optional_counter("measure_examined"),
-            "measure_executed": optional_counter("measure_executed"),
-            "display_finalized": optional_counter("display_finalized"),
-            "display_full_passes": optional_counter("display_full_passes"),
-            "semantic_order_examined": optional_counter("semantic_order_examined"),
-            "global_fallbacks": optional_counter("global_fallbacks"),
-            "display_fallbacks": optional_counter("display_fallbacks"),
-        })
+            records.append({
+                "run": run + 1,
+                "name": name,
+                "commit": commit,
+                "region_reuse_ns": int(reuse_match.group(1)),
+                "initial_10k_ns": int(tree_match.group(1)),
+                "unchanged_10k_ns": int(tree_match.group(2)),
+                "measure_examined": optional_counter("measure_examined"),
+                "measure_executed": optional_counter("measure_executed"),
+                "display_finalized": optional_counter("display_finalized"),
+                "display_full_passes": optional_counter("display_full_passes"),
+                "semantic_order_examined": optional_counter("semantic_order_examined"),
+                "global_fallbacks": optional_counter("global_fallbacks"),
+                "display_fallbacks": optional_counter("display_fallbacks"),
+            })
 
 metrics = ["region_reuse_ns", "initial_10k_ns", "unchanged_10k_ns"]
 medians = {
@@ -179,6 +201,7 @@ ratio = medians["fixed"]["region_reuse_ns"] / medians["baseline"]["region_reuse_
 summary = {
     "profile": profile,
     "refs": {name: commit for name, (commit, _) in executables.items()},
+    "compatibility_adaptations": compatibility_adaptations,
     "samples": records,
     "medians": medians,
     "fixed_to_baseline_region_ratio": ratio,

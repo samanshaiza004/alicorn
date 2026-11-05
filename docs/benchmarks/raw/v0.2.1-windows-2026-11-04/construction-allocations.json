@@ -1,0 +1,1224 @@
+{
+  "compiler": "Odin dev-2026-11-nightly:9a69916",
+  "profile": "default",
+  "allocation_tracking": true,
+  "phase_instrumentation": false,
+  "phase_detail": false,
+  "rss": false,
+  "windows_process_metrics": false,
+  "probe_sha256": "a94b7e0a8927d88c666319d9f366032dabd90cecc08571d6c13a049b03816cce",
+  "refs": {
+    "v020": {
+      "commit": "24a881590b249c5c166c7864482886fb5aa41653",
+      "executable": "$ALICORN\\out\\release-v0.2.1-windows-2026-11-04\\construction-allocations\\v020.exe",
+      "compatibility": [
+        "runtime/image_assets.odin: decoded.pixels.buf -> decoded.pixels (unused image decoder SDK adaptation)"
+      ],
+      "instrumented_functions": {},
+      "patch_sha256": null
+    },
+    "v021": {
+      "commit": "736277f899b7777d0cf907a1b7c962370d7217b0",
+      "executable": "$ALICORN\\out\\release-v0.2.1-windows-2026-11-04\\construction-allocations\\v021.exe",
+      "compatibility": [],
+      "instrumented_functions": {},
+      "patch_sha256": null
+    }
+  },
+  "samples": [
+    {
+      "label": "v020",
+      "workload": "containers",
+      "run": 1,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 170900,
+      "description_ns": 18276600,
+      "end_frame_ns": 77206300,
+      "total_ns": 95482900,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 7545100,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 40188",
+        "allocations Description calls 46 requested_bytes 55310162",
+        "allocations End_Frame calls 100111 requested_bytes 37087206",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 56049508,
+        "high_water": 56702006,
+        "live_after_destroy": 22362744
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "containers",
+      "run": 1,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 138600,
+      "description_ns": 15530000,
+      "end_frame_ns": 56589500,
+      "total_ns": 72119500,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 7211000,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 41372",
+        "allocations Description calls 46 requested_bytes 55310162",
+        "allocations End_Frame calls 70107 requested_bytes 34562933",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 56050692,
+        "high_water": 56703190,
+        "live_after_destroy": 22362744
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "containers",
+      "run": 2,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 99000,
+      "description_ns": 18713100,
+      "end_frame_ns": 58693600,
+      "total_ns": 77406700,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 7916400,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 41372",
+        "allocations Description calls 46 requested_bytes 55310162",
+        "allocations End_Frame calls 70107 requested_bytes 34562933",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 56050692,
+        "high_water": 56703190,
+        "live_after_destroy": 22362744
+      }
+    },
+    {
+      "label": "v020",
+      "workload": "containers",
+      "run": 2,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 97400,
+      "description_ns": 16416400,
+      "end_frame_ns": 78414400,
+      "total_ns": 94830800,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 7348400,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 40188",
+        "allocations Description calls 46 requested_bytes 55310162",
+        "allocations End_Frame calls 100111 requested_bytes 37087206",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 56049508,
+        "high_water": 56702006,
+        "live_after_destroy": 22362744
+      }
+    },
+    {
+      "label": "v020",
+      "workload": "containers",
+      "run": 3,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 92800,
+      "description_ns": 15858400,
+      "end_frame_ns": 79419900,
+      "total_ns": 95278300,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 7413800,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 40188",
+        "allocations Description calls 46 requested_bytes 55310162",
+        "allocations End_Frame calls 100111 requested_bytes 37087206",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 56049508,
+        "high_water": 56702006,
+        "live_after_destroy": 22362744
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "containers",
+      "run": 3,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 78700,
+      "description_ns": 21602900,
+      "end_frame_ns": 59860200,
+      "total_ns": 81463100,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 7111900,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 41372",
+        "allocations Description calls 46 requested_bytes 55310162",
+        "allocations End_Frame calls 70107 requested_bytes 34562933",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 56050692,
+        "high_water": 56703190,
+        "live_after_destroy": 22362744
+      }
+    },
+    {
+      "label": "v020",
+      "workload": "short",
+      "run": 1,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 103000,
+      "description_ns": 16096500,
+      "end_frame_ns": 99309000,
+      "total_ns": 115405500,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 10339400,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 40188",
+        "allocations Description calls 46 requested_bytes 55310162",
+        "allocations End_Frame calls 130133 requested_bytes 56351718",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 70521764,
+        "high_water": 70521816,
+        "live_after_destroy": 22362744
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "short",
+      "run": 1,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 101600,
+      "description_ns": 15528400,
+      "end_frame_ns": 76246100,
+      "total_ns": 91774500,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 9887200,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 41372",
+        "allocations Description calls 46 requested_bytes 55310162",
+        "allocations End_Frame calls 100129 requested_bytes 53827445",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 70522948,
+        "high_water": 70523000,
+        "live_after_destroy": 22362744
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "short",
+      "run": 2,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 85200,
+      "description_ns": 16439300,
+      "end_frame_ns": 81233300,
+      "total_ns": 97672600,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 14837700,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 41372",
+        "allocations Description calls 46 requested_bytes 55310162",
+        "allocations End_Frame calls 100129 requested_bytes 53827445",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 70522948,
+        "high_water": 70523000,
+        "live_after_destroy": 22362744
+      }
+    },
+    {
+      "label": "v020",
+      "workload": "short",
+      "run": 2,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 88000,
+      "description_ns": 19060700,
+      "end_frame_ns": 99472100,
+      "total_ns": 118532800,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 11635800,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 40188",
+        "allocations Description calls 46 requested_bytes 55310162",
+        "allocations End_Frame calls 130133 requested_bytes 56351718",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 70521764,
+        "high_water": 70521816,
+        "live_after_destroy": 22362744
+      }
+    },
+    {
+      "label": "v020",
+      "workload": "short",
+      "run": 3,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 98300,
+      "description_ns": 15496000,
+      "end_frame_ns": 103099200,
+      "total_ns": 118595200,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 12075900,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 40188",
+        "allocations Description calls 46 requested_bytes 55310162",
+        "allocations End_Frame calls 130133 requested_bytes 56351718",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 70521764,
+        "high_water": 70521816,
+        "live_after_destroy": 22362744
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "short",
+      "run": 3,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 82800,
+      "description_ns": 16657500,
+      "end_frame_ns": 83488200,
+      "total_ns": 100145700,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 9768800,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 41372",
+        "allocations Description calls 46 requested_bytes 55310162",
+        "allocations End_Frame calls 100129 requested_bytes 53827445",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 70522948,
+        "high_water": 70523000,
+        "live_after_destroy": 22362744
+      }
+    },
+    {
+      "label": "v020",
+      "workload": "wrapped",
+      "run": 1,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 97200,
+      "description_ns": 18477900,
+      "end_frame_ns": 99941900,
+      "total_ns": 118419800,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 10510600,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1203322180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 40188",
+        "allocations Description calls 46 requested_bytes 55310162",
+        "allocations End_Frame calls 130133 requested_bytes 57861718",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 72031764,
+        "high_water": 72031816,
+        "live_after_destroy": 22362744
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "wrapped",
+      "run": 1,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 103000,
+      "description_ns": 17110300,
+      "end_frame_ns": 79669800,
+      "total_ns": 96780100,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 10865700,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1203322180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 41372",
+        "allocations Description calls 46 requested_bytes 55310162",
+        "allocations End_Frame calls 100129 requested_bytes 55337445",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 72032948,
+        "high_water": 72033000,
+        "live_after_destroy": 22362744
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "wrapped",
+      "run": 2,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 76700,
+      "description_ns": 16311200,
+      "end_frame_ns": 81679500,
+      "total_ns": 97990700,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 10610300,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1203322180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 41372",
+        "allocations Description calls 46 requested_bytes 55310162",
+        "allocations End_Frame calls 100129 requested_bytes 55337445",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 72032948,
+        "high_water": 72033000,
+        "live_after_destroy": 22362744
+      }
+    },
+    {
+      "label": "v020",
+      "workload": "wrapped",
+      "run": 2,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 98000,
+      "description_ns": 16570600,
+      "end_frame_ns": 103285600,
+      "total_ns": 119856200,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 10362800,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1203322180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 40188",
+        "allocations Description calls 46 requested_bytes 55310162",
+        "allocations End_Frame calls 130133 requested_bytes 57861718",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 72031764,
+        "high_water": 72031816,
+        "live_after_destroy": 22362744
+      }
+    },
+    {
+      "label": "v020",
+      "workload": "wrapped",
+      "run": 3,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 93200,
+      "description_ns": 15957800,
+      "end_frame_ns": 114349300,
+      "total_ns": 130307100,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 14543500,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1203322180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 40188",
+        "allocations Description calls 46 requested_bytes 55310162",
+        "allocations End_Frame calls 130133 requested_bytes 57861718",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 72031764,
+        "high_water": 72031816,
+        "live_after_destroy": 22362744
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "wrapped",
+      "run": 3,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 89200,
+      "description_ns": 17909100,
+      "end_frame_ns": 85975200,
+      "total_ns": 103884300,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 10971400,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1203322180.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 41372",
+        "allocations Description calls 46 requested_bytes 55310162",
+        "allocations End_Frame calls 100129 requested_bytes 55337445",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 72032948,
+        "high_water": 72033000,
+        "live_after_destroy": 22362744
+      }
+    },
+    {
+      "label": "v020",
+      "workload": "panel",
+      "run": 1,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 89300,
+      "description_ns": 923800,
+      "end_frame_ns": 7871900,
+      "total_ns": 8795700,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 488700,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 40188",
+        "allocations Description calls 32 requested_bytes 3130834",
+        "allocations End_Frame calls 9423 requested_bytes 4315027",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 4532800,
+        "high_water": 4532852,
+        "live_after_destroy": 1439672
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "panel",
+      "run": 1,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 103700,
+      "description_ns": 844800,
+      "end_frame_ns": 5058700,
+      "total_ns": 5903500,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 674000,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 41372",
+        "allocations Description calls 32 requested_bytes 3130834",
+        "allocations End_Frame calls 6119 requested_bytes 4026955",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 4533984,
+        "high_water": 4534036,
+        "live_after_destroy": 1439672
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "panel",
+      "run": 2,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 85400,
+      "description_ns": 901000,
+      "end_frame_ns": 5483500,
+      "total_ns": 6384500,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 490200,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 41372",
+        "allocations Description calls 32 requested_bytes 3130834",
+        "allocations End_Frame calls 6119 requested_bytes 4026955",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 4533984,
+        "high_water": 4534036,
+        "live_after_destroy": 1439672
+      }
+    },
+    {
+      "label": "v020",
+      "workload": "panel",
+      "run": 2,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 77600,
+      "description_ns": 702000,
+      "end_frame_ns": 7209200,
+      "total_ns": 7911200,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 384400,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 40188",
+        "allocations Description calls 32 requested_bytes 3130834",
+        "allocations End_Frame calls 9423 requested_bytes 4315027",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 4532800,
+        "high_water": 4532852,
+        "live_after_destroy": 1439672
+      }
+    },
+    {
+      "label": "v020",
+      "workload": "panel",
+      "run": 3,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 90400,
+      "description_ns": 896400,
+      "end_frame_ns": 8225400,
+      "total_ns": 9121800,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 525700,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 72
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 40188",
+        "allocations Description calls 32 requested_bytes 3130834",
+        "allocations End_Frame calls 9423 requested_bytes 4315027",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 4532800,
+        "high_water": 4532852,
+        "live_after_destroy": 1439672
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "panel",
+      "run": 3,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "true",
+      "init_ns": 107600,
+      "description_ns": 870500,
+      "end_frame_ns": 5566900,
+      "total_ns": 6437400,
+      "cpu_supported": "false",
+      "init_cpu_ns": 0,
+      "description_cpu_ns": 0,
+      "end_frame_cpu_ns": 0,
+      "total_cpu_ns": 0,
+      "destroy_cpu_ns": 0,
+      "destroy_ns": 525700,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1272,
+        "description": 768,
+        "node": 2048,
+        "trace_event": 104
+      },
+      "allocations": [
+        "allocations Init calls 11 requested_bytes 41372",
+        "allocations Description calls 32 requested_bytes 3130834",
+        "allocations End_Frame calls 6119 requested_bytes 4026955",
+        "allocations Destroy calls 1 requested_bytes 64"
+      ],
+      "cpu_phases": {},
+      "requested_memory": {
+        "live_after_end_frame": 4533984,
+        "high_water": 4534036,
+        "live_after_destroy": 1439672
+      }
+    }
+  ],
+  "summary": [
+    {
+      "label": "v020",
+      "workload": "containers",
+      "init_ns": {
+        "median": 97400,
+        "min": 92800,
+        "max": 170900
+      },
+      "description_ns": {
+        "median": 16416400,
+        "min": 15858400,
+        "max": 18276600
+      },
+      "end_frame_ns": {
+        "median": 78414400,
+        "min": 77206300,
+        "max": 79419900
+      },
+      "total_ns": {
+        "median": 95278300,
+        "min": 94830800,
+        "max": 95482900
+      },
+      "destroy_ns": {
+        "median": 7413800,
+        "min": 7348400,
+        "max": 7545100
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "containers",
+      "init_ns": {
+        "median": 99000,
+        "min": 78700,
+        "max": 138600
+      },
+      "description_ns": {
+        "median": 18713100,
+        "min": 15530000,
+        "max": 21602900
+      },
+      "end_frame_ns": {
+        "median": 58693600,
+        "min": 56589500,
+        "max": 59860200
+      },
+      "total_ns": {
+        "median": 77406700,
+        "min": 72119500,
+        "max": 81463100
+      },
+      "destroy_ns": {
+        "median": 7211000,
+        "min": 7111900,
+        "max": 7916400
+      }
+    },
+    {
+      "label": "v020",
+      "workload": "short",
+      "init_ns": {
+        "median": 98300,
+        "min": 88000,
+        "max": 103000
+      },
+      "description_ns": {
+        "median": 16096500,
+        "min": 15496000,
+        "max": 19060700
+      },
+      "end_frame_ns": {
+        "median": 99472100,
+        "min": 99309000,
+        "max": 103099200
+      },
+      "total_ns": {
+        "median": 118532800,
+        "min": 115405500,
+        "max": 118595200
+      },
+      "destroy_ns": {
+        "median": 11635800,
+        "min": 10339400,
+        "max": 12075900
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "short",
+      "init_ns": {
+        "median": 85200,
+        "min": 82800,
+        "max": 101600
+      },
+      "description_ns": {
+        "median": 16439300,
+        "min": 15528400,
+        "max": 16657500
+      },
+      "end_frame_ns": {
+        "median": 81233300,
+        "min": 76246100,
+        "max": 83488200
+      },
+      "total_ns": {
+        "median": 97672600,
+        "min": 91774500,
+        "max": 100145700
+      },
+      "destroy_ns": {
+        "median": 9887200,
+        "min": 9768800,
+        "max": 14837700
+      }
+    },
+    {
+      "label": "v020",
+      "workload": "wrapped",
+      "init_ns": {
+        "median": 97200,
+        "min": 93200,
+        "max": 98000
+      },
+      "description_ns": {
+        "median": 16570600,
+        "min": 15957800,
+        "max": 18477900
+      },
+      "end_frame_ns": {
+        "median": 103285600,
+        "min": 99941900,
+        "max": 114349300
+      },
+      "total_ns": {
+        "median": 119856200,
+        "min": 118419800,
+        "max": 130307100
+      },
+      "destroy_ns": {
+        "median": 10510600,
+        "min": 10362800,
+        "max": 14543500
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "wrapped",
+      "init_ns": {
+        "median": 89200,
+        "min": 76700,
+        "max": 103000
+      },
+      "description_ns": {
+        "median": 17110300,
+        "min": 16311200,
+        "max": 17909100
+      },
+      "end_frame_ns": {
+        "median": 81679500,
+        "min": 79669800,
+        "max": 85975200
+      },
+      "total_ns": {
+        "median": 97990700,
+        "min": 96780100,
+        "max": 103884300
+      },
+      "destroy_ns": {
+        "median": 10865700,
+        "min": 10610300,
+        "max": 10971400
+      }
+    },
+    {
+      "label": "v020",
+      "workload": "panel",
+      "init_ns": {
+        "median": 89300,
+        "min": 77600,
+        "max": 90400
+      },
+      "description_ns": {
+        "median": 896400,
+        "min": 702000,
+        "max": 923800
+      },
+      "end_frame_ns": {
+        "median": 7871900,
+        "min": 7209200,
+        "max": 8225400
+      },
+      "total_ns": {
+        "median": 8795700,
+        "min": 7911200,
+        "max": 9121800
+      },
+      "destroy_ns": {
+        "median": 488700,
+        "min": 384400,
+        "max": 525700
+      }
+    },
+    {
+      "label": "v021",
+      "workload": "panel",
+      "init_ns": {
+        "median": 103700,
+        "min": 85400,
+        "max": 107600
+      },
+      "description_ns": {
+        "median": 870500,
+        "min": 844800,
+        "max": 901000
+      },
+      "end_frame_ns": {
+        "median": 5483500,
+        "min": 5058700,
+        "max": 5566900
+      },
+      "total_ns": {
+        "median": 6384500,
+        "min": 5903500,
+        "max": 6437400
+      },
+      "destroy_ns": {
+        "median": 525700,
+        "min": 490200,
+        "max": 674000
+      }
+    }
+  ]
+}

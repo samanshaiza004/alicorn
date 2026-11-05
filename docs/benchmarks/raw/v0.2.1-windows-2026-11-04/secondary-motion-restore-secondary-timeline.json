@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "kind": "alicorn-flight-recorder",
+  "timestamp_clock": "monotonic",
+  "sample_order": "oldest_to_newest",
+  "sample_count": 0,
+    "samples": [
+  ],
+  "pointer_event_count": 0,
+  "pointer_events": [
+  ]
+}
