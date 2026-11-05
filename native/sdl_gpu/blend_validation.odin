@@ -2,7 +2,9 @@ package alicorn_sdl_gpu
 
 import "core:fmt"
 import "core:math"
+import "core:time"
 import alicorn "../../runtime"
+import paint_reference "../../tests/paint_reference"
 import runa "../../third_party/Runa"
 import "vendor:sdl3"
 
@@ -450,6 +452,180 @@ blend_validation_motion_clip_case :: proc(
 	return true
 }
 
+blend_validation_reference_scene_dump :: proc(seed: u64, commands: []alicorn.Paint_Command) {
+	fmt.println("cpu_reference_replay_seed", seed, "command_count", len(commands))
+	for command, index in commands {
+		surface := command.payload.(alicorn.Surface_Paint)
+		fmt.println("cpu_reference_command", "index", index, "owner", command.owner,
+			"bounds", command.bounds, "clip", command.clip,
+			"translation", command.translation, "opacity", command.opacity,
+			"fill", surface.fill)
+	}
+}
+
+Blend_Reference_Diff :: struct {
+	max_channel_error: int,
+	mismatched_pixels: int,
+	first_x, first_y, first_channel: int,
+	first_expected, first_actual: int,
+}
+
+blend_validation_reference_diff :: proc(expected, actual: []u8) -> Blend_Reference_Diff {
+	diff := Blend_Reference_Diff{first_x=-1, first_y=-1, first_channel=-1}
+	if len(expected) != len(actual) { diff.mismatched_pixels = -1; return diff }
+	for pixel in 0..<(BLEND_VALIDATION_SIZE*BLEND_VALIDATION_SIZE) {
+		pixel_mismatch := false
+		for channel in 0..<4 {
+			index := pixel*4+channel
+			difference := abs(int(expected[index])-int(actual[index]))
+			if difference > diff.max_channel_error { diff.max_channel_error = difference }
+			if difference > 2 {
+				pixel_mismatch = true
+				if diff.first_x < 0 {
+					diff.first_x, diff.first_y, diff.first_channel = pixel%BLEND_VALIDATION_SIZE, pixel/BLEND_VALIDATION_SIZE, channel
+					diff.first_expected, diff.first_actual = int(expected[index]), int(actual[index])
+				}
+			}
+		}
+		if pixel_mismatch { diff.mismatched_pixels += 1 }
+	}
+	return diff
+}
+
+blend_validation_reference_compare :: proc(seed: u64, expected, actual: []u8) -> bool {
+	diff := blend_validation_reference_diff(expected, actual)
+	if diff.mismatched_pixels != 0 {
+		fmt.println("cpu_gpu_reference_mismatch", "seed", seed, "mismatched_pixels", diff.mismatched_pixels,
+			"max_channel_error_bytes", diff.max_channel_error, "first_pixel", diff.first_x, diff.first_y,
+			"channel_rgba", diff.first_channel, "expected", diff.first_expected, "actual", diff.first_actual,
+			"per_channel_tolerance_bytes", 2)
+		return false
+	}
+	return true
+}
+
+blend_validation_reference_replay_differs :: proc(
+	commands: []alicorn.Paint_Command,
+	renderers: ^Blend_Validation_Renderers,
+	target: ^sdl3.GPUTexture,
+	download: ^sdl3.GPUTransferBuffer,
+	actual: []u8,
+) -> (differs, valid: bool) {
+	expected: [BLEND_VALIDATION_SIZE*BLEND_VALIDATION_SIZE*4]u8
+	if error := paint_reference.paint_reference_render(commands, BLEND_VALIDATION_SIZE, BLEND_VALIDATION_SIZE, {}, expected[:]); error.code != .None {
+		return false, false
+	}
+	if !blend_validation_readback(renderers, target, download, commands, 1, {}, actual) { return false, false }
+	return blend_validation_reference_diff(expected[:], actual).mismatched_pixels > 0, true
+}
+
+// Remove a command only when the same CPU/GPU mismatch still reproduces.
+blend_validation_reference_reduce_failure :: proc(
+	seed: u64,
+	commands: []alicorn.Paint_Command,
+	renderers: ^Blend_Validation_Renderers,
+	target: ^sdl3.GPUTexture,
+	download: ^sdl3.GPUTransferBuffer,
+	actual: []u8,
+) {
+	if len(commands) > paint_reference.PAINT_REFERENCE_SCENE_RECTANGLES { return }
+	current: [paint_reference.PAINT_REFERENCE_SCENE_RECTANGLES]alicorn.Paint_Command
+	trial: [paint_reference.PAINT_REFERENCE_SCENE_RECTANGLES]alicorn.Paint_Command
+	copy(current[:], commands)
+	count := len(commands)
+	changed := true
+	for changed {
+		changed = false
+		index := 0
+		for index < count {
+			candidate_count := count-1
+			copy(trial[:index], current[:index])
+			copy(trial[index:candidate_count], current[index+1:count])
+			differs, completed := blend_validation_reference_replay_differs(trial[:candidate_count], renderers, target, download, actual)
+			if !completed {
+				fmt.println("cpu_reference_reducer_aborted", "seed", seed, "candidate_count", candidate_count)
+				return
+			}
+			if differs {
+				copy(current[:candidate_count], trial[:candidate_count])
+				count = candidate_count
+				changed = true
+			} else {
+				index += 1
+			}
+		}
+	}
+	fmt.println("cpu_reference_replay_minimized", "seed", seed, "original_commands", len(commands), "reduced_commands", count)
+	blend_validation_reference_scene_dump(seed, current[:count])
+}
+
+blend_validation_reference_scenes :: proc(
+	renderers: ^Blend_Validation_Renderers,
+	target: ^sdl3.GPUTexture,
+	download: ^sdl3.GPUTransferBuffer,
+	actual: []u8,
+) -> bool {
+	commands: [paint_reference.PAINT_REFERENCE_SCENE_RECTANGLES]alicorn.Paint_Command
+	expected: [BLEND_VALIDATION_SIZE*BLEND_VALIDATION_SIZE*4]u8
+	cpu_render_ns: i64
+	gpu_readback_ns: i64
+	for seed in 1..=32 {
+		count := paint_reference.paint_reference_generate_scene(u64(seed), BLEND_VALIDATION_SIZE, BLEND_VALIDATION_SIZE, commands[:])
+		if count != paint_reference.PAINT_REFERENCE_SCENE_RECTANGLES {
+			fmt.println("cpu_reference_scene_generation_failed", "seed", seed)
+			return false
+		}
+		display := commands[:count]
+		started := time.now()
+		if error := paint_reference.paint_reference_render(display, BLEND_VALIDATION_SIZE, BLEND_VALIDATION_SIZE, {}, expected[:]); error.code != .None {
+			fmt.println("cpu_reference_rejected_generated_scene", "seed", seed, "command_index", error.command_index,
+				"owner", error.owner, "reason", error.code)
+			blend_validation_reference_scene_dump(u64(seed), display)
+			return false
+		}
+		cpu_render_ns += time.duration_nanoseconds(time.since(started))
+		started = time.now()
+		if !blend_validation_readback(renderers, target, download, display, 1, {}, actual) {
+			fmt.println("cpu_gpu_reference_readback_failed", "seed", seed)
+			blend_validation_reference_scene_dump(u64(seed), display)
+			return false
+		}
+		gpu_readback_ns += time.duration_nanoseconds(time.since(started))
+		if !blend_validation_reference_compare(u64(seed), expected[:], actual) {
+			blend_validation_reference_reduce_failure(u64(seed), display, renderers, target, download, actual)
+			return false
+		}
+	}
+
+	// Keep the reduced mutation failure as a fixed GPU regression, independent
+	// of seed generation. This protects the specific stationary-clip contract.
+	fixed_commands := [1]alicorn.Paint_Command{paint_reference.paint_reference_stationary_clip_regression()}
+	if error := paint_reference.paint_reference_render(fixed_commands[:], BLEND_VALIDATION_SIZE,
+		BLEND_VALIDATION_SIZE, {}, expected[:]); error.code != .None {
+		fmt.println("cpu_reference_rejected_fixed_regression", "command_index", error.command_index,
+			"owner", error.owner, "reason", error.code)
+		return false
+	}
+	if !blend_validation_readback(renderers, target, download, fixed_commands[:], 1, {}, actual) {
+		fmt.println("cpu_gpu_reference_fixed_regression_readback_failed", "stationary_clip_after_translation")
+		blend_validation_reference_scene_dump(0xC11F, fixed_commands[:])
+		return false
+	}
+	if !blend_validation_reference_compare(0xC11F, expected[:], actual) {
+		fmt.println("cpu_gpu_reference_fixed_regression_failed", "stationary_clip_after_translation")
+		blend_validation_reference_scene_dump(0xC11F, fixed_commands[:])
+		return false
+	}
+	fmt.println("cpu_gpu_reference_fixed_regression", "stationary_clip_after_translation", "PASS")
+	fmt.println("cpu_gpu_reference_scenes", "seeds", 32, "rectangles_per_scene",
+		paint_reference.PAINT_REFERENCE_SCENE_RECTANGLES, "target", "128x128", "scale", 1,
+		"target_format", "R8G8B8A8_UNORM", "rgba_tolerance_bytes", 2,
+		"cpu_total_ns", cpu_render_ns, "cpu_mean_ns", cpu_render_ns/32,
+		"gpu_readback_total_ns", gpu_readback_ns, "gpu_readback_mean_ns", gpu_readback_ns/32,
+		"cpu_reference_allocations_per_scene", 0)
+	return true
+}
+
 blend_validation_device :: proc() -> bool {
 	driver: cstring = nil
 	when ODIN_OS == .Darwin { driver = "metal" }
@@ -486,6 +662,7 @@ blend_validation_device :: proc() -> bool {
 	pixels := make([]u8, BLEND_VALIDATION_SIZE*BLEND_VALIDATION_SIZE*4)
 	defer delete(pixels)
 	if !blend_validation_cases(&renderers, &rt, target, download, pixels) { return false }
+	if !blend_validation_reference_scenes(&renderers, target, download, pixels) { return false }
 	return blend_validation_motion_clip_case(&renderers, &rt, target, download, pixels)
 }
 
