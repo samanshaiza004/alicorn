@@ -6,7 +6,7 @@ Date: 2026-11-04
 
 At the measured `736277f` candidate, synthetic construction time improved across all four workloads in both compiler profiles. Large-tree end-frame allocation traffic also fell after the Issue #157 trace change. The retained locality counters stayed stable, the 20,000-row text workload was slightly faster, and closed-inspector motion sampling remained allocation-free with a small steady-state timing delta.
 
-This is a positive performance result for the measured workloads, not complete v0.2.1 release signoff. The native runs below are lifecycle observations rather than a paired v0.2.0 comparison. A matched Windows Scratchpad workload, continuous resize/input responsiveness, DPI coverage, and native frame p99 are still outstanding.
+This is a positive performance result for the measured workloads, not complete v0.2.1 release signoff. A matched Windows Scratchpad A/B now complements the synthetic results: cumulative app-build callback time improved by a paired median 6.19%, while first application submission, process CPU, and peak working set were effectively flat. Continuous resize/input responsiveness, active native frame p99, DPI coverage, and cross-platform confirmation remain outstanding.
 
 ## Compared revisions and environment
 
@@ -101,7 +101,20 @@ The Windows dual-window titlebar-drag behavior was physically observed after the
 
 ## Real Scratchpad workload
 
-The existing [Issue #157 macOS A/B report](issue-157-construction-cpu-macos-2026-11-04.md) provides the real-application complement: opening and closing a 5,002-line document reduced cumulative application-build callback time by a paired median 8%, while total process CPU and peak RSS stayed flat. It is an Apple M1 comparison of the structured-trace change, not a matched Windows v0.2.0-versus-`736277f` comparison. No Windows Scratchpad A/B is claimed in this scorecard.
+The [matched Windows Scratchpad A/B](scratchpad-ab-windows-2026-11-04.md) ran the same compatible Scratchpad revision against v0.2.0 and candidate `736277f` on this host. Cumulative app-build callback time fell 6.19% by paired median; first application submission was effectively flat (+1.82%, about 0.18 ms), with process CPU and peak working set also effectively flat. This is an automated nine-action command-path workload, not physical input or current Scratchpad `main`.
+
+The [Issue #157 macOS A/B report](issue-157-construction-cpu-macos-2026-11-04.md) remains a separate Apple M1 comparison of the structured-trace change. It reduced cumulative application-build callback time by a paired median 8%, while total process CPU and peak RSS stayed flat. Do not combine its values with this Windows comparison as if they were one cross-platform run.
+
+## Performance acceptance criteria
+
+| Criterion | Status | Evidence |
+| --- | --- | --- |
+| No retained-locality counter regression | **Pass for measured probes** | Unchanged-root and isolated-subtree counters match the release baseline. |
+| No persistent blank regions during continuous resize | **Not measured** | Requires horizontal, vertical, and diagonal native resize capture. |
+| No stale-size frame after resize settles | **Not measured** | The current fixtures do not capture submitted frame dimensions against the final window size. |
+| No unexplained major increase in active-frame p99 | **Not measured** | The Scratchpad run is event-driven, not a sustained active-presentation comparison. |
+| No motion-driven GPU submissions after settlement | **Pass in candidate Windows lifecycle captures** | Per-window idle submission totals remained unchanged through the five-second quiet interval. See the [restore capture](raw/v0.2.1-windows-2026-11-04/secondary-motion-restore.json) and [close capture](raw/v0.2.1-windows-2026-11-04/secondary-motion-close.json); this is not an OS-wide wake measurement or an A/B distribution. |
+| Input-to-submit and input-to-display responsiveness | **Not measured** | The Scratchpad command-path hook does not synthesize input; startup-to-first-submit is reported separately. |
 
 ## Scorecard and remaining release evidence
 
@@ -109,9 +122,9 @@ The existing [Issue #157 macOS A/B report](issue-157-construction-cpu-macos-2026
 | --- | --- |
 | Established performance invariants regressed? | No measured regression in unchanged-root locality or visible-row work counts. Construction, end-frame allocation traffic, and synthetic working set improved. The small sibling-reuse timing increase remains monitored. |
 | New capabilities add measurable cost? | The motion sampler's closed-inspector steady-state delta was small in this run and remained allocation-free. Diagnostic owner setup adds 59–321 KiB across tested owner counts. |
-| What changed for application users? | The retained trace fix lowered construction time and allocator traffic in these probes. The Mac Scratchpad A/B shows an 8% callback-time improvement on a large-document interaction; a Windows app-level comparison is still needed. |
+| What changed for application users? | The retained trace fix lowered construction time and allocator traffic in these probes. The Windows Scratchpad A/B shows a 6.19% cumulative callback-time reduction on the tested nine-action workflow; first submission, CPU, and working set remained effectively flat. |
 
-Still outstanding for a full release-level comparison: a matched Windows Scratchpad workload; repeated native runs with per-frame p50/p95/p99; continuous resize and input responsiveness; DPI/refresh transitions; and a comparable native run on another supported OS/GPU backend. Preserve the October Windows benchmark reports as historical baselines; their compiler and workloads differ and they are not regression thresholds for this November-toolchain comparison.
+Still outstanding for a full release-level comparison: repeated active native runs with per-frame p50/p95/p99; continuous resize and input responsiveness; DPI/refresh transitions; and a comparable native run on another supported OS/GPU backend. The [resize and frame-pacing acceptance table](scratchpad-ab-windows-2026-11-04.md#performance-acceptance-status) records the current evidence boundary. Preserve the October Windows benchmark reports as historical baselines; their compiler and workloads differ and they are not regression thresholds for this November-toolchain comparison.
 
 ## Raw captures and reproduction
 

@@ -1,0 +1,169 @@
+diff --git a/cmd/alicorn-dev/main.go b/cmd/alicorn-dev/main.go
+index 1006a38..5756543 100644
+--- a/cmd/alicorn-dev/main.go
++++ b/cmd/alicorn-dev/main.go
+@@ -200,8 +200,16 @@ func run(args []string) error {
+ 		if err != nil {
+ 			return err
+ 		}
++		// Benchmark-only compatibility: Alicorn 736277f moved the AccessKit
++		// Odin binding into a standalone collection, while this historical
++		// Scratchpad build driver predates that collection wiring.
++		compilerArgs := appMutationDiagnosticCompilerArgs(*mutationDiagnostics)
++		compilerArgs = append(compilerArgs,
++			"-collection:accesskit="+filepath.Join(alicornRoot, ".deps", "odin-accesskit"),
++			"-collection:accesskit_c="+filepath.Join(alicornRoot, ".deps", "accesskit", "accesskit-c-0.23.1", "lib", "windows", "x86_64", "msvc", "static"),
++		)
+ 		exe, err := buildFrontendWithOptions(root, out, odinExe, collectionArg, accessKitFlags,
+-			appMutationDiagnosticCompilerArgs(*mutationDiagnostics), true, *release, false, frontendEnv)
++			compilerArgs, true, *release, false, frontendEnv)
+ 		if err != nil {
+ 			return err
+ 		}
+diff --git a/frontends/alicorn/main.odin b/frontends/alicorn/main.odin
+index 17c9af0..dc9934f 100644
+--- a/frontends/alicorn/main.odin
++++ b/frontends/alicorn/main.odin
+@@ -314,6 +314,10 @@ App :: struct {
+ 	smoke_rendered:         bool,
+ 	smoke_wake_observed:    bool,
+ 	smoke_shutdown:         bool,
++	performance_sequence_enabled: bool,
++	performance_sequence_steps: int,
++	performance_sequence_complete: bool,
++	performance_sequence_failed: bool,
+ }
+ 
+ editor_window_request_is_rejected :: proc(app: ^App, request: bridge.Visible_Window_Request) -> bool {
+@@ -467,6 +471,7 @@ application_start :: proc(state: rawptr, waker: host.Application_Waker) {
+ 	app := cast(^App)state
+ 	app.waker = waker
+ 	start_backend(app)
++	if app.performance_sequence_enabled { scratchpad_performance_sequence_schedule(app) }
+ 	if app.appearance_fixture_workbench {
+ 		// One fixture-only deadline lets document loading settle before the host
+ 		// captures at one second. It adds no periodic wake to ordinary operation.
+@@ -794,6 +799,10 @@ application_scheduled_wake :: proc(state: rawptr, rt: ^alicorn.Runtime, class: h
+ 	if class != .Frequent { return }
+ 	app := cast(^App)state
+ 	if app == nil || !app.backend.started { return }
++	if app.performance_sequence_enabled && !app.performance_sequence_complete && !app.performance_sequence_failed {
++		scratchpad_performance_sequence_step(app, rt)
++		return
++	}
+ 	if document, found := find_document(&app.backend.state, app.backend.state.active); found {
+ 		if view_index := editor_view_find(app.editor_views[:], document.id); view_index >= 0 {
+ 			view := &app.editor_views[view_index]
+@@ -806,6 +815,92 @@ application_scheduled_wake :: proc(state: rawptr, rt: ^alicorn.Runtime, class: h
+ 	editor_schedule_selection_autoscroll(app, false)
+ }
+ 
++scratchpad_performance_sequence_schedule :: proc(app: ^App) {
++	if app == nil || !app.performance_sequence_enabled || app.performance_sequence_complete || app.performance_sequence_failed { return }
++	_ = host.application_schedule_after(app.services.scheduler, .Frequent, 150_000_000)
++}
++
++scratchpad_performance_sequence_fail :: proc(app: ^App, message: string) {
++	if app == nil { return }
++	app.performance_sequence_failed = true
++	fmt.eprintln("alicorn-performance-sequence failed", "step", app.performance_sequence_steps, message)
++}
++
++scratchpad_performance_sequence_open :: proc(app: ^App, rt: ^alicorn.Runtime, relative_path: string) -> bool {
++	if app == nil || rt == nil || !app.backend.state.has_workspace { return false }
++	path := fmt.tprintf("%s/%s", app.backend.state.workspace_root, relative_path)
++	response := bridge.backend_command(&app.backend, "open_path", path=path)
++	opened := response.ok
++	if opened {
++		handle_command_result(app, rt, &response)
++	} else {
++		fmt.eprintln("alicorn-performance-sequence open failed", relative_path, response.code, response.message)
++	}
++	bridge.backend_command_result_destroy(&response, context.allocator)
++	return opened
++}
++
++scratchpad_performance_sequence_step :: proc(app: ^App, rt: ^alicorn.Runtime) {
++	if app == nil || rt == nil || app.performance_sequence_complete || app.performance_sequence_failed { return }
++	if !app.smoke_rendered || !app.backend.state.has_workspace {
++		if !app.backend.state.has_workspace {
++			fmt.eprintln("alicorn-performance-sequence workspace state", "requested", app.workspace_path, "available", app.backend.state.has_workspace)
++		}
++		scratchpad_performance_sequence_schedule(app)
++		return
++	}
++	advanced := false
++	switch app.performance_sequence_steps {
++	case 0:
++		if scratchpad_performance_sequence_open(app, rt, "README.md") { advanced = true }
++	case 1:
++		if scratchpad_performance_sequence_open(app, rt, "application/sample_00.go") { advanced = true }
++	case 2:
++		for document in app.backend.state.documents {
++			if strings.has_suffix(document.path, "README.md") {
++				select_document(app, rt, document.id)
++				active, found := find_document(&app.backend.state, app.backend.state.active)
++				advanced = found && strings.has_suffix(active.path, "README.md")
++				break
++			}
++		}
++	case 3:
++		quick_open_open_surface(app, rt)
++		advanced = app.quick_open_open
++	case 4:
++		if app.quick_open_open && !app.quick_open_ready {
++			scratchpad_performance_sequence_schedule(app)
++			return
++		}
++		if app.quick_open_open { quick_open_close_surface(app, rt, true) }
++		advanced = !app.quick_open_open
++	case 5:
++		dispatch_action(app, rt, ACTION_WORKSPACE_SETTINGS)
++		advanced = app.settings_surface_open
++	case 6:
++		settings_surface_close(app, rt)
++		advanced = !app.settings_surface_open
++	case 7, 8:
++		if len(app.backend.state.documents) == 0 {
++			scratchpad_performance_sequence_fail(app, "expected both fixture documents to remain open")
++			return
++		}
++		expected_document_count := 1 if app.performance_sequence_steps == 8 else 2
++		dispatch_action(app, rt, ACTION_DOCUMENT_CLOSE)
++		advanced = len(app.backend.state.documents) < expected_document_count
++	case:
++		app.performance_sequence_complete = app.performance_sequence_steps == 9
++		return
++	}
++	if !advanced {
++		scratchpad_performance_sequence_fail(app, "action did not reach its expected state")
++		return
++	}
++	app.performance_sequence_steps += 1
++	app.performance_sequence_complete = app.performance_sequence_steps == 9
++	if !app.performance_sequence_complete { scratchpad_performance_sequence_schedule(app) }
++}
++
+ go_to_line_open_surface :: proc(app: ^App, rt: ^alicorn.Runtime) {
+ 	if app == nil || rt == nil || !app.backend.started { return }
+ 	if _, found := find_document(&app.backend.state, app.backend.state.active); !found { return }
+@@ -3151,6 +3246,7 @@ main :: proc() {
+ 	if library, found := os.lookup_env("SCRATCHPAD_BACKEND_LIBRARY", context.allocator); found { app.backend_library = library }
+ 	if workspace, found := os.lookup_env("SCRATCHPAD_ALICORN_WORKSPACE", context.allocator); found { app.workspace_path = workspace }
+ 	if smoke, found := os.lookup_env("SCRATCHPAD_ALICORN_SMOKE", context.allocator); found { app.smoke = smoke == "1" || smoke == "true" }
++	if sequence, found := os.lookup_env("SCRATCHPAD_ALICORN_PERF_SEQUENCE", context.allocator); found { app.performance_sequence_enabled = sequence == "1" || sequence == "true" }
+ 	// Reproducible appearance capture: select an in-memory theme and open the
+ 	// real Settings scene without writing a user preference.
+ 	if fixture, found := os.lookup_env("SCRATCHPAD_APPEARANCE_FIXTURE", context.allocator); found {
+@@ -3227,6 +3323,11 @@ main :: proc() {
+ 	if app.smoke {
+ 		passed := app.smoke_rendered && app.smoke_wake_observed && app.smoke_shutdown
+ 		fmt.println("alicorn-smoke", "publication_rendered", app.smoke_rendered, "wake_observed", app.smoke_wake_observed, "ordered_shutdown", app.smoke_shutdown)
++		if app.performance_sequence_enabled {
++			sequence_passed := app.performance_sequence_complete && !app.performance_sequence_failed && app.performance_sequence_steps == 9
++			fmt.println("alicorn-performance-sequence", "steps", app.performance_sequence_steps, "complete", app.performance_sequence_complete, "passed", sequence_passed)
++			passed = passed && sequence_passed
++		}
+ 		if !passed { os.exit(1) }
+ 	}
+ }
