@@ -95,6 +95,26 @@ test_cpu_paint_reference :: proc(state: ^Test_State) {
 		}
 	}
 
+	// Permanent one-command reduction of the GPU clip/translation mutation.
+	// Bounds translate but the already-resolved clip remains stationary, so
+	// this scene must cover exactly one column by nine rows at x=114.
+	stationary_clip_regression := [1]alicorn.Paint_Command{
+		paint_reference.paint_reference_stationary_clip_regression(),
+	}
+	stationary_clip_pixels: [128*128*4]u8
+	error = paint_reference.paint_reference_render(stationary_clip_regression[:], 128, 128, {}, stationary_clip_pixels[:])
+	expect(state, error.code == .None, "minimized stationary-clip regression scene must render")
+	stationary_clip_coverage_matches := true
+	for y in 0..<128 {
+		for x in 0..<128 {
+			alpha := stationary_clip_pixels[(y*128+x)*4+3]
+			inside := x == 114 && y >= 101 && y < 110
+			if (alpha != 0) != inside { stationary_clip_coverage_matches = false }
+		}
+	}
+	expect(state, stationary_clip_coverage_matches,
+		"minimized clip/translation regression must preserve its exact one-by-nine stationary-clip coverage")
+
 	base_commands := [2]alicorn.Paint_Command{
 		alicorn.paint_surface_command(1, {4, 4, 12, 8}, {0, 0, 32, 32}, {0.8, 0.2, 0.1, 0.75}),
 		alicorn.paint_surface_command(2, {10, 6, 8, 12}, {8, 4, 20, 20}, {0.1, 0.7, 0.3, 0.6}, opacity=0.5),

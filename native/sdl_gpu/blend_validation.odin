@@ -596,6 +596,27 @@ blend_validation_reference_scenes :: proc(
 			return false
 		}
 	}
+
+	// Keep the reduced mutation failure as a fixed GPU regression, independent
+	// of seed generation. This protects the specific stationary-clip contract.
+	fixed_commands := [1]alicorn.Paint_Command{paint_reference.paint_reference_stationary_clip_regression()}
+	if error := paint_reference.paint_reference_render(fixed_commands[:], BLEND_VALIDATION_SIZE,
+		BLEND_VALIDATION_SIZE, {}, expected[:]); error.code != .None {
+		fmt.println("cpu_reference_rejected_fixed_regression", "command_index", error.command_index,
+			"owner", error.owner, "reason", error.code)
+		return false
+	}
+	if !blend_validation_readback(renderers, target, download, fixed_commands[:], 1, {}, actual) {
+		fmt.println("cpu_gpu_reference_fixed_regression_readback_failed", "stationary_clip_after_translation")
+		blend_validation_reference_scene_dump(0xC11F, fixed_commands[:])
+		return false
+	}
+	if !blend_validation_reference_compare(0xC11F, expected[:], actual) {
+		fmt.println("cpu_gpu_reference_fixed_regression_failed", "stationary_clip_after_translation")
+		blend_validation_reference_scene_dump(0xC11F, fixed_commands[:])
+		return false
+	}
+	fmt.println("cpu_gpu_reference_fixed_regression", "stationary_clip_after_translation", "PASS")
 	fmt.println("cpu_gpu_reference_scenes", "seeds", 32, "rectangles_per_scene",
 		paint_reference.PAINT_REFERENCE_SCENE_RECTANGLES, "target", "128x128", "scale", 1,
 		"target_format", "R8G8B8A8_UNORM", "rgba_tolerance_bytes", 2,

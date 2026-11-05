@@ -38,8 +38,9 @@ surface insertion, scene-plus-clip translation, transactional rejection,
 fractional-edge rejection, and deterministic seeded replay.
 
 The GPU fixture renders 32 deterministic scenes of eight rectangles each at
-128×128, then compares every channel of every pixel. The per-channel tolerance
-remains 2/255. On this Windows D3D12 run:
+128×128, plus a fixed one-command regression reduced from the mutation failure.
+It compares every channel of every pixel. The per-channel tolerance remains
+2/255. On the original Windows D3D12 run (before adding the fixed fixture):
 
 | Check | Result |
 | --- | ---: |
@@ -73,14 +74,18 @@ fill=(0.85882354,0.92941177,0.49019608,0.5019608)
 
 The mutation was reverted. This demonstrates a clip/translation fault class
 that the existing point probes did not detect, so the prototype has shown
-additional detection value on D3D12.
+additional detection value on D3D12. The reduced command is now a named,
+permanent CPU assertion and is rendered through the production GPU readback
+path independently of the seeded corpus. It expects coverage in exactly one
+pixel column by nine rows at `(114, 101)` through `(114, 109)`, so changes to
+the random generator cannot erase this fault-class regression.
 
 ## Current decision and remaining validation
 
 **GO for retaining this narrow test-only reference.** Keep the generated corpus
 bounded and extend supported paint operations only when a real test need
-justifies it. The mismatch seed and reduced command are replayable from this
-report and the fixed generator.
+justifies it. The random seed remains useful for replaying the discovery; the
+fixed regression now provides stable independent coverage.
 
 Metal validation and hosted CI cost remain open. Run the existing
 `tools/validate_blending.sh` workflow on macOS and record its result and elapsed

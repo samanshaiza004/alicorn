@@ -6,6 +6,20 @@ import alicorn "../../runtime"
 PAINT_REFERENCE_MAX_DIMENSION :: 128
 PAINT_REFERENCE_SCENE_RECTANGLES :: 8
 
+// This one-command scene was minimized from the clip/translation GPU failure
+// found by seed 2. Keep it independent of the generated corpus so generator
+// changes cannot remove this regression coverage.
+paint_reference_stationary_clip_regression :: proc() -> alicorn.Paint_Command {
+	return alicorn.paint_surface_command(
+		alicorn.Node_ID(7),
+		{112, 76, 36, 42},
+		{113, 101, 2, 9},
+		{0.85882354, 0.92941177, 0.49019608, 0.5019608},
+		opacity=0.2509804,
+		translation={2, -3},
+	)
+}
+
 Paint_Reference_Error_Code :: enum {
 	None,
 	Invalid_Target,
