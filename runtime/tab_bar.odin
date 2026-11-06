@@ -4,6 +4,9 @@ import "core:fmt"
 
 TAB_CLOSE_SLOT_WIDTH :: f32(28)
 TAB_CLOSE_CONTROL_SIZE :: f32(24)
+TAB_CLOSE_HIGHLIGHT_SIZE :: f32(18)
+TAB_CLOSE_ICON_SIZE :: f32(14)
+TAB_CLOSE_CONTOUR_CLEARANCE :: f32(1)
 TAB_AUTO_CLOSE_ALWAYS_WIDTH :: f32(156)
 TAB_BAR_SCROLL_CONTROL_WIDTH :: f32(22)
 
@@ -74,6 +77,11 @@ DEFAULT_TAB_BAR_STYLE :: Layout_Style{
 // and visual depth without changing their retained bounds or hit targets.
 CONNECTED_TAB_INACTIVE_DROP :: f32(3)
 
+// Keep the close affordance inside the same shoulders and crown the renderer uses.
+connected_tab_contour_insets :: proc(width, height: f32, scale: f32 = 1) -> (shoulder, crown: f32) {
+	return minf(width*0.22, 28*scale), minf(height*0.12, 4*scale)
+}
+
 connected_tab_visual_bounds :: proc(bounds: Rect, selected: bool) -> Rect {
 	if selected { return bounds }
 	drop := minf(CONNECTED_TAB_INACTIVE_DROP, maxf(bounds.h, 0))
@@ -116,6 +124,54 @@ connected_tab_visual_colors :: proc(
 		text = style_contrast_fallback(text, fill, 4.5)
 	}
 	return
+}
+
+tab_close_owner :: proc(rt: ^Runtime, close: ^Node) -> (tab: ^Node, show_dirty_marker: bool) {
+	if close.icon_id != .Close { return }
+	part, found := rt.visual_parts[close.id]
+	if !found || !part.defined || part.identity != visual_part_core(.Overlay) { return }
+	owner, exists := rt.nodes[part.owner]
+	if exists && owner.active && owner.kind == .Button && owner.button_variant == .Tab {
+		return owner, part.reveal_on_direct_hover
+	}
+	return
+}
+
+tab_close_centered_square :: proc(center: [2]f32, size: f32) -> Rect {
+	return Rect{center.x-size*0.5, center.y-size*0.5, size, size}
+}
+
+tab_close_append_paint :: proc(rt: ^Runtime, close, tab: ^Node, show_dirty_marker: bool) {
+	center := [2]f32{close.bounds.x+close.bounds.w*0.5, close.bounds.y+close.bounds.h*0.5}
+	size := minf(TAB_CLOSE_HIGHLIGHT_SIZE, minf(close.bounds.w, close.bounds.h))
+	if surface, connected := rt.semantic_surfaces[tab.id]; connected && surface.shape.kind == .Connected_Tab {
+		tab_bounds := connected_tab_visual_bounds(tab.bounds, tab.selected)
+		_, crown := connected_tab_contour_insets(tab_bounds.w, tab_bounds.h)
+		// Short inactive tabs sit lower. Trim the decoration symmetrically
+		// around the target's center to keep it below the crown.
+		size = minf(size, 2*(center.y-tab_bounds.y-crown-TAB_CLOSE_CONTOUR_CLEARANCE))
+	}
+	if size <= 0 { return }
+
+	hot := visual_part_self_hovered(rt, close.id)
+	if show_dirty_marker && !hot {
+		dot := tab_close_centered_square(center, minf(5, size))
+		accent := style_environment_color(rt, close.style_environment, .Accent)
+		append(&close.paint, paint_surface_command(close.id, dot, close.clip, accent,
+			shape=Surface_Shape{kind=.Rounded_Rectangle, corner_radius=dot.w*0.5}))
+		return
+	}
+	if hot {
+		// Tint the tab beneath the icon with its own ink. This follows both
+		// paper and workbench surfaces without borrowing a button's relief.
+		tint := close.color
+		tint.a *= 0.22 if close.pressed else 0.12
+		highlight := tab_close_centered_square(center, size)
+		append(&close.paint, paint_surface_command(close.id, highlight, close.clip, tint,
+			shape=Surface_Shape{kind=.Rounded_Rectangle, corner_radius=4}))
+	}
+	icon_bounds := tab_close_centered_square(center, minf(TAB_CLOSE_ICON_SIZE, size))
+	append(&close.paint, paint_icon_command(close.id, icon_bounds, close.clip, .Close, close.color))
 }
 
 Tab_Bar_Action :: enum { None, Select, Close }
@@ -323,6 +379,11 @@ tab_bar :: proc(
 	offset_x = clampf(offset_x, 0, maxf(content_width-viewport_width, 0))
 	tab_bar_pending_scroll_set(rt, scroll.id, offset_x, content_width)
 
+	content_inset := f32(8)
+	if compact && connected_appearance {
+		content_inset = clampf((tab_width-TAB_CLOSE_SLOT_WIDTH)*0.5, 0, 20)
+	}
+	shoulder, _ := connected_tab_contour_insets(tab_width, opts.height)
 	row_style := layout_style(.Row, width=content_width, height=scroll.viewport_height, gap=opts.gap, clip=true)
 	container_begin_simple(
 		ui,
@@ -363,7 +424,7 @@ tab_bar :: proc(
 		if item.dirty { pending.paint_value |= 1 << 4 }
 		connected_shape := connected_appearance
 		selected_connected := connected_shape && item.selected
-		connected_ink := style_color(ui, .Muted_Text)
+		close_ink := style_color(ui, .Text if item.selected else .Muted_Text)
 		if connected_shape {
 			fill := style_color(ui, .Surface)
 			ink := style_color(ui, .Text)
@@ -381,7 +442,7 @@ tab_bar :: proc(
 				if !fill_override_set { fill, ink = style_color(ui, .Surface), style_color(ui, .Text) }
 				if rt.style_environment.accessibility.increased_contrast { ink = style_contrast_fallback(ink, fill, 4.5) }
 				pending.color = ink
-				connected_ink = ink
+				close_ink = style_contrast_fallback(ink, fill, 3)
 			}
 		}
 		item_semantic_id := item.semantic_id
@@ -432,8 +493,8 @@ tab_bar :: proc(
 			.Container,
 			label="tab-content",
 			key=key_u64(1),
-			style=layout_style(.Row, width=maxf(tab_width-(40 if connected_appearance else 16), 0) if compact else tab_width,
-				height=content_height, gap=0, align=.Center, clip=true, padding=0 if compact else 8),
+			style=layout_style(.Row, width=maxf(tab_width-2*content_inset, 0) if compact else tab_width,
+				height=content_height, gap=0, align=.Center, clip=true, padding=0 if compact else content_inset),
 		)
 		_ = visual_part_attach(ui, content_id, tab_id, visual_part_core(.Content))
 		label_style := DEFAULT_BUTTON_TEXT_STYLE
@@ -470,6 +531,12 @@ tab_bar :: proc(
 		if item.closable {
 			if dirty_close_reveal { close_width = TAB_CLOSE_SLOT_WIDTH }
 			trailing_width = close_width
+			if connected_shape {
+				// Leave a gutter beyond the hit target where necessary, so the
+				// entire hover highlight fits even at the widest shoulder.
+				highlight_inset := (close_width-TAB_CLOSE_HIGHLIGHT_SIZE)*0.5
+				trailing_width += maxf(shoulder+TAB_CLOSE_CONTOUR_CLEARANCE-content_inset-highlight_inset, 0)
+			}
 		}
 		else if item.dirty { trailing_width = 16 }
 		if trailing_width > 0 {
@@ -505,7 +572,7 @@ tab_bar :: proc(
 				}
 				close_id, close_activated := button_begin(
 					ui,
-					"×" if !dirty_close_reveal && !connected_shape else "",
+					"",
 					key=key_u64(5),
 					style=layout_style(.Row, width=close_width, height=TAB_CLOSE_CONTROL_SIZE, align=.Center),
 					text_style=DEFAULT_BUTTON_TEXT_STYLE,
@@ -514,44 +581,15 @@ tab_bar :: proc(
 					focusable=false,
 				)
 				if close_id != 0 {
+					close := &rt.pending[len(rt.pending)-1].description
+					close.icon_id = .Close
+					close.color = close_ink
 					_ = semantic_description(ui, .Button, fmt.tprintf("Close %s", item.label),
 						actions=semantic_actions_add({}, .Press))
 				}
 				_ = visual_part_attach(ui, close_id, tab_id, visual_part_core(.Overlay), close_visibility,
 					reveal_on_direct_hover=dirty_close_reveal)
 				if close_activated && result.action == .None { result.action, result.item_index = .Close, index }
-				if connected_shape && !dirty_close_reveal {
-					glyph := text(ui, "×", key=key_u64(1), style=layout_style(.Row, width=close_width, height=TAB_CLOSE_CONTROL_SIZE, align=.Center), text_style=DEFAULT_BUTTON_TEXT_STYLE)
-					_ = visual_part_attach(ui, glyph, tab_id, visual_part_core(.Label))
-				}
-				if dirty_close_reveal {
-					close_content := container_begin_simple(
-						ui,
-						.Container,
-						label="tab-close-content",
-						key=key_u64(1),
-						style=layout_style(.Row, width=close_width, height=TAB_CLOSE_CONTROL_SIZE, gap=0, align=.Center),
-					)
-					_ = visual_part_attach(ui, close_content, close_id, visual_part_core(.Content))
-					marker_id := surface_begin(
-						ui,
-						surface_core_color_role(.Accent),
-						key=key_u64(2),
-						style=layout_style(.Row, width=4, height=4),
-						label="tab-dirty-indicator",
-					)
-					_ = visual_part_attach(ui, marker_id, close_id, visual_part_core(.Indicator), .Owner_Not_Hovered)
-					surface_end(ui)
-					glyph_id := text(ui, "×", key=key_u64(3),
-						style=layout_style(.Row, width=TAB_CLOSE_CONTROL_SIZE, height=TAB_CLOSE_CONTROL_SIZE, align=.Center),
-						text_style=DEFAULT_BUTTON_TEXT_STYLE)
-					_ = visual_part_attach(ui, glyph_id, close_id, visual_part_core(.Label), .Owner_Hovered)
-					if selected_connected {
-						span := [1]Text_Paint_Span{{start=0,end=2,color=connected_ink,color_set=true}}
-						_ = text_paint_spans(ui,glyph_id,span[:])
-					}
-					container_end(ui)
-				}
 				button_end(ui)
 			}
 			container_end(ui)

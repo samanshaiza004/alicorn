@@ -299,6 +299,14 @@ tab_bar_test_display_has_text :: proc(rt: ^Runtime, owner: Node_ID) -> bool {
 	return false
 }
 
+tab_bar_test_display_has_close_icon :: proc(rt: ^Runtime, owner: Node_ID) -> bool {
+	for command in rt.display {
+		if command.owner != owner { continue }
+		if icon, ok := command.payload.(Icon_Paint); ok && icon.id == .Close { return true }
+	}
+	return false
+}
+
 tab_bar_test_display_has_surface :: proc(rt: ^Runtime, owner: Node_ID) -> bool {
 	if rt == nil { return false }
 	for command in rt.display {
@@ -416,8 +424,8 @@ test_tab_bar_compact_close_hover_preserves_layout_and_text_run :: proc(t: ^testi
 		testing.expect(t, selected_count == 1 && selected_close_count == 1 && tab_count == 1 && close_count == 1 && label_count == 1,
 			"the compact hover fixture should retain selected and idle tabs with their controls")
 		if selected_count != 1 || selected_close_count != 1 || tab_count != 1 || close_count != 1 || label_count != 1 { continue }
-		testing.expect(t, visual_part_is_visible(&rt, selected_close) && tab_bar_test_display_has_text(&rt, selected_close) &&
-			!visual_part_is_visible(&rt, close_id) && !tab_bar_test_display_has_text(&rt, close_id),
+		testing.expect(t, visual_part_is_visible(&rt, selected_close) && tab_bar_test_display_has_close_icon(&rt, selected_close) &&
+			!visual_part_is_visible(&rt, close_id) && !tab_bar_test_display_has_close_icon(&rt, close_id),
 			"Selected_Or_Hover should show the selected close control and reserve the idle close slot")
 		bounds := make(map[Node_ID]Rect)
 		defer delete(bounds)
@@ -441,7 +449,7 @@ test_tab_bar_compact_close_hover_preserves_layout_and_text_run :: proc(t: ^testi
 			testing.expect(t, ready, "compact hover changes should request retained presentation work")
 			if ready { end_presentation_frame(&ui) }
 			testing.expect(t, visual_part_is_visible(&rt, close_id) == (index < 2) &&
-				tab_bar_test_display_has_text(&rt, close_id) == (index < 2) && visual_part_is_visible(&rt, selected_close),
+				tab_bar_test_display_has_close_icon(&rt, close_id) == (index < 2) && visual_part_is_visible(&rt, selected_close),
 				"compact close visibility should follow owner hover while the selected close remains visible")
 			for id, saved in bounds {
 				testing.expect(t, rt.nodes[id].bounds == saved,
@@ -558,16 +566,9 @@ test_tab_bar_builds_retained_scroll_list_tab_and_close_hierarchy :: proc(t: ^tes
 			testing.expect(t, part.owner == tab_id && part.identity == visual_part_core(.Overlay),
 				"the close action should be a typed visual part owned by its tab Button")
 			close := rt.nodes[close_id]
-			testing.expect(t, close.button_variant == .Quiet && close.button_content_style.padding_x == 0 && close.button_content_style.padding_y == 0,
-				"the close action should use a quiet resting treatment without squeezing its × glyph into padded overflow")
-			muted_text := style_environment_color(&rt, DEFAULT_STYLE_ENVIRONMENT, .Muted_Text)
-			regular_text := style_environment_color(&rt, DEFAULT_STYLE_ENVIRONMENT, .Text)
-			close_idle := style_button_resolve(&rt, DEFAULT_STYLE_ENVIRONMENT, .Quiet, Button_Visual_State{})
-			close_hovered := style_button_resolve(&rt, DEFAULT_STYLE_ENVIRONMENT, .Quiet, Button_Visual_State{hovered=true})
-			testing.expect(t, close_idle.text == muted_text &&
-				close_hovered.text == style_color_mix(muted_text, regular_text, 0.45) &&
-				close_hovered.text != close_idle.text,
-				"the tab close glyph should brighten from muted text on hover without using danger red at rest")
+			expected_ink := style_environment_color(&rt, DEFAULT_STYLE_ENVIRONMENT, .Text if item.selected else .Muted_Text)
+			testing.expect(t, close.label == "" && close.icon_id == .Close && close.color == expected_ink,
+				"the close action should carry a font-independent icon in the tab's ink")
 			if content_count == 1 {
 				testing.expect(t, abs(close.bounds.y+close.bounds.h*0.5-(tab.bounds.y+tab.bounds.h*0.5)) < 0.01,
 					"the 24-unit close target should share the tab and label vertical center")
@@ -966,10 +967,9 @@ test_tab_bar_close_policy_keeps_dirty_marker_and_reveals_on_hover :: proc(t: ^te
 
 	testing.expect(t, !visual_part_is_visible(&rt, selected_close),
 		"Auto should hide the close part on a compact selected tab until it is hovered")
-	dirty_marker, dirty_marker_count := tab_bar_test_visual_part(&rt, dirty_close, .Indicator)
-	testing.expect(t, dirty_marker_count == 1 && tab_bar_test_display_has_surface(&rt, dirty_marker),
+	testing.expect(t, tab_bar_test_display_has_surface(&rt, dirty_close) && !tab_bar_test_display_has_close_icon(&rt, dirty_close),
 		"a hidden close action should retain its composed dirty indicator")
-	testing.expect(t, !tab_bar_test_display_has_text(&rt, clean_close),
+	testing.expect(t, !tab_bar_test_display_has_close_icon(&rt, clean_close),
 		"an unselected clean compact tab should omit its hidden close action from the composed paint stream")
 	clean_title_bounds, clean_title_found := tab_bar_test_text_bounds(&rt, clean_tab)
 	hidden_close_bounds := rt.nodes[clean_close].bounds
@@ -978,7 +978,7 @@ test_tab_bar_close_policy_keeps_dirty_marker_and_reveals_on_hover :: proc(t: ^te
 
 	invalidate_root(&rt, "tab-bar responsive width increased")
 	_ = tab_bar_test_build(&rt, items[:], 640, options)
-	wide_close_visible := visual_part_is_visible(&rt, selected_close) && tab_bar_test_display_has_text(&rt, selected_close)
+	wide_close_visible := visual_part_is_visible(&rt, selected_close) && tab_bar_test_display_has_close_icon(&rt, selected_close)
 	testing.expect(t, wide_close_visible,
 		"Auto should keep the close glyph visible when a tab has comfortable width")
 
@@ -999,7 +999,7 @@ test_tab_bar_close_policy_keeps_dirty_marker_and_reveals_on_hover :: proc(t: ^te
 	ui, ready := begin_presentation_frame(&rt)
 	testing.expect(t, ready, "hovering a tab should request retained presentation work")
 	if ready { end_presentation_frame(&ui) }
-	close_glyph_visible := visual_part_is_visible(&rt, clean_close) && tab_bar_test_display_has_text(&rt, clean_close)
+	close_glyph_visible := visual_part_is_visible(&rt, clean_close) && tab_bar_test_display_has_close_icon(&rt, clean_close)
 	testing.expect(t, rt.nodes[clean_tab].hovered && close_glyph_visible,
 		"hovering any part of a compact tab should reveal its close glyph without changing geometry")
 	testing.expect(t, same_rect(rt.nodes[clean_tab].bounds, clean_bounds),
@@ -1025,7 +1025,7 @@ test_tab_bar_close_policy_keeps_dirty_marker_and_reveals_on_hover :: proc(t: ^te
 		}
 	}
 	testing.expect(t, hover_surface_found,
-		"hovering the close Button should paint its generic recipe surface")
+		"hovering the close Button should paint its highlight")
 	testing.expect(t, same_rect(rt.nodes[clean_tab].bounds, clean_bounds),
 		"hovering the close action must not resize or reflow its tab")
 	close_title_bounds, close_title_found := tab_bar_test_text_bounds(&rt, clean_tab)
@@ -1054,15 +1054,9 @@ test_tab_bar_dirty_marker_only_yields_to_close_hover :: proc(t: ^testing.T) {
 	testing.expect(t, tab_count == 1 && close_count == 1,
 		"the dirty document should have one retained tab and one internal close action")
 	if tab_count != 1 || close_count != 1 { return }
-	marker_id, marker_count := tab_bar_test_visual_part(&rt, close_id, .Indicator)
-	glyph_id, glyph_count := tab_bar_test_visual_part(&rt, close_id, .Label)
-	testing.expect(t, marker_count == 1 && glyph_count == 1,
-		"a dirty close action should compose one marker and one close glyph as its own visual parts")
-	if marker_count != 1 || glyph_count != 1 { return }
-
 	tab_bounds := rt.nodes[tab_id].bounds
 	close_bounds := rt.nodes[close_id].bounds
-	testing.expect(t, tab_bar_test_display_has_surface(&rt, marker_id) && !tab_bar_test_display_has_text(&rt, glyph_id),
+	testing.expect(t, tab_bar_test_display_has_surface(&rt, close_id) && !tab_bar_test_display_has_close_icon(&rt, close_id),
 		"a selected dirty tab should show its dirty marker until the close action itself is hovered")
 	testing.expect(t, hit_test(&rt, close_bounds.x+close_bounds.w*0.5, close_bounds.y+close_bounds.h*0.5) == tab_id,
 		"the hidden close slot should not activate from pointer hit testing before it has been revealed")
@@ -1073,7 +1067,7 @@ test_tab_bar_dirty_marker_only_yields_to_close_hover :: proc(t: ^testing.T) {
 		"moving over the tab body should target the tab, not its hidden close action")
 	ui, ready := begin_presentation_frame(&rt)
 	if ready { end_presentation_frame(&ui) }
-	testing.expect(t, tab_bar_test_display_has_surface(&rt, marker_id) && !tab_bar_test_display_has_text(&rt, glyph_id),
+	testing.expect(t, tab_bar_test_display_has_surface(&rt, close_id) && !tab_bar_test_display_has_close_icon(&rt, close_id),
 		"tab-body hover and selected state must not replace a dirty marker with a close glyph")
 
 	close_x := close_bounds.x+close_bounds.w*0.5
@@ -1086,12 +1080,12 @@ test_tab_bar_dirty_marker_only_yields_to_close_hover :: proc(t: ^testing.T) {
 	hover_surface := false
 	for command in close_paint {
 		if surface, ok := command.payload.(Surface_Paint); ok && surface.fill.a > 0 {
-			hover_surface = command.bounds == close_bounds
+			hover_surface = command.bounds.w == TAB_CLOSE_HIGHLIGHT_SIZE && command.bounds.h == TAB_CLOSE_HIGHLIGHT_SIZE
 		}
 	}
-	testing.expect(t, rt.nodes[close_id].hovered && tab_bar_test_display_has_text(&rt, glyph_id) &&
-		!tab_bar_test_display_has_surface(&rt, marker_id) && hover_surface,
-		"the close glyph should replace the dirty marker while its generic Button recipe paints the hovered action")
+	testing.expect(t, rt.nodes[close_id].hovered && tab_bar_test_display_has_close_icon(&rt, close_id) &&
+		len(close_paint) == 2 && hover_surface,
+		"the highlighted close icon should replace the dirty marker")
 	testing.expect(t, same_rect(rt.nodes[tab_id].bounds, tab_bounds) && same_rect(rt.nodes[close_id].bounds, close_bounds),
 		"revealing the close action must not move or resize the tab or its title slot")
 
@@ -1099,7 +1093,7 @@ test_tab_bar_dirty_marker_only_yields_to_close_hover :: proc(t: ^testing.T) {
 		"leaving the close slot should return pointer ownership to the tab body")
 	ui, ready = begin_presentation_frame(&rt)
 	if ready { end_presentation_frame(&ui) }
-	testing.expect(t, tab_bar_test_display_has_surface(&rt, marker_id) && !tab_bar_test_display_has_text(&rt, glyph_id),
+	testing.expect(t, tab_bar_test_display_has_surface(&rt, close_id) && !tab_bar_test_display_has_close_icon(&rt, close_id),
 		"leaving the close action should restore the dirty marker even while the tab remains hovered")
 
 	// A click that arrives before any hover/motion event must not activate a
