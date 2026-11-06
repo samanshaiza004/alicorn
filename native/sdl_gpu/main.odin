@@ -34,16 +34,6 @@ native_run_application :: proc(
 			if ok && parsed > 0 { validation_timeout_seconds = int(parsed) }
 		}
 	}
-	when ODIN_OS == .Darwin {
-		// Keep higher-priority environment settings available for opt-out/A-B runs.
-		if !sdl3.SetHint(sdl3.HINT_MAC_SCROLL_MOMENTUM, "1") &&
-			sdl3.GetHint(sdl3.HINT_MAC_SCROLL_MOMENTUM) == nil {
-			fail("SDL_MAC_SCROLL_MOMENTUM hint could not be set")
-		}
-		momentum_hint := sdl3.GetHint(sdl3.HINT_MAC_SCROLL_MOMENTUM)
-		if momentum_hint == nil { fail("SDL_MAC_SCROLL_MOMENTUM hint is unavailable") }
-		fmt.println("sdl_mac_scroll_momentum", momentum_hint)
-	}
 	if !sdl3.SetHint(sdl3.HINT_IME_IMPLEMENTED_UI, "composition") {
 		fail("SDL_IME_IMPLEMENTED_UI hint could not be set")
 	}
