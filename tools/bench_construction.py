@@ -7,6 +7,8 @@ No construction latency threshold is imposed by this research tool.
 """
 
 import argparse
+import ctypes
+from ctypes import wintypes
 import hashlib
 import json
 import os
@@ -15,6 +17,7 @@ import re
 import shutil
 import statistics
 import subprocess
+import time
 import tarfile
 from pathlib import Path
 
@@ -116,6 +119,74 @@ def command(args, **kwargs):
     return result
 
 
+class PROCESS_MEMORY_COUNTERS_EX(ctypes.Structure):
+    _fields_ = [
+        ("cb", wintypes.DWORD),
+        ("page_fault_count", wintypes.DWORD),
+        ("peak_working_set_size", ctypes.c_size_t),
+        ("working_set_size", ctypes.c_size_t),
+        ("quota_peak_paged_pool_usage", ctypes.c_size_t),
+        ("quota_paged_pool_usage", ctypes.c_size_t),
+        ("quota_peak_non_paged_pool_usage", ctypes.c_size_t),
+        ("quota_non_paged_pool_usage", ctypes.c_size_t),
+        ("pagefile_usage", ctypes.c_size_t),
+        ("peak_pagefile_usage", ctypes.c_size_t),
+        ("private_usage", ctypes.c_size_t),
+    ]
+
+
+def run_windows_with_process_metrics(args):
+    """Run a child while sampling its OS peak working set."""
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    psapi = ctypes.WinDLL("psapi", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    psapi.GetProcessMemoryInfo.argtypes = [
+        wintypes.HANDLE, ctypes.POINTER(PROCESS_MEMORY_COUNTERS_EX), wintypes.DWORD,
+    ]
+    psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+
+    process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    handle = kernel32.OpenProcess(0x0400 | 0x0010, False, process.pid)
+    if not handle:
+        error = ctypes.get_last_error()
+        process.kill()
+        process.communicate()
+        raise ctypes.WinError(error)
+
+    peak_working_set = 0
+    sample_count = 0
+
+    def capture_peak():
+        nonlocal peak_working_set, sample_count
+        counters = PROCESS_MEMORY_COUNTERS_EX()
+        counters.cb = ctypes.sizeof(counters)
+        if psapi.GetProcessMemoryInfo(handle, ctypes.byref(counters), counters.cb):
+            peak_working_set = max(peak_working_set, counters.peak_working_set_size)
+        sample_count += 1
+
+    try:
+        while process.poll() is None:
+            capture_peak()
+            time.sleep(0.001)
+        capture_peak()
+        stdout, stderr = process.communicate()
+        if process.returncode:
+            raise RuntimeError(
+                f"command failed ({process.returncode}): {args!r}\n{stdout or ''}{stderr or ''}"
+            )
+
+        return subprocess.CompletedProcess(args, process.returncode, stdout, stderr), {
+            "peak_working_set_bytes": peak_working_set,
+            "working_set_samples": sample_count,
+            "sampling_interval_ms": 1,
+        }
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 def snapshot(root, output, label, ref, november):
     commit = subprocess.check_output(
         ["git", "rev-parse", "--verify", ref + "^{commit}"], cwd=root, text=True
@@ -177,6 +248,8 @@ def main():
     parser.add_argument("--phases", action="store_true", help="Instrument disposable runtime snapshots; keep separate from ordinary timing runs")
     parser.add_argument("--phase-detail", action="store_true", help="Add per-node clocks; higher overhead, used only for attribution")
     parser.add_argument("--rss", action="store_true", help="Capture Darwin process peak RSS with /usr/bin/time -l")
+    parser.add_argument("--windows-process-metrics", action="store_true",
+                        help="Capture child process peak working set on Windows")
     parser.add_argument("--workloads", default="containers:10000,short:10000,wrapped:10000,panel:100")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
@@ -184,6 +257,8 @@ def main():
         parser.error("--runs must be positive")
     if args.rss and platform.system() != "Darwin":
         parser.error("--rss currently requires Darwin /usr/bin/time -l")
+    if args.windows_process_metrics and platform.system() != "Windows":
+        parser.error("--windows-process-metrics requires Windows")
     if args.allocations and args.phases:
         parser.error("capture allocation attribution and CPU phases separately")
     if args.phase_detail and not args.phases:
@@ -247,12 +322,22 @@ def main():
                     invoke = [refs[label]["executable"], workload, count, "1", str(int(args.allocations)), "0"]
                     if args.rss:
                         invoke = ["/usr/bin/time", "-l"] + invoke
-                    result = command(invoke, capture_output=True)
+                    process_metrics = None
+                    if args.windows_process_metrics:
+                        result, process_metrics = run_windows_with_process_metrics(invoke)
+                    else:
+                        result = command(invoke, capture_output=True)
                     raw.write(f"PROCESS {label} {refs[label]['commit']} {workload} {count} {run+1}\n{result.stdout}{result.stderr}\n")
+                    if process_metrics:
+                        raw.write("PROCESS_METRICS " + " ".join(
+                            f"{key} {value}" for key, value in process_metrics.items()
+                        ) + "\n")
                     construction = next(line for line in result.stdout.splitlines() if line.startswith("construction "))
                     sample = {"label": label, "workload": workload, "run": run+1, **tokens(construction)}
                     sample["record_sizes"] = tokens(next(line for line in result.stdout.splitlines() if line.startswith("record_sizes ")))
                     sample["allocations"] = [line for line in result.stdout.splitlines() if line.startswith("allocations ")]
+                    if process_metrics:
+                        sample["process_metrics"] = process_metrics
                     sample["cpu_phases"] = {line.split()[1]: tokens(" ".join(line.split()[1:]))
                                             for line in result.stdout.splitlines() if line.startswith("cpu_phase ")}
                     memory = next((line for line in result.stdout.splitlines() if line.startswith("requested_memory ")), None)
@@ -269,19 +354,22 @@ def main():
         metrics += ["init_cpu_ns", "description_cpu_ns", "end_frame_cpu_ns", "total_cpu_ns", "destroy_cpu_ns"]
     if args.rss:
         metrics.append("peak_rss_bytes")
+    if args.windows_process_metrics:
+        metrics.append("peak_working_set_bytes")
     summary = []
     for workload, _ in workloads:
         for label in refs:
             matching = [sample for sample in samples if sample["label"] == label and sample["workload"] == workload]
             row = {"label": label, "workload": workload}
             for metric in metrics:
-                values = [sample[metric] for sample in matching]
+                values = [sample.get("process_metrics", {}).get(metric, sample.get(metric)) for sample in matching]
                 row[metric] = {"median": statistics.median(values), "min": min(values), "max": max(values)}
             summary.append(row)
     report = {
         "compiler": version, "profile": "speed" if args.speed else "default",
         "allocation_tracking": args.allocations, "phase_instrumentation": args.phases,
         "phase_detail": args.phase_detail, "rss": args.rss,
+        "windows_process_metrics": args.windows_process_metrics,
         "probe_sha256": hashlib.sha256(probe_bytes).hexdigest(),
         "refs": refs, "samples": samples, "summary": summary,
     }

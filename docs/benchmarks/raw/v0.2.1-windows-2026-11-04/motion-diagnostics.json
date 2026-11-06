@@ -1,0 +1,305 @@
+{
+  "odin": "Odin dev-2026-11-nightly:9a69916",
+  "profile": "speed",
+  "runs": 5,
+  "refs": {
+    "baseline": "9690333ea5dbe335737d59a1c0bfb331edd3ee44",
+    "candidate": "736277f899b7777d0cf907a1b7c962370d7217b0"
+  },
+  "compatibility_adaptations": {
+    "baseline": [
+      "runtime/image_assets.odin: decoded.pixels.buf -> decoded.pixels (unused image decoder SDK adaptation)"
+    ],
+    "candidate": []
+  },
+  "results": {
+    "baseline": {
+      "owner_setup": {
+        "1": {
+          "median_ns": 14300.0,
+          "median_allocations": 1.0,
+          "median_allocated_bytes": 4032.0
+        },
+        "100": {
+          "median_ns": 468200,
+          "median_allocations": 6,
+          "median_allocated_bytes": 206592
+        },
+        "1000": {
+          "median_ns": 18365800,
+          "median_allocations": 9,
+          "median_allocated_bytes": 1642688
+        }
+      },
+      "tick_latency": {
+        "1": {
+          "p50_ns": 400.0,
+          "p95_ns": 500.0,
+          "p99_ns": 700.0
+        },
+        "100": {
+          "p50_ns": 31000.0,
+          "p95_ns": 39205.0,
+          "p99_ns": 57144.00000000013
+        },
+        "1000": {
+          "p50_ns": 313400.0,
+          "p95_ns": 418229.99999999994,
+          "p99_ns": 503232.00000000006
+        }
+      },
+      "retarget_latency": {
+        "p50_ns": 4000.0,
+        "p95_ns": 4200.0,
+        "p99_ns": 5401.999999999998
+      },
+      "last_run_summaries": {
+        "tick_summary:1": {
+          "count": "1",
+          "samples": "180",
+          "active_after": "1",
+          "frame_builds": "0",
+          "reconcile_visits": "0",
+          "measure_requests": "0",
+          "text_shapes": "0",
+          "layout_visits": "0",
+          "paint_visits": "0",
+          "composition_visits": "0",
+          "tick_allocations": "0",
+          "tick_bytes": "0",
+          "ack_allocations": "180",
+          "ack_bytes": "5940"
+        },
+        "tick_summary:100": {
+          "count": "100",
+          "samples": "180",
+          "active_after": "100",
+          "frame_builds": "0",
+          "reconcile_visits": "0",
+          "measure_requests": "0",
+          "text_shapes": "0",
+          "layout_visits": "0",
+          "paint_visits": "0",
+          "composition_visits": "0",
+          "tick_allocations": "0",
+          "tick_bytes": "0",
+          "ack_allocations": "180",
+          "ack_bytes": "5940"
+        },
+        "tick_summary:1000": {
+          "count": "1000",
+          "samples": "180",
+          "active_after": "1000",
+          "frame_builds": "0",
+          "reconcile_visits": "0",
+          "measure_requests": "0",
+          "text_shapes": "0",
+          "layout_visits": "0",
+          "paint_visits": "0",
+          "composition_visits": "0",
+          "tick_allocations": "0",
+          "tick_bytes": "0",
+          "ack_allocations": "180",
+          "ack_bytes": "5940"
+        },
+        "retarget_summary:1000": {
+          "changes": "1000",
+          "active_after": "1",
+          "retarget_allocations": "0",
+          "retarget_bytes": "0",
+          "ack_allocations": "1000",
+          "ack_bytes": "33000"
+        }
+      },
+      "last_run_diagnostics": {},
+      "process_cpu_ns_median": 109375000,
+      "process_cpu_cycles_median": 458793413,
+      "wall_ns_median": 100621200
+    },
+    "candidate": {
+      "owner_setup": {
+        "1": {
+          "median_ns": 20950.0,
+          "median_allocations": 2.0,
+          "median_allocated_bytes": 63248.0
+        },
+        "100": {
+          "median_ns": 507000,
+          "median_allocations": 7,
+          "median_allocated_bytes": 298192
+        },
+        "1000": {
+          "median_ns": 19954900,
+          "median_allocations": 10,
+          "median_allocated_bytes": 1964048
+        }
+      },
+      "tick_latency": {
+        "1": {
+          "p50_ns": 400.0,
+          "p95_ns": 400.0,
+          "p99_ns": 542.0000000000016
+        },
+        "100": {
+          "p50_ns": 31200.0,
+          "p95_ns": 39414.99999999999,
+          "p99_ns": 48252.00000000009
+        },
+        "1000": {
+          "p50_ns": 315550.0,
+          "p95_ns": 419569.99999999994,
+          "p99_ns": 516107.00000000006
+        }
+      },
+      "retarget_latency": {
+        "p50_ns": 4100.0,
+        "p95_ns": 4400.0,
+        "p99_ns": 5801.999999999998
+      },
+      "last_run_summaries": {
+        "tick_summary:1": {
+          "count": "1",
+          "samples": "180",
+          "active_after": "1",
+          "frame_builds": "0",
+          "reconcile_visits": "0",
+          "measure_requests": "0",
+          "text_shapes": "0",
+          "layout_visits": "0",
+          "paint_visits": "0",
+          "composition_visits": "0",
+          "tick_allocations": "0",
+          "tick_bytes": "0",
+          "ack_allocations": "180",
+          "ack_bytes": "5940"
+        },
+        "tick_summary:100": {
+          "count": "100",
+          "samples": "180",
+          "active_after": "100",
+          "frame_builds": "0",
+          "reconcile_visits": "0",
+          "measure_requests": "0",
+          "text_shapes": "0",
+          "layout_visits": "0",
+          "paint_visits": "0",
+          "composition_visits": "0",
+          "tick_allocations": "0",
+          "tick_bytes": "0",
+          "ack_allocations": "180",
+          "ack_bytes": "5940"
+        },
+        "tick_summary:1000": {
+          "count": "1000",
+          "samples": "180",
+          "active_after": "1000",
+          "frame_builds": "0",
+          "reconcile_visits": "0",
+          "measure_requests": "0",
+          "text_shapes": "0",
+          "layout_visits": "0",
+          "paint_visits": "0",
+          "composition_visits": "0",
+          "tick_allocations": "0",
+          "tick_bytes": "0",
+          "ack_allocations": "180",
+          "ack_bytes": "5940"
+        },
+        "retarget_summary:1000": {
+          "changes": "1000",
+          "active_after": "1",
+          "retarget_allocations": "0",
+          "retarget_bytes": "0",
+          "ack_allocations": "1000",
+          "ack_bytes": "33000"
+        }
+      },
+      "last_run_diagnostics": {
+        "diagnostics_setup:1": {
+          "count": "1",
+          "events": "1",
+          "retargets": "0",
+          "requests": "1",
+          "coalesced": "0",
+          "evictions": "0"
+        },
+        "diagnostics_sample:1": {
+          "count": "1",
+          "sample_ticks": "180",
+          "owner_visits": "180",
+          "property_samples": "180",
+          "requests": "180",
+          "coalesced": "180",
+          "submissions": "180",
+          "events": "1",
+          "evictions": "0"
+        },
+        "diagnostics_setup:100": {
+          "count": "100",
+          "events": "100",
+          "retargets": "0",
+          "requests": "100",
+          "coalesced": "99",
+          "evictions": "0"
+        },
+        "diagnostics_sample:100": {
+          "count": "100",
+          "sample_ticks": "180",
+          "owner_visits": "18000",
+          "property_samples": "18000",
+          "requests": "180",
+          "coalesced": "180",
+          "submissions": "180",
+          "events": "100",
+          "evictions": "0"
+        },
+        "diagnostics_setup:1000": {
+          "count": "1000",
+          "events": "128",
+          "retargets": "0",
+          "requests": "1000",
+          "coalesced": "999",
+          "evictions": "872"
+        },
+        "diagnostics_sample:1000": {
+          "count": "1000",
+          "sample_ticks": "180",
+          "owner_visits": "180000",
+          "property_samples": "180000",
+          "requests": "180",
+          "coalesced": "180",
+          "submissions": "180",
+          "events": "128",
+          "evictions": "0"
+        },
+        "diagnostics_churn:1000": {
+          "changes": "1000",
+          "retargets": "1000",
+          "requests": "2000",
+          "coalesced": "2000",
+          "submissions": "1000",
+          "events": "128",
+          "evictions": "873"
+        }
+      },
+      "process_cpu_ns_median": 93750000,
+      "process_cpu_cycles_median": 461218238,
+      "wall_ns_median": 100983400
+    }
+  },
+  "overhead": {
+    "tick_p50_ratio": {
+      "1": 1.0,
+      "100": 1.0064516129032257,
+      "1000": 1.0068602425015953
+    },
+    "tick_p95_ratio": {
+      "1": 0.8,
+      "100": 1.0053564596352504,
+      "1000": 1.0032039786720226
+    },
+    "retarget_p50_ratio": 1.025,
+    "retarget_p95_ratio": 1.0476190476190477,
+    "process_cpu_cycles_ratio": 1.0052852219131576
+  }
+}

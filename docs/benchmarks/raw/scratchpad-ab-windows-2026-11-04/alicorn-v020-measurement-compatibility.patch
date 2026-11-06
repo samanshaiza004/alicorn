@@ -1,0 +1,71 @@
+diff --git a/native/sdl_gpu/application_loop.odin b/native/sdl_gpu/application_loop.odin
+index 8636dd5..d108cf8 100644
+--- a/native/sdl_gpu/application_loop.odin
++++ b/native/sdl_gpu/application_loop.odin
+@@ -696,6 +696,9 @@ run_application_loop :: proc(
+ 			if fence == nil {
+ 				fail("SDL application submission failed")
+ 			}
++			if application_submission_pending && timing.first_application_submit_ns == 0 {
++				timing.first_application_submit_ns = u64(time.duration_nanoseconds(time.since(start)))
++			}
+ 			append(&in_flight, Native_In_Flight{fence})
+ 			native_text_commit_submission(text_renderer)
+ 			native_surface_commit_submission(surface_renderer)
+@@ -824,6 +827,7 @@ run_application_loop :: proc(
+ 	fmt.println(
+ 		"SDL application PASS",
+ 		"submissions", submitted,
++		"primary_gpu_submissions", timing.gpu_submissions,
+ 		"retired", retired,
+ 		"max_frames_in_flight", max_in_flight,
+ 		"wall_ns", elapsed_ns,
+@@ -855,6 +859,8 @@ run_application_loop :: proc(
+ 		"gpu_submit_ns", timing.gpu_submit_ns,
+ 		"fence_wait_ns", timing.fence_wait_ns,
+ 		"application_tick_max_ns", timing.application_tick_max_ns,
++		"first_application_submit_ns", timing.first_application_submit_ns,
++		"application_build_ns", timing.application_build_ns,
+ 		"application_build_max_ns", timing.application_build_max_ns,
+ 		"application_stabilization_rebuilds", timing.application_stabilization_rebuilds,
+ 		"application_stabilization_limit_hits", timing.application_stabilization_limit_hits,
+diff --git a/native/sdl_gpu/observability.odin b/native/sdl_gpu/observability.odin
+index e0e2056..537d154 100644
+--- a/native/sdl_gpu/observability.odin
++++ b/native/sdl_gpu/observability.odin
+@@ -29,6 +29,7 @@ Native_Host_Timing :: struct {
+ 	frames:              u64,
+ 	event_pump_ns:       u64,
+ 	application_build_ns: u64,
++	first_application_submit_ns: u64,
+ 	application_gpu_encode_ns: u64,
+ 	native_chrome_encode_ns: u64,
+ 	devtools_hud_encode_ns: u64,
+diff --git a/runtime/image_assets.odin b/runtime/image_assets.odin
+index 67efaf5..281d9bc 100644
+--- a/runtime/image_assets.odin
++++ b/runtime/image_assets.odin
+@@ -62,12 +62,12 @@ image_decode_bytes :: proc(data: []u8, allocator := context.allocator, scratch_a
+ 	pixel_count := decoded.width*decoded.height
+ 	channel_bytes := decoded.depth/8
+ 	expected_bytes := pixel_count*decoded.channels*channel_bytes
+-	if len(decoded.pixels.buf) != expected_bytes { return {}, .Decode_Failed }
++	if len(decoded.pixels) != expected_bytes { return {}, .Decode_Failed }
+ 	rgba := make([]u8, pixel_count*4, allocator)
+ 	if rgba == nil && pixel_count > 0 { return {}, .Resource_Limit }
+ 	if decoded.depth == 8 {
+ 		for i := 0; i < pixel_count; i += 1 {
+-			pixel := decoded.pixels.buf[i*decoded.channels:]
++			pixel := decoded.pixels[i*decoded.channels:]
+ 		switch decoded.channels {
+ 		case 1: rgba[i*4+0], rgba[i*4+1], rgba[i*4+2], rgba[i*4+3] = pixel[0], pixel[0], pixel[0], 255
+ 		case 2: rgba[i*4+0], rgba[i*4+1], rgba[i*4+2], rgba[i*4+3] = pixel[0], pixel[0], pixel[0], pixel[1]
+@@ -76,7 +76,7 @@ image_decode_bytes :: proc(data: []u8, allocator := context.allocator, scratch_a
+ 		}
+ 		}
+ 	} else {
+-		pixels16 := mem.slice_data_cast([]u16, decoded.pixels.buf[:])
++		pixels16 := mem.slice_data_cast([]u16, decoded.pixels[:])
+ 		for i := 0; i < pixel_count; i += 1 {
+ 			pixel := pixels16[i*decoded.channels:]
+ 		switch decoded.channels {

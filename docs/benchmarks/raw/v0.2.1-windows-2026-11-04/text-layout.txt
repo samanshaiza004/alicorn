@@ -1,0 +1,99 @@
+PROCESS 1 v020 out\release-v0.2.1-windows-2026-11-04\construction-speed\v020-24a881590b24
+Alicorn focused text-layout benchmark (headless; raw wall-clock nanoseconds)
+workload logical_rows 20000 viewport 1180 x 860 estimated_row_height 84 text_bytes_first_row 358 typography_spans 2 paint_spans 3
+initial_frame visible_rows 11 measured_heights 11 shape_calls_total 11 retained_nodes 14
+warmup_geometry measured_height_rows 12 height_min 62.40039 height_max 104.00098
+variable_height_scroll frames 120 elapsed_ns 285566800 ns_per_frame 2379723 shape_calls 246 shape_cache_hits 0 layout_node_visits 3460 retained_nodes 15
+wrapped_width_reflow frames 40 elapsed_ns 128192700 ns_per_frame 3204817 shape_calls 362 shape_cache_hits 0 layout_node_visits 924 retained_nodes 13
+final_geometry measured_height_rows 317 height_min 62.40039 height_max 187.2002
+text_cache_entries 317
+
+PROCESS 1 v021 out\release-v0.2.1-windows-2026-11-04\construction-speed\v021-736277f899b7
+Alicorn focused text-layout benchmark (headless; raw wall-clock nanoseconds)
+workload logical_rows 20000 viewport 1180 x 860 estimated_row_height 84 text_bytes_first_row 358 typography_spans 2 paint_spans 3
+initial_frame visible_rows 11 measured_heights 11 shape_calls_total 11 retained_nodes 14
+warmup_geometry measured_height_rows 12 height_min 62.40039 height_max 104.00098
+variable_height_scroll frames 120 elapsed_ns 288890300 ns_per_frame 2407419 shape_calls 246 shape_cache_hits 0 layout_node_visits 3460 retained_nodes 15
+wrapped_width_reflow frames 40 elapsed_ns 121208400 ns_per_frame 3030210 shape_calls 362 shape_cache_hits 0 layout_node_visits 924 retained_nodes 13
+final_geometry measured_height_rows 317 height_min 62.40039 height_max 187.2002
+text_cache_entries 319
+
+PROCESS 2 v021 out\release-v0.2.1-windows-2026-11-04\construction-speed\v021-736277f899b7
+Alicorn focused text-layout benchmark (headless; raw wall-clock nanoseconds)
+workload logical_rows 20000 viewport 1180 x 860 estimated_row_height 84 text_bytes_first_row 358 typography_spans 2 paint_spans 3
+initial_frame visible_rows 11 measured_heights 11 shape_calls_total 11 retained_nodes 14
+warmup_geometry measured_height_rows 12 height_min 62.40039 height_max 104.00098
+variable_height_scroll frames 120 elapsed_ns 305493900 ns_per_frame 2545782 shape_calls 246 shape_cache_hits 0 layout_node_visits 3460 retained_nodes 15
+wrapped_width_reflow frames 40 elapsed_ns 136169700 ns_per_frame 3404242 shape_calls 362 shape_cache_hits 0 layout_node_visits 924 retained_nodes 13
+final_geometry measured_height_rows 317 height_min 62.40039 height_max 187.2002
+text_cache_entries 319
+
+PROCESS 2 v020 out\release-v0.2.1-windows-2026-11-04\construction-speed\v020-24a881590b24
+Alicorn focused text-layout benchmark (headless; raw wall-clock nanoseconds)
+workload logical_rows 20000 viewport 1180 x 860 estimated_row_height 84 text_bytes_first_row 358 typography_spans 2 paint_spans 3
+initial_frame visible_rows 11 measured_heights 11 shape_calls_total 11 retained_nodes 14
+warmup_geometry measured_height_rows 12 height_min 62.40039 height_max 104.00098
+variable_height_scroll frames 120 elapsed_ns 294881100 ns_per_frame 2457342 shape_calls 246 shape_cache_hits 0 layout_node_visits 3460 retained_nodes 15
+wrapped_width_reflow frames 40 elapsed_ns 126257500 ns_per_frame 3156437 shape_calls 362 shape_cache_hits 0 layout_node_visits 924 retained_nodes 13
+final_geometry measured_height_rows 317 height_min 62.40039 height_max 187.2002
+text_cache_entries 317
+
+PROCESS 3 v020 out\release-v0.2.1-windows-2026-11-04\construction-speed\v020-24a881590b24
+Alicorn focused text-layout benchmark (headless; raw wall-clock nanoseconds)
+workload logical_rows 20000 viewport 1180 x 860 estimated_row_height 84 text_bytes_first_row 358 typography_spans 2 paint_spans 3
+initial_frame visible_rows 11 measured_heights 11 shape_calls_total 11 retained_nodes 14
+warmup_geometry measured_height_rows 12 height_min 62.40039 height_max 104.00098
+variable_height_scroll frames 120 elapsed_ns 297060700 ns_per_frame 2475505 shape_calls 246 shape_cache_hits 0 layout_node_visits 3460 retained_nodes 15
+wrapped_width_reflow frames 40 elapsed_ns 128839000 ns_per_frame 3220975 shape_calls 362 shape_cache_hits 0 layout_node_visits 924 retained_nodes 13
+final_geometry measured_height_rows 317 height_min 62.40039 height_max 187.2002
+text_cache_entries 317
+
+PROCESS 3 v021 out\release-v0.2.1-windows-2026-11-04\construction-speed\v021-736277f899b7
+Alicorn focused text-layout benchmark (headless; raw wall-clock nanoseconds)
+workload logical_rows 20000 viewport 1180 x 860 estimated_row_height 84 text_bytes_first_row 358 typography_spans 2 paint_spans 3
+initial_frame visible_rows 11 measured_heights 11 shape_calls_total 11 retained_nodes 14
+warmup_geometry measured_height_rows 12 height_min 62.40039 height_max 104.00098
+variable_height_scroll frames 120 elapsed_ns 292846500 ns_per_frame 2440387 shape_calls 246 shape_cache_hits 0 layout_node_visits 3460 retained_nodes 15
+wrapped_width_reflow frames 40 elapsed_ns 124897300 ns_per_frame 3122432 shape_calls 362 shape_cache_hits 0 layout_node_visits 924 retained_nodes 13
+final_geometry measured_height_rows 317 height_min 62.40039 height_max 187.2002
+text_cache_entries 319
+
+PROCESS 4 v021 out\release-v0.2.1-windows-2026-11-04\construction-speed\v021-736277f899b7
+Alicorn focused text-layout benchmark (headless; raw wall-clock nanoseconds)
+workload logical_rows 20000 viewport 1180 x 860 estimated_row_height 84 text_bytes_first_row 358 typography_spans 2 paint_spans 3
+initial_frame visible_rows 11 measured_heights 11 shape_calls_total 11 retained_nodes 14
+warmup_geometry measured_height_rows 12 height_min 62.40039 height_max 104.00098
+variable_height_scroll frames 120 elapsed_ns 292277200 ns_per_frame 2435643 shape_calls 246 shape_cache_hits 0 layout_node_visits 3460 retained_nodes 15
+wrapped_width_reflow frames 40 elapsed_ns 122324700 ns_per_frame 3058117 shape_calls 362 shape_cache_hits 0 layout_node_visits 924 retained_nodes 13
+final_geometry measured_height_rows 317 height_min 62.40039 height_max 187.2002
+text_cache_entries 319
+
+PROCESS 4 v020 out\release-v0.2.1-windows-2026-11-04\construction-speed\v020-24a881590b24
+Alicorn focused text-layout benchmark (headless; raw wall-clock nanoseconds)
+workload logical_rows 20000 viewport 1180 x 860 estimated_row_height 84 text_bytes_first_row 358 typography_spans 2 paint_spans 3
+initial_frame visible_rows 11 measured_heights 11 shape_calls_total 11 retained_nodes 14
+warmup_geometry measured_height_rows 12 height_min 62.40039 height_max 104.00098
+variable_height_scroll frames 120 elapsed_ns 311934400 ns_per_frame 2599453 shape_calls 246 shape_cache_hits 0 layout_node_visits 3460 retained_nodes 15
+wrapped_width_reflow frames 40 elapsed_ns 129363300 ns_per_frame 3234082 shape_calls 362 shape_cache_hits 0 layout_node_visits 924 retained_nodes 13
+final_geometry measured_height_rows 317 height_min 62.40039 height_max 187.2002
+text_cache_entries 317
+
+PROCESS 5 v020 out\release-v0.2.1-windows-2026-11-04\construction-speed\v020-24a881590b24
+Alicorn focused text-layout benchmark (headless; raw wall-clock nanoseconds)
+workload logical_rows 20000 viewport 1180 x 860 estimated_row_height 84 text_bytes_first_row 358 typography_spans 2 paint_spans 3
+initial_frame visible_rows 11 measured_heights 11 shape_calls_total 11 retained_nodes 14
+warmup_geometry measured_height_rows 12 height_min 62.40039 height_max 104.00098
+variable_height_scroll frames 120 elapsed_ns 299255200 ns_per_frame 2493793 shape_calls 246 shape_cache_hits 0 layout_node_visits 3460 retained_nodes 15
+wrapped_width_reflow frames 40 elapsed_ns 141198700 ns_per_frame 3529967 shape_calls 362 shape_cache_hits 0 layout_node_visits 924 retained_nodes 13
+final_geometry measured_height_rows 317 height_min 62.40039 height_max 187.2002
+text_cache_entries 317
+
+PROCESS 5 v021 out\release-v0.2.1-windows-2026-11-04\construction-speed\v021-736277f899b7
+Alicorn focused text-layout benchmark (headless; raw wall-clock nanoseconds)
+workload logical_rows 20000 viewport 1180 x 860 estimated_row_height 84 text_bytes_first_row 358 typography_spans 2 paint_spans 3
+initial_frame visible_rows 11 measured_heights 11 shape_calls_total 11 retained_nodes 14
+warmup_geometry measured_height_rows 12 height_min 62.40039 height_max 104.00098
+variable_height_scroll frames 120 elapsed_ns 296942600 ns_per_frame 2474521 shape_calls 246 shape_cache_hits 0 layout_node_visits 3460 retained_nodes 15
+wrapped_width_reflow frames 40 elapsed_ns 123693300 ns_per_frame 3092332 shape_calls 362 shape_cache_hits 0 layout_node_visits 924 retained_nodes 13
+final_geometry measured_height_rows 317 height_min 62.40039 height_max 187.2002
+text_cache_entries 319

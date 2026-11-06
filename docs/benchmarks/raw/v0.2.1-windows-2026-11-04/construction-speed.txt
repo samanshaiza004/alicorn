@@ -1,0 +1,200 @@
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 containers 10000 1
+construction items 10000 repeats 1 tracked false init_ns 77700 description_ns 11285700 end_frame_ns 35690800 total_ns 46976500 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 6593700 retained 10001 display 1 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 59506688 working_set_samples 35 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 containers 10000 1
+construction items 10000 repeats 1 tracked false init_ns 84600 description_ns 10292900 end_frame_ns 25740300 total_ns 36033200 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 5838700 retained 10001 display 1 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 55922688 working_set_samples 28 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 containers 10000 2
+construction items 10000 repeats 1 tracked false init_ns 61800 description_ns 9017300 end_frame_ns 24870800 total_ns 33888100 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 5948200 retained 10001 display 1 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 55705600 working_set_samples 26 sampling_interval_ms 1
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 containers 10000 2
+construction items 10000 repeats 1 tracked false init_ns 56500 description_ns 10122300 end_frame_ns 37738800 total_ns 47861100 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 5577600 retained 10001 display 1 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 59277312 working_set_samples 34 sampling_interval_ms 1
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 containers 10000 3
+construction items 10000 repeats 1 tracked false init_ns 46200 description_ns 9588600 end_frame_ns 31538800 total_ns 41127400 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 5935400 retained 10001 display 1 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 59207680 working_set_samples 31 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 containers 10000 3
+construction items 10000 repeats 1 tracked false init_ns 59000 description_ns 9416300 end_frame_ns 24365100 total_ns 33781400 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 5583300 retained 10001 display 1 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 55672832 working_set_samples 26 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 containers 10000 4
+construction items 10000 repeats 1 tracked false init_ns 54700 description_ns 9269800 end_frame_ns 23813600 total_ns 33083400 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 5539500 retained 10001 display 1 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 55681024 working_set_samples 26 sampling_interval_ms 1
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 containers 10000 4
+construction items 10000 repeats 1 tracked false init_ns 57600 description_ns 9457000 end_frame_ns 30445600 total_ns 39902600 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 5685400 retained 10001 display 1 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 59236352 working_set_samples 30 sampling_interval_ms 1
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 containers 10000 5
+construction items 10000 repeats 1 tracked false init_ns 49200 description_ns 9550500 end_frame_ns 30578900 total_ns 40129400 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 5404200 retained 10001 display 1 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 59228160 working_set_samples 29 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 containers 10000 5
+construction items 10000 repeats 1 tracked false init_ns 63400 description_ns 9670700 end_frame_ns 25272700 total_ns 34943400 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 5990600 retained 10001 display 1 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 55701504 working_set_samples 28 sampling_interval_ms 1
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 short 10000 1
+construction items 10000 repeats 1 tracked false init_ns 57000 description_ns 9546600 end_frame_ns 40301300 total_ns 49847900 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 10242500 retained 10001 display 10001 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 74903552 working_set_samples 38 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 short 10000 1
+construction items 10000 repeats 1 tracked false init_ns 52400 description_ns 12045500 end_frame_ns 35844400 total_ns 47889900 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 8980000 retained 10001 display 10001 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 71462912 working_set_samples 38 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 short 10000 2
+construction items 10000 repeats 1 tracked false init_ns 58700 description_ns 11439100 end_frame_ns 37978100 total_ns 49417200 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 11029800 retained 10001 display 10001 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 71458816 working_set_samples 38 sampling_interval_ms 1
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 short 10000 2
+construction items 10000 repeats 1 tracked false init_ns 50900 description_ns 9837800 end_frame_ns 53383300 total_ns 63221100 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 9335300 retained 10001 display 10001 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 74903552 working_set_samples 44 sampling_interval_ms 1
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 short 10000 3
+construction items 10000 repeats 1 tracked false init_ns 62200 description_ns 10604000 end_frame_ns 42374000 total_ns 52978000 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 10627300 retained 10001 display 10001 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 74915840 working_set_samples 40 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 short 10000 3
+construction items 10000 repeats 1 tracked false init_ns 63200 description_ns 14307800 end_frame_ns 48201400 total_ns 62509200 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 11503900 retained 10001 display 10001 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 71426048 working_set_samples 47 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 short 10000 4
+construction items 10000 repeats 1 tracked false init_ns 65100 description_ns 12803200 end_frame_ns 41121100 total_ns 53924300 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 8259400 retained 10001 display 10001 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 71528448 working_set_samples 40 sampling_interval_ms 1
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 short 10000 4
+construction items 10000 repeats 1 tracked false init_ns 89300 description_ns 9712700 end_frame_ns 43135300 total_ns 52848000 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 8443200 retained 10001 display 10001 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 74907648 working_set_samples 39 sampling_interval_ms 1
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 short 10000 5
+construction items 10000 repeats 1 tracked false init_ns 57000 description_ns 10851700 end_frame_ns 42360300 total_ns 53212000 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 9136000 retained 10001 display 10001 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 74960896 working_set_samples 42 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 short 10000 5
+construction items 10000 repeats 1 tracked false init_ns 55600 description_ns 10349700 end_frame_ns 34416400 total_ns 44766100 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 8288000 retained 10001 display 10001 geometry_sum 1.21292218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 71434240 working_set_samples 34 sampling_interval_ms 1
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 wrapped 10000 1
+construction items 10000 repeats 1 tracked false init_ns 55600 description_ns 12178200 end_frame_ns 46991800 total_ns 59170000 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 8895800 retained 10001 display 10001 geometry_sum 1.20332218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 76828672 working_set_samples 43 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 wrapped 10000 1
+construction items 10000 repeats 1 tracked false init_ns 59300 description_ns 10654600 end_frame_ns 39091800 total_ns 49746400 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 9590800 retained 10001 display 10001 geometry_sum 1.20332218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 73097216 working_set_samples 38 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 wrapped 10000 2
+construction items 10000 repeats 1 tracked false init_ns 50800 description_ns 10723400 end_frame_ns 39993100 total_ns 50716500 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 10158700 retained 10001 display 10001 geometry_sum 1.20332218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 73052160 working_set_samples 38 sampling_interval_ms 1
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 wrapped 10000 2
+construction items 10000 repeats 1 tracked false init_ns 48900 description_ns 11008000 end_frame_ns 48876400 total_ns 59884400 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 9825700 retained 10001 display 10001 geometry_sum 1.20332218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 76845056 working_set_samples 43 sampling_interval_ms 1
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 wrapped 10000 3
+construction items 10000 repeats 1 tracked false init_ns 72200 description_ns 10712600 end_frame_ns 55763400 total_ns 66476000 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 13488300 retained 10001 display 10001 geometry_sum 1.20332218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 76845056 working_set_samples 51 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 wrapped 10000 3
+construction items 10000 repeats 1 tracked false init_ns 61800 description_ns 14162300 end_frame_ns 50250600 total_ns 64412900 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 13337900 retained 10001 display 10001 geometry_sum 1.20332218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 73089024 working_set_samples 48 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 wrapped 10000 4
+construction items 10000 repeats 1 tracked false init_ns 82100 description_ns 10959600 end_frame_ns 47610800 total_ns 58570400 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 12173000 retained 10001 display 10001 geometry_sum 1.20332218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 73072640 working_set_samples 46 sampling_interval_ms 1
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 wrapped 10000 4
+construction items 10000 repeats 1 tracked false init_ns 49300 description_ns 12513400 end_frame_ns 53704000 total_ns 66217400 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 10214600 retained 10001 display 10001 geometry_sum 1.20332218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 76845056 working_set_samples 48 sampling_interval_ms 1
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 wrapped 10000 5
+construction items 10000 repeats 1 tracked false init_ns 59800 description_ns 15823300 end_frame_ns 72219300 total_ns 88042600 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 14846200 retained 10001 display 10001 geometry_sum 1.20332218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 76808192 working_set_samples 65 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 wrapped 10000 5
+construction items 10000 repeats 1 tracked false init_ns 62300 description_ns 19251400 end_frame_ns 61860500 total_ns 81111900 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 12776100 retained 10001 display 10001 geometry_sum 1.20332218e+09
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 73105408 working_set_samples 57 sampling_interval_ms 1
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 panel 100 1
+construction items 100 repeats 1 tracked false init_ns 62600 description_ns 721900 end_frame_ns 4516900 total_ns 5238800 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 542300 retained 601 display 601 geometry_sum 3.32858e+06
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 8544256 working_set_samples 6 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 panel 100 1
+construction items 100 repeats 1 tracked false init_ns 67400 description_ns 682100 end_frame_ns 2756300 total_ns 3438400 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 429100 retained 601 display 601 geometry_sum 3.32858e+06
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 8343552 working_set_samples 5 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 panel 100 2
+construction items 100 repeats 1 tracked false init_ns 54000 description_ns 653100 end_frame_ns 2799000 total_ns 3452100 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 667900 retained 601 display 601 geometry_sum 3.32858e+06
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 8331264 working_set_samples 6 sampling_interval_ms 1
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 panel 100 2
+construction items 100 repeats 1 tracked false init_ns 68700 description_ns 708700 end_frame_ns 3616300 total_ns 4325000 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 490000 retained 601 display 601 geometry_sum 3.32858e+06
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 8552448 working_set_samples 5 sampling_interval_ms 1
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 panel 100 3
+construction items 100 repeats 1 tracked false init_ns 57800 description_ns 640400 end_frame_ns 4223500 total_ns 4863900 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 559500 retained 601 display 601 geometry_sum 3.32858e+06
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 8572928 working_set_samples 7 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 panel 100 3
+construction items 100 repeats 1 tracked false init_ns 52600 description_ns 667900 end_frame_ns 2449800 total_ns 3117700 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 467900 retained 601 display 601 geometry_sum 3.32858e+06
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 8306688 working_set_samples 6 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 panel 100 4
+construction items 100 repeats 1 tracked false init_ns 47200 description_ns 538500 end_frame_ns 3149900 total_ns 3688400 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 530400 retained 601 display 601 geometry_sum 3.32858e+06
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 8282112 working_set_samples 5 sampling_interval_ms 1
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 panel 100 4
+construction items 100 repeats 1 tracked false init_ns 58700 description_ns 727600 end_frame_ns 4045200 total_ns 4772800 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 427700 retained 601 display 601 geometry_sum 3.32858e+06
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 8601600 working_set_samples 6 sampling_interval_ms 1
+PROCESS v020 24a881590b249c5c166c7864482886fb5aa41653 panel 100 5
+construction items 100 repeats 1 tracked false init_ns 46200 description_ns 527700 end_frame_ns 2914100 total_ns 3441800 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 359100 retained 601 display 601 geometry_sum 3.32858e+06
+record_sizes pending 1272 description 768 node 2048 trace_event 72
+
+PROCESS_METRICS peak_working_set_bytes 8568832 working_set_samples 5 sampling_interval_ms 1
+PROCESS v021 736277f899b7777d0cf907a1b7c962370d7217b0 panel 100 5
+construction items 100 repeats 1 tracked false init_ns 52600 description_ns 593200 end_frame_ns 3439200 total_ns 4032400 cpu_supported false init_cpu_ns 0 description_cpu_ns 0 end_frame_cpu_ns 0 total_cpu_ns 0 destroy_cpu_ns 0 destroy_ns 473800 retained 601 display 601 geometry_sum 3.32858e+06
+record_sizes pending 1272 description 768 node 2048 trace_event 104
+
+PROCESS_METRICS peak_working_set_bytes 8331264 working_set_samples 5 sampling_interval_ms 1

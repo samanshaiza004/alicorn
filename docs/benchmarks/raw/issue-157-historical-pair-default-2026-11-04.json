@@ -1,0 +1,1875 @@
+{
+  "compiler": "dev-2026-11-nightly:9a69916",
+  "profile": "default",
+  "allocation_tracking": false,
+  "phase_instrumentation": false,
+  "phase_detail": false,
+  "rss": false,
+  "probe_sha256": "96da7f8e2462f4e764724f8552b3379e8cbcee34246457db109f1287e09a1ebf",
+  "refs": {
+    "parent": {
+      "commit": "7e856892f16846ab2dbb15628d7c670db87efd33",
+      "compatibility": [],
+      "instrumented_functions": {},
+      "patch_sha256": null
+    },
+    "theme_layout_assets": {
+      "commit": "3d1086318710969b2193c3047c3fa2d047396a72",
+      "compatibility": [
+        "runtime/image_assets.odin: decoded.pixels.buf -> decoded.pixels (unused image decoder SDK adaptation)"
+      ],
+      "instrumented_functions": {},
+      "patch_sha256": null
+    },
+    "trace_cost_bound": {
+      "commit": "3d1086318710969b2193c3047c3fa2d047396a72",
+      "compatibility": [
+        "runtime/image_assets.odin: decoded.pixels.buf -> decoded.pixels (unused image decoder SDK adaptation)"
+      ],
+      "instrumented_functions": {},
+      "patch_sha256": "7b12b3704f49d1b9cec8a497fbeb939649daddef8a2e77fbe1de554e3ecb7626"
+    }
+  },
+  "samples": [
+    {
+      "label": "parent",
+      "workload": "containers",
+      "run": 1,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 111000,
+      "description_ns": 18937000,
+      "end_frame_ns": 69594000,
+      "total_ns": 88531000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 110000,
+      "description_cpu_ns": 18740000,
+      "end_frame_cpu_ns": 69415000,
+      "total_cpu_ns": 88155000,
+      "destroy_cpu_ns": 5040000,
+      "destroy_ns": 5054000,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "theme_layout_assets",
+      "workload": "containers",
+      "run": 1,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 185000,
+      "description_ns": 17760000,
+      "end_frame_ns": 91231000,
+      "total_ns": 108991000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 185000,
+      "description_cpu_ns": 17712000,
+      "end_frame_cpu_ns": 90926000,
+      "total_cpu_ns": 108638000,
+      "destroy_cpu_ns": 4833000,
+      "destroy_ns": 4838000,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "trace_cost_bound",
+      "workload": "containers",
+      "run": 1,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 113000,
+      "description_ns": 18195000,
+      "end_frame_ns": 68692000,
+      "total_ns": 86887000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 113000,
+      "description_cpu_ns": 18177000,
+      "end_frame_cpu_ns": 68456000,
+      "total_cpu_ns": 86633000,
+      "destroy_cpu_ns": 4677000,
+      "destroy_ns": 4678000,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "trace_cost_bound",
+      "workload": "containers",
+      "run": 2,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 41000,
+      "description_ns": 18336000,
+      "end_frame_ns": 69977000,
+      "total_ns": 88313000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 41000,
+      "description_cpu_ns": 18284000,
+      "end_frame_cpu_ns": 69759000,
+      "total_cpu_ns": 88043000,
+      "destroy_cpu_ns": 4915000,
+      "destroy_ns": 4916000,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "theme_layout_assets",
+      "workload": "containers",
+      "run": 2,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 44000,
+      "description_ns": 19681000,
+      "end_frame_ns": 92211000,
+      "total_ns": 111892000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 42000,
+      "description_cpu_ns": 19484000,
+      "end_frame_cpu_ns": 91870000,
+      "total_cpu_ns": 111354000,
+      "destroy_cpu_ns": 5143000,
+      "destroy_ns": 5165000,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "parent",
+      "workload": "containers",
+      "run": 2,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 34000,
+      "description_ns": 17966000,
+      "end_frame_ns": 73229000,
+      "total_ns": 91195000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 34000,
+      "description_cpu_ns": 17941000,
+      "end_frame_cpu_ns": 72861000,
+      "total_cpu_ns": 90802000,
+      "destroy_cpu_ns": 8351000,
+      "destroy_ns": 9173000,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "parent",
+      "workload": "containers",
+      "run": 3,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 35000,
+      "description_ns": 19153000,
+      "end_frame_ns": 71304000,
+      "total_ns": 90457000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 34000,
+      "description_cpu_ns": 19108000,
+      "end_frame_cpu_ns": 71146000,
+      "total_cpu_ns": 90254000,
+      "destroy_cpu_ns": 6612000,
+      "destroy_ns": 7031000,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "theme_layout_assets",
+      "workload": "containers",
+      "run": 3,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 45000,
+      "description_ns": 18764000,
+      "end_frame_ns": 95281000,
+      "total_ns": 114045000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 45000,
+      "description_cpu_ns": 18669000,
+      "end_frame_cpu_ns": 94862000,
+      "total_cpu_ns": 113531000,
+      "destroy_cpu_ns": 8074000,
+      "destroy_ns": 8591000,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "trace_cost_bound",
+      "workload": "containers",
+      "run": 3,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 52000,
+      "description_ns": 19474000,
+      "end_frame_ns": 71668000,
+      "total_ns": 91142000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 46000,
+      "description_cpu_ns": 19231000,
+      "end_frame_cpu_ns": 71418000,
+      "total_cpu_ns": 90649000,
+      "destroy_cpu_ns": 4714000,
+      "destroy_ns": 4723000,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "trace_cost_bound",
+      "workload": "containers",
+      "run": 4,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 31000,
+      "description_ns": 18282000,
+      "end_frame_ns": 70779000,
+      "total_ns": 89061000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 31000,
+      "description_cpu_ns": 18264000,
+      "end_frame_cpu_ns": 70643000,
+      "total_cpu_ns": 88907000,
+      "destroy_cpu_ns": 4947000,
+      "destroy_ns": 4954000,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "theme_layout_assets",
+      "workload": "containers",
+      "run": 4,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 41000,
+      "description_ns": 18009000,
+      "end_frame_ns": 89253000,
+      "total_ns": 107262000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 40000,
+      "description_cpu_ns": 17916000,
+      "end_frame_cpu_ns": 89120000,
+      "total_cpu_ns": 107036000,
+      "destroy_cpu_ns": 4930000,
+      "destroy_ns": 4936000,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "parent",
+      "workload": "containers",
+      "run": 4,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 37000,
+      "description_ns": 18444000,
+      "end_frame_ns": 68720000,
+      "total_ns": 87164000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 36000,
+      "description_cpu_ns": 18407000,
+      "end_frame_cpu_ns": 68599000,
+      "total_cpu_ns": 87006000,
+      "destroy_cpu_ns": 4520000,
+      "destroy_ns": 4530000,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "parent",
+      "workload": "containers",
+      "run": 5,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 36000,
+      "description_ns": 18394000,
+      "end_frame_ns": 68826000,
+      "total_ns": 87220000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 35000,
+      "description_cpu_ns": 18355000,
+      "end_frame_cpu_ns": 68684000,
+      "total_cpu_ns": 87039000,
+      "destroy_cpu_ns": 6248000,
+      "destroy_ns": 6749000,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "theme_layout_assets",
+      "workload": "containers",
+      "run": 5,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 41000,
+      "description_ns": 18737000,
+      "end_frame_ns": 93328000,
+      "total_ns": 112065000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 40000,
+      "description_cpu_ns": 18716000,
+      "end_frame_cpu_ns": 93042000,
+      "total_cpu_ns": 111758000,
+      "destroy_cpu_ns": 6061000,
+      "destroy_ns": 6514000,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "trace_cost_bound",
+      "workload": "containers",
+      "run": 5,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 28000,
+      "description_ns": 17745000,
+      "end_frame_ns": 71893000,
+      "total_ns": 89638000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 28000,
+      "description_cpu_ns": 17704000,
+      "end_frame_cpu_ns": 71640000,
+      "total_cpu_ns": 89344000,
+      "destroy_cpu_ns": 4979000,
+      "destroy_ns": 4982000,
+      "retained": 10001,
+      "display": 1,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "parent",
+      "workload": "short",
+      "run": 1,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 38000,
+      "description_ns": 23027000,
+      "end_frame_ns": 93091000,
+      "total_ns": 116118000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 37000,
+      "description_cpu_ns": 21717000,
+      "end_frame_cpu_ns": 92662000,
+      "total_cpu_ns": 114379000,
+      "destroy_cpu_ns": 6321000,
+      "destroy_ns": 6329000,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "theme_layout_assets",
+      "workload": "short",
+      "run": 1,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 40000,
+      "description_ns": 18569000,
+      "end_frame_ns": 113842000,
+      "total_ns": 132411000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 39000,
+      "description_cpu_ns": 18537000,
+      "end_frame_cpu_ns": 113530000,
+      "total_cpu_ns": 132067000,
+      "destroy_cpu_ns": 5927000,
+      "destroy_ns": 5929000,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "trace_cost_bound",
+      "workload": "short",
+      "run": 1,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 31000,
+      "description_ns": 18425000,
+      "end_frame_ns": 90882000,
+      "total_ns": 109307000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 31000,
+      "description_cpu_ns": 18356000,
+      "end_frame_cpu_ns": 90577000,
+      "total_cpu_ns": 108933000,
+      "destroy_cpu_ns": 6905000,
+      "destroy_ns": 6912000,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "trace_cost_bound",
+      "workload": "short",
+      "run": 2,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 33000,
+      "description_ns": 18388000,
+      "end_frame_ns": 93184000,
+      "total_ns": 111572000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 33000,
+      "description_cpu_ns": 18347000,
+      "end_frame_cpu_ns": 92760000,
+      "total_cpu_ns": 111107000,
+      "destroy_cpu_ns": 7507000,
+      "destroy_ns": 7510000,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "theme_layout_assets",
+      "workload": "short",
+      "run": 2,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 45000,
+      "description_ns": 18645000,
+      "end_frame_ns": 110871000,
+      "total_ns": 129516000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 44000,
+      "description_cpu_ns": 18601000,
+      "end_frame_cpu_ns": 110362000,
+      "total_cpu_ns": 128963000,
+      "destroy_cpu_ns": 5876000,
+      "destroy_ns": 5883000,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "parent",
+      "workload": "short",
+      "run": 2,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 36000,
+      "description_ns": 17179000,
+      "end_frame_ns": 86482000,
+      "total_ns": 103661000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 35000,
+      "description_cpu_ns": 17173000,
+      "end_frame_cpu_ns": 86278000,
+      "total_cpu_ns": 103451000,
+      "destroy_cpu_ns": 7083000,
+      "destroy_ns": 7194000,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "parent",
+      "workload": "short",
+      "run": 3,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 45000,
+      "description_ns": 18276000,
+      "end_frame_ns": 83412000,
+      "total_ns": 101688000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 44000,
+      "description_cpu_ns": 18215000,
+      "end_frame_cpu_ns": 83314000,
+      "total_cpu_ns": 101529000,
+      "destroy_cpu_ns": 6471000,
+      "destroy_ns": 6510000,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "theme_layout_assets",
+      "workload": "short",
+      "run": 3,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 41000,
+      "description_ns": 16569000,
+      "end_frame_ns": 103004000,
+      "total_ns": 119573000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 41000,
+      "description_cpu_ns": 16561000,
+      "end_frame_cpu_ns": 102917000,
+      "total_cpu_ns": 119478000,
+      "destroy_cpu_ns": 6261000,
+      "destroy_ns": 6289000,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "trace_cost_bound",
+      "workload": "short",
+      "run": 3,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 32000,
+      "description_ns": 16611000,
+      "end_frame_ns": 85141000,
+      "total_ns": 101752000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 32000,
+      "description_cpu_ns": 16606000,
+      "end_frame_cpu_ns": 85059000,
+      "total_cpu_ns": 101665000,
+      "destroy_cpu_ns": 5541000,
+      "destroy_ns": 5543000,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "trace_cost_bound",
+      "workload": "short",
+      "run": 4,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 27000,
+      "description_ns": 17465000,
+      "end_frame_ns": 84008000,
+      "total_ns": 101473000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 26000,
+      "description_cpu_ns": 17434000,
+      "end_frame_cpu_ns": 83941000,
+      "total_cpu_ns": 101375000,
+      "destroy_cpu_ns": 5988000,
+      "destroy_ns": 5994000,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "theme_layout_assets",
+      "workload": "short",
+      "run": 4,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 47000,
+      "description_ns": 16727000,
+      "end_frame_ns": 104195000,
+      "total_ns": 120922000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 46000,
+      "description_cpu_ns": 16699000,
+      "end_frame_cpu_ns": 104106000,
+      "total_cpu_ns": 120805000,
+      "destroy_cpu_ns": 5821000,
+      "destroy_ns": 5822000,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "parent",
+      "workload": "short",
+      "run": 4,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 37000,
+      "description_ns": 16759000,
+      "end_frame_ns": 82395000,
+      "total_ns": 99154000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 36000,
+      "description_cpu_ns": 16739000,
+      "end_frame_cpu_ns": 82318000,
+      "total_cpu_ns": 99057000,
+      "destroy_cpu_ns": 6285000,
+      "destroy_ns": 6311000,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "parent",
+      "workload": "short",
+      "run": 5,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 37000,
+      "description_ns": 16602000,
+      "end_frame_ns": 82287000,
+      "total_ns": 98889000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 37000,
+      "description_cpu_ns": 16590000,
+      "end_frame_cpu_ns": 82208000,
+      "total_cpu_ns": 98798000,
+      "destroy_cpu_ns": 5571000,
+      "destroy_ns": 5572000,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "theme_layout_assets",
+      "workload": "short",
+      "run": 5,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 45000,
+      "description_ns": 16923000,
+      "end_frame_ns": 104303000,
+      "total_ns": 121226000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 44000,
+      "description_cpu_ns": 16909000,
+      "end_frame_cpu_ns": 104145000,
+      "total_cpu_ns": 121054000,
+      "destroy_cpu_ns": 5487000,
+      "destroy_ns": 5491000,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "trace_cost_bound",
+      "workload": "short",
+      "run": 5,
+      "items": 10000,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 33000,
+      "description_ns": 17052000,
+      "end_frame_ns": 84748000,
+      "total_ns": 101800000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 34000,
+      "description_cpu_ns": 17046000,
+      "end_frame_cpu_ns": 84688000,
+      "total_cpu_ns": 101734000,
+      "destroy_cpu_ns": 5570000,
+      "destroy_ns": 5572000,
+      "retained": 10001,
+      "display": 10001,
+      "geometry_sum": 1212922180.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "parent",
+      "workload": "panel",
+      "run": 1,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 31000,
+      "description_ns": 799000,
+      "end_frame_ns": 5285000,
+      "total_ns": 6084000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 31000,
+      "description_cpu_ns": 798000,
+      "end_frame_cpu_ns": 5260000,
+      "total_cpu_ns": 6058000,
+      "destroy_cpu_ns": 169000,
+      "destroy_ns": 173000,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "theme_layout_assets",
+      "workload": "panel",
+      "run": 1,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 41000,
+      "description_ns": 807000,
+      "end_frame_ns": 7452000,
+      "total_ns": 8259000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 40000,
+      "description_cpu_ns": 806000,
+      "end_frame_cpu_ns": 7452000,
+      "total_cpu_ns": 8258000,
+      "destroy_cpu_ns": 148000,
+      "destroy_ns": 149000,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "trace_cost_bound",
+      "workload": "panel",
+      "run": 1,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 28000,
+      "description_ns": 797000,
+      "end_frame_ns": 5250000,
+      "total_ns": 6047000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 28000,
+      "description_cpu_ns": 797000,
+      "end_frame_cpu_ns": 5249000,
+      "total_cpu_ns": 6046000,
+      "destroy_cpu_ns": 157000,
+      "destroy_ns": 157000,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "trace_cost_bound",
+      "workload": "panel",
+      "run": 2,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 30000,
+      "description_ns": 758000,
+      "end_frame_ns": 5270000,
+      "total_ns": 6028000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 28000,
+      "description_cpu_ns": 758000,
+      "end_frame_cpu_ns": 5267000,
+      "total_cpu_ns": 6025000,
+      "destroy_cpu_ns": 152000,
+      "destroy_ns": 153000,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "theme_layout_assets",
+      "workload": "panel",
+      "run": 2,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 44000,
+      "description_ns": 830000,
+      "end_frame_ns": 7595000,
+      "total_ns": 8425000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 42000,
+      "description_cpu_ns": 830000,
+      "end_frame_cpu_ns": 7587000,
+      "total_cpu_ns": 8417000,
+      "destroy_cpu_ns": 135000,
+      "destroy_ns": 135000,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "parent",
+      "workload": "panel",
+      "run": 2,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 34000,
+      "description_ns": 782000,
+      "end_frame_ns": 4994000,
+      "total_ns": 5776000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 33000,
+      "description_cpu_ns": 781000,
+      "end_frame_cpu_ns": 4992000,
+      "total_cpu_ns": 5773000,
+      "destroy_cpu_ns": 135000,
+      "destroy_ns": 136000,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "parent",
+      "workload": "panel",
+      "run": 3,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 31000,
+      "description_ns": 771000,
+      "end_frame_ns": 5013000,
+      "total_ns": 5784000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 30000,
+      "description_cpu_ns": 771000,
+      "end_frame_cpu_ns": 5010000,
+      "total_cpu_ns": 5781000,
+      "destroy_cpu_ns": 148000,
+      "destroy_ns": 148000,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "theme_layout_assets",
+      "workload": "panel",
+      "run": 3,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 41000,
+      "description_ns": 769000,
+      "end_frame_ns": 7558000,
+      "total_ns": 8327000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 40000,
+      "description_cpu_ns": 769000,
+      "end_frame_cpu_ns": 7551000,
+      "total_cpu_ns": 8320000,
+      "destroy_cpu_ns": 133000,
+      "destroy_ns": 134000,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "trace_cost_bound",
+      "workload": "panel",
+      "run": 3,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 34000,
+      "description_ns": 795000,
+      "end_frame_ns": 5265000,
+      "total_ns": 6060000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 33000,
+      "description_cpu_ns": 794000,
+      "end_frame_cpu_ns": 5261000,
+      "total_cpu_ns": 6055000,
+      "destroy_cpu_ns": 134000,
+      "destroy_ns": 136000,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "trace_cost_bound",
+      "workload": "panel",
+      "run": 4,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 32000,
+      "description_ns": 805000,
+      "end_frame_ns": 5184000,
+      "total_ns": 5989000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 30000,
+      "description_cpu_ns": 801000,
+      "end_frame_cpu_ns": 5181000,
+      "total_cpu_ns": 5982000,
+      "destroy_cpu_ns": 132000,
+      "destroy_ns": 132000,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "theme_layout_assets",
+      "workload": "panel",
+      "run": 4,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 43000,
+      "description_ns": 854000,
+      "end_frame_ns": 7685000,
+      "total_ns": 8539000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 42000,
+      "description_cpu_ns": 848000,
+      "end_frame_cpu_ns": 7665000,
+      "total_cpu_ns": 8513000,
+      "destroy_cpu_ns": 136000,
+      "destroy_ns": 136000,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "parent",
+      "workload": "panel",
+      "run": 4,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 30000,
+      "description_ns": 797000,
+      "end_frame_ns": 5012000,
+      "total_ns": 5809000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 31000,
+      "description_cpu_ns": 795000,
+      "end_frame_cpu_ns": 5012000,
+      "total_cpu_ns": 5807000,
+      "destroy_cpu_ns": 130000,
+      "destroy_ns": 131000,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "parent",
+      "workload": "panel",
+      "run": 5,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 31000,
+      "description_ns": 827000,
+      "end_frame_ns": 5312000,
+      "total_ns": 6139000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 31000,
+      "description_cpu_ns": 823000,
+      "end_frame_cpu_ns": 5304000,
+      "total_cpu_ns": 6127000,
+      "destroy_cpu_ns": 140000,
+      "destroy_ns": 139000,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "theme_layout_assets",
+      "workload": "panel",
+      "run": 5,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 44000,
+      "description_ns": 814000,
+      "end_frame_ns": 7837000,
+      "total_ns": 8651000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 44000,
+      "description_cpu_ns": 813000,
+      "end_frame_cpu_ns": 7770000,
+      "total_cpu_ns": 8583000,
+      "destroy_cpu_ns": 150000,
+      "destroy_ns": 150000,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    },
+    {
+      "label": "trace_cost_bound",
+      "workload": "panel",
+      "run": 5,
+      "items": 100,
+      "repeats": 1,
+      "tracked": "false",
+      "init_ns": 34000,
+      "description_ns": 801000,
+      "end_frame_ns": 5154000,
+      "total_ns": 5955000,
+      "cpu_supported": "true",
+      "init_cpu_ns": 34000,
+      "description_cpu_ns": 801000,
+      "end_frame_cpu_ns": 5153000,
+      "total_cpu_ns": 5954000,
+      "destroy_cpu_ns": 131000,
+      "destroy_ns": 132000,
+      "retained": 601,
+      "display": 601,
+      "geometry_sum": 3328580.0,
+      "record_sizes": {
+        "pending": 1232,
+        "description": 768,
+        "node": 2032,
+        "trace_event": 72
+      },
+      "allocations": [],
+      "cpu_phases": {}
+    }
+  ],
+  "summary": [
+    {
+      "label": "parent",
+      "workload": "containers",
+      "init_ns": {
+        "median": 36000,
+        "min": 34000,
+        "max": 111000
+      },
+      "description_ns": {
+        "median": 18444000,
+        "min": 17966000,
+        "max": 19153000
+      },
+      "end_frame_ns": {
+        "median": 69594000,
+        "min": 68720000,
+        "max": 73229000
+      },
+      "total_ns": {
+        "median": 88531000,
+        "min": 87164000,
+        "max": 91195000
+      },
+      "destroy_ns": {
+        "median": 6749000,
+        "min": 4530000,
+        "max": 9173000
+      },
+      "init_cpu_ns": {
+        "median": 35000,
+        "min": 34000,
+        "max": 110000
+      },
+      "description_cpu_ns": {
+        "median": 18407000,
+        "min": 17941000,
+        "max": 19108000
+      },
+      "end_frame_cpu_ns": {
+        "median": 69415000,
+        "min": 68599000,
+        "max": 72861000
+      },
+      "total_cpu_ns": {
+        "median": 88155000,
+        "min": 87006000,
+        "max": 90802000
+      },
+      "destroy_cpu_ns": {
+        "median": 6248000,
+        "min": 4520000,
+        "max": 8351000
+      }
+    },
+    {
+      "label": "theme_layout_assets",
+      "workload": "containers",
+      "init_ns": {
+        "median": 44000,
+        "min": 41000,
+        "max": 185000
+      },
+      "description_ns": {
+        "median": 18737000,
+        "min": 17760000,
+        "max": 19681000
+      },
+      "end_frame_ns": {
+        "median": 92211000,
+        "min": 89253000,
+        "max": 95281000
+      },
+      "total_ns": {
+        "median": 111892000,
+        "min": 107262000,
+        "max": 114045000
+      },
+      "destroy_ns": {
+        "median": 5165000,
+        "min": 4838000,
+        "max": 8591000
+      },
+      "init_cpu_ns": {
+        "median": 42000,
+        "min": 40000,
+        "max": 185000
+      },
+      "description_cpu_ns": {
+        "median": 18669000,
+        "min": 17712000,
+        "max": 19484000
+      },
+      "end_frame_cpu_ns": {
+        "median": 91870000,
+        "min": 89120000,
+        "max": 94862000
+      },
+      "total_cpu_ns": {
+        "median": 111354000,
+        "min": 107036000,
+        "max": 113531000
+      },
+      "destroy_cpu_ns": {
+        "median": 5143000,
+        "min": 4833000,
+        "max": 8074000
+      }
+    },
+    {
+      "label": "trace_cost_bound",
+      "workload": "containers",
+      "init_ns": {
+        "median": 41000,
+        "min": 28000,
+        "max": 113000
+      },
+      "description_ns": {
+        "median": 18282000,
+        "min": 17745000,
+        "max": 19474000
+      },
+      "end_frame_ns": {
+        "median": 70779000,
+        "min": 68692000,
+        "max": 71893000
+      },
+      "total_ns": {
+        "median": 89061000,
+        "min": 86887000,
+        "max": 91142000
+      },
+      "destroy_ns": {
+        "median": 4916000,
+        "min": 4678000,
+        "max": 4982000
+      },
+      "init_cpu_ns": {
+        "median": 41000,
+        "min": 28000,
+        "max": 113000
+      },
+      "description_cpu_ns": {
+        "median": 18264000,
+        "min": 17704000,
+        "max": 19231000
+      },
+      "end_frame_cpu_ns": {
+        "median": 70643000,
+        "min": 68456000,
+        "max": 71640000
+      },
+      "total_cpu_ns": {
+        "median": 88907000,
+        "min": 86633000,
+        "max": 90649000
+      },
+      "destroy_cpu_ns": {
+        "median": 4915000,
+        "min": 4677000,
+        "max": 4979000
+      }
+    },
+    {
+      "label": "parent",
+      "workload": "short",
+      "init_ns": {
+        "median": 37000,
+        "min": 36000,
+        "max": 45000
+      },
+      "description_ns": {
+        "median": 17179000,
+        "min": 16602000,
+        "max": 23027000
+      },
+      "end_frame_ns": {
+        "median": 83412000,
+        "min": 82287000,
+        "max": 93091000
+      },
+      "total_ns": {
+        "median": 101688000,
+        "min": 98889000,
+        "max": 116118000
+      },
+      "destroy_ns": {
+        "median": 6329000,
+        "min": 5572000,
+        "max": 7194000
+      },
+      "init_cpu_ns": {
+        "median": 37000,
+        "min": 35000,
+        "max": 44000
+      },
+      "description_cpu_ns": {
+        "median": 17173000,
+        "min": 16590000,
+        "max": 21717000
+      },
+      "end_frame_cpu_ns": {
+        "median": 83314000,
+        "min": 82208000,
+        "max": 92662000
+      },
+      "total_cpu_ns": {
+        "median": 101529000,
+        "min": 98798000,
+        "max": 114379000
+      },
+      "destroy_cpu_ns": {
+        "median": 6321000,
+        "min": 5571000,
+        "max": 7083000
+      }
+    },
+    {
+      "label": "theme_layout_assets",
+      "workload": "short",
+      "init_ns": {
+        "median": 45000,
+        "min": 40000,
+        "max": 47000
+      },
+      "description_ns": {
+        "median": 16923000,
+        "min": 16569000,
+        "max": 18645000
+      },
+      "end_frame_ns": {
+        "median": 104303000,
+        "min": 103004000,
+        "max": 113842000
+      },
+      "total_ns": {
+        "median": 121226000,
+        "min": 119573000,
+        "max": 132411000
+      },
+      "destroy_ns": {
+        "median": 5883000,
+        "min": 5491000,
+        "max": 6289000
+      },
+      "init_cpu_ns": {
+        "median": 44000,
+        "min": 39000,
+        "max": 46000
+      },
+      "description_cpu_ns": {
+        "median": 16909000,
+        "min": 16561000,
+        "max": 18601000
+      },
+      "end_frame_cpu_ns": {
+        "median": 104145000,
+        "min": 102917000,
+        "max": 113530000
+      },
+      "total_cpu_ns": {
+        "median": 121054000,
+        "min": 119478000,
+        "max": 132067000
+      },
+      "destroy_cpu_ns": {
+        "median": 5876000,
+        "min": 5487000,
+        "max": 6261000
+      }
+    },
+    {
+      "label": "trace_cost_bound",
+      "workload": "short",
+      "init_ns": {
+        "median": 32000,
+        "min": 27000,
+        "max": 33000
+      },
+      "description_ns": {
+        "median": 17465000,
+        "min": 16611000,
+        "max": 18425000
+      },
+      "end_frame_ns": {
+        "median": 85141000,
+        "min": 84008000,
+        "max": 93184000
+      },
+      "total_ns": {
+        "median": 101800000,
+        "min": 101473000,
+        "max": 111572000
+      },
+      "destroy_ns": {
+        "median": 5994000,
+        "min": 5543000,
+        "max": 7510000
+      },
+      "init_cpu_ns": {
+        "median": 32000,
+        "min": 26000,
+        "max": 34000
+      },
+      "description_cpu_ns": {
+        "median": 17434000,
+        "min": 16606000,
+        "max": 18356000
+      },
+      "end_frame_cpu_ns": {
+        "median": 85059000,
+        "min": 83941000,
+        "max": 92760000
+      },
+      "total_cpu_ns": {
+        "median": 101734000,
+        "min": 101375000,
+        "max": 111107000
+      },
+      "destroy_cpu_ns": {
+        "median": 5988000,
+        "min": 5541000,
+        "max": 7507000
+      }
+    },
+    {
+      "label": "parent",
+      "workload": "panel",
+      "init_ns": {
+        "median": 31000,
+        "min": 30000,
+        "max": 34000
+      },
+      "description_ns": {
+        "median": 797000,
+        "min": 771000,
+        "max": 827000
+      },
+      "end_frame_ns": {
+        "median": 5013000,
+        "min": 4994000,
+        "max": 5312000
+      },
+      "total_ns": {
+        "median": 5809000,
+        "min": 5776000,
+        "max": 6139000
+      },
+      "destroy_ns": {
+        "median": 139000,
+        "min": 131000,
+        "max": 173000
+      },
+      "init_cpu_ns": {
+        "median": 31000,
+        "min": 30000,
+        "max": 33000
+      },
+      "description_cpu_ns": {
+        "median": 795000,
+        "min": 771000,
+        "max": 823000
+      },
+      "end_frame_cpu_ns": {
+        "median": 5012000,
+        "min": 4992000,
+        "max": 5304000
+      },
+      "total_cpu_ns": {
+        "median": 5807000,
+        "min": 5773000,
+        "max": 6127000
+      },
+      "destroy_cpu_ns": {
+        "median": 140000,
+        "min": 130000,
+        "max": 169000
+      }
+    },
+    {
+      "label": "theme_layout_assets",
+      "workload": "panel",
+      "init_ns": {
+        "median": 43000,
+        "min": 41000,
+        "max": 44000
+      },
+      "description_ns": {
+        "median": 814000,
+        "min": 769000,
+        "max": 854000
+      },
+      "end_frame_ns": {
+        "median": 7595000,
+        "min": 7452000,
+        "max": 7837000
+      },
+      "total_ns": {
+        "median": 8425000,
+        "min": 8259000,
+        "max": 8651000
+      },
+      "destroy_ns": {
+        "median": 136000,
+        "min": 134000,
+        "max": 150000
+      },
+      "init_cpu_ns": {
+        "median": 42000,
+        "min": 40000,
+        "max": 44000
+      },
+      "description_cpu_ns": {
+        "median": 813000,
+        "min": 769000,
+        "max": 848000
+      },
+      "end_frame_cpu_ns": {
+        "median": 7587000,
+        "min": 7452000,
+        "max": 7770000
+      },
+      "total_cpu_ns": {
+        "median": 8417000,
+        "min": 8258000,
+        "max": 8583000
+      },
+      "destroy_cpu_ns": {
+        "median": 136000,
+        "min": 133000,
+        "max": 150000
+      }
+    },
+    {
+      "label": "trace_cost_bound",
+      "workload": "panel",
+      "init_ns": {
+        "median": 32000,
+        "min": 28000,
+        "max": 34000
+      },
+      "description_ns": {
+        "median": 797000,
+        "min": 758000,
+        "max": 805000
+      },
+      "end_frame_ns": {
+        "median": 5250000,
+        "min": 5154000,
+        "max": 5270000
+      },
+      "total_ns": {
+        "median": 6028000,
+        "min": 5955000,
+        "max": 6060000
+      },
+      "destroy_ns": {
+        "median": 136000,
+        "min": 132000,
+        "max": 157000
+      },
+      "init_cpu_ns": {
+        "median": 30000,
+        "min": 28000,
+        "max": 34000
+      },
+      "description_cpu_ns": {
+        "median": 797000,
+        "min": 758000,
+        "max": 801000
+      },
+      "end_frame_cpu_ns": {
+        "median": 5249000,
+        "min": 5153000,
+        "max": 5267000
+      },
+      "total_cpu_ns": {
+        "median": 6025000,
+        "min": 5954000,
+        "max": 6055000
+      },
+      "destroy_cpu_ns": {
+        "median": 134000,
+        "min": 131000,
+        "max": 157000
+      }
+    }
+  ],
+  "host": "Apple M1 MacBook Air (MacBookAir10,1), arm64, macOS 27.2 build 26B123",
+  "capture_note": "Absolute local executable paths omitted; measurements, revisions, compatibility notes, and hashes preserved."
+}

@@ -36,8 +36,9 @@ widget tree. The API is still evolving, and Alicorn is not production-ready.
 
 **New to Alicorn?** Follow [Getting Started](docs/getting-started.md) to install
 the prerequisites, build the project, and run an editable native example.
-For this release's scope and limitations, see the
-[v0.2.0 release notes](RELEASE_NOTES_v0.2.0.md).
+For the current release's scope and limitations, see the
+[changelog](CHANGELOG.md), which consolidates the v0.1.0, v0.2.0, and v0.2.1
+release notes.
 
 For the reusable native distribution path, see
 [Native application packaging](docs/packaging.md).

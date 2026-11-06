@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "kind": "alicorn-native-window-diagnostics",
+  "primary": {
+	  "sdl_window_id": 3,
+	  "sdl_position_x": 16,
+	  "sdl_position_y": 39,
+	  "focused": false,
+	  "mouse_focused": false,
+	  "always_on_top": false,
+	  "logical_width": 900,
+	  "logical_height": 480,
+	  "window_logical_height": 480,
+	  "pixel_width": 900,
+	  "pixel_height": 480,
+	  "pixel_density": 1.0000,
+	  "display_scale": 1.0000,
+	  "runtime": {
+	    "viewport": {"x": 0.000, "y": 0.000, "width": 900.000, "height": 480.000},
+	    "retained_nodes": 9,
+	    "display_commands": 8,
+	    "focused_node": 0,
+	    "gpu_submissions": 94,
+	    "frame_needs_submission": false,
+	    "presentation_revision": 95,
+	    "submitted_revision": 95
+	  }, "win32": null},
+  "secondary": {
+	  "sdl_window_id": 4,
+	  "sdl_position_x": 940,
+	  "sdl_position_y": 39,
+	  "focused": false,
+	  "mouse_focused": false,
+	  "always_on_top": false,
+	  "logical_width": 720,
+	  "logical_height": 360,
+	  "window_logical_height": 360,
+	  "pixel_width": 720,
+	  "pixel_height": 360,
+	  "pixel_density": 1.0000,
+	  "display_scale": 1.0000,
+	  "runtime": {
+	    "viewport": {"x": 0.000, "y": 0.000, "width": 720.000, "height": 360.000},
+	    "retained_nodes": 9,
+	    "display_commands": 8,
+	    "focused_node": 0,
+	    "gpu_submissions": 20,
+	    "frame_needs_submission": false,
+	    "presentation_revision": 20,
+	    "submitted_revision": 20
+	  }, "win32": null}
+}

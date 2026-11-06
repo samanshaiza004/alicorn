@@ -1,0 +1,48 @@
+Alicorn inspector
+keyboard focus: 0 selected node: 0 captured: 0
+semantic focus: none
+retained nodes: 9
+semantics: revision=2 entities=5 latest=(1>2 +1 -0) requests=0 work=(described=30 resolved=16 structure=5 properties=1 focus-search=0 active-update=0)
+last invalidation: secondary window input may have changed shared application state
+frame: 95 built=6 idle=0 regions-skipped=0 subtrees-reused=0 adjacency-rebuilds=1 surface-updates=0 geometry-updates=0 surface-clears=0 stale-surface-updates=0 geometry-overflow-rejections=0 surface-pending=false presentation=95 submitted=95
+work: reconcile=54 measure=13 measure_hits=5 measure_misses=8 text_shapes=6 layout=17 paint=10 compose=752 style_resolutions=1 style_cache_hits=0 created=9 retired=0
+actions:
+recent trace:
+  #477 Submit cause=none node=0 GPU frame submission acknowledged
+Node: 4792352286525751279 parent=0 kind=Root source=C:/Users/saman/.codex/worktrees/issue-146-secondary-windows/alicorn/tests/fixtures/secondary_motion/main.odin:80:10 component=container key="" scope="" bounds=(0.0,0.0 900.0x480.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 13014390513463586618 parent=4792352286525751279 kind=Container source=C:/Users/saman/.codex/worktrees/issue-146-secondary-windows/alicorn/tests/fixtures/secondary_motion/main.odin:87:5 component=container key="" scope="" bounds=(0.0,0.0 900.0x480.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 2949932900412744228 parent=13014390513463586618 kind=Text source=C:/Users/saman/.codex/worktrees/issue-146-secondary-windows/alicorn/tests/fixtures/secondary_motion/main.odin:88:3 component=text key="" scope="" bounds=(24.0,24.0 852.0x31.2)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(23,Leading) selection=(23,Leading)->(23,Leading) reason: new retained node
+Node: 9390702724318073749 parent=13014390513463586618 kind=Text source=C:/Users/saman/.codex/worktrees/issue-146-secondary-windows/alicorn/tests/fixtures/secondary_motion/main.odin:89:3 component=text key="" scope="" bounds=(24.0,69.2 852.0x20.8)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(55,Leading) selection=(55,Leading)->(55,Leading) reason: new retained node
+Node: 6620072055638766250 parent=13014390513463586618 kind=Text source=C:/Users/saman/.codex/worktrees/issue-146-secondary-windows/alicorn/tests/fixtures/secondary_motion/main.odin:90:3 component=text key="" scope="" bounds=(24.0,104.0 852.0x20.8)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(88,Leading) selection=(88,Leading)->(88,Leading) reason: new retained node
+Node: 10876909374869668416 parent=13014390513463586618 kind=Container source=C:/Users/saman/.codex/worktrees/issue-146-secondary-windows/alicorn/tests/fixtures/secondary_motion/main.odin:91:12 component=container key="" scope="" bounds=(24.0,138.8 836.0x28.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 9299480160134653050 parent=10876909374869668416 kind=Container source=C:/Users/saman/.codex/worktrees/issue-146-secondary-windows/alicorn/tests/fixtures/secondary_motion/main.odin:105:13 component=container key="cross-window-motion-marker" scope="" bounds=(24.0,138.8 16.0x16.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  semantic surface: direct fill shape=rounded-rectangle radius=8.00 material=0(flat) height=0.00 group=0 fill=(0.435,0.659,1.000,1.000) stroke=(0.000,0.000,0.000,0.000;0.00;Centered) resolution=retained-cache dependencies=paint,material generations=(paint=1 material=1)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 6951684103226776177 parent=13014390513463586618 kind=Text source=C:/Users/saman/.codex/worktrees/issue-146-secondary-windows/alicorn/tests/fixtures/secondary_motion/main.odin:125:3 component=text key="" scope="" bounds=(24.0,180.8 852.0x20.8)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(27,Leading) selection=(27,Leading)->(27,Leading) reason: description changed
+Node: 11531104140495858710 parent=13014390513463586618 kind=Text source=C:/Users/saman/.codex/worktrees/issue-146-secondary-windows/alicorn/tests/fixtures/secondary_motion/main.odin:126:3 component=text key="" scope="" bounds=(24.0,215.6 852.0x20.8)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(101,Leading) selection=(101,Leading)->(101,Leading) reason: new retained node

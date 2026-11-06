@@ -938,6 +938,11 @@ run_application_loop :: proc(
 			flight := Native_In_Flight{fence=fence}
 			flight.serial = u64(submitted+1)
 			append(&in_flight, flight)
+			if application_submission_pending && timing.first_application_submit_ns == 0 {
+				// Measure from the application-loop timing origin to the first
+				// successful GPU submission that consumes an application frame.
+				timing.first_application_submit_ns = u64(time.duration_nanoseconds(time.since(start)))
+			}
 			native_text_commit_submission(text_renderer)
 			native_surface_commit_submission(surface_renderer)
 			native_solid_commit_submission(solid_renderer)
@@ -1130,6 +1135,7 @@ run_application_loop :: proc(
 		"gpu_submit_ns", timing.gpu_submit_ns,
 		"fence_wait_ns", timing.fence_wait_ns,
 		"application_tick_max_ns", timing.application_tick_max_ns,
+		"first_application_submit_ns", timing.first_application_submit_ns,
 		"application_build_ns", timing.application_build_ns,
 		"application_build_max_ns", timing.application_build_max_ns,
 		"application_stabilization_rebuilds", timing.application_stabilization_rebuilds,

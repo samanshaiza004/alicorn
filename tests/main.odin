@@ -5,6 +5,7 @@ import "core:mem"
 import "core:os"
 import "core:strings"
 import alicorn "../runtime"
+import paint_reference "./paint_reference"
 import runa "../third_party/Runa"
 
 test_paint_surface_matches_color :: proc(command: alicorn.Paint_Command, expected: alicorn.Color) -> bool {
@@ -56,6 +57,153 @@ expect :: proc(state: ^Test_State, condition: bool, message: string) {
 	if !condition {
 		state.failures += 1
 		fmt.println("FAIL:", message)
+	}
+}
+
+test_cpu_paint_reference :: proc(state: ^Test_State) {
+	commands := [2]alicorn.Paint_Command{
+		alicorn.paint_surface_command(1, {0, 0, 1, 1}, {0, 0, 1, 1}, {1, 0, 0, 0.5}),
+		alicorn.paint_surface_command(2, {0, 0, 1, 1}, {0, 0, 1, 1}, {0, 0, 1, 0.5}),
+	}
+	pixel: [4]u8
+	error := paint_reference.paint_reference_render(commands[:], 1, 1, {}, pixel[:])
+	expect(state, error.code == .None, "CPU paint reference must render supported flat surfaces")
+	expect(state, pixel == [4]u8{64, 0, 128, 192}, "CPU reference must quantize each source-over result to RGBA8")
+	reversed := [2]alicorn.Paint_Command{commands[1], commands[0]}
+	error = paint_reference.paint_reference_render(reversed[:], 1, 1, {}, pixel[:])
+	expect(state, error.code == .None && pixel == [4]u8{128, 0, 64, 192},
+		"source order must remain observable for overlapping translucent surfaces")
+	opaque_clear := [1]alicorn.Paint_Command{
+		alicorn.paint_surface_command(3, {0, 0, 1, 1}, {0, 0, 1, 1}, {1, 0, 0, 0.5}),
+	}
+	error = paint_reference.paint_reference_render(opaque_clear[:], 1, 1, [4]u8{16, 32, 64, 255}, pixel[:])
+	expect(state, error.code == .None && pixel == [4]u8{136, 16, 32, 255},
+		"opaque RGBA8 clear colors must source-over correctly")
+
+	// Bounds move with presentation; the already-resolved clip remains fixed.
+	translated := [1]alicorn.Paint_Command{
+		alicorn.paint_surface_command(17, {8, 4, 8, 8}, {0, 0, 14, 16}, {1, 0.25, 0, 1}, translation={4, 0}),
+	}
+	clipped_pixels: [24*16*4]u8
+	error = paint_reference.paint_reference_render(translated[:], 24, 16, {}, clipped_pixels[:])
+	expect(state, error.code == .None, "CPU reference must accept integer translated bounds with a stationary clip")
+	for y in 0..<16 {
+		for x in 0..<24 {
+			alpha := clipped_pixels[(y*24+x)*4+3]
+			inside := x >= 12 && x < 14 && y >= 4 && y < 12
+			expect(state, (alpha == 255) == inside, "stationary clipping must intersect translated bounds with half-open edges")
+		}
+	}
+
+	// Permanent one-command reduction of the GPU clip/translation mutation.
+	// Bounds translate but the already-resolved clip remains stationary, so
+	// this scene must cover exactly one column by nine rows at x=114.
+	stationary_clip_regression := [1]alicorn.Paint_Command{
+		paint_reference.paint_reference_stationary_clip_regression(),
+	}
+	stationary_clip_pixels: [128*128*4]u8
+	error = paint_reference.paint_reference_render(stationary_clip_regression[:], 128, 128, {}, stationary_clip_pixels[:])
+	expect(state, error.code == .None, "minimized stationary-clip regression scene must render")
+	stationary_clip_coverage_matches := true
+	for y in 0..<128 {
+		for x in 0..<128 {
+			alpha := stationary_clip_pixels[(y*128+x)*4+3]
+			inside := x == 114 && y >= 101 && y < 110
+			if (alpha != 0) != inside { stationary_clip_coverage_matches = false }
+		}
+	}
+	expect(state, stationary_clip_coverage_matches,
+		"minimized clip/translation regression must preserve its exact one-by-nine stationary-clip coverage")
+
+	base_commands := [2]alicorn.Paint_Command{
+		alicorn.paint_surface_command(1, {4, 4, 12, 8}, {0, 0, 32, 32}, {0.8, 0.2, 0.1, 0.75}),
+		alicorn.paint_surface_command(2, {10, 6, 8, 12}, {8, 4, 20, 20}, {0.1, 0.7, 0.3, 0.6}, opacity=0.5),
+	}
+	transparent_commands := [3]alicorn.Paint_Command{base_commands[0],
+		alicorn.paint_surface_command(9, {0, 0, 32, 32}, {0, 0, 32, 32}, {1, 0, 1, 0}),
+		base_commands[1],
+	}
+	base_pixels: [32*32*4]u8
+	transparent_pixels: [32*32*4]u8
+	error = paint_reference.paint_reference_render(base_commands[:], 32, 32, {}, base_pixels[:])
+	expect(state, error.code == .None, "base metamorphic scene must render")
+	error = paint_reference.paint_reference_render(transparent_commands[:], 32, 32, {}, transparent_pixels[:])
+	expect(state, error.code == .None && base_pixels == transparent_pixels,
+		"inserting a fully transparent surface must preserve all pixels")
+	clip_only := [1]alicorn.Paint_Command{
+		alicorn.paint_surface_command(5, {0, 0, 32, 32}, {8, 4, 20, 20}, {0.5, 0.75, 0.25, 1}),
+	}
+	clip_pixels: [32*32*4]u8
+	error = paint_reference.paint_reference_render(clip_only[:], 32, 32, {}, clip_pixels[:])
+	clip_outside_is_clear := true
+	for y in 0..<32 {
+		for x in 0..<32 {
+			alpha := clip_pixels[(y*32+x)*4+3]
+			if x < 8 || x >= 28 || y < 4 || y >= 24 {
+				if alpha != 0 { clip_outside_is_clear = false }
+			}
+		}
+	}
+	expect(state, error.code == .None && clip_outside_is_clear, "clipping must not paint outside the command clip")
+
+	shifted := base_commands
+	for i in 0..<len(shifted) {
+		shifted[i].bounds.x += 3
+		shifted[i].bounds.y += 2
+		shifted[i].clip.x += 3
+		shifted[i].clip.y += 2
+	}
+	shifted_pixels: [32*32*4]u8
+	error = paint_reference.paint_reference_render(shifted[:], 32, 32, {}, shifted_pixels[:])
+	expect(state, error.code == .None, "translated scene and clip must render")
+	translation_matches := true
+	for y in 0..<28 {
+		for x in 0..<29 {
+			a := (y*32+x)*4
+			b := ((y+2)*32+(x+3))*4
+			for channel in 0..<4 {
+				if base_pixels[a+channel] != shifted_pixels[b+channel] { translation_matches = false }
+			}
+		}
+	}
+	expect(state, translation_matches, "moving bounds, clip, and viewport together must preserve corresponding pixels")
+
+	// Unsupported content rejects the entire list before touching caller storage.
+	sentinel: [32]u8
+	for i in 0..<len(sentinel) { sentinel[i] = u8(0xA0+i) }
+	unsupported := [2]alicorn.Paint_Command{
+		alicorn.paint_surface_command(4, {0, 0, 4, 4}, {0, 0, 8, 8}, {1, 0, 0, 1}),
+		alicorn.paint_surface_command(99, {0, 0, 4, 4}, {0, 0, 8, 8}, {0, 1, 0, 1},
+			shape=alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=2}),
+	}
+	error = paint_reference.paint_reference_render(unsupported[:], 2, 4, {}, sentinel[:])
+	unchanged := true
+	for i in 0..<len(sentinel) { if sentinel[i] != u8(0xA0+i) { unchanged = false } }
+	expect(state, error.code == .Unsupported_Shape && error.command_index == 1 && error.owner == alicorn.Node_ID(99) && unchanged,
+		"unsupported commands must report their source index and owner without partially changing output")
+
+	fractional := [1]alicorn.Paint_Command{
+		alicorn.paint_surface_command(7, {0.5, 0, 4, 4}, {0, 0, 8, 8}, {1, 1, 1, 1}),
+	}
+	error = paint_reference.paint_reference_render(fractional[:], 2, 4, {}, sentinel[:])
+	expect(state, error.code == .Non_Pixel_Aligned, "fractional edges must be explicitly outside the initial reference contract")
+
+	seeded_a: [paint_reference.PAINT_REFERENCE_SCENE_RECTANGLES]alicorn.Paint_Command
+	seeded_b: [paint_reference.PAINT_REFERENCE_SCENE_RECTANGLES]alicorn.Paint_Command
+	seed_pixels_a: [128*128*4]u8
+	seed_pixels_b: [128*128*4]u8
+	for seed in 1..=32 {
+		count_a := paint_reference.paint_reference_generate_scene(u64(seed), 128, 128, seeded_a[:])
+		count_b := paint_reference.paint_reference_generate_scene(u64(seed), 128, 128, seeded_b[:])
+		expect(state, count_a == paint_reference.PAINT_REFERENCE_SCENE_RECTANGLES && count_a == count_b,
+			"seeded paint scenes must be deterministic and bounded")
+		error = paint_reference.paint_reference_render(seeded_a[:count_a], 128, 128, {}, seed_pixels_a[:])
+		if error.code != .None {
+			expect(state, false, "generated scene must be supported by the CPU reference")
+			continue
+		}
+		error = paint_reference.paint_reference_render(seeded_b[:count_b], 128, 128, {}, seed_pixels_b[:])
+		expect(state, error.code == .None && seed_pixels_a == seed_pixels_b, "replaying a generated seed must produce identical RGBA8 output")
 	}
 }
 
@@ -4109,6 +4257,7 @@ test_runtime_allocator_ownership :: proc(state: ^Test_State) {
 
 main :: proc() {
 	state: Test_State
+	test_cpu_paint_reference(&state)
 	test_identity_and_ambiguity(&state)
 	test_region_diagnostics(&state)
 	test_typed_key_variants(&state)

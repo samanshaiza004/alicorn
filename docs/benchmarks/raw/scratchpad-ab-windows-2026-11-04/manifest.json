@@ -1,0 +1,154 @@
+{
+  "schema": 1,
+  "recorded_local_date": "2026-11-04",
+  "scenario": "Automated nine-action Scratchpad large-document command-path A/B",
+  "scratchpad": {
+    "revision": "751f949c24c0ad3108c201358f7a65b740cd951a",
+    "source_note": "Compatibility revision used for both Alicorn revisions; current Scratchpad main requires APIs absent from v0.2.0.",
+    "benchmark_harness_source_sha256": "299DBC7A6E105DC87E959B273A7D3B39785CDA75F73FD9FA19E9F45B2E486702",
+    "build_driver_source_sha256": "FB22BB8E83AA72D9574BBEA1ACD2547214E7E40C0A9ED6D5CE4A75EC813C9160"
+  },
+  "caliber_revision": "197cd964cc7265bc60df599a6b8562eac7c75f3a",
+  "alicorn": {
+    "baseline": {
+      "label": "v0.2.0",
+      "commit": "24a881590b249c5c166c7864482886fb5aa41653",
+      "binary_sha256": "1BBE81F6B1A56E3755812403257D5C5987E1797F612C36EC6C27CB8A905CF118"
+    },
+    "candidate": {
+      "label": "v0.2.1 candidate",
+      "commit": "736277f899b7777d0cf907a1b7c962370d7217b0",
+      "binary_sha256": "4FFEFA2BAE8D18907CC38679F7F98220EA0A386EF54BCD222ED8F629AB72AFAB"
+    },
+    "instrumentation": "Both outputs include the same fields: cumulative app build time, maximum single app build callback, first successful application-frame submission, primary GPU submission count, and host wall time. v0.2.0 received a temporary measurement-only host summary overlay because it did not print all these fields."
+  },
+  "toolchain": {
+    "odin": "dev-2026-11-nightly:9a69916",
+    "odin_binary_sha256": "F2143C351575AF8D9D5757B38E52FA5E17922159556DA9D9CA01FF8E3F345115",
+    "go": "go1.27.1",
+    "profile": "release; Odin -o:speed"
+  },
+  "host": {
+    "os": "Windows 10 Home 22H2, build 19045",
+    "cpu": "AMD Ryzen 5 7600X, 12 logical processors",
+    "memory": "16 GiB",
+    "gpu": "NVIDIA GeForce RTX 2080 SUPER",
+    "gpu_driver": "595.97",
+    "native_backend": "SDL 3.4.18 / Direct3D 12"
+  },
+  "fixture": {
+    "directories": 8,
+    "small_files": 192,
+    "readme_files": 1,
+    "total_files": 193,
+    "large_document": "application/sample_00.go",
+    "large_document_lines": 5002,
+    "sequence": [
+      "open README.md",
+      "open application/sample_00.go",
+      "switch back to README.md",
+      "open Quick Open",
+      "close Quick Open after index ready",
+      "open Settings",
+      "close Settings",
+      "close README.md",
+      "close the remaining Go document"
+    ],
+    "sequence_driver": "Benchmark-only scheduled hook invokes Scratchpad app/backend command paths. It does not synthesize native keyboard/mouse input."
+  },
+  "protocol": {
+    "warmups_per_revision": 1,
+    "measured_runs_per_revision": 7,
+    "total_processes": 16,
+    "order": "Warmup v0.2.0 then candidate; measured pairs alternate order by round. Every process passed smoke and nine-step sequence validation.",
+    "smoke_window": "Approximately 3 seconds, fixed smoke exit",
+    "working_set_poll_interval_ms": 10,
+    "metrics": [
+      "first_application_submit_ns",
+      "application_build_ns",
+      "application_build_max_ns",
+      "cpu_total_ns",
+      "peak_working_set_bytes",
+      "elapsed_ns",
+      "host_wall_ns",
+      "primary_gpu_submissions"
+    ]
+  },
+  "compatibility_overlays": [
+    "v0.2.0 image decoder: decoded.pixels.buf to decoded.pixels for Odin dev-2026-11 binding compatibility; this file is not exercised by the measured workload.",
+    "Scratchpad benchmark copy adds temporary AccessKit collection arguments to the build driver.",
+    "Scratchpad benchmark copy adds an environment-gated sequence hook to the application source; its source SHA-256 is listed above."
+  ],
+  "artifacts": {
+    "samples_csv_sha256": "1E549A1DA11145F23B921D8C4246862B9C33BDBD554D3C462797D9B9255144AE",
+    "runner_sha256": "2271156126EB53CCA455D5770293A84F96C3EFB4C5A21D8F13E5C810C4C8DE0B",
+    "run_logs": [
+      {
+        "file": "v020-run-01.log",
+        "sha256": "62AEA3F38914E90F2453AB4B04DD7968144025E84DD1B254788ABC1EC2C03014"
+      },
+      {
+        "file": "v020-run-02.log",
+        "sha256": "3983B49B866D73D2A0D101D54BB12EC5694FF10AC1DB96FF815D6522280DA084"
+      },
+      {
+        "file": "v020-run-03.log",
+        "sha256": "E3CCEAED0E65F136F2E327697FFAB29ACA7C2BAFF57C266009D97F7F81B9B902"
+      },
+      {
+        "file": "v020-run-04.log",
+        "sha256": "53AFE0230B4FD2A2D1A008C5CE4789ACDF6E26D5F77F46BBC9BE85853DD53E2B"
+      },
+      {
+        "file": "v020-run-05.log",
+        "sha256": "EBF246473E7F06051F4482E32AEC122553DAF43A6BE7B377D995B26FB329F6A0"
+      },
+      {
+        "file": "v020-run-06.log",
+        "sha256": "50BFE033851DCEFC7231F9915F369D839410CA0297E4E838555A66247660B645"
+      },
+      {
+        "file": "v020-run-07.log",
+        "sha256": "110208B4E13B1194F94CD3A5488533F14FEF1F93D2A7920928C678902C0687C1"
+      },
+      {
+        "file": "v020-warmup-01.log",
+        "sha256": "8F02380B23FF73DB84570249238E40FEAD2E635E584249D3B73284AA2D83FE0D"
+      },
+      {
+        "file": "v021-run-01.log",
+        "sha256": "BC1FC04A62AAB57099C4508A9060AFA80D1D1AC9FEA9C51252056D2BC503EC24"
+      },
+      {
+        "file": "v021-run-02.log",
+        "sha256": "9272135115BED8CAA6A1692135B803B41886A03B3C2DBC3E622CF7A3213DB40D"
+      },
+      {
+        "file": "v021-run-03.log",
+        "sha256": "2178B477A8ACBEAAAE99C1C493D887C173966239FC0DD56BC8CCA4C82EE670BD"
+      },
+      {
+        "file": "v021-run-04.log",
+        "sha256": "CE09B125373E94CB89939EDE2E15CCF481AADDF9CC32DA5871B3D0A88A4FE78C"
+      },
+      {
+        "file": "v021-run-05.log",
+        "sha256": "16B41F7B3D848957C02114EAA21FCA711BBC273DA21A6C44C7D27420406E0379"
+      },
+      {
+        "file": "v021-run-06.log",
+        "sha256": "07DC461639A897741D4C96CCE02EFF628B5568613AAA1E19DCD7F9EA91AFC307"
+      },
+      {
+        "file": "v021-run-07.log",
+        "sha256": "31EB48AE73356276B2AB620E0B25BE977C55208E56460BEB70F1E7B1EE3F36F3"
+      },
+      {
+        "file": "v021-warmup-01.log",
+        "sha256": "5ECEF771267D078B93EAE6F078CDB443E1C3C91AC5FB352A7605A32B842B7E49"
+      }
+    ],
+    "scratchpad_benchmark_harness_patch_sha256": "14C4860D386B865C69F9AA06A1A667D1CDA294537D21B43725CFF4243F236782",
+    "baseline_alicorn_compatibility_patch_sha256": "F7D6283328F77942B7E1351B44533B29184261A390E977E03FC6DDA3645C0069"
+  }
+}

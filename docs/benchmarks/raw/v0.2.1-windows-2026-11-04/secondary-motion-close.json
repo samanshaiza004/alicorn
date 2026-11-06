@@ -1,0 +1,26 @@
+{
+  "mode": "close",
+  "process_id": 47856,
+  "events": "secondary-motion-close-events.jsonl",
+  "secondary_window_id": 4,
+  "primary_samples_ready": 17,
+  "primary_samples_hidden": 98,
+  "secondary_samples_ready": 15,
+  "secondary_samples_at_suspend": 20,
+  "secondary_runtime_sample_ticks_hidden": 21,
+  "secondary_scheduler_samples_at_suspend": 20,
+  "secondary_restore_samples": null,
+  "outcome": "minimized secondary closed during motion; primary continued to settle; quiet interval completed; clean host shutdown",
+  "secondary_close_active_owners": 1,
+  "secondary_close_samples": 20,
+  "secondary_close_submissions": 22,
+  "primary_idle_samples": 450,
+  "primary_idle_submissions": 455,
+  "quiet_checkpoint_events": [
+    "motion.validation.primary.post_close.owners"
+  ],
+  "quiet_seconds": 5,
+  "event_count_after_quiet": 44,
+  "host_exit_code": 0,
+  "host_summary": "SDL application PASS submissions 455 primary_gpu_submissions 455 retired 455 max_frames_in_flight 2 wall_ns 14430984000 motion_samples 450 motion_timer_wakes 450 motion_restore_samples 0 motion_hidden_active_observations 0 motion_missed_intervals 26 motion_max_lateness_ns 121486833 live_resize_expose_events 0 live_resize_motion_samples 0 live_resize_gpu_submissions 0 windows_move_enter_messages 0 windows_move_exit_messages 0 windows_move_timer_wakes 0 windows_move_position_messages 0 windows_move_position_changed_messages 0 windows_move_redraws 0 windows_move_motion_samples 0 windows_move_gpu_submissions 0 windows_move_primary_motion_samples 0 windows_move_primary_gpu_submissions 0 windows_move_secondary_motion_samples 0 windows_move_secondary_gpu_submissions 0 logical_resize_events 0 pixel_resize_events 1 scale_events 0 text_input_events 0 composition_events 0 text_change_dispatches 0 text_changes 0 text_edit_key_events 0 text_navigation_key_events 0 text_selection_key_events 0 text_word_key_events 0 events_per_pump_max 0 oldest_event_age_max_ns 0 input_to_submit_p95_ns 0 input_to_submit_max_ns 0 text_mesh_rebuilds 2 text_mesh_cache_hits 454 text_fingerprint_ns 661200 text_fingerprint_bytes 134060 text_mesh_rebuild_ns 535900 text_vertex_uploads 2 frame_p95_ns 18079200 gpu_encode_ns 28249300 inspector_encode_ns 0 inspector_submissions 0 gpu_submit_ns 73718700 fence_wait_ns 11567200 application_tick_max_ns 0 first_application_submit_ns 25549800 application_build_ns 2804900 application_build_max_ns 2518800 application_stabilization_rebuilds 0 application_stabilization_limit_hits 0 event_waits 459 event_wait_event_returns 8 event_wait_timeouts 451 event_wait_timeout_zero_ms 3 event_wait_timeout_one_ms 0 event_wait_timeout_two_plus_ms 455 event_wait_indefinite 1 event_wait_elapsed_ns 13145160600 event_wait_elapsed_max_ns 5032975400 event_wait_elapsed_under_100us 7 event_wait_elapsed_under_500us 1 event_wait_elapsed_under_1ms 1 wait_deadline_none 1 wait_deadline_swapchain_retry 0 wait_deadline_primary_tick 0 wait_deadline_primary_motion 437 wait_deadline_drag_autoscroll 0 wait_deadline_tooltip 0 wait_deadline_notice 0 wait_deadline_application_scheduled 17 wait_deadline_devtools_hud 0 wait_deadline_child_motion 2 wait_deadline_child_tick 0 wait_deadline_child_scheduled 2 wait_deadline_child_tooltip 0 wait_deadline_child_notice 0 wait_deadline_smoke_exit 0 wait_deadline_validation_exit 0 application_wake_events 0 native_host_wake_events 0 native_chrome_encode_ns 0 gpu_encode_max_ns 1542400 fence_wait_max_ns 213600"
+}

@@ -7,6 +7,18 @@ limitations before using a number.
 
 ## Reports
 
+- [v0.2.1 candidate performance scorecard — Windows
+  (2026-11-04)](benchmarks/performance-scorecard-v0.2.1-windows-2026-11-04.md):
+  matched construction, retained-locality, text, motion, and Scratchpad
+  measurements with explicit platform and workload limits.
+- [Matched Scratchpad A/B — Windows
+  (2026-11-04)](benchmarks/scratchpad-ab-windows-2026-11-04.md):
+  application-build callbacks, first submission, CPU, working set, and resize
+  acceptance boundaries.
+- [Issue #157 construction CPU attribution — macOS
+  (2026-11-04)](benchmarks/issue-157-construction-cpu-macos-2026-11-04.md):
+  deferred trace formatting results and the accepted retained-construction
+  cost.
 - [Wrapped text/layout](benchmarks/text-layout.md): the same 20,000-logical-row
   headless scroll/reflow workload, measured separately on Windows and macOS,
   with raw per-run output for both platforms.

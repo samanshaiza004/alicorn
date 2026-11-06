@@ -9,7 +9,7 @@ Backdrop blur is now a supported, bounded semantic-surface capability in Alicorn
 
 Scratchpad Quick Open is the first ordinary consumer. It uses a stable six-logical-pixel Gaussian, 70% panel fill, and 50% modal dim. The developer comparison/tuning controls and compile-time feature gate have been removed. The user confirmed that the Gaussian result is visually useful, then found that interaction-triggered cache deferral could leave one direct fallback frame displayed until another pointer event. The host now distinguishes temporary fence deferral from permanent fallback and schedules a host-only retry; cached idle scenes still arm no timer or wake.
 
-The bounded host implementation is ready for use, while cross-platform and stress evidence remains open. The available local validation environment currently has no enumerated macOS display, so it can run compilation and unit tests but cannot complete the GPU readback or live GUI path. Windows/D3D12 acceptance should be recorded from native CI or a Windows host before claiming backend parity.
+The bounded host implementation has hosted readback validation on both Metal and D3D12. The macOS and Windows foundation jobs passed on PR head `6a5a104`; see the [Metal workflow](https://github.com/samanshaiza004/alicorn/actions/runs/42293184017) and [D3D12 workflow](https://github.com/samanshaiza004/alicorn/actions/runs/42293184107). These results validate the bounded readback fixture on those backends, not interactive frame pacing or universal renderer parity. The newly integrated head still needs fresh CI. The local validation environment has no enumerated macOS display, so it cannot complete the live GUI path.
 
 The Gaussian quality gate replaced the stretched five-tap binomial with a sampled discrete Gaussian. Metal readbacks compare against an independent dense CPU convolution. The filter is correct for the documented encoded-SDR contract; linear-light treatment, HDR, wide-gamut color management, and output corner masks are outside this version.
 
@@ -26,7 +26,7 @@ sh tools/validate_effects.sh --odin /path/to/odin --driver=vulkan
 ./tools/validate_effects.ps1 -Odin odin -Driver vulkan
 ```
 
-The runners execute native unit tests, then device-only GPU readbacks. Requested-device failure is a failure, never a silent pass or a switch to a different renderer. Captures are written to `out/retained-effects/{flat,analytic-shadow,blur-cold,blur-retained}.ppm`. Foundation CI includes Metal and D3D12 runs; a configured step alone is not evidence that a hosted run passed.
+The runners execute native unit tests, then device-only GPU readbacks. Requested-device failure is a failure, never a silent pass or a switch to a different renderer. Captures are written to `out/retained-effects/{flat,analytic-shadow,blur-cold,blur-retained}.ppm`. Foundation CI runs Metal and D3D12 readbacks; the linked workflow results above passed on PR head `6a5a104`.
 
 ## Boundary and rendering contract
 
@@ -145,10 +145,9 @@ correctness readbacks, and device-idle resize stalls are not described as frame
 presentation latency.
 
 Remaining validation includes stationary-pointer interaction after a deferred
-rebuild, Windows/D3D12 native readback and UI behavior, hardware GPU time and
-residency measurements, native idle tracing with an enabled but cached effect,
-failure injection/device removal, and resize/close stress under two frames in
-flight.
+rebuild, Windows/D3D12 native UI behavior, hardware GPU time and residency
+measurements, native idle tracing with an enabled but cached effect, failure
+injection/device removal, and resize/close stress under two frames in flight.
 
 ## Scratchpad Quick Open integration
 
@@ -237,7 +236,9 @@ retained blur measured 1.673 ms.
 | Default native-hello idle smoke | PASS, three seconds; one submission/retirement, two event waits, zero application wake events/ticks or motion timers |
 | Default binary effect-symbol audit | PASS; no `native_effect_*` symbols in the ordinary host build |
 | Vulkan availability on this Mac | UNAVAILABLE: `SDL_HINT_GPU_DRIVER vulkan unsupported!` |
-| D3D12 and hosted workflow executions | UNVERIFIED locally; reproducible runner and CI step added |
+| Hosted Metal readback on PR head `6a5a104` | PASS; [macOS workflow](https://github.com/samanshaiza004/alicorn/actions/runs/42293184017) |
+| Hosted D3D12 readback on PR head `6a5a104` | PASS; [Windows workflow](https://github.com/samanshaiza004/alicorn/actions/runs/42293184107) |
+| Fresh CI on the integrated head | PENDING |
 | Actual device loss / hardware GPU timestamps / real dogfood interaction comparison | UNVERIFIED |
 
 The sandbox cannot enumerate this Mac's displays. The successful Metal runs
