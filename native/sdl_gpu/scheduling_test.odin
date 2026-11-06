@@ -12,6 +12,22 @@ test_event_wait_timeout_keeps_earliest_deadline :: proc(t: ^testing.T) {
 		"later deadlines must not postpone the swapchain retry")
 	testing.expect(t, native_event_wait_timeout_min(100, 16) == 16,
 		"earlier application ticks or scheduled wakes should still run first")
+	selected := Native_Event_Wait_Deadline_Source.None
+	_ = native_event_wait_timeout_min(-1, 17, &selected, .Retained_Effect_Retry)
+	testing.expect(t, selected == .Retained_Effect_Retry,
+		"a deferred retained effect should use a visible, bounded host retry deadline")
+}
+
+@(test)
+test_retained_effect_retry_is_one_shot_until_rearmed :: proc(t: ^testing.T) {
+	now := u64(5_000_000_000)
+	deadline := native_retained_effect_retry_deadline_after(now)
+	testing.expect(t, deadline == now+NATIVE_RETAINED_EFFECT_RETRY_INTERVAL_NS &&
+		!native_retained_effect_retry_is_due(deadline, deadline-1) &&
+		native_retained_effect_retry_is_due(deadline, deadline),
+		"a deferred effect should request one retry opportunity after a bounded quiet wait")
+	testing.expect(t, !native_retained_effect_retry_is_due(0, deadline+NATIVE_RETAINED_EFFECT_RETRY_INTERVAL_NS),
+		"once the host consumes or cancels the retry deadline, it must not poll while idle")
 }
 
 @(test)

@@ -5,8 +5,6 @@ import "core:testing"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
-when ALICORN_RETAINED_EFFECTS_EXPERIMENT {
-
 @(test)
 test_effect_composite_pipeline_tracks_window_swapchain_format :: proc(t:^testing.T) {
 	cache := native_effect_make(nil, 1024, sdl3.GPUTextureFormat.B8G8R8A8_UNORM)
@@ -24,13 +22,17 @@ test_effect_cache_identity_tracks_prefix_but_not_palette_query :: proc(t: ^testi
 	region := alicorn.Rect{80, 60, 400, 300}
 	clip := alicorn.Rect{0, 0, 1000, 700}
 	background := alicorn.paint_surface_command(alicorn.Node_ID(1), alicorn.Rect{0,0,1000,700}, clip, alicorn.Color{0.1,0.12,0.16,1})
-	marker := alicorn.paint_backdrop_effect_command(alicorn.Node_ID(2), region, clip, alicorn.experimental_backdrop_blur(4))
+	marker := alicorn.paint_backdrop_effect_command(alicorn.Node_ID(2), region, clip, alicorn.backdrop_blur(4))
+	button_a := alicorn.paint_surface_command(alicorn.Node_ID(4), alicorn.Rect{100,130,88,32}, clip,
+		alicorn.Color{0.18,0.24,0.35,1})
+	button_b := button_a
+	button_b.payload = alicorn.Surface_Paint{shape={kind=.Rectangle}, fill=alicorn.Color{0.34,0.48,0.68,1}}
 	query_a := alicorn.paint_text_command(alicorn.Node_ID(3), alicorn.Rect{100,90,200,32}, clip,
 		alicorn.Text_Run_Handle{source=.Retained, resource=17, generation=1}, alicorn.Color{1,1,1,1})
 	query_b := alicorn.paint_text_command(alicorn.Node_ID(3), alicorn.Rect{100,90,200,32}, clip,
 		alicorn.Text_Run_Handle{source=.Retained, resource=18, generation=2}, alicorn.Color{1,1,1,1})
-	display_a := [?]alicorn.Paint_Command{background, marker, query_a}
-	display_b := [?]alicorn.Paint_Command{background, marker, query_b}
+	display_a := [?]alicorn.Paint_Command{background, marker, button_a, query_a}
+	display_b := [?]alicorn.Paint_Command{background, marker, button_b, query_b}
 	prefix_a, marker_a, marker_index_a, found_a := native_effect_prefix_before_first_marker(display_a[:])
 	prefix_b, marker_b, marker_index_b, found_b := native_effect_prefix_before_first_marker(display_b[:])
 	testing.expect(t, found_a && found_b && marker_index_a == 1 && marker_index_b == 1,
@@ -39,7 +41,7 @@ test_effect_cache_identity_tracks_prefix_but_not_palette_query :: proc(t: ^testi
 	generation_a := native_effect_prefix_generation(prefix_a, marker_a.bounds, marker_a.clip, 2, 2, 4)
 	generation_b := native_effect_prefix_generation(prefix_b, marker_b.bounds, marker_b.clip, 2, 2, 4)
 	testing.expect(t, generation_a == generation_b,
-		"typing in the palette after the effect boundary must reuse the same retained backdrop")
+		"hovering a palette button or typing after the effect boundary must reuse the same retained backdrop")
 	changed_background := background
 	changed_background.payload = alicorn.Surface_Paint{shape={kind=.Rectangle}, fill=alicorn.Color{0.2,0.12,0.16,1}}
 	display_changed := [?]alicorn.Paint_Command{changed_background, marker, query_a}
@@ -239,12 +241,43 @@ test_effect_slot_reuse_waits_for_its_submission_fence :: proc(t:^testing.T) {
 	changed.source_generation += 1
 	status := native_retained_effects_prepare(&effects, changed)
 	testing.expect(t, status == .Fallback && effects.slots[0].valid && effects.slots[0].plan == plan,
-		"an in-flight cache slot must remain untouched; use the other safe slot or direct fallback")
+		"without a device, a cache slot remains untouched; the host may use direct fallback")
+	testing.expect(t, native_retained_effects_slot_in_flight(&effects, 0),
+		"the cache is not writable before its recorded submission fence completes")
 
 	native_retained_effects_note_completed(&effects, 6)
-	_ = native_retained_effects_prepare(&effects, changed)
-	testing.expect(t, !effects.slots[0].valid,
-		"a replaced slot may retire its old payload only after its recorded submission fence completes")
-	native_retained_effects_abort(&effects)
+	testing.expect(t, !native_retained_effects_slot_in_flight(&effects, 0),
+		"retiring its submission fence makes the cache slot eligible for replacement")
 }
+
+@(test)
+test_effect_reports_deferred_when_both_cache_slots_are_in_flight :: proc(t:^testing.T) {
+	plan, ok := native_effect_plan(effect_test_request())
+	if !ok { testing.expect(t, false, "deferred fixture should have a bounded effect plan"); return }
+	effects := native_retained_effects_make(nil)
+	// This nonnil token is never dereferenced: both slots are marked in flight,
+	// so prepare must classify the wait before any SDL GPU operation.
+	effects.device = cast(^sdl3.GPUDevice)uintptr(1)
+	for &slot, index in effects.slots {
+		slot.valid = true
+		slot.plan = plan
+		slot.live_bytes = plan.bytes
+		effects.slot_last_use_serial[index] = u64(index+8)
+	}
+	effects.completed_serial = 0
+	changed := plan
+	changed.source_generation += 1
+	status := native_retained_effects_prepare(&effects, changed)
+	testing.expect(t, status == .Deferred,
+		"a valid effect blocked only by outstanding slot fences needs a scheduled retry, not a permanent direct fallback")
+	testing.expect(t, effects.slots[0].valid && effects.slots[1].valid,
+		"preparing a deferred effect must preserve both in-flight cache generations")
+	testing.expect(t, native_retained_effects_next_busy_serial(&effects) == 8,
+		"the host should wait only through the earliest fence that can free a cache slot")
+	native_retained_effects_note_completed(&effects, 8)
+	testing.expect(t, native_retained_effects_next_busy_serial(&effects) == 9,
+		"the next slot fence remains protected until its own submission retires")
+	native_retained_effects_note_completed(&effects, 9)
+	testing.expect(t, native_retained_effects_next_busy_serial(&effects) == 0,
+		"once all retained generations complete, effect recovery requires no more fence wait")
 }

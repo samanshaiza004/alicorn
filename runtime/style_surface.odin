@@ -29,7 +29,7 @@ Semantic_Surface_Style :: struct {
 	material: Material_ID,
 	physical_height: f32,
 	material_group: Material_Group_ID,
-	backdrop_effect: Experimental_Backdrop_Effect,
+	backdrop_effect: Backdrop_Effect,
 	// Optional retained visual above this surface. Only an abutting, visible
 	// visual can open the corresponding segment of the top material edge.
 	open_top_edge: Node_ID,
@@ -64,12 +64,12 @@ semantic_surface_style_is_valid :: proc(rt: ^Runtime, environment: Style_Environ
 	if style.stroke.width > 0 && !style_color_is_valid(style.stroke.color) { return false }
 	if style.physical_height != style.physical_height || abs(style.physical_height) > SURFACE_PHYSICAL_HEIGHT_LIMIT { return false }
 	if !surface_shape_is_valid(style.shape) { return false }
-	if !experimental_backdrop_effect_is_valid(style.backdrop_effect) { return false }
+	if !backdrop_effect_is_valid(style.backdrop_effect) { return false }
 	_, material_ok := style_material_resolve(rt, style.material)
 	return material_ok
 }
 
-experimental_backdrop_effect_is_valid :: proc(effect: Experimental_Backdrop_Effect) -> bool {
+backdrop_effect_is_valid :: proc(effect: Backdrop_Effect) -> bool {
 	if effect.fallback != .Direct { return false }
 	switch effect.kind {
 	case .None:
@@ -140,7 +140,7 @@ surface_begin :: proc(
 	stroke := Paint_Stroke{},
 	stroke_placement := Paint_Stroke_Placement.Centered,
 	open_top_edge: Node_ID = 0,
-	backdrop_effect := EXPERIMENTAL_BACKDROP_NONE,
+	backdrop_effect := BACKDROP_NONE,
 ) -> Node_ID {
 	if ui == nil || ui.runtime == nil { return 0 }
 	rt := ui.runtime

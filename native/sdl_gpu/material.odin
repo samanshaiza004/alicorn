@@ -58,8 +58,8 @@ native_solid_material_vertex_count :: proc(
 // so its decoration cannot cover an adjacent label or close target.
 native_solid_append_connected_tab :: proc(vertices: ^[dynamic]Native_Text_Vertex, bounds: alicorn.Rect, fill: alicorn.Color, opacity: f32, scale: f32) {
 	if bounds.w <= 0 || bounds.h <= 0 { return }
-	shoulder := min(bounds.w*0.22, 28*scale)
-	top := bounds.y+min(4*scale, bounds.h*0.12)
+	shoulder, crown := alicorn.connected_tab_contour_insets(bounds.w, bounds.h, scale)
+	top := bounds.y+crown
 	bottom := bounds.y+bounds.h
 	color := [4]f32{fill.r, fill.g, fill.b, fill.a*opacity}
 	transparent := color

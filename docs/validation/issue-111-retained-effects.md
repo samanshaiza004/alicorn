@@ -1,35 +1,17 @@
-# Issue #111: bounded retained-effects experiment
+# Issue #111: bounded retained backdrop blur
 
-Research: 2026-11-03; native validation: 2026-11-04.
+Research: 2026-11-03; Gaussian quality validation: 2026-11-04; host retry and API promotion: 2026-11-04.
 Sources: [primary-source review](../research/retained-effects-issue-111.md).
 
 ## Scope and decision
 
-The experiment remains gated by
-`ALICORN_RETAINED_EFFECTS_EXPERIMENT=true`. Ordinary applications exclude the
-native compositor and cache at compile time. The experiment adds an opt-in
-backdrop boundary to semantic surfaces and conditionally wires the native
-application compositor; `Runtime`, `Node`, and `Description` record sizes stay
-unchanged, and the default direct-rendering path remains intact. The API is not
-promoted to a supported effects system.
+Backdrop blur is now a supported, bounded semantic-surface capability in Alicorn's native SDL_GPU window compositor. Applications request it with `backdrop_blur(sigma, .Direct)` on `surface_begin`; Alicorn owns capture, Gaussian filtering, retained textures, fence tracking, composition, and fallback. This is a focused material capability, not a general effects graph. Existing analytic materials remain the component-shadow implementation.
 
-The decision is **NO-GO for a supported application effects API at this stage**.
-The probe establishes a bounded implementation and a reproducible comparison;
-it does not establish the issue's two real consumer interactions or full backend
-acceptance. Backdrop blur remains an experiment. Existing analytic materials
-remain the component-shadow implementation.
+Scratchpad Quick Open is the first ordinary consumer. It uses a stable six-logical-pixel Gaussian, 70% panel fill, and 50% modal dim. The developer comparison/tuning controls and compile-time feature gate have been removed. The user confirmed that the Gaussian result is visually useful, then found that interaction-triggered cache deferral could leave one direct fallback frame displayed until another pointer event. The host now distinguishes temporary fence deferral from permanent fallback and schedules a host-only retry; cached idle scenes still arm no timer or wake.
 
-The first real consumer experiment is Scratchpad Quick Open. The low-level
-validation fixtures still provide controlled paint/readback comparisons; the
-Scratchpad integration now checks whether the same bounded compositor helps a
-real interaction. Neither the fixture measurements nor the integration build
-establish user preference or cross-platform product readiness.
+The bounded host implementation is ready for use, while cross-platform and stress evidence remains open. The available local validation environment currently has no enumerated macOS display, so it can run compilation and unit tests but cannot complete the GPU readback or live GUI path. Windows/D3D12 acceptance should be recorded from native CI or a Windows host before claiming backend parity.
 
-The blur-quality gate replaced the stretched five-tap binomial with a sampled
-discrete Gaussian. Metal readbacks now compare against an independent dense
-CPU convolution. The effect remains experimental: this fixes filter-kernel
-quality, but does not settle linear-light color treatment, consumer preference,
-or Windows/D3D12 parity.
+The Gaussian quality gate replaced the stretched five-tap binomial with a sampled discrete Gaussian. Metal readbacks compare against an independent dense CPU convolution. The filter is correct for the documented encoded-SDR contract; linear-light treatment, HDR, wide-gamut color management, and output corner masks are outside this version.
 
 ## Run
 
@@ -44,12 +26,7 @@ sh tools/validate_effects.sh --odin /path/to/odin --driver=vulkan
 ./tools/validate_effects.ps1 -Odin odin -Driver vulkan
 ```
 
-The runners enable the experiment, run native unit tests, then execute device-only
-GPU readbacks. Requested-device failure is a failure, never a silent pass or a
-switch to a different renderer. Captures are written to
-`out/retained-effects/{flat,analytic-shadow,blur-cold,blur-retained}.ppm`.
-Foundation CI includes Metal and D3D12 runs; adding a step does not constitute
-a completed hosted result.
+The runners execute native unit tests, then device-only GPU readbacks. Requested-device failure is a failure, never a silent pass or a switch to a different renderer. Captures are written to `out/retained-effects/{flat,analytic-shadow,blur-cold,blur-retained}.ppm`. Foundation CI includes Metal and D3D12 runs; a configured step alone is not evidence that a hosted run passed.
 
 ## Boundary and rendering contract
 
@@ -57,7 +34,7 @@ The validation fixture's `Native_Effect_Request` contains one stable key,
 authoritative source generation, resolved output rectangle/ancestor clip,
 uniform DPI scale, Gaussian standard deviation (`sigma`) in logical pixels,
 and depth. The fixture advances the source generation explicitly. In the
-opt-in application path, a paint-stream marker defines the boundary and the
+application path, a paint-stream marker defines the boundary and the
 host hashes the commands before it together with bounds, clip, DPI scale, and
 effect parameters. Commands after the marker (including Quick Open
 query/results) do not invalidate the backdrop. This observes only the generic
@@ -95,12 +72,12 @@ begins.
 The color contract is **encoded SDR RGBA8**, matching the existing ordinary
 UNORM renderer. This is deliberately not a linear-light blur. HDR, sRGB render
 targets, wide-gamut/native display color management, and rounded effect-output
-masks are unimplemented. A supported effects API needs an explicit decision on
-those cases; changing the whole renderer's color contract is outside this probe.
+masks are unimplemented. This supported API currently excludes those cases; changing the whole renderer's
+color contract is outside this feature slice.
 
 ## Bounded retention and failure behavior
 
-- The low-level fixture uses one slot. The opt-in primary application host uses
+- The low-level fixture uses one slot. The primary application host uses
   two fence-tracked slots, each with three textures, maximum 2048 physical
   pixels on either axis, sigma at most eight logical pixels (32 physical
   pixels), radius at most 96 physical pixels, and depth one. The app cache has
@@ -115,8 +92,11 @@ those cases; changing the whole renderer's color contract is outside this probe.
   There is no partial-damage algorithm.
 - The isolated validation fixture uses conservative device-idle retirement.
   The application path reuses a slot only after its last-use submission fence
-  retires; if both slots are busy or the budget is exceeded, it draws directly.
-  Ordinary replacement, resize, and dismissal do not drain the GPU. Device-idle
+  retires; if both slots are busy, the host draws directly for that frame and
+  schedules one retry opportunity. At that opportunity it waits only through
+  the earliest fence that can free a cache slot, rather than polling the GPU
+  continuously. A hard budget/format/allocation failure remains a direct
+  fallback. Ordinary replacement, resize, and dismissal do not drain the GPU. Device-idle
   waiting remains a shutdown fallback after the host's final submission wait.
 - Unsupported format, budget, or allocation failure chooses direct drawing.
   Canceled/submission-failed work is not published as a valid output generation.
@@ -124,9 +104,11 @@ those cases; changing the whole renderer's color contract is outside this probe.
 - Device loss is not transparently recovered. A failed device requires the
   host's device teardown/recreation; old cache handles must never migrate to a
   new device. Actual device removal and injected submit failure remain untested.
-- Initially inactive scenes create zero effect resources. Static cached planning
-  performs no filter pass, allocation, submission, timer, or wake. The probe
-  itself owns no event loop; existing native-host idle behavior is unchanged.
+- Initially inactive scenes create zero effect resources. A stable cached scene
+  performs no filter pass, allocation, submission, timer, or wake. A retry timer
+  exists only while a valid effect is deferred by in-flight GPU work; the host
+  consumes it once, retires the relevant submission fence, and redraws without
+  rebuilding or acknowledging the application description.
 
 ## Validation and measurement boundaries
 
@@ -162,52 +144,25 @@ does not expose a portable timestamp query used by this fixture. Captures,
 correctness readbacks, and device-idle resize stalls are not described as frame
 presentation latency.
 
-Remaining adoption gates include two app-level interaction reviews,
-hardware GPU p95/residency, native idle tracing with enabled effects, failure
-injection/device removal, more than one outstanding command, and backend parity.
+Remaining validation includes stationary-pointer interaction after a deferred
+rebuild, Windows/D3D12 native readback and UI behavior, hardware GPU time and
+residency measurements, native idle tracing with an enabled but cached effect,
+failure injection/device removal, and resize/close stress under two frames in
+flight.
 
-## Scratchpad Quick Open dogfood
+## Scratchpad Quick Open integration
 
-The opt-in Scratchpad build adds three controls to Quick Open:
+Quick Open now uses the supported Alicorn surface API directly:
 
-| Mode | Presentation |
-| --- | --- |
-| Flat | Existing opaque theme panel over the existing dim modal backdrop |
-| Tint | The same panel at 88% opacity, with no blur request |
-| Blur | The same tinted panel plus retained backdrop blur with sigma 4 logical pixels |
+- Gaussian sigma: 6 logical pixels.
+- Panel fill: 70% opacity, keeping query/results foreground readable.
+- Workspace dim: 50% opacity.
+- The bounded result list and all foreground text remain crisp.
+- The panel keeps a fixed ten-row viewport, so query and result changes do not alter the capture bounds.
 
-The panel is bounded and has a fixed ten-row results viewport. Query, result
-text, and focus controls use the ordinary crisp paint path. The blur marker is
-placed before the panel fill and its children, so their paint is not filtered.
-Typing changes only the foreground side of the boundary; edits, scroll/paint,
-theme, geometry, clipping, scale, or blur-parameter changes behind it change the
-cache identity.
+The blur marker precedes the panel fill and its children. Typing and result navigation change foreground paint only and should reuse the same captured prefix. Edits, scrolling, theme, geometry, clipping, and scale changes behind Quick Open invalidate the cached image. A host that cannot satisfy the bounded resource policy draws the direct panel fallback.
 
-The local release-speed dogfood executable is in Scratchpad's ignored build
-output at `out/issue-111-quick-open-blur/`; run
-`./out/issue-111-quick-open-blur/run-quick-open-blur.command`. It opens with the
-workspace at `~/dev` and disables session writes. Press `Cmd+P` to open Quick
-Open; Blur is selected by default. The comparison buttons switch to Flat and
-Tint without closing the palette. This is a local arm64 executable linked to
-Homebrew SDL 3.4.18, not a consumer package.
-
-The earlier Quick Open dogfood build used Alicorn `dfed741` plus its opt-in
-working-tree changes, Scratchpad `6f60a79` plus its local Quick Open changes,
-and Caliber `197cd96`. At that point, 318 Alicorn runtime tests, 152 default
-native tests, 159 opt-in native tests, 14 isolated Quick Open frontend tests,
-and Scratchpad `go test ./...` passed. `git diff --check` passed. The full
-Scratchpad frontend suite reports titlebar geometry/button assertions in
-`connected_titlebar_test.odin` and `main_test.odin`. The same assertions
-reproduced from clean Scratchpad `6f60a79` with its pinned Alicorn `fe8967f`
-(and the local macOS font-API cast required by this Odin toolchain), so they
-predate the Issue #111 changes. Both full runs were interrupted after those
-same failures and did not produce a complete suite summary. The shell-launched
-native candidate could not enumerate a display (`The video driver did not add
-any displays`), so interactive Metal appearance, typing/resize feel, and user
-preference remain unverified. The Gaussian API now names this parameter
-`sigma`; Scratchpad's local dogfood code still needs to sync its assertions and
-dependency pin before a fresh app build. Interactive consumer comparison
-remains open before changing the no-go decision.
+The user has visually reviewed the Gaussian treatment and reported the interaction-triggered disappearance now addressed by the deferred-effect retry. The user should recheck stationary-pointer behavior after the updated Alicorn and Scratchpad revisions are built on their interactive Mac. This environment cannot enumerate a display, so I could not independently reproduce the GUI interaction here.
 
 ## Historical native results: five-tap prototype
 
@@ -304,7 +259,8 @@ frosted-glass treatment or a second useful application need.
 | --- | --- | --- |
 | ![Flat palette](assets/issue111-flat.png) | ![Analytic shadow](assets/issue111-analytic-shadow.png) | ![Retained blur](assets/issue111-blur-retained.png) |
 
-For now the useful result is an opt-in, tested probe and an explicit adoption
-boundary: keep direct shadows, retain the blur experiment, and require real
-consumer evidence plus a nonblocking lifetime/color policy before promoting
-the layer into Alicorn's supported application API.
+The production API intentionally remains narrow: one bounded backdrop blur
+request on a semantic surface, an explicit direct fallback, and host-owned
+resource lifetime. The Gaussian implementation and Quick Open consumer are
+now part of Alicorn/Scratchpad; backend parity and the remaining stress cases
+above are still validation work.

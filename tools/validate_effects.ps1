@@ -10,9 +10,9 @@ try {
     $SDL3 = Join-Path (Split-Path -Parent $Odin) 'vendor\sdl3\SDL3.dll'
     if (-not (Test-Path -LiteralPath $SDL3 -PathType Leaf) -or (Get-Item -LiteralPath $SDL3).Length -lt 100000) { throw "Valid SDL3.dll not found at '$SDL3'." }
     Copy-Item -LiteralPath $SDL3 -Destination out\SDL3.dll -Force
-    & $Odin test native\sdl_gpu @($AccessKit.CompilerArguments) -define:ALICORN_RETAINED_EFFECTS_EXPERIMENT=true -out:out\alicorn_effects_tests.exe
+    & $Odin test native\sdl_gpu @($AccessKit.CompilerArguments) -out:out\alicorn_effects_tests.exe
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    & $Odin build native\effects_validation_entry @($AccessKit.CompilerArguments) -o:speed -define:ALICORN_RETAINED_EFFECTS_EXPERIMENT=true -out:out\alicorn_effects_validation.exe
+    & $Odin build native\effects_validation_entry @($AccessKit.CompilerArguments) -o:speed -out:out\alicorn_effects_validation.exe
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     & .\out\alicorn_effects_validation.exe "--driver=$Driver"
     exit $LASTEXITCODE

@@ -12,8 +12,9 @@ NATIVE_DESCRIPTION_STABILIZATION_LIMIT :: 4
 // be verified without attributing them to application work.
 native_frame_submission_requested :: proc(
 	application, native_chrome, devtools_hud, inspector: bool,
+	retained_effect_retry := false,
 ) -> bool {
-	return application || native_chrome || devtools_hud || inspector
+	return application || native_chrome || devtools_hud || inspector || retained_effect_retry
 }
 
 Native_Description_Stabilization :: struct {

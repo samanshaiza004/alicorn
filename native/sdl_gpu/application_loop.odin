@@ -56,6 +56,7 @@ run_application_loop :: proc(
 		device,
 		composite_format=sdl3.GetGPUSwapchainTextureFormat(device, window),
 	)
+	effect_retry_deadline_ns: u64 = 0
 	retired := 0
 	max_in_flight := 0
 	query_before_wait_true := 0
@@ -190,6 +191,9 @@ run_application_loop :: proc(
 		motion_breadcrumbs=breadcrumbs,
 		text_input_coordinator=&text_input_coordinator,
 		device=device,
+		retained_effects=&retained_effects,
+		completed_submission_serial=&completed_submission_serial,
+		effect_retry_deadline_ns=&effect_retry_deadline_ns,
 		rt=rt,
 		application=&application_instance,
 		metrics=metrics,
@@ -264,6 +268,13 @@ run_application_loop :: proc(
 			if swapchain_retry_pending && native_motion_window_renderable_for_window(window, sdl3.GetWindowFlags(window)) {
 				wait_timeout_ms = native_event_wait_timeout_min(wait_timeout_ms, 100,
 					wait_timeout_source_output, .Swapchain_Retry)
+			}
+			if retained_effects.retry_pending && effect_retry_deadline_ns != 0 &&
+			   !primary_drawable_unavailable && native_motion_window_renderable_for_window(window, sdl3.GetWindowFlags(window)) {
+				effect_retry_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(effect_retry_deadline_ns, u64(sdl3.GetTicksNS())))
+				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(
+					wait_timeout_ms, effect_retry_timeout_ms, wait_timeout_source_output, .Retained_Effect_Retry,
+				))
 			}
 			// Tick-driven applications still need their regular callback while a
 			// drawable is unavailable. Wait only until the next tick rather than
@@ -470,6 +481,29 @@ run_application_loop :: proc(
 			motion_host_gpu_submissions=timing.gpu_submissions,
 			motion_breadcrumbs=breadcrumbs,
 		)
+		effect_retry_submission_pending := false
+		retry_now_ns := u64(sdl3.GetTicksNS())
+		if native_retained_effect_retry_is_due(effect_retry_deadline_ns, retry_now_ns) &&
+		   !primary_drawable_unavailable && native_motion_window_renderable_for_window(window, sdl3.GetWindowFlags(window)) {
+			effect_retry_deadline_ns = 0
+			retired += native_poll_completed_fences(device, &in_flight, &completed_submission_serial)
+			native_retained_effects_note_completed(&retained_effects, completed_submission_serial)
+			target_serial := native_retained_effects_next_busy_serial(&retained_effects)
+			for completed_submission_serial < target_serial {
+				if len(in_flight) == 0 || in_flight[0].serial > target_serial {
+					fail("retained effect cache references an untracked GPU submission")
+				}
+				if !wait_and_retire_oldest(
+					device, &in_flight, &query_before_wait_true, &query_after_wait_true,
+					&wait_count, &timing, &completed_submission_serial,
+				) {
+					fail("SDL retained-effect fence wait failed")
+				}
+				retired += 1
+				native_retained_effects_note_completed(&retained_effects, completed_submission_serial)
+			}
+			effect_retry_submission_pending = true
+		}
 		_ = alicorn.tooltip_advance(rt, u64(sdl3.GetTicksNS()))
 		_ = alicorn.notice_advance(rt, u64(sdl3.GetTicksNS()))
 		native_drag_autoscroll_update(rt, &drag_autoscroll_deadline_ns, u64(sdl3.GetTicksNS()))
@@ -763,6 +797,7 @@ run_application_loop :: proc(
 			native_chrome_submission_pending,
 			devtools_hud_redraw_pending,
 			inspector_submission_pending,
+			effect_retry_submission_pending,
 		) {
 			if len(in_flight) >= 2 {
 				if !wait_and_retire_oldest(device, &in_flight, &query_before_wait_true, &query_after_wait_true, &wait_count, &timing, &completed_submission_serial) {
@@ -805,6 +840,7 @@ run_application_loop :: proc(
 			was_drawable_unavailable := primary_drawable_unavailable
 			primary_drawable_unavailable = false
 			if was_drawable_unavailable {
+			if retained_effects.retry_pending { effect_retry_submission_pending = true }
 				resume_motion_now_ns := u64(sdl3.GetTicksNS())
 				resume_window_flags := sdl3.GetWindowFlags(window)
 				resume_motion := native_motion_scheduler_advance(
@@ -900,12 +936,18 @@ run_application_loop :: proc(
 				fail("SDL application submission failed")
 			}
 			flight := Native_In_Flight{fence=fence}
-			when ALICORN_RETAINED_EFFECTS_EXPERIMENT { flight.serial = u64(submitted+1) }
+			flight.serial = u64(submitted+1)
 			append(&in_flight, flight)
 			native_text_commit_submission(text_renderer)
 			native_surface_commit_submission(surface_renderer)
 			native_solid_commit_submission(solid_renderer)
 			native_retained_effects_commit(&retained_effects, u64(submitted+1))
+			if retained_effects.retry_pending && !primary_drawable_unavailable &&
+			   native_motion_window_renderable_for_window(window, sdl3.GetWindowFlags(window)) {
+				effect_retry_deadline_ns = native_retained_effect_retry_deadline_after(u64(sdl3.GetTicksNS()))
+			} else {
+				effect_retry_deadline_ns = 0
+			}
 			native_inspector_submission_succeeded(inspector)
 			if native_inspector_visible(inspector) { timing.inspector_submissions += 1 }
 			if application_submission_pending {
@@ -1088,6 +1130,7 @@ run_application_loop :: proc(
 		"gpu_submit_ns", timing.gpu_submit_ns,
 		"fence_wait_ns", timing.fence_wait_ns,
 		"application_tick_max_ns", timing.application_tick_max_ns,
+		"application_build_ns", timing.application_build_ns,
 		"application_build_max_ns", timing.application_build_max_ns,
 		"application_stabilization_rebuilds", timing.application_stabilization_rebuilds,
 		"application_stabilization_limit_hits", timing.application_stabilization_limit_hits,

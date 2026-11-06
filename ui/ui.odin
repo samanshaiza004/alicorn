@@ -380,6 +380,7 @@ panel_end :: proc(
 	_shape: alicorn.Surface_Shape,
 	_material: alicorn.Material_ID,
 	_physical_height: f32,
+	_backdrop_effect: alicorn.Backdrop_Effect,
 	opened: bool,
 ) {
 	if opened { alicorn.surface_end(ui) }
@@ -388,7 +389,8 @@ panel_end :: proc(
 // panel is a layout column with one ordinary retained surface paint command.
 // Its optional typed sizing lowers onto the same surface node; percentage
 // width remains subject to the current parent's definiteness rules. Omitted
-// fill uses the active theme's Surface role.
+// fill uses the active theme's Surface role. backdrop_effect requests an
+// optional bounded effect behind this panel.
 @(deferred_in_out=panel_end)
 panel :: proc(
 	ui: ^UI,
@@ -410,6 +412,7 @@ panel :: proc(
 	shape: alicorn.Surface_Shape = {kind=.Rectangle},
 	material: alicorn.Material_ID = alicorn.MATERIAL_FLAT,
 	physical_height: f32 = 0,
+	backdrop_effect: alicorn.Backdrop_Effect = alicorn.BACKDROP_NONE,
 ) -> bool {
 	resolved_shape := shape
 	if radius != 0 { resolved_shape = alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=radius} }
@@ -428,6 +431,7 @@ panel :: proc(
 		fill=fill,
 		stroke=paint_stroke(stroke),
 		stroke_placement=stroke.placement,
+		backdrop_effect=backdrop_effect,
 		label=label,
 		loc=loc,
 	)

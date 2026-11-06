@@ -91,13 +91,11 @@ draw_display_list :: proc(
 		for overlay in chrome { append(&owned, overlay) }
 		render_display = owned[:]
 	}
-	when ALICORN_RETAINED_EFFECTS_EXPERIMENT {
-		if retained_effects != nil && !native_effects_prepare_display_prefix(
-			command, swap_w, swap_h, text_renderer, surface_renderer, solid_renderer,
-			render_display, logical_to_pixel_x, logical_to_pixel_y, retained_effects,
-			scratch_allocator,
-		) { return false }
-	}
+	if retained_effects != nil && !native_effects_prepare_display_prefix(
+		command, swap_w, swap_h, text_renderer, surface_renderer, solid_renderer,
+		render_display, logical_to_pixel_x, logical_to_pixel_y, retained_effects,
+		scratch_allocator,
+	) { return false }
 	if !native_text_rebuild_mesh(text_renderer, render_display, logical_to_pixel_x, logical_to_pixel_y, scratch_allocator) { return false }
 	if !native_text_sync_atlas(text_renderer, command, scratch_allocator) { return false }
 	if !native_text_upload_vertices(text_renderer, command) { return false }
@@ -243,9 +241,7 @@ wait_and_retire_oldest :: proc(
 	if sdl3.QueryGPUFence(device, old.fence) {
 		query_after_wait_true^ += 1
 	}
-	when ALICORN_RETAINED_EFFECTS_EXPERIMENT {
-		if completed_serial != nil { completed_serial^ = max(completed_serial^, old.serial) }
-	}
+	if completed_serial != nil { completed_serial^ = max(completed_serial^, old.serial) }
 	// The blocking wait is the authoritative completion point for this known
 	// oldest submission. Query behavior is recorded but not required for safe
 	// retirement, including SDL backend implementations with unusual query
@@ -256,4 +252,25 @@ wait_and_retire_oldest :: proc(
 	}
 	pop(in_flight)
 	return true
+}
+
+// Retire only the completed prefix of the submission queue. This is used by
+// the one-shot retained-effect retry path; ordinary idle frames do not poll
+// GPU fences. Queue ordering makes the completed prefix safe to acknowledge.
+native_poll_completed_fences :: proc(
+	device: ^sdl3.GPUDevice,
+	in_flight: ^[dynamic; 3]Native_In_Flight,
+	completed_serial: ^u64,
+) -> int {
+	retired := 0
+	for len(in_flight) > 0 {
+		old := in_flight[0]
+		if !sdl3.QueryGPUFence(device, old.fence) { break }
+		if completed_serial != nil { completed_serial^ = max(completed_serial^, old.serial) }
+		sdl3.ReleaseGPUFence(device, old.fence)
+		for i := 1; i < len(in_flight); i += 1 { in_flight[i-1] = in_flight[i] }
+		pop(in_flight)
+		retired += 1
+	}
+	return retired
 }

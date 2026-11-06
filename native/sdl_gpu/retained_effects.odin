@@ -5,13 +5,8 @@ import "core:math"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
-ALICORN_RETAINED_EFFECTS_EXPERIMENT :: #config(ALICORN_RETAINED_EFFECTS_EXPERIMENT, false)
-
-when ALICORN_RETAINED_EFFECTS_EXPERIMENT {
-
-// Issue #111 application dogfood experiment. The narrow app-facing surface
-// marker is compiled into the native compositor only for explicit opt-in
-// builds. Filtering is encoded SDR_UNORM, not a linear-light blur.
+// Supported bounded backdrop blur for semantic surfaces. Filtering is encoded
+// SDR_UNORM, not a linear-light blur.
 //
 // Caller protocol: prepare -> capture the opaque generic paint prefix into
 // cache.source (translated by -plan.source_bounds.xy) -> encode -> composite ->
@@ -66,7 +61,7 @@ Native_Effect_Plan :: struct {
 	bytes: u64,
 }
 
-Native_Effect_Status :: enum { Inactive, Cached, Render, Fallback }
+Native_Effect_Status :: enum { Inactive, Cached, Render, Deferred, Fallback }
 
 Native_Effect_Cache :: struct {
 	device: ^sdl3.GPUDevice,
@@ -107,6 +102,7 @@ Native_Retained_Effects :: struct {
 	pending_slot: int,
 	pending_status: Native_Effect_Status,
 	pending_key: u64,
+	retry_pending: bool,
 	direct_fallbacks: u64,
 }
 
@@ -125,9 +121,26 @@ native_retained_effects_note_completed :: proc(effects: ^Native_Retained_Effects
 	effects.completed_serial = max(effects.completed_serial, completed_serial)
 }
 
+native_retained_effects_slot_in_flight :: proc(effects: ^Native_Retained_Effects, index: int) -> bool {
+	return effects != nil && index >= 0 && index < NATIVE_RETAINED_EFFECT_SLOT_COUNT &&
+		effects.slot_last_use_serial[index] > effects.completed_serial
+}
+
+native_retained_effects_next_busy_serial :: proc(effects: ^Native_Retained_Effects) -> u64 {
+	if effects == nil { return 0 }
+	next := u64(0xffff_ffff_ffff_ffff)
+	for serial in effects.slot_last_use_serial {
+		if serial > effects.completed_serial { next = min(next, serial) }
+	}
+	return 0 if next == u64(0xffff_ffff_ffff_ffff) else next
+}
+
 native_retained_effects_prepare :: proc(effects: ^Native_Retained_Effects, plan: Native_Effect_Plan) -> Native_Effect_Status {
-	if effects == nil || !plan.active || !native_effect_plan_valid(plan) || effects.pending_slot >= 0 {
-		if effects != nil { effects.direct_fallbacks += 1 }
+	if effects == nil { return .Fallback }
+	effects.retry_pending = false
+	if !plan.active || !native_effect_plan_valid(plan) || effects.pending_slot >= 0 ||
+	   effects.device == nil || plan.bytes > effects.budget_bytes {
+		effects.direct_fallbacks += 1
 		return .Fallback
 	}
 	// Prefer an exact cached prefix even if its output is still referenced by
@@ -140,13 +153,27 @@ native_retained_effects_prepare :: proc(effects: ^Native_Retained_Effects, plan:
 			return .Cached
 		}
 	}
+	may_retry_after_fence := false
 	for &slot, index in effects.slots {
-		if effects.slot_last_use_serial[index] > effects.completed_serial { continue }
 		other_index := 1-index
+		if native_retained_effects_slot_in_flight(effects, index) {
+			may_retry_after_fence = true
+			continue
+		}
 		other_bytes := effects.slots[other_index].live_bytes
 		available := u64(0)
 		if other_bytes < effects.budget_bytes { available = effects.budget_bytes-other_bytes }
-		if plan.bytes > available { continue }
+		if plan.bytes > available {
+			if native_retained_effects_slot_in_flight(effects, other_index) {
+				may_retry_after_fence = true
+				continue
+			}
+			// A completed cache generation is safe to evict. The swapchain keeps
+			// the last presented image; its offscreen texture need not stay resident
+			// merely to preserve a cache entry that blocks a replacement.
+			native_effect_reset(&effects.slots[other_index])
+			available = effects.budget_bytes
+		}
 		slot.budget_bytes = available
 		status := native_effect_prepare(&slot, plan)
 		if status == .Render || status == .Cached {
@@ -155,6 +182,10 @@ native_retained_effects_prepare :: proc(effects: ^Native_Retained_Effects, plan:
 			effects.pending_key = plan.key
 			return status
 		}
+	}
+	if may_retry_after_fence {
+		effects.retry_pending = true
+		return .Deferred
 	}
 	effects.direct_fallbacks += 1
 	return .Fallback
@@ -301,8 +332,8 @@ native_effect_gaussian_taps :: proc(sigma_pixels: f32) -> (taps: [NATIVE_EFFECT_
 }
 
 native_effect_plan :: proc(request: Native_Effect_Request) -> (plan: Native_Effect_Plan, ok: bool) {
-	// The opt-in gate permits a zero-initialized disabled request, even without
-	// a device, key, generation, scale or depth. Enabled requests are validated.
+	// A zero-initialized disabled request needs no device, key, generation, scale,
+	// or depth. Enabled requests are validated.
 	if !request.enabled { return plan, true }
 	if !native_effect_finite(request.scale) || request.scale <= 0 || request.scale > NATIVE_EFFECT_MAX_SCALE ||
 	   !native_effect_finite(request.sigma) || request.sigma < 0 || request.sigma > 8 ||
@@ -665,31 +696,3 @@ native_effect_commit :: proc(cache: ^Native_Effect_Cache) {
 	cache.output_generation += 1
 }
 
-} else {
-	// Empty, zero-work host types preserve the ordinary direct renderer when
-	// the experimental build flag is absent.
-	Native_Retained_Effects :: struct {}
-
-	native_retained_effects_make :: proc(
-		device: ^sdl3.GPUDevice,
-		budget_bytes: u64 = 0,
-		composite_format: sdl3.GPUTextureFormat = sdl3.GPUTextureFormat.R8G8B8A8_UNORM,
-	) -> Native_Retained_Effects {
-		return {}
-	}
-
-	native_retained_effects_note_completed :: proc(effects: ^Native_Retained_Effects, completed_serial: u64) {}
-	native_retained_effects_abort :: proc(effects: ^Native_Retained_Effects) {}
-	native_retained_effects_commit :: proc(effects: ^Native_Retained_Effects, submission_serial: u64) {}
-	native_retained_effects_destroy :: proc(effects: ^Native_Retained_Effects, device_already_idle: bool = false) {}
-
-	native_retained_effects_composite_at :: proc(
-		effects: ^Native_Retained_Effects,
-		owner: alicorn.Node_ID,
-		command: ^sdl3.GPUCommandBuffer,
-		target: ^sdl3.GPUTexture,
-		w, h: sdl3.Uint32,
-	) -> bool {
-		return true
-	}
-} // ALICORN_RETAINED_EFFECTS_EXPERIMENT

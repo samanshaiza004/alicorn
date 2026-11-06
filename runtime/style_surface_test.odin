@@ -4,10 +4,10 @@ import "core:testing"
 import "core:strings"
 
 @(test)
-test_experimental_backdrop_is_an_ordered_surface_boundary :: proc(t: ^testing.T) {
+test_backdrop_is_an_ordered_surface_boundary :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 180, 100})
 	defer destroy_runtime(&rt)
-	effect := experimental_backdrop_blur(4, .Direct)
+	effect := backdrop_blur(4, .Direct)
 	ui, build := begin_frame(&rt)
 	if !build { testing.expect(t, false, "backdrop boundary fixture should build"); return }
 	container_begin(&ui, .Root, key=key_string("backdrop-boundary-root"), style=layout_style(width=180, height=100))
@@ -32,7 +32,7 @@ test_experimental_backdrop_is_an_ordered_surface_boundary :: proc(t: ^testing.T)
 	changed.backdrop_effect.sigma = 5
 	testing.expect(t, semantic_surface_style_hash(changed) != semantic_surface_style_hash(style),
 		"changing effect parameters should invalidate the retained surface description")
-	testing.expect(t, !experimental_backdrop_effect_is_valid(experimental_backdrop_blur(9)),
+	testing.expect(t, !backdrop_effect_is_valid(backdrop_blur(9)),
 		"blur sigma beyond the supported logical bound must be rejected")
 }
 

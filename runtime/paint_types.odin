@@ -7,27 +7,26 @@ Paint_Stroke_Placement :: enum u8 {
 	Count,
 }
 
-// Experimental_Backdrop_Effect is an opt-in compositor request attached to a
-// semantic surface. Direct is the required fallback for hosts that cannot
-// retain or filter the bounded backdrop. This remains experimental until the
-// native host resource-scheduling gate is complete.
-Experimental_Backdrop_Effect_Kind :: enum u8 { None, Blur }
-Experimental_Backdrop_Fallback :: enum u8 { Direct }
-Experimental_Backdrop_Effect :: struct {
-	kind: Experimental_Backdrop_Effect_Kind,
+// Backdrop_Effect is a bounded compositor request attached to a semantic
+// surface. Direct is the required fallback for hosts that cannot retain or
+// filter the backdrop within their supported resource policy.
+Backdrop_Effect_Kind :: enum u8 { None, Blur }
+Backdrop_Effect_Fallback :: enum u8 { Direct }
+Backdrop_Effect :: struct {
+	kind: Backdrop_Effect_Kind,
 	sigma: f32,
-	fallback: Experimental_Backdrop_Fallback,
+	fallback: Backdrop_Effect_Fallback,
 }
 
-EXPERIMENTAL_BACKDROP_NONE :: Experimental_Backdrop_Effect{}
+BACKDROP_NONE :: Backdrop_Effect{}
 
-experimental_backdrop_blur :: proc(sigma: f32, fallback := Experimental_Backdrop_Fallback.Direct) -> Experimental_Backdrop_Effect {
-	return Experimental_Backdrop_Effect{kind=.Blur, sigma=sigma, fallback=fallback}
+backdrop_blur :: proc(sigma: f32, fallback := Backdrop_Effect_Fallback.Direct) -> Backdrop_Effect {
+	return Backdrop_Effect{kind=.Blur, sigma=sigma, fallback=fallback}
 }
 
 Backdrop_Effect_Paint :: struct {
 	sigma: f32,
-	fallback: Experimental_Backdrop_Fallback,
+	fallback: Backdrop_Effect_Fallback,
 }
 
 // Paint_Command is the renderer-facing output of every paint producer:
@@ -54,7 +53,7 @@ Paint_Payload :: union #no_nil {
 	Geometry_Paint,
 }
 
-paint_backdrop_effect_command :: proc(owner: Node_ID, bounds, clip: Rect, effect: Experimental_Backdrop_Effect) -> Paint_Command {
+paint_backdrop_effect_command :: proc(owner: Node_ID, bounds, clip: Rect, effect: Backdrop_Effect) -> Paint_Command {
 	return Paint_Command{
 		owner=owner,
 		bounds=bounds,

@@ -14,6 +14,15 @@ SCHEDULED_WAKE_MAX_U64 :: u64(0xffff_ffff_ffff_ffff)
 // expiry are snapped together, even if some started later.
 NATIVE_MOTION_SAMPLE_INTERVAL_NS :: u64(16_666_667)
 NATIVE_MOTION_UNCERTIFIED_LIMIT_NS :: u64(5_000_000_000)
+NATIVE_RETAINED_EFFECT_RETRY_INTERVAL_NS :: u64(16_666_667)
+
+native_retained_effect_retry_deadline_after :: proc(now_ns: u64) -> u64 {
+	return scheduled_wake_deadline_after(now_ns, NATIVE_RETAINED_EFFECT_RETRY_INTERVAL_NS)
+}
+
+native_retained_effect_retry_is_due :: proc(deadline_ns, now_ns: u64) -> bool {
+	return deadline_ns != 0 && now_ns >= deadline_ns
+}
 
 Native_Motion_Scheduler_Stats :: struct {
 	samples: u64,
@@ -390,6 +399,7 @@ Native_Scheduled_Wake_State :: struct {
 Native_Event_Wait_Deadline_Source :: enum {
 	None,
 	Swapchain_Retry,
+	Retained_Effect_Retry,
 	Primary_Tick,
 	Primary_Motion,
 	Drag_Autoscroll,
@@ -406,7 +416,7 @@ Native_Event_Wait_Deadline_Source :: enum {
 	Validation_Exit,
 }
 
-NATIVE_EVENT_WAIT_DEADLINE_SOURCE_COUNT :: 16
+NATIVE_EVENT_WAIT_DEADLINE_SOURCE_COUNT :: 17
 
 // SDL event waits use a negative timeout for an indefinite wait. Merge a new
 // nonnegative deadline without accidentally replacing an earlier retry/tick.

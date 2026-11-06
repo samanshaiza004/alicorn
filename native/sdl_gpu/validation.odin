@@ -642,7 +642,7 @@ RunFoundation :: proc() {
 			fail("SDL_SubmitGPUCommandBufferAndAcquireFence failed")
 		}
 		flight := Native_In_Flight{fence=fence}
-		when ALICORN_RETAINED_EFFECTS_EXPERIMENT { flight.serial = u64(submitted+1) }
+		flight.serial = u64(submitted+1)
 		append(&in_flight, flight)
 			native_text_commit_submission(&text_renderer)
 			native_surface_commit_submission(&surface_renderer)

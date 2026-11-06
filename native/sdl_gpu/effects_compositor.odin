@@ -1,6 +1,6 @@
 package alicorn_sdl_gpu
 
-// Experimental application compositor integration for bounded backdrop blur.
+// Application compositor integration for bounded backdrop blur.
 // The request is a paint-stream boundary: the host captures only commands
 // before it, then composites the cached result immediately before the owning
 // surface. Applications never see textures, command buffers, or fences.
@@ -8,8 +8,6 @@ package alicorn_sdl_gpu
 import "core:mem"
 import alicorn "../../runtime"
 import "vendor:sdl3"
-
-when ALICORN_RETAINED_EFFECTS_EXPERIMENT {
 
 NATIVE_EFFECT_PREFIX_CLEAR :: sdl3.FColor{0.035, 0.045, 0.065, 1}
 
@@ -133,7 +131,6 @@ native_effect_capture_clear :: proc(command: ^sdl3.GPUCommandBuffer, texture: ^s
 	sdl3.EndGPURenderPass(pass)
 	return true
 }
-
 native_effects_prepare_display_prefix :: proc(
 	command: ^sdl3.GPUCommandBuffer,
 	swap_w, swap_h: sdl3.Uint32,
@@ -146,6 +143,7 @@ native_effects_prepare_display_prefix :: proc(
 	scratch_allocator: mem.Allocator,
 ) -> bool {
 	if effects == nil { return true }
+	effects.retry_pending = false
 	prefix, marker, marker_index, found := native_effect_prefix_before_first_marker(display)
 	if !found { return true }
 	// A second boundary would imply nested sampling semantics that this narrow
@@ -199,5 +197,3 @@ native_effects_prepare_display_prefix :: proc(
 	}
 	return true
 }
-
-} // ALICORN_RETAINED_EFFECTS_EXPERIMENT

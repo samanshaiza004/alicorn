@@ -1,7 +1,7 @@
 package alicorn_sdl_gpu
 
-// Dedicated #111 experiment. No application loop or ordinary compositor calls
-// these functions. Readbacks reuse draw_display_list and its existing shaders.
+// Focused retained-effects GPU validation. Readbacks reuse draw_display_list
+// and its existing shaders.
 import "core:fmt"
 import "core:math"
 import "core:os"
@@ -10,8 +10,6 @@ import "core:strings"
 import "core:time"
 import alicorn "../../runtime"
 import "vendor:sdl3"
-
-when ALICORN_RETAINED_EFFECTS_EXPERIMENT {
 
 EFFECT_PROBE_WIDTH :: 384
 EFFECT_PROBE_HEIGHT :: 256
@@ -399,5 +397,4 @@ RunRetainedEffectsValidation :: proc() {
     if !sdl3.Init(sdl3.INIT_VIDEO) { fail("effects SDL initialization failed") }
     defer sdl3.Quit()
     if !effect_probe_device(driver) { fail("retained effects experiment failed") }
-}
 }
