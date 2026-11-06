@@ -1,9 +1,12 @@
-# #109 final decision: retained sizing with Scratchpad and Punks
+# #109 sizing decision record: partial adoption and future research
 
-Status: completed research experiment with partial adoption. Keep the
-correctness fixes and narrow definite-parent percentage width; do not declare
-the broader sizing algebra successful. Track production acceptance separately
-in [#158](https://github.com/samanshaiza004/alicorn/issues/158).
+Status: v0.2.1-era decision record for the completed partial experiment. Keep
+the correctness fixes and narrow definite-parent percentage width; do not
+declare the broader sizing algebra successful. The remaining work belongs to
+the v0.3.0 research issue [#109](https://github.com/samanshaiza004/alicorn/issues/109)
+and production acceptance tracking in
+[#158](https://github.com/samanshaiza004/alicorn/issues/158). Broader layout
+resizing is intentionally outside the v0.2.1 release scope.
 
 Decision date: 2026-10-29, America/Guatemala. The Windows sidecar benchmark and
 consumer validation follow-up are recorded below.

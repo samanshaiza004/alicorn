@@ -3,6 +3,9 @@
 Start with [Getting Started](getting-started.md) to install the toolchain, build
 Alicorn, and run the native starter.
 
+The current release is [Alicorn v0.2.1](../CHANGELOG.md); the same changelog
+contains the v0.1.0 and v0.2.0 release history.
+
 ## Use Alicorn
 
 - [Progressive application guide](guide.md) — build interfaces from basic
@@ -35,8 +38,10 @@ Alicorn, and run the native starter.
 
 ## Active research
 
-- [#109 sizing completion proposal](research/issue-109-completion-plan.md) —
-  retained percentage dependencies and the Scratchpad/Punks adoption gate.
+- [#109 typed sizing research](research/issue-109-completion-plan.md) —
+  v0.3.0 follow-up research. v0.2.1 includes only the already merged fixed,
+  fit-height, and definite-parent percentage-width work; broader layout
+  resizing remains deferred and is not a v0.2.1 release gate.
 
 ## Platform status and validation
 

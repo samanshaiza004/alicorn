@@ -7,6 +7,13 @@ the current project status.
 
 ## Current acceptance and platform limits
 
+- [v0.2.1 release validation](release-v0.2.1.md) — included history, checks,
+  release scope, and remaining platform-validation boundaries.
+- [Odin dev-2026-11 migration](odin-dev-2026-11.md) — Windows validation for
+  the current compiler baseline; the record explicitly identifies checks that
+  still require another platform or local CMake installation.
+- [Issue #90 CPU paint reference](issue-90-cpu-paint-reference.md) — bounded
+  CPU/GPU differential evidence for the supported test-only paint subset.
 - [Issue #144 motion diagnostics and virtual-clock replay](issue-144-motion-diagnostics.md) — completed diagnostic and replay scope; broader native acceptance remains under #146.
 - [Issue #106 incremental-vs-fresh-runtime invalidation oracle](issue-106-invalidation-oracle.md) — bounded deterministic test oracle for retained invalidation misuse; follow-up corpus remains open.
 - [Issue #146 motion diagnostics and Punks dogfood progress (2026-10-30)](issue-146-progress-2026-10-30.md) — closed-inspector headless overhead and application integration evidence; native scheduler acceptance remains open.
