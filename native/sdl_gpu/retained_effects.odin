@@ -695,4 +695,3 @@ native_effect_commit :: proc(cache: ^Native_Effect_Cache) {
 	cache.pending_command = nil
 	cache.output_generation += 1
 }
-
