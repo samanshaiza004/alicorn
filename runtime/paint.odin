@@ -481,7 +481,10 @@ update_paint :: proc(rt: ^Runtime) {
 				if parent, ok := rt.nodes[node.parent]; ok {
 					parent_is_context_menu = parent.kind == .Context_Menu_Panel
 				}
-				if parent_is_context_menu {
+				close_tab, show_dirty_marker := tab_close_owner(rt, node)
+				if close_tab != nil {
+					tab_close_append_paint(rt, node, close_tab, show_dirty_marker)
+				} else if parent_is_context_menu {
 					// Menu navigation and pointer hover share the menu's active-row
 					// highlight. Ordinary buttons still receive their independent
 					// focus outline below.
@@ -536,7 +539,7 @@ update_paint :: proc(rt: ^Runtime) {
 				if len(node.label) > 0 {
 					append(&node.paint, paint_text_command(node.id, text_bounds, text_clip, paint_text_handle_for_node(node), text_color))
 				}
-				if node.icon_id != .None {
+				if node.icon_id != .None && close_tab == nil {
 					icon_size := minf(16, maxf(content_bounds.h-4, 10))
 					icon_x := node.bounds.x+node.bounds.w-padding_x-icon_size
 					if len(node.label) == 0 { icon_x = node.bounds.x+(node.bounds.w-icon_size)*0.5 }

@@ -79,8 +79,8 @@ test_connected_tab_appearance_is_scoped_retained_and_preserves_close_target :: p
 	testing.expect(t,close_count==1 && rt.nodes[close].bounds.w==TAB_CLOSE_CONTROL_SIZE && rt.nodes[close].bounds.h==TAB_CLOSE_CONTROL_SIZE,
 		"decoration must preserve the independently interactive close target")
 	label,label_count:=tab_bar_test_visual_part(&rt,tab,.Label)
-	// Both the document label and the clean close glyph inherit the paper ink.
-	testing.expect(t,label_count==2 && label!=0,"the title and close glyph should share selected-surface contrast")
+	testing.expect(t,label_count==1 && label!=0 && close_count==1 && rt.nodes[close].color==ink,
+		"the close icon should use the selected paper ink and remain separate from the document title")
 	items := tab_bar_test_items(0)
 	for item in items {
 		item_id, matches := tab_bar_test_item_node(&rt, item.semantic_id)
@@ -128,6 +128,69 @@ test_connected_tab_appearance_is_scoped_retained_and_preserves_close_target :: p
 	before:=rt.stats.paint_nodes_visited
 	ui,ready=begin_presentation_frame(&rt)
 	testing.expect(t,!ready && rt.stats.paint_nodes_visited==before,"unchanged connected tabs must require no idle paint work")
+}
+
+@(test)
+test_connected_tab_close_paint_stays_inside_the_contour :: proc(t: ^testing.T) {
+	for height in ([2]f32{26, 42}) {
+		for width in ([2]f32{48, 180}) {
+			rt := new_runtime(Rect{0, 0, 600, 100})
+			defer destroy_runtime(&rt)
+			items := tab_bar_test_items()
+			options := DEFAULT_TAB_BAR_OPTIONS
+			options.height = height
+			options.min_tab_width, options.max_tab_width = width, width
+			options.gap = 0
+			options.appearance, options.presentation = .Connected, .Compact
+			options.close_policy = .Always
+			options.selected_fill = Color{0.94, 0.91, 0.82, 1}
+			options.selected_text = Color{0.15, 0.14, 0.12, 1}
+			options.selected_fill_set = true
+			_ = tab_bar_test_build(&rt, items[:], width*f32(len(items)), options)
+			_ = tab_bar_test_build(&rt, items[:], width*f32(len(items)), options)
+
+			for item in items {
+				tab_id, _ := tab_bar_test_item_node(&rt, item.semantic_id)
+				close_id, _ := tab_bar_test_close_node(&rt, tab_id)
+				if tab_id == 0 || close_id == 0 {
+					testing.expect(t, false, "the contour fixture should retain every tab and close target")
+					continue
+				}
+				tab, close := rt.nodes[tab_id], rt.nodes[close_id]
+				hit := layout_node_finalized_geometry(&rt, close_id).bounds
+				x, y := hit.x+hit.w*0.5, hit.y+hit.h*0.5
+				testing.expect(t, process_pointer(&rt, Pointer_Event{kind=.Move, x=x, y=y}) == close_id,
+					"the close action should remain independently hoverable")
+				ui, ready := begin_presentation_frame(&rt)
+				if ready { end_presentation_frame(&ui) }
+				testing.expect(t, len(close.paint) == 2 && layout_node_finalized_geometry(&rt, close_id).bounds == hit,
+					"hover should paint a highlight and icon without moving the target")
+				if len(close.paint) != 2 { continue }
+
+				highlight, icon := close.paint[0], close.paint[1]
+				surface, surface_ok := highlight.payload.(Surface_Paint)
+				glyph, glyph_ok := icon.payload.(Icon_Paint)
+				expected_ink := options.selected_text if item.selected else style_environment_color(&rt, close.style_environment, .Muted_Text)
+				tint := expected_ink
+				tint.a *= 0.12
+				testing.expect(t, surface_ok && surface.shape.kind == .Rounded_Rectangle &&
+					surface.material == MATERIAL_FLAT && surface.fill == tint &&
+					glyph_ok && glyph.id == .Close && glyph.color == expected_ink,
+					"hover should tint the tab with its own ink and draw a flat highlight behind the close icon")
+
+				outline := connected_tab_visual_bounds(tab.bounds, tab.selected)
+				shoulder, crown := connected_tab_contour_insets(outline.w, outline.h)
+				plate := highlight.bounds
+				testing.expect(t, plate.x >= outline.x+shoulder && plate.x+plate.w <= outline.x+outline.w-shoulder &&
+					plate.y >= outline.y+crown && plate.y+plate.h <= outline.y+outline.h,
+					"even the smallest inactive tab should contain the whole highlight inside its contour")
+				testing.expect(t, plate.w < hit.w && plate.h < hit.h && icon.bounds.w <= plate.w && icon.bounds.h <= plate.h &&
+					abs(plate.x+plate.w*0.5-x) < 0.01 && abs(plate.y+plate.h*0.5-y) < 0.01 &&
+					abs(icon.bounds.x+icon.bounds.w*0.5-x) < 0.01 && abs(icon.bounds.y+icon.bounds.h*0.5-y) < 0.01,
+					"the icon and highlight should share the hit target's center")
+			}
+		}
+	}
 }
 
 @(test)
