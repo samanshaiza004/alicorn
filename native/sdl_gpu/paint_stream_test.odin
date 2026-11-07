@@ -3,10 +3,6 @@ package alicorn_sdl_gpu
 import "core:testing"
 import alicorn "../../runtime"
 
-paint_stream_test_same_rect :: proc(a, b: alicorn.Rect) -> bool {
-	return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h
-}
-
 @(test)
 test_paint_stream_keeps_heterogeneous_order_and_only_batches_neighbors :: proc(t: ^testing.T) {
 	overlap := alicorn.Rect{4, 6, 32, 24}
@@ -30,7 +26,7 @@ test_paint_stream_keeps_heterogeneous_order_and_only_batches_neighbors :: proc(t
 		want_end := index+1
 		if expected[run_index] == .Image { want_end = index+2 }
 		testing.expect(t, end == want_end, "only adjacent commands in an image run may batch; unlike paint remains an ordering barrier")
-		testing.expect(t, paint_stream_test_same_rect(display[index].bounds, overlap), "fixture commands should overlap so reordering would change visible compositing")
+		testing.expect(t, alicorn.rect_equal(display[index].bounds, overlap), "fixture commands should overlap so reordering would change visible compositing")
 		index = end
 	}
 	testing.expect(t, index == len(display), "the compositor must visit each retained paint command exactly once")

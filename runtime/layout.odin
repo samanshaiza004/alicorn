@@ -169,20 +169,20 @@ intrinsic_main :: proc(rt: ^Runtime, node: ^Node, direction: Layout_Direction) -
 	return 24 + 2*padding_y
 }
 
-main_axis_min :: proc(style: Layout_Style, direction: Layout_Direction) -> f32 {
+layout_axis_minimum :: proc(style: Layout_Style, direction: Layout_Direction) -> f32 {
 	return style.min_width if direction == .Row else style.min_height
 }
 
-main_axis_max :: proc(style: Layout_Style, direction: Layout_Direction) -> f32 {
+layout_axis_maximum :: proc(style: Layout_Style, direction: Layout_Direction) -> f32 {
 	return style.max_width if direction == .Row else style.max_height
 }
 
 resolved_main_size :: proc(node: ^Node, direction: Layout_Direction, basis: f32) -> f32 {
-	return clampf(basis, main_axis_min(node.style, direction), main_axis_max(node.style, direction))
+	return clampf(basis, layout_axis_minimum(node.style, direction), layout_axis_maximum(node.style, direction))
 }
 
 layout_node_main_min :: proc(rt: ^Runtime, node: ^Node, direction: Layout_Direction) -> f32 {
-	return layout_node_min_height(rt, node) if direction == .Column else main_axis_min(node.style, direction)
+	return layout_node_min_height(rt, node) if direction == .Column else layout_axis_minimum(node.style, direction)
 }
 
 // Float grow weights are normalized against the largest participant before
@@ -210,7 +210,7 @@ layout_main_style_bounds :: proc(rt: ^Runtime, node: ^Node, direction: Layout_Di
 		minimum_value = 0
 	}
 	minimum = layout_unit_extent(minimum_value)
-	maximum_value := main_axis_max(node.style, direction)
+	maximum_value := layout_axis_maximum(node.style, direction)
 	if maximum_value < 0 && !math.is_nan(maximum_value) && !math.is_inf(maximum_value) {
 		max_unbounded = true
 		maximum = minimum
@@ -468,7 +468,7 @@ layout_split_pane_bounds :: proc(
 	direction: Layout_Direction,
 ) -> (minimum, maximum: f32, max_unbounded: bool) {
 	minimum = explicit_minimum
-	style_minimum := main_axis_min(pane.style, direction)
+	style_minimum := layout_axis_minimum(pane.style, direction)
 	if math.is_nan(minimum) || math.is_inf(minimum) || minimum < 0 {
 		layout_trace_allocator_input_error(rt, owner, "Split minimum must be finite and nonnegative; using zero")
 		minimum = 0
@@ -478,7 +478,7 @@ layout_split_pane_bounds :: proc(
 		style_minimum = 0
 	}
 	minimum = maxf(minimum, style_minimum)
-	maximum = main_axis_max(pane.style, direction)
+	maximum = layout_axis_maximum(pane.style, direction)
 	if maximum < 0 && !math.is_nan(maximum) && !math.is_inf(maximum) {
 		max_unbounded = true
 		return
@@ -635,9 +635,9 @@ layout_split_children :: proc(rt: ^Runtime, parent: ^Node, inner: Rect, children
 		}
 		old_clip := child.clip
 		if parent.style.clip { child.clip = rect_intersection(parent.clip, parent.bounds) } else { child.clip = parent.clip }
-		bounds_changed := !same_rect(old_bounds, child.bounds)
-		hit_changed := !same_rect(old_hit_bounds, child.hit_bounds)
-		clip_changed := !same_rect(old_clip, child.clip)
+		bounds_changed := !rect_equal(old_bounds, child.bounds)
+		hit_changed := !rect_equal(old_hit_bounds, child.hit_bounds)
+		clip_changed := !rect_equal(old_clip, child.clip)
 		layout_finalize_node_geometry_for_node(rt, child)
 		semantic_sync_bounds(rt, child)
 		if bounds_changed || hit_changed || clip_changed {
@@ -750,8 +750,8 @@ layout_adaptive_children :: proc(rt: ^Runtime, parent: ^Node, inner: Rect, child
 		else { alternative.clip = parent.clip }
 		layout_finalize_node_geometry_for_node(rt, alternative)
 		semantic_sync_bounds(rt, alternative)
-		bounds_changed := !same_rect(old_bounds, alternative.bounds)
-		clip_changed := !same_rect(old_clip, alternative.clip)
+		bounds_changed := !rect_equal(old_bounds, alternative.bounds)
+		clip_changed := !rect_equal(old_clip, alternative.clip)
 		if bounds_changed || clip_changed {
 			dirty_set(&alternative.dirty, .Layout, true)
 			dirty_set(&alternative.dirty, .Paint, true)
@@ -843,7 +843,7 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 			}
 		}
 		inner = geometry.viewport
-		if !same_rect(old_viewport, geometry.viewport) || old_vertical != geometry.vertical_visible || old_horizontal != geometry.horizontal_visible ||
+		if !rect_equal(old_viewport, geometry.viewport) || old_vertical != geometry.vertical_visible || old_horizontal != geometry.horizontal_visible ||
 			old_offset_x != parent.scroll_offset_x || old_offset_y != parent.scroll_offset_y {
 			rt.scroll_geometry_changed = true
 		}
@@ -1003,8 +1003,8 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		} else if parent.style.clip { child.clip = rect_intersection(parent.clip, parent.bounds) } else { child.clip = parent.clip }
 		layout_finalize_node_geometry_for_node(rt, child)
 		semantic_sync_bounds(rt, child)
-		bounds_changed := !same_rect(old_bounds, child.bounds)
-		clip_changed := !same_rect(old_clip, child.clip)
+		bounds_changed := !rect_equal(old_bounds, child.bounds)
+		clip_changed := !rect_equal(old_clip, child.clip)
 		if bounds_changed && child.kind == .Custom_Surface && child.surface_kind == .Geometry &&
 			(old_bounds.w != child.bounds.w || old_bounds.h != child.bounds.h) {
 			// Geometry is authored in this surface's logical coordinate space.
@@ -1053,18 +1053,18 @@ layout_tree :: proc(rt: ^Runtime) {
 			node.clip = rt.viewport
 			layout_finalize_node_geometry_for_node(rt, node)
 			semantic_sync_bounds(rt, node)
-			if !same_rect(old, node.bounds) {
+			if !rect_equal(old, node.bounds) {
 				dirty_set(&node.dirty, .Layout, true)
 				dirty_set(&node.dirty, .Paint, true)
 				dirty_set(&node.dirty, .Composite, true)
 				queue_paint(rt, id)
 			}
-			if !same_rect(old_clip, node.clip) {
+			if !rect_equal(old_clip, node.clip) {
 				dirty_set(&node.dirty, .Paint, true)
 				dirty_set(&node.dirty, .Composite, true)
 				queue_paint(rt, id)
 			}
-			if !same_rect(old, node.bounds) || dirty_has(node.dirty, .Layout) {
+			if !rect_equal(old, node.bounds) || dirty_has(node.dirty, .Layout) {
 				layout_note_node_visit(rt, node)
 				layout_children(rt, id)
 			}

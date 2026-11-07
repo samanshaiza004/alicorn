@@ -30,20 +30,6 @@ Native_Icon_Renderer :: struct {
     atlas_uploads, atlas_upload_bytes, vertices_uploaded, mesh_rebuilds, mesh_cache_hits: u64,
 }
 
-native_icon_fragment_shader :: proc(device: ^sdl3.GPUDevice) -> ^sdl3.GPUShader {
-    supported := sdl3.GetGPUShaderFormats(device)
-    info := sdl3.GPUShaderCreateInfo{stage=.FRAGMENT, num_samplers=1}
-    if native_shader_supported(supported, {.DXIL}) {
-        info.format = {.DXIL}; info.code = &GPU_ICON_FRAG_DXIL[0]; info.code_size = uint(len(GPU_ICON_FRAG_DXIL)); info.entrypoint = "PSMain"
-    } else if native_shader_supported(supported, {.MSL}) {
-        info.format = {.MSL}; info.code = &GPU_ICON_FRAG_MSL[0]; info.code_size = uint(len(GPU_ICON_FRAG_MSL)); info.entrypoint = "PSMain"
-    } else if native_shader_supported(supported, {.SPIRV}) {
-        info.format = {.SPIRV}; info.code = &GPU_ICON_FRAG_SPV[0]; info.code_size = uint(len(GPU_ICON_FRAG_SPV)); info.entrypoint = "main"
-    }
-    if info.code == nil { return nil }
-    return sdl3.CreateGPUShader(device, info)
-}
-
 native_icon_upload_atlases :: proc(renderer: ^Native_Icon_Renderer) -> bool {
     total := 0
     for page in alicorn.ICON_ATLAS_PAGES { total += len(page.pixels) }
@@ -108,7 +94,7 @@ native_icon_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUText
 	renderer.draws = make([dynamic]Native_Icon_Draw, 0, 1024)
 
 	vertex_shader := native_text_shader(device, .VERTEX, false)
-	fragment_shader := native_icon_fragment_shader(device)
+    fragment_shader := native_fragment_shader(device, GPU_ICON_FRAG_DXIL, GPU_ICON_FRAG_MSL, GPU_ICON_FRAG_SPV)
 	if vertex_shader == nil || fragment_shader == nil {
 		if vertex_shader != nil { sdl3.ReleaseGPUShader(device, vertex_shader) }
 		if fragment_shader != nil { sdl3.ReleaseGPUShader(device, fragment_shader) }
@@ -156,61 +142,6 @@ native_icon_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUText
 	return renderer, true
 }
 
-native_icon_ensure_vertex_capacity :: proc(renderer: ^Native_Icon_Renderer, required: int) -> bool {
-	maximum := int(sdl3.Uint32(0xFFFFFFFF) / sdl3.Uint32(size_of(Native_Text_Vertex)))
-	new_capacity := native_next_vertex_capacity(renderer.vertex_capacity, required, maximum)
-	if new_capacity == 0 { return false }
-	if new_capacity == renderer.vertex_capacity { return true }
-	new_size := sdl3.Uint32(new_capacity * size_of(Native_Text_Vertex))
-	new_buffer := sdl3.CreateGPUBuffer(renderer.device, sdl3.GPUBufferCreateInfo{
-		usage=sdl3.GPUBufferUsageFlags{.VERTEX}, size=new_size,
-	})
-	if new_buffer == nil { return false }
-	new_transfer := sdl3.CreateGPUTransferBuffer(renderer.device, sdl3.GPUTransferBufferCreateInfo{
-		usage=.UPLOAD, size=new_size,
-	})
-	if new_transfer == nil {
-		sdl3.ReleaseGPUBuffer(renderer.device, new_buffer)
-		return false
-	}
-	// These buffers are shared by submissions. Wait before replacing them so
-	// earlier frames cannot still be reading the old vertex buffer.
-	if !sdl3.WaitForGPUIdle(renderer.device) {
-		sdl3.ReleaseGPUTransferBuffer(renderer.device, new_transfer)
-		sdl3.ReleaseGPUBuffer(renderer.device, new_buffer)
-		return false
-	}
-	sdl3.ReleaseGPUBuffer(renderer.device, renderer.vertex_buffer)
-	sdl3.ReleaseGPUTransferBuffer(renderer.device, renderer.vertex_transfer)
-	renderer.vertex_buffer = new_buffer
-	renderer.vertex_transfer = new_transfer
-	renderer.vertex_capacity = new_capacity
-	return true
-}
-
-native_icon_upload :: proc(renderer: ^Native_Icon_Renderer, command: ^sdl3.GPUCommandBuffer) -> bool {
-	if !renderer.upload_pending { return true }
-	if len(renderer.vertices) > renderer.vertex_capacity { return false }
-	mapped := sdl3.MapGPUTransferBuffer(renderer.device, renderer.vertex_transfer, true)
-	if mapped == nil { return false }
-	destination := cast([^]Native_Text_Vertex)mapped
-	for vertex, i in renderer.vertices { destination[i] = vertex }
-	sdl3.UnmapGPUTransferBuffer(renderer.device, renderer.vertex_transfer)
-	copy_pass := sdl3.BeginGPUCopyPass(command)
-	if copy_pass == nil { return false }
-	source := sdl3.GPUTransferBufferLocation{transfer_buffer=renderer.vertex_transfer, offset=0}
-	destination_region := sdl3.GPUBufferRegion{
-		buffer=renderer.vertex_buffer,
-		offset=0,
-		size=sdl3.Uint32(len(renderer.vertices) * size_of(Native_Text_Vertex)),
-	}
-	sdl3.UploadToGPUBuffer(copy_pass, source, destination_region, true)
-	sdl3.EndGPUCopyPass(copy_pass)
-	renderer.vertices_uploaded += 1
-	return true
-}
-
-
 // Uses the same finalized edge conversion as surfaces, clipping and text.
 // Clipping changes UVs, never the raster resource size or the widget geometry.
 native_icon_append_quad :: proc(vertices: ^[dynamic]Native_Text_Vertex, draw: alicorn.Paint_Command, scale_x, scale_y: f32, target_w, target_h: sdl3.Uint32) -> (entry: alicorn.Icon_Atlas_Entry, added: bool) {
@@ -241,17 +172,17 @@ native_icon_append_quad :: proc(vertices: ^[dynamic]Native_Text_Vertex, draw: al
 }
 
 native_icon_mesh_fingerprint :: proc(display: []alicorn.Paint_Command, scale_x, scale_y: f32, target_w, target_h: sdl3.Uint32) -> u64 {
-    h := native_text_hash_mix(1469598103934665603, u64(len(display)))
-    h = native_text_hash_mix(h, u64(transmute(u32)scale_x)); h = native_text_hash_mix(h, u64(transmute(u32)scale_y))
-    h = native_text_hash_mix(h, u64(target_w)); h = native_text_hash_mix(h, u64(target_h))
+    h := alicorn.hash_mix(1469598103934665603, u64(len(display)))
+    h = alicorn.hash_mix(h, u64(transmute(u32)scale_x)); h = alicorn.hash_mix(h, u64(transmute(u32)scale_y))
+    h = alicorn.hash_mix(h, u64(target_w)); h = alicorn.hash_mix(h, u64(target_h))
     for draw, index in display {
         icon, ok := draw.payload.(alicorn.Icon_Paint)
         if !ok { continue }
-        h = native_text_hash_mix(h, u64(index)); h = native_text_hash_mix(h, u64(icon.id))
+        h = alicorn.hash_mix(h, u64(index)); h = alicorn.hash_mix(h, u64(icon.id))
         h = native_text_hash_rect(h, draw.bounds); h = native_text_hash_rect(h, draw.clip)
         h = native_text_hash_color(h, icon.color)
-        h = native_text_hash_mix(h, u64(transmute(u32)draw.opacity))
-        for axis in draw.translation { h = native_text_hash_mix(h, u64(transmute(u32)axis)) }
+        h = alicorn.hash_mix(h, u64(transmute(u32)draw.opacity))
+        for axis in draw.translation { h = alicorn.hash_mix(h, u64(transmute(u32)axis)) }
     }
     return h
 }
@@ -263,7 +194,10 @@ native_icon_build :: proc(renderer: ^Native_Icon_Renderer, display: []alicorn.Pa
     for draw in display { append(&renderer.draws, Native_Icon_Draw{}) }
     required := 0
     for draw in display { if alicorn.paint_command_is_icon(draw) { required += 6 } }
-    if !native_icon_ensure_vertex_capacity(renderer, required) { return false }
+    if !native_vertex_buffer_ensure_capacity(
+		renderer.device, &renderer.vertex_buffer, &renderer.vertex_transfer,
+		&renderer.vertex_capacity, required,
+	) { return false }
     for draw, index in display {
         if !alicorn.paint_command_is_icon(draw) { continue }
         first := sdl3.Uint32(len(renderer.vertices))

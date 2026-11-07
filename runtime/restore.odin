@@ -8,10 +8,6 @@ restore_outcome_pending :: proc(outcome: Restore_Outcome) -> bool {
 	return outcome == .Requested || outcome == .Deferred
 }
 
-restore_value_is_finite :: proc(value: f32) -> bool {
-	return !math.is_nan(value) && !math.is_inf(value)
-}
-
 restore_value_close :: proc(a, b: f32) -> bool {
 	return math.abs(a-b) <= 0.016
 }
@@ -112,7 +108,7 @@ restore_start :: proc(
 		layout_generation=restore_layout_generation(rt),
 	}
 	restore_report_record(rt, target, state^)
-	valid := restore_value_is_finite(requested.x) && restore_value_is_finite(requested.y)
+	valid := number_is_finite(requested.x) && number_is_finite(requested.y)
 	if !valid {
 		restore_set_outcome(rt, target, state, .Cancelled, .Invalid_Value)
 		return true

@@ -310,7 +310,7 @@ paint_hash :: proc(d: Description, retained_description_hash: u64, scroll_focus_
 	return h
 }
 
-same_rect :: proc(a, b: Rect) -> bool {
+rect_equal :: proc(a, b: Rect) -> bool {
 	return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h
 }
 

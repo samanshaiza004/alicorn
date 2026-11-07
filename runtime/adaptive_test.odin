@@ -465,14 +465,14 @@ test_adaptive_switch_hides_input_and_semantics_and_replays :: proc(t: ^testing.T
 	wide_again := adaptive_test_describe(&rt, 500)
 	wide_again_state := adaptive_selection_state(&rt, wide_again.owner)
 	testing.expect(t, wide_again_state.selected_alternative == wide_again.wide &&
-		same_rect(rt.nodes[wide_again.widest_button].bounds, wide_bounds),
+		rect_equal(rt.nodes[wide_again.widest_button].bounds, wide_bounds),
 		"Compact to Wide replay should restore the same selected branch geometry")
 
 	clean := new_runtime(Rect{0, 0, 500, 180})
 	defer destroy_runtime(&clean)
 	clean_nodes := adaptive_test_describe(&clean, 500)
-	testing.expect(t, same_rect(rt.nodes[wide_again.owner].bounds, clean.nodes[clean_nodes.owner].bounds) &&
-		same_rect(rt.nodes[wide_again.widest_button].bounds, clean.nodes[clean_nodes.widest_button].bounds),
+	testing.expect(t, rect_equal(rt.nodes[wide_again.owner].bounds, clean.nodes[clean_nodes.owner].bounds) &&
+		rect_equal(rt.nodes[wide_again.widest_button].bounds, clean.nodes[clean_nodes.widest_button].bounds),
 		"retained replay should match a clean solve for identical final constraints")
 }
 

@@ -25,7 +25,10 @@ native_icon_readback_case :: proc(renderer: ^Native_Icon_Renderer, scale: f32, l
     draw := alicorn.paint_icon_command(1, alicorn.Rect{8,8,16,16}, alicorn.Rect{0,0,256,128}, .Search, tint, opacity=0.5)
     display := [2]alicorn.Paint_Command{draw,draw}
     if !native_icon_build(renderer, display[:layers], scale, scale, width, height) { return false }
-    if !native_icon_upload(renderer, command) { return false }
+    if !native_vertex_buffer_upload(
+		renderer.device, renderer.vertex_buffer, renderer.vertex_transfer, renderer.vertices[:],
+		renderer.vertex_capacity, renderer.upload_pending, &renderer.vertices_uploaded, command,
+	) { return false }
     if !native_icon_render_batch(renderer, command, target, width, height, renderer.draws[:]) { return false }
     copy_pass := sdl3.BeginGPUCopyPass(command)
     if copy_pass == nil { return false }

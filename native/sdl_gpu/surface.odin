@@ -26,7 +26,7 @@ Native_Surface_Renderer :: struct {
 }
 
 native_surface_mix :: proc(h, value: u64) -> u64 {
-	return native_text_hash_mix(h, value)
+	return alicorn.hash_mix(h, value)
 }
 
 native_surface_color :: proc(r, g, b, a: f32) -> [4]f32 {
@@ -302,19 +302,6 @@ native_surface_rebuild_mesh :: proc(renderer: ^Native_Surface_Renderer, command:
 	return true
 }
 
-native_surface_prepare_white_texture :: proc(renderer: ^Native_Surface_Renderer, command: ^sdl3.GPUCommandBuffer) -> bool {
-	if renderer.white_texture_initialized { return true }
-	target := sdl3.GPUColorTargetInfo{
-		texture=renderer.white_texture, clear_color=sdl3.FColor{1, 1, 1, 1},
-		load_op=.CLEAR, store_op=.STORE,
-	}
-	pass := sdl3.BeginGPURenderPass(command, &target, 1, nil)
-	if pass == nil { return false }
-	sdl3.EndGPURenderPass(pass)
-	renderer.white_texture_initialized = true
-	return true
-}
-
 native_surface_upload_vertices :: proc(renderer: ^Native_Surface_Renderer, command: ^sdl3.GPUCommandBuffer) -> bool {
 	if !renderer.vertex_upload_pending { return true }
 	mapped := sdl3.MapGPUTransferBuffer(renderer.device, renderer.vertex_transfer, true)
@@ -344,7 +331,7 @@ native_surface_render_command :: proc(
 	target_w, target_h: sdl3.Uint32,
 	scale_x, scale_y: f32,
 ) -> bool {
-	if !native_surface_prepare_white_texture(renderer, command_buffer) { return false }
+	if !native_white_texture_initialize(renderer.device, renderer.white_texture, &renderer.white_texture_initialized, command_buffer) { return false }
 	if !native_surface_rebuild_mesh(renderer, command, scale_x, scale_y) { return false }
 	if !native_surface_upload_vertices(renderer, command_buffer) { return false }
 	if len(renderer.vertices) == 0 { return true }
