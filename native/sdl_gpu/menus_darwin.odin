@@ -347,11 +347,7 @@ native_menu_destroy :: proc(menu: ^Native_Menu_Runtime) {
 }
 
 native_menu_take_pending :: proc(menu: ^Native_Menu_Runtime) -> (Application_Command_ID, bool) {
-	if menu == nil || !menu.has_pending { return {}, false }
-	command := menu.pending_command
-	menu.pending_command = {}
-	menu.has_pending = false
-	return command, true
+	return native_menu_take_pending_shared(menu)
 }
 
 native_menu_try_shortcut :: proc(menu: ^Native_Menu_Runtime, keycode: int, modifiers: sdl3.Keymod, repeat: bool) -> bool {

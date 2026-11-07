@@ -251,13 +251,9 @@ native_retained_effects_destroy :: proc(effects: ^Native_Retained_Effects, devic
 	effects.slot_last_use_serial = [NATIVE_RETAINED_EFFECT_SLOT_COUNT]u64{}
 }
 
-native_effect_finite :: proc(value: f32) -> bool {
-	return !math.is_nan(value) && !math.is_inf(value)
-}
-
 native_effect_rect_bounded :: proc(rect: alicorn.Rect) -> bool {
 	for value in ([4]f32{rect.x, rect.y, rect.w, rect.h}) {
-		if !native_effect_finite(value) || abs(value) > NATIVE_EFFECT_MAX_COORD { return false }
+		if !alicorn.number_is_finite(value) || abs(value) > NATIVE_EFFECT_MAX_COORD { return false }
 	}
 	return abs(f64(rect.x)+f64(rect.w)) <= NATIVE_EFFECT_MAX_COORD &&
 	       abs(f64(rect.y)+f64(rect.h)) <= NATIVE_EFFECT_MAX_COORD
@@ -268,7 +264,7 @@ native_effect_byte_size :: proc(width, height: sdl3.Uint32) -> u64 {
 }
 
 native_effect_gaussian_radius :: proc(sigma_pixels: f32) -> (radius: int, ok: bool) {
-	if !native_effect_finite(sigma_pixels) || sigma_pixels <= 0 || sigma_pixels > NATIVE_EFFECT_MAX_SIGMA_PIXELS {
+	if !alicorn.number_is_finite(sigma_pixels) || sigma_pixels <= 0 || sigma_pixels > NATIVE_EFFECT_MAX_SIGMA_PIXELS {
 		return 0, false
 	}
 	radius_f64 := math.ceil(3*f64(sigma_pixels))
@@ -335,8 +331,8 @@ native_effect_plan :: proc(request: Native_Effect_Request) -> (plan: Native_Effe
 	// A zero-initialized disabled request needs no device, key, generation, scale,
 	// or depth. Enabled requests are validated.
 	if !request.enabled { return plan, true }
-	if !native_effect_finite(request.scale) || request.scale <= 0 || request.scale > NATIVE_EFFECT_MAX_SCALE ||
-	   !native_effect_finite(request.sigma) || request.sigma < 0 || request.sigma > 8 ||
+	if !alicorn.number_is_finite(request.scale) || request.scale <= 0 || request.scale > NATIVE_EFFECT_MAX_SCALE ||
+	   !alicorn.number_is_finite(request.sigma) || request.sigma < 0 || request.sigma > 8 ||
 	   !native_effect_rect_bounded(request.region) || !native_effect_rect_bounded(request.clip) ||
 	   request.depth != 1 || request.key == 0 || request.source_generation == 0 { return plan, false }
 	output_clip := alicorn.rect_intersection(request.region, request.clip)
@@ -379,8 +375,8 @@ native_effect_plan_valid :: proc(plan: Native_Effect_Plan) -> bool {
 	if !plan.active { return true }
 	if plan.key == 0 || plan.source_generation == 0 ||
 	   plan.width == 0 || plan.height == 0 || plan.width > NATIVE_EFFECT_MAX_DIMENSION || plan.height > NATIVE_EFFECT_MAX_DIMENSION ||
-	   !native_effect_finite(plan.scale) || plan.scale <= 0 || plan.scale > NATIVE_EFFECT_MAX_SCALE ||
-	   !native_effect_finite(plan.sigma_pixels) || plan.sigma_pixels <= 0 || plan.sigma_pixels > NATIVE_EFFECT_MAX_SIGMA_PIXELS ||
+	   !alicorn.number_is_finite(plan.scale) || plan.scale <= 0 || plan.scale > NATIVE_EFFECT_MAX_SCALE ||
+	   !alicorn.number_is_finite(plan.sigma_pixels) || plan.sigma_pixels <= 0 || plan.sigma_pixels > NATIVE_EFFECT_MAX_SIGMA_PIXELS ||
 	   !native_effect_rect_bounded(plan.source_bounds) || !native_effect_rect_bounded(plan.output_clip) ||
 	   plan.source_bounds.w <= 0 || plan.source_bounds.h <= 0 || plan.output_clip.w <= 0 || plan.output_clip.h <= 0 ||
 	   plan.bytes != native_effect_byte_size(plan.width, plan.height) { return false }
@@ -468,7 +464,9 @@ native_effect_create_fixed :: proc(cache: ^Native_Effect_Cache) -> bool {
 	vertex := native_text_shader(cache.device, .VERTEX, false)
 	if vertex == nil { return false }
 	defer sdl3.ReleaseGPUShader(cache.device, vertex)
-	fragment := native_image_fragment_shader(cache.device)
+	fragment := native_fragment_shader(
+		cache.device, GPU_IMAGE_FRAG_DXIL, GPU_IMAGE_FRAG_MSL, GPU_IMAGE_FRAG_SPV,
+	)
 	if fragment == nil { return false }
 	defer sdl3.ReleaseGPUShader(cache.device, fragment)
 	vertex_buffers := [1]sdl3.GPUVertexBufferDescription{{slot=0, pitch=sdl3.Uint32(size_of(Native_Text_Vertex)), input_rate=.VERTEX}}

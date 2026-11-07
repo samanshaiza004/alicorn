@@ -100,7 +100,12 @@ draw_display_list :: proc(
 	if !native_text_sync_atlas(text_renderer, command, scratch_allocator) { return false }
 	if !native_text_upload_vertices(text_renderer, command) { return false }
 	if !native_icon_build(&solid_renderer.icons, render_display, logical_to_pixel_x, logical_to_pixel_y, swap_w, swap_h) { return false }
-	if !native_icon_upload(&solid_renderer.icons, command) { return false }
+	if !native_vertex_buffer_upload(
+		solid_renderer.icons.device, solid_renderer.icons.vertex_buffer,
+		solid_renderer.icons.vertex_transfer, solid_renderer.icons.vertices[:],
+		solid_renderer.icons.vertex_capacity, solid_renderer.icons.upload_pending,
+		&solid_renderer.icons.vertices_uploaded, command,
+	) { return false }
 	if !native_image_sync(&solid_renderer.images, command, render_display) { return false }
 	if !native_image_build(&solid_renderer.images, render_display, logical_to_pixel_x, logical_to_pixel_y, swap_w, swap_h) { return false }
 	if !native_image_upload_vertices(&solid_renderer.images, command) { return false }
@@ -113,11 +118,18 @@ draw_display_list :: proc(
 	// after app draws are recorded. Reserve their bounded space now, before any
 	// current-command draw can retain the existing GPU buffer.
 	if reserve_solid_vertices > 0 {
-		_ = native_solid_ensure_vertex_capacity(solid_renderer, len(solid_renderer.vertices)+reserve_solid_vertices)
+		_ = native_vertex_buffer_ensure_capacity(
+			solid_renderer.device, &solid_renderer.vertex_buffer, &solid_renderer.vertex_transfer,
+			&solid_renderer.vertex_capacity, len(solid_renderer.vertices)+reserve_solid_vertices,
+		)
 	}
 	if len(solid_renderer.vertices) > 0 {
-		if !native_solid_prepare_white_texture(solid_renderer, command) { return false }
-		if !native_solid_upload(solid_renderer, command) { return false }
+		if !native_white_texture_initialize(solid_renderer.device, solid_renderer.white_texture, &solid_renderer.white_initialized, command) { return false }
+		if !native_vertex_buffer_upload(
+			solid_renderer.device, solid_renderer.vertex_buffer, solid_renderer.vertex_transfer,
+			solid_renderer.vertices[:], solid_renderer.vertex_capacity, solid_renderer.upload_pending,
+			&solid_renderer.vertices_uploaded, command,
+		) { return false }
 	}
 	// Retained geometry stays in application-content logical units. Apply the
 	// native inset once here, then convert the result to physical swapchain pixels.

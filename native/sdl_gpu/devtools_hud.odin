@@ -561,8 +561,11 @@ native_devtools_hud_render :: proc(
 	if len(renderer.vertices)-vertex_start == 0 { return true }
 	append(&renderer.draws, Native_Solid_Draw{first_vertex=sdl3.Uint32(vertex_start), vertex_count=sdl3.Uint32(len(renderer.vertices)-vertex_start)})
 	renderer.upload_pending = true
-	if !native_solid_prepare_white_texture(renderer, command) { return false }
-	if !native_solid_upload(renderer, command) { return false }
+	if !native_white_texture_initialize(renderer.device, renderer.white_texture, &renderer.white_initialized, command) { return false }
+	if !native_vertex_buffer_upload(
+		renderer.device, renderer.vertex_buffer, renderer.vertex_transfer, renderer.vertices[:],
+		renderer.vertex_capacity, renderer.upload_pending, &renderer.vertices_uploaded, command,
+	) { return false }
 	if !native_solid_render_batch(renderer, command, target, target_w, target_h, renderer.draws[draw_start:]) { return false }
 	return true
 }

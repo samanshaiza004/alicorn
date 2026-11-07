@@ -143,14 +143,10 @@ MOTION_LOG_F64_MAX :: f64(709.782712893384)
 // Longer or uncertified responses are rewritten to Snap by the retained layer.
 MOTION_REDUCED_OPACITY_MAX_NS :: u64(250_000_000)
 
-motion_finite :: proc(value: f64) -> bool {
-	return !math.is_nan(value) && !math.is_inf(value)
-}
-
 motion_config_valid :: proc(config: Motion_Config) -> bool {
-	return motion_finite(config.omega) && config.omega > 0 &&
-		motion_finite(config.position_tolerance) && config.position_tolerance > 0 &&
-		motion_finite(config.velocity_tolerance) && config.velocity_tolerance > 0
+	return number_is_finite(config.omega) && config.omega > 0 &&
+		number_is_finite(config.position_tolerance) && config.position_tolerance > 0 &&
+		number_is_finite(config.velocity_tolerance) && config.velocity_tolerance > 0
 }
 
 motion_theme_policy_valid :: proc(policy: Motion_Theme_Policy) -> bool {
@@ -247,7 +243,7 @@ motion_certified_deadline :: proc(
 	log_omega_b := log_omega + log_b
 
 	tail_start := 1 / config.omega
-	if !motion_finite(tail_start) || tail_start > MOTION_MAX_SETTLE_SECONDS {
+	if !number_is_finite(tail_start) || tail_start > MOTION_MAX_SETTLE_SECONDS {
 		return 0, false
 	}
 	hi := tail_start
@@ -280,11 +276,11 @@ motion_certified_deadline :: proc(
 	// relative margin is far above f64 ulp error and remains negligible for UI
 	// response times; at least one nanosecond is retained for nonzero motion.
 	deadline_seconds := hi + max(f64(1)/MOTION_NS_PER_SECOND, hi*1e-12)
-	if !motion_finite(deadline_seconds) || deadline_seconds > MOTION_MAX_SETTLE_SECONDS {
+	if !number_is_finite(deadline_seconds) || deadline_seconds > MOTION_MAX_SETTLE_SECONDS {
 		return 0, false
 	}
 	rounded_ns := math.ceil(deadline_seconds * MOTION_NS_PER_SECOND)
-	if !motion_finite(rounded_ns) || rounded_ns > f64(MOTION_MAX_SETTLE_NS) {
+	if !number_is_finite(rounded_ns) || rounded_ns > f64(MOTION_MAX_SETTLE_NS) {
 		return 0, false
 	}
 	if rounded_ns < 1 { rounded_ns = 1 }
@@ -297,11 +293,11 @@ motion_scalar_create :: proc(
 	start: Motion_Time,
 ) -> (response: Motion_Scalar_Response, status: Motion_Status) {
 	if !motion_config_valid(config) { return {}, .Invalid_Configuration }
-	if !motion_finite(from) || !motion_finite(target) || !motion_finite(initial_velocity) {
+	if !number_is_finite(from) || !number_is_finite(target) || !number_is_finite(initial_velocity) {
 		return {}, .Invalid_Value
 	}
 	residual := from-target
-	if !motion_finite(residual) { return {}, .Numeric_Overflow }
+	if !number_is_finite(residual) { return {}, .Numeric_Overflow }
 	deadline_ns, established := motion_certified_deadline(residual, initial_velocity, config)
 	return Motion_Scalar_Response{
 		initialized=true,
@@ -339,7 +335,7 @@ motion_signed_exp_sum :: proc(
 	log_result := hi + math.ln(abs(sum))
 	if math.is_nan(log_result) || log_result > MOTION_LOG_F64_MAX { return 0, false }
 	result := math.exp(log_result)
-	if !motion_finite(result) { return 0, false }
+	if !number_is_finite(result) { return 0, false }
 	if sum < 0 { result = -result }
 	return result, true
 }
@@ -366,7 +362,7 @@ motion_signed_exp_sum3 :: proc(
 	log_result := hi + math.ln(abs(sum))
 	if math.is_nan(log_result) || log_result > MOTION_LOG_F64_MAX { return 0, false }
 	result := math.exp(log_result)
-	if !motion_finite(result) { return 0, false }
+	if !number_is_finite(result) { return 0, false }
 	if sum < 0 { result = -result }
 	return result, true
 }
@@ -455,7 +451,7 @@ motion_scalar_sample :: proc(response: Motion_Scalar_Response, at: Motion_Time) 
 	seconds := f64(elapsed_ns)/MOTION_NS_PER_SECOND
 	value, velocity, ok := motion_scalar_evaluate(response, seconds)
 	if !ok { return Motion_Scalar_Sample{status=.Numeric_Overflow} }
-	if !motion_finite(value) || !motion_finite(velocity) {
+	if !number_is_finite(value) || !number_is_finite(velocity) {
 		return Motion_Scalar_Sample{status=.Numeric_Overflow}
 	}
 	return Motion_Scalar_Sample{
@@ -474,7 +470,7 @@ motion_scalar_settle :: proc(
 	at: Motion_Time,
 ) -> (next: Motion_Scalar_Response, status: Motion_Status) {
 	if !response.initialized { return response, .Invalid_Response }
-	if !motion_finite(target) { return response, .Invalid_Value }
+	if !number_is_finite(target) { return response, .Invalid_Value }
 	if response.mode == .Settle && response.target == target { return response, .Ok }
 	if i64(at) < i64(response.start_time) { return response, .Time_Rewound }
 	current := motion_scalar_sample(response, at)
@@ -482,17 +478,18 @@ motion_scalar_settle :: proc(
 	return motion_scalar_create(current.value, target, current.velocity, response.config, at)
 }
 
-motion_scalar_direct :: proc(
+motion_scalar_immediate :: proc(
 	response: Motion_Scalar_Response,
 	target: f64,
 	at: Motion_Time,
+	mode: Motion_Mode,
 ) -> (next: Motion_Scalar_Response, status: Motion_Status) {
 	if !response.initialized { return response, .Invalid_Response }
-	if !motion_finite(target) { return response, .Invalid_Value }
-	if response.mode == .Direct && response.target == target { return response, .Ok }
+	if !number_is_finite(target) { return response, .Invalid_Value }
+	if response.mode == mode && response.target == target { return response, .Ok }
 	if i64(at) < i64(response.start_time) { return response, .Time_Rewound }
 	next = response
-	next.mode = .Direct
+	next.mode = mode
 	next.presented_0 = target
 	next.target = target
 	next.residual_0 = 0
@@ -503,25 +500,20 @@ motion_scalar_direct :: proc(
 	return next, .Ok
 }
 
+motion_scalar_direct :: proc(
+	response: Motion_Scalar_Response,
+	target: f64,
+	at: Motion_Time,
+) -> (Motion_Scalar_Response, Motion_Status) {
+	return motion_scalar_immediate(response, target, at, .Direct)
+}
+
 motion_scalar_snap :: proc(
 	response: Motion_Scalar_Response,
 	target: f64,
 	at: Motion_Time,
 ) -> (next: Motion_Scalar_Response, status: Motion_Status) {
-	if !response.initialized { return response, .Invalid_Response }
-	if !motion_finite(target) { return response, .Invalid_Value }
-	if response.mode == .Snap && response.target == target { return response, .Ok }
-	if i64(at) < i64(response.start_time) { return response, .Time_Rewound }
-	next = response
-	next.mode = .Snap
-	next.presented_0 = target
-	next.target = target
-	next.residual_0 = 0
-	next.velocity_0 = 0
-	next.start_time = at
-	next.settle_after_ns = 0
-	next.deadline_established = true
-	return next, .Ok
+	return motion_scalar_immediate(response, target, at, .Snap)
 }
 
 motion_translation_create :: proc(
@@ -573,7 +565,7 @@ motion_translation_settle :: proc(
 	at: Motion_Time,
 ) -> (next: Motion_Translation_Response, status: Motion_Status) {
 	if !response.x.initialized || !response.y.initialized { return response, .Invalid_Response }
-	if !motion_finite(target.x) || !motion_finite(target.y) { return response, .Invalid_Value }
+	if !number_is_finite(target.x) || !number_is_finite(target.y) { return response, .Invalid_Value }
 	if response.x.mode == .Settle && response.y.mode == .Settle &&
 		response.x.target == target.x && response.y.target == target.y { return response, .Ok }
 	current := motion_translation_sample(response, at)
@@ -583,18 +575,19 @@ motion_translation_settle :: proc(
 	return next, .Ok
 }
 
-motion_translation_direct :: proc(
+motion_translation_immediate :: proc(
 	response: Motion_Translation_Response,
 	target: Motion_Vector2,
 	at: Motion_Time,
+	mode: Motion_Mode,
 ) -> (next: Motion_Translation_Response, status: Motion_Status) {
 	if !response.x.initialized || !response.y.initialized { return response, .Invalid_Response }
-	if !motion_finite(target.x) || !motion_finite(target.y) { return response, .Invalid_Value }
-	if response.x.mode == .Direct && response.y.mode == .Direct &&
+	if !number_is_finite(target.x) || !number_is_finite(target.y) { return response, .Invalid_Value }
+	if response.x.mode == mode && response.y.mode == mode &&
 		response.x.target == target.x && response.y.target == target.y { return response, .Ok }
 	if i64(at) < i64(response.x.start_time) || i64(at) < i64(response.y.start_time) { return response, .Time_Rewound }
 	next = response
-	next.x.mode, next.y.mode = .Direct, .Direct
+	next.x.mode, next.y.mode = mode, mode
 	next.x.presented_0, next.y.presented_0 = target.x, target.y
 	next.x.target, next.y.target = target.x, target.y
 	next.x.residual_0, next.y.residual_0 = 0, 0
@@ -605,24 +598,18 @@ motion_translation_direct :: proc(
 	return next, .Ok
 }
 
+motion_translation_direct :: proc(
+	response: Motion_Translation_Response,
+	target: Motion_Vector2,
+	at: Motion_Time,
+) -> (Motion_Translation_Response, Motion_Status) {
+	return motion_translation_immediate(response, target, at, .Direct)
+}
+
 motion_translation_snap :: proc(
 	response: Motion_Translation_Response,
 	target: Motion_Vector2,
 	at: Motion_Time,
 ) -> (next: Motion_Translation_Response, status: Motion_Status) {
-	if !response.x.initialized || !response.y.initialized { return response, .Invalid_Response }
-	if !motion_finite(target.x) || !motion_finite(target.y) { return response, .Invalid_Value }
-	if response.x.mode == .Snap && response.y.mode == .Snap &&
-		response.x.target == target.x && response.y.target == target.y { return response, .Ok }
-	if i64(at) < i64(response.x.start_time) || i64(at) < i64(response.y.start_time) { return response, .Time_Rewound }
-	next = response
-	next.x.mode, next.y.mode = .Snap, .Snap
-	next.x.presented_0, next.y.presented_0 = target.x, target.y
-	next.x.target, next.y.target = target.x, target.y
-	next.x.residual_0, next.y.residual_0 = 0, 0
-	next.x.velocity_0, next.y.velocity_0 = 0, 0
-	next.x.start_time, next.y.start_time = at, at
-	next.x.settle_after_ns, next.y.settle_after_ns = 0, 0
-	next.x.deadline_established, next.y.deadline_established = true, true
-	return next, .Ok
+	return motion_translation_immediate(response, target, at, .Snap)
 }

@@ -279,46 +279,32 @@ native_text_handle_equal :: proc(a, b: alicorn.Text_Run_Handle) -> bool {
 	return a.source == b.source && a.resource == b.resource && a.generation == b.generation
 }
 
-native_text_hash_mix :: proc(h, value: u64) -> u64 {
-	result := h ~ value
-	result *= 1099511628211
-	return result
-}
-
-native_text_hash_string :: proc(value: string) -> u64 {
-	h: u64 = 1469598103934665603
-	for i := 0; i < len(value); i += 1 {
-		h = native_text_hash_mix(h, u64(value[i]))
-	}
-	return h
-}
-
 native_text_hash_rect :: proc(h: u64, rect: alicorn.Rect) -> u64 {
 	result := h
-	result = native_text_hash_mix(result, u64(transmute(u32)rect.x))
-	result = native_text_hash_mix(result, u64(transmute(u32)rect.y))
-	result = native_text_hash_mix(result, u64(transmute(u32)rect.w))
-	result = native_text_hash_mix(result, u64(transmute(u32)rect.h))
+	result = alicorn.hash_mix(result, u64(transmute(u32)rect.x))
+	result = alicorn.hash_mix(result, u64(transmute(u32)rect.y))
+	result = alicorn.hash_mix(result, u64(transmute(u32)rect.w))
+	result = alicorn.hash_mix(result, u64(transmute(u32)rect.h))
 	return result
 }
 
 native_text_hash_color :: proc(h: u64, color: alicorn.Color) -> u64 {
 	result := h
-	result = native_text_hash_mix(result, u64(transmute(u32)color.r))
-	result = native_text_hash_mix(result, u64(transmute(u32)color.g))
-	result = native_text_hash_mix(result, u64(transmute(u32)color.b))
-	result = native_text_hash_mix(result, u64(transmute(u32)color.a))
+	result = alicorn.hash_mix(result, u64(transmute(u32)color.r))
+	result = alicorn.hash_mix(result, u64(transmute(u32)color.g))
+	result = alicorn.hash_mix(result, u64(transmute(u32)color.b))
+	result = alicorn.hash_mix(result, u64(transmute(u32)color.a))
 	return result
 }
 
 native_text_hash_spans :: proc(h: u64, spans: []alicorn.Text_Paint_Span) -> u64 {
 	color_count: u64 = 0
 	for span in spans { if span.color_set { color_count += 1 } }
-	result := native_text_hash_mix(h, color_count)
+	result := alicorn.hash_mix(h, color_count)
 	for span in spans {
 		if !span.color_set { continue }
-		result = native_text_hash_mix(result, u64(span.start))
-		result = native_text_hash_mix(result, u64(span.end))
+		result = alicorn.hash_mix(result, u64(span.start))
+		result = alicorn.hash_mix(result, u64(span.end))
 		result = native_text_hash_color(result, span.color)
 	}
 	return result
@@ -658,8 +644,8 @@ native_text_reserve_shaped_vertices :: proc(
 native_text_mesh_fingerprint :: proc(renderer: ^Native_Text_Renderer, display: []alicorn.Paint_Command, scale_x, scale_y: f32) -> (fingerprint: u64, bytes_hashed: u64) {
 	h: u64 = 1469598103934665603
 	bytes_hashed = 0
-	h = native_text_hash_mix(h, u64(transmute(u32)scale_x))
-	h = native_text_hash_mix(h, u64(transmute(u32)scale_y))
+	h = alicorn.hash_mix(h, u64(transmute(u32)scale_x))
+	h = alicorn.hash_mix(h, u64(transmute(u32)scale_y))
 	text_index: u64 = 0
 	for command, command_index in display {
 		paint, is_text := native_text_command_payload(command)
@@ -670,30 +656,30 @@ native_text_mesh_fingerprint :: proc(renderer: ^Native_Text_Renderer, display: [
 		bytes_hashed += u64(len(run.value))
 		// Span hashing makes one count pass and one content pass.
 		bytes_hashed += u64(len(paint.spans) * size_of(alicorn.Text_Paint_Span) * 2)
-		h = native_text_hash_mix(h, text_index)
-		h = native_text_hash_mix(h, u64(command_index))
+		h = alicorn.hash_mix(h, text_index)
+		h = alicorn.hash_mix(h, u64(command_index))
 		text_index += 1
-		h = native_text_hash_mix(h, u64(handle.source))
-		h = native_text_hash_mix(h, handle.resource)
-		h = native_text_hash_mix(h, handle.generation)
+		h = alicorn.hash_mix(h, u64(handle.source))
+		h = alicorn.hash_mix(h, handle.resource)
+		h = alicorn.hash_mix(h, handle.generation)
 		h = native_text_hash_rect(h, command.bounds)
 		h = native_text_hash_rect(h, command.clip)
-		h = native_text_hash_mix(h, u64(transmute(u32)command.opacity))
+		h = alicorn.hash_mix(h, u64(transmute(u32)command.opacity))
 		// A transition between culled and translated commands changes which
 		// glyphs enter the mesh; the translation values themselves are only a
 		// draw transform and must not rebuild the retained vertices.
 		translated := command.translation[0] != 0 || command.translation[1] != 0
-		h = native_text_hash_mix(h, u64(translated))
+		h = alicorn.hash_mix(h, u64(translated))
 		h = native_text_hash_color(h, paint.color)
-		h = native_text_hash_mix(h, native_text_hash_string(run.value))
+		h = alicorn.hash_mix(h, alicorn.hash_string(run.value))
 		h = native_text_hash_spans(h, paint.spans)
-		h = native_text_hash_mix(h, u64(run.font))
-		h = native_text_hash_mix(h, u64(run.font_source))
-		h = native_text_hash_mix(h, u64(transmute(u32)run.size))
-		h = native_text_hash_mix(h, u64(transmute(u32)run.font_weight))
-		h = native_text_hash_mix(h, run.style_hash)
+		h = alicorn.hash_mix(h, u64(run.font))
+		h = alicorn.hash_mix(h, u64(run.font_source))
+		h = alicorn.hash_mix(h, u64(transmute(u32)run.size))
+		h = alicorn.hash_mix(h, u64(transmute(u32)run.font_weight))
+		h = alicorn.hash_mix(h, run.style_hash)
 	}
-	h = native_text_hash_mix(h, text_index)
+	h = alicorn.hash_mix(h, text_index)
 	return h, bytes_hashed
 }
 
@@ -708,7 +694,7 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 	// Font replacement can preserve every display-command field while changing
 	// the retained run's atlas slots. Include the runtime text generation so a
 	// same-string font swap cannot leave old vertices resident.
-	fingerprint = native_text_hash_mix(fingerprint, renderer.runtime.text_engine.font_generation)
+	fingerprint = alicorn.hash_mix(fingerprint, renderer.runtime.text_engine.font_generation)
 	renderer.fingerprint_ns += u64(time.duration_nanoseconds(time.since(fingerprint_start)))
 	renderer.fingerprint_bytes += fingerprint_bytes
 	renderer.mesh_text_commands = text_command_count

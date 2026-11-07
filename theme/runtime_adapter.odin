@@ -107,7 +107,7 @@ theme_runtime_style_theme :: proc(
 	for binding in compiled.extension_color_roles {
 		if u64(binding.id) == 0 || u32(binding.token) == 0 || int(u32(binding.token)) > len(compiled.colors) { return }
 		role_id := alicorn.Style_Extension_Color_Role_ID(u64(binding.id))
-		if role_id == 0 || theme_runtime_adapter_color_role_exists(color_roles[:], role_id) { return }
+		if role_id == 0 || theme_runtime_adapter_role_exists(color_roles[:], role_id) { return }
 		append(&color_roles, alicorn.Style_Extension_Color_Role_Binding{
 			role=role_id,
 			token=alicorn.Style_Color_Token_ID(u32(binding.token)),
@@ -116,7 +116,7 @@ theme_runtime_style_theme :: proc(
 	for binding in compiled.extension_length_roles {
 		if u64(binding.id) == 0 || u32(binding.token) == 0 || int(u32(binding.token)) > len(compiled.lengths) { return }
 		role_id := alicorn.Style_Extension_Length_Role_ID(u64(binding.id))
-		if role_id == 0 || theme_runtime_adapter_length_role_exists(length_roles[:], role_id) { return }
+		if role_id == 0 || theme_runtime_adapter_role_exists(length_roles[:], role_id) { return }
 		append(&length_roles, alicorn.Style_Extension_Length_Role_Binding{
 			role=role_id,
 			token=alicorn.Style_Length_Token_ID(u32(binding.token)),
@@ -403,7 +403,7 @@ theme_runtime_style_theme_destroy :: proc(
 
 theme_runtime_adapter_compiled_is_valid :: proc(compiled: Compiled_Theme) -> bool {
 	for color in compiled.colors {
-		if !theme_runtime_adapter_color_is_valid(color) { return false }
+		if !alicorn.style_color_is_valid(alicorn.Color{r=color.r, g=color.g, b=color.b, a=color.a}) { return false }
 	}
 	for length in compiled.lengths {
 		value := f32(length)
@@ -413,12 +413,6 @@ theme_runtime_adapter_compiled_is_valid :: proc(compiled: Compiled_Theme) -> boo
 		if token != 0 && int(u32(token)) > len(compiled.colors) { return false }
 	}
 	return true
-}
-
-theme_runtime_adapter_color_is_valid :: proc(color: Theme_Color) -> bool {
-	return color.r == color.r && color.g == color.g && color.b == color.b && color.a == color.a &&
-	       color.r >= 0 && color.r <= 1 && color.g >= 0 && color.g <= 1 &&
-	       color.b >= 0 && color.b <= 1 && color.a > 0 && color.a <= 1
 }
 
 theme_runtime_adapter_core_role :: proc(role: Core_Color_Role) -> (alicorn.Style_Color_Role, bool) {
@@ -446,18 +440,7 @@ theme_runtime_adapter_core_role :: proc(role: Core_Color_Role) -> (alicorn.Style
 	return .Count, false
 }
 
-theme_runtime_adapter_color_role_exists :: proc(
-	bindings: []alicorn.Style_Extension_Color_Role_Binding,
-	role: alicorn.Style_Extension_Color_Role_ID,
-) -> bool {
-	for binding in bindings { if binding.role == role { return true } }
-	return false
-}
-
-theme_runtime_adapter_length_role_exists :: proc(
-	bindings: []alicorn.Style_Extension_Length_Role_Binding,
-	role: alicorn.Style_Extension_Length_Role_ID,
-) -> bool {
+theme_runtime_adapter_role_exists :: proc(bindings: []$Binding, role: $Role) -> bool {
 	for binding in bindings { if binding.role == role { return true } }
 	return false
 }

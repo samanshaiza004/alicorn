@@ -261,7 +261,7 @@ scroll_region_begin :: proc(
 		)
 		request_started = started && request_state != nil && restore_outcome_pending(request_state.outcome)
 	}
-	if request_started && restore_value_is_finite(restore.offset_x) && restore_value_is_finite(restore.offset_y) {
+	if request_started && number_is_finite(restore.offset_x) && number_is_finite(restore.offset_y) {
 		// Seed the very first virtual range from the application intent. Layout
 		// will clamp against the real viewport and may request one correction.
 		offset_x = clampf(restore.offset_x, 0, max_scroll_x)

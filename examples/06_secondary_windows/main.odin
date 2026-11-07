@@ -70,7 +70,7 @@ open_tool_window :: proc(primary: ^Window_State) -> bool {
 		interaction_update_policy=.Correct_After_Interaction,
 		build=build_window,
 		on_services=window_services,
-		on_stop=tool_window_stop,
+		on_stop=tool_window_destroy_state,
 	}
 	accepted := host.application_open_window(
 		primary.services.windows,
@@ -78,7 +78,7 @@ open_tool_window :: proc(primary: ^Window_State) -> bool {
 			application=application,
 			width=480,
 			height=320,
-			on_open_failed=tool_window_open_failed,
+			on_open_failed=tool_window_destroy_state,
 		},
 	)
 	if !accepted { free(tool, allocator=context.allocator) }
@@ -90,11 +90,7 @@ window_services :: proc(state: rawptr, services: host.Application_Services) {
 	app.services = services
 }
 
-tool_window_open_failed :: proc(state: rawptr) {
-	free(cast(^Window_State)state, allocator=context.allocator)
-}
-
-tool_window_stop :: proc(state: rawptr) {
+tool_window_destroy_state :: proc(state: rawptr) {
 	free(cast(^Window_State)state, allocator=context.allocator)
 }
 

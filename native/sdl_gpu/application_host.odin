@@ -80,6 +80,27 @@ Native_Menu_Runtime :: struct {
 	has_pending:     bool,
 }
 
+native_menu_take_pending_shared :: proc(menu: ^Native_Menu_Runtime) -> (Application_Command_ID, bool) {
+	if menu == nil || !menu.has_pending { return {}, false }
+	command := menu.pending_command
+	menu.pending_command = {}
+	menu.has_pending = false
+	return command, true
+}
+
+native_menu_try_shortcut_shared :: proc(
+	menu: ^Native_Menu_Runtime,
+	keycode: int,
+	modifiers: sdl3.Keymod,
+	repeat: bool,
+) -> bool {
+	if menu == nil || menu.application == nil || menu.application.on_menu_command == nil { return false }
+	command, found := native_menu_match_shortcut(menu.application, keycode, modifiers)
+	if !found { return false }
+	if !repeat { native_menu_dispatch_command(menu, command) }
+	return true
+}
+
 native_menu_shortcut_key_equal :: proc(shortcut_key, key: rune) -> bool {
 	if shortcut_key == 0 { return false }
 	upper_key := key

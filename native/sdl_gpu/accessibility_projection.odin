@@ -1025,7 +1025,7 @@ accessibility_projection_nodes_equal :: proc(a, b: Accessibility_Projection_Node
 	if a.id != b.id || a.semantic_id != b.semantic_id || a.semantic_parent != b.semantic_parent ||
 	   a.role != b.role || a.label != b.label || a.description != b.description || a.value != b.value ||
 	   a.text_selection != b.text_selection || a.live != b.live || a.live_atomic != b.live_atomic ||
-	   !accessibility_projection_byte_lengths_equal(a.text_run_character_lengths, b.text_run_character_lengths) ||
+	   !alicorn.semantic_byte_lengths_equal(a.text_run_character_lengths, b.text_run_character_lengths) ||
 	   a.states != b.states || a.actions != b.actions || a.bounds != b.bounds || a.has_bounds != b.has_bounds ||
 	   a.is_collection != b.is_collection || a.logical_count != b.logical_count ||
 	   a.position_in_set != b.position_in_set || a.has_position_in_set != b.has_position_in_set ||
@@ -1035,13 +1035,6 @@ accessibility_projection_nodes_equal :: proc(a, b: Accessibility_Projection_Node
 	   a.numeric_maximum != b.numeric_maximum || a.numeric_step != b.numeric_step ||
 	   a.has_numeric_value != b.has_numeric_value || len(a.children) != len(b.children) { return false }
 	for child, index in a.children { if child != b.children[index] { return false } }
-	return true
-}
-
-@(private)
-accessibility_projection_byte_lengths_equal :: proc(a, b: []u8) -> bool {
-	if len(a) != len(b) { return false }
-	for i in 0..<len(a) { if a[i] != b[i] { return false } }
 	return true
 }
 

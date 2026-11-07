@@ -139,7 +139,7 @@ test_motion_handles_large_timestamps_and_unestablished_slow_deadline :: proc(t: 
 		"a deadline beyond the supported time horizon is reported as unestablished")
 	sample := motion_scalar_sample(response, Motion_Time(9_000_000_000_000_000_000))
 	testing.expect(t, sample.status == .Ok && sample.active && !sample.deadline_established &&
-		motion_finite(sample.value) && motion_finite(sample.velocity),
+		number_is_finite(sample.value) && number_is_finite(sample.velocity),
 		"large signed timestamps must not overflow elapsed-time arithmetic or snap without a deadline")
 }
 
