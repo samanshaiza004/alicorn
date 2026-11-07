@@ -121,7 +121,7 @@ test_effect_gaussian_tiny_sigma_has_finite_identity_taps :: proc(t:^testing.T) {
 		"a positive sigma whose tail underflows should still produce a bounded kernel")
 	if !ok { return }
 	for tap in taps[:count] {
-		testing.expect(t, native_effect_finite(tap.offset_pixels) && native_effect_finite(tap.weight) && tap.weight >= 0,
+		testing.expect(t, alicorn.number_is_finite(tap.offset_pixels) && alicorn.number_is_finite(tap.weight) && tap.weight >= 0,
 			"underflowed tail taps must remain finite zero-weight samples")
 	}
 	testing.expect(t, taps[0].offset_pixels == 0 && taps[0].weight == 1 &&

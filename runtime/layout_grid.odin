@@ -8,14 +8,6 @@ grid_axis_size :: proc(size: Layout_Size, direction: Layout_Direction) -> Layout
 	return size.width if direction == .Row else size.height
 }
 
-grid_axis_minimum :: proc(style: Layout_Style, direction: Layout_Direction) -> f32 {
-	return style.min_width if direction == .Row else style.min_height
-}
-
-grid_axis_maximum :: proc(style: Layout_Style, direction: Layout_Direction) -> f32 {
-	return style.max_width if direction == .Row else style.max_height
-}
-
 grid_axis_track_items :: proc(
 	rt: ^Runtime,
 	parent: ^Node,
@@ -113,7 +105,7 @@ grid_add_track_contribution :: proc(
 	direction: Layout_Direction,
 ) {
 	if index < 0 || index >= len(items) { return }
-	minimum_value := grid_axis_minimum(child.style, direction)
+	minimum_value := layout_axis_minimum(child.style, direction)
 	if math.is_nan(minimum_value) || math.is_inf(minimum_value) || minimum_value < 0 {
 		record_trace(rt, .Layout, child.id, fmt.tprintf("Grid item has invalid %v minimum; using zero", direction))
 		minimum_value = 0
@@ -199,7 +191,7 @@ grid_adjust_span_minimums :: proc(
 		span := int(child.grid_column_span)
 		if direction == .Column { start, span = int(child.grid_row), int(child.grid_row_span) }
 		if span <= 1 { continue }
-		minimum_value := grid_axis_minimum(child.style, direction)
+		minimum_value := layout_axis_minimum(child.style, direction)
 		if math.is_nan(minimum_value) || math.is_inf(minimum_value) || minimum_value < 0 {
 			record_trace(rt, .Layout, child_id, fmt.tprintf("Grid %v span [%d,%d) has invalid item minimum; using zero", direction, start, start+span))
 			minimum_value = 0
@@ -381,7 +373,7 @@ grid_cell_bounds :: proc(
 
 grid_desired_child_extent :: proc(rt: ^Runtime, child: ^Node, direction: Layout_Direction, available: f32) -> f32 {
 	style_extent := child.style.width if direction == .Row else child.style.height
-	if style_extent >= 0 { return clampf(style_extent, grid_axis_minimum(child.style, direction), grid_axis_maximum(child.style, direction)) }
+	if style_extent >= 0 { return clampf(style_extent, layout_axis_minimum(child.style, direction), layout_axis_maximum(child.style, direction)) }
 	if state, ok := rt.measure_states[child.id]; ok && state.cache_key.valid {
 		measured := layout_unit_to_f32(grid_axis_size(state.result.size, direction))
 		if node_has_text_product(child.kind) && child.text_run_valid {
@@ -391,7 +383,7 @@ grid_desired_child_extent :: proc(rt: ^Runtime, child: ^Node, direction: Layout_
 				if child.kind == .Checkbox { measured += 36 }
 			}
 		}
-		return minf(clampf(measured, grid_axis_minimum(child.style, direction), grid_axis_maximum(child.style, direction)), available)
+		return minf(clampf(measured, layout_axis_minimum(child.style, direction), layout_axis_maximum(child.style, direction)), available)
 	}
 	return minf(available, 24)
 }
@@ -508,8 +500,8 @@ layout_grid_children :: proc(rt: ^Runtime, parent: ^Node, inner: Rect, children:
 		if parent.style.clip { child.clip = rect_intersection(parent.clip, parent.bounds) } else { child.clip = parent.clip }
 		layout_finalize_node_geometry_for_node(rt, child)
 		semantic_sync_bounds(rt, child)
-		bounds_changed := !same_rect(old_bounds, child.bounds)
-		clip_changed := !same_rect(old_clip, child.clip)
+		bounds_changed := !rect_equal(old_bounds, child.bounds)
+		clip_changed := !rect_equal(old_clip, child.clip)
 		if bounds_changed || clip_changed || dirty_has(child.dirty, .Layout) {
 			dirty_set(&child.dirty, .Layout, true)
 			dirty_set(&child.dirty, .Paint, true)

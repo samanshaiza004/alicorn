@@ -492,17 +492,17 @@ motion_intent_queue :: proc(
 		motion_diagnostic_record(rt, .Failure, owner, .Invalid_Value, source, cause, coalesce=true)
 		return .Invalid_Value
 	}
-	if !motion_finite(reveal_offset.x) || !motion_finite(reveal_offset.y) ||
+	if !number_is_finite(reveal_offset.x) || !number_is_finite(reveal_offset.y) ||
 		abs(reveal_offset.x) > MOTION_TRANSLATION_COMPONENT_MAX ||
 		abs(reveal_offset.y) > MOTION_TRANSLATION_COMPONENT_MAX {
 		motion_diagnostic_record(rt, .Failure, owner, .Invalid_Value, source, cause, coalesce=true)
 		return .Invalid_Value
 	}
-	if target.has_opacity && (!motion_finite(target.opacity) || target.opacity < 0 || target.opacity > 1) {
+	if target.has_opacity && (!number_is_finite(target.opacity) || target.opacity < 0 || target.opacity > 1) {
 		motion_diagnostic_record(rt, .Failure, owner, .Invalid_Value, source, cause, coalesce=true)
 		return .Invalid_Value
 	}
-	if target.has_translation && (!motion_finite(target.translation.x) || !motion_finite(target.translation.y) ||
+	if target.has_translation && (!number_is_finite(target.translation.x) || !number_is_finite(target.translation.y) ||
 		abs(target.translation.x) > MOTION_TRANSLATION_COMPONENT_MAX ||
 		abs(target.translation.y) > MOTION_TRANSLATION_COMPONENT_MAX) {
 		motion_diagnostic_record(rt, .Failure, owner, .Invalid_Value, source, cause, coalesce=true)
@@ -691,9 +691,9 @@ motion_clamp_opacity :: proc(value: f64) -> f32 {
 }
 
 motion_value_to_f32 :: proc(value: f64) -> (result: f32, ok: bool) {
-	if !motion_finite(value) || abs(value) > MOTION_F32_MAX { return 0, false }
+	if !number_is_finite(value) || abs(value) > MOTION_F32_MAX { return 0, false }
 	result = f32(value)
-	return result, motion_finite(f64(result))
+	return result, number_is_finite(f64(result))
 }
 
 motion_mode_valid :: proc(mode: Motion_Mode) -> bool {
@@ -742,7 +742,7 @@ motion_scalar_set_target :: proc(
 	mode: Motion_Mode,
 	at: Motion_Time,
 ) -> (next: Motion_Scalar_Response, status: Motion_Status) {
-	if !motion_finite(target) { return response, .Invalid_Value }
+	if !number_is_finite(target) { return response, .Invalid_Value }
 	if !motion_config_valid(config) { return response, .Invalid_Configuration }
 	if !motion_mode_valid(mode) { return response, .Invalid_Value }
 	if !initialized {
@@ -786,7 +786,7 @@ motion_translation_set_target :: proc(
 	mode: Motion_Mode,
 	at: Motion_Time,
 ) -> (next: Motion_Translation_Response, status: Motion_Status) {
-	if !motion_finite(target.x) || !motion_finite(target.y) { return response, .Invalid_Value }
+	if !number_is_finite(target.x) || !number_is_finite(target.y) { return response, .Invalid_Value }
 	if !motion_config_valid(config) { return response, .Invalid_Configuration }
 	if !motion_mode_valid(mode) { return response, .Invalid_Value }
 	if !initialized {
@@ -832,7 +832,7 @@ motion_target_opacity :: proc(
 	if rt == nil { return .Invalid_Runtime }
 	event_source := source
 	if event_source.file == "" { event_source = Source_Site{loc.file_path, int(loc.line), int(loc.column), "motion opacity"} }
-	if target < 0 || target > 1 || !motion_finite(target) {
+	if target < 0 || target > 1 || !number_is_finite(target) {
 		if record_diagnostics { return motion_diagnostic_failure(rt, handle.node, .Invalid_Value, event_source, cause, "motion opacity") }
 		return .Invalid_Value
 	}
@@ -917,7 +917,7 @@ motion_target_translation :: proc(
 	if rt == nil { return .Invalid_Runtime }
 	event_source := source
 	if event_source.file == "" { event_source = Source_Site{loc.file_path, int(loc.line), int(loc.column), "motion translation"} }
-	if !motion_finite(target.x) || !motion_finite(target.y) ||
+	if !number_is_finite(target.x) || !number_is_finite(target.y) ||
 		abs(target.x) > MOTION_TRANSLATION_COMPONENT_MAX || abs(target.y) > MOTION_TRANSLATION_COMPONENT_MAX {
 		if record_diagnostics { return motion_diagnostic_failure(rt, handle.node, .Invalid_Value, event_source, cause, "motion translation") }
 		return .Invalid_Value
@@ -1012,15 +1012,15 @@ motion_apply_intent :: proc(
 	if intent != .Settle && intent != .Direct && intent != .Snap && intent != .Reveal {
 		return .Invalid_Value
 	}
-	if !motion_finite(reveal_offset.x) || !motion_finite(reveal_offset.y) ||
+	if !number_is_finite(reveal_offset.x) || !number_is_finite(reveal_offset.y) ||
 		abs(reveal_offset.x) > MOTION_TRANSLATION_COMPONENT_MAX ||
 		abs(reveal_offset.y) > MOTION_TRANSLATION_COMPONENT_MAX {
 		return .Invalid_Value
 	}
-	if target.has_opacity && (!motion_finite(target.opacity) || target.opacity < 0 || target.opacity > 1) {
+	if target.has_opacity && (!number_is_finite(target.opacity) || target.opacity < 0 || target.opacity > 1) {
 		return .Invalid_Value
 	}
-	if target.has_translation && (!motion_finite(target.translation.x) || !motion_finite(target.translation.y) ||
+	if target.has_translation && (!number_is_finite(target.translation.x) || !number_is_finite(target.translation.y) ||
 		abs(target.translation.x) > MOTION_TRANSLATION_COMPONENT_MAX ||
 		abs(target.translation.y) > MOTION_TRANSLATION_COMPONENT_MAX) {
 		return .Invalid_Value

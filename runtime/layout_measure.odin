@@ -785,9 +785,9 @@ layout_text_measure_constraints :: proc(rt: ^Runtime, parent: ^Node, child: ^Nod
 
 layout_grow_measure_constraints :: proc(rt: ^Runtime, parent: ^Node, child: ^Node, assigned_main, cross_size: f32) -> Layout_Constraints {
 	constraints := layout_text_measure_constraints(rt, parent, child, cross_size)
-	minimum := main_axis_min(child.style, parent.style.direction)
+	minimum := layout_axis_minimum(child.style, parent.style.direction)
 	if parent.style.direction == .Column { minimum = layout_node_min_height(rt, child) }
-	assigned := clampf(assigned_main, minimum, main_axis_max(child.style, parent.style.direction))
+	assigned := clampf(assigned_main, minimum, layout_axis_maximum(child.style, parent.style.direction))
 	if parent.style.direction == .Row {
 		constraints.width = layout_axis_constraint_normalize(assigned, assigned)
 	} else {

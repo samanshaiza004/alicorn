@@ -515,7 +515,7 @@ native_darwin_titlebar_refresh :: proc(
 		display_scale=sdl3.GetWindowDisplayScale(menu.window),
 		fullscreen=fullscreen,
 	}
-	metrics_changed := !state.titlebar.metrics_valid || !darwin_titlebar_metrics_equal(state.titlebar.metrics, metrics)
+	metrics_changed := !state.titlebar.metrics_valid || !window_chrome_metrics_equal(state.titlebar.metrics, metrics)
 	// Keep the last resolved regions until the pending layout publishes new
 	// products. Native resize/style measurements are not a substitute for layout.
 	next.interactive = state.titlebar.geometry.interactive
@@ -534,16 +534,6 @@ native_darwin_titlebar_refresh :: proc(
 		fmt.println("macos_titlebar_geometry", "logical", window_width, window_height,
 			"header", next.header, "measured_controls", measured_controls,
 			"active_controls", next.native_control_count, "display_scale", metrics.display_scale)
-	}
-	return true
-}
-
-darwin_titlebar_metrics_equal :: proc(a, b: Window_Chrome_Metrics) -> bool {
-	if a.header != b.header || a.native_control_count != b.native_control_count ||
-		a.content_start_x != b.content_start_x || a.content_end_x != b.content_end_x ||
-		a.display_scale != b.display_scale || a.fullscreen != b.fullscreen { return false }
-	for i in 0..<min(max(a.native_control_count, 0), len(a.native_controls)) {
-		if a.native_controls[i] != b.native_controls[i] { return false }
 	}
 	return true
 }

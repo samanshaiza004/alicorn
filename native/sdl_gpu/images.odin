@@ -44,20 +44,6 @@ Native_Image_Renderer :: struct {
 	mesh_fingerprint: u64,
 }
 
-native_image_fragment_shader :: proc(device: ^sdl3.GPUDevice) -> ^sdl3.GPUShader {
-	supported := sdl3.GetGPUShaderFormats(device)
-	info := sdl3.GPUShaderCreateInfo{stage=.FRAGMENT, num_samplers=1}
-	if native_shader_supported(supported, {.DXIL}) {
-		info.format = {.DXIL}; info.code = &GPU_IMAGE_FRAG_DXIL[0]; info.code_size = uint(len(GPU_IMAGE_FRAG_DXIL)); info.entrypoint = "PSMain"
-	} else if native_shader_supported(supported, {.MSL}) {
-		info.format = {.MSL}; info.code = &GPU_IMAGE_FRAG_MSL[0]; info.code_size = uint(len(GPU_IMAGE_FRAG_MSL)); info.entrypoint = "PSMain"
-	} else if native_shader_supported(supported, {.SPIRV}) {
-		info.format = {.SPIRV}; info.code = &GPU_IMAGE_FRAG_SPV[0]; info.code_size = uint(len(GPU_IMAGE_FRAG_SPV)); info.entrypoint = "main"
-	}
-	if info.code == nil { return nil }
-	return sdl3.CreateGPUShader(device, info)
-}
-
 native_image_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTextureFormat, runtime: ^alicorn.Runtime) -> (renderer: Native_Image_Renderer, ok: bool) {
 	if device == nil || runtime == nil { return renderer, false }
 	renderer.device = device
@@ -76,7 +62,7 @@ native_image_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTex
 	renderer.images = make([dynamic]Native_GPU_Image, 0, 16)
 	renderer.uploads = make([dynamic]Native_Image_Upload, 0, 4)
 	vertex_shader := native_text_shader(device, .VERTEX, false)
-	fragment_shader := native_image_fragment_shader(device)
+	fragment_shader := native_fragment_shader(device, GPU_IMAGE_FRAG_DXIL, GPU_IMAGE_FRAG_MSL, GPU_IMAGE_FRAG_SPV)
 	if vertex_shader == nil || fragment_shader == nil {
 		if vertex_shader != nil { sdl3.ReleaseGPUShader(device, vertex_shader) }
 		if fragment_shader != nil { sdl3.ReleaseGPUShader(device, fragment_shader) }
@@ -231,20 +217,20 @@ native_image_pixel_quad :: proc(vertices: ^[dynamic]Native_Text_Vertex, draw: al
 }
 
 native_image_hash_handle :: proc(h: u64, handle: alicorn.Image_Handle) -> u64 {
-	return native_text_hash_mix(h, u64(handle))
+	return alicorn.hash_mix(h, u64(handle))
 }
 
 native_image_build :: proc(renderer: ^Native_Image_Renderer, display: []alicorn.Paint_Command, scale_x, scale_y: f32, target_w, target_h: sdl3.Uint32) -> bool {
-	h := native_text_hash_mix(1469598103934665603, u64(len(display)))
-	h = native_text_hash_mix(h, u64(transmute(u32)scale_x)); h = native_text_hash_mix(h, u64(transmute(u32)scale_y))
-	h = native_text_hash_mix(h, u64(target_w)); h = native_text_hash_mix(h, u64(target_h))
+	h := alicorn.hash_mix(1469598103934665603, u64(len(display)))
+	h = alicorn.hash_mix(h, u64(transmute(u32)scale_x)); h = alicorn.hash_mix(h, u64(transmute(u32)scale_y))
+	h = alicorn.hash_mix(h, u64(target_w)); h = alicorn.hash_mix(h, u64(target_h))
 	for command, index in display {
 		paint, ok := command.payload.(alicorn.Image_Paint)
 		if !ok { continue }
-		h = native_image_hash_handle(h, paint.image); h = native_text_hash_mix(h, u64(index))
+		h = native_image_hash_handle(h, paint.image); h = alicorn.hash_mix(h, u64(index))
 		h = native_text_hash_rect(h, command.bounds); h = native_text_hash_rect(h, command.clip)
-		h = native_text_hash_mix(h, u64(transmute(u32)command.opacity))
-		h = native_text_hash_mix(h, u64(transmute(u32)command.translation[0])); h = native_text_hash_mix(h, u64(transmute(u32)command.translation[1]))
+		h = alicorn.hash_mix(h, u64(transmute(u32)command.opacity))
+		h = alicorn.hash_mix(h, u64(transmute(u32)command.translation[0])); h = alicorn.hash_mix(h, u64(transmute(u32)command.translation[1]))
 	}
 	if renderer.mesh_valid && renderer.mesh_fingerprint == h { return true }
 	clear(&renderer.vertices); clear(&renderer.draws)

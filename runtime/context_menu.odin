@@ -378,7 +378,7 @@ context_menu_layout_children :: proc(rt: ^Runtime, parent: ^Node, children: []No
 	child.clip = parent.clip
 	layout_finalize_node_geometry_for_node(rt, child)
 	semantic_sync_bounds(rt, child)
-	if !same_rect(old_bounds, child.bounds) || !same_rect(old_clip, child.clip) || dirty_has(child.dirty, .Layout) {
+	if !rect_equal(old_bounds, child.bounds) || !rect_equal(old_clip, child.clip) || dirty_has(child.dirty, .Layout) {
 		dirty_set(&child.dirty, .Layout, true)
 		dirty_set(&child.dirty, .Paint, true)
 		dirty_set(&child.dirty, .Composite, true)

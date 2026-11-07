@@ -981,12 +981,8 @@ theme_clone_string :: proc(value: string, allocator: mem.Allocator) -> string {
 }
 
 theme_color_is_valid :: proc(color: Theme_Color) -> bool {
-	return theme_unit_float_is_valid(color.r) && theme_unit_float_is_valid(color.g) &&
-	       theme_unit_float_is_valid(color.b) && color.a == color.a && color.a > 0 && color.a <= 1
-}
-
-theme_unit_float_is_valid :: proc(value: f32) -> bool {
-	return value == value && value >= 0 && value <= 1
+	return theme_unit_value_is_valid(color.r) && theme_unit_value_is_valid(color.g) &&
+	       theme_unit_value_is_valid(color.b) && color.a == color.a && color.a > 0 && color.a <= 1
 }
 
 theme_length_is_valid :: proc(value: Theme_Length) -> bool {

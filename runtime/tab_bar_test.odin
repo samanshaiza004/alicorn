@@ -1002,7 +1002,7 @@ test_tab_bar_close_policy_keeps_dirty_marker_and_reveals_on_hover :: proc(t: ^te
 	close_glyph_visible := visual_part_is_visible(&rt, clean_close) && tab_bar_test_display_has_close_icon(&rt, clean_close)
 	testing.expect(t, rt.nodes[clean_tab].hovered && close_glyph_visible,
 		"hovering any part of a compact tab should reveal its close glyph without changing geometry")
-	testing.expect(t, same_rect(rt.nodes[clean_tab].bounds, clean_bounds),
+	testing.expect(t, rect_equal(rt.nodes[clean_tab].bounds, clean_bounds),
 		"revealing the close glyph should not shift or resize its tab")
 
 	close_bounds := rt.nodes[clean_close].bounds
@@ -1026,10 +1026,10 @@ test_tab_bar_close_policy_keeps_dirty_marker_and_reveals_on_hover :: proc(t: ^te
 	}
 	testing.expect(t, hover_surface_found,
 		"hovering the close Button should paint its highlight")
-	testing.expect(t, same_rect(rt.nodes[clean_tab].bounds, clean_bounds),
+	testing.expect(t, rect_equal(rt.nodes[clean_tab].bounds, clean_bounds),
 		"hovering the close action must not resize or reflow its tab")
 	close_title_bounds, close_title_found := tab_bar_test_text_bounds(&rt, clean_tab)
-	testing.expect(t, clean_title_found && close_title_found && same_rect(clean_title_bounds, close_title_bounds),
+	testing.expect(t, clean_title_found && close_title_found && rect_equal(clean_title_bounds, close_title_bounds),
 		"showing and hovering the close affordance must not move or rewrap the tab title")
 }
 
@@ -1086,7 +1086,7 @@ test_tab_bar_dirty_marker_only_yields_to_close_hover :: proc(t: ^testing.T) {
 	testing.expect(t, rt.nodes[close_id].hovered && tab_bar_test_display_has_close_icon(&rt, close_id) &&
 		len(close_paint) == 2 && hover_surface,
 		"the highlighted close icon should replace the dirty marker")
-	testing.expect(t, same_rect(rt.nodes[tab_id].bounds, tab_bounds) && same_rect(rt.nodes[close_id].bounds, close_bounds),
+	testing.expect(t, rect_equal(rt.nodes[tab_id].bounds, tab_bounds) && rect_equal(rt.nodes[close_id].bounds, close_bounds),
 		"revealing the close action must not move or resize the tab or its title slot")
 
 	testing.expect(t, process_pointer(&rt, Pointer_Event{kind=.Move, x=body_x, y=body_y}) == tab_id,

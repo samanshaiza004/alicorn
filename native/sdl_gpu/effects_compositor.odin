@@ -11,12 +11,8 @@ import "vendor:sdl3"
 
 NATIVE_EFFECT_PREFIX_CLEAR :: sdl3.FColor{0.035, 0.045, 0.065, 1}
 
-native_effect_hash_mix :: proc(hash, value: u64) -> u64 {
-	return (hash ~ value) * 1099511628211
-}
-
 native_effect_hash_f32 :: proc(hash: u64, value: f32) -> u64 {
-	return native_effect_hash_mix(hash, u64(transmute(u32)value))
+	return alicorn.hash_mix(hash, u64(transmute(u32)value))
 }
 
 native_effect_hash_rect :: proc(hash: u64, rect: alicorn.Rect) -> u64 {
@@ -32,55 +28,55 @@ native_effect_hash_color :: proc(hash: u64, color: alicorn.Color) -> u64 {
 }
 
 native_effect_hash_command :: proc(hash: u64, draw: alicorn.Paint_Command) -> u64 {
-	result := native_effect_hash_mix(hash, u64(draw.owner))
+	result := alicorn.hash_mix(hash, u64(draw.owner))
 	result = native_effect_hash_rect(result, draw.bounds)
 	result = native_effect_hash_rect(result, draw.clip)
-	result = native_effect_hash_mix(result, u64(draw.stroke_placement))
+	result = alicorn.hash_mix(result, u64(draw.stroke_placement))
 	result = native_effect_hash_f32(result, draw.opacity)
 	result = native_effect_hash_f32(result, draw.translation[0])
 	result = native_effect_hash_f32(result, draw.translation[1])
 	switch payload in draw.payload {
 	case alicorn.Surface_Paint:
-		result = native_effect_hash_mix(result, 1)
-		result = native_effect_hash_mix(result, u64(payload.shape.kind))
+		result = alicorn.hash_mix(result, 1)
+		result = alicorn.hash_mix(result, u64(payload.shape.kind))
 		result = native_effect_hash_f32(result, payload.shape.corner_radius)
 		result = native_effect_hash_color(result, payload.fill)
 		result = native_effect_hash_color(result, payload.stroke.color)
 		result = native_effect_hash_f32(result, payload.stroke.width)
-		result = native_effect_hash_mix(result, u64(payload.material))
+		result = alicorn.hash_mix(result, u64(payload.material))
 		result = native_effect_hash_f32(result, payload.physical_height)
-		result = native_effect_hash_mix(result, u64(payload.material_group))
+		result = alicorn.hash_mix(result, u64(payload.material_group))
 		result = native_effect_hash_f32(result, payload.top_edge_gap[0])
 		result = native_effect_hash_f32(result, payload.top_edge_gap[1])
 	case alicorn.Backdrop_Effect_Paint:
-		result = native_effect_hash_mix(result, 2)
+		result = alicorn.hash_mix(result, 2)
 	case alicorn.Icon_Paint:
-		result = native_effect_hash_mix(result, 3)
-		result = native_effect_hash_mix(result, u64(payload.id))
+		result = alicorn.hash_mix(result, 3)
+		result = alicorn.hash_mix(result, u64(payload.id))
 		result = native_effect_hash_color(result, payload.color)
 	case alicorn.Image_Paint:
-		result = native_effect_hash_mix(result, 4)
-		result = native_effect_hash_mix(result, u64(payload.image))
+		result = alicorn.hash_mix(result, 4)
+		result = alicorn.hash_mix(result, u64(payload.image))
 	case alicorn.Text_Paint:
-		result = native_effect_hash_mix(result, 5)
-		result = native_effect_hash_mix(result, u64(payload.run.source))
-		result = native_effect_hash_mix(result, payload.run.resource)
-		result = native_effect_hash_mix(result, payload.run.generation)
+		result = alicorn.hash_mix(result, 5)
+		result = alicorn.hash_mix(result, u64(payload.run.source))
+		result = alicorn.hash_mix(result, payload.run.resource)
+		result = alicorn.hash_mix(result, payload.run.generation)
 		result = native_effect_hash_color(result, payload.color)
 		for span in payload.spans {
-			result = native_effect_hash_mix(result, u64(span.start))
-			result = native_effect_hash_mix(result, u64(span.end))
+			result = alicorn.hash_mix(result, u64(span.start))
+			result = alicorn.hash_mix(result, u64(span.end))
 			result = native_effect_hash_color(result, span.color)
-			result = native_effect_hash_mix(result, u64(span.color_set))
-			result = native_effect_hash_mix(result, u64(span.underline))
-			result = native_effect_hash_mix(result, u64(span.strikethrough))
+			result = alicorn.hash_mix(result, u64(span.color_set))
+			result = alicorn.hash_mix(result, u64(span.underline))
+			result = alicorn.hash_mix(result, u64(span.strikethrough))
 			result = native_effect_hash_color(result, span.background)
-			result = native_effect_hash_mix(result, u64(span.background_set))
+			result = alicorn.hash_mix(result, u64(span.background_set))
 		}
 	case alicorn.Geometry_Paint:
-		result = native_effect_hash_mix(result, 6)
-		result = native_effect_hash_mix(result, u64(payload.geometry.resource))
-		result = native_effect_hash_mix(result, payload.geometry.generation)
+		result = alicorn.hash_mix(result, 6)
+		result = alicorn.hash_mix(result, u64(payload.geometry.resource))
+		result = alicorn.hash_mix(result, payload.geometry.generation)
 	}
 	return result
 }
@@ -96,7 +92,7 @@ native_effect_prefix_generation :: proc(
 	hash = native_effect_hash_f32(hash, scale_x)
 	hash = native_effect_hash_f32(hash, scale_y)
 	hash = native_effect_hash_f32(hash, sigma)
-	hash = native_effect_hash_mix(hash, u64(len(display)))
+	hash = alicorn.hash_mix(hash, u64(len(display)))
 	for draw in display { hash = native_effect_hash_command(hash, draw) }
 	if hash == 0 { return 1 }
 	return hash

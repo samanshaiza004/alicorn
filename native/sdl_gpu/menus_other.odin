@@ -23,11 +23,7 @@ native_menu_try_shortcut :: proc(
 	modifiers: sdl3.Keymod,
 	repeat: bool,
 ) -> bool {
-	if menu == nil || menu.application == nil || menu.application.on_menu_command == nil { return false }
-	command, found := native_menu_match_shortcut(menu.application, keycode, modifiers)
-	if !found { return false }
-	if !repeat { native_menu_dispatch_command(menu, command) }
-	return true
+	return native_menu_try_shortcut_shared(menu, keycode, modifiers, repeat)
 }
 
 native_menu_accessibility_appearance_changed :: proc(

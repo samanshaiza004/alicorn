@@ -770,7 +770,7 @@ theme_json_parse_color :: proc(parser: ^JSON_Parser, node: JSON_Node) -> (Theme_
 	}
 	values: [3]f32
 	for element, index in components.elements {
-		if element.kind != .Number || !theme_json_unit_component(element.number) {
+		if element.kind != .Number || !theme_unit_value_is_valid(element.number) {
 			theme_json_diagnostic(parser, .Invalid_Color, element.span, "sRGB components must be finite numbers in [0,1]")
 			return {}, false
 		}
@@ -778,7 +778,7 @@ theme_json_parse_color :: proc(parser: ^JSON_Parser, node: JSON_Node) -> (Theme_
 	}
 	a: f32 = 1
 	if has_alpha {
-		if alpha.kind != .Number || !theme_json_unit_component(alpha.number) || alpha.number == 0 {
+		if alpha.kind != .Number || !theme_unit_value_is_valid(alpha.number) || alpha.number == 0 {
 			theme_json_diagnostic(parser, .Invalid_Color, alpha.span, "alpha must be a finite number in (0,1]")
 			return {}, false
 		}
@@ -1020,7 +1020,7 @@ theme_json_source_span :: proc(parser: ^JSON_Parser, span: Source_Span) -> Sourc
 	return result
 }
 
-theme_json_unit_component :: proc(value: f64) -> bool {
+theme_unit_value_is_valid :: proc(value: $T) -> bool {
 	return value == value && value >= 0 && value <= 1
 }
 

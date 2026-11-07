@@ -542,16 +542,6 @@ win32_rect_intersection :: proc(a, b: win.RECT) -> win.RECT {
 	return win.RECT{left, top, max(right, left), max(bottom, top)}
 }
 
-win32_window_chrome_metrics_equal :: proc(a, b: Window_Chrome_Metrics) -> bool {
-	if a.header != b.header || a.native_control_count != b.native_control_count ||
-		a.content_start_x != b.content_start_x || a.content_end_x != b.content_end_x ||
-		a.display_scale != b.display_scale || a.fullscreen != b.fullscreen { return false }
-	for i in 0..<min(max(a.native_control_count, 0), len(a.native_controls)) {
-		if a.native_controls[i] != b.native_controls[i] { return false }
-	}
-	return true
-}
-
 // Publish the native menu/caption geometry in the same logical coordinate
 // space as the retained tree. Native menu labels and caption buttons remain
 // host-owned exclusions; the application may place tabs only between them.
@@ -590,7 +580,7 @@ win32_menu_sync_window_chrome_metrics :: proc(
 		next.native_controls[next.native_control_count] = win32_chrome_rect_to_window(control.bounds, density)
 		next.native_control_count += 1
 	}
-	changed := !state.chrome_metrics_valid || !win32_window_chrome_metrics_equal(state.chrome_metrics, next)
+	changed := !state.chrome_metrics_valid || !window_chrome_metrics_equal(state.chrome_metrics, next)
 	state.chrome_metrics = next
 	state.chrome_metrics_valid = true
 	if !changed { return true }
@@ -1518,11 +1508,7 @@ native_menu_destroy :: proc(menu: ^Native_Menu_Runtime) {
 }
 
 native_menu_take_pending :: proc(menu: ^Native_Menu_Runtime) -> (Application_Command_ID, bool) {
-	if menu == nil || !menu.has_pending { return {}, false }
-	command := menu.pending_command
-	menu.pending_command = {}
-	menu.has_pending = false
-	return command, true
+	return native_menu_take_pending_shared(menu)
 }
 
 native_menu_try_shortcut :: proc(
@@ -1531,9 +1517,5 @@ native_menu_try_shortcut :: proc(
 	modifiers: sdl3.Keymod,
 	repeat: bool,
 ) -> bool {
-	if menu == nil || menu.application == nil || menu.application.on_menu_command == nil { return false }
-	command, found := native_menu_match_shortcut(menu.application, keycode, modifiers)
-	if !found { return false }
-	if !repeat { native_menu_dispatch_command(menu, command) }
-	return true
+	return native_menu_try_shortcut_shared(menu, keycode, modifiers, repeat)
 }
