@@ -64,6 +64,7 @@ TEXT_INPUT_ALLOCATOR_TEST_FONT :: #load("../assets/fonts/AtkinsonHyperlegibleNex
 Controlled_Text_Field_Test_State :: struct {
 	value: Text_Field_Buffer,
 	result: Text_Field_Response,
+	pending_semantic_value_uses_current_buffer: bool,
 }
 
 controlled_text_field_test_render :: proc(rt: ^Runtime, state: ^Controlled_Text_Field_Test_State) -> Node_ID {
@@ -77,6 +78,12 @@ controlled_text_field_test_render :: proc(rt: ^Runtime, state: ^Controlled_Text_
 		key=key_string("controlled-text-field-input"),
 		style=layout_style(width=240, height=40),
 	)
+	_ = semantic_text_field_label(&ui, "Name")
+	if len(rt.pending) > 0 {
+		pending := rt.pending[len(rt.pending)-1]
+		state.pending_semantic_value_uses_current_buffer =
+			raw_data(pending.semantic.value) == raw_data(state.value.text)
+	}
 	container_end(&ui)
 	end_frame(&ui)
 	return state.result.node
@@ -107,10 +114,16 @@ test_controlled_text_field_adopts_commits_but_not_ime_preedit :: proc(t: ^testin
 		"IME preedit must remain transient and must not mutate application-owned committed text")
 	change := process_text_input(&rt, field, "!")
 	if len(change.text) > 0 { delete(change.text, rt.persistent_allocator) }
+	invalidate_root(&rt, "controlled text field committed input adoption")
 	_ = controlled_text_field_test_render(&rt, &state)
 	testing.expect(t, state.value.text == "seed!" && state.result.changed,
 		"a committed input event should be copied into the app-owned buffer on the next description")
+	testing.expect(t, state.pending_semantic_value_uses_current_buffer,
+		"the pending semantic value must be rebound before the app-owned buffer releases its previous text")
 	testing.expect(t, state.result.node == field, "controlled adoption must preserve the retained field identity")
+	semantic, semantic_found := semantic_node_lookup(&rt, semantic_visual_id(field))
+	testing.expect(t, semantic_found && semantic.value == "seed!",
+		"the semantic value should track the adopted committed text")
 	testing.expect(t, text_field_buffer_set(&state.value, "programmatic"), "the app should be able to replace controlled text explicitly")
 	invalidate_root(&rt, "controlled text field programmatic replacement")
 	_ = controlled_text_field_test_render(&rt, &state)
