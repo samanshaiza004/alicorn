@@ -29,6 +29,7 @@ Semantic_Surface_Style :: struct {
 	material: Material_ID,
 	physical_height: f32,
 	material_group: Material_Group_ID,
+	backdrop_effect: Backdrop_Effect,
 	// Optional retained visual above this surface. Only an abutting, visible
 	// visual can open the corresponding segment of the top material edge.
 	open_top_edge: Node_ID,
@@ -63,8 +64,20 @@ semantic_surface_style_is_valid :: proc(rt: ^Runtime, environment: Style_Environ
 	if style.stroke.width > 0 && !style_color_is_valid(style.stroke.color) { return false }
 	if style.physical_height != style.physical_height || abs(style.physical_height) > SURFACE_PHYSICAL_HEIGHT_LIMIT { return false }
 	if !surface_shape_is_valid(style.shape) { return false }
+	if !backdrop_effect_is_valid(style.backdrop_effect) { return false }
 	_, material_ok := style_material_resolve(rt, style.material)
 	return material_ok
+}
+
+backdrop_effect_is_valid :: proc(effect: Backdrop_Effect) -> bool {
+	if effect.fallback != .Direct { return false }
+	switch effect.kind {
+	case .None:
+		return effect.sigma == 0
+	case .Blur:
+		return effect.sigma == effect.sigma && abs(effect.sigma) <= 8 && effect.sigma > 0
+	}
+	return false
 }
 
 semantic_surface_color_is_valid :: proc(color: Color) -> bool {
@@ -103,6 +116,9 @@ semantic_surface_style_hash :: proc(style: Semantic_Surface_Style) -> u64 {
 	h = hash_mix(h, u64(transmute(u32)style.physical_height))
 	h = hash_mix(h, u64(u32(style.material_group)))
 	h = hash_mix(h, u64(style.open_top_edge))
+	h = hash_mix(h, u64(style.backdrop_effect.kind))
+	h = hash_mix(h, u64(transmute(u32)style.backdrop_effect.sigma))
+	h = hash_mix(h, u64(style.backdrop_effect.fallback))
 	return h
 }
 
@@ -124,6 +140,7 @@ surface_begin :: proc(
 	stroke := Paint_Stroke{},
 	stroke_placement := Paint_Stroke_Placement.Centered,
 	open_top_edge: Node_ID = 0,
+	backdrop_effect := BACKDROP_NONE,
 ) -> Node_ID {
 	if ui == nil || ui.runtime == nil { return 0 }
 	rt := ui.runtime
@@ -139,6 +156,7 @@ surface_begin :: proc(
 		physical_height=physical_height,
 		material_group=material_group,
 		open_top_edge=open_top_edge,
+		backdrop_effect=backdrop_effect,
 	}
 	if !rt.frame_open || !semantic_surface_style_is_valid(rt, rt.style_environment, semantic_style) {
 		append_diagnostic(rt, "surface_begin requires an open frame, resolvable theme role, supported shape, bounded optical height, and registered material")

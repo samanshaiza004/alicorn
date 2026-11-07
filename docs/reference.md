@@ -647,9 +647,9 @@ composite control and returns a `Tab_Bar_Result`. Internally, the retained
 tree uses a `Scroll_Region` labelled `tab-bar`, a `Virtual_List`, and one
 ordinary `.Tab` Button owner per item. Its label, selected underline, dirty
 indicator, and close action are retained descendants tagged as visual parts.
-The close action remains an independent `.Danger` Button, so its activation
-does not also select the parent tab. Part bounds and clipping come from normal
-layout, and renderer consumers see only generic surface/text commands.
+The close action is an independent Button whose activation leaves tab selection
+to the application. Part bounds and clipping come from normal layout, and
+renderer consumers see generic surface, text, and icon commands.
 
 Each `Tab_Bar_Item` contains:
 
@@ -670,11 +670,11 @@ reach their minimum width, it uses horizontal overflow; the selected tab is
 kept visible. Accessible Scroll tabs left/right controls appear while the bar
 overflows, and the bar also accepts horizontal wheel/trackpad scrolling. The
 close affordance is internal to the tab surface, retains a 24×24 logical hit
-target, and its hover visibility does not change tab layout or width. Inactive
-tabs show a distinct rounded close-action surface on hover; dirty state uses
-the same reserved trailing slot, so switching between its marker and close
-action does not shift the title. For dirty tabs, the marker remains visible
-while hovering the tab body; it is replaced by the close glyph only when the
+target, and its hover visibility does not change tab layout or width. The
+centered close icon takes its ink from the tab and gets a small flat highlight
+under the pointer. Dirty state uses the reserved trailing slot, so switching
+between its marker and close icon does not shift the title. For dirty tabs, the
+marker remains visible while hovering the tab body and gives way to the close icon when the
 pointer enters the close action itself (or while that action is pressed).
 Moving into a hidden close slot reveals it, but clicking the invisible slot
 without first hovering does not activate Close. `Always` explicitly shows the

@@ -125,7 +125,8 @@ paint_reference_validate_command :: proc(command: alicorn.Paint_Command, index: 
 		if !paint_reference_color_valid(surface.fill) {
 			return paint_reference_error(.Out_Of_Range_Color, index, command.owner)
 		}
-	case alicorn.Icon_Paint, alicorn.Image_Paint, alicorn.Text_Paint, alicorn.Geometry_Paint:
+	case alicorn.Icon_Paint, alicorn.Image_Paint, alicorn.Text_Paint, alicorn.Geometry_Paint,
+		alicorn.Backdrop_Effect_Paint:
 		return paint_reference_error(.Unsupported_Payload, index, command.owner)
 	}
 	return Paint_Reference_Error{}

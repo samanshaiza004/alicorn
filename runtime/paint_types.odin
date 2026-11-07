@@ -7,6 +7,28 @@ Paint_Stroke_Placement :: enum u8 {
 	Count,
 }
 
+// Backdrop_Effect is a bounded compositor request attached to a semantic
+// surface. Direct is the required fallback for hosts that cannot retain or
+// filter the backdrop within their supported resource policy.
+Backdrop_Effect_Kind :: enum u8 { None, Blur }
+Backdrop_Effect_Fallback :: enum u8 { Direct }
+Backdrop_Effect :: struct {
+	kind: Backdrop_Effect_Kind,
+	sigma: f32,
+	fallback: Backdrop_Effect_Fallback,
+}
+
+BACKDROP_NONE :: Backdrop_Effect{}
+
+backdrop_blur :: proc(sigma: f32, fallback := Backdrop_Effect_Fallback.Direct) -> Backdrop_Effect {
+	return Backdrop_Effect{kind=.Blur, sigma=sigma, fallback=fallback}
+}
+
+Backdrop_Effect_Paint :: struct {
+	sigma: f32,
+	fallback: Backdrop_Effect_Fallback,
+}
+
 // Paint_Command is the renderer-facing output of every paint producer:
 // retained widgets, runtime overlays, and host chrome. The owner is diagnostic
 // and transient-maintenance metadata; renderers dispatch only on the payload.
@@ -24,10 +46,20 @@ Paint_Command :: struct {
 
 Paint_Payload :: union #no_nil {
 	Surface_Paint,
+	Backdrop_Effect_Paint,
 	Icon_Paint,
 	Image_Paint,
 	Text_Paint,
 	Geometry_Paint,
+}
+
+paint_backdrop_effect_command :: proc(owner: Node_ID, bounds, clip: Rect, effect: Backdrop_Effect) -> Paint_Command {
+	return Paint_Command{
+		owner=owner,
+		bounds=bounds,
+		clip=clip,
+		payload=Backdrop_Effect_Paint{effect.sigma, effect.fallback},
+	}
 }
 
 // Icon_ID names font-independent, theme-tinted icons backed by compiled
@@ -263,6 +295,11 @@ paint_image_command :: proc(
 
 paint_command_is_surface :: proc(command: Paint_Command) -> bool {
 	_, ok := command.payload.(Surface_Paint)
+	return ok
+}
+
+paint_command_is_backdrop_effect :: proc(command: Paint_Command) -> bool {
+	_, ok := command.payload.(Backdrop_Effect_Paint)
 	return ok
 }
 

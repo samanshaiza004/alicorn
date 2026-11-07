@@ -25,6 +25,20 @@ jobs:
       - name: Validate source-over blending through Direct3D 12 readback
         shell: pwsh
         run: ./tools/validate_blending.ps1 -Odin odin
+      - name: Validate bounded retained-effects experiment through Direct3D 12 readback
+        shell: pwsh
+        run: |
+          ./tools/validate_effects.ps1 -Odin odin | Tee-Object -FilePath out/retained-effects-d3d12.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload retained-effects Direct3D 12 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retained-effects-d3d12
+          path: |
+            out/retained-effects/**
+            out/retained-effects-d3d12.txt
+          retention-days: 7
       - name: Compile every example
         shell: pwsh
         run: ./tools/build_examples.ps1 -Odin odin

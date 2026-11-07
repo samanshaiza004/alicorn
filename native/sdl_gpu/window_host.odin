@@ -209,9 +209,12 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 		if !wait_and_retire_oldest(
 			state.device, state.in_flight,
 			state.query_before_wait_true, state.query_after_wait_true, state.wait_count,
-			state.timing,
+			state.timing, state.completed_submission_serial,
 		) {
 			return
+		}
+		if state.retained_effects != nil && state.completed_submission_serial != nil {
+			native_retained_effects_note_completed(state.retained_effects, state.completed_submission_serial^)
 		}
 		if state.retired != nil { state.retired^ += 1 }
 	}
@@ -255,8 +258,10 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 		native_menu=state.native_menu,
 		reserve_solid_vertices=hud_vertex_reserve,
 		scratch_allocator=state.host_scratch.allocator,
+		retained_effects=state.retained_effects,
 	) {
 		_ = sdl3.CancelGPUCommandBuffer(command)
+		if state.retained_effects != nil { native_retained_effects_abort(state.retained_effects) }
 		fail("SDL live-resize display-list draw failed")
 	}
 	encode_elapsed := u64(time.duration_nanoseconds(time.since(encode_start)))
@@ -302,10 +307,22 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	native_timing_accumulate(&state.timing.gpu_submit_ns, &state.timing.gpu_submit_max_ns,
 		u64(time.duration_nanoseconds(time.since(submit_start))))
 	if fence == nil { fail("SDL live-resize frame submission failed") }
-	append(state.in_flight, Native_In_Flight{fence})
+	flight := Native_In_Flight{fence=fence}
+	flight.serial = state.timing.gpu_submissions+1
+	append(state.in_flight, flight)
 	native_text_commit_submission(state.text_renderer)
 	native_surface_commit_submission(state.surface_renderer)
 	native_solid_commit_submission(state.solid_renderer)
+	if state.retained_effects != nil {
+		native_retained_effects_commit(state.retained_effects, flight.serial)
+		if state.effect_retry_deadline_ns != nil {
+			if state.retained_effects.retry_pending {
+				state.effect_retry_deadline_ns^ = native_retained_effect_retry_deadline_after(u64(sdl3.GetTicksNS()))
+			} else {
+				state.effect_retry_deadline_ns^ = 0
+			}
+		}
+	}
 	native_inspector_submission_succeeded(state.inspector)
 	if native_inspector_visible(state.inspector) { state.timing.inspector_submissions += 1 }
 	if application_submission_pending {
@@ -408,6 +425,9 @@ Native_Live_Resize_State :: struct {
 	secondary_manager: ^Native_Secondary_Window_Manager,
 	text_input_coordinator: ^Native_Text_Input_Coordinator,
 	device: ^sdl3.GPUDevice,
+	retained_effects: ^Native_Retained_Effects,
+	completed_submission_serial: ^u64,
+	effect_retry_deadline_ns: ^u64,
 	rt: ^alicorn.Runtime,
 	application: ^Application,
 	metrics: ^Window_Metrics,

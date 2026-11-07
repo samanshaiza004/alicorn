@@ -181,6 +181,15 @@ test_cpu_paint_reference :: proc(state: ^Test_State) {
 	for i in 0..<len(sentinel) { if sentinel[i] != u8(0xA0+i) { unchanged = false } }
 	expect(state, error.code == .Unsupported_Shape && error.command_index == 1 && error.owner == alicorn.Node_ID(99) && unchanged,
 		"unsupported commands must report their source index and owner without partially changing output")
+	effect_unsupported := [1]alicorn.Paint_Command{
+		alicorn.paint_backdrop_effect_command(100, {0, 0, 2, 4}, {0, 0, 2, 4}, alicorn.backdrop_blur(2)),
+	}
+	error = paint_reference.paint_reference_render(effect_unsupported[:], 2, 4, {}, sentinel[:])
+	unchanged = true
+	for i in 0..<len(sentinel) { if sentinel[i] != u8(0xA0+i) { unchanged = false } }
+	expect(state, error.code == .Unsupported_Payload && error.command_index == 0 &&
+		error.owner == alicorn.Node_ID(100) && unchanged,
+		"the flat CPU reference must reject backdrop effects transactionally")
 
 	fractional := [1]alicorn.Paint_Command{
 		alicorn.paint_surface_command(7, {0.5, 0, 4, 4}, {0, 0, 8, 8}, {1, 1, 1, 1}),

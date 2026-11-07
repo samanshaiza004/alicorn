@@ -41,6 +41,7 @@ Native_Secondary_Window :: struct {
 	text_renderer: Native_Text_Renderer,
 	surface_renderer: Native_Surface_Renderer,
 	solid_renderer: Native_Solid_Renderer,
+	retained_effects: Native_Retained_Effects,
 	text_input_state: Native_Text_Input_State,
 	pointer_modifier_state: sdl3.Keymod,
 	pointer_button_state: Native_Pointer_Button_State,
@@ -267,6 +268,7 @@ native_secondary_window_create :: proc(manager: ^Native_Secondary_Window_Manager
 		return false
 	}
 	format := sdl3.GetGPUSwapchainTextureFormat(manager.device, window)
+	child.retained_effects = native_retained_effects_make(manager.device, composite_format=format)
 	text_ok, surface_ok, solid_ok: bool
 	child.text_renderer, text_ok = native_text_make(manager.device, format, child.runtime)
 	if !text_ok {
@@ -437,6 +439,7 @@ native_secondary_window_destroy :: proc(manager: ^Native_Secondary_Window_Manage
 	if !native_secondary_window_gpu_release_safe(wait_for_gpu, manager.device != nil, idle_wait_succeeded) {
 		fail("secondary window GPU idle wait failed before resource release")
 	}
+	native_retained_effects_destroy(&child.retained_effects, device_already_idle=true)
 	native_solid_destroy(&child.solid_renderer)
 	native_surface_destroy(&child.surface_renderer)
 	native_text_destroy(&child.text_renderer)
@@ -670,17 +673,25 @@ native_secondary_window_render :: proc(
 		content_inset_top=child.native_menu.content_inset_top,
 		native_menu=&child.native_menu,
 		scratch_allocator=child.host_scratch.allocator,
+		retained_effects=&child.retained_effects,
 	) {
 		_ = sdl3.CancelGPUCommandBuffer(command)
+		native_retained_effects_abort(&child.retained_effects)
 		return false
 	}
 	fence := sdl3.SubmitGPUCommandBufferAndAcquireFence(command)
-	if fence == nil { return false }
+	if fence == nil {
+		native_retained_effects_abort(&child.retained_effects)
+		return false
+	}
+	next_serial := child.timing.gpu_submissions+1
+	native_retained_effects_commit(&child.retained_effects, next_serial)
 	if !sdl3.WaitForGPUFences(manager.device, true, &fence, 1) {
 		sdl3.ReleaseGPUFence(manager.device, fence)
 		return false
 	}
 	sdl3.ReleaseGPUFence(manager.device, fence)
+	native_retained_effects_note_completed(&child.retained_effects, next_serial)
 	native_text_commit_submission(&child.text_renderer)
 	native_surface_commit_submission(&child.surface_renderer)
 	native_solid_commit_submission(&child.solid_renderer)
