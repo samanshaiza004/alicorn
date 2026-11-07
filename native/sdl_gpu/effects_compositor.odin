@@ -31,7 +31,7 @@ native_effect_hash_color :: proc(hash: u64, color: alicorn.Color) -> u64 {
 	return result
 }
 
-native_effect_hash_command :: proc(hash: u64, draw: alicorn.Paint_Command) -> u64 {
+native_effect_hash_command :: proc(hash: u64, draw: alicorn.Paint_Command, rt: ^alicorn.Runtime) -> u64 {
 	result := native_effect_hash_mix(hash, u64(draw.owner))
 	result = native_effect_hash_rect(result, draw.bounds)
 	result = native_effect_hash_rect(result, draw.clip)
@@ -81,11 +81,17 @@ native_effect_hash_command :: proc(hash: u64, draw: alicorn.Paint_Command) -> u6
 		result = native_effect_hash_mix(result, 6)
 		result = native_effect_hash_mix(result, u64(payload.geometry.resource))
 		result = native_effect_hash_mix(result, payload.geometry.generation)
+		if rt != nil {
+			payload_view, valid := alicorn.gpu_surface_payload_resolve(rt, payload.geometry)
+			result = native_effect_hash_mix(result, u64(valid))
+			if valid { result = native_effect_hash_mix(result, u64(payload_view.revision)) }
+		}
 	}
 	return result
 }
 
-native_effect_prefix_generation :: proc(
+native_effect_prefix_generation_for_runtime :: proc(
+	rt: ^alicorn.Runtime,
 	display: []alicorn.Paint_Command,
 	region, clip: alicorn.Rect,
 	scale_x, scale_y, sigma: f32,
@@ -97,9 +103,17 @@ native_effect_prefix_generation :: proc(
 	hash = native_effect_hash_f32(hash, scale_y)
 	hash = native_effect_hash_f32(hash, sigma)
 	hash = native_effect_hash_mix(hash, u64(len(display)))
-	for draw in display { hash = native_effect_hash_command(hash, draw) }
+	for draw in display { hash = native_effect_hash_command(hash, draw, rt) }
 	if hash == 0 { return 1 }
 	return hash
+}
+
+native_effect_prefix_generation :: proc(
+	display: []alicorn.Paint_Command,
+	region, clip: alicorn.Rect,
+	scale_x, scale_y, sigma: f32,
+) -> u64 {
+	return native_effect_prefix_generation_for_runtime(nil, display, region, clip, scale_x, scale_y, sigma)
 }
 
 native_effect_prefix_before_first_marker :: proc(display: []alicorn.Paint_Command) -> (prefix: []alicorn.Paint_Command, marker: alicorn.Paint_Command, marker_index: int, found: bool) {
@@ -153,8 +167,11 @@ native_effects_prepare_display_prefix :: proc(
 	}
 	payload, is_effect := marker.payload.(alicorn.Backdrop_Effect_Paint)
 	if !is_effect || marker.owner == 0 || abs(scale_x-scale_y) > 0.001 { return true }
+	if surface_renderer == nil || surface_renderer.runtime == nil { return true }
 	key := u64(marker.owner)
-	generation := native_effect_prefix_generation(prefix, marker.bounds, marker.clip, scale_x, scale_y, payload.sigma)
+	generation := native_effect_prefix_generation_for_runtime(
+		surface_renderer.runtime, prefix, marker.bounds, marker.clip, scale_x, scale_y, payload.sigma,
+	)
 	request := Native_Effect_Request{
 		enabled=true,
 		key=key,

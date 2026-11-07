@@ -308,8 +308,9 @@ native_dialog_file_callback :: proc "c" (userdata: rawptr, filelist: [^]cstring,
 	request := cast(^Native_Dialog_Request)userdata
 	if request == nil || request.bridge == nil { return }
 	bridge := request.bridge
-	native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.enter", u64(request.id))
-	result := File_Dialog_Result{id=request.id, selected_filter=int(filter)}
+	request_id := request.id
+	native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.enter", u64(request_id))
+	result := File_Dialog_Result{id=request_id, selected_filter=int(filter)}
 	result.paths = make([dynamic]string, 0, allocator=bridge.allocator)
 	if filelist == nil {
 		result.status = .Error
@@ -332,9 +333,9 @@ native_dialog_file_callback :: proc "c" (userdata: rawptr, filelist: [^]cstring,
 		}
 	}
 	switch result.status {
-	case .Accepted:   native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.accepted", u64(request.id))
-	case .Cancelled:  native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.cancelled", u64(request.id))
-	case .Error:      native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.error", u64(request.id))
+	case .Accepted:   native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.accepted", u64(request_id))
+	case .Cancelled:  native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.cancelled", u64(request_id))
+	case .Error:      native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.error", u64(request_id))
 	}
 
 	should_wake := false
@@ -350,9 +351,9 @@ native_dialog_file_callback :: proc "c" (userdata: rawptr, filelist: [^]cstring,
 	}
 	sync.mutex_unlock(&bridge.mutex)
 	if should_wake {
-		native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.queued", u64(request.id))
+		native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.queued", u64(request_id))
 	} else {
-		native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.dropped_shutdown", u64(request.id))
+		native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.dropped_shutdown", u64(request_id))
 		native_dialog_result_destroy(&result, bridge.allocator)
 	}
 	native_dialog_request_destroy(request)
@@ -360,7 +361,7 @@ native_dialog_file_callback :: proc "c" (userdata: rawptr, filelist: [^]cstring,
 		application_wake(waker)
 		native_dialog_bridge_finish_wake(bridge)
 	}
-	native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.completed", u64(request.id))
+	native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.callback.completed", u64(request_id))
 	native_dialog_bridge_release(bridge)
 }
 
@@ -478,9 +479,10 @@ ShowFileDialog :: proc(service: Dialog_Service, request: File_Dialog_Request) ->
 	case .Save_File: type = .SAVEFILE
 	case .Open_Folder: type = .OPENFOLDER
 	}
-	native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.invoke", u64(native.id))
+	request_id := native.id
+	native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.invoke", u64(request_id))
 	sdl3.ShowFileDialogWithProperties(type, native_dialog_file_callback, rawptr(native), native.props)
-	native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.invoke_return", u64(native.id))
+	native_breadcrumb_event(bridge.diagnostics, "alicorn", "dialog.invoke_return", u64(request_id))
 	return true
 }
 
