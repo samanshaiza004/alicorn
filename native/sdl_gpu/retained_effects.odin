@@ -12,9 +12,9 @@ import "vendor:sdl3"
 // cache.source (translated by -plan.source_bounds.xy) -> encode -> composite ->
 // submit -> commit on success, abort on cancellation/failure. Cached skips source
 // capture and encode. All render/copy passes must be closed before these calls.
-// The captured prefix uses RGBA8_UNORM; filter targets use RGBA16_FLOAT to
-// avoid quantizing every weighted tap. The composite pipeline matches the
-// owning window's actual swapchain format (for example BGRA8 on Metal).
+// Capture and composite use the owning window's swapchain format so the
+// captured paint prefix matches its renderer pipelines. Filter targets use
+// RGBA16_FLOAT to avoid quantizing every weighted tap.
 // Cancel/submit a command before preparing/resetting its cache again; a cache
 // belongs to one device and one caller, with at most one pending command.
 //
@@ -33,7 +33,6 @@ NATIVE_EFFECT_MAX_GAUSSIAN_KERNEL_WIDTH :: 2*NATIVE_EFFECT_MAX_GAUSSIAN_RADIUS_P
 NATIVE_EFFECT_MAX_FILTER_TAPS :: 97
 NATIVE_EFFECT_VERTEX_COUNT :: NATIVE_EFFECT_MAX_FILTER_TAPS*12+6
 NATIVE_EFFECT_VERTEX_BYTES :: u64(NATIVE_EFFECT_VERTEX_COUNT * size_of(Native_Text_Vertex))
-NATIVE_EFFECT_SOURCE_FORMAT :: sdl3.GPUTextureFormat.R8G8B8A8_UNORM
 NATIVE_EFFECT_FILTER_FORMAT :: sdl3.GPUTextureFormat.R16G16B16A16_FLOAT
 
 Native_Effect_Tap :: struct {
@@ -557,7 +556,7 @@ native_effect_prepare :: proc(cache: ^Native_Effect_Cache, plan: Native_Effect_P
 	// Callers select this cache only after its last-use fence has retired. This
 	// permits bounded reuse without a device-wide wait on resize or repaint.
 	native_effect_abort(cache)
-	if !sdl3.GPUTextureSupportsFormat(cache.device, NATIVE_EFFECT_SOURCE_FORMAT, .D2, {.SAMPLER, .COLOR_TARGET}) ||
+	if !sdl3.GPUTextureSupportsFormat(cache.device, cache.composite_format, .D2, {.SAMPLER, .COLOR_TARGET}) ||
 	   !sdl3.GPUTextureSupportsFormat(cache.device, NATIVE_EFFECT_FILTER_FORMAT, .D2, {.SAMPLER, .COLOR_TARGET}) ||
 	   !sdl3.GPUTextureSupportsFormat(cache.device, cache.composite_format, .D2, {.COLOR_TARGET}) {
 		native_effect_reset(cache)
@@ -571,7 +570,7 @@ native_effect_prepare :: proc(cache: ^Native_Effect_Cache, plan: Native_Effect_P
 		// Release BEFORE allocating replacements: the budget covers the peak,
 		// including the unchanged fixed buffer and transfer buffer.
 		native_effect_release_textures(cache)
-		formats := [3]sdl3.GPUTextureFormat{NATIVE_EFFECT_SOURCE_FORMAT, NATIVE_EFFECT_FILTER_FORMAT, NATIVE_EFFECT_FILTER_FORMAT}
+		formats := [3]sdl3.GPUTextureFormat{cache.composite_format, NATIVE_EFFECT_FILTER_FORMAT, NATIVE_EFFECT_FILTER_FORMAT}
 		bytes_per_pixel := [3]u64{4, 8, 8}
 		for slot, index in ([3]^^sdl3.GPUTexture{&cache.source, &cache.ping, &cache.output}) {
 			slot^ = sdl3.CreateGPUTexture(cache.device, {

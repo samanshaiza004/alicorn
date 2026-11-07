@@ -6,15 +6,14 @@ import alicorn "../../runtime"
 import "vendor:sdl3"
 
 @(test)
-test_effect_composite_pipeline_tracks_window_swapchain_format :: proc(t:^testing.T) {
+test_effect_capture_and_composite_follow_window_swapchain_format :: proc(t:^testing.T) {
 	cache := native_effect_make(nil, 1024, sdl3.GPUTextureFormat.B8G8R8A8_UNORM)
 	effects := native_retained_effects_make(nil, composite_format=sdl3.GPUTextureFormat.B8G8R8A8_UNORM)
 	testing.expect(t, cache.composite_format == .B8G8R8A8_UNORM &&
 		effects.composite_format == .B8G8R8A8_UNORM &&
 		effects.slots[0].composite_format == .B8G8R8A8_UNORM &&
-		NATIVE_EFFECT_SOURCE_FORMAT == .R8G8B8A8_UNORM &&
 		NATIVE_EFFECT_FILTER_FORMAT == .R16G16B16A16_FLOAT,
-		"capture remains RGBA8, Gaussian accumulation uses half-float, and composite follows the window swapchain format")
+		"capture and composite use the window swapchain format while Gaussian accumulation uses half-float")
 }
 
 @(test)
