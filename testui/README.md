@@ -44,6 +44,9 @@ test_save_button :: proc(t: ^testing.T) {
 - `step` delivers one typed input turn. A key turn includes up to four normal
   application descriptions while Alicorn's root is invalidated; it does not
   keep describing until arbitrary application work stops.
+- `open` performs an initialization description before returning. Its turn
+  report says `input=initialization` and `key=none`; `.Initial_Description` is
+  reserved for that report and is rejected if passed to `step`.
 - `click_at` injects pointer down/up at logical window coordinates. `click`
   uses a current `Element` snapshot, rejects stale snapshots, checks hit-test
   ownership, and then sends ordinary pointer input.
@@ -66,6 +69,9 @@ test_save_button :: proc(t: ^testing.T) {
 - `advance_time` advances the harness's monotonic virtual clock explicitly
   and ticks retained motion once. No real sleep or automatic time advancement
   occurs. `last_turn` and `last_turn_diagnostic` explain bounded-turn failures.
+  `Turn_Report.key_valid` distinguishes an actual key input from other turns,
+  and `pointer_target` retains the physical hit-test result after corrective
+  descriptions finish.
 
 ## Guarantee boundary
 
