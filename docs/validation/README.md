@@ -7,6 +7,9 @@ the current project status.
 
 ## Current acceptance and platform limits
 
+- [Issue #165 headless UI replay and native capture](issue-165-2026-11-08.md) —
+  public replay harness, History consumer regression, and Windows D3D12 capture;
+  records backend-specific screenshot limits.
 - [v0.2.1 release validation](release-v0.2.1.md) — included history, checks,
   release scope, and remaining platform-validation boundaries.
 - [Odin dev-2026-11 migration](odin-dev-2026-11.md) — Windows validation for

@@ -92,6 +92,50 @@ as the native host without creating an SDL window or GPU device. Supplying both
   and `pointer_target` retains the physical hit-test result after corrective
   descriptions finish.
 
+## Bounded replay logs
+
+`replay_log_create`, `replay_log_step`, `replay_log_encode`,
+`replay_log_decode`, and `replay_log_play` record and replay up to 256 typed
+input turns. Each turn records the input kind, stable semantic pointer/focus
+IDs, semantic revision before and after the turn, causal ID/kind/action, and
+deterministic retained-work deltas for descriptions, reconciliation, measure,
+layout, paint, composition, text shaping, and semantic publication. Application
+tests still assert their own model state; the harness does not reflect
+arbitrary application memory.
+
+Committed text, preedit text, and semantic-action text are **redacted by
+default**. The log keeps byte counts and refuses replay if a required text
+payload was omitted. Pass `include_text=true` only for fixture data that is
+safe to store: opted-in logs contain those exact strings. The recorder caps
+logs at 256 turns and 64 KiB of captured text; encoded files are limited to
+1 MiB. Treat text-enabled recordings as source documents.
+
+```odin
+log := testui.replay_log_create()
+defer testui.replay_log_destroy(&log)
+
+status, log_error := testui.replay_log_step(&log, &handle,
+    testui.Input{kind=.Key, key=.Page_Down})
+if status != .Ok || log_error != .None { return }
+
+data, log_error := testui.replay_log_encode(&log)
+defer delete(data) // bytes belong to the allocator passed to encode
+if log_error != .None { return }
+```
+
+Decode the artifact and call `replay_log_play` on a fresh handle initialized
+with the same fixture state. Playback checks semantic identity, focus,
+revision, stabilization, and cause metadata. `compare_work=true` also requires
+exact retained-work counters, which is useful for same-build regression runs
+and may intentionally differ across Alicorn revisions.
+
+Replay logs are CPU-only and do not contain pixels. For a native visual
+artifact, run the same fixture through the native host's
+`--diagnostics --capture-after=N --capture-dir=...` path; it writes a PPM
+screenshot alongside platform/runtime diagnostics. Keep pixel baselines
+specific to the backend and display scale. See the
+[native diagnostics guide](../docs/development.md#native-diagnostics).
+
 ## Guarantee boundary
 
 The harness uses Alicorn's standard runtime, bundled fonts, semantic queries,

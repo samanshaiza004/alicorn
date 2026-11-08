@@ -485,3 +485,20 @@ trace_snapshot :: proc(rt: ^Runtime) -> []Trace_Event {
 	}
 	return result
 }
+
+// trace_sequence returns the newest sequence number without allocating.
+trace_sequence :: proc(rt: ^Runtime) -> u64 {
+	if rt == nil { return 0 }
+	return rt.trace.sequence
+}
+
+// trace_latest_event_after returns the newest borrowed trace event written
+// after sequence. Its reason string remains ring-backed and must not be kept
+// beyond the next runtime mutation or trace overwrite.
+trace_latest_event_after :: proc(rt: ^Runtime, sequence: u64) -> (event: Trace_Event, found: bool) {
+	if rt == nil || rt.trace.count <= 0 || len(rt.trace.events) <= 0 || rt.trace.sequence <= sequence {
+		return {}, false
+	}
+	index := (rt.trace.next - 1 + len(rt.trace.events)) % len(rt.trace.events)
+	return rt.trace.events[index], true
+}

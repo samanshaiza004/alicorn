@@ -123,7 +123,29 @@ Turn_Report :: struct {
 	layout_pending: bool,
 	focus: alicorn.Node_ID,
 	pointer_target: alicorn.Node_ID,
+	focus_semantic_id, pointer_target_semantic_id: alicorn.Semantic_ID,
+	semantic_revision_before, semantic_revision: u64,
+	cause_id: u64,
+	cause_kind: alicorn.Cause_Kind,
+	action_id: alicorn.Action_ID,
+	work: Turn_Work,
 	message: string,
+}
+
+// Turn_Work contains deterministic retained-runtime work deltas for one
+// harness input. GPU submission counters are included to make the headless
+// boundary explicit; they remain zero because testui owns no GPU device.
+Turn_Work :: struct {
+	descriptions_emitted, descriptions_reused: u64,
+	reconcile_nodes_visited: u64,
+	measure_nodes_examined, measure_nodes_executed: u64,
+	layout_nodes_visited, paint_nodes_visited, composition_nodes_visited: u64,
+	text_shape_requests: u64,
+	semantic_entities_resolved: u64,
+	semantic_structure_changes, semantic_property_changes: u64,
+	semantic_projection_nodes_added, semantic_projection_nodes_updated: u64,
+	semantic_projection_nodes_removed: u64,
+	gpu_submits: u64,
 }
 
 Test_Handle :: struct($T: typeid) {
@@ -251,7 +273,13 @@ open :: proc(
 		close(&handle)
 		return {}, .Font_Initialization_Failed
 	}
-	status = run_descriptions(&handle, .Initial_Description)
+	status = run_descriptions(
+		&handle,
+		.Initial_Description,
+		stats_before=alicorn.frame_stats_snapshot(handle.runtime),
+		trace_sequence_before=alicorn.trace_sequence(handle.runtime),
+		semantic_revision_before=alicorn.semantic_revision(handle.runtime),
+	)
 	return handle, status
 }
 
@@ -301,6 +329,9 @@ run_descriptions :: proc(
 	input: Input_Kind,
 	key: Key = .Tab,
 	pointer_target: alicorn.Node_ID = 0,
+	stats_before: alicorn.Frame_Stats = {},
+	trace_sequence_before: u64 = 0,
+	semantic_revision_before: u64 = 0,
 ) -> Status {
 	handle.last_turn = Turn_Report{
 		input=input,
@@ -327,7 +358,51 @@ run_descriptions :: proc(
 		return .Did_Not_Stabilize
 	}
 	handle.last_turn.stabilized = true
+	capture_turn_observation(handle, stats_before, trace_sequence_before, semantic_revision_before)
 	return .Ok
+}
+
+capture_turn_observation :: proc(
+	handle: ^Test_Handle($T),
+	before: alicorn.Frame_Stats,
+	trace_sequence_before: u64,
+	semantic_revision_before: u64,
+) {
+	if handle == nil || handle.runtime == nil { return }
+	rt := handle.runtime
+	after := alicorn.frame_stats_snapshot(rt)
+	work := Turn_Work{
+		descriptions_emitted=after.descriptions_emitted-before.descriptions_emitted,
+		descriptions_reused=after.descriptions_reused-before.descriptions_reused,
+		reconcile_nodes_visited=after.reconcile_nodes_visited-before.reconcile_nodes_visited,
+		measure_nodes_examined=after.measure_nodes_examined-before.measure_nodes_examined,
+		measure_nodes_executed=after.measure_nodes_executed-before.measure_nodes_executed,
+		layout_nodes_visited=after.layout_nodes_visited-before.layout_nodes_visited,
+		paint_nodes_visited=after.paint_nodes_visited-before.paint_nodes_visited,
+		composition_nodes_visited=after.composition_nodes_visited-before.composition_nodes_visited,
+		text_shape_requests=after.text_shape_requests-before.text_shape_requests,
+		semantic_entities_resolved=after.semantic_entities_resolved-before.semantic_entities_resolved,
+		semantic_structure_changes=after.semantic_structure_changes-before.semantic_structure_changes,
+		semantic_property_changes=after.semantic_property_changes-before.semantic_property_changes,
+		semantic_projection_nodes_added=after.semantic_projection_nodes_added-before.semantic_projection_nodes_added,
+		semantic_projection_nodes_updated=after.semantic_projection_nodes_updated-before.semantic_projection_nodes_updated,
+		semantic_projection_nodes_removed=after.semantic_projection_nodes_removed-before.semantic_projection_nodes_removed,
+		gpu_submits=after.gpu_submits-before.gpu_submits,
+	}
+	handle.last_turn.semantic_revision = alicorn.semantic_revision(rt)
+	handle.last_turn.semantic_revision_before = semantic_revision_before
+	handle.last_turn.work = work
+	if info, found := alicorn.node_info(rt, handle.last_turn.focus); found {
+		handle.last_turn.focus_semantic_id = info.semantic_id
+	}
+	if info, found := alicorn.node_info(rt, handle.last_turn.pointer_target); found {
+		handle.last_turn.pointer_target_semantic_id = info.semantic_id
+	}
+	if event, found := alicorn.trace_latest_event_after(rt, trace_sequence_before); found {
+		handle.last_turn.cause_id = event.cause_id
+		handle.last_turn.cause_kind = event.cause_kind
+		handle.last_turn.action_id = event.action_id
+	}
 }
 
 application_has_text_focus :: proc(handle: ^Test_Handle($T)) -> (focused, composing: bool) {
@@ -438,6 +513,34 @@ step :: proc(handle: ^Test_Handle($T), input: Input) -> Status {
 	if handle == nil || handle.runtime == nil { return .Invalid_Application }
 	if input.kind == .Initial_Description { return .Unsupported_Input }
 	rt := handle.runtime
+	stats_before := alicorn.frame_stats_snapshot(rt)
+	trace_sequence_before := alicorn.trace_sequence(rt)
+	semantic_revision_before := alicorn.semantic_revision(rt)
+	cause_scope: alicorn.Cause_Scope
+	cause_active := false
+	switch input.kind {
+	case .Key:
+		cause_scope = alicorn.cause_begin(rt, .Keyboard, fmt.tprintf("testui key: %v", input.key))
+		cause_active = true
+	case .Text_Commit:
+		cause_scope = alicorn.cause_begin(rt, .Text_Input, "testui text commit")
+		cause_active = true
+	case .Text_Preedit, .Text_Cancel:
+		cause_scope = alicorn.cause_begin(rt, .Text_Composition, "testui text composition")
+		cause_active = true
+	case .Pointer:
+		cause_scope = alicorn.pointer_cause_begin(rt, input.pointer.kind)
+		cause_active = true
+	case .Scroll:
+		cause_scope = alicorn.cause_begin(rt, .Scroll, "testui scroll")
+		cause_active = true
+	case .Semantic_Action:
+		cause_scope = alicorn.cause_begin(rt, .Host_Event, "testui semantic action")
+		cause_active = true
+	case .Time_Advance:
+	case .Initial_Description:
+	}
+	defer if cause_active { alicorn.cause_end(rt, cause_scope) }
 	pointer_target: alicorn.Node_ID
 	#partial switch input.kind {
 	case .Key:
@@ -584,6 +687,7 @@ step :: proc(handle: ^Test_Handle($T), input: Input) -> Status {
 		event := input.pointer
 		event.timestamp_ns = handle.now_ns
 		pointer_target = alicorn.process_pointer(rt, event)
+		event.target_key = alicorn.key_string("")
 		if key, ok := alicorn.node_identity_key(rt, pointer_target); ok { event.target_key = key }
 		if !alicorn.context_menu_pointer_consumed(rt) {
 			_ = alicorn.application_dispatch_pointer(rt, rawptr(handle.state), handle.on_pointer, event, pointer_target)
@@ -598,7 +702,12 @@ step :: proc(handle: ^Test_Handle($T), input: Input) -> Status {
 	case .Time_Advance:
 		return advance_time(handle, input.delta_ns)
 	}
-	return run_descriptions(handle, input.kind, input.key, pointer_target)
+	if cause_active {
+		alicorn.cause_end(rt, cause_scope)
+		cause_active = false
+	}
+	return run_descriptions(handle, input.kind, input.key, pointer_target,
+		stats_before, trace_sequence_before, semantic_revision_before)
 }
 
 // find queries only semantics published by the application/runtime. It does
@@ -793,12 +902,18 @@ click_at :: proc(handle: ^Test_Handle($T), x, y: f32, button := alicorn.POINTER_
 advance_time :: proc(handle: ^Test_Handle($T), delta_ns: u64) -> Status {
 	if handle == nil || handle.runtime == nil { return .Invalid_Application }
 	if delta_ns > 0x7fffffffffffffff-u64(handle.now_ns) { return .Invalid_Time }
+	stats_before := alicorn.frame_stats_snapshot(handle.runtime)
+	trace_sequence_before := alicorn.trace_sequence(handle.runtime)
+	semantic_revision_before := alicorn.semantic_revision(handle.runtime)
+	cause_scope := alicorn.cause_begin(handle.runtime, .Scheduled_Wake, "testui virtual time advance")
 	handle.now_ns += delta_ns
 	if alicorn.motion_clock_set_time(handle.runtime, alicorn.Motion_Time(i64(handle.now_ns))) != .Ok {
+		alicorn.cause_end(handle.runtime, cause_scope)
 		return .Invalid_Time
 	}
 	tick := alicorn.motion_tick(handle.runtime, alicorn.Motion_Time(i64(handle.now_ns)))
 	if tick.status != .Ok {
+		alicorn.cause_end(handle.runtime, cause_scope)
 		handle.last_turn = Turn_Report{
 			input=.Time_Advance,
 			stabilized=false,
@@ -806,7 +921,10 @@ advance_time :: proc(handle: ^Test_Handle($T), delta_ns: u64) -> Status {
 		}
 		return .Motion_Failure
 	}
-	return run_descriptions(handle, .Time_Advance)
+	alicorn.cause_end(handle.runtime, cause_scope)
+	return run_descriptions(handle, .Time_Advance, stats_before=stats_before,
+		trace_sequence_before=trace_sequence_before,
+		semantic_revision_before=semantic_revision_before)
 }
 
 last_turn :: proc(handle: ^Test_Handle($T)) -> Turn_Report {
@@ -822,7 +940,12 @@ last_turn_diagnostic :: proc(handle: ^Test_Handle($T)) -> string {
 	key_name := "none"
 	if r.key_valid { key_name = fmt.tprintf("%v", r.key) }
 	return fmt.tprintf(
-		"input=%s key=%s descriptions=%d stabilized=%v layout_pending=%v focus=%d pointer_target=%d %s",
-		input_name, key_name, r.descriptions, r.stabilized, r.layout_pending, r.focus, r.pointer_target, r.message,
+		"input=%s key=%s descriptions=%d stabilized=%v layout_pending=%v focus=%d/%d pointer_target=%d/%d revision=%d->%d cause=%d work=(reconcile:%d measure:%d/%d layout:%d paint:%d semantic:%d/%d) %s",
+		input_name, key_name, r.descriptions, r.stabilized, r.layout_pending,
+		r.focus, r.focus_semantic_id.value, r.pointer_target, r.pointer_target_semantic_id.value,
+		r.semantic_revision_before, r.semantic_revision, r.cause_id, r.work.reconcile_nodes_visited,
+		r.work.measure_nodes_examined, r.work.measure_nodes_executed, r.work.layout_nodes_visited,
+		r.work.paint_nodes_visited, r.work.semantic_entities_resolved,
+		r.work.semantic_property_changes, r.message,
 	)
 }

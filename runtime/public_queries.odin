@@ -13,6 +13,7 @@ DEFAULT_TEXT_SIZE :: f32(16)
 Node_Info :: struct {
 	id: Node_ID,
 	kind: Node_Kind,
+	semantic_id: Semantic_ID,
 	key: UI_Key,
 	bounds: Rect,
 	hit_bounds: Rect,
@@ -90,6 +91,7 @@ node_info :: proc(rt: ^Runtime, id: Node_ID) -> (info: Node_Info, ok: bool) {
 	info = Node_Info{
 		id=node.id,
 		kind=node.kind,
+		semantic_id=node.semantic_id,
 		key=key,
 		bounds=layout_node_finalized_geometry(rt, id).bounds,
 		hit_bounds=layout_node_finalized_geometry(rt, id).hit_bounds,
@@ -116,6 +118,14 @@ node_info :: proc(rt: ^Runtime, id: Node_ID) -> (info: Node_Info, ok: bool) {
 		scroll_geometry_resolved=node.scroll_geometry_resolved,
 	}
 	return info, true
+}
+
+// frame_stats_snapshot returns cumulative retained-runtime work counters as a
+// value snapshot. Applications and test harnesses should use this query
+// instead of reading Runtime implementation fields directly.
+frame_stats_snapshot :: proc(rt: ^Runtime) -> Frame_Stats {
+	if rt == nil { return {} }
+	return rt.stats
 }
 
 // node_identity_key returns the explicit key for a retained node. The returned
