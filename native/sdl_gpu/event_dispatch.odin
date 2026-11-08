@@ -411,14 +411,7 @@ pump_events :: proc(
 			callback_blocked_by_drag = drag_consumed && !captured_split_move
 			callback_called = callback_available && !callback_blocked_by_context_menu && !callback_blocked_by_drag
 			if callback_called {
-				application.on_pointer(application.state, rt, pointer, pointer_target)
-				// App-level pointer handlers can mutate their own state even when
-				// the hit test intentionally returns no retained target. Preserve
-				// the historical description refresh for those explicit handlers;
-				// otherwise an inert surface/background click stays presentation-only.
-				if pointer.kind == .Down || pointer.kind == .Up {
-					alicorn.invalidate_root(rt, "application pointer callback")
-				}
+				_ = alicorn.application_dispatch_pointer(rt, application.state, application.on_pointer, pointer, pointer_target)
 			}
 			alicorn.cause_end(rt, pointer_cause)
 		}
@@ -481,16 +474,7 @@ pump_events :: proc(
 			scroll_cause := alicorn.cause_begin(rt, .Scroll, "mouse wheel")
 			if devtools_last_cause != nil { devtools_last_cause^ = scroll_cause.cause }
 			scroll_event := native_scroll_event_from_sdl(event.wheel, pointer_modifiers_from_sdl(sdl3.GetModState()))
-			scroll_captured := false
-			if application.on_scroll_capture != nil {
-				target := alicorn.scroll_region_hit_test(rt, scroll_event.x, scroll_event.y)
-				if target != 0 {
-					scroll_captured = application.on_scroll_capture(application.state, rt, scroll_event, target)
-				}
-			}
-			if !scroll_captured && !alicorn.process_scroll(rt, scroll_event) && application.on_scroll != nil {
-				application.on_scroll(application.state, rt, scroll_event)
-			}
+			_ = alicorn.application_dispatch_scroll(rt, application.state, scroll_event, application.on_scroll_capture, application.on_scroll)
 			alicorn.cause_end(rt, scroll_cause)
 		}
 		if event.type == .KEY_DOWN && event.key.down {
@@ -498,13 +482,10 @@ pump_events :: proc(
 			key_cause := alicorn.cause_begin(rt, .Keyboard, "SDL key down")
 			if devtools_last_cause != nil { devtools_last_cause^ = key_cause.cause }
 			context_key := native_context_menu_key_from_sdl(event.key.key)
-			select_handled := false
-			if alicorn.select_wants_text_input(rt) && event.key.key == sdl3.K_TAB {
-				select_handled = alicorn.select_handle_tab(rt, native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT))
-			} else {
-				select_handled = alicorn.select_handle_key(rt, context_key)
-			}
-			context_menu_handled := select_handled || alicorn.context_menu_handle_key(rt, context_key)
+			context_menu_handled := alicorn.application_dispatch_overlay_key(
+				rt, context_key, is_tab=event.key.key == sdl3.K_TAB,
+				reverse_tab=native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT),
+			)
 			drag_cancelled := false
 			if !context_menu_handled && event.key.key == sdl3.K_ESCAPE && alicorn.drag_is_active(rt) {
 				_ = alicorn.drag_cancel(rt)
@@ -584,10 +565,11 @@ pump_events :: proc(
 						else { mapped = false }
 					case: mapped = false
 					}
-					if mapped && application_key_can_preempt_text_field(application_key, composition_active) &&
-						application.on_key(application.state, rt, application_key) {
+					if mapped && alicorn.application_dispatch_key(
+						rt, application.state, application.on_key, application_key,
+						text_input_focused=true, composition_active=composition_active,
+					) {
 						runtime_key_handled = true
-						alicorn.invalidate_root(rt, "application handled focused text-field key")
 					}
 				}
 			}
@@ -721,8 +703,8 @@ pump_events :: proc(
 						}
 					case: handled = false
 					}
-					if handled && application.on_key != nil && application.on_key(application.state, rt, application_key) {
-						alicorn.invalidate_root(rt, "application keyboard command")
+					if handled {
+						_ = alicorn.application_dispatch_key(rt, application.state, application.on_key, application_key)
 					}
 				}
 			}

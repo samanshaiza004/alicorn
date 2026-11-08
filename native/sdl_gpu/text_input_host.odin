@@ -104,16 +104,10 @@ native_application_text_input_event :: proc(
 	event: Application_Text_Input_Event,
 	require_live_target := true,
 ) -> bool {
-	if application == nil || application.on_text_input == nil || owner == 0 { return false }
-	if require_live_target && !alicorn.text_input_target_is_active(rt, owner) { return false }
-	application.on_text_input(application.state, rt, owner, event)
-	reason := "application text input"
-	#partial switch event.kind {
-	case .Preedit: reason = "application text preedit"
-	case .Cancel: reason = "application text composition canceled"
-	}
-	alicorn.invalidate_root(rt, reason)
-	return true
+	if application == nil { return false }
+	return alicorn.application_dispatch_text_input(
+		rt, application.state, application.on_text_input, owner, event, require_live_target,
+	)
 }
 
 native_dispatch_generic_text_input_event :: proc(
@@ -192,14 +186,7 @@ native_dispatch_application_text_key :: proc(
 	if application == nil || application.on_text_key == nil || rt == nil { return false }
 	event, mapped := native_application_text_key_event(key, mod)
 	if !mapped { return false }
-	owner := rt.focused
-	node, ok := rt.nodes[owner]
-	if !ok || !node.active || node.kind == .Text_Field || !alicorn.text_input_target_is_active(rt, owner) {
-		return false
-	}
-	if !application.on_text_key(application.state, rt, owner, event) { return false }
-	alicorn.invalidate_root(rt, "application handled focused text key")
-	return true
+	return alicorn.application_dispatch_text_key(rt, application.state, application.on_text_key, event)
 }
 
 // Control+Tab is an application-level document navigation chord. It must be
@@ -213,14 +200,15 @@ native_dispatch_application_tab_navigation :: proc(
 ) -> bool {
 	if key != sdl3.K_TAB || !native_text_modifier(mod, sdl3.KMOD_CTRL) { return false }
 	if rt != nil && alicorn.context_menu_input_active(rt) { return true }
-	if application != nil && application.on_key != nil && rt != nil {
-		application_key := Application_Key.Tab_Next
-		if native_text_modifier(mod, sdl3.KMOD_SHIFT) { application_key = .Tab_Previous }
-		if application.on_key(application.state, rt, application_key) {
-			alicorn.invalidate_root(rt, "application handled Control+Tab document navigation")
-		}
+	state: rawptr
+	callback: alicorn.Application_Key_Proc
+	if application != nil {
+		state = application.state
+		callback = application.on_key
 	}
-	return true
+	return alicorn.application_dispatch_tab_navigation(
+		rt, state, callback, true, native_text_modifier(mod, sdl3.KMOD_SHIFT),
+	)
 }
 
 // A generic focused text owner gets first refusal on Tab. If it declines the
@@ -234,9 +222,7 @@ native_dispatch_application_text_key_or_focus_traverse :: proc(
 	if native_dispatch_application_tab_navigation(application, rt, key, mod) { return true }
 	if native_dispatch_application_text_key(application, rt, key, mod) { return true }
 	if key != sdl3.K_TAB || rt == nil { return false }
-	direction: alicorn.Focus_Direction = .Next
-	if native_text_modifier(mod, sdl3.KMOD_SHIFT) { direction = .Previous }
-	return alicorn.focus_traverse(rt, direction) != 0
+	return alicorn.application_dispatch_tab_focus(rt, native_text_modifier(mod, sdl3.KMOD_SHIFT))
 }
 
 native_cancel_application_text_composition :: proc(
@@ -502,13 +488,7 @@ native_dispatch_text_change :: proc(
 		if change.changed { telemetry.text_changes += 1 }
 	}
 	if application != nil {
-		if application.on_text_change != nil {
-			// The callback borrows the runtime-owned text for the duration of the
-			// call. It must clone any value it keeps; the host releases the product
-			// through rt.persistent_allocator after the callback returns.
-			application.on_text_change(application.state, rt, change)
-		}
-		if len(change.text) > 0 { delete(change.text, rt.persistent_allocator) }
+		alicorn.application_dispatch_text_change(rt, application.state, application.on_text_change, change)
 	} else {
 		adopt_text_change(app_text, rt, change)
 	}
@@ -559,14 +539,13 @@ native_text_apply_key_edit :: proc(
 	application: ^Application,
 	telemetry: ^Native_Text_Event_Telemetry = nil,
 ) -> bool {
-	field, ok := rt.nodes[node]
-	if !ok || !field.active || field.kind != .Text_Field || field.composition.active { return false }
-	if telemetry != nil { telemetry.text_edit_key_events += 1 }
-	command: alicorn.Text_Command = .Delete_Backward if kind == .Backspace else .Delete_Forward
+	event := Application_Text_Key_Event{key=.Backspace if kind == .Backspace else .Delete}
 	if word {
-		command = .Delete_Word_Backward if kind == .Backspace else .Delete_Word_Forward
+		event.key = .Delete_Word_Backward if kind == .Backspace else .Delete_Word_Forward
 	}
-	change := alicorn.process_text_command(rt, node, command)
+	result, change := alicorn.application_route_text_field_key(rt, node, event)
+	if result != .Edit { return false }
+	if telemetry != nil { telemetry.text_edit_key_events += 1 }
 	native_dispatch_text_change(app_text, application, rt, change, telemetry)
 	return true
 }
@@ -580,68 +559,19 @@ native_text_apply_key_navigation :: proc(
 ) -> bool {
 	field, ok := rt.nodes[node]
 	if !ok || !field.active || field.kind != .Text_Field || field.composition.active { return false }
-	shift := native_text_modifier(mod, sdl3.KMOD_SHIFT)
-	primary := native_text_primary_modifier(mod)
-	word := native_text_word_modifier(mod)
-	line := native_text_line_modifier(mod)
-	selection_nonempty := field.selection_anchor.byte != field.selection_focus.byte
-	target := field.caret.byte
-	handled := true
-	switch key {
-	case sdl3.K_LEFT, sdl3.K_RIGHT:
-		direction := -1 if key == sdl3.K_LEFT else 1
-		if !shift && selection_nonempty {
-			target = field.selection_anchor.byte if direction < 0 else field.selection_focus.byte
-			if field.selection_anchor.byte > field.selection_focus.byte {
-				target = field.selection_focus.byte if direction < 0 else field.selection_anchor.byte
-			}
-		} else if line && !shift {
-			target = 0 if direction < 0 else len(field.text)
-			_ = alicorn.set_text_caret(rt, node, target)
-			if telemetry != nil { telemetry.text_navigation_key_events += 1 }
-			return true
-		} else if !shift {
-			command: alicorn.Text_Command = .Move_Left if direction < 0 else .Move_Right
-			if word { command = .Move_Word_Left if direction < 0 else .Move_Word_Right }
-			_ = alicorn.process_text_command(rt, node, command)
-			if telemetry != nil {
-				telemetry.text_navigation_key_events += 1
-				if word { telemetry.text_word_key_events += 1 }
-			}
-			return true
-		} else if line {
-			target = 0 if direction < 0 else len(field.text)
-		} else if word {
-			position := alicorn.text_move_word(field.text, alicorn.Text_Position{target, .Leading}, direction, rt.scratch_allocator)
-			target = position.byte
-		} else {
-			position := alicorn.text_move_logical(field.text, alicorn.Text_Position{target, .Leading}, direction)
-			target = position.byte
-		}
-	case sdl3.K_HOME:
-		target = 0
-	case sdl3.K_END:
-		target = len(field.text)
-	case sdl3.K_A:
-		if !primary { handled = false }
-		if handled {
-			_ = alicorn.set_text_selection(rt, node, 0, len(field.text))
-			if telemetry != nil { telemetry.text_selection_key_events += 1 }
-			return true
-		}
-	case:
-		handled = false
-	}
-	if !handled { return false }
-	if shift {
-		_ = alicorn.set_text_selection(rt, node, field.selection_anchor.byte, target)
+	if key == sdl3.K_A && native_text_primary_modifier(mod) {
+		_ = alicorn.set_text_selection(rt, node, 0, len(field.text))
 		if telemetry != nil { telemetry.text_selection_key_events += 1 }
-	} else {
-		_ = alicorn.set_text_caret(rt, node, target)
+		return true
 	}
+	event, mapped := native_application_text_key_event(key, mod)
+	if !mapped { return false }
+	result, _ := alicorn.application_route_text_field_key(rt, node, event)
+	if result != .Navigation { return false }
 	if telemetry != nil {
 		telemetry.text_navigation_key_events += 1
-		if word { telemetry.text_word_key_events += 1 }
+		if event.shift { telemetry.text_selection_key_events += 1 }
+		if event.key == .Word_Left || event.key == .Word_Right { telemetry.text_word_key_events += 1 }
 	}
 	return true
 }

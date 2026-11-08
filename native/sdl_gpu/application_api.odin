@@ -2,55 +2,8 @@ package alicorn_sdl_gpu
 
 import alicorn "../../runtime"
 
-// Application_Key is the small cross-platform command vocabulary exposed by
-// the SDL host. Applications do not need to depend on SDL keycode constants
-// just to implement navigation or a few commands.
-Application_Key :: enum {
-	Left,
-	Right,
-	Up,
-	Down,
-	Page_Up,
-	Page_Down,
-	Home,
-	End,
-	Fit_Selection,
-	Command_1,
-	Command_2,
-	Command_3,
-	Toggle,
-	Open_Repository,
-	Open_Command_Palette,
-	Find,
-	Workspace_Search,
-	Context_Menu,
-	Workspace_Rename,
-	Find_Next,
-	Find_Previous,
-	Tab_Next,
-	Tab_Previous,
-	Zoom_In,
-	Zoom_Out,
-	Zoom_Reset,
-	Escape,
-	Return,
-}
-
-// These keys may be offered to an application before native text editing so a
-// focused text field can participate in transient UI such as a command picker.
-application_key_can_preempt_text_field :: proc(key: Application_Key, composition_active := false) -> bool {
-	if key == .Escape && composition_active { return false }
-	if key == .Workspace_Rename && composition_active { return false }
-	if composition_active && (key == .Zoom_In || key == .Zoom_Out || key == .Zoom_Reset) { return false }
-	#partial switch key {
-	case .Up, .Down, .Page_Up, .Page_Down, .Open_Repository, .Open_Command_Palette,
-	     .Find, .Workspace_Search, .Workspace_Rename, .Context_Menu, .Find_Next, .Find_Previous,
-	     .Tab_Next, .Tab_Previous, .Zoom_In, .Zoom_Out, .Zoom_Reset, .Escape, .Return:
-		return true
-	case:
-		return false
-	}
-}
+Application_Key :: alicorn.Application_Key
+application_key_can_preempt_text_field :: alicorn.application_key_can_preempt_text_field
 
 native_text_field_return_key :: proc(shifted: bool) -> Application_Key {
 	return .Find_Previous if shifted else .Return
@@ -185,53 +138,19 @@ Application_Interaction_Update_Policy :: enum {
 // It is the intended place to install embedded or disk-loaded font roles.
 Application_Initialize_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
 
-Application_Text_Change_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, change: alicorn.Text_Change)
+Application_Text_Change_Proc :: alicorn.Application_Text_Change_Proc
 
-Application_Text_Input_Event_Kind :: enum { Commit, Preedit, Cancel }
+Application_Text_Input_Event_Kind :: alicorn.Application_Text_Input_Event_Kind
+Application_Text_Input_Event :: alicorn.Application_Text_Input_Event
+Application_Text_Input_Proc :: alicorn.Application_Text_Input_Proc
 
-// SDL event text is borrowed for the callback. Preedit selection offsets are
-// UTF-8 byte offsets, not SDL's character indexes.
-Application_Text_Input_Event :: struct {
-	kind: Application_Text_Input_Event_Kind,
-	text: string,
-	selection_start_byte: int,
-	selection_end_byte: int,
-}
+Application_Text_Navigation_Key :: alicorn.Application_Text_Navigation_Key
+Application_Text_Key_Event :: alicorn.Application_Text_Key_Event
+Application_Text_Key_Proc :: alicorn.Application_Text_Key_Proc
 
-Application_Text_Input_Proc :: proc(
-	state: rawptr,
-	rt: ^alicorn.Runtime,
-	owner: alicorn.Node_ID,
-	event: Application_Text_Input_Event,
-)
+Application_Key_Proc :: alicorn.Application_Key_Proc
 
-// Application_Text_Navigation_Key is the host-normalized editing intent. The
-// SDL host applies platform modifier conventions before delivering it, so an
-// application need not interpret Ctrl/Option/Command itself.
-Application_Text_Navigation_Key :: enum {
-	Left, Right, Home, End, Up, Down, Page_Up, Page_Down, Backspace, Delete, Tab,
-	Word_Left, Word_Right, Line_Start, Line_End, Document_Start, Document_End,
-	Delete_Word_Backward, Delete_Word_Forward, Delete_Line_Backward, Delete_Line_Forward,
-}
-
-Application_Text_Key_Event :: struct {
-	key:     Application_Text_Navigation_Key,
-	shift:   bool,
-	control: bool,
-	alt:     bool,
-	super:   bool,
-}
-
-Application_Text_Key_Proc :: proc(
-	state: rawptr,
-	rt: ^alicorn.Runtime,
-	owner: alicorn.Node_ID,
-	event: Application_Text_Key_Event,
-) -> bool
-
-Application_Key_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, key: Application_Key) -> bool
-
-Application_Pointer_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Pointer_Event, target: alicorn.Node_ID)
+Application_Pointer_Proc :: alicorn.Application_Pointer_Proc
 
 Application_Drag_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Drag_Event)
 
@@ -246,9 +165,9 @@ Application_File_Drop_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, path: st
 // event and skip both retained scrolling and the on_scroll fallback. Return
 // false to preserve normal routing. Application changes require explicit
 // invalidation; installing this callback does not schedule ticks or polling.
-Application_Scroll_Capture_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Scroll_Event, target: alicorn.Node_ID) -> bool
+Application_Scroll_Capture_Proc :: alicorn.Application_Scroll_Capture_Proc
 
-Application_Scroll_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, event: alicorn.Scroll_Event)
+Application_Scroll_Proc :: alicorn.Application_Scroll_Proc
 
 Application_Tick_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
 
