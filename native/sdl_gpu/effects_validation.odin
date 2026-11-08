@@ -256,6 +256,22 @@ effect_probe_ppm :: proc(path: string, pixels: []u8) -> bool {
     return os.write_entire_file(path,strings.to_string(builder))==nil
 }
 
+effect_probe_geometry_surface :: proc(rt: ^alicorn.Runtime) -> (owner: alicorn.Node_ID, draw: alicorn.Paint_Command, ok: bool) {
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin(&ui, .Root, label="effect-payload-root")
+	owner = alicorn.gpu_geometry_surface(&ui, "effect-payload-surface",
+		alicorn.layout_style(width=EFFECT_PROBE_WIDTH, height=EFFECT_PROBE_HEIGHT))
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	node, found := rt.nodes[owner]
+	if !found || node == nil { return }
+	handle := alicorn.paint_geometry_handle_for_node(node)
+	if handle.resource == 0 || handle.generation == 0 { return }
+	draw = alicorn.paint_geometry_command(owner, node.bounds, node.clip, handle)
+	return owner, draw, true
+}
+
 effect_probe_device :: proc(driver: cstring) -> bool {
     device:=sdl3.CreateGPUDevice({.DXIL,.MSL,.SPIRV},true,driver)
     if device==nil { return false }
@@ -304,6 +320,86 @@ effect_probe_device :: proc(driver: cstring) -> bool {
             if !ok || !effect_probe_reference(plan,source,pixels,true) { return false }
         }
     }
+
+	// A retained custom geometry surface keeps the same geometry handle while
+	// its pixels change. The effect key must include the resolved payload
+	// revision, causing a fresh capture/filter pass for the replacement data.
+	geometry_owner, geometry_draw, geometry_ok := effect_probe_geometry_surface(&rt)
+	if !geometry_ok { return false }
+	geometry_segments := [1]alicorn.GPU_Surface_Line_Segment{{
+		start={18, 34}, end={176, 34}, thickness=48, color={0.92, 0.12, 0.16, 1},
+	}}
+	if !alicorn.gpu_surface_update_geometry(&rt, geometry_owner, geometry_segments[:], nil) { return false }
+	geometry_handle := alicorn.paint_geometry_handle_for_node(rt.nodes[geometry_owner])
+	geometry_prefix := [1]alicorn.Paint_Command{geometry_draw}
+	geometry_region := alicorn.Rect{12, 10, 180, 90}
+	geometry_clip := alicorn.Rect{0, 0, EFFECT_PROBE_WIDTH, EFFECT_PROBE_HEIGHT}
+	geometry_generation := native_effect_prefix_generation_for_runtime(
+		&rt, geometry_prefix[:], geometry_region, geometry_clip, 1, 1, 4)
+	geometry_request := Native_Effect_Request{
+		enabled=true, key=73, source_generation=geometry_generation,
+		region=geometry_region, clip=geometry_clip, scale=1, sigma=4, depth=1,
+	}
+	geometry_plan, geometry_plan_ok := native_effect_plan(geometry_request)
+	if !geometry_plan_ok { return false }
+	geometry_source := make([]u8, int(geometry_plan.width*geometry_plan.height*4), allocator=context.temp_allocator)
+	geometry_cache := native_effect_make(device, EFFECT_PROBE_BUDGET)
+	defer native_effect_reset(&geometry_cache)
+	geometry_passes_before := geometry_cache.filter_passes
+	geometry_output_before := geometry_cache.output_generation
+	_, ok = effect_probe_frame(&renderers, &geometry_cache, geometry_plan, geometry_prefix[:],
+		target, download, pixels, geometry_source, true, false, backdrop=true)
+	if !ok || geometry_cache.filter_passes < geometry_passes_before+2 ||
+		geometry_cache.output_generation != geometry_output_before+1 { return false }
+	first_pixels := make([]u8, len(pixels), allocator=context.temp_allocator)
+	first_source := make([]u8, len(geometry_source), allocator=context.temp_allocator)
+	copy(first_pixels, pixels)
+	copy(first_source, geometry_source)
+
+	// Identical content should re-use the completed capture and filtered result.
+	stable_generation := native_effect_prefix_generation_for_runtime(
+		&rt, geometry_prefix[:], geometry_region, geometry_clip, 1, 1, 4)
+	if stable_generation != geometry_generation { return false }
+	stable_hits, stable_passes := geometry_cache.cache_hits, geometry_cache.filter_passes
+	_, ok = effect_probe_frame(&renderers, &geometry_cache, geometry_plan, geometry_prefix[:],
+		target, download, pixels, geometry_source, true, false, backdrop=true)
+	if !ok || geometry_cache.cache_hits != stable_hits+1 || geometry_cache.filter_passes != stable_passes { return false }
+	for value, index in pixels { if value != first_pixels[index] { return false } }
+	for value, index in geometry_source { if value != first_source[index] { return false } }
+
+	old_payload, old_payload_ok := alicorn.gpu_surface_payload_resolve(&rt, geometry_handle)
+	geometry_segments[0].color = {0.1, 0.28, 0.96, 1}
+	if !alicorn.gpu_surface_update_geometry(&rt, geometry_owner, geometry_segments[:], nil) { return false }
+	new_handle := alicorn.paint_geometry_handle_for_node(rt.nodes[geometry_owner])
+	new_payload, new_payload_ok := alicorn.gpu_surface_payload_resolve(&rt, new_handle)
+	if !old_payload_ok || !new_payload_ok || new_handle != geometry_handle || new_payload.revision <= old_payload.revision { return false }
+	updated_generation := native_effect_prefix_generation_for_runtime(
+		&rt, geometry_prefix[:], geometry_region, geometry_clip, 1, 1, 4)
+	if updated_generation == geometry_generation { return false }
+	geometry_request.source_generation = updated_generation
+	updated_plan, updated_plan_ok := native_effect_plan(geometry_request)
+	if !updated_plan_ok || updated_plan.width != geometry_plan.width || updated_plan.height != geometry_plan.height { return false }
+	updated_passes_before, updated_output_before := geometry_cache.filter_passes, geometry_cache.output_generation
+	_, ok = effect_probe_frame(&renderers, &geometry_cache, updated_plan, geometry_prefix[:],
+		target, download, pixels, geometry_source, true, false, backdrop=true)
+	if !ok || geometry_cache.filter_passes < updated_passes_before+2 ||
+		geometry_cache.output_generation != updated_output_before+1 { return false }
+	source_changed, output_changed := false, false
+	for value, index in geometry_source { if value != first_source[index] { source_changed = true; break } }
+	for value, index in pixels { if value != first_pixels[index] { output_changed = true; break } }
+	if !source_changed || !output_changed { return false }
+	copy(first_pixels, pixels)
+	copy(first_source, geometry_source)
+	updated_hits, updated_passes := geometry_cache.cache_hits, geometry_cache.filter_passes
+	_, ok = effect_probe_frame(&renderers, &geometry_cache, updated_plan, geometry_prefix[:],
+		target, download, pixels, geometry_source, true, false, backdrop=true)
+	if !ok || geometry_cache.cache_hits != updated_hits+1 || geometry_cache.filter_passes != updated_passes { return false }
+	for value, index in pixels { if value != first_pixels[index] { return false } }
+	for value, index in geometry_source { if value != first_source[index] { return false } }
+	fmt.println("effects_geometry_payload_revision PASS", "stable_handle", true,
+		"payload_revision", old_payload.revision, new_payload.revision,
+		"capture_refreshed", source_changed, "output_changed", output_changed, "unchanged_cache_hit", true)
+
     generation,allocations,passes:=cache.output_generation,cache.allocations,cache.filter_passes
     uploads:=cache.vertex_upload_bytes
     for _ in 0..<100 { if native_effect_prepare(&cache,plan)!=.Cached { return false } }
