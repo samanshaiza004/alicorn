@@ -5,12 +5,9 @@ import alicorn "../../runtime"
 import "core:os"
 import runa "../../third_party/Runa"
 
-// Alicorn's native host embeds its default faces so apps do not depend on
-// system-installed fonts or the process working directory.
-NATIVE_UI_FONT_DATA :: #load("../../assets/fonts/AtkinsonHyperlegibleNext-Variable.ttf")
-NATIVE_UI_ITALIC_FONT_DATA :: #load("../../assets/fonts/AtkinsonHyperlegibleNext-Italic-Variable.ttf")
-NATIVE_MONO_FONT_DATA :: #load("../../assets/fonts/AtkinsonHyperlegibleMono-Variable.ttf")
-NATIVE_MONO_ITALIC_FONT_DATA :: #load("../../assets/fonts/AtkinsonHyperlegibleMono-Italic-Variable.ttf")
+// Keep the native fixture name as an alias so host validation code can load
+// the same bundled face used by the runtime and headless test host.
+NATIVE_UI_FONT_DATA :: alicorn.DEFAULT_UI_FONT_DATA
 
 NATIVE_FALLBACK_CODEPOINTS := [?]rune{'↑', '↓', '→', '←', '×', '—'}
 
@@ -64,10 +61,7 @@ native_load_optional_fallback_font :: proc(
 }
 
 native_load_default_fonts :: proc(rt: ^alicorn.Runtime) -> bool {
-	if !rt.text_engine.font_loaded && !alicorn.text_engine_load_font(&rt.text_engine, NATIVE_UI_FONT_DATA) { return false }
-	if !rt.text_engine.monospace_font_loaded && !alicorn.text_engine_load_font_role(&rt.text_engine, .Monospace, NATIVE_MONO_FONT_DATA) { return false }
-	if !rt.text_engine.italic_font_loaded && !rt.text_engine.application_primary_font[.UI] && !alicorn.text_engine_load_italic_font_role(&rt.text_engine, .UI, NATIVE_UI_ITALIC_FONT_DATA) { return false }
-	if !rt.text_engine.monospace_italic_font_loaded && !rt.text_engine.application_primary_font[.Monospace] && !alicorn.text_engine_load_italic_font_role(&rt.text_engine, .Monospace, NATIVE_MONO_ITALIC_FONT_DATA) { return false }
+	if !alicorn.text_engine_load_default_fonts(rt) { return false }
 	// System faces are optional, script-oriented fallbacks; they do not alter
 	// the bundled primary typography for text the default face can render.
 	if !rt.text_engine.fallback_font_loaded && !rt.text_engine.application_fallback_font[.UI] {

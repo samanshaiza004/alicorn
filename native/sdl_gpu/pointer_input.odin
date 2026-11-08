@@ -8,17 +8,17 @@ import "vendor:sdl3"
 native_route_focused_control_key :: proc(rt: ^alicorn.Runtime, key: sdl3.Keycode) -> bool {
 	switch key {
 	case sdl3.K_SPACE:
-		return alicorn.activate_focused(rt, .Space)
+		return alicorn.application_route_focused_control_key(rt, .Toggle)
 	case sdl3.K_RETURN, sdl3.K_KP_ENTER:
-		return alicorn.activate_focused(rt, .Enter)
+		return alicorn.application_route_focused_control_key(rt, .Return)
 	case sdl3.K_LEFT, sdl3.K_DOWN:
-		return alicorn.adjust_focused_slider(rt, -1)
+		return alicorn.application_route_focused_control_key(rt, .Left)
 	case sdl3.K_RIGHT, sdl3.K_UP:
-		return alicorn.adjust_focused_slider(rt, 1)
+		return alicorn.application_route_focused_control_key(rt, .Right)
 	case sdl3.K_HOME:
-		return alicorn.set_focused_slider_bound(rt, .Minimum)
+		return alicorn.application_route_focused_control_key(rt, .Home)
 	case sdl3.K_END:
-		return alicorn.set_focused_slider_bound(rt, .Maximum)
+		return alicorn.application_route_focused_control_key(rt, .End)
 	case:
 		return false
 	}

@@ -48,6 +48,22 @@ For focused work:
 ./tools/native_sdl_gpu.sh
 ```
 
+### Headless application interaction tests
+
+Import `alicorn:testui` to drive an application's normal render procedure and
+callbacks against Alicorn's retained runtime without opening SDL or creating a
+GPU device. The harness supports typed key/text/pointer/scroll input, semantic
+actions, owned semantic/layout snapshots, and explicit virtual time. Physical
+clicks still go through hit testing; semantic actions test the separately
+advertised accessibility contract. See [`testui/README.md`](../testui/README.md)
+for ownership rules and the native/GPU guarantees it does not claim.
+
+The public regression includes a virtualized History-style commit list. Page
+Down must update selection and bring the selected row inside the actual scroll
+viewport. A negative control updates selection while reveal is disabled and
+confirms the selected logical row remains unrealized, proving the assertion
+would catch a missing reveal request.
+
 The scripts accept `-Odin PATH` on PowerShell and `--odin PATH` on Unix-like
 shells. They otherwise use `ALICORN_ODIN`, then `odin` on `PATH`.
 

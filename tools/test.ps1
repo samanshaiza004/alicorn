@@ -45,6 +45,8 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test ui "-collection:alicorn=$RepoRoot" @($AccessKit.CompilerArguments) -out:out\alicorn_ui_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Odin test testui "-collection:alicorn=$RepoRoot" -out:out\alicorn_testui_tests.exe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test theme
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin build tools\theme -out:out\alicorn_theme.exe
