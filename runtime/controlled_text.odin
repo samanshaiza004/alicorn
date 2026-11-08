@@ -123,6 +123,7 @@ text_field_controlled :: proc(
 		item := &rt.pending[len(rt.pending)-1]
 		if item.kind == .Description && item.description.id == result.node {
 			item.description.text = buffer.text
+			item.semantic.value = buffer.text
 		}
 	}
 	if !state_found { state = Controlled_Text_Field_State{} }

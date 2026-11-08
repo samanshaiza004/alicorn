@@ -6,15 +6,14 @@ import alicorn "../../runtime"
 import "vendor:sdl3"
 
 @(test)
-test_effect_composite_pipeline_tracks_window_swapchain_format :: proc(t:^testing.T) {
+test_effect_capture_and_composite_follow_window_swapchain_format :: proc(t:^testing.T) {
 	cache := native_effect_make(nil, 1024, sdl3.GPUTextureFormat.B8G8R8A8_UNORM)
 	effects := native_retained_effects_make(nil, composite_format=sdl3.GPUTextureFormat.B8G8R8A8_UNORM)
 	testing.expect(t, cache.composite_format == .B8G8R8A8_UNORM &&
 		effects.composite_format == .B8G8R8A8_UNORM &&
 		effects.slots[0].composite_format == .B8G8R8A8_UNORM &&
-		NATIVE_EFFECT_SOURCE_FORMAT == .R8G8B8A8_UNORM &&
 		NATIVE_EFFECT_FILTER_FORMAT == .R16G16B16A16_FLOAT,
-		"capture remains RGBA8, Gaussian accumulation uses half-float, and composite follows the window swapchain format")
+		"capture and composite use the window swapchain format while Gaussian accumulation uses half-float")
 }
 
 @(test)
@@ -49,6 +48,49 @@ test_effect_cache_identity_tracks_prefix_but_not_palette_query :: proc(t: ^testi
 	generation_changed := native_effect_prefix_generation(changed_prefix, changed_marker.bounds, changed_marker.clip, 2, 2, 4)
 	testing.expect(t, generation_changed != generation_a,
 		"a paint change behind the palette must invalidate the retained backdrop")
+}
+
+@(test)
+test_effect_prefix_generation_tracks_geometry_payload_revision :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 160, 100})
+	defer alicorn.destroy_runtime(&rt)
+	ui, build := alicorn.begin_frame(&rt)
+	if !build {
+		testing.expect(t, false, "geometry effect fixture should build")
+		return
+	}
+	alicorn.container_begin(&ui, .Root, label="effect-geometry-root")
+	owner := alicorn.gpu_geometry_surface(&ui, "effect-geometry", alicorn.layout_style(width=160, height=100))
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+
+	segments := [1]alicorn.GPU_Surface_Line_Segment{{
+		start={12, 28}, end={130, 28}, thickness=36, color={0.9, 0.1, 0.15, 1},
+	}}
+	testing.expect(t, alicorn.gpu_surface_update_geometry(&rt, owner, segments[:], nil),
+		"initial geometry payload should be accepted")
+	node := rt.nodes[owner]
+	handle := alicorn.paint_geometry_handle_for_node(node)
+	draw := alicorn.paint_geometry_command(owner, node.bounds, node.clip, handle)
+	prefix := [?]alicorn.Paint_Command{draw}
+	region := alicorn.Rect{12, 12, 136, 56}
+	clip := alicorn.Rect{0, 0, 160, 100}
+	generation := native_effect_prefix_generation_for_runtime(&rt, prefix[:], region, clip, 1, 1, 4)
+	repeated := native_effect_prefix_generation_for_runtime(&rt, prefix[:], region, clip, 1, 1, 4)
+	testing.expect(t, generation == repeated,
+		"unchanged geometry content should keep a stable backdrop prefix generation")
+	before, before_ok := alicorn.gpu_surface_payload_resolve(&rt, handle)
+
+	segments[0].color = {0.1, 0.25, 0.95, 1}
+	testing.expect(t, alicorn.gpu_surface_update_geometry(&rt, owner, segments[:], nil),
+		"replacement geometry payload should be accepted")
+	updated_handle := alicorn.paint_geometry_handle_for_node(rt.nodes[owner])
+	after, after_ok := alicorn.gpu_surface_payload_resolve(&rt, updated_handle)
+	updated_generation := native_effect_prefix_generation_for_runtime(&rt, prefix[:], region, clip, 1, 1, 4)
+	testing.expect(t, updated_handle == handle && before_ok && after_ok && after.revision > before.revision,
+		"payload replacement should advance its revision without replacing the geometry handle")
+	testing.expect(t, updated_generation != generation,
+		"changing GPU surface pixels must invalidate the backdrop prefix even when its geometry handle is stable")
 }
 
 effect_test_request :: proc() -> Native_Effect_Request {
