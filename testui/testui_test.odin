@@ -94,6 +94,65 @@ test_public_harness_drives_focus_text_and_physical_button_input :: proc(t: ^test
 	close(&h)
 }
 
+Harness_Full_Build_App :: struct {
+	descriptions: int,
+	activations: int,
+	width, height: int,
+	scale: f32,
+}
+
+harness_test_full_build :: proc(
+	state: rawptr,
+	rt: ^alicorn.Runtime,
+	logical_width, logical_height: int,
+	dpi_scale: f32,
+) -> alicorn.Node_ID {
+	app := cast(^Harness_Full_Build_App)state
+	app.descriptions += 1
+	app.width = logical_width
+	app.height = logical_height
+	app.scale = dpi_scale
+	ui, should_build := alicorn.begin_frame(rt)
+	if !should_build { return 0 }
+	root := alicorn.container_begin(&ui, .Root, label="full-application-root",
+		style=alicorn.layout_style(.Column, grow=1))
+	if alicorn.button(&ui, "Save", key=alicorn.key_string("full-build-save"),
+		style=alicorn.layout_style(height=32)) {
+		app.activations += 1
+	}
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return root
+}
+
+@(test)
+test_public_harness_runs_full_application_build_callback :: proc(t: ^testing.T) {
+	app := Harness_Full_Build_App{}
+	_, empty_status := open(&app, width=240, height=120)
+	testing.expect(t, empty_status == .Invalid_Application,
+		"open should reject an application with no render or full-build callback")
+
+	h, status := open(&app, width=240, height=120, scale=2,
+		build_application=harness_test_full_build)
+	if !testing.expect(t, status == .Ok, last_turn_diagnostic(&h)) { return }
+	defer close(&h)
+	testing.expect(t, app.descriptions == 1 && app.width == 240 && app.height == 120 && app.scale == 2,
+		"the full application callback should receive the configured viewport and scale")
+
+	save := find(&h, Query{role=.Button, name="Save", match_role=true, match_name=true})
+	defer destroy_find_result(&save)
+	if !testing.expect(t, save.match == .Unique && save.element.has_bounds,
+		"full application semantics should be queryable after its normal frame lifecycle") {
+		return
+	}
+	if !testing.expect(t, click(&h, &save.element) == .Ok,
+		"physical input should drive controls from the full application build") {
+		return
+	}
+	testing.expect(t, app.activations == 1 && app.descriptions > 1,
+		"input should reach the application and rerun its production-style build callback")
+}
+
 Harness_Ambiguous_App :: struct {
 	activations: int,
 }

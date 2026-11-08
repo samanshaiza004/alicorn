@@ -34,6 +34,25 @@ test_save_button :: proc(t: ^testing.T) {
 }
 ```
 
+For an application whose native build callback owns `begin_frame` and
+`end_frame`, pass that full callback instead of a subtree renderer:
+
+```odin
+h, status := testui.open(
+    &app,
+    width=480,
+    height=320,
+    build_application=application_build,
+    on_key=application_on_key,
+)
+```
+
+`build_application` receives the borrowed state pointer, test runtime, logical
+viewport size, and display scale. It lets an integration test exercise the
+same application composition, focus setup, semantic descriptions, and callbacks
+as the native host without creating an SDL window or GPU device. Supplying both
+`render` and `build_application`, or neither, returns `.Invalid_Application`.
+
 ## Input and queries
 
 - `Key` is Alicorn's logical application-key vocabulary after platform

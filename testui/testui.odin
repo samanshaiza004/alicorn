@@ -98,6 +98,12 @@ Input :: struct {
 }
 
 Application_Initialize_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
+Application_Build_Proc :: proc(
+	state: rawptr,
+	rt: ^alicorn.Runtime,
+	logical_width, logical_height: int,
+	dpi_scale: f32,
+) -> alicorn.Node_ID
 Application_Key_Proc :: alicorn.Application_Key_Proc
 Application_Text_Key_Proc :: alicorn.Application_Text_Key_Proc
 Application_Text_Change_Proc :: alicorn.Application_Text_Change_Proc
@@ -123,6 +129,7 @@ Turn_Report :: struct {
 Test_Handle :: struct($T: typeid) {
 	state: ^T,
 	render: proc(^T, ^alicorn.UI),
+	build_application: Application_Build_Proc,
 	render_overlays: proc(^T, ^alicorn.UI),
 	initialize: Application_Initialize_Proc,
 	on_key: Application_Key_Proc,
@@ -183,9 +190,13 @@ test_handle_generation: u64
 // open borrows application state until close. It creates Alicorn's normal
 // Runtime, loads the same bundled primary fonts as the native host, and runs
 // the supplied application description without creating an SDL window/GPU.
+// Supply either render for a UI subtree, or build_application for the full
+// Application_Build_Proc used by a native host. A full build owns its normal
+// begin_frame/end_frame lifecycle, so the same production entry point can be
+// exercised without duplicating its layout and callbacks in a test adapter.
 open :: proc(
 	state: ^$T,
-	render: proc(^T, ^alicorn.UI),
+	render: proc(^T, ^alicorn.UI) = nil,
 	width: int = 720,
 	height: int = 480,
 	scale: f32 = 1,
@@ -199,14 +210,16 @@ open :: proc(
 	on_pointer: Application_Pointer_Proc = nil,
 	on_scroll_capture: Application_Scroll_Capture_Proc = nil,
 	on_scroll: Application_Scroll_Proc = nil,
+	build_application: Application_Build_Proc = nil,
 ) -> (handle: Test_Handle(T), status: Status) {
-	if state == nil || render == nil { return {}, .Invalid_Application }
+	if state == nil || (render == nil) == (build_application == nil) { return {}, .Invalid_Application }
 	if width <= 0 || height <= 0 || scale <= 0 || !alicorn.number_is_finite(scale) {
 		return {}, .Invalid_Viewport
 	}
 	handle.allocator = allocator
 	handle.state = state
 	handle.render = render
+	handle.build_application = build_application
 	handle.render_overlays = render_overlays
 	handle.initialize = initialize
 	handle.on_key = on_key
@@ -253,6 +266,17 @@ close :: proc(handle: ^Test_Handle($T)) {
 
 describe_once :: proc(handle: ^Test_Handle($T)) -> bool {
 	rt := handle.runtime
+	if handle.build_application != nil {
+		_ = handle.build_application(
+			rawptr(handle.state),
+			rt,
+			handle.viewport_width,
+			handle.viewport_height,
+			handle.scale,
+		)
+		handle.description_epoch += 1
+		return true
+	}
 	ui, should_build := alicorn.begin_frame(rt)
 	if !should_build { return false }
 	root := alicorn.container_begin(
