@@ -169,6 +169,9 @@ native_inspector_update :: proc(overlay: ^Native_Inspector_Overlay, source: ^ali
 		}
 	}
 	if !overlay.runtime.invalidated && alicorn.presentation_needs_frame(&overlay.runtime) {
+		if native_motion_clock_set_current_time(&overlay.runtime) != .Ok {
+			fail("inspector retained-paint motion clock update failed")
+		}
 		ui, ready := alicorn.begin_presentation_frame(&overlay.runtime)
 		if ready { alicorn.end_presentation_frame(&ui) }
 	}

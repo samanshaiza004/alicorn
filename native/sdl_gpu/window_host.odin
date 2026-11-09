@@ -198,6 +198,9 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	)
 	}
 	if (!inspector_enabled || !state.rt.hard_error) && alicorn.presentation_needs_frame(state.rt) {
+		if native_motion_clock_set_current_time(state.rt) != .Ok {
+			fail("primary live-resize retained-paint motion clock update failed")
+		}
 		presentation_ui, ready := alicorn.begin_presentation_frame(state.rt)
 		if ready { alicorn.end_presentation_frame(&presentation_ui) }
 	}

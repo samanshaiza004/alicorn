@@ -628,6 +628,9 @@ run_application_loop :: proc(
 				_ = native_menu_sync_chrome_appearance(&child.native_menu, request_redraw=!application_frame_pending)
 			}
 			if !child.runtime.invalidated && alicorn.presentation_needs_frame(child.runtime) {
+				if native_motion_clock_set_current_time(child.runtime) != .Ok {
+					fail("secondary retained-paint motion clock update failed")
+				}
 				presentation_ui, ready := alicorn.begin_presentation_frame(child.runtime)
 				if ready { alicorn.end_presentation_frame(&presentation_ui) }
 			}
@@ -735,6 +738,9 @@ run_application_loop :: proc(
 		// application to rebuild its procedural description. Flush that retained
 		// presentation before submitting the next GPU frame.
 		if !rt.invalidated && (!inspector.enabled || !rt.hard_error) && alicorn.presentation_needs_frame(rt) {
+			if native_motion_clock_set_current_time(rt) != .Ok {
+				fail("primary retained-paint motion clock update failed")
+			}
 			presentation_ui, ready := alicorn.begin_presentation_frame(rt)
 			if ready {
 				alicorn.end_presentation_frame(&presentation_ui)
@@ -879,6 +885,9 @@ run_application_loop :: proc(
 				if resume_motion.status != .Ok { fail("retained motion restore sampling failed") }
 				native_motion_scheduler_sync_timing(&motion_scheduler, &timing, resume_motion.active_owners)
 				if !rt.invalidated && alicorn.presentation_needs_frame(rt) {
+					if native_motion_clock_set_current_time(rt) != .Ok {
+						fail("primary retained-paint motion clock update after restore failed")
+					}
 					presentation_ui, ready := alicorn.begin_presentation_frame(rt)
 					if ready { alicorn.end_presentation_frame(&presentation_ui) }
 				}

@@ -350,6 +350,10 @@ run_descriptions :: proc(
 			continue
 		}
 		if alicorn.presentation_needs_frame(handle.runtime) {
+			if alicorn.motion_clock_set_time(handle.runtime, alicorn.Motion_Time(i64(handle.now_ns))) != .Ok {
+				handle.last_turn.message = "virtual motion clock rejected the retained presentation timestamp"
+				return .Invalid_Time
+			}
 			presentation_ui, ready := alicorn.begin_presentation_frame(handle.runtime)
 			if ready { alicorn.end_presentation_frame(&presentation_ui) }
 		}

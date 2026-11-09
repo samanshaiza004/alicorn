@@ -55,6 +55,13 @@ native_motion_clock_now :: proc(_data: rawptr) -> alicorn.Motion_Time {
 	return alicorn.Motion_Time(i64(sdl3.GetTicksNS()))
 }
 
+// Retained interaction paint can start a timed transition between app
+// descriptions and scheduler samples. Refresh its timestamp without sampling;
+// motion deadlines and suspension behavior remain owned by the scheduler.
+native_motion_clock_set_current_time :: proc(rt: ^alicorn.Runtime) -> alicorn.Motion_Runtime_Status {
+	return alicorn.motion_clock_set_time(rt, native_motion_clock_now(nil), .Native_Monotonic)
+}
+
 native_motion_clock_service :: proc() -> Application_Motion_Clock {
 	return Application_Motion_Clock{now=native_motion_clock_now}
 }

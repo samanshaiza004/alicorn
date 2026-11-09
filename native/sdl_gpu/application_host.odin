@@ -39,9 +39,7 @@ native_application_build_until_stable :: proc(
 		// Intent-based motion resolves targets from the same monotonic domain as
 		// native presentation sampling. Inject it before every application
 		// description so app code never needs its own motion clock.
-		_ = alicorn.motion_clock_set_time(
-			rt, alicorn.Motion_Time(i64(sdl3.GetTicksNS())), .Native_Monotonic,
-		)
+		_ = native_motion_clock_set_current_time(rt)
 		build_start := time.now()
 		_ = application.build(application.state, rt, metrics.logical_width, metrics.logical_height, metrics.display_scale)
 		native_timing_accumulate(&timing.application_build_ns, &timing.application_build_max_ns, u64(time.duration_nanoseconds(time.since(build_start))))

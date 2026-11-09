@@ -463,6 +463,63 @@ test_button_hover_fill_transition_is_retained_reversible_and_inspector_independe
 		"Reduced Motion should snap to the current resolved target, cancel the track and report why") { return }
 }
 
+@(test)
+test_button_hover_transition_uses_current_time_after_idle_gap :: proc(t: ^testing.T) {
+	app := Harness_Visual_Transition_App{}
+	h, status := open(&app, harness_visual_transition_render, width=320, height=120)
+	if !testing.expect(t, status == .Ok, last_turn_diagnostic(&h)) { return }
+	defer close(&h)
+	result := find(&h, Query{
+		role=.Button,
+		name="Transition target",
+		key=alicorn.key_string("transition-button"),
+		match_role=true,
+		match_name=true,
+		match_key=true,
+	})
+	defer destroy_find_result(&result)
+	if !testing.expect(t, result.match == .Unique && result.element.has_bounds,
+		"the transition fixture should expose one physically clickable button") { return }
+	owner := result.element.visual_node
+	initial_fill, initial_found := harness_visual_transition_fill(h.runtime, owner)
+	track, track_found := h.runtime.style_transition_owners[owner]
+	if !testing.expect(t, initial_found && track_found && !track.active,
+		"the initial frame should establish the resting button style") { return }
+
+	// Model native idle: host time advances, but no application description or
+	// motion wake runs to refresh the runtime's injected clock.
+	h.now_ns = 5_000_000_000
+	bounds := result.element.bounds
+	if !testing.expect(t, step(&h, Input{kind=.Pointer, pointer=alicorn.Pointer_Event{
+		kind=.Move, x=bounds.x+bounds.w*0.5, y=bounds.y+bounds.h*0.5,
+	}}) == .Ok, "pointer entry after idle should flush retained hover paint") { return }
+	track = h.runtime.style_transition_owners[owner]
+	fill, fill_found := harness_visual_transition_fill(h.runtime, owner)
+	if !testing.expect(t, fill_found && fill == track.pair.rest.surface && track.active,
+		"the first retained hover frame should still show the resting fill") { return }
+
+	if !testing.expect(t, advance_time(&h, 90_000_000) == .Ok,
+		"the transition should make progress after an idle gap") { return }
+	track = h.runtime.style_transition_owners[owner]
+	fill, fill_found = harness_visual_transition_fill(h.runtime, owner)
+	if !testing.expect(t, track.active && track.segment.start_time == alicorn.Motion_Time(5_000_000_000) &&
+		track.presented_mix > 0.50 && track.presented_mix < 0.53 && fill_found &&
+		app.descriptions == 1 && last_turn(&h).descriptions == 0,
+		"hover should progress from the current monotonic time without rebuilding the app") { return }
+
+	if !testing.expect(t, advance_time(&h, 199_999_999) == .Ok,
+		"the transition should remain active until its full duration elapses") { return }
+	track = h.runtime.style_transition_owners[owner]
+	if !testing.expect(t, track.active && track.presented_mix < 1,
+		"the hover transition should not settle before 300 ms of active time") { return }
+	if !testing.expect(t, advance_time(&h, 10_000_001) == .Ok,
+		"the transition should settle at its 300 ms endpoint") { return }
+	track = h.runtime.style_transition_owners[owner]
+	fill, fill_found = harness_visual_transition_fill(h.runtime, owner)
+	testing.expect(t, fill_found && fill == track.pair.hover.surface && !track.active,
+		"the final hover color should appear exactly when the full duration elapses")
+}
+
 style_transition_test_color_mix :: proc(from, to: alicorn.Color, amount: f32) -> alicorn.Color {
 	return alicorn.Color{
 		from.r+(to.r-from.r)*amount,
