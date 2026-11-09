@@ -756,6 +756,8 @@ Button_Recipe :: struct {
 	semantic_active_role:   Style_Color_Role,
 	rest_surface:           Button_Surface_Treatment,
 	pressed_surface:        Button_Surface_Treatment,
+	// An opt-in duration policy for the flat Button fill's rest/hover pair.
+	hover_fill_transition:   Style_Transition,
 }
 
 Button_Recipe_Set :: struct {
@@ -1904,6 +1906,9 @@ Runtime :: struct {
 	// runtime-local, while handles also carry a process-unique runtime lifetime
 	// identity to prevent cross-runtime aliasing. Records leave with their owner.
 	motion_owners: map[Node_ID]Motion_Retained_Owner,
+	// Timed visual-state transitions are a separate sparse sidecar. They do not
+	// borrow or depend on explicit translation/opacity motion-owner lifetime.
+	style_transition_owners: map[Node_ID]Style_Transition_Owner,
 	// Motion diagnostics are allocated only for motion-enabled runtimes. Their
 	// fixed-capacity event ring records transitions, never sampled frames.
 	motion_diagnostics: ^Motion_Diagnostics,

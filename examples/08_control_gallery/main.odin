@@ -8,6 +8,7 @@ import "core:mem"
 import "core:os"
 import "core:sync"
 import "core:thread"
+import "core:time"
 import alicorn "alicorn:runtime"
 import theme "alicorn:theme"
 import ui "alicorn:ui"
@@ -105,6 +106,24 @@ gallery_adopt_candidate :: proc(app: ^App, rt: ^alicorn.Runtime, candidate: ^the
 		return
 	}
 	defer theme.theme_runtime_style_theme_destroy(&runtime_theme, app.allocator)
+	// The Gallery is the opt-in dogfood surface. Three flat Button recipes use
+	// distinct timing policies; other controls retain immediate style updates.
+	durations := [3]time.Duration{
+		time.Duration(120)*time.Millisecond,
+		time.Duration(180)*time.Millisecond,
+		time.Duration(300)*time.Millisecond,
+	}
+	button_variants := [3]alicorn.Button_Variant{.Default, .Primary, .Toolbar}
+	for variant in 0..<len(durations) {
+		duration := durations[variant]
+		button_variant := button_variants[variant]
+		recipe := runtime_theme.button_recipes.recipes[int(button_variant)]
+		recipe.hover_fill_transition = alicorn.Style_Transition{
+			duration=duration,
+			easing=.Ease,
+		}
+		runtime_theme.button_recipes.recipes[int(button_variant)] = recipe
+	}
 
 	if app.active_output.ok {
 		switch alicorn.style_theme_replace(rt, app.registered_theme, runtime_theme) {
@@ -162,6 +181,17 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 		if ui.row(ctx, gap=8) {
 			if ui.icon_button(ctx, "Search", .Search) { app.searches += 1 }
 			ui.text(ctx, fmt.tprintf("Search activations: %d", app.searches))
+		}
+		ui.text(ctx, "Opt-in Button hover fill · CSS Ease")
+		if ui.row(ctx, gap=8) {
+			_ = ui.button(ctx, "120 ms", key=alicorn.key_string("gallery-transition-120"),
+				height=32, variant=.Default)
+			_ = ui.button(ctx, "180 ms", key=alicorn.key_string("gallery-transition-180"),
+				height=32, variant=.Primary)
+			_ = ui.button(ctx, "300 ms", key=alicorn.key_string("gallery-transition-300"),
+				height=32, variant=.Toolbar)
+			_ = ui.button(ctx, "Immediate", key=alicorn.key_string("gallery-transition-immediate"),
+				height=32, variant=.Quiet)
 		}
 
 		if ui.row(ctx, gap=10, align=.Center) {

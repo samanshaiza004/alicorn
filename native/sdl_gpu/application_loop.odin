@@ -631,6 +631,17 @@ run_application_loop :: proc(
 				presentation_ui, ready := alicorn.begin_presentation_frame(child.runtime)
 				if ready { alicorn.end_presentation_frame(&presentation_ui) }
 			}
+			// Interaction paint can start a timed visual-state transition. The
+			// pre-presentation scheduler pass could not see that new activity, so
+			// arm its first deadline before the child window returns to idle wait.
+			child_activity := alicorn.motion_activity(child.runtime)
+			child_flags_after_paint := sdl3.GetWindowFlags(child.window)
+			_ = native_motion_scheduler_prepare(
+				&child.motion_scheduler,
+				child_activity.active_owners,
+				!child.presentation_suspended && native_motion_window_renderable_for_window(child.window, child_flags_after_paint),
+				u64(sdl3.GetTicksNS()),
+			)
 			if queued_events > 0 && rt != nil {
 				alicorn.invalidate_root(rt, "secondary window input may have changed shared application state")
 			}
@@ -729,6 +740,17 @@ run_application_loop :: proc(
 				alicorn.end_presentation_frame(&presentation_ui)
 			}
 		}
+		// Hover transitions begin while retained interaction paint is flushed.
+		// Refresh motion demand after that flush so a stationary pointer still
+		// gets its first scheduled sample without an unrelated future event.
+		primary_activity_after_paint := alicorn.motion_activity(rt)
+		primary_flags_after_paint := sdl3.GetWindowFlags(window)
+		_ = native_motion_scheduler_prepare(
+			&motion_scheduler,
+			primary_activity_after_paint.active_owners,
+			!primary_drawable_unavailable && native_motion_window_renderable_for_window(window, primary_flags_after_paint),
+			u64(sdl3.GetTicksNS()),
+		)
 		when ODIN_OS == .Darwin { native_darwin_titlebar_sync_layout(native_menu) }
 		when ODIN_OS == .Windows {
 			if native_menu != nil {

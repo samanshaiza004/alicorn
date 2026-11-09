@@ -438,6 +438,7 @@ copy_node_description :: proc(
 	style_spans_changed := hash_text_style_spans(node.text_style_spans[:]) != hash_text_style_spans(d.text_style_spans)
 	overflow_changed := node.text_style.overflow != d.text_style.overflow
 	kind_changed := node.kind != d.kind
+	if kind_changed { style_transition_owner_cancel(rt, node.id) }
 	if kind_changed && node.kind == .Text_Field {
 		controlled_text_field_state_clear(rt, node.id)
 	}
@@ -754,6 +755,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	node, ok := rt.nodes[id]
 	if !ok { return }
 	motion_retire_owner(rt, id)
+	if rt.style_transition_owners != nil { delete_key(&rt.style_transition_owners, id) }
 	restore_release_node(rt, id)
 	if rt.semantic_focus.owner == id {
 		_ = restore_cancel_pending(rt, .Semantic_Focus, id, .Target_Retired)
@@ -1141,6 +1143,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.nodes)
 	delete(rt.drag_preview_modes)
 	if rt.motion_owners != nil { delete(rt.motion_owners) }
+	if rt.style_transition_owners != nil { delete(rt.style_transition_owners) }
 	if rt.motion_diagnostics != nil { free(rt.motion_diagnostics, allocator=rt.persistent_allocator) }
 	for _, state in rt.controlled_text_fields {
 		if len(state.model_text) > 0 { delete(state.model_text, rt.persistent_allocator) }

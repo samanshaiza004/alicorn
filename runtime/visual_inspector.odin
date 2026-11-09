@@ -531,6 +531,8 @@ inspector_overlay_motion :: proc(ui: ^UI, inspected: ^Runtime, selected: Node_ID
 	append(&lines, fmt.tprintf("Retarget=%d no-op=%d mode=%d", stats.retargets, stats.unchanged_target_noops, stats.mode_changes))
 	append(&lines, fmt.tprintf("Reveal=%d reduced-motion=%d", stats.reveals, stats.reduced_motion_rewrites))
 	append(&lines, fmt.tprintf("Release=%d retired=%d settled=%d", stats.releases, stats.owners_retired, stats.settlements))
+	append(&lines, fmt.tprintf("Style fills retargeted=%d settled=%d snapped=%d",
+		stats.style_transition_retargets, stats.style_transition_settlements, stats.style_transition_snaps))
 	append(&lines, fmt.tprintf("Hidden gaps=%d snaps=%d failures=%d", stats.hidden_gap_fast_forwards, stats.bounded_snaps, stats.failures))
 	append(&lines, fmt.tprintf("Trace evictions=%d", stats.trace_evictions))
 	append(&lines, "", "Recent motion transitions (bounded; sampled frames are aggregated above)")
@@ -553,6 +555,13 @@ inspector_overlay_motion :: proc(ui: ^UI, inspected: ^Runtime, selected: Node_ID
 		append(&lines, fmt.tprintf("  %s%s cause=%s", owner_text, intent_text, cause_text))
 		append(&lines, fmt.tprintf("  source=%s status=%v", source_text, event.status))
 		append(&lines, fmt.tprintf("  repeats=%d hidden-gap=%d ns", event.repeat_count, event.elapsed_ns))
+		if event.style_transition_sample {
+			append(&lines, fmt.tprintf("  hover fill mix=%.4f target=%s duration=%d ns reason=%v",
+				event.style_transition_mix,
+				"hover" if event.style_transition_target_hovered else "rest",
+				event.style_transition_duration_ns,
+				event.reason))
+		}
 		if event.kind == .Opacity_Clamp { append(&lines, fmt.tprintf("  raw opacity sample=%g; presented value was clamped to [0,1]", event.detail_value.x)) }
 		if event.reason == .Reduced_Opacity_Fade_Exceeded_Bound {
 			append(&lines, fmt.tprintf("  reduced-motion opacity fade exceeded %d ms; response snapped",

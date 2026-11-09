@@ -1,7 +1,9 @@
 # Timed transitions for retained visual states
 
-Proposal, 2026-11-09. Source reviewed at [Alicorn `0fc31ca`](https://github.com/samanshaiza004/alicorn/commit/0fc31ca75c0c666a9be4d766fd91a96acbc14c26).
-This is a small prototype under [#91](https://github.com/samanshaiza004/alicorn/issues/91),
+Prototype, 2026-11-09. The Button hover-fill slice is implemented on
+`codex/visual-state-transitions`; see the validation notes below. The original
+proposal reviewed source at [Alicorn `0fc31ca`](https://github.com/samanshaiza004/alicorn/commit/0fc31ca75c0c666a9be4d766fd91a96acbc14c26).
+This remains a bounded prototype under [#91](https://github.com/samanshaiza004/alicorn/issues/91),
 with the property and authoring contracts in [#138](https://github.com/samanshaiza004/alicorn/issues/138)
 and [#141](https://github.com/samanshaiza004/alicorn/issues/141). Use the existing
 [Control Gallery](../../examples/08_control_gallery/main.odin) for the first demonstration.
@@ -26,7 +28,7 @@ that need velocity continuity.
 | --- | --- |
 | Rest and hover styles | Pointer routing updates retained hover state and queues paint. The Button recipe resolves selected, hover, pressed, and disabled transforms in order. `Style_Transform` mixes color roles. [Input](../../runtime/input.odin#L583-L615), [resolver](../../runtime/style.odin#L709-L779) |
 | Explicit motion | `ui.motion` queues targets during description. Retained translation and opacity use a critically damped response for Settle, and compose over the painted subtree. `omega` is a response rate with position and velocity tolerances. [Motion types](../../runtime/motion_math.odin#L9-L45), [reference](../reference.md#L1218-L1276) |
-| State driven timing and the example card | Hover currently swaps to the resolved paint immediately. The typed motion target exposes translation and opacity. Scale and interpolated shadows need new property support. Translation preserves logical hit testing and accessibility bounds. [Button paint](../../runtime/paint.odin#L484-L540), [motion target](../../runtime/motion_math.odin#L106-L122), [materials](../../runtime/material.odin#L3-L24) |
+| State driven timing and the example card | Ordinary Buttons can opt their flat opaque hover fill into `.Linear` or CSS `.Ease` timing. The sparse sidecar is separate from computed-style cache and explicit spring owners. Scale and interpolated shadows need new property support. Translation preserves logical hit testing and accessibility bounds. [Button paint](../../runtime/paint.odin), [transition state](../../runtime/style_transition.odin), [motion target](../../runtime/motion_math.odin#L106-L122) |
 
 ## Authoring for the first slice
 
@@ -68,15 +70,15 @@ and owner lifetime outside the shared runtime.
 | Reduced Motion, Increased Contrast, no clock, or exhausted capacity | Present the resolved fill immediately. A mid-flight preference change cancels the track on the next eligible frame. |
 
 For the two-state hover pair, store mix `m` in [0, 1]. On a true reversal,
-sample `m` from the current leg, set the new goal `g` to 0 or 1, and use
-`duration * abs(g - m)` for the new leg. For example, 90 ms into a 300 ms linear
-entry, exit takes 90 ms. The curve restarts from the sampled value, so position
-in color space is continuous and velocity can change. Validate the duration
-and easing and check timestamp arithmetic. At or beyond the deadline return
-the exact endpoint, including after a missed frame. The deadline applies to
-sampling. A native display shows the endpoint on its next presentation
-opportunity. This uses the CSS reasoning for shorter reversals within one
-fixed pair of endpoints. [CSS Transitions §3.1](https://www.w3.org/TR/css-transitions-1/#reversing)
+sample the eased presentation `m` from the current leg, set the new goal `g` to
+0 or 1, and use `duration * abs(g - m)` for the new leg. For example, 90 ms
+into a 300 ms CSS Ease entry, `m` is about 0.513, so exit takes about 154 ms;
+with Linear it takes 90 ms. Keep the original endpoint pair fixed through
+repeated reversals. The curve restarts from the sampled value, so color
+position is continuous and velocity may change. Validate duration and easing
+and check timestamp arithmetic. At or beyond the deadline return the exact
+endpoint, including after a missed frame. A native display shows it on its
+next presentation opportunity. [CSS Transitions §3.1](https://www.w3.org/TR/css-transitions-1/#reversing)
 
 Initially require a flat, opaque surface at both endpoints and unchanged
 foreground color between those endpoints. Use the existing linear component
@@ -104,8 +106,9 @@ and contrast in the actual renderer. [Alicorn color contract](../themes.md#color
    [theme replacement](../../runtime/style.odin#L483-L521),
    [Button paint](../../runtime/paint.odin#L450-L540)
 2. **Keep transition state sparse.** Allocate a bounded sidecar only for
-   eligible, opted-in, realized owners. Each entry holds the last painted
-   target and stamp, with a timed segment while active. Sample only active
+   eligible, opted-in, realized owners. Each entry holds the adopted target,
+   compatible style stamp, fixed endpoint pair, and presented sample, with a
+   timed segment while active. Sample only active
    entries. Copy the numeric endpoints by value. Disarm the segment on
    settlement or snap, and remove the entry on opt-out, loss of presentation,
    retirement or runtime destruction. An owner can also have an explicit
@@ -120,7 +123,7 @@ and contrast in the actual renderer. [Alicorn color contract](../themes.md#color
    and request one retained presentation for the window. Reuse the paint
    queue and keep sampling off the allocating interaction-reason path.
    Report fill retarget, reversal, snap reason and settlement through the
-   bounded motion diagnostics. [Tick and activity](../../runtime/motion_retained.odin#L1169-L1272),
+   bounded motion diagnostics. [Tick and activity](../../runtime/motion_retained.odin),
    [paint queue](../../runtime/reconcile.odin#L657-L674)
 4. **Arm the first frame and disarm the last.** Inject the current monotonic
    timestamp for retained frames as well as descriptions. The SDL loop
@@ -160,11 +163,14 @@ clip, translation, opacity, painter order and revision. [Composition fallback](.
 | Retained work | In an otherwise stable scene, zero application descriptions, reconciliation, measure, layout, or reshaping for hover and sampling. Count paint/compose work and allocations after warmup. The opt-out control schedules no motion. |
 | Native | Run a matched Gallery comparison on macOS/Metal and Windows/D3D12. Move onto the control and hold the pointer still. Check progression, completion, rapid reversal, hide/restore and a secondary window. Compare pre/mid/post frames and confirm motion wakes and submissions stop when settled. |
 
-Use a single scoped Gallery recipe for the prototype and compare it with the
-immediate control under the same theme. Promote the timed fill when that
-interaction reads well and the retained-work gate holds. Then try a second
-real consumer on a stable visual part before making transition fields
-available to more recipes. Add the recipe field to the JSON compiler after that dogfood.
+The Gallery demonstrates 120 ms, 180 ms and 300 ms CSS Ease hover fills on
+Default, Primary and Toolbar buttons, with an immediate Quiet control. The
+headless regression checks emitted fill colors, inspector independence,
+reversal, exact settlement, no description/layout/shaping work, and a Reduced
+Motion snap. Native Metal and D3D12 comparison is still required before
+promoting this beyond the prototype. After that dogfood, try a second real
+consumer on a stable visual part before making transition fields available to
+more recipes. Add JSON authoring only when a real consumer needs it.
 
 The card can add a timed translation for a small lift once the fill seam
 works. Give its visual group a stable logical interaction owner and room for

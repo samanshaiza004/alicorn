@@ -72,11 +72,17 @@ and removes analytic materials' translucent outer shadows. Preference-adapted
 materials are immutable, cached variants in the Runtime material registry, so
 re-describing a surface does not append an unbounded series of duplicates.
 
-The runtime currently has no animated style transitions or animated material
-responses. `reduce_motion` is retained and inspectable, and changing it advances
-the Material dependency so future motion-sensitive material behavior must
-consume it. It does not flatten static relief. Applications can also pass
-normalized values through `Style_Environment` for a manual scoped override.
+The runtime supports an opt-in timed transition for ordinary Button hover
+fills through `Button_Recipe.hover_fill_transition`. It is limited to flat,
+opaque fills with unchanged foreground and geometry. Entry and exit use the
+retained motion clock; the default zero duration keeps existing immediate
+behavior. Reduced Motion, Increased Contrast, non-color differentiation,
+pressed/selected/disabled states, and incompatible style changes snap to the
+resolved target. This does not animate general style properties or materials.
+`reduce_motion` is retained and inspectable, and changing it advances the
+Material dependency; it does not flatten static relief. Applications can also
+pass normalized values through `Style_Environment` for a manual scoped
+override.
 The native SDL host imports the normalized appearance preferences exposed by
 Windows and macOS and listens for platform change notifications. Windows
 provides increased contrast, reduced motion, reduced transparency, and the
