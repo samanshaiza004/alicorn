@@ -284,7 +284,11 @@ append_drag_preview :: proc(rt: ^Runtime) {
 drag_preview_translation :: proc(rt: ^Runtime) -> [2]f32 {
 	if rt == nil { return {} }
 	if rt.drag_preview.mode == .Source_Subtree {
-		return [2]f32{rt.drag.x-rt.drag.start_x, drag_preview_track_delta_y(rt)}
+		vertical_delta := rt.drag.y-rt.drag.start_y
+		if rt.drag.tracking.mode == .Horizontal_Magnetic {
+			vertical_delta = drag_preview_track_delta_y(rt)
+		}
+		return [2]f32{rt.drag.x-rt.drag.start_x, vertical_delta}
 	}
 	if rt.drag.tracking.mode == .Horizontal_Magnetic && rt.drag.presentation_state != .Free {
 		preview_y := rt.drag.track_bounds.y+rt.drag.track_bounds.h*0.5
