@@ -114,26 +114,34 @@ Re-run on 2026-11-09 at `05281552` with Odin
 - The compiler emitted existing large-stack warnings for the native test
   helper `Native_Secondary_Window`; no check failed.
 
-## Scope and remaining acceptance evidence
+## Scratchpad native dogfood follow-up (maintainer report, 2026-11-09)
 
-The Windows native run now confirms visible theme replacement and gives a
-measured, promising improvement over a restart baseline. The existing
-Scratchpad dogfood record at `c2e1bbd` adds a real editor-build regression with
-focused caret, selection, unsaved content, and a scrolled viewport; its 237
-frontend tests and macOS arm64 production build passed. That is headless
-consumer validation, not a manual native typing session.
+Scratchpad `1da8f94` adds an opt-in editor-theme watcher using the same Alicorn
+theme compiler. The maintainer reports that native Scratchpad validation
+covered live reload across multiple windows and continued text scrolling while
+working in the editor. The user reports the Scratchpad validation is complete;
+no Scratchpad-specific latency measurements were supplied. The screenshot was
+provided with that validation report.
 
-Not verified here: simultaneous editing while typing or scrolling in the
-Windows native editor, a single Alicorn process propagating one theme edit to
-both its primary and secondary windows, and physical macOS theme editing. The
-live-theme example watches one file for one Runtime. Alicorn's secondary
-windows own separate Runtime instances, so the current example does not claim
-multi-window fan-out. The release runtime still has no watcher: the example
-returns from `start_app` without starting a worker unless an explicit theme
-path is supplied.
+![Scratchpad live theme editing with multiple native windows](assets/issue-166-scratchpad-live-theme.png)
 
-This is sufficient evidence to keep the opt-in, single-Runtime developer
-prototype and avoid adding a watcher to production. Treat multi-window
-propagation and native editing interaction as follow-up acceptance if the
-workflow is intended to cover those cases; do not describe this record as
-proving them.
+The Scratchpad build succeeded on Windows with Alicorn `ae43c830` and Odin
+`dev-2026-11-nightly:08539cd`. Its watcher is started only when
+`SCRATCHPAD_LIVE_EDITOR_THEME_PATH` is explicitly set; ordinary launches do not
+start a watcher. Invalid candidates retain the last-good theme. This consumer
+dogfood closes the native multi-window and editor-scrolling checks for the
+opt-in development workflow. It does not add live theme watching to Alicorn's
+release runtime.
+
+## Assessment and remaining limits
+
+The Windows native D3D12 example established visible replacement, last-good
+recovery, rapid-save handling, low edit-to-visible latency, and zero idle
+application work. Scratchpad's native dogfood adds maintainer-reported
+multi-window propagation and continued scrolling during editor use. Together,
+these meet the GO criteria for the opt-in theme-editing development workflow.
+
+Physical macOS live-edit behavior was not tested in this validation session,
+and no separate Scratchpad timing sample was recorded. The watcher remains an
+explicit development opt-in; this issue does not add a watcher to Alicorn's
+release runtime or promise a production theme-reload feature.
