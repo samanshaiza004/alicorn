@@ -34,6 +34,15 @@ native_run_application :: proc(
 			if ok && parsed > 0 { validation_timeout_seconds = int(parsed) }
 		}
 	}
+	when ODIN_OS == .Darwin {
+		// SDL disables momentum wheel events by default on macOS. Preserve
+		// the trackpad's native inertial scrolling; environment overrides
+		// retain SDL's higher-priority opt-out behavior.
+		if !sdl3.SetHint(sdl3.HINT_MAC_SCROLL_MOMENTUM, "1") &&
+			sdl3.GetHint(sdl3.HINT_MAC_SCROLL_MOMENTUM) == nil {
+			fail("SDL_MAC_SCROLL_MOMENTUM hint could not be set")
+		}
+	}
 	if !sdl3.SetHint(sdl3.HINT_IME_IMPLEMENTED_UI, "composition") {
 		fail("SDL_IME_IMPLEMENTED_UI hint could not be set")
 	}
