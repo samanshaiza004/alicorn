@@ -1,8 +1,9 @@
 # Issue #166 — live theme editing Windows prototype
 
-Validated on Windows on 2026-11-08 in a native SDL3/D3D12 process with Odin
-`dev-2026-09-nightly:a2fb372`. SDL reported version 3.4.2. The machine's WMI
-CPU/GPU details were unavailable to this process, so they are not recorded.
+Validated on Windows on 2026-11-08 in a native SDL3/D3D12 process with the
+project-pinned Odin `dev-2026-11-nightly:9a69916`. SDL reported version 3.4.2.
+The machine's WMI CPU/GPU details were unavailable to this process, so they
+are not recorded.
 
 ## Prototype
 
@@ -36,9 +37,9 @@ sequence was exercised against the running process:
 5. Two saves 35 ms apart produced one adoption of the final persisted file,
    consistent with the debounce/coalescing policy.
 
-Accepted-candidate process logs measured compile times of about 0.16–0.32 ms,
-compile-to-UI-adoption delays of about 0.10–0.13 ms, and change-detection-to-
-adoption delays of about 241–243 ms. The latter includes the configured 240 ms
+Accepted-candidate process logs measured compile times of about 0.13–0.24 ms,
+compile-to-UI-adoption delays of about 0.08–0.11 ms, and change-detection-to-
+adoption delays of about 242–243 ms. The latter includes the configured 240 ms
 debounce. These measurements stop at UI-thread adoption; no screenshot or
 frame-presentation instrumentation was available, so they do not establish
 edit-to-visible latency or quantify improvement over a controlled restart
@@ -47,13 +48,17 @@ pixel inspection.
 
 ## Checks
 
+- `tools/test.ps1 -Odin <project-pinned Odin>` — passed all configured suites,
+  including AccessKit ABI/UIA, runtime, theme, UI, and native host checks.
+- `tools/check.ps1 -Odin <project-pinned Odin>` — passed all configured builds
+  and checks.
 - `odin test runtime` — 326 tests passed, including theme replacement,
   invalid-candidate retention, stable identity, style-domain invalidation,
   interaction-state retention, and per-Runtime isolation.
 - `odin test theme` — 35 tests passed.
-- `odin check examples/10_live_theme` — passed.
-- `odin build examples/10_live_theme` — passed and linked; the native smoke
-  required the SDL3 DLL beside the executable.
+- `odin check examples/10_live_theme` and `odin build examples/10_live_theme` —
+  passed and linked; the native smoke required the SDL3 DLL beside the
+  executable.
 - `git diff --check` — passed.
 - The compiler emitted existing large-stack warnings for the native test
   helper `Native_Secondary_Window`; no check failed.

@@ -2,7 +2,6 @@
 package alicorn
 
 import "core:mem"
-import "core:bytes"
 import odin_image "core:image"
 import odin_png "core:image/png"
 import odin_qoi "core:image/qoi"
@@ -63,13 +62,12 @@ image_decode_bytes :: proc(data: []u8, allocator := context.allocator, scratch_a
 	pixel_count := decoded.width*decoded.height
 	channel_bytes := decoded.depth/8
 	expected_bytes := pixel_count*decoded.channels*channel_bytes
-	decoded_pixels := bytes.buffer_to_bytes(&decoded.pixels)
-	if len(decoded_pixels) != expected_bytes { return {}, .Decode_Failed }
+	if len(decoded.pixels) != expected_bytes { return {}, .Decode_Failed }
 	rgba := make([]u8, pixel_count*4, allocator)
 	if rgba == nil && pixel_count > 0 { return {}, .Resource_Limit }
 	if decoded.depth == 8 {
 		for i := 0; i < pixel_count; i += 1 {
-			pixel := decoded_pixels[i*decoded.channels:]
+			pixel := decoded.pixels[i*decoded.channels:]
 		switch decoded.channels {
 		case 1: rgba[i*4+0], rgba[i*4+1], rgba[i*4+2], rgba[i*4+3] = pixel[0], pixel[0], pixel[0], 255
 		case 2: rgba[i*4+0], rgba[i*4+1], rgba[i*4+2], rgba[i*4+3] = pixel[0], pixel[0], pixel[0], pixel[1]
@@ -78,7 +76,7 @@ image_decode_bytes :: proc(data: []u8, allocator := context.allocator, scratch_a
 		}
 		}
 	} else {
-		pixels16 := mem.slice_data_cast([]u16, decoded_pixels)
+		pixels16 := mem.slice_data_cast([]u16, decoded.pixels[:])
 		for i := 0; i < pixel_count; i += 1 {
 			pixel := pixels16[i*decoded.channels:]
 		switch decoded.channels {
