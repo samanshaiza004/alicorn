@@ -42,6 +42,21 @@ The first smoke's accepted-candidate logs measured compile times of about
 change-detection-to-adoption delays of about 242–243 ms. The latter includes
 the configured 240 ms debounce.
 
+## Follow-up interactive edit session
+
+The maintainer then edited the watched JSON theme repeatedly in Visual Studio
+Code while the native preview remained open. The preview visibly adopted the
+changes without restarting, and the console recorded repeated successful
+`[live-theme] applied` candidates. The screenshot's native diagnostics report
+SDL 3.4.20 and Direct3D 12. This is qualitative confirmation of repeated
+interactive saves, not a new latency measurement.
+
+![Windows editor and live Alicorn theme preview during repeated theme saves](assets/issue-166-windows-interactive-session.png)
+
+This session still used the single-window preview. It does not test a theme
+edit while Scratchpad is actively typing or scrolling, nor propagation to a
+secondary window.
+
 ## Native frame and restart comparison (2026-11-09 UTC)
 
 I captured the live example through Alicorn's native D3D12 diagnostic readback,
