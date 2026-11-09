@@ -1212,6 +1212,10 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		delete(theme.extension_length_role_provenance, rt.persistent_allocator)
 	}
 	delete(rt.style_themes)
+	if len(rt.style_theme_preview.theme.color_tokens) > 0 {
+		delete(rt.style_theme_preview.theme.color_tokens, rt.persistent_allocator)
+	}
+	rt.style_theme_preview = Style_Theme_Preview{}
 	delete(rt.style_materials)
 	delete(rt.style_scope_stack)
 	delete(rt.adaptive_description_scopes)

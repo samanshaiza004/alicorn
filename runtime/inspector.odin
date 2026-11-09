@@ -41,9 +41,9 @@ style_inspector_token_role :: proc(
 style_inspector_color_token_chain :: proc(sb: ^strings.Builder, rt: ^Runtime, theme: Style_Theme_ID, token: Style_Color_Token_ID) {
 	current := token
 	first := true
-	theme_index := u64(u32(theme))
-	if rt == nil || theme_index == 0 || theme_index > u64(len(rt.style_themes)) { return }
-	metadata := rt.style_themes[theme_index-1].color_token_provenance
+	theme_data := style_theme_data(rt, theme)
+	if theme_data == nil { return }
+	metadata := theme_data.color_token_provenance
 	for _ in 0..<len(metadata) {
 		provenance, found := style_token_provenance(rt, theme, current)
 		if !found { break }
@@ -126,9 +126,17 @@ style_inspector_surface_role :: proc(sb: ^strings.Builder, rt: ^Runtime, theme: 
 	}
 }
 
+style_inspector_provenance_theme :: proc(rt: ^Runtime, provenance: Style_Provenance) -> Style_Theme_ID {
+	if rt != nil && provenance.theme == STYLE_THEME_PREVIEW_INTERNAL_ID && rt.style_theme_preview.active {
+		return STYLE_THEME_PREVIEW_INTERNAL_ID
+	}
+	return provenance.theme
+}
+
 style_inspector_text_field_provenance :: proc(sb: ^strings.Builder, rt: ^Runtime, node: ^Node) {
 	if rt == nil || node == nil { return }
 	environment := node.style_environment
+	theme := style_environment_theme_id(rt, environment)
 	recipe := style_text_field_recipe(rt, environment)
 	state := Text_Field_Visual_State{hovered=node.hovered, focused=rt.focused == node.id}
 	_ = style_text_field_resolve_retained(rt, node, state)
@@ -137,20 +145,21 @@ style_inspector_text_field_provenance :: proc(sb: ^strings.Builder, rt: ^Runtime
 	fmt.sbprintf(sb, "  text field style: recipe=text_field.default resolution=retained-cache state=(hovered=%t focused=%t) dependencies=paint generations=(paint=%d)\n",
 		state.hovered, state.focused, computed.generations.paint)
 	fmt.sbprintf(sb, "  token provenance: text_field.default")
-	style_inspector_token_role(sb, rt, environment.theme, "surface", "base", recipe.surface_role, environment.accent)
-	style_inspector_token_role(sb, rt, environment.theme, "text", "base", recipe.text_role, environment.accent)
-	style_inspector_token_role(sb, rt, environment.theme, "border", "base", recipe.border_role, environment.accent)
-	style_inspector_token_role(sb, rt, environment.theme, "focus-border", "focused", recipe.focused_border_role, environment.accent)
-	style_inspector_token_role(sb, rt, environment.theme, "focus", "overlay", recipe.focus_role, environment.accent)
-	style_inspector_token_role(sb, rt, environment.theme, "selection", "base", recipe.selection_role, environment.accent)
-	style_inspector_token_role(sb, rt, environment.theme, "caret", "base", recipe.caret_role, environment.accent)
-	if state.hovered { style_inspector_control_transform_provenance(sb, rt, environment.theme, "hovered", recipe.hovered, environment.accent) }
+	style_inspector_token_role(sb, rt, theme, "surface", "base", recipe.surface_role, environment.accent)
+	style_inspector_token_role(sb, rt, theme, "text", "base", recipe.text_role, environment.accent)
+	style_inspector_token_role(sb, rt, theme, "border", "base", recipe.border_role, environment.accent)
+	style_inspector_token_role(sb, rt, theme, "focus-border", "focused", recipe.focused_border_role, environment.accent)
+	style_inspector_token_role(sb, rt, theme, "focus", "overlay", recipe.focus_role, environment.accent)
+	style_inspector_token_role(sb, rt, theme, "selection", "base", recipe.selection_role, environment.accent)
+	style_inspector_token_role(sb, rt, theme, "caret", "base", recipe.caret_role, environment.accent)
+	if state.hovered { style_inspector_control_transform_provenance(sb, rt, theme, "hovered", recipe.hovered, environment.accent) }
 	fmt.sbprintln(sb)
 }
 
 style_inspector_scrollbar_provenance :: proc(sb: ^strings.Builder, rt: ^Runtime, node: ^Node) {
 	if rt == nil || node == nil { return }
 	environment := node.style_environment
+	theme := style_environment_theme_id(rt, environment)
 	recipe := style_scrollbar_recipe(rt, environment)
 	state := Scrollbar_Visual_State{hovered=node.hovered, pressed=rt.scrollbar_drag_node == node.id}
 	_ = style_scrollbar_resolve_retained(rt, node, state)
@@ -159,11 +168,11 @@ style_inspector_scrollbar_provenance :: proc(sb: ^strings.Builder, rt: ^Runtime,
 	fmt.sbprintf(sb, "  scrollbar style: recipe=scrollbar.default resolution=retained-cache state=(hovered=%t pressed=%t) dependencies=paint generations=(paint=%d)\n",
 		state.hovered, state.pressed, computed.generations.paint)
 	fmt.sbprintf(sb, "  token provenance: scrollbar.default")
-	style_inspector_token_role(sb, rt, environment.theme, "track", "base", recipe.track_role, environment.accent)
-	style_inspector_token_role(sb, rt, environment.theme, "thumb", "base", recipe.thumb_role, environment.accent)
-	style_inspector_token_role(sb, rt, environment.theme, "corner", "base", recipe.corner_role, environment.accent)
-	if state.hovered { style_inspector_token_role(sb, rt, environment.theme, "thumb", "hovered", recipe.hovered_thumb.role, environment.accent) }
-	if state.pressed { style_inspector_token_role(sb, rt, environment.theme, "thumb", "pressed", recipe.pressed_thumb.role, environment.accent) }
+	style_inspector_token_role(sb, rt, theme, "track", "base", recipe.track_role, environment.accent)
+	style_inspector_token_role(sb, rt, theme, "thumb", "base", recipe.thumb_role, environment.accent)
+	style_inspector_token_role(sb, rt, theme, "corner", "base", recipe.corner_role, environment.accent)
+	if state.hovered { style_inspector_token_role(sb, rt, theme, "thumb", "hovered", recipe.hovered_thumb.role, environment.accent) }
+	if state.pressed { style_inspector_token_role(sb, rt, theme, "thumb", "pressed", recipe.pressed_thumb.role, environment.accent) }
 	fmt.sbprintln(sb)
 }
 
@@ -189,6 +198,7 @@ style_inspector_control_part_recipe :: proc(
 style_inspector_checkbox_provenance :: proc(sb: ^strings.Builder, rt: ^Runtime, node: ^Node) {
 	if rt == nil || node == nil { return }
 	environment := node.style_environment
+	theme := style_environment_theme_id(rt, environment)
 	state := Checkbox_Visual_State{
 		checked=node.paint_value&1 != 0,
 		hovered=node.hovered,
@@ -211,19 +221,20 @@ style_inspector_checkbox_provenance :: proc(sb: ^strings.Builder, rt: ^Runtime, 
 	}
 	fmt.sbprintf(sb, " focus-mode=%s dependencies=paint generations=(paint=%d)\n  token provenance: checkbox.default",
 		focus_indicator_mode_name(resolved.focus_indicator_mode), computed.generations.paint)
-	style_inspector_control_part_recipe(sb, rt, environment.theme, "box", recipe.box,
+	style_inspector_control_part_recipe(sb, rt, theme, "box", recipe.box,
 		Control_Visual_State{selected=state.checked, hovered=state.hovered, pressed=state.pressed, disabled=state.disabled}, environment.accent)
-	style_inspector_control_part_recipe(sb, rt, environment.theme, "checkmark", recipe.checkmark,
+	style_inspector_control_part_recipe(sb, rt, theme, "checkmark", recipe.checkmark,
 		Control_Visual_State{selected=state.checked, hovered=state.hovered, pressed=state.pressed, disabled=state.disabled}, environment.accent)
-	style_inspector_control_part_recipe(sb, rt, environment.theme, "label", recipe.label,
+	style_inspector_control_part_recipe(sb, rt, theme, "label", recipe.label,
 		Control_Visual_State{selected=state.checked, hovered=state.hovered, pressed=state.pressed, disabled=state.disabled}, environment.accent)
-	style_inspector_token_role(sb, rt, environment.theme, "focus", "overlay", recipe.focus_role, environment.accent)
+	style_inspector_token_role(sb, rt, theme, "focus", "overlay", recipe.focus_role, environment.accent)
 	fmt.sbprintln(sb)
 }
 
 style_inspector_slider_provenance :: proc(sb: ^strings.Builder, rt: ^Runtime, node: ^Node) {
 	if rt == nil || node == nil { return }
 	environment := node.style_environment
+	theme := style_environment_theme_id(rt, environment)
 	state := Slider_Visual_State{
 		hovered=node.hovered,
 		pressed=node.pressed,
@@ -246,11 +257,11 @@ style_inspector_slider_provenance :: proc(sb: ^strings.Builder, rt: ^Runtime, no
 		focus_indicator_mode_name(resolved.focus_indicator_mode), computed.generations.paint)
 	recipe := style_slider_recipe(rt, environment)
 	part_state := Control_Visual_State{hovered=state.hovered, pressed=state.pressed, disabled=state.disabled}
-	style_inspector_control_part_recipe(sb, rt, environment.theme, "track", recipe.track, part_state, environment.accent)
-	style_inspector_control_part_recipe(sb, rt, environment.theme, "fill", recipe.fill, part_state, environment.accent)
-	style_inspector_control_part_recipe(sb, rt, environment.theme, "thumb", recipe.thumb, part_state, environment.accent)
-	style_inspector_control_part_recipe(sb, rt, environment.theme, "label", recipe.label, part_state, environment.accent)
-	style_inspector_token_role(sb, rt, environment.theme, "focus", "overlay", recipe.focus_role, environment.accent)
+	style_inspector_control_part_recipe(sb, rt, theme, "track", recipe.track, part_state, environment.accent)
+	style_inspector_control_part_recipe(sb, rt, theme, "fill", recipe.fill, part_state, environment.accent)
+	style_inspector_control_part_recipe(sb, rt, theme, "thumb", recipe.thumb, part_state, environment.accent)
+	style_inspector_control_part_recipe(sb, rt, theme, "label", recipe.label, part_state, environment.accent)
+	style_inspector_token_role(sb, rt, theme, "focus", "overlay", recipe.focus_role, environment.accent)
 	fmt.sbprintln(sb)
 }
 
@@ -261,7 +272,7 @@ style_inspector_semantic_surface :: proc(sb: ^strings.Builder, rt: ^Runtime, nod
 	if !cached { return }
 	fmt.sbprintf(sb, "  semantic surface: ")
 	if style.fill_override_set { fmt.sbprintf(sb, "direct fill") }
-	else { style_inspector_surface_role(sb, rt, node.style_environment.theme, style.role) }
+	else { style_inspector_surface_role(sb, rt, style_environment_theme_id(rt, node.style_environment), style.role) }
 	material, material_found := style_material_resolve(rt, style.material)
 	material_kind := "unavailable"
 	if material_found { material_kind = style_inspector_material_kind_name(material.kind) }
@@ -435,20 +446,21 @@ inspect :: proc(rt: ^Runtime) -> string {
 				computed_style.generations.metrics, computed_style.generations.typography,
 				computed_style.generations.paint, computed_style.generations.material)
 			provenance := computed_style.provenance
+			provenance_theme := style_inspector_provenance_theme(rt, provenance)
 			provenance_variant := Button_Variant(provenance.variant)
 			provenance_state := style_button_state_from_bits(provenance.state_bits)
 			fmt.sbprintf(&sb, "  token provenance: button.%s", button_variant_name(provenance_variant))
-			style_inspector_token_role(&sb, rt, provenance.theme, "surface", "base", recipe.surface_role, provenance.accent)
-			style_inspector_token_role(&sb, rt, provenance.theme, "text", "base", recipe.text_role, provenance.accent)
-			style_inspector_token_role(&sb, rt, provenance.theme, "focus", "base", recipe.focus_role, provenance.accent)
-			style_inspector_token_role(&sb, rt, provenance.theme, "semantic-active", "base", recipe.semantic_active_role, provenance.accent)
-			style_inspector_token_role(&sb, rt, provenance.theme, "indicator", "base", recipe.selected_indicator_role, provenance.accent)
-			if provenance_state.selected { style_inspector_transform_provenance(&sb, rt, provenance.theme, "selected", recipe.selected, provenance.accent) }
-			if provenance_state.hovered { style_inspector_transform_provenance(&sb, rt, provenance.theme, "hovered", recipe.hovered, provenance.accent) }
-			if provenance_state.pressed { style_inspector_transform_provenance(&sb, rt, provenance.theme, "pressed", recipe.pressed, provenance.accent) }
-			if provenance_state.disabled { style_inspector_transform_provenance(&sb, rt, provenance.theme, "disabled", recipe.disabled, provenance.accent) }
+			style_inspector_token_role(&sb, rt, provenance_theme, "surface", "base", recipe.surface_role, provenance.accent)
+			style_inspector_token_role(&sb, rt, provenance_theme, "text", "base", recipe.text_role, provenance.accent)
+			style_inspector_token_role(&sb, rt, provenance_theme, "focus", "base", recipe.focus_role, provenance.accent)
+			style_inspector_token_role(&sb, rt, provenance_theme, "semantic-active", "base", recipe.semantic_active_role, provenance.accent)
+			style_inspector_token_role(&sb, rt, provenance_theme, "indicator", "base", recipe.selected_indicator_role, provenance.accent)
+			if provenance_state.selected { style_inspector_transform_provenance(&sb, rt, provenance_theme, "selected", recipe.selected, provenance.accent) }
+			if provenance_state.hovered { style_inspector_transform_provenance(&sb, rt, provenance_theme, "hovered", recipe.hovered, provenance.accent) }
+			if provenance_state.pressed { style_inspector_transform_provenance(&sb, rt, provenance_theme, "pressed", recipe.pressed, provenance.accent) }
+			if provenance_state.disabled { style_inspector_transform_provenance(&sb, rt, provenance_theme, "disabled", recipe.disabled, provenance.accent) }
 			if provenance.drop_target_on && !provenance_state.disabled {
-				style_inspector_token_role(&sb, rt, provenance.theme, "surface", "drop-target", .Success, provenance.accent)
+				style_inspector_token_role(&sb, rt, provenance_theme, "surface", "drop-target", .Success, provenance.accent)
 			}
 			fmt.sbprintf(&sb, "\n")
 		}

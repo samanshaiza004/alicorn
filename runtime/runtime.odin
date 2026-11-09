@@ -647,6 +647,22 @@ Text_Overflow :: enum {
 }
 
 Style_Theme_ID :: distinct u32
+
+// Style_Theme_Preview_ID addresses the Runtime's single bounded development
+// preview slot. It is deliberately distinct from immutable registered themes.
+Style_Theme_Preview_ID :: distinct u32
+@(private)
+STYLE_THEME_PREVIEW_SLOT :: Style_Theme_Preview_ID(1)
+@(private)
+STYLE_THEME_PREVIEW_INTERNAL_ID :: Style_Theme_ID(0xFFFFFFFF)
+
+@(private)
+Style_Theme_Preview :: struct {
+	active:       bool,
+	source_theme: Style_Theme_ID,
+	theme:        Style_Theme,
+	generation:   u64,
+}
 Style_Accent :: distinct u32
 
 // Accessibility_Appearance_Preferences contains normalized host/user
@@ -972,6 +988,7 @@ DEFAULT_STYLE_THEME_ID :: Style_Theme_ID(1)
 // text_scale is the normalized user/host text scaling input.
 Style_Environment :: struct {
 	theme: Style_Theme_ID,
+	preview: Style_Theme_Preview_ID,
 	density: f32,
 	text_scale: f32,
 	accent: Style_Accent,
@@ -1980,6 +1997,7 @@ Runtime :: struct {
 	root_text_scale: f32,
 	root_text_scale_known: bool,
 	style_themes: [dynamic]Style_Theme,
+	style_theme_preview: Style_Theme_Preview,
 	style_materials: [dynamic]Style_Material,
 	style_scope_stack: [dynamic]Style_Environment_Scope,
 	adaptive_description_scopes: [dynamic]Adaptive_Description_Scope,

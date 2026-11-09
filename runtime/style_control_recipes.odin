@@ -268,45 +268,33 @@ DEFAULT_SLIDER_RECIPE :: Slider_Recipe{
 }
 
 style_checkbox_recipe :: proc(rt: ^Runtime, environment: Style_Environment) -> Checkbox_Recipe {
-	if rt != nil {
-		index := u64(u32(environment.theme))
-		if index > 0 && index <= u64(len(rt.style_themes)) {
-			recipe := rt.style_themes[index-1].checkbox_recipe
-			if recipe.defined && style_checkbox_recipe_is_valid(recipe) { return recipe }
-		}
+	if theme := style_theme_data(rt, style_environment_theme_id(rt, environment)); theme != nil {
+		recipe := theme.checkbox_recipe
+		if recipe.defined && style_checkbox_recipe_is_valid(recipe) { return recipe }
 	}
 	return DEFAULT_CHECKBOX_RECIPE
 }
 
 style_slider_recipe :: proc(rt: ^Runtime, environment: Style_Environment) -> Slider_Recipe {
-	if rt != nil {
-		index := u64(u32(environment.theme))
-		if index > 0 && index <= u64(len(rt.style_themes)) {
-			recipe := rt.style_themes[index-1].slider_recipe
-			if recipe.defined && style_slider_recipe_is_valid(recipe) { return recipe }
-		}
+	if theme := style_theme_data(rt, style_environment_theme_id(rt, environment)); theme != nil {
+		recipe := theme.slider_recipe
+		if recipe.defined && style_slider_recipe_is_valid(recipe) { return recipe }
 	}
 	return DEFAULT_SLIDER_RECIPE
 }
 
 style_text_field_recipe :: proc(rt: ^Runtime, environment: Style_Environment) -> Text_Field_Recipe {
-	if rt != nil {
-		index := u64(u32(environment.theme))
-		if index > 0 && index <= u64(len(rt.style_themes)) {
-			recipe := rt.style_themes[index-1].text_field_recipe
-			if recipe.defined && style_text_field_recipe_is_valid(recipe) { return recipe }
-		}
+	if theme := style_theme_data(rt, style_environment_theme_id(rt, environment)); theme != nil {
+		recipe := theme.text_field_recipe
+		if recipe.defined && style_text_field_recipe_is_valid(recipe) { return recipe }
 	}
 	return DEFAULT_TEXT_FIELD_RECIPE
 }
 
 style_theme_control_metrics :: proc(rt: ^Runtime, theme: Style_Theme_ID) -> Control_Metrics {
-	if rt != nil {
-		index := u64(u32(theme))
-		if index > 0 && index <= u64(len(rt.style_themes)) {
-			metrics := rt.style_themes[index-1].control_metrics
-			if metrics.defined { return metrics }
-		}
+	if theme_data := style_theme_data(rt, theme); theme_data != nil {
+		metrics := theme_data.control_metrics
+		if metrics.defined { return metrics }
 	}
 	return DEFAULT_CONTROL_METRICS
 }
@@ -315,7 +303,7 @@ style_theme_control_metrics :: proc(rt: ^Runtime, theme: Style_Theme_ID) -> Cont
 // Text scale remains a separate input applied by text shaping, so a larger
 // text run can raise the preferred size without being scaled twice.
 style_control_metric :: proc(rt: ^Runtime, environment: Style_Environment, kind: Control_Metric_Kind) -> Control_Metric {
-	metrics := style_theme_control_metrics(rt, environment.theme)
+	metrics := style_theme_control_metrics(rt, style_environment_theme_id(rt, environment))
 	metric := metrics.button
 	switch kind {
 	case .Button: metric = metrics.button
@@ -342,12 +330,9 @@ style_text_field_horizontal_inset :: proc(rt: ^Runtime, environment: Style_Envir
 }
 
 style_scrollbar_recipe :: proc(rt: ^Runtime, environment: Style_Environment) -> Scrollbar_Recipe {
-	if rt != nil {
-		index := u64(u32(environment.theme))
-		if index > 0 && index <= u64(len(rt.style_themes)) {
-			recipe := rt.style_themes[index-1].scrollbar_recipe
-			if recipe.defined && style_scrollbar_recipe_is_valid(recipe) { return recipe }
-		}
+	if theme := style_theme_data(rt, style_environment_theme_id(rt, environment)); theme != nil {
+		recipe := theme.scrollbar_recipe
+		if recipe.defined && style_scrollbar_recipe_is_valid(recipe) { return recipe }
 	}
 	return DEFAULT_SCROLLBAR_RECIPE
 }

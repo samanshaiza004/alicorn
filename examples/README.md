@@ -66,7 +66,10 @@ build. Program arguments follow the example name on the shell runner and use
    counter and lifecycle with the main window.
 7. In `07_simple_appearance`, change panel fill, border, or swatch colors.
 8. In `08_control_gallery`, browse the built-in icon assets and activate the
-   named icon button.
+   named icon button. To dogfood live color preview, edit
+   `examples/08_control_gallery/theme.json` while the app is open, then choose
+   **Reload Theme**. A color-only edit updates the accent without relayout;
+   invalid JSON or changed theme structure keeps the last good palette active.
 9. In `09_retained_motion`, select **Editor** and **Settings** repeatedly.
    The marker should retarget smoothly while ordinary app builds remain idle
    between selections. Leave the window alone after it settles; no motion timer

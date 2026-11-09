@@ -241,6 +241,35 @@ token and role-binding storage, so the adapter-owned value can then be
 destroyed. The built-in theme remains a typed `DEFAULT_STYLE_THEME` value and
 does not need a parser or filesystem access to start Alicorn.
 
+## Experimental live color preview
+
+The runtime also provides one opt-in, bounded preview slot for development
+tools. Normal `Style_Theme` registrations remain immutable. Start a preview
+from one registered tokenized theme with `style_theme_preview_begin`, then
+replace its complete color-token vector with
+`style_theme_preview_replace_colors`. The runtime rejects invalid handles,
+non-finite colors, and vectors whose shape differs from the source theme. An
+applied replacement advances the preview generation and invalidates Paint in
+nodes inside that preview scope; it does not invalidate Metrics or Typography.
+The preview is owned by the Runtime and remains active until that Runtime is
+destroyed. A Runtime currently supports one preview source.
+
+The `theme` package's `theme_compile_json` and
+`theme_preview_structure_compatible` helpers support development reloaders.
+The compatibility check permits color value edits while requiring token IDs
+and names, alias edges, role bindings, lengths, recipes, materials, and
+extension-role identities to remain fixed. A host should compile a candidate
+into owned storage, validate it against the last good candidate, and transfer
+only its color values to the UI thread for adoption. Compilation failures and
+incompatible candidates should leave the current preview untouched. This is
+not a file watcher or production theme-mutation API.
+
+The Control Gallery demonstrates this flow. From the repository root, run
+`./tools/run_example.sh 08_control_gallery`, edit
+`examples/08_control_gallery/theme.json`, then choose **Reload Theme**. Change
+the `gallery.accent` color value to see the preview update. Token names,
+bindings, lengths, recipes, and materials are fixed for this initial slice.
+
 ## Supported source subset
 
 The first source frontend is strict JSON with a documented DTCG-inspired

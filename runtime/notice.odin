@@ -153,7 +153,7 @@ notice_take_action :: proc(rt: ^Runtime) -> (event: Notice_Action_Event, found: 
 
 @(private)
 notice_style_environment_is_set :: proc(environment: Style_Environment) -> bool {
-	return environment.theme != 0 || environment.density != 0 || environment.text_scale != 0 ||
+	return environment.theme != 0 || environment.preview != 0 || environment.density != 0 || environment.text_scale != 0 ||
 		environment.accent != 0 || environment.accessibility_set
 }
 

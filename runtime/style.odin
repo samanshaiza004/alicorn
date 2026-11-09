@@ -175,10 +175,10 @@ style_generations_match :: proc(current, resolved: Style_Generations, domains: S
 }
 
 style_theme_color_token :: proc(rt: ^Runtime, theme: Style_Theme_ID, role: Style_Color_Role) -> Style_Color_Token_ID {
-	if rt == nil || !style_color_role_is_valid(role) { return 0 }
-	theme_index := u64(u32(theme))
-	if theme_index == 0 || theme_index > u64(len(rt.style_themes)) { return 0 }
-	return rt.style_themes[theme_index-1].core_color_tokens[int(role)]
+	if !style_color_role_is_valid(role) { return 0 }
+	theme_data := style_theme_data(rt, theme)
+	if theme_data == nil { return 0 }
+	return theme_data.core_color_tokens[int(role)]
 }
 
 style_color_is_valid :: proc(color: Color) -> bool {
@@ -380,6 +380,96 @@ style_theme_register :: proc(rt: ^Runtime, theme: Style_Theme) -> Style_Theme_ID
 	return Style_Theme_ID(u32(len(rt.style_themes)))
 }
 
+Style_Theme_Preview_Result :: enum { Rejected, Unchanged, Applied }
+
+style_theme_data :: proc(rt: ^Runtime, theme: Style_Theme_ID) -> ^Style_Theme {
+	if rt == nil { return nil }
+	if theme == STYLE_THEME_PREVIEW_INTERNAL_ID {
+		if rt.style_theme_preview.active { return &rt.style_theme_preview.theme }
+		return nil
+	}
+	index := u64(u32(theme))
+	if index == 0 || index > u64(len(rt.style_themes)) { return nil }
+	return &rt.style_themes[index-1]
+}
+
+style_environment_theme_id :: proc(rt: ^Runtime, environment: Style_Environment) -> Style_Theme_ID {
+	if rt != nil && environment.preview == STYLE_THEME_PREVIEW_SLOT && rt.style_theme_preview.active {
+		return STYLE_THEME_PREVIEW_INTERNAL_ID
+	}
+	return environment.theme
+}
+
+// style_theme_preview_begin snapshots one immutable registered theme into the
+// Runtime's single bounded development slot. The snapshot borrows all
+// structural arrays from the immutable source and owns its color-token array.
+// This preview intentionally lasts for the Runtime lifetime.
+style_theme_preview_begin :: proc(rt: ^Runtime, source: Style_Theme_ID) -> Style_Theme_Preview_ID {
+	if rt == nil || rt.frame_open || source == STYLE_THEME_PREVIEW_INTERNAL_ID { return 0 }
+	if rt.style_theme_preview.active {
+		if rt.style_theme_preview.source_theme == source { return STYLE_THEME_PREVIEW_SLOT }
+		return 0
+	}
+	source_theme := style_theme_data(rt, source)
+	if source_theme == nil || len(source_theme.color_tokens) == 0 { return 0 }
+	preview := source_theme^
+	preview.color_tokens = make([]Color, len(source_theme.color_tokens), allocator=rt.persistent_allocator)
+	copy(preview.color_tokens, source_theme.color_tokens)
+	rt.style_theme_preview = Style_Theme_Preview{
+		active=true,
+		source_theme=source,
+		theme=preview,
+		generation=1,
+	}
+	return STYLE_THEME_PREVIEW_SLOT
+}
+
+style_theme_preview_generation :: proc(rt: ^Runtime, preview_id: Style_Theme_Preview_ID) -> u64 {
+	if rt == nil || preview_id != STYLE_THEME_PREVIEW_SLOT || !rt.style_theme_preview.active { return 0 }
+	return rt.style_theme_preview.generation
+}
+
+// style_theme_preview_replace_colors atomically copies a color-token vector
+// whose shape and bindings are fixed by the initial snapshot. It performs
+// Paint-only invalidation in nodes that opted into this preview.
+style_theme_preview_replace_colors :: proc(
+	rt: ^Runtime,
+	preview_id: Style_Theme_Preview_ID,
+	colors: []Color,
+) -> Style_Theme_Preview_Result {
+	if rt == nil || rt.frame_open || preview_id != STYLE_THEME_PREVIEW_SLOT || !rt.style_theme_preview.active {
+		return .Rejected
+	}
+	preview := &rt.style_theme_preview
+	if len(colors) != len(preview.theme.color_tokens) { return .Rejected }
+	changed := false
+	for color, index in colors {
+		if !style_color_is_valid(color) { return .Rejected }
+		if color != preview.theme.color_tokens[index] { changed = true }
+	}
+	if !changed { return .Unchanged }
+	copy(preview.theme.color_tokens, colors)
+	for role in Style_Color_Role {
+		if role == .Count { continue }
+		token := preview.theme.core_color_tokens[int(role)]
+		index := u64(u32(token))
+		if index > 0 && index <= u64(len(preview.theme.color_tokens)) {
+			preview.theme.colors[int(role)] = preview.theme.color_tokens[index-1]
+		}
+	}
+	preview.generation += 1
+	if preview.generation == 0 { preview.generation = 1 }
+	for id, node in rt.nodes {
+		if !node.active || node.style_environment.theme != STYLE_THEME_PREVIEW_INTERNAL_ID { continue }
+		_ = style_generations_advance(&node.style_generations, {.Paint})
+		style_computed_cache_invalidate(rt, id)
+		mark_dirty(node, "style preview colors replaced", false, false, true, true, rt.persistent_allocator)
+		queue_paint(rt, id)
+	}
+	invalidate_root(rt, "style preview colors replaced")
+	return .Applied
+}
+
 // style_theme_motion_policy resolves the optional intent defaults for one
 // node's current theme. Older custom themes with no motion policy inherit the
 // library defaults, but no node animates unless its application opts in.
@@ -387,9 +477,9 @@ style_theme_motion_policy :: proc(rt: ^Runtime, theme_id: Style_Theme_ID) -> Mot
 	if rt == nil { return DEFAULT_MOTION_THEME_POLICY }
 	resolved_id := theme_id
 	if resolved_id == 0 { resolved_id = DEFAULT_STYLE_THEME_ID }
-	index := u64(u32(resolved_id))
-	if index == 0 || index > u64(len(rt.style_themes)) { return DEFAULT_MOTION_THEME_POLICY }
-	policy := rt.style_themes[index-1].motion_policy
+	theme := style_theme_data(rt, resolved_id)
+	if theme == nil { return DEFAULT_MOTION_THEME_POLICY }
+	policy := theme.motion_policy
 	if policy.defined { return policy }
 	return DEFAULT_MOTION_THEME_POLICY
 }
@@ -397,9 +487,7 @@ style_theme_motion_policy :: proc(rt: ^Runtime, theme_id: Style_Theme_ID) -> Mot
 style_theme_color :: proc(rt: ^Runtime, theme: Style_Theme_ID, role: Style_Color_Role) -> Color {
 	default_theme := DEFAULT_STYLE_THEME
 	if int(role) < 0 || role >= .Count { return default_theme.colors[int(Style_Color_Role.Text)] }
-	index := u64(u32(theme))
-	if rt != nil && index > 0 && index <= u64(len(rt.style_themes)) {
-		theme_data := rt.style_themes[index-1]
+	if theme_data := style_theme_data(rt, theme); theme_data != nil {
 		if token := theme_data.core_color_tokens[int(role)]; token != 0 {
 			if value, found := style_token_color(rt, theme, token); found { return value }
 		}
@@ -466,26 +554,27 @@ style_environment_extension_color :: proc(
 	environment: Style_Environment,
 	role: Style_Extension_Color_Role_ID,
 ) -> (color: Color, found: bool) {
-	color, found = style_extension_color(rt, environment.theme, role)
+	color, found = style_extension_color(rt, style_environment_theme_id(rt, environment), role)
 	if found { color = style_accessibility_color(environment, color) }
 	return
 }
 
 style_environment_color :: proc(rt: ^Runtime, environment: Style_Environment, role: Style_Color_Role) -> Color {
-	color := style_theme_color(rt, environment.theme, role)
+	theme := style_environment_theme_id(rt, environment)
+	color := style_theme_color(rt, theme, role)
 	if role == .Accent && environment.accent != 0 { color = style_accent_color(environment.accent) }
 	if environment.accessibility.increased_contrast {
-		surface := style_theme_color(rt, environment.theme, .Surface)
-		subtle := style_theme_color(rt, environment.theme, .Subtle_Surface)
-		editor := style_theme_color(rt, environment.theme, .Editor_Background)
-		accent := style_theme_color(rt, environment.theme, .Accent)
+		surface := style_theme_color(rt, theme, .Surface)
+		subtle := style_theme_color(rt, theme, .Subtle_Surface)
+		editor := style_theme_color(rt, theme, .Editor_Background)
+		accent := style_theme_color(rt, theme, .Accent)
 		if environment.accent != 0 { accent = style_accent_color(environment.accent) }
 		#partial switch role {
 		case .Text, .Muted_Text:
 			color = style_high_contrast_ink(surface, subtle, accent)
 		case .Accent_Text:
-			hover := style_theme_color(rt, environment.theme, .Accent_Hover)
-			pressed := style_theme_color(rt, environment.theme, .Accent_Pressed)
+			hover := style_theme_color(rt, theme, .Accent_Hover)
+			pressed := style_theme_color(rt, theme, .Accent_Pressed)
 			color = style_high_contrast_ink(accent, hover, pressed)
 		case .Focus, .Semantic_Focus, .Border, .Scrollbar_Thumb:
 			color = style_high_contrast_ink(surface, subtle, editor)
@@ -536,8 +625,7 @@ style_button_recipe :: proc(rt: ^Runtime, environment: Style_Environment, varian
 	if index < 0 || index >= BUTTON_VARIANT_COUNT { index = int(Button_Variant.Default) }
 	theme := DEFAULT_STYLE_THEME
 	if rt != nil {
-		id := u64(u32(environment.theme))
-		if id > 0 && id <= u64(len(rt.style_themes)) { theme = rt.style_themes[id-1] }
+		if resolved := style_theme_data(rt, style_environment_theme_id(rt, environment)); resolved != nil { theme = resolved^ }
 	}
 	recipe := theme.button_recipes.recipes[index]
 	if !recipe.defined {
@@ -665,7 +753,17 @@ style_environment_resolve :: proc(previous, override: Style_Environment, rt: ^Ru
 		index := u64(u32(override.theme))
 		if index == 0 || index > u64(len(rt.style_themes)) { return }
 		resolved.theme = override.theme
+		resolved.preview = 0
 	}
+	if override.preview != 0 {
+		if override.preview != STYLE_THEME_PREVIEW_SLOT || rt == nil || !rt.style_theme_preview.active { return }
+		if resolved.theme != rt.style_theme_preview.source_theme && resolved.theme != STYLE_THEME_PREVIEW_INTERNAL_ID { return }
+		resolved.theme = STYLE_THEME_PREVIEW_INTERNAL_ID
+	}
+	// Keep the replaceable handle at the application scope boundary. The
+	// retained representation uses the reserved theme identity so Description
+	// does not grow for a preview-only field.
+	resolved.preview = 0
 	if override.density != 0 {
 		if override.density != override.density || override.density < 0.5 || override.density > 3 { return }
 		resolved.density = override.density

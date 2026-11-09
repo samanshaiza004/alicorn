@@ -65,38 +65,38 @@ style_extension_length_role_id :: proc(namespace, name: string) -> Style_Extensi
 }
 
 style_token_provenance :: proc(rt: ^Runtime, theme: Style_Theme_ID, token: Style_Color_Token_ID) -> (value: Style_Token_Provenance, found: bool) {
-	theme_index := u64(u32(theme))
 	token_index := u64(u32(token))
-	if rt == nil || theme_index == 0 || theme_index > u64(len(rt.style_themes)) || token_index == 0 { return }
-	metadata := rt.style_themes[theme_index-1].color_token_provenance
+	theme_data := style_theme_data(rt, theme)
+	if theme_data == nil || token_index == 0 { return }
+	metadata := theme_data.color_token_provenance
 	if token_index > u64(len(metadata)) { return }
 	value = metadata[token_index-1]
 	return value, value.id == u32(token_index) && value.name != ""
 }
 
 style_length_token_provenance :: proc(rt: ^Runtime, theme: Style_Theme_ID, token: Style_Length_Token_ID) -> (value: Style_Token_Provenance, found: bool) {
-	theme_index := u64(u32(theme))
 	token_index := u64(u32(token))
-	if rt == nil || theme_index == 0 || theme_index > u64(len(rt.style_themes)) || token_index == 0 { return }
-	metadata := rt.style_themes[theme_index-1].length_token_provenance
+	theme_data := style_theme_data(rt, theme)
+	if theme_data == nil || token_index == 0 { return }
+	metadata := theme_data.length_token_provenance
 	if token_index > u64(len(metadata)) { return }
 	value = metadata[token_index-1]
 	return value, value.id == u32(token_index) && value.name != ""
 }
 
 style_extension_color_role_name :: proc(rt: ^Runtime, theme: Style_Theme_ID, role: Style_Extension_Color_Role_ID) -> (name: string, found: bool) {
-	theme_index := u64(u32(theme))
-	if rt == nil || theme_index == 0 || theme_index > u64(len(rt.style_themes)) || role == 0 { return }
-	for provenance in rt.style_themes[theme_index-1].extension_color_role_provenance {
+	theme_data := style_theme_data(rt, theme)
+	if theme_data == nil || role == 0 { return }
+	for provenance in theme_data.extension_color_role_provenance {
 		if provenance.role == role { return provenance.name, provenance.name != "" }
 	}
 	return
 }
 
 style_extension_length_role_name :: proc(rt: ^Runtime, theme: Style_Theme_ID, role: Style_Extension_Length_Role_ID) -> (name: string, found: bool) {
-	theme_index := u64(u32(theme))
-	if rt == nil || theme_index == 0 || theme_index > u64(len(rt.style_themes)) || role == 0 { return }
-	for provenance in rt.style_themes[theme_index-1].extension_length_role_provenance {
+	theme_data := style_theme_data(rt, theme)
+	if theme_data == nil || role == 0 { return }
+	for provenance in theme_data.extension_length_role_provenance {
 		if provenance.role == role { return provenance.name, provenance.name != "" }
 	}
 	return
@@ -104,18 +104,18 @@ style_extension_length_role_name :: proc(rt: ^Runtime, theme: Style_Theme_ID, ro
 
 style_token_color :: proc(rt: ^Runtime, theme: Style_Theme_ID, token: Style_Color_Token_ID) -> (value: Color, ok: bool) {
 	index := u64(u32(token))
-	theme_index := u64(u32(theme))
-	if rt == nil || index == 0 || theme_index == 0 || theme_index > u64(len(rt.style_themes)) { return }
-	colors := rt.style_themes[theme_index-1].color_tokens
+	theme_data := style_theme_data(rt, theme)
+	if theme_data == nil || index == 0 { return }
+	colors := theme_data.color_tokens
 	if index > u64(len(colors)) { return }
 	return colors[index-1], true
 }
 
 style_token_length :: proc(rt: ^Runtime, theme: Style_Theme_ID, token: Style_Length_Token_ID) -> (value: Style_Length, ok: bool) {
 	index := u64(u32(token))
-	theme_index := u64(u32(theme))
-	if rt == nil || index == 0 || theme_index == 0 || theme_index > u64(len(rt.style_themes)) { return }
-	lengths := rt.style_themes[theme_index-1].length_tokens
+	theme_data := style_theme_data(rt, theme)
+	if theme_data == nil || index == 0 { return }
+	lengths := theme_data.length_tokens
 	if index > u64(len(lengths)) { return }
 	return lengths[index-1], true
 }
@@ -123,18 +123,18 @@ style_token_length :: proc(rt: ^Runtime, theme: Style_Theme_ID, token: Style_Len
 // Resolve role names once during setup and retain the returned token ID.
 // These small per-theme binding tables intentionally avoid a global interner.
 style_extension_color_token :: proc(rt: ^Runtime, theme: Style_Theme_ID, role: Style_Extension_Color_Role_ID) -> (token: Style_Color_Token_ID, found: bool) {
-	theme_index := u64(u32(theme))
-	if rt == nil || role == 0 || theme_index == 0 || theme_index > u64(len(rt.style_themes)) { return }
-	for binding in rt.style_themes[theme_index-1].extension_color_roles {
+	theme_data := style_theme_data(rt, theme)
+	if theme_data == nil || role == 0 { return }
+	for binding in theme_data.extension_color_roles {
 		if binding.role == role { return binding.token, true }
 	}
 	return
 }
 
 style_extension_length_token :: proc(rt: ^Runtime, theme: Style_Theme_ID, role: Style_Extension_Length_Role_ID) -> (token: Style_Length_Token_ID, found: bool) {
-	theme_index := u64(u32(theme))
-	if rt == nil || role == 0 || theme_index == 0 || theme_index > u64(len(rt.style_themes)) { return }
-	for binding in rt.style_themes[theme_index-1].extension_length_roles {
+	theme_data := style_theme_data(rt, theme)
+	if theme_data == nil || role == 0 { return }
+	for binding in theme_data.extension_length_roles {
 		if binding.role == role { return binding.token, true }
 	}
 	return
