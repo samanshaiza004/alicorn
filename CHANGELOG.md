@@ -4,6 +4,15 @@ All notable Alicorn releases are recorded here. The project release notes are
 consolidated in this file; vendored components retain their own upstream
 changelogs.
 
+## [Unreleased]
+
+### Fixed
+
+- Restore macOS trackpad momentum scrolling in the SDL host while preserving
+  SDL environment overrides.
+
+---
+
 ## [0.2.1] — 2026-11-06
 
 Alicorn remains an experimental native GUI runtime for Odin. This release
