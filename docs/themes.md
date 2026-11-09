@@ -490,7 +490,9 @@ application.
 
 This is intentionally a narrow v0.2 foundation rather than a general cascade:
 there are no selectors, arbitrary properties, inheritance filesystem loader,
-theme hot reload, or global cross-node memoization.
+or global cross-node memoization. An opt-in development-only live-editing
+example is described in `examples/10_live_theme/README.md`; it does not add a
+theme watcher or parser to ordinary applications or release builds.
 
 ## Runtime contract conformance
 

@@ -1,6 +1,7 @@
 package alicorn
 
 import "core:math"
+import "core:mem"
 
 style_environment_changed_domains :: proc(previous, next: Style_Environment) -> Style_Domains {
 	changed: Style_Domains = {}
@@ -302,6 +303,166 @@ style_accent_color :: proc(accent: Style_Accent) -> Color {
 	}
 }
 
+style_theme_owned_copy :: proc(theme: Style_Theme, allocator: mem.Allocator) -> Style_Theme {
+	registered := theme
+	// Never retain even an empty borrowed slice header from the caller. Theme
+	// snapshots own every dynamic field for their entire registered lifetime.
+	registered.color_tokens = nil
+	registered.length_tokens = nil
+	registered.extension_color_roles = nil
+	registered.extension_length_roles = nil
+	registered.color_token_provenance = nil
+	registered.length_token_provenance = nil
+	registered.extension_color_role_provenance = nil
+	registered.extension_length_role_provenance = nil
+	if len(theme.color_tokens) > 0 {
+		registered.color_tokens = make([]Color, len(theme.color_tokens), allocator=allocator)
+		copy(registered.color_tokens, theme.color_tokens)
+	}
+	if len(theme.length_tokens) > 0 {
+		registered.length_tokens = make([]Style_Length, len(theme.length_tokens), allocator=allocator)
+		copy(registered.length_tokens, theme.length_tokens)
+	}
+	if len(theme.extension_color_roles) > 0 {
+		registered.extension_color_roles = make([]Style_Extension_Color_Role_Binding, len(theme.extension_color_roles), allocator=allocator)
+		copy(registered.extension_color_roles, theme.extension_color_roles)
+	}
+	if len(theme.extension_length_roles) > 0 {
+		registered.extension_length_roles = make([]Style_Extension_Length_Role_Binding, len(theme.extension_length_roles), allocator=allocator)
+		copy(registered.extension_length_roles, theme.extension_length_roles)
+	}
+	if len(theme.color_token_provenance) > 0 {
+		registered.color_token_provenance = make([]Style_Token_Provenance, len(theme.color_token_provenance), allocator=allocator)
+		for source, index in theme.color_token_provenance {
+			registered.color_token_provenance[index] = Style_Token_Provenance{
+				id=source.id,
+				name=owned(source.name, allocator),
+				alias_target=owned(source.alias_target, allocator),
+			}
+		}
+	}
+	if len(theme.length_token_provenance) > 0 {
+		registered.length_token_provenance = make([]Style_Token_Provenance, len(theme.length_token_provenance), allocator=allocator)
+		for source, index in theme.length_token_provenance {
+			registered.length_token_provenance[index] = Style_Token_Provenance{
+				id=source.id,
+				name=owned(source.name, allocator),
+				alias_target=owned(source.alias_target, allocator),
+			}
+		}
+	}
+	if len(theme.extension_color_role_provenance) > 0 {
+		registered.extension_color_role_provenance = make([]Style_Extension_Color_Role_Provenance, len(theme.extension_color_role_provenance), allocator=allocator)
+		for source, index in theme.extension_color_role_provenance {
+			registered.extension_color_role_provenance[index] = Style_Extension_Color_Role_Provenance{
+				role=source.role,
+				name=owned(source.name, allocator),
+			}
+		}
+	}
+	if len(theme.extension_length_role_provenance) > 0 {
+		registered.extension_length_role_provenance = make([]Style_Extension_Length_Role_Provenance, len(theme.extension_length_role_provenance), allocator=allocator)
+		for source, index in theme.extension_length_role_provenance {
+			registered.extension_length_role_provenance[index] = Style_Extension_Length_Role_Provenance{
+				role=source.role,
+				name=owned(source.name, allocator),
+			}
+		}
+	}
+	return registered
+}
+
+style_theme_owned_destroy :: proc(theme: ^Style_Theme, allocator: mem.Allocator) {
+	if theme == nil { return }
+	delete(theme.color_tokens, allocator)
+	delete(theme.length_tokens, allocator)
+	delete(theme.extension_color_roles, allocator)
+	delete(theme.extension_length_roles, allocator)
+	for provenance in theme.color_token_provenance {
+		delete(provenance.name, allocator)
+		delete(provenance.alias_target, allocator)
+	}
+	delete(theme.color_token_provenance, allocator)
+	for provenance in theme.length_token_provenance {
+		delete(provenance.name, allocator)
+		delete(provenance.alias_target, allocator)
+	}
+	delete(theme.length_token_provenance, allocator)
+	for provenance in theme.extension_color_role_provenance { delete(provenance.name, allocator) }
+	delete(theme.extension_color_role_provenance, allocator)
+	for provenance in theme.extension_length_role_provenance { delete(provenance.name, allocator) }
+	delete(theme.extension_length_role_provenance, allocator)
+	theme^ = Style_Theme{}
+}
+
+style_theme_slice_equal :: proc($T: typeid, left, right: []T) -> bool {
+	if len(left) != len(right) { return false }
+	for value, index in left { if value != right[index] { return false } }
+	return true
+}
+
+style_theme_token_provenance_equal :: proc(left, right: []Style_Token_Provenance) -> bool {
+	if len(left) != len(right) { return false }
+	for value, index in left {
+		other := right[index]
+		if value.id != other.id || value.name != other.name || value.alias_target != other.alias_target { return false }
+	}
+	return true
+}
+
+style_theme_role_provenance_equal :: proc(left, right: []Style_Extension_Color_Role_Provenance) -> bool {
+	if len(left) != len(right) { return false }
+	for value, index in left {
+		other := right[index]
+		if value.role != other.role || value.name != other.name { return false }
+	}
+	return true
+}
+
+style_theme_length_role_provenance_equal :: proc(left, right: []Style_Extension_Length_Role_Provenance) -> bool {
+	if len(left) != len(right) { return false }
+	for value, index in left {
+		other := right[index]
+		if value.role != other.role || value.name != other.name { return false }
+	}
+	return true
+}
+
+style_theme_change_domains :: proc(previous, next: Style_Theme) -> Style_Domains {
+	changed: Style_Domains = {}
+	paint_changed := previous.colors != next.colors ||
+		previous.button_recipes != next.button_recipes ||
+		previous.checkbox_recipe != next.checkbox_recipe ||
+		previous.slider_recipe != next.slider_recipe ||
+		previous.text_field_recipe != next.text_field_recipe ||
+		previous.scrollbar_recipe != next.scrollbar_recipe ||
+		previous.core_color_tokens != next.core_color_tokens ||
+		!style_theme_slice_equal(Color, previous.color_tokens, next.color_tokens) ||
+		!style_theme_slice_equal(Style_Extension_Color_Role_Binding, previous.extension_color_roles, next.extension_color_roles) ||
+		!style_theme_token_provenance_equal(previous.color_token_provenance, next.color_token_provenance) ||
+		!style_theme_role_provenance_equal(previous.extension_color_role_provenance, next.extension_color_role_provenance)
+	metrics_changed := previous.control_metrics != next.control_metrics ||
+		!style_theme_slice_equal(Style_Length, previous.length_tokens, next.length_tokens) ||
+		!style_theme_slice_equal(Style_Extension_Length_Role_Binding, previous.extension_length_roles, next.extension_length_roles) ||
+		!style_theme_token_provenance_equal(previous.length_token_provenance, next.length_token_provenance) ||
+		!style_theme_length_role_provenance_equal(previous.extension_length_role_provenance, next.extension_length_role_provenance)
+	if previous.motion_policy != next.motion_policy { paint_changed = true }
+	if paint_changed { changed += {.Paint} }
+	if metrics_changed { changed += {.Metrics} }
+	return changed
+}
+
+style_theme_material_references_valid :: proc(rt: ^Runtime, theme: Style_Theme) -> bool {
+	for recipe in theme.button_recipes.recipes {
+		if !recipe.defined { continue }
+		for treatment in ([?]Button_Surface_Treatment{recipe.rest_surface, recipe.pressed_surface}) {
+			if !treatment.defined { continue }
+			if _, ok := style_material_resolve(rt, treatment.material); !ok { return false }
+		}
+	}
+	return true
+}
+
 // style_theme_register appends an immutable palette and returns a compact ID.
 // IDs remain stable for the lifetime of this Runtime.
 style_theme_register :: proc(rt: ^Runtime, theme: Style_Theme) -> Style_Theme_ID {
@@ -309,75 +470,54 @@ style_theme_register :: proc(rt: ^Runtime, theme: Style_Theme) -> Style_Theme_ID
 		if rt != nil { append_diagnostic(rt, "style theme contains invalid colors, token bindings, logical lengths, or control recipes") }
 		return 0
 	}
-	for recipe in theme.button_recipes.recipes {
-		if !recipe.defined { continue }
-		for treatment in ([?]Button_Surface_Treatment{recipe.rest_surface, recipe.pressed_surface}) {
-			if !treatment.defined { continue }
-			if _, ok := style_material_resolve(rt, treatment.material); !ok {
-				append_diagnostic(rt, "button surface treatment requires a material registered in this Runtime")
-				return 0
-			}
-		}
+	if !style_theme_material_references_valid(rt, theme) {
+		append_diagnostic(rt, "button surface treatment requires a material registered in this Runtime")
+		return 0
 	}
-	// Registered themes are immutable snapshots. Copy variable-sized token and
-	// binding data so callers may release or reuse their source buffers.
-	registered := theme
-	if len(theme.color_tokens) > 0 {
-		registered.color_tokens = make([]Color, len(theme.color_tokens), allocator=rt.persistent_allocator)
-		copy(registered.color_tokens, theme.color_tokens)
-	}
-	if len(theme.length_tokens) > 0 {
-		registered.length_tokens = make([]Style_Length, len(theme.length_tokens), allocator=rt.persistent_allocator)
-		copy(registered.length_tokens, theme.length_tokens)
-	}
-	if len(theme.extension_color_roles) > 0 {
-		registered.extension_color_roles = make([]Style_Extension_Color_Role_Binding, len(theme.extension_color_roles), allocator=rt.persistent_allocator)
-		copy(registered.extension_color_roles, theme.extension_color_roles)
-	}
-	if len(theme.extension_length_roles) > 0 {
-		registered.extension_length_roles = make([]Style_Extension_Length_Role_Binding, len(theme.extension_length_roles), allocator=rt.persistent_allocator)
-		copy(registered.extension_length_roles, theme.extension_length_roles)
-	}
-	if len(theme.color_token_provenance) > 0 {
-		registered.color_token_provenance = make([]Style_Token_Provenance, len(theme.color_token_provenance), allocator=rt.persistent_allocator)
-		for source, index in theme.color_token_provenance {
-			registered.color_token_provenance[index] = Style_Token_Provenance{
-				id=source.id,
-				name=owned(source.name, rt.persistent_allocator),
-				alias_target=owned(source.alias_target, rt.persistent_allocator),
-			}
-		}
-	}
-	if len(theme.length_token_provenance) > 0 {
-		registered.length_token_provenance = make([]Style_Token_Provenance, len(theme.length_token_provenance), allocator=rt.persistent_allocator)
-		for source, index in theme.length_token_provenance {
-			registered.length_token_provenance[index] = Style_Token_Provenance{
-				id=source.id,
-				name=owned(source.name, rt.persistent_allocator),
-				alias_target=owned(source.alias_target, rt.persistent_allocator),
-			}
-		}
-	}
-	if len(theme.extension_color_role_provenance) > 0 {
-		registered.extension_color_role_provenance = make([]Style_Extension_Color_Role_Provenance, len(theme.extension_color_role_provenance), allocator=rt.persistent_allocator)
-		for source, index in theme.extension_color_role_provenance {
-			registered.extension_color_role_provenance[index] = Style_Extension_Color_Role_Provenance{
-				role=source.role,
-				name=owned(source.name, rt.persistent_allocator),
-			}
-		}
-	}
-	if len(theme.extension_length_role_provenance) > 0 {
-		registered.extension_length_role_provenance = make([]Style_Extension_Length_Role_Provenance, len(theme.extension_length_role_provenance), allocator=rt.persistent_allocator)
-		for source, index in theme.extension_length_role_provenance {
-			registered.extension_length_role_provenance[index] = Style_Extension_Length_Role_Provenance{
-				role=source.role,
-				name=owned(source.name, rt.persistent_allocator),
-			}
-		}
-	}
+	registered := style_theme_owned_copy(theme, rt.persistent_allocator)
 	append(&rt.style_themes, registered)
 	return Style_Theme_ID(u32(len(rt.style_themes)))
+}
+
+// style_theme_replace replaces one registered non-default theme in place.
+// Stage on the owning thread and call only between description/presentation
+// frames. The candidate is validated and deep-copied before the old snapshot
+// is released. Paint-only replacements repaint retained nodes without a
+// description rebuild or layout; metric replacements invalidate the root so
+// application-authored token-to-layout calculations can be recomputed. This
+// is intended for explicit development tools, not background runtime mutation.
+Style_Theme_Replace_Result :: enum u8 { Rejected, Unchanged, Replaced }
+
+style_theme_replace :: proc(rt: ^Runtime, id: Style_Theme_ID, theme: Style_Theme) -> Style_Theme_Replace_Result {
+	if rt == nil || rt.frame_open || id == 0 || id == DEFAULT_STYLE_THEME_ID || !style_theme_is_valid(theme) ||
+		!style_theme_material_references_valid(rt, theme) { return .Rejected }
+	index := int(u32(id))-1
+	if index < 0 || index >= len(rt.style_themes) { return .Rejected }
+	previous := rt.style_themes[index]
+	domains := style_theme_change_domains(previous, theme)
+	if domains == {} { return .Unchanged }
+	// Invalidate application code when motion policy changes: declarative motion
+	// requests are reconciled from the next complete description.
+	motion_policy_changed := previous.motion_policy != theme.motion_policy
+	replacement := style_theme_owned_copy(theme, rt.persistent_allocator)
+	rt.style_themes[index] = replacement
+	style_theme_owned_destroy(&previous, rt.persistent_allocator)
+	for node_id, node in rt.nodes {
+		if node == nil || node.style_environment.theme != id { continue }
+		style_generations_advance(&node.style_generations, domains)
+		style_computed_cache_invalidate(rt, node_id)
+		stages := style_domains_dirty_stages(domains)
+		for stage in Dirty_Stage { if stage in stages { dirty_set(&node.dirty, stage, true) } }
+		if Dirty_Stage.Measure in stages { layout_measure_mark_dirty(rt, node) }
+		if Style_Domain.Metrics in domains { mark_layout_ancestors(rt, node_id) }
+		if node.active && node.present { queue_paint(rt, node_id) }
+	}
+	if Style_Domain.Metrics in domains || motion_policy_changed {
+		invalidate_root(rt, "live style theme replacement requires application description")
+	} else {
+		request_presentation(rt, "live style theme paint changed")
+	}
+	return .Replaced
 }
 
 // style_theme_motion_policy resolves the optional intent defaults for one

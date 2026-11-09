@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "contract": "0.2",
+  "extends": "alicorn.base",
+  "tokens": {
+    "demo.palette.background": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.10, 0.12, 0.15], "alpha": 1}
+    },
+    "demo.palette.surface": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.18, 0.21, 0.24], "alpha": 1}
+    },
+    "demo.palette.text": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.92, 0.94, 0.97], "alpha": 1}
+    },
+    "demo.palette.muted": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.62, 0.67, 0.72], "alpha": 1}
+    },
+    "demo.palette.accent": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.25, 0.62, 0.86], "alpha": 1}
+    }
+  },
+  "roles": {
+    "core": {
+      "window_background": "{demo.palette.background}",
+      "surface": "{demo.palette.surface}",
+      "editor_background": "{demo.palette.background}",
+      "text": "{demo.palette.text}",
+      "muted_text": "{demo.palette.muted}",
+      "accent": "{demo.palette.accent}"
+    }
+  }
+}
