@@ -37,16 +37,52 @@ sequence was exercised against the running process:
 5. Two saves 35 ms apart produced one adoption of the final persisted file,
    consistent with the debounce/coalescing policy.
 
-Accepted-candidate process logs measured compile times of about 0.13–0.24 ms,
-compile-to-UI-adoption delays of about 0.08–0.11 ms, and change-detection-to-
-adoption delays of about 242–243 ms. The latter includes the configured 240 ms
-debounce. These measurements stop at UI-thread adoption; no screenshot or
-frame-presentation instrumentation was available, so they do not establish
-edit-to-visible latency or quantify improvement over a controlled restart
-baseline. The UI automation service could not enumerate the SDL window for
-pixel inspection.
+The first smoke's accepted-candidate logs measured compile times of about
+0.13–0.24 ms, compile-to-UI-adoption delays of about 0.08–0.11 ms, and
+change-detection-to-adoption delays of about 242–243 ms. The latter includes
+the configured 240 ms debounce.
+
+## Native frame and restart comparison (2026-11-09 UTC)
+
+I captured the live example through Alicorn's native D3D12 diagnostic readback,
+not desktop screen capture. The initial frame shows the blue accent; after
+editing the same JSON file twice, captured frames show the red and then green
+accent while the process remains open. The final capture had
+`presentation_revision == submitted_revision == 5` and five application GPU
+submissions. The screenshots are 720×520 at 100% display scale:
+
+- [Initial blue theme](assets/issue-166-windows-live-theme-before.png)
+- [Updated green theme](assets/issue-166-windows-live-theme-after.png)
+
+Three file-save-to-native-capture samples were 369.5, 438.6, and 417.5 ms
+(median 417.5 ms). Candidate adoption itself took about 275–282 ms after the
+save, including the 240 ms debounce and file-poll scheduling. The measured
+compile-to-adoption delay ranged from 0.09 to 0.48 ms. The native capture
+timestamp is an upper bound on when the updated frame was presented, not a
+direct measurement of the first visible pixel.
+
+For a restart baseline, I built a temporary harness that synchronously loaded
+the same JSON theme once at startup, with no watcher, and automatically
+captured its first submitted D3D12 frame. Three process-launch-to-first-frame
+captures were 693.2, 485.5, and 583.9 ms (median 583.9 ms). The live-edit
+median was 166 ms, or about 28.5%, lower. This is a useful same-machine
+comparison, though not a perfectly matched benchmark: live captures were
+requested with F12 after adoption, while restart captures were automatic at
+the first GPU submission. Both measurements stop at Alicorn's native capture;
+they are not photon-timing measurements.
+
+The before/after diagnostics retained 12 runtime nodes and semantic revision
+2. Layout visits (44), measurement visits (68), text-shape calls (12), and
+text-mesh rebuilds (2) did not increase across the color-only replacement.
+Paint and composition work advanced to produce the new colors. After roughly
+19 seconds of watched idle, the native diagnostics showed zero application
+ticks, scheduled/frequent wakes, or additional application GPU submissions
+before the manual capture. The file watcher remained on its sleeping worker.
 
 ## Checks
+
+Re-run on 2026-11-09 at `05281552` with Odin
+`dev-2026-11-nightly:9a69916`:
 
 - `tools/test.ps1 -Odin <project-pinned Odin>` — passed all configured suites,
   including AccessKit ABI/UIA, runtime, theme, UI, and native host checks.
@@ -63,12 +99,26 @@ pixel inspection.
 - The compiler emitted existing large-stack warnings for the native test
   helper `Native_Secondary_Window`; no check failed.
 
-## Remaining acceptance evidence
+## Scope and remaining acceptance evidence
 
-This is a successful Windows implementation prototype, not a complete GO
-decision for #166. Actual visual output and edit-to-visible latency still need
-an instrumented or manually captured run. macOS validation, a two-window
-watcher/consumer scenario, and a controlled comparison with the normal
-restart-based theme-edit loop were not performed. The example intentionally
-supports one watched window, and must remain explicitly opted in; no watcher
-was added to release runtime paths.
+The Windows native run now confirms visible theme replacement and gives a
+measured, promising improvement over a restart baseline. The existing
+Scratchpad dogfood record at `c2e1bbd` adds a real editor-build regression with
+focused caret, selection, unsaved content, and a scrolled viewport; its 237
+frontend tests and macOS arm64 production build passed. That is headless
+consumer validation, not a manual native typing session.
+
+Not verified here: simultaneous editing while typing or scrolling in the
+Windows native editor, a single Alicorn process propagating one theme edit to
+both its primary and secondary windows, and physical macOS theme editing. The
+live-theme example watches one file for one Runtime. Alicorn's secondary
+windows own separate Runtime instances, so the current example does not claim
+multi-window fan-out. The release runtime still has no watcher: the example
+returns from `start_app` without starting a worker unless an explicit theme
+path is supplied.
+
+This is sufficient evidence to keep the opt-in, single-Runtime developer
+prototype and avoid adding a watcher to production. Treat multi-window
+propagation and native editing interaction as follow-up acceptance if the
+workflow is intended to cover those cases; do not describe this record as
+proving them.
