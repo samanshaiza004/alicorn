@@ -1142,6 +1142,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	}
 	delete(rt.nodes)
 	delete(rt.drag_preview_modes)
+	delete(rt.drag_tracking_options)
 	if rt.motion_owners != nil { delete(rt.motion_owners) }
 	if rt.style_transition_owners != nil { delete(rt.style_transition_owners) }
 	if rt.motion_diagnostics != nil { free(rt.motion_diagnostics, allocator=rt.persistent_allocator) }
@@ -1310,6 +1311,12 @@ end_frame :: proc(ui: ^UI) {
 		node, found := ui.runtime.nodes[source_id]
 		if !found || node == nil || !node.active || node.drag_source_type == Drag_Type(0) {
 			delete_key(&ui.runtime.drag_preview_modes, source_id)
+		}
+	}
+	for source_id in ui.runtime.drag_tracking_options {
+		node, found := ui.runtime.nodes[source_id]
+		if !found || node == nil || !node.active || node.drag_source_type == Drag_Type(0) {
+			delete_key(&ui.runtime.drag_tracking_options, source_id)
 		}
 	}
 	// A controlled-field submit belongs to the next application description.

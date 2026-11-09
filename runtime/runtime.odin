@@ -482,11 +482,11 @@ Drag_Event :: struct {
 	previous_target: Semantic_ID,
 	target: Semantic_ID,
 	position: Drop_Position,
-	// Pointer position is local to the Runtime viewport. It is present on
-	// release events so hosts can distinguish an outside-window tear-off from
-	// an ordinary drag that ended without a valid drop target.
+	// Pointer position is local to the Runtime viewport. It remains raw even
+	// when magnetic tracking constrains preview movement and drop hit testing.
 	pointer_x, pointer_y: f32,
 	has_pointer_position: bool,
+	presentation_state: Drag_Presentation_State,
 }
 
 Drag_Session :: struct {
@@ -496,6 +496,9 @@ Drag_Session :: struct {
 	source_node: Node_ID, // presentation hint only; never the source identity
 	start_x, start_y: f32,
 	x, y: f32,
+	track_bounds: Rect,
+	tracking: Drag_Tracking_Options,
+	presentation_state: Drag_Presentation_State,
 	target: Semantic_ID,
 	target_node: Node_ID, // presentation hint only; never the target identity
 	position: Drop_Position,
@@ -505,6 +508,34 @@ Drag_Session :: struct {
 Drag_Preview_Mode :: enum {
 	Label = 0,
 	Source_Subtree,
+}
+
+// Drag_Tracking_Mode controls preview movement and drop-target coordinates.
+// The session and drag events always retain the real pointer coordinates.
+Drag_Tracking_Mode :: enum {
+	Free = 0,
+	Horizontal_Magnetic,
+}
+
+Drag_Presentation_State :: enum {
+	Free = 0,
+	Horizontal_Track,
+	Detached,
+}
+
+Drag_Tracking_Options :: struct {
+	mode: Drag_Tracking_Mode,
+	// Distance outside the source tab's vertical track needed to detach.
+	detach_distance: f32,
+	// Distance back inside that track at which the preview reattaches.
+	reattach_distance: f32,
+}
+
+DEFAULT_DRAG_TRACKING_OPTIONS :: Drag_Tracking_Options{}
+DRAG_TRACKING_HORIZONTAL_MAGNETIC :: Drag_Tracking_Options{
+	mode=.Horizontal_Magnetic,
+	detach_distance=24,
+	reattach_distance=8,
 }
 
 // Drag_Preview is a small runtime-owned presentation snapshot. The shaped run
@@ -2022,6 +2053,7 @@ Runtime :: struct {
 	drag: Drag_Session,
 	drag_preview: Drag_Preview,
 	drag_preview_modes: map[Node_ID]Drag_Preview_Mode,
+	drag_tracking_options: map[Node_ID]Drag_Tracking_Options,
 	drag_event: Drag_Event,
 	drag_event_pending: bool,
 	scrollbar_drag_node: Node_ID,

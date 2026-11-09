@@ -6,6 +6,12 @@ changelogs.
 
 ## [Unreleased]
 
+### Added
+
+- Added opt-in magnetic horizontal drag tracking for tab bars, with a vertical
+  tear-off threshold, reattachment hysteresis, constrained reorder hit testing,
+  and raw pointer coordinates preserved for host decisions.
+
 ### Fixed
 
 - Restore macOS trackpad momentum scrolling in the SDL host while preserving
