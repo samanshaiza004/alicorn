@@ -619,6 +619,10 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 			if event.button == 0 || event.button == POINTER_BUTTON_PRIMARY {
 				if _, target_found := rt.nodes[target]; target_found {
 					if source_node, drag_type, source_id, found := drag_source_at(rt, target); found {
+						source_bounds := Rect{}
+						if source, source_found := rt.nodes[source_node]; source_found && source != nil {
+							source_bounds = source.bounds
+						}
 						rt.drag = Drag_Session{
 							phase=.Candidate,
 							drag_type=drag_type,
@@ -628,6 +632,8 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 							start_y=event.y,
 							x=event.x,
 							y=event.y,
+							track_bounds=source_bounds,
+							tracking=rt.drag_tracking_options[source_node],
 						}
 					}
 				}

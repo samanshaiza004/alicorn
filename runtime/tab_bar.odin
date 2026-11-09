@@ -36,6 +36,10 @@ Tab_Bar_Options :: struct {
 	// drag_preview_mode is forwarded to each tab drag source. Source_Subtree
 	// lifts the complete painted tab into an inert runtime overlay.
 	drag_preview_mode: Drag_Preview_Mode,
+	// drag_tracking opts into magnetic horizontal reorder behavior. The preview
+	// stays on its tab track until it crosses detach_distance, then follows both
+	// pointer axes; reattach_distance supplies hysteresis on the way back.
+	drag_tracking: Drag_Tracking_Options,
 	presentation:  Tab_Bar_Presentation,
 	appearance:    Tab_Bar_Appearance,
 	// animate_selection_indicator reserves stable indicator geometry and returns
@@ -459,7 +463,7 @@ tab_bar :: proc(
 		})
 		if item.selected { selected_semantic_id = item_semantic_id }
 		if opts.drag_type != Drag_Type(0) && semantic_id_is_valid(item.semantic_id) {
-			_ = drag_source(ui, opts.drag_type, item.semantic_id, opts.drag_preview_mode)
+			_ = drag_source(ui, opts.drag_type, item.semantic_id, opts.drag_preview_mode, opts.drag_tracking)
 			_ = drop_target(ui, opts.drag_type, item.semantic_id, .Between_Horizontal)
 		}
 		if tab_activated && result.action == .None { result.action, result.item_index = .Select, index }
