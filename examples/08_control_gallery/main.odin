@@ -16,6 +16,7 @@ CONTROL_GALLERY_THEME_PATH :: "examples/08_control_gallery/theme.json"
 
 App :: struct {
 	searches: int,
+	allocator: mem.Allocator,
 	waker: ui.Application_Waker,
 	worker: ^thread.Thread,
 	completion_mutex: sync.Mutex,
@@ -43,14 +44,15 @@ gallery_status_text :: proc(app: ^App) -> string {
 
 gallery_compile_theme_worker :: proc(data: rawptr) {
 	app := cast(^App)data
+	allocator := app.allocator
 	output := theme.Theme_JSON_Compile_Output{}
 	read_failed := false
-	bytes, err := os.read_entire_file(CONTROL_GALLERY_THEME_PATH, mem.heap_allocator)
+	bytes, err := os.read_entire_file(CONTROL_GALLERY_THEME_PATH, allocator)
 	if err != nil {
 		read_failed = true
 	} else {
-		output = theme.theme_compile_json(string(bytes), CONTROL_GALLERY_THEME_PATH, mem.heap_allocator)
-		delete(bytes, mem.heap_allocator)
+		output = theme.theme_compile_json(string(bytes), CONTROL_GALLERY_THEME_PATH, allocator)
+		delete(bytes, allocator)
 	}
 	sync.mutex_lock(&app.completion_mutex)
 	app.candidate = output
@@ -99,8 +101,8 @@ gallery_adopt_candidate :: proc(app: ^App, rt: ^alicorn.Runtime, candidate: ^the
 			gallery_status_set(app, "Rejected: token names, bindings, lengths, recipes, and materials must stay fixed.")
 			return
 		}
-		colors := make([]alicorn.Color, len(candidate.compiled.theme.colors), allocator=mem.heap_allocator)
-		defer delete(colors, mem.heap_allocator)
+		colors := make([]alicorn.Color, len(candidate.compiled.theme.colors), allocator=app.allocator)
+		defer delete(colors, app.allocator)
 		for color, index in candidate.compiled.theme.colors {
 			colors[index] = alicorn.Color{color.r, color.g, color.b, color.a}
 		}
@@ -115,12 +117,12 @@ gallery_adopt_candidate :: proc(app: ^App, rt: ^alicorn.Runtime, candidate: ^the
 			gallery_status_set(app, fmt.tprintf("Applied preview generation %d.", alicorn.style_theme_preview_generation(rt, app.preview)))
 		}
 	} else {
-		runtime_theme, adapted := theme.theme_runtime_style_theme(candidate.compiled, mem.heap_allocator)
+		runtime_theme, adapted := theme.theme_runtime_style_theme(candidate.compiled, app.allocator)
 		if !adapted {
 			gallery_status_set(app, "Theme compiled but could not adapt to Alicorn's runtime style contract.")
 			return
 		}
-		defer theme.theme_runtime_style_theme_destroy(&runtime_theme, mem.heap_allocator)
+		defer theme.theme_runtime_style_theme_destroy(&runtime_theme, app.allocator)
 		registered := alicorn.style_theme_register(rt, runtime_theme)
 		if registered == 0 {
 			gallery_status_set(app, "Alicorn rejected the initial runtime theme; no preview was installed.")
@@ -136,7 +138,7 @@ gallery_adopt_candidate :: proc(app: ^App, rt: ^alicorn.Runtime, candidate: ^the
 		gallery_status_set(app, "Theme loaded. Edit colors in theme.json and choose Reload Theme.")
 	}
 
-	theme.theme_json_compile_output_destroy(&app.active_output, mem.heap_allocator)
+	theme.theme_json_compile_output_destroy(&app.active_output, app.allocator)
 	app.active_output = candidate^
 	candidate^ = theme.Theme_JSON_Compile_Output{}
 	return true
@@ -182,7 +184,7 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 			if app.preview != 0 {
 				ui.text(ctx, fmt.tprintf("Preview generation %d", alicorn.style_theme_preview_generation(ctx.runtime, app.preview)))
 				_ = ui.box(ctx, key=alicorn.key_string("gallery-accent-swatch"), width=34, height=22,
-					fill=alicorn.style_color(ctx.runtime, .Accent), radius=3)
+					fill=alicorn.style_color(ctx, .Accent), radius=3)
 			} else {
 				ui.text(ctx, "Preview loading…")
 			}
@@ -194,6 +196,7 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 }
 
 start_app :: proc(app: ^App, waker: ui.Application_Waker) {
+	app.allocator = context.allocator
 	app.waker = waker
 	gallery_status_set(app, "Loading the Control Gallery theme…")
 	gallery_start_compile(app)
@@ -226,7 +229,7 @@ wake_app :: proc(app: ^App, ctx: ui.Application_Context) {
 			gallery_status_set(app, "Theme candidate was not applied; last good preview remains active.")
 		}
 	}
-	theme.theme_json_compile_output_destroy(&candidate, mem.heap_allocator)
+	theme.theme_json_compile_output_destroy(&candidate, app.allocator)
 	ui.invalidate(ctx, "Control Gallery theme compilation completed")
 }
 
@@ -236,8 +239,8 @@ stop_app :: proc(app: ^App) {
 		thread.destroy(app.worker)
 		app.worker = nil
 	}
-	theme.theme_json_compile_output_destroy(&app.candidate, mem.heap_allocator)
-	theme.theme_json_compile_output_destroy(&app.active_output, mem.heap_allocator)
+	theme.theme_json_compile_output_destroy(&app.candidate, app.allocator)
+	theme.theme_json_compile_output_destroy(&app.active_output, app.allocator)
 }
 
 main :: proc() {
