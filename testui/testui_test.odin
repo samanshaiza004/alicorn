@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:strings"
 import "core:testing"
 import "core:math"
+import "core:time"
 import alicorn "alicorn:runtime"
 
 Harness_Test_App :: struct {
@@ -297,6 +298,235 @@ test_virtual_time_is_explicit_and_shared_with_synthetic_pointer_events :: proc(t
 		"the turn report and harness clock should expose the same virtual time advance")
 	testing.expect(t, click_at(&h, 20, 15) == .Ok && app.last_pointer_timestamp == 50_000_000,
 		"synthetic pointer events should use virtual time rather than wall-clock time")
+}
+
+Harness_Visual_Transition_App :: struct {
+	descriptions: int,
+	theme: alicorn.Style_Theme_ID,
+}
+
+harness_visual_transition_render :: proc(app: ^Harness_Visual_Transition_App, ui: ^alicorn.UI) {
+	app.descriptions += 1
+	root := alicorn.container_begin(ui, .Root, key=alicorn.key_string("transition-root"),
+		style=alicorn.layout_style(.Column, grow=1))
+	if root != 0 {
+		if app.theme == 0 {
+			theme := alicorn.DEFAULT_STYLE_THEME
+			recipe := theme.button_recipes.recipes[int(alicorn.Button_Variant.Default)]
+			recipe.hover_fill_transition = alicorn.Style_Transition{
+				duration=300*time.Millisecond,
+				easing=.Ease,
+			}
+			theme.button_recipes.recipes[int(alicorn.Button_Variant.Default)] = recipe
+			app.theme = alicorn.style_theme_register(ui.runtime, theme)
+		}
+		scope := alicorn.style_environment_push(ui, alicorn.Style_Environment{theme=app.theme})
+		_ = alicorn.button(ui, "Transition target", key=alicorn.key_string("transition-button"),
+			style=alicorn.layout_style(width=200, height=40))
+		alicorn.style_environment_pop(ui, scope)
+		alicorn.container_end(ui)
+	}
+}
+
+harness_visual_transition_fill :: proc(rt: ^alicorn.Runtime, owner: alicorn.Node_ID) -> (fill: alicorn.Color, found: bool) {
+	node, ok := rt.nodes[owner]
+	if !ok || node == nil { return }
+	for command in node.paint {
+		if command.bounds != node.bounds { continue }
+		if surface, is_surface := command.payload.(alicorn.Surface_Paint); is_surface {
+			return surface.fill, true
+		}
+	}
+	return {}, false
+}
+
+harness_visual_transition_color_near :: proc(a, b: alicorn.Color, epsilon: f32) -> bool {
+	return math.abs(a.r-b.r) <= epsilon && math.abs(a.g-b.g) <= epsilon &&
+		math.abs(a.b-b.b) <= epsilon && math.abs(a.a-b.a) <= epsilon
+}
+
+@(test)
+test_button_hover_fill_transition_is_retained_reversible_and_inspector_independent :: proc(t: ^testing.T) {
+	app := Harness_Visual_Transition_App{}
+	h, status := open(&app, harness_visual_transition_render, width=320, height=120)
+	if !testing.expect(t, status == .Ok, last_turn_diagnostic(&h)) { return }
+	defer close(&h)
+	result := find(&h, Query{
+		role=.Button,
+		name="Transition target",
+		key=alicorn.key_string("transition-button"),
+		match_role=true,
+		match_name=true,
+		match_key=true,
+	})
+	defer destroy_find_result(&result)
+	if !testing.expect(t, result.match == .Unique && result.element.has_bounds,
+		"the transition fixture should expose one physically clickable button") { return }
+	owner := result.element.visual_node
+	initial_fill, initial_found := harness_visual_transition_fill(h.runtime, owner)
+	track, track_found := h.runtime.style_transition_owners[owner]
+	if !testing.expect(t, initial_found && track_found && !track.active && track.presented_mix == 0,
+		"the first resting frame should establish the independent style-transition baseline") { return }
+
+	// Inspector resolution may populate the ordinary computed-style cache. It
+	// must not become the transition system's adopted hover target.
+	_ = alicorn.style_button_resolve_retained(h.runtime, h.runtime.nodes[owner],
+		alicorn.Button_Visual_State{hovered=true})
+	bounds := result.element.bounds
+	if !testing.expect(t, step(&h, Input{kind=.Pointer, pointer=alicorn.Pointer_Event{
+		kind=.Move, x=bounds.x+bounds.w*0.5, y=bounds.y+bounds.h*0.5,
+	}}) == .Ok, "physical pointer motion should enter the button") { return }
+	track = h.runtime.style_transition_owners[owner]
+	fill, fill_found := harness_visual_transition_fill(h.runtime, owner)
+	activity := alicorn.motion_activity(h.runtime)
+	if !testing.expect(t, fill_found && fill == track.pair.rest.surface && track.active &&
+		activity.active_owners == 1 && activity.active_properties == 1,
+		"hover should begin at the resting fill and schedule a retained transition") { return }
+	transition_event, transition_event_found := alicorn.motion_diagnostics_event_recent(h.runtime, 0)
+	if !testing.expect(t, transition_event_found &&
+		transition_event.kind == .Style_Transition_Retarget &&
+		transition_event.style_transition_sample && transition_event.owner.valid &&
+		transition_event.style_transition_duration_ns == 300_000_000,
+		"the bounded motion diagnostics should identify the owner, target and duration") { return }
+	if !testing.expect(t, app.descriptions == 1 && last_turn(&h).descriptions == 0,
+		"hover and transition setup should not rerun the application description") { return }
+
+	if !testing.expect(t, advance_time(&h, 90_000_000) == .Ok,
+		"virtual time should advance the hover transition without pointer input") { return }
+	track = h.runtime.style_transition_owners[owner]
+	fill, fill_found = harness_visual_transition_fill(h.runtime, owner)
+	if !testing.expect(t, fill_found && track.presented_mix > 0.50 && track.presented_mix < 0.53 &&
+		last_turn(&h).work.descriptions_emitted == 0 && last_turn(&h).work.layout_nodes_visited == 0 &&
+		last_turn(&h).work.text_shape_requests == 0,
+		"the eased sample should visibly interpolate without descriptions, layout, or reshaping") { return }
+	first_sample := track.presented_mix
+
+	if !testing.expect(t, step(&h, Input{kind=.Pointer, pointer=alicorn.Pointer_Event{kind=.Move, x=310, y=110}}) == .Ok,
+		"moving off the button should reverse the same hover transition") { return }
+	track = h.runtime.style_transition_owners[owner]
+	if !testing.expect(t, track.active && track.segment.target_mix == 0 &&
+		math.abs(track.segment.start_mix-first_sample) < 0.001 &&
+		track.segment.duration_ns >= 153_000_000 && track.segment.duration_ns <= 155_000_000,
+		"exit should start from the eased visual sample and shorten by remaining visual distance") { return }
+
+	if !testing.expect(t, advance_time(&h, 50_000_000) == .Ok,
+		"the reversed segment should continue on explicit virtual time") { return }
+	track = h.runtime.style_transition_owners[owner]
+	before_reversal := track.presented_mix
+	if !testing.expect(t, before_reversal > 0 && before_reversal < first_sample,
+		"the exit sample should move continuously back toward the original resting endpoint") { return }
+	if !testing.expect(t, step(&h, Input{kind=.Pointer, pointer=alicorn.Pointer_Event{
+		kind=.Move, x=bounds.x+bounds.w*0.5, y=bounds.y+bounds.h*0.5,
+	}}) == .Ok, "re-entering should reverse without replacing the original endpoint pair") { return }
+	track = h.runtime.style_transition_owners[owner]
+	fill, fill_found = harness_visual_transition_fill(h.runtime, owner)
+	if !testing.expect(t, track.active && track.segment.target_mix == 1 &&
+		math.abs(track.segment.start_mix-before_reversal) < 0.001 && fill_found &&
+		harness_visual_transition_color_near(fill,
+			style_transition_test_color_mix(track.pair.rest.surface, track.pair.hover.surface, f32(before_reversal)), 0.0001),
+		"re-entering should preserve the current sample and both original style endpoints") { return }
+
+	final_duration := track.segment.duration_ns
+	if !testing.expect(t, advance_time(&h, final_duration+1) == .Ok,
+		"the latest target should complete without further pointer movement") { return }
+	track = h.runtime.style_transition_owners[owner]
+	fill, fill_found = harness_visual_transition_fill(h.runtime, owner)
+	activity = alicorn.motion_activity(h.runtime)
+	if !testing.expect(t, fill_found && fill == track.pair.hover.surface && !track.active &&
+		activity.active_owners == 0 && !alicorn.presentation_needs_frame(h.runtime),
+		"the exact hover endpoint should be painted before the scheduler returns to true idle") { return }
+	settled_event, settled_event_found := alicorn.motion_diagnostics_event_recent(h.runtime, 0)
+	if !testing.expect(t, settled_event_found && settled_event.kind == .Style_Transition_Settled &&
+		settled_event.style_transition_mix == 1 && settled_event.style_transition_target_hovered,
+		"transition settlement should be reported without impersonating an explicit spring owner") { return }
+	work := last_turn(&h).work
+	testing.expect(t, work.descriptions_emitted == 0 && work.layout_nodes_visited == 0 &&
+		work.text_shape_requests == 0,
+		"all transition-only turns should preserve application state without layout or shaping work")
+
+	if !testing.expect(t, step(&h, Input{kind=.Pointer, pointer=alicorn.Pointer_Event{kind=.Move, x=310, y=110}}) == .Ok,
+		"hover exit should begin another transition before the accessibility snap test") { return }
+	track = h.runtime.style_transition_owners[owner]
+	if !testing.expect(t, track.active &&
+		alicorn.style_root_accessibility_set(h.runtime, alicorn.Accessibility_Appearance_Preferences{reduce_motion=true}),
+		"Reduced Motion should be accepted as a root appearance change while the fill is moving") { return }
+	if !testing.expect(t, advance_time(&h, 0) == .Ok,
+		"the accessibility update should be applied at the next deterministic turn") { return }
+	fill, fill_found = harness_visual_transition_fill(h.runtime, owner)
+	_, track_found = h.runtime.style_transition_owners[owner]
+	snap_event, snap_event_found := alicorn.motion_diagnostics_event_recent(h.runtime, 0)
+	activity = alicorn.motion_activity(h.runtime)
+	if !testing.expect(t, fill_found && fill == track.pair.rest.surface && !track_found &&
+		activity.active_owners == 0 && snap_event_found &&
+		snap_event.kind == .Style_Transition_Snap &&
+		snap_event.reason == .Style_Transition_Accessibility_Preference,
+		"Reduced Motion should snap to the current resolved target, cancel the track and report why") { return }
+}
+
+@(test)
+test_button_hover_transition_uses_current_time_after_idle_gap :: proc(t: ^testing.T) {
+	app := Harness_Visual_Transition_App{}
+	h, status := open(&app, harness_visual_transition_render, width=320, height=120)
+	if !testing.expect(t, status == .Ok, last_turn_diagnostic(&h)) { return }
+	defer close(&h)
+	result := find(&h, Query{
+		role=.Button,
+		name="Transition target",
+		key=alicorn.key_string("transition-button"),
+		match_role=true,
+		match_name=true,
+		match_key=true,
+	})
+	defer destroy_find_result(&result)
+	if !testing.expect(t, result.match == .Unique && result.element.has_bounds,
+		"the transition fixture should expose one physically clickable button") { return }
+	owner := result.element.visual_node
+	initial_fill, initial_found := harness_visual_transition_fill(h.runtime, owner)
+	track, track_found := h.runtime.style_transition_owners[owner]
+	if !testing.expect(t, initial_found && track_found && !track.active,
+		"the initial frame should establish the resting button style") { return }
+
+	// Model native idle: host time advances, but no application description or
+	// motion wake runs to refresh the runtime's injected clock.
+	h.now_ns = 5_000_000_000
+	bounds := result.element.bounds
+	if !testing.expect(t, step(&h, Input{kind=.Pointer, pointer=alicorn.Pointer_Event{
+		kind=.Move, x=bounds.x+bounds.w*0.5, y=bounds.y+bounds.h*0.5,
+	}}) == .Ok, "pointer entry after idle should flush retained hover paint") { return }
+	track = h.runtime.style_transition_owners[owner]
+	fill, fill_found := harness_visual_transition_fill(h.runtime, owner)
+	if !testing.expect(t, fill_found && fill == track.pair.rest.surface && track.active,
+		"the first retained hover frame should still show the resting fill") { return }
+
+	if !testing.expect(t, advance_time(&h, 90_000_000) == .Ok,
+		"the transition should make progress after an idle gap") { return }
+	track = h.runtime.style_transition_owners[owner]
+	fill, fill_found = harness_visual_transition_fill(h.runtime, owner)
+	if !testing.expect(t, track.active && track.segment.start_time == alicorn.Motion_Time(5_000_000_000) &&
+		track.presented_mix > 0.50 && track.presented_mix < 0.53 && fill_found &&
+		app.descriptions == 1 && last_turn(&h).descriptions == 0,
+		"hover should progress from the current monotonic time without rebuilding the app") { return }
+
+	if !testing.expect(t, advance_time(&h, 199_999_999) == .Ok,
+		"the transition should remain active until its full duration elapses") { return }
+	track = h.runtime.style_transition_owners[owner]
+	if !testing.expect(t, track.active && track.presented_mix < 1,
+		"the hover transition should not settle before 300 ms of active time") { return }
+	if !testing.expect(t, advance_time(&h, 10_000_001) == .Ok,
+		"the transition should settle at its 300 ms endpoint") { return }
+	track = h.runtime.style_transition_owners[owner]
+	fill, fill_found = harness_visual_transition_fill(h.runtime, owner)
+	testing.expect(t, fill_found && fill == track.pair.hover.surface && !track.active,
+		"the final hover color should appear exactly when the full duration elapses")
+}
+
+style_transition_test_color_mix :: proc(from, to: alicorn.Color, amount: f32) -> alicorn.Color {
+	return alicorn.Color{
+		from.r+(to.r-from.r)*amount,
+		from.g+(to.g-from.g)*amount,
+		from.b+(to.b-from.b)*amount,
+		from.a+(to.a-from.a)*amount,
+	}
 }
 
 Harness_Generic_Text_App :: struct {

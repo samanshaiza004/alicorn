@@ -483,8 +483,10 @@ update_paint :: proc(rt: ^Runtime) {
 				}
 				close_tab, show_dirty_marker := tab_close_owner(rt, node)
 				if close_tab != nil {
+					style_transition_owner_cancel(rt, node.id)
 					tab_close_append_paint(rt, node, close_tab, show_dirty_marker)
 				} else if parent_is_context_menu {
+					style_transition_owner_cancel(rt, node.id)
 					// Menu navigation and pointer hover share the menu's active-row
 					// highlight. Ordinary buttons still receive their independent
 					// focus outline below.
@@ -506,8 +508,12 @@ update_paint :: proc(rt: ^Runtime) {
 						pressed=node.pressed,
 						disabled=node.disabled,
 					}, node.drop_position == .On)
+					if !connected {
+						resolved_style.surface = style_transition_button_fill(rt, node, resolved_style, hovered)
+					}
 					text_color = resolved_style.text
 					if connected {
+						style_transition_owner_cancel(rt, node.id)
 						connected_fill, connected_text := connected_tab_visual_colors(
 							rt, node, resolved_style, hovered, node.pressed, node.drop_position == .On,
 						)

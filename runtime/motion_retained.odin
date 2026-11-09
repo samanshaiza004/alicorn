@@ -63,12 +63,20 @@ Motion_Diagnostic_Kind :: enum {
 	Hidden_Gap_Fast_Forward,
 	Opacity_Clamp,
 	Bounded_Snap,
+	Style_Transition_Retarget,
+	Style_Transition_Settled,
+	Style_Transition_Snap,
 	Failure,
 }
 
 Motion_Diagnostic_Reason :: enum {
 	None,
 	Reduced_Opacity_Fade_Exceeded_Bound,
+	Style_Transition_Interaction_State,
+	Style_Transition_Style_Changed,
+	Style_Transition_Accessibility_Preference,
+	Style_Transition_No_Clock,
+	Style_Transition_Invalid_Policy,
 }
 
 Motion_Property_Snapshot :: struct {
@@ -115,6 +123,10 @@ Motion_Diagnostic_Event :: struct {
 	status: Motion_Runtime_Status,
 	elapsed_ns: u64,
 	detail_value: Motion_Vector2,
+	style_transition_sample: bool,
+	style_transition_mix: f64,
+	style_transition_target_hovered: bool,
+	style_transition_duration_ns: u64,
 	repeat_count: u64,
 }
 
@@ -134,6 +146,9 @@ Motion_Diagnostic_Stats :: struct {
 	opacity_clamps: u64,
 	bounded_snaps: u64,
 	failures: u64,
+	style_transition_retargets: u64,
+	style_transition_settlements: u64,
+	style_transition_snaps: u64,
 	sample_ticks: u64,
 	owner_visits: u64,
 	property_samples: u64,
@@ -244,9 +259,34 @@ motion_diagnostics_ensure :: proc(rt: ^Runtime) -> ^Motion_Diagnostics {
 }
 
 motion_diagnostics_owner_snapshot :: proc(rt: ^Runtime, owner: Node_ID) -> Motion_Diagnostic_Owner_Snapshot {
-	if rt == nil || rt.motion_owners == nil { return {} }
+	if rt == nil { return {} }
+	if rt.motion_owners == nil {
+		if rt.style_transition_owners != nil {
+			if _, found := rt.style_transition_owners[owner]; found {
+				return Motion_Diagnostic_Owner_Snapshot{
+					valid=true,
+					owner=owner,
+					clock_source=rt.motion_clock_source,
+					clock_time=rt.motion_time,
+				}
+			}
+		}
+		return {}
+	}
 	state, found := rt.motion_owners[owner]
-	if !found { return Motion_Diagnostic_Owner_Snapshot{owner=owner} }
+	if !found {
+		if rt.style_transition_owners != nil {
+			if _, transition_found := rt.style_transition_owners[owner]; transition_found {
+				return Motion_Diagnostic_Owner_Snapshot{
+					valid=true,
+					owner=owner,
+					clock_source=rt.motion_clock_source,
+					clock_time=rt.motion_time,
+				}
+			}
+		}
+		return Motion_Diagnostic_Owner_Snapshot{owner=owner}
+	}
 	snapshot := Motion_Diagnostic_Owner_Snapshot{
 		valid=true,
 		owner=owner,
@@ -413,6 +453,9 @@ motion_diagnostic_record :: proc(
 	case .Hidden_Gap_Fast_Forward: diagnostics.stats.hidden_gap_fast_forwards += 1
 	case .Opacity_Clamp: diagnostics.stats.opacity_clamps += 1
 	case .Bounded_Snap: diagnostics.stats.bounded_snaps += 1
+	case .Style_Transition_Retarget: diagnostics.stats.style_transition_retargets += 1
+	case .Style_Transition_Settled: diagnostics.stats.style_transition_settlements += 1
+	case .Style_Transition_Snap: diagnostics.stats.style_transition_snaps += 1
 	case .Failure: diagnostics.stats.failures += 1
 	}
 }
@@ -1175,29 +1218,50 @@ motion_tick :: proc(rt: ^Runtime, at: Motion_Time) -> Motion_Tick_Result {
 	if rt.motion_clock_initialized && i64(at) < i64(rt.motion_time) {
 		return Motion_Tick_Result{status=.Time_Rewound}
 	}
-	if rt.motion_owners == nil {
+	if rt.motion_owners == nil && rt.style_transition_owners == nil {
 		rt.motion_time = at
 		rt.motion_clock_initialized = true
 		return Motion_Tick_Result{status=.Ok}
 	}
 	if rt.motion_diagnostics != nil {
 		rt.motion_diagnostics.stats.sample_ticks += 1
-		rt.motion_diagnostics.stats.owner_visits += u64(len(rt.motion_owners))
-		for _, state in rt.motion_owners {
-			if state.has_translation { rt.motion_diagnostics.stats.property_samples += 1 }
-			if state.has_opacity { rt.motion_diagnostics.stats.property_samples += 1 }
+		if rt.motion_owners != nil {
+			rt.motion_diagnostics.stats.owner_visits += u64(len(rt.motion_owners))
+			for _, state in rt.motion_owners {
+				if state.has_translation { rt.motion_diagnostics.stats.property_samples += 1 }
+				if state.has_opacity { rt.motion_diagnostics.stats.property_samples += 1 }
+			}
+		}
+		if rt.style_transition_owners != nil {
+			for _, state in rt.style_transition_owners {
+				if !state.active { continue }
+				rt.motion_diagnostics.stats.owner_visits += 1
+				rt.motion_diagnostics.stats.property_samples += 1
+			}
 		}
 	}
-	for owner, state in rt.motion_owners {
-		status := motion_sample_validate(state, at)
-		if status != .Ok {
-			motion_diagnostic_record(rt, .Failure, owner, status, coalesce=true)
-			return Motion_Tick_Result{status=status}
+	if rt.motion_owners != nil {
+		for owner, state in rt.motion_owners {
+			status := motion_sample_validate(state, at)
+			if status != .Ok {
+				motion_diagnostic_record(rt, .Failure, owner, status, coalesce=true)
+				return Motion_Tick_Result{status=status}
+			}
+		}
+	}
+	if rt.style_transition_owners != nil {
+		for owner, state in rt.style_transition_owners {
+			if !state.active { continue }
+			if sample := style_transition_segment_sample(state.segment, at); !sample.ok {
+				motion_diagnostic_record(rt, .Failure, owner, .Invalid_Value, coalesce=true)
+				return Motion_Tick_Result{status=.Invalid_Value}
+			}
 		}
 	}
 	result := Motion_Tick_Result{status=.Ok}
 	rt.motion_time = at
 	rt.motion_clock_initialized = true
+	if rt.motion_owners != nil {
 	for owner, &state in rt.motion_owners {
 		changed := false
 		owner_active := false
@@ -1245,15 +1309,52 @@ motion_tick :: proc(rt: ^Runtime, at: Motion_Time) -> Motion_Tick_Result {
 		if changed { result.changed_owners += 1 }
 		if settled { motion_diagnostic_record(rt, .Settled, owner) }
 	}
-	if result.changed_owners > 0 {
+	}
+	explicit_changed_owners := result.changed_owners
+	transition_changed := false
+	if rt.style_transition_owners != nil {
+		for owner, &state in rt.style_transition_owners {
+			if !state.active { continue }
+			previously_active := state.active
+			sample := style_transition_segment_sample(state.segment, at)
+			if !sample.ok { return Motion_Tick_Result{status=.Invalid_Value} }
+			changed := sample.mix != state.presented_mix
+			state.presented_mix = sample.mix
+			state.active = sample.active
+			if changed {
+				result.changed_owners += 1
+				transition_changed = true
+				style_transition_request_owner_paint(rt, owner)
+			}
+			if state.active {
+				result.active_properties += 1
+				if !motion_retained_owner_is_active(rt, owner) { result.active_owners += 1 }
+			} else if previously_active {
+				style_transition_diagnostic_record(
+					rt, owner, .Style_Transition_Settled, .None,
+					state.presented_mix, state.adopted_hover,
+				)
+			}
+		}
+	}
+	if explicit_changed_owners > 0 {
 		motion_request_presentation(rt, "retained motion presentation sampled")
+	} else if transition_changed {
+		request_presentation(rt, "retained visual-state transition sampled")
 	}
 	return result
 }
 
+motion_retained_owner_is_active :: proc(rt: ^Runtime, owner: Node_ID) -> bool {
+	if rt == nil || rt.motion_owners == nil { return false }
+	state, found := rt.motion_owners[owner]
+	return found && (state.opacity_active || state.translation_active)
+}
+
 motion_activity :: proc(rt: ^Runtime) -> Motion_Activity {
 	result := Motion_Activity{}
-	if rt == nil || rt.motion_owners == nil { return result }
+	if rt == nil { return result }
+	if rt.motion_owners != nil {
 	for _, state in rt.motion_owners {
 		owner_active := false
 		if state.opacity_active {
@@ -1267,6 +1368,14 @@ motion_activity :: proc(rt: ^Runtime) -> Motion_Activity {
 			if !state.translation_deadline_established { result.unestablished_deadlines += 1 }
 		}
 		if owner_active { result.active_owners += 1 }
+	}
+	}
+	if rt.style_transition_owners != nil {
+		for owner, state in rt.style_transition_owners {
+			if !state.active { continue }
+			result.active_properties += 1
+			if !motion_retained_owner_is_active(rt, owner) { result.active_owners += 1 }
+		}
 	}
 	return result
 }

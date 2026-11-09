@@ -106,6 +106,28 @@ test_native_motion_window_coalesces_active_owners_and_retires_to_idle :: proc(t:
 }
 
 @(test)
+test_native_motion_scheduler_arms_after_presentation_starts_hover_activity :: proc(t: ^testing.T) {
+	state := Native_Motion_Scheduler_State{}
+	now := u64(4_000_000_000)
+	_ = native_motion_scheduler_prepare(&state, 0, true, now)
+	_, initial_deadline_found := native_motion_scheduler_next_deadline(&state)
+	if !testing.expect(t, !initial_deadline_found && !state.active,
+		"the scheduler's pre-presentation pass should remain idle before hover paint creates a transition") { return }
+	_ = native_motion_scheduler_prepare(&state, 1, true, now+1)
+	deadline, deadline_found := native_motion_scheduler_next_deadline(&state)
+	if !testing.expect(t, deadline_found && state.active && deadline == now+1+NATIVE_MOTION_SAMPLE_INTERVAL_NS,
+		"the post-presentation pass should arm one bounded sample for newly created hover activity") { return }
+	should_sample := native_motion_scheduler_prepare(&state, 1, true, deadline)
+	if !testing.expect(t, should_sample,
+		"the stationary pointer should receive the due sample without another input event") { return }
+	native_motion_scheduler_finish_sample(&state, 0, 0, deadline)
+	_, settled_deadline_found := native_motion_scheduler_next_deadline(&state)
+	should_sample = native_motion_scheduler_prepare(&state, 0, true, deadline+1_000_000_000)
+	testing.expect(t, !settled_deadline_found && !should_sample,
+		"a completed transition should leave the window with no timer or idle motion work")
+}
+
+@(test)
 test_native_motion_suspend_and_restore_samples_current_time_once :: proc(t: ^testing.T) {
 	state := Native_Motion_Scheduler_State{}
 	now := u64(2_000_000_000)

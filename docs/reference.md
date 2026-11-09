@@ -524,10 +524,13 @@ indicators so a custom theme's role choices cannot silently remove those
 signals. Reduced transparency makes semantic theme surfaces opaque and
 suppresses translucent analytic outer shadows. Non-color differentiation adds
 selected-button underlines; Checkbox checkmarks and Slider thumb outlines use
-geometric state markers. `reduce_motion` is available to material/style producers, but the
-current runtime has no animated transitions to shorten. The scope container
-must keep parent-assigned bounds stable while its contents reflow. Theme IDs are
-immutable and local to a runtime; do not reuse IDs across runtimes.
+geometric state markers. `reduce_motion` is available to material/style
+producers. Ordinary Buttons can opt into a bounded hover-fill transition;
+accessibility preferences and pressed, selected, or disabled states remain
+immediate. This is separate from the explicit critically damped `ui.motion`
+system below. The scope container must keep parent-assigned bounds stable while
+its contents reflow. Theme IDs are immutable and local to a runtime; do not
+reuse IDs across runtimes.
 
 The separate [`theme` compiler contract](themes.md) compiles typed color and
 logical-length tokens, aliases, core roles, and namespaced extension roles.
@@ -581,6 +584,25 @@ toolbar.hovered = alicorn.Style_Transform{surface_role=.Accent, surface_mix=0.08
 theme.button_recipes.recipes[int(alicorn.Button_Variant.Toolbar)] = toolbar
 theme_id := alicorn.style_theme_register(&rt, theme)
 ```
+
+An ordinary Button recipe may also opt its flat opaque hover fill into a timed
+transition. The same policy applies on entry and exit, and the default zero
+duration preserves immediate hover painting:
+
+```odin
+recipe := theme.button_recipes.recipes[int(alicorn.Button_Variant.Default)]
+recipe.hover_fill_transition = alicorn.Style_Transition{
+    duration = 180 * time.Millisecond,
+    easing   = .Ease,
+}
+theme.button_recipes.recipes[int(alicorn.Button_Variant.Default)] = recipe
+```
+
+The runtime retains the intermediate fill and uses the shared motion clock and
+window scheduler. Press, selection, disable, Reduced Motion, Increased
+Contrast, non-color differentiation, and incompatible style changes snap to
+the resolved fill. This initial property does not animate text, geometry,
+translucent fills, or materials.
 
 ### Checkbox and Slider recipes
 

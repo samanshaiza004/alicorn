@@ -42,6 +42,8 @@ Motion_Runtime_Status :: alicorn.Motion_Runtime_Status
 Motion_Presentation :: alicorn.Motion_Presentation
 Motion_Tick_Result :: alicorn.Motion_Tick_Result
 Motion_Vector2 :: alicorn.Motion_Vector2
+Style_Transition :: alicorn.Style_Transition
+Style_Transition_Easing :: alicorn.Style_Transition_Easing
 
 @(private)
 DEFAULT_CHECKBOX_STYLE :: Layout_Style{

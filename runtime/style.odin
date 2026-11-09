@@ -215,7 +215,8 @@ style_button_recipe_is_valid :: proc(recipe: Button_Recipe) -> bool {
 	       style_transform_is_valid(recipe.selected) &&
 	       style_transform_is_valid(recipe.hovered) &&
 	       style_transform_is_valid(recipe.pressed) &&
-	       style_transform_is_valid(recipe.disabled)
+	       style_transform_is_valid(recipe.disabled) &&
+	       style_transition_is_valid(recipe.hover_fill_transition)
 }
 
 style_theme_is_valid :: proc(theme: Style_Theme) -> bool {

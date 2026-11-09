@@ -768,6 +768,9 @@ native_secondary_window_live_resize_redraw_once :: proc(
 		alicorn.request_presentation(child.runtime, "SDL secondary live-resize expose")
 	}
 	if alicorn.presentation_needs_frame(child.runtime) {
+		if native_motion_clock_set_current_time(child.runtime) != .Ok {
+			fail("secondary live-resize retained-paint motion clock update failed")
+		}
 		presentation_ui, ready := alicorn.begin_presentation_frame(child.runtime)
 		if ready { alicorn.end_presentation_frame(&presentation_ui) }
 	}

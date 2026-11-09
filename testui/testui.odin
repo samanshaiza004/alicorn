@@ -340,21 +340,32 @@ run_descriptions :: proc(
 		pointer_target=pointer_target,
 	}
 	for pass := 0; pass < MAX_DESCRIPTIONS_PER_TURN; pass += 1 {
-		if !handle.runtime.invalidated {
+		if handle.runtime.invalidated {
+			if alicorn.motion_clock_set_time(handle.runtime, alicorn.Motion_Time(i64(handle.now_ns))) != .Ok {
+				handle.last_turn.message = "virtual motion clock rejected the current harness timestamp"
+				return .Invalid_Time
+			}
+			if !describe_once(handle) { break }
+			handle.last_turn.descriptions += 1
+			continue
+		}
+		if alicorn.presentation_needs_frame(handle.runtime) {
+			if alicorn.motion_clock_set_time(handle.runtime, alicorn.Motion_Time(i64(handle.now_ns))) != .Ok {
+				handle.last_turn.message = "virtual motion clock rejected the retained presentation timestamp"
+				return .Invalid_Time
+			}
+			presentation_ui, ready := alicorn.begin_presentation_frame(handle.runtime)
+			if ready { alicorn.end_presentation_frame(&presentation_ui) }
+		}
+		if !handle.runtime.invalidated && !alicorn.presentation_needs_frame(handle.runtime) {
 			handle.last_turn.stabilized = true
 			break
 		}
-		if alicorn.motion_clock_set_time(handle.runtime, alicorn.Motion_Time(i64(handle.now_ns))) != .Ok {
-			handle.last_turn.message = "virtual motion clock rejected the current harness timestamp"
-			return .Invalid_Time
-		}
-		if !describe_once(handle) { break }
-		handle.last_turn.descriptions += 1
 	}
 	handle.last_turn.layout_pending = alicorn.layout_is_pending(handle.runtime)
 	handle.last_turn.focus = alicorn.focused_node(handle.runtime)
-	if handle.runtime.invalidated {
-		handle.last_turn.message = "bounded description limit reached; application invalidated during each corrective description"
+	if handle.runtime.invalidated || alicorn.presentation_needs_frame(handle.runtime) {
+		handle.last_turn.message = "bounded UI turn limit reached before descriptions and retained presentation settled"
 		return .Did_Not_Stabilize
 	}
 	handle.last_turn.stabilized = true
