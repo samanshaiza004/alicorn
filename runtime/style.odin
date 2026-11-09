@@ -463,8 +463,9 @@ style_theme_material_references_valid :: proc(rt: ^Runtime, theme: Style_Theme) 
 	return true
 }
 
-// style_theme_register appends an immutable palette and returns a compact ID.
-// IDs remain stable for the lifetime of this Runtime.
+// style_theme_register appends an owned theme snapshot and returns a compact
+// ID. IDs remain stable for this Runtime; only style_theme_replace can update
+// a non-default snapshot in place.
 style_theme_register :: proc(rt: ^Runtime, theme: Style_Theme) -> Style_Theme_ID {
 	if rt == nil || !style_theme_is_valid(theme) {
 		if rt != nil { append_diagnostic(rt, "style theme contains invalid colors, token bindings, logical lengths, or control recipes") }

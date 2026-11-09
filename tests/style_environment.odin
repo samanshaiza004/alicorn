@@ -1,6 +1,7 @@
 package main
 
 import "core:fmt"
+import "core:math"
 import "core:strings"
 import alicorn "../runtime"
 import theme "../theme"
@@ -175,6 +176,129 @@ test_style_environment_theme_paint_locality :: proc(state: ^Test_State) {
 		"a scoped theme change must not advance style generations in a sibling subtree")
 	_ = editor
 	_ = sidebar
+}
+
+Style_Replace_Fixture_Nodes :: struct {
+	field: alicorn.Node_ID,
+	button: alicorn.Node_ID,
+	sidebar: alicorn.Node_ID,
+}
+
+render_style_replace_fixture :: proc(rt: ^alicorn.Runtime, theme_id: alicorn.Style_Theme_ID) -> Style_Replace_Fixture_Nodes {
+	nodes := Style_Replace_Fixture_Nodes{}
+	alicorn.invalidate_root(rt, "style theme replacement regression")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return nodes }
+	alicorn.container_begin(&ui, .Root, key="preview-root", style=alicorn.layout_style(.Row, grow=1, gap=12))
+	alicorn.container_begin(&ui, .Container, key="preview-pane", style=alicorn.layout_style(.Column, width=240, grow=1, gap=8), layout_boundary=true)
+	scope := alicorn.style_environment_push(&ui, alicorn.Style_Environment{theme=theme_id})
+	nodes.field = alicorn.text_field(&ui, "preserve selection", key=alicorn.key_string("preview-field"))
+	_ = alicorn.button(&ui, "Accent action", key=alicorn.key_string("preview-button"), variant=.Primary)
+	alicorn.style_environment_pop(&ui, scope)
+	alicorn.container_end(&ui)
+	alicorn.container_begin(&ui, .Container, key="preview-sidebar", style=alicorn.layout_style(.Column, width=120, grow=1))
+	nodes.sidebar = alicorn.text_ex(&ui, "Unchanged sibling", alicorn.site("tests/style_preview.odin", 3, 1, "sidebar"), key="preview-sidebar-label", explicit_key=true)
+	alicorn.container_end(&ui)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	for id in rt.order {
+		if node, found := rt.nodes[id]; found && node.kind == .Button && node.label == "Accent action" {
+			nodes.button = id
+			break
+		}
+	}
+	return nodes
+}
+
+test_style_theme_replace_is_paint_local_and_preserves_state :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 420, 180})
+	defer alicorn.destroy_runtime(&rt)
+	rt.layout_visit_probe = make(map[alicorn.Node_ID]u64, allocator=rt.persistent_allocator)
+	rt.layout_visit_probe[0] = 0
+	expect(state, alicorn.text_engine_load_font(&rt.text_engine, TEST_UI_FONT_DATA), "style preview fixture font must load")
+
+	initial_text := alicorn.Color{0.15, 0.16, 0.18, 1}
+	initial_accent := alicorn.Color{0.78, 0.16, 0.12, 1}
+	theme := alicorn.DEFAULT_STYLE_THEME
+	theme.colors[int(alicorn.Style_Color_Role.Text)] = initial_text
+	theme.colors[int(alicorn.Style_Color_Role.Accent)] = initial_accent
+	theme.color_tokens = {initial_text, initial_accent}
+	theme.core_color_tokens[int(alicorn.Style_Color_Role.Text)] = alicorn.Style_Color_Token_ID(1)
+	theme.core_color_tokens[int(alicorn.Style_Color_Role.Accent)] = alicorn.Style_Color_Token_ID(2)
+	theme_id := alicorn.style_theme_register(&rt, theme)
+	expect(state, theme_id != 0, "immutable source theme should register")
+	nodes := render_style_replace_fixture(&rt, theme_id)
+	if nodes.field == 0 || nodes.button == 0 || nodes.sidebar == 0 {
+		expect(state, false, "preview fixture should realize the field, primary button, and sibling")
+		return
+	}
+	expect(state, alicorn.focus(&rt, nodes.field), "preview field should accept focus")
+	expect(state, alicorn.set_text_selection(&rt, nodes.field, 11, 3), "preview field should retain a non-empty selection")
+	nodes = render_style_replace_fixture(&rt, theme_id)
+	field_before := rt.nodes[nodes.field]
+	sidebar_before := rt.nodes[nodes.sidebar]
+	button_before, button_before_found := rt.computed_styles[nodes.button]
+	if !button_before_found { expect(state, false, "primary button should have retained computed style"); return }
+	old_surface := button_before.payload.(alicorn.Button_Resolved_Style).surface
+	old_layout_visits := rt.stats.layout_nodes_visited
+	old_text_run := field_before.text_run_generation
+	old_field_paint_generation := field_before.style_generations.paint
+	old_sidebar_generations := sidebar_before.style_generations
+	old_sidebar_color := sidebar_before.color
+	old_caret := field_before.caret
+	old_anchor := field_before.selection_anchor
+	old_focus := field_before.selection_focus
+	registered_theme_count := len(rt.style_themes)
+
+	expect(state, alicorn.style_theme_replace(&rt, theme_id, theme) == .Unchanged,
+		"reloading identical values should not invalidate the registered theme")
+	wrong_shape := theme
+	wrong_shape.color_tokens = wrong_shape.color_tokens[:1]
+	expect(state, alicorn.style_theme_replace(&rt, theme_id, wrong_shape) == .Rejected,
+		"a candidate with an invalid color-token binding must be rejected before mutation")
+	invalid_theme := theme
+	invalid_theme.colors[int(alicorn.Style_Color_Role.Text)].r = math.nan_f32()
+	expect(state, alicorn.style_theme_replace(&rt, theme_id, invalid_theme) == .Rejected,
+		"non-finite candidate colors must be rejected before mutation")
+	expect(state, alicorn.style_theme_replace(&rt, 0, theme) == .Rejected,
+		"an invalid theme ID must be rejected")
+
+	updated_accent := alicorn.Color{0.10, 0.64, 0.27, 1}
+	updated_theme := theme
+	updated_theme.colors[int(alicorn.Style_Color_Role.Accent)] = updated_accent
+	updated_theme.color_tokens[1] = updated_accent
+	expect(state, alicorn.style_theme_replace(&rt, theme_id, updated_theme) == .Replaced,
+		"a valid color-only candidate should replace the scoped runtime theme")
+	nodes = render_style_replace_fixture(&rt, theme_id)
+	button_after, button_after_found := rt.computed_styles[nodes.button]
+	if !button_after_found { expect(state, false, "updated primary button should have retained computed style"); return }
+	new_surface := button_after.payload.(alicorn.Button_Resolved_Style).surface
+	field_after := rt.nodes[nodes.field]
+	sidebar_after := rt.nodes[nodes.sidebar]
+	expect(state, new_surface == updated_accent && new_surface != old_surface,
+		"the updated Accent token should reach the normal retained control resolver")
+	expect(state, rt.stats.layout_nodes_visited == old_layout_visits,
+		"a color-only theme replacement must perform no layout visits")
+	expect(state, field_after.text_run_generation == old_text_run,
+		"a color-only theme replacement must not reshape focused text")
+	expect(state, field_after.style_generations.paint > old_field_paint_generation,
+		"the node inside the themed scope should receive Paint invalidation")
+	expect(state, rt.focused == nodes.field && field_after.caret == old_caret &&
+		field_after.selection_anchor == old_anchor && field_after.selection_focus == old_focus,
+		"focus, caret, and selection must survive the preview replacement")
+	expect(state, sidebar_after.color == old_sidebar_color && sidebar_after.style_generations == old_sidebar_generations,
+		"a sibling outside the preview scope must retain its paint and style generations")
+
+	for index in 0..<100 {
+		color := alicorn.Color{f32(index%17)/16, f32((index*7)%19)/18, f32((index*11)%23)/22, 1}
+		candidate := theme
+		candidate.colors[int(alicorn.Style_Color_Role.Accent)] = color
+		candidate.color_tokens[1] = color
+		expect(state, alicorn.style_theme_replace(&rt, theme_id, candidate) == .Replaced,
+			"repeated color replacements should update the same registered theme")
+	}
+	expect(state, len(rt.style_themes) == registered_theme_count,
+		"repeated live replacements must not append registrations or grow the theme registry")
 }
 
 render_primary_button_with_accent :: proc(rt: ^alicorn.Runtime, accent: alicorn.Color) -> alicorn.Node_ID {

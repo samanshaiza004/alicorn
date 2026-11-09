@@ -290,7 +290,7 @@ checker verifies only the mutation scopes the application explicitly reports.
 | `LAYOUT_SIZE_FIT_CONTENT` | Opt a Row or Column `Container` into measured height, or a `Scroll_Region` into a content-sized, max-capped viewport. |
 | `button_content_style` | Set label alignment and padding inside a button. |
 | `Text_Style` | Select weight, overflow behavior, and text presentation options. `font_size` is a logical-unit override; the active text scale still applies. |
-| `Style_Theme` / `style_theme_register` | Register an immutable typed color palette for one runtime. |
+| `Style_Theme` / `style_theme_register` / `style_theme_replace` | Register a typed theme, then replace a non-default runtime theme between frames; changed style domains determine paint, layout, and description invalidation. |
 | `Style_Control_State` / `Style_Control_States` | Shared selected, hovered, pressed, and disabled recipe-transform vocabulary. |
 | `style_color` / `style_metric` | Resolve a semantic color or scale an app-owned metric in the active environment. |
 | `Style_Color_Token_ID` / `Style_Length_Token_ID` | Address theme-local typed token arrays without string lookup. |

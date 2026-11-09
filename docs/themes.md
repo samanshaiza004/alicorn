@@ -13,8 +13,9 @@ describing a frame.
 - Application and vendor roles use qualified names such as
   `app.editor.current_line` and `vendor.audio.meter.hot`; they do not extend
   Alicorn's core enum.
-- Color and length token IDs are distinct and local to one compiled/registered
-  theme. A token ID is only meaningful together with its immutable theme ID.
+- Color and length token IDs are distinct and local to one compiled theme.
+  After an explicit runtime theme replacement, re-resolve token IDs from the
+  accepted compiled snapshot rather than retaining IDs across generations.
 - Extension-role IDs are typed, namespaced hashes. The compiler rejects a
   collision among roles of the same type instead of letting one binding win.
 - The runtime retains one `Computed_Style` entry per resolved node in a
@@ -28,8 +29,9 @@ describing a frame.
 - Button, Checkbox, Slider, Text Field, and Scrollbar recipes depend on Paint.
   An opt-in Button surface treatment also depends on Material.
   Semantic Surface resolution depends on Paint for its role color and Material for its shape,
-  material, optical height, and group. Theme registrations and material
-  registrations are immutable; recipe/state/theme identity is part of the
+  material, optical height, and group. Material registrations are immutable;
+  theme snapshots change only through explicit `style_theme_replace`.
+  Recipe/state/theme identity is part of the
   computed-style signature, and semantic-surface description changes are
   hashed into its signature and advance their respective domains.
 - Theme and accent changes schedule Paint only; immutable opt-in Button
@@ -230,8 +232,10 @@ described. Register materials during setup; runtime descriptions carry only
 the immutable `Material_ID`. Surface role changes advance the node's Paint
 generation; shape/material/height/group changes advance its Material
 generation, while the description/paint hashes schedule the actual redraw.
-Material registrations and registered themes are immutable, so a registry
-append cannot change an already-resolved surface.
+Material registrations remain immutable, so a registry append cannot change
+an already-resolved surface. Theme IDs remain stable; development tools may
+replace a non-default theme snapshot explicitly through
+`style_theme_replace`, which recomputes invalidation from the changed domains.
 
 Complete document/theme ownership stays outside the runtime: parsing and
 compilation happen in the `theme` package, then
@@ -240,6 +244,31 @@ compilation happen in the `theme` package, then
 token and role-binding storage, so the adapter-owned value can then be
 destroyed. The built-in theme remains a typed `DEFAULT_STYLE_THEME` value and
 does not need a parser or filesystem access to start Alicorn.
+
+## Experimental live color editing
+
+`style_theme_replace` can update a non-default runtime theme between frames.
+It validates and owns the replacement snapshot, then invalidates the style
+domains that changed. A color-only change requests presentation and repaint;
+metric or motion-policy changes also request a new application description.
+The Control Gallery uses this API for a deliberately narrower experiment:
+it accepts color-value edits while rejecting changes to theme structure.
+
+The `theme` package's `theme_compile_json` and
+`theme_preview_structure_compatible` helpers support development reloaders.
+The compatibility check permits color value edits while requiring token IDs
+and names, alias edges, role bindings, lengths, recipes, materials, and
+extension-role identities to remain fixed. A host should compile a candidate
+into owned storage, validate it against the last good candidate, and transfer
+only a compatible candidate to the UI thread for adoption. Compilation
+failures and incompatible candidates should leave the last good theme
+untouched. This Control Gallery experiment is not a file watcher.
+
+The Control Gallery demonstrates this flow. From the repository root, run
+`./tools/run_example.sh 08_control_gallery`, edit
+`examples/08_control_gallery/theme.json`, then choose **Reload Theme**. Change
+the `gallery.accent` color value to see the themed gallery update. Token names,
+bindings, lengths, recipes, and materials are fixed for this initial slice.
 
 ## Supported source subset
 
@@ -498,7 +527,7 @@ theme watcher or parser to ordinary applications or release builds.
 
 `tests/style_environment.odin` contains the end-to-end styling contract fixture.
 It compiles the strict JSON source through alias resolution and the built-in
-base, adapts and registers the immutable runtime theme, then uses its core and
+base, adapts and registers the runtime theme, then uses its core and
 app-namespaced roles in a scoped editor subtree with a normal Button recipe and
 a semantic Surface. The fixture also checks retained `Computed_Style`
 provenance and verifies that visual changes leave the semantic entity unchanged.
