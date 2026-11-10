@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "contract": "0.2",
+  "extends": "alicorn.base",
+  "tokens": {
+    "acme.mode_rail.container": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.11, 0.15, 0.21], "alpha": 1}
+    },
+    "acme.mode_rail.option": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.17, 0.22, 0.29], "alpha": 1}
+    },
+    "acme.mode_rail.signal": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.25, 0.72, 0.84], "alpha": 1}
+    },
+    "acme.mode_rail.attention": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.98, 0.61, 0.26], "alpha": 1}
+    },
+    "example.window.background": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.07, 0.09, 0.13], "alpha": 1}
+    }
+  },
+  "roles": {
+    "extensions": {
+      "vendor.acme.mode_rail.container": {"$type": "color", "$value": "{acme.mode_rail.container}"},
+      "vendor.acme.mode_rail.option": {"$type": "color", "$value": "{acme.mode_rail.option}"},
+      "vendor.acme.mode_rail.signal": {"$type": "color", "$value": "{acme.mode_rail.signal}"},
+      "vendor.acme.mode_rail.attention": {"$type": "color", "$value": "{acme.mode_rail.attention}"},
+      "app.example.window_background": {"$type": "color", "$value": "{example.window.background}"}
+    }
+  }
+}
