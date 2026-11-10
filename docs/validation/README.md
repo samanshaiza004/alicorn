@@ -12,6 +12,9 @@ the current project status.
   records backend-specific screenshot limits.
 - [v0.2.1 release validation](release-v0.2.1.md) — included history, checks,
   release scope, and remaining platform-validation boundaries.
+- [Release candidate validation (2026-11-10)](release-candidate-2026-11-10.md)
+  — current-source CI, local checks, native display limitation, and existing
+  tag state.
 - [Odin dev-2026-11 migration](odin-dev-2026-11.md) — Windows validation for
   the current compiler baseline; the record explicitly identifies checks that
   still require another platform or local CMake installation.
