@@ -10,11 +10,8 @@ the current project status.
 - [Issue #165 headless UI replay and native capture](issue-165-2026-11-08.md) —
   public replay harness, History consumer regression, and Windows D3D12 capture;
   records backend-specific screenshot limits.
-- [v0.2.1 release validation](release-v0.2.1.md) — included history, checks,
-  release scope, and remaining platform-validation boundaries.
-- [Release candidate validation (2026-11-10)](release-candidate-2026-11-10.md)
-  — current-source CI, local checks, native display limitation, and existing
-  tag state.
+- [v0.2.1 release validation](release-v0.2.1.md) — complete v0.2.0-to-v0.2.1
+  history, CI, local checks, release scope, and platform-validation boundaries.
 - [Odin dev-2026-11 migration](odin-dev-2026-11.md) — Windows validation for
   the current compiler baseline; the record explicitly identifies checks that
   still require another platform or local CMake installation.

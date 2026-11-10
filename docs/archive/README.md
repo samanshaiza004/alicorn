@@ -12,6 +12,8 @@ not override the [current documentation](../README.md) or
 
 ## Dated validation and investigations
 
+- [Initial v0.2.1 release-candidate validation (2026-11-06)](validation/release-v0.2.1-initial-candidate-2026-11-06.md) —
+  superseded by the [final release validation](../validation/release-v0.2.1.md).
 - [#103 platform and renderer evidence](validation/issue-103-windows-2026-10-27.md),
   [macOS evidence](validation/issue-103-macos-2026-10-27.md), and
   [blend readback](validation/issue-103-blend-readback-2026-10-27.md). The

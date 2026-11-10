@@ -4,116 +4,7 @@ All notable Alicorn releases are recorded here. The project release notes are
 consolidated in this file; vendored components retain their own upstream
 changelogs.
 
-## [Unreleased]
-
-### Added
-
-- Added bounded retained Gaussian backdrop blur to native SDL_GPU semantic
-  surfaces. Alicorn owns prefix capture, filtering, fence-tracked cache slots,
-  composition, and direct fallback; Scratchpad Quick Open is the first app
-  consumer. The effect remains bounded and does not introduce a general effects
-  graph.
-- Added the public `alicorn:testui` headless application interaction harness.
-  It can run a full application build callback, route typed synthetic input
-  through shared logical policies, advance virtual time, and return owned
-  semantic/layout snapshots and bounded interaction reports. Added bounded
-  semantic replay logs; native GPU pixels and OS input remain outside the
-  headless guarantee.
-- Added in-place replacement of non-default runtime style themes, retaining
-  theme identity while invalidating affected retained style dependencies. The
-  Control Gallery now demonstrates opt-in live color-theme editing with
-  candidate validation and last-good behavior.
-- Added opt-in timed hover-fill transitions for eligible Button recipes, with
-  Linear and CSS Ease timing, reversible entry/exit, retained scheduling,
-  reduced-motion fallback, and immediate handling of incompatible visual-state
-  changes.
-- Added opt-in magnetic horizontal tab-bar dragging, including tear-off and
-  reattachment thresholds, constrained reorder hit testing, and preserved raw
-  pointer coordinates for host decisions.
-- Added a bounded runtime font-file/face registry with stable IDs and shared
-  backing storage for identical font files.
-
-### Fixed
-
-- Replaced the sparse stretched binomial backdrop filter with a normalized,
-  sampled discrete Gaussian and higher-precision intermediate targets. Added
-  retained-effect recovery after temporary GPU-fence deferral, correct cache
-  invalidation when GPU-surface content changes, and explicit CPU-reference
-  rejection for unsupported backdrop effects.
-- Closed native callback and text-input lifetime gaps, preserved headless
-  pointer-target reports across corrective descriptions, and bounded magnetic
-  tab dragging to the tab strip while preserving free-subtree preview motion.
-- Refresh retained motion time before interaction-only paint so newly started
-  transitions receive their first scheduled frame without further pointer
-  input.
-- Restore macOS trackpad momentum scrolling in the SDL host while preserving
-  SDL environment overrides.
-- Refine connected-tab close painting so its centered, font-independent icon
-  stays within the tab contour with contrast-aware ink and hover treatment.
-- Use the Odin-supported image pixel representation for current toolchains.
-
-### Research and validation
-
-- Recorded the bounded retained-effects design and its Gaussian Metal/D3D12
-  readback limits; the native fixture validates encoded-SDR filtering but does
-  not claim HDR, linear-light, or universal interactive GPU performance.
-- Added Issue #165 public-harness documentation and a History-style
-  selection/reveal regression, including full-application callback coverage.
-- Recorded live-theme validation on Windows and Scratchpad, plus the
-  visual-state-transition design and its current Button-only property scope.
-- Recorded the current-source release-candidate checks and their local/hosted
-  validation boundaries in
-  [release-candidate validation](docs/validation/release-candidate-2026-11-10.md).
-
-### Merged pull requests
-
-- [#178 — Retained Gaussian backdrop effects](https://github.com/samanshaiza004/alicorn/pull/178)
-- [#185 — Headless application test harness](https://github.com/samanshaiza004/alicorn/pull/185)
-- [#186 — Full-application test harness callbacks](https://github.com/samanshaiza004/alicorn/pull/186)
-- [#188 — Retained Button hover-fill transitions](https://github.com/samanshaiza004/alicorn/pull/188)
-
-### Complete commit ledger since the existing `v0.2.1` tag
-
-The following 32 non-merge commits from the existing `v0.2.1` tag through
-code baseline `974d74cde2c2e38f931c1cfb74280dfc5966f680` are listed below.
-Merge commits are represented by the pull-request links above where they
-correspond to a PR; intermediate branch-merging commits are omitted.
-- [dfed741](https://github.com/samanshaiza004/alicorn/commit/dfed7411732b704bcfb849b64c6c1f2a449ffff3) — research: prototype bounded retained effects
-- [a031daa](https://github.com/samanshaiza004/alicorn/commit/a031daaa3fa35dc269412ef69fd0972111d205da) — feat: dogfood retained effects in application host
-- [4375e64](https://github.com/samanshaiza004/alicorn/commit/4375e64642570d93c180244fb6c6f665bf8e679f) — fix(gpu): replace sparse backdrop blur with Gaussian
-- [7cc8b3b](https://github.com/samanshaiza004/alicorn/commit/7cc8b3b4b84b2c0bac42fb26f729c6293a13e23d) — feat: promote retained Gaussian backdrop effects
-- [6a5a104](https://github.com/samanshaiza004/alicorn/commit/6a5a104001dd92b7a7274a8d3b891d202ffcf78e) — style: refine tab close affordance
-- [eef2468](https://github.com/samanshaiza004/alicorn/commit/eef2468e3faba11a50442fa28a9cbae4dcca10b9) — Remove scroll momentum change from effects PR
-- [27056f4](https://github.com/samanshaiza004/alicorn/commit/27056f451af0154c838115aa577aa0c6e5c7dd56) — fix(test): reject backdrop effects in CPU reference
-- [74b4f34](https://github.com/samanshaiza004/alicorn/commit/74b4f349ca6be6cef629fab40a0b662c287da19d) — style: remove trailing blank line from effects cache
-- [52a9fa9](https://github.com/samanshaiza004/alicorn/commit/52a9fa9a1ad3216eb862d1c1ee31d825adfbf472) — refactor: consolidate duplicate implementations
-- [291d1f6](https://github.com/samanshaiza004/alicorn/commit/291d1f68dda2a3a8e92d94af5cf22fa907850b96) — fix(effects): invalidate cached backdrop for GPU surface updates
-- [9d3e015](https://github.com/samanshaiza004/alicorn/commit/9d3e0159d6d0339056855b7a4977b4494e80545d) — fix: close native callback and text lifetime gaps
-- [328b8d4](https://github.com/samanshaiza004/alicorn/commit/328b8d463d29b97547915a7229333054e1cb44c4) — feat: add headless application test harness
-- [29bf6ac](https://github.com/samanshaiza004/alicorn/commit/29bf6acceb4a9955b3f26e4041736d70557c7f8e) — fix: preserve headless test interaction reports
-- [e75d4f2](https://github.com/samanshaiza004/alicorn/commit/e75d4f2c38b41f6897eae0b4fbd94d20faffe587) — feat(testui): support full application build callbacks
-- [a941240](https://github.com/samanshaiza004/alicorn/commit/a94124062a4c917cd23b5d24acd931dd15dc08ab) — feat(testui): add bounded semantic replay logs
-- [9c0931c](https://github.com/samanshaiza004/alicorn/commit/9c0931c405f38e52dee5aca482330996bc9ae29f) — chore: normalize issue 165 follow-up file endings
-- [755c1fa](https://github.com/samanshaiza004/alicorn/commit/755c1fa32f4388e2559d59059a282f59effe75a3) — feat: add experimental live color preview
-- [d23c20d](https://github.com/samanshaiza004/alicorn/commit/d23c20dc2bd39d2a1d5ee14c295cf6bca6c6af6f) — fix: build live theme gallery with current Odin
-- [80c037e](https://github.com/samanshaiza004/alicorn/commit/80c037e2f6e8a72fe1f6ca93aa55bd2d01ba6ede) — feat: add opt-in live theme editing prototype
-- [c359610](https://github.com/samanshaiza004/alicorn/commit/c3596108d1003cb24a242ef3d02995ab5d26df21) — fix: validate live theme on pinned Odin
-- [de5f45d](https://github.com/samanshaiza004/alicorn/commit/de5f45ddfad10a76ffec2ecce9ff589d07ffa786) — docs: record Windows live theme validation
-- [ae43c83](https://github.com/samanshaiza004/alicorn/commit/ae43c830d2e0f86de28ac27ef2d7968302570654) — docs: record interactive live theme validation
-- [0fc31ca](https://github.com/samanshaiza004/alicorn/commit/0fc31ca75c0c666a9be4d766fd91a96acbc14c26) — docs: record Scratchpad live theme validation
-- [b6b670a](https://github.com/samanshaiza004/alicorn/commit/b6b670a739b63ee9853daa6af093928e331b6015) — docs: propose timed visual state transitions
-- [d6f8245](https://github.com/samanshaiza004/alicorn/commit/d6f824592b57bd960b7fc091641b8a75c42f5d6e) — fix(mac): restore trackpad scroll momentum
-- [8d9bf17](https://github.com/samanshaiza004/alicorn/commit/8d9bf17fe2fed5b0b55dac97bdaea1475b0a81e7) — Add retained Button hover fill transitions
-- [0c8b44b](https://github.com/samanshaiza004/alicorn/commit/0c8b44bc0365803ebb2ccc464a64633ff0dcfe73) — feat: add magnetic horizontal tab dragging
-- [ee2ca73](https://github.com/samanshaiza004/alicorn/commit/ee2ca732b9b18b408f3be856369cb9e7893d2599) — fix: refresh motion time before retained paint
-- [5e31467](https://github.com/samanshaiza004/alicorn/commit/5e31467d961c22c25c0437df44a001f6a0f0f7b1) — fix(drag): preserve free subtree preview movement
-- [38205de](https://github.com/samanshaiza004/alicorn/commit/38205de02fdd2add4b1de02bf9b463bfad9a1080) — fix: bound magnetic tab dragging to strip
-- [4339592](https://github.com/samanshaiza004/alicorn/commit/4339592865cd05116d4d1c8aa119ce0c3bb5957e) — feat: add bounded font face registry
-- [974d74c](https://github.com/samanshaiza004/alicorn/commit/974d74cde2c2e38f931c1cfb74280dfc5966f680) — fix: use supported Odin image pixel representation
-
----
-
-## [0.2.1] — 2026-11-06
+## [0.2.1] — 2026-11-10
 
 Alicorn remains an experimental native GUI runtime for Odin. This release
 collects the merged runtime, authoring, native-host, rendering-test, build, and
@@ -123,6 +14,17 @@ Compare: [v0.2.0...v0.2.1](https://github.com/samanshaiza004/alicorn/compare/v0.
 
 ### Highlights
 
+- **Retained visual effects:** native SDL_GPU surfaces can request bounded
+  Gaussian backdrop blur with retained cache reuse and direct fallback; the
+  first application consumer is Scratchpad Quick Open.
+- **Application-level headless testing:** the public `alicorn:testui` harness
+  drives real application build callbacks with synthetic input, virtual time,
+  semantic queries, and owned layout snapshots.
+- **Live style updates and motion:** non-default themes can be replaced in
+  place, and eligible Button hover fills can transition with retained timing.
+- **More capable tabs and fonts:** horizontal tab bars support opt-in magnetic
+  reorder/tear-off interactions, and the runtime has a bounded font-file/face
+  registry with shared backing for identical files.
 - Retained motion now has generation-checked targets, intent-based authoring,
   reduced-motion handling, per-window scheduling, replay/causal diagnostics,
   and native Windows move/minimize lifecycle handling.
@@ -154,6 +56,24 @@ Compare: [v0.2.0...v0.2.1](https://github.com/samanshaiza004/alicorn/compare/v0.
   the production renderer and app-facing paint APIs are unchanged.
 - Moved the reusable Odin AccessKit binding to the standalone
   [odin-accesskit](https://github.com/samanshaiza004/odin-accesskit) dependency.
+- Added bounded retained Gaussian backdrop blur to native SDL_GPU semantic
+  surfaces. Alicorn owns prefix capture, filtering, fence-tracked cache slots,
+  composition, and direct fallback; no general effects graph was introduced.
+- Added `alicorn:testui` with full-application build callbacks, shared logical
+  input routing, explicit virtual time, owned semantic/layout snapshots, and
+  bounded replay logs. Native GPU pixels and OS input remain outside its
+  headless guarantee.
+- Added in-place replacement of non-default runtime style themes while
+  preserving theme identity and invalidating affected retained dependencies.
+  The Control Gallery demonstrates validated, last-good live color editing.
+- Added opt-in timed hover-fill transitions for eligible Button recipes, with
+  Linear and CSS Ease timing, reversible entry/exit, retained scheduling, and
+  reduced-motion fallback.
+- Added opt-in magnetic horizontal tab dragging with tear-off and reattachment
+  thresholds, constrained reorder hit testing, and preserved raw pointer
+  coordinates for host decisions.
+- Added a bounded runtime font-file/face registry with stable IDs and shared
+  backing storage for identical font files.
 
 ### Fixed
 
@@ -171,6 +91,23 @@ Compare: [v0.2.0...v0.2.1](https://github.com/samanshaiza004/alicorn/compare/v0.
   markers and close hit targets remain intact.
 - Corrected helper-default normalization and cached percentage sizing bugs
   discovered during the #109 Scratchpad/Punks experiment.
+
+- Replaced the sparse stretched binomial backdrop filter with a normalized,
+  sampled discrete Gaussian and higher-precision intermediate targets. Added
+  retained-effect recovery after temporary GPU-fence deferral, correct cache
+  invalidation when GPU-surface content changes, and explicit CPU-reference
+  rejection for unsupported backdrop effects.
+- Closed native callback and text-input lifetime gaps, preserved headless
+  pointer-target reports across corrective descriptions, and bounded magnetic
+  tab dragging to the tab strip while preserving free-subtree preview motion.
+- Refresh retained motion time before interaction-only paint so newly started
+  transitions receive their first scheduled frame without further pointer
+  input.
+- Restore macOS trackpad momentum scrolling in the SDL host while preserving
+  SDL environment overrides.
+- Refine connected-tab close painting so its centered, font-independent icon
+  stays within the tab contour with contrast-aware ink and hover treatment.
+- Use the Odin-supported image pixel representation for current toolchains.
 
 ### Performance and measurement
 
@@ -216,6 +153,20 @@ Compare: [v0.2.0...v0.2.1](https://github.com/samanshaiza004/alicorn/compare/v0.
   run. The complete evidence and limits are indexed in
   [validation](docs/validation/README.md) and
   [benchmarks](docs/benchmarks/README.md).
+- The public `alicorn:testui` harness was exercised against History's real
+  application build and keyboard callbacks. Its negative control detects when
+  selection changes without revealing the selected row in the viewport.
+- Live-theme editing was validated on Windows and dogfooded in Scratchpad; the
+  Button hover-transition implementation is opt-in and its documented property
+  scope remains limited to eligible flat fills.
+- The v0.2.1 source baseline `974d74cde2c2e38f931c1cfb74280dfc5966f680`
+  passed all five hosted checks, including macOS Metal and Windows D3D12 effect
+  readback. Release-preparation documentation checks also passed; current
+  evidence and limits are in the
+  [release validation report](docs/validation/release-v0.2.1.md).
+- Local `tools/check.sh` and `tools/test.sh` passed with Odin `dev-2026-11`.
+  Local Metal readback could not start because the available SDL environment
+  enumerated no displays; the hosted Metal readback passed.
 
 ### Dependencies and toolchain
 
@@ -252,12 +203,17 @@ Compare: [v0.2.0...v0.2.1](https://github.com/samanshaiza004/alicorn/compare/v0.
 - [#160 — Complete Issue #157 construction attribution](https://github.com/samanshaiza004/alicorn/pull/160)
 - [#161 — Add a bounded CPU paint reference for #90](https://github.com/samanshaiza004/alicorn/pull/161)
 - [#176 — Refine the connected-tab close affordance](https://github.com/samanshaiza004/alicorn/pull/176)
+- [#178 — Retained Gaussian backdrop effects](https://github.com/samanshaiza004/alicorn/pull/178)
+- [#185 — Headless application test harness](https://github.com/samanshaiza004/alicorn/pull/185)
+- [#186 — Full-application test harness callbacks](https://github.com/samanshaiza004/alicorn/pull/186)
+- [#188 — Retained Button hover-fill transitions](https://github.com/samanshaiza004/alicorn/pull/188)
 
 ### Complete commit ledger
 
-Every commit from the v0.2.0 tag through the v0.2.1 source baseline
-072aaf5a29e97f5dad6296dff84835f9f707fcbf is listed below: 60 implementation,
-test, build, research, benchmark, and validation commits.
+All 93 non-merge commits from the v0.2.0 tag through source baseline
+`974d74cde2c2e38f931c1cfb74280dfc5966f680` are listed below. Pull-request
+merges are represented by the linked PRs; intermediate merge commits are
+omitted.
 - [6aba0b2](https://github.com/samanshaiza004/alicorn/commit/6aba0b2bdbbc0a02147958a65679191103a8e0ed) — feat(ui): add lexical key scopes and actionable identity diagnostics
 - [7980c0d](https://github.com/samanshaiza004/alicorn/commit/7980c0d27fec6ff2aff53e4641b2d90137e5303a) — feat(ui): bridge native lifecycle and scoped virtual lists
 - [1d20f30](https://github.com/samanshaiza004/alicorn/commit/1d20f308643d9a2900d0c26a90137b4d8e5850d7) — feat(ui): prototype theme metrics and typed sizing
@@ -312,12 +268,46 @@ test, build, research, benchmark, and validation commits.
 - [5930abb](https://github.com/samanshaiza004/alicorn/commit/5930abbe3a4d813ce4fdceccc9882f44b31287a5) — fix(text): fill editor row selection backgrounds
 - [1fde82b](https://github.com/samanshaiza004/alicorn/commit/1fde82b324be957ee685a5b7b3ce0fffef19bf3b) — build: adopt Odin dev-2026-11
 - [fe8967f](https://github.com/samanshaiza004/alicorn/commit/fe8967f08fed8b29e7cd27d5989f52b7a85f405c) — fix(build): correct Odin macOS archive checksum
+- [dfed741](https://github.com/samanshaiza004/alicorn/commit/dfed7411732b704bcfb849b64c6c1f2a449ffff3) — research: prototype bounded retained effects
+- [a031daa](https://github.com/samanshaiza004/alicorn/commit/a031daaa3fa35dc269412ef69fd0972111d205da) — feat: dogfood retained effects in application host
 - [067ff0c](https://github.com/samanshaiza004/alicorn/commit/067ff0c73551821474c30fc12d0eea2dea4a3009) — perf: defer layout invalidation trace formatting
+- [4375e64](https://github.com/samanshaiza004/alicorn/commit/4375e64642570d93c180244fb6c6f665bf8e679f) — fix(gpu): replace sparse backdrop blur with Gaussian
 - [736277f](https://github.com/samanshaiza004/alicorn/commit/736277f899b7777d0cf907a1b7c962370d7217b0) — perf: complete Issue #157 construction attribution
 - [bafe2fa](https://github.com/samanshaiza004/alicorn/commit/bafe2fa6db6b49c404538d63756b32590566d89a) — docs: record v0.2.1 Windows performance benchmarks
 - [c6eb8fe](https://github.com/samanshaiza004/alicorn/commit/c6eb8fe6fd0c6229cafb2f2d2592876ca786a6cc) — docs: record matched Windows Scratchpad benchmarks
 - [a2f1be0](https://github.com/samanshaiza004/alicorn/commit/a2f1be071d3856a7c356025f98cc415a6c09c600) — test(renderer): add bounded CPU paint reference for #90
+- [7cc8b3b](https://github.com/samanshaiza004/alicorn/commit/7cc8b3b4b84b2c0bac42fb26f729c6293a13e23d) — feat: promote retained Gaussian backdrop effects
+- [6a5a104](https://github.com/samanshaiza004/alicorn/commit/6a5a104001dd92b7a7274a8d3b891d202ffcf78e) — style: refine tab close affordance
 - [072aaf5](https://github.com/samanshaiza004/alicorn/commit/072aaf5a29e97f5dad6296dff84835f9f707fcbf) — style: refine tab close affordance
+- [44a7b84](https://github.com/samanshaiza004/alicorn/commit/44a7b84d3c87a687e718162e7235412782e97c8e) — docs(release): prepare Alicorn v0.2.1
+- [eef2468](https://github.com/samanshaiza004/alicorn/commit/eef2468e3faba11a50442fa28a9cbae4dcca10b9) — Remove scroll momentum change from effects PR
+- [27056f4](https://github.com/samanshaiza004/alicorn/commit/27056f451af0154c838115aa577aa0c6e5c7dd56) — fix(test): reject backdrop effects in CPU reference
+- [74b4f34](https://github.com/samanshaiza004/alicorn/commit/74b4f349ca6be6cef629fab40a0b662c287da19d) — style: remove trailing blank line from effects cache
+- [52a9fa9](https://github.com/samanshaiza004/alicorn/commit/52a9fa9a1ad3216eb862d1c1ee31d825adfbf472) — refactor: consolidate duplicate implementations
+- [291d1f6](https://github.com/samanshaiza004/alicorn/commit/291d1f68dda2a3a8e92d94af5cf22fa907850b96) — fix(effects): invalidate cached backdrop for GPU surface updates
+- [9d3e015](https://github.com/samanshaiza004/alicorn/commit/9d3e0159d6d0339056855b7a4977b4494e80545d) — fix: close native callback and text lifetime gaps
+- [328b8d4](https://github.com/samanshaiza004/alicorn/commit/328b8d463d29b97547915a7229333054e1cb44c4) — feat: add headless application test harness
+- [29bf6ac](https://github.com/samanshaiza004/alicorn/commit/29bf6acceb4a9955b3f26e4041736d70557c7f8e) — fix: preserve headless test interaction reports
+- [e75d4f2](https://github.com/samanshaiza004/alicorn/commit/e75d4f2c38b41f6897eae0b4fbd94d20faffe587) — feat(testui): support full application build callbacks
+- [a941240](https://github.com/samanshaiza004/alicorn/commit/a94124062a4c917cd23b5d24acd931dd15dc08ab) — feat(testui): add bounded semantic replay logs
+- [9c0931c](https://github.com/samanshaiza004/alicorn/commit/9c0931c405f38e52dee5aca482330996bc9ae29f) — chore: normalize issue 165 follow-up file endings
+- [755c1fa](https://github.com/samanshaiza004/alicorn/commit/755c1fa32f4388e2559d59059a282f59effe75a3) — feat: add experimental live color preview
+- [d23c20d](https://github.com/samanshaiza004/alicorn/commit/d23c20dc2bd39d2a1d5ee14c295cf6bca6c6af6f) — fix: build live theme gallery with current Odin
+- [80c037e](https://github.com/samanshaiza004/alicorn/commit/80c037e2f6e8a72fe1f6ca93aa55bd2d01ba6ede) — feat: add opt-in live theme editing prototype
+- [c359610](https://github.com/samanshaiza004/alicorn/commit/c3596108d1003cb24a242ef3d02995ab5d26df21) — fix: validate live theme on pinned Odin
+- [de5f45d](https://github.com/samanshaiza004/alicorn/commit/de5f45ddfad10a76ffec2ecce9ff589d07ffa786) — docs: record Windows live theme validation
+- [ae43c83](https://github.com/samanshaiza004/alicorn/commit/ae43c830d2e0f86de28ac27ef2d7968302570654) — docs: record interactive live theme validation
+- [0fc31ca](https://github.com/samanshaiza004/alicorn/commit/0fc31ca75c0c666a9be4d766fd91a96acbc14c26) — docs: record Scratchpad live theme validation
+- [b6b670a](https://github.com/samanshaiza004/alicorn/commit/b6b670a739b63ee9853daa6af093928e331b6015) — docs: propose timed visual state transitions
+- [d6f8245](https://github.com/samanshaiza004/alicorn/commit/d6f824592b57bd960b7fc091641b8a75c42f5d6e) — fix(mac): restore trackpad scroll momentum
+- [8d9bf17](https://github.com/samanshaiza004/alicorn/commit/8d9bf17fe2fed5b0b55dac97bdaea1475b0a81e7) — Add retained Button hover fill transitions
+- [0c8b44b](https://github.com/samanshaiza004/alicorn/commit/0c8b44bc0365803ebb2ccc464a64633ff0dcfe73) — feat: add magnetic horizontal tab dragging
+- [ee2ca73](https://github.com/samanshaiza004/alicorn/commit/ee2ca732b9b18b408f3be856369cb9e7893d2599) — fix: refresh motion time before retained paint
+- [5e31467](https://github.com/samanshaiza004/alicorn/commit/5e31467d961c22c25c0437df44a001f6a0f0f7b1) — fix(drag): preserve free subtree preview movement
+- [38205de](https://github.com/samanshaiza004/alicorn/commit/38205de02fdd2add4b1de02bf9b463bfad9a1080) — fix: bound magnetic tab dragging to strip
+- [4339592](https://github.com/samanshaiza004/alicorn/commit/4339592865cd05116d4d1c8aa119ce0c3bb5957e) — feat: add bounded font face registry
+- [974d74c](https://github.com/samanshaiza004/alicorn/commit/974d74cde2c2e38f931c1cfb74280dfc5966f680) — fix: use supported Odin image pixel representation
+
 
 ---
 
