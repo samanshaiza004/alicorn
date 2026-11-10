@@ -2,8 +2,50 @@ package alicorn
 
 import "core:testing"
 import "core:mem"
+import runa "../third_party/Runa"
 
 IMAGE_ASSET_TEST_FONT :: #load("../assets/fonts/AtkinsonHyperlegibleNext-Variable.ttf")
+IMAGE_ASSET_TEST_MONO_FONT :: #load("../assets/fonts/AtkinsonHyperlegibleMono-Variable.ttf")
+
+font_test_read_be_u16 :: proc(data: []u8, offset: int) -> u16 {
+	return u16(data[offset])<<8 | u16(data[offset+1])
+}
+
+font_test_read_be_u32 :: proc(data: []u8, offset: int) -> u32 {
+	return u32(data[offset])<<24 | u32(data[offset+1])<<16 | u32(data[offset+2])<<8 | u32(data[offset+3])
+}
+
+font_test_write_be_u32 :: proc(data: []u8, offset: int, value: u32) {
+	data[offset+0] = u8(value >> 24)
+	data[offset+1] = u8(value >> 16)
+	data[offset+2] = u8(value >> 8)
+	data[offset+3] = u8(value)
+}
+
+font_test_adjust_ttc_face_offsets :: proc(data: []u8, face_offset: int) {
+	table_count := int(font_test_read_be_u16(data, face_offset+4))
+	for i in 0..<table_count {
+		record_offset := face_offset + 12 + i*16
+		table_offset := font_test_read_be_u32(data, record_offset+8)
+		font_test_write_be_u32(data, record_offset+8, table_offset+u32(face_offset))
+	}
+}
+
+font_test_make_two_face_ttc :: proc(first, second: []u8) -> []u8 {
+	first_offset := 20
+	second_offset := first_offset + len(first)
+	data := make([]u8, second_offset+len(second), context.temp_allocator)
+	data[0], data[1], data[2], data[3] = 0x74, 0x74, 0x63, 0x66 // ttcf
+	data[5] = 1 // version 1.0
+	font_test_write_be_u32(data, 8, 2)
+	font_test_write_be_u32(data, 12, u32(first_offset))
+	font_test_write_be_u32(data, 16, u32(second_offset))
+	copy(data[first_offset:], first)
+	copy(data[second_offset:], second)
+	font_test_adjust_ttc_face_offsets(data, first_offset)
+	font_test_adjust_ttc_face_offsets(data, second_offset)
+	return data
+}
 
 image_asset_test_qoi :: proc() -> [27]u8 {
 	return [27]u8{
@@ -131,6 +173,81 @@ test_font_asset_api_copies_input_and_invalidates_typography :: proc(t: ^testing.
 	bad := []u8{0,1,2,3}
 	testing.expect(t, !font_load_bytes(&rt, .Monospace, bad) && rt.text_engine.font_generation == generation,
 		"invalid replacement bytes should leave the last valid face and generation intact")
+}
+
+@(test)
+test_font_file_registry_copies_deduplicates_and_retains_face :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0,0,80,50})
+	defer destroy_runtime(&rt)
+	input := make([]u8, len(IMAGE_ASSET_TEST_FONT))
+	copy(input, IMAGE_ASSET_TEST_FONT)
+	file := font_file_load_bytes(&rt, input)
+	input[0] = 0
+	duplicate := font_file_load_bytes(&rt, IMAGE_ASSET_TEST_FONT)
+	face := font_face_load(&rt, file, 0)
+	duplicate_face := font_face_load(&rt, file, 0)
+	bad_file := font_file_load_bytes(&rt, []u8{0, 1, 2, 3})
+	_, file_lookup_found := rt.text_engine.font_files[file]
+	_, invalid_face := rt.text_engine.font_faces[Font_Face_ID(999)]
+	testing.expect(t, file != 0 && duplicate == file && text_engine_registered_font_file_count(&rt.text_engine) == 1,
+		"equal font inputs should share one Runtime-owned backing file")
+	testing.expect(t, face != 0 && duplicate_face == face && text_engine_registered_font_face_count(&rt.text_engine) == 1,
+		"re-registering one file face should preserve its stable face identity")
+	stored := rt.text_engine.font_files[file]
+	testing.expect(t, stored != nil && stored.data[0] == IMAGE_ASSET_TEST_FONT[0] && rt.text_engine.font_file_bytes == len(IMAGE_ASSET_TEST_FONT),
+		"the registry should retain an owned byte copy and account unique file bytes once")
+	testing.expect(t, font_face_load(&rt, file, 1) == 0 && file_lookup_found && !invalid_face,
+		"invalid face indices and unknown face IDs should be rejected without adding entries")
+	testing.expect(t, bad_file == 0 && text_engine_registered_font_file_count(&rt.text_engine) == 1,
+		"malformed or unsupported font bytes should not occupy the bounded file registry")
+	delete(input)
+}
+
+@(test)
+test_font_registry_loads_distinct_ttc_faces_and_owns_collection_bytes :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0,0,80,50})
+	defer destroy_runtime(&rt)
+	collection := font_test_make_two_face_ttc(IMAGE_ASSET_TEST_FONT, IMAGE_ASSET_TEST_MONO_FONT)
+	file := font_file_load_bytes(&rt, collection)
+	delete(collection, context.temp_allocator)
+	face0_id := font_face_load(&rt, file, 0)
+	face1_id := font_face_load(&rt, file, 1)
+	face0, face0_found := text_engine_font_face(&rt.text_engine, face0_id)
+	face1, face1_found := text_engine_font_face(&rt.text_engine, face1_id)
+	face0_glyph: runa.Glyph_ID
+	face1_glyph: runa.Glyph_ID
+	if face0_found { face0_glyph = runa.font_lookup_glyph(&face0.font, 'A') }
+	if face1_found { face1_glyph = runa.font_lookup_glyph(&face1.font, 'A') }
+	_, face0_drawable, face0_ok := text_engine_glyph(&rt.text_engine, face0_glyph, 16, face_id=face0_id)
+	_, face1_drawable, face1_ok := text_engine_glyph(&rt.text_engine, face1_glyph, 16, face_id=face1_id)
+	testing.expect(t, file != 0 && text_engine_registered_font_file_count(&rt.text_engine) == 1 && text_engine_registered_font_face_count(&rt.text_engine) == 2,
+		"a TTC should register one owned file and distinct faces by collection index")
+	testing.expect(t, face0_found && face1_found && face0.id != face1.id && face0.face_index == 0 && face1.face_index == 1,
+		"collection indices should resolve to stable, distinct face records")
+	testing.expect(t, face0_glyph != 0 && face1_glyph != 0 && face0_ok && face1_ok && face0_drawable && face1_drawable,
+		"both parsed faces should remain usable for glyph lookup and rasterization after the caller releases the TTC bytes")
+	testing.expect(t, len(rt.text_engine.glyphs) == 2,
+		"equal glyph IDs from different TTC faces must not alias in the raster cache")
+}
+
+@(test)
+test_glyph_resource_identity_includes_stable_font_face_id :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0,0,80,50})
+	defer destroy_runtime(&rt)
+	testing.expect(t, text_engine_load_font(&rt.text_engine, IMAGE_ASSET_TEST_FONT), "primary font should load")
+	file := font_file_load_bytes(&rt, #load("../assets/fonts/AtkinsonHyperlegibleMono-Variable.ttf"))
+	face_id := font_face_load(&rt, file, 0)
+	primary_id := rt.text_engine.primary_face_ids[.UI]
+	face, face_found := text_engine_font_face(&rt.text_engine, face_id)
+	primary_glyph := runa.font_lookup_glyph(&rt.text_engine.font, 'A')
+	secondary_glyph: runa.Glyph_ID
+	if face_found { secondary_glyph = runa.font_lookup_glyph(&face.font, 'A') }
+	_, primary_drawable, primary_ok := text_engine_glyph(&rt.text_engine, primary_glyph, 16, face_id=primary_id)
+	_, secondary_drawable, secondary_ok := text_engine_glyph(&rt.text_engine, secondary_glyph, 16, face_id=face_id)
+	testing.expect(t, face_id != 0 && face_id != primary_id && primary_glyph != 0 && secondary_glyph != 0,
+		"the registry face and primary face should have independent identities and the shared test glyph")
+	testing.expect(t, primary_ok && secondary_ok && primary_drawable && secondary_drawable && len(rt.text_engine.glyphs) == 2,
+		"the same glyph index from distinct faces must occupy separate raster-cache entries")
 }
 
 @(test)

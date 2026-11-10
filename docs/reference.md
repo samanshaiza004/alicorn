@@ -265,6 +265,7 @@ checker verifies only the mutation scopes the application explicitly reports.
 | `GPU_Surface_Image` / `gpu_surface_image` / `gpu_surface_update_images` | Retain up to 256 Runtime-owned image handles as surface-local layers above the background and below custom geometry. |
 | `Image_Handle` / `Image_Load_Error` | Identify a retained image resource and report bounded decode failures. |
 | `font_load_bytes` / `font_load_italic_bytes` / `font_load_fallback_bytes` | Install app-owned fonts by `Font_Role`; the host keeps defaults for faces not supplied. |
+| `font_file_load_bytes` / `font_face_load` | Register a bounded, Runtime-owned SFNT/TTC file and parse one face by collection index. Returns stable `Font_File_ID` / `Font_Face_ID` values; this registry stage does not yet enable automatic glyph fallback. |
 | `button` | Emit an interactive button; returns `bool` when activated. |
 | `checkbox` | Emit a controlled checkbox; returns `{value, changed}`. |
 | `slider_f32` | Emit a controlled horizontal `f32` slider; returns `{value, changed}`. |

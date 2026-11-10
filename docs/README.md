@@ -27,6 +27,8 @@ contains the v0.1.0 and v0.2.0 release history.
 - [Secondary native windows](secondary-native-windows.md).
 - [Scroll capture](scroll-capture.md).
 - [Icon assets](icon-assets.md).
+- [Unicode font fallback prototype](unicode-font-fallback.md) — current
+  face-registry stage and remaining shaping/platform gates.
 
 ## Develop and distribute
 

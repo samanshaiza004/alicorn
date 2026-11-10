@@ -2,6 +2,7 @@
 package alicorn
 
 import "core:mem"
+import "core:bytes"
 import odin_image "core:image"
 import odin_png "core:image/png"
 import odin_qoi "core:image/qoi"
@@ -62,12 +63,13 @@ image_decode_bytes :: proc(data: []u8, allocator := context.allocator, scratch_a
 	pixel_count := decoded.width*decoded.height
 	channel_bytes := decoded.depth/8
 	expected_bytes := pixel_count*decoded.channels*channel_bytes
-	if len(decoded.pixels) != expected_bytes { return {}, .Decode_Failed }
+	decoded_pixels := bytes.buffer_to_bytes(&decoded.pixels)
+	if len(decoded_pixels) != expected_bytes { return {}, .Decode_Failed }
 	rgba := make([]u8, pixel_count*4, allocator)
 	if rgba == nil && pixel_count > 0 { return {}, .Resource_Limit }
 	if decoded.depth == 8 {
 		for i := 0; i < pixel_count; i += 1 {
-			pixel := decoded.pixels[i*decoded.channels:]
+			pixel := decoded_pixels[i*decoded.channels:]
 		switch decoded.channels {
 		case 1: rgba[i*4+0], rgba[i*4+1], rgba[i*4+2], rgba[i*4+3] = pixel[0], pixel[0], pixel[0], 255
 		case 2: rgba[i*4+0], rgba[i*4+1], rgba[i*4+2], rgba[i*4+3] = pixel[0], pixel[0], pixel[0], pixel[1]
@@ -76,7 +78,7 @@ image_decode_bytes :: proc(data: []u8, allocator := context.allocator, scratch_a
 		}
 		}
 	} else {
-		pixels16 := mem.slice_data_cast([]u16, decoded.pixels[:])
+		pixels16 := mem.slice_data_cast([]u16, decoded_pixels)
 		for i := 0; i < pixel_count; i += 1 {
 			pixel := pixels16[i*decoded.channels:]
 		switch decoded.channels {
@@ -162,4 +164,23 @@ font_load_fallback_bytes :: proc(rt: ^Runtime, role: Font_Role, data: []u8) -> b
 	rt.text_engine.application_fallback_font[role] = true
 	invalidate_root(rt, "application fallback font role changed")
 	return true
+}
+
+// font_file_load_bytes copies a validated SFNT/TTC source into the Runtime's
+// bounded font registry. Identical bytes share one backing allocation. The
+// file remains owned by the Runtime until destruction, including while any
+// collection faces reference it.
+font_file_load_bytes :: proc(rt: ^Runtime, data: []u8) -> Font_File_ID {
+	if rt == nil { return 0 }
+	return text_engine_font_file_load_bytes(&rt.text_engine, data)
+}
+
+// font_face_load parses one face from a registered font file and returns its
+// stable Runtime-local identity. Face index is zero for a standalone SFNT and
+// selects a specific face for TTC/OTC collections. Registration alone does
+// not change current typography; a later fallback-resolver stage will decide
+// when registered faces participate in shaping.
+font_face_load :: proc(rt: ^Runtime, file: Font_File_ID, face_index: int) -> Font_Face_ID {
+	if rt == nil { return 0 }
+	return text_engine_font_face_load(&rt.text_engine, file, face_index)
 }

@@ -8,6 +8,17 @@ import "core:unicode/utf8"
 import runa "../third_party/Runa"
 
 FONT_WEIGHT_AXIS_TAG :: runa.Axis_Tag(0x77676874)
+FONT_FACE_FILE_BYTE_LIMIT :: 64 * 1024 * 1024
+FONT_FILE_COUNT_LIMIT :: 64
+FONT_FACE_COUNT_LIMIT :: 32
+
+// Font_File_ID identifies one Runtime-owned copy of a font file. Multiple
+// collection faces can reference the same backing bytes.
+Font_File_ID :: distinct u32
+
+// Font_Face_ID is stable for the lifetime of its Runtime. Glyph resources use
+// this identity instead of assuming that a glyph ID is unique across faces.
+Font_Face_ID :: distinct u32
 
 // text_style_requested_size resolves the per-control logical font size while
 // preserving the inherited user/host text scale. Non-positive, NaN, or
@@ -67,13 +78,38 @@ Text_Engine :: struct {
 	application_primary_font: [Font_Role]bool,
 	application_italic_font: [Font_Role]bool,
 	application_fallback_font: [Font_Role]bool,
+	primary_face_ids: [Font_Role]Font_Face_ID,
+	italic_face_ids: [Font_Role]Font_Face_ID,
+	fallback_face_ids: [Font_Role]Font_Face_ID,
 	italic_font_loaded:    bool,
 	monospace_italic_font_loaded: bool,
 	cache_initialized:    bool,
 	font_generation:      u64,
+	font_files:           map[Font_File_ID]^Text_Font_File,
+	font_file_order:      [dynamic]Font_File_ID,
+	font_faces:           map[Font_Face_ID]^Text_Font_Face,
+	font_face_order:      [dynamic]Font_Face_ID,
+	font_face_ids_by_pointer: map[rawptr]Font_Face_ID,
+	font_file_bytes:      int,
+	next_font_file_id:    u32,
+	next_font_face_id:    u32,
 	atlas:                 runa.Atlas,
 	atlas_initialized:    bool,
 	glyphs:                map[Glyph_Resource_Key]runa.Atlas_Slot,
+}
+
+Text_Font_File :: struct {
+	id: Font_File_ID,
+	data: []u8,
+	hash: u64,
+}
+
+Text_Font_Face :: struct {
+	id: Font_Face_ID,
+	file: Font_File_ID,
+	face_index: int,
+	font: runa.Font,
+	weight_axis: Font_Weight_Axis,
 }
 
 Text_Font_Source :: enum u8 {
@@ -87,6 +123,7 @@ Text_Font_Source :: enum u8 {
 // logical glyph resource identity.
 Glyph_Resource_Key :: struct {
 	font_generation: u64,
+	font_face:      Font_Face_ID,
 	font:           Font_Role,
 	font_source:    Text_Font_Source,
 	font_weight_bits: u32,
@@ -100,6 +137,7 @@ Glyph_Resource_Key :: struct {
 
 Text_Glyph :: struct {
 	glyph_id:       runa.Glyph_ID,
+	font_face:      Font_Face_ID,
 	font_source:    Text_Font_Source,
 	cluster_start:  int,
 	cluster_end:    int,
@@ -220,7 +258,134 @@ new_text_engine :: proc(name := "unconfigured", available := false, allocator :=
 		cache=runa.cache_make(allocator), cache_initialized=true,
 		atlas=runa.atlas_make(1024, 1024, allocator), atlas_initialized=true,
 		glyphs=make(map[Glyph_Resource_Key]runa.Atlas_Slot, allocator=allocator),
+		font_files=make(map[Font_File_ID]^Text_Font_File, allocator=allocator),
+		font_file_order=make([dynamic]Font_File_ID, 0, 4, allocator),
+		font_faces=make(map[Font_Face_ID]^Text_Font_Face, allocator=allocator),
+		font_face_order=make([dynamic]Font_Face_ID, 0, 8, allocator),
+		font_face_ids_by_pointer=make(map[rawptr]Font_Face_ID, allocator=allocator),
+		next_font_file_id=1,
+		next_font_face_id=1,
 	}
+}
+
+text_engine_allocate_font_file_id :: proc(engine: ^Text_Engine) -> Font_File_ID {
+	if engine == nil || engine.next_font_file_id == 0 { return 0 }
+	id := Font_File_ID(engine.next_font_file_id)
+	engine.next_font_file_id += 1
+	return id
+}
+
+text_engine_allocate_font_face_id :: proc(engine: ^Text_Engine) -> Font_Face_ID {
+	if engine == nil || engine.next_font_face_id == 0 { return 0 }
+	id := Font_Face_ID(engine.next_font_face_id)
+	engine.next_font_face_id += 1
+	return id
+}
+
+text_font_bytes_hash :: proc(data: []u8) -> u64 {
+	h: u64 = 0xCBF29CE484222325
+	for b in data {
+		h ~= u64(b)
+		h *= 0x100000001B3
+	}
+	return h
+}
+
+text_font_bytes_equal :: proc(a, b: []u8) -> bool {
+	if len(a) != len(b) { return false }
+	for i in 0..<len(a) { if a[i] != b[i] { return false } }
+	return true
+}
+
+// text_engine_font_file_load_bytes retains one bounded, deduplicated copy of
+// an SFNT/TTC file. The input remains application-owned and can be discarded
+// after this call. The backing bytes live until Runtime destruction so every
+// parsed collection face keeps a valid source buffer.
+text_engine_font_file_load_bytes :: proc(engine: ^Text_Engine, data: []u8) -> Font_File_ID {
+	if engine == nil || len(data) == 0 || len(data) > FONT_FACE_FILE_BYTE_LIMIT { return 0 }
+	hash := text_font_bytes_hash(data)
+	for id in engine.font_file_order {
+		file, found := engine.font_files[id]
+		if found && file != nil && file.hash == hash && text_font_bytes_equal(file.data, data) {
+			return id
+		}
+	}
+	if len(data) > FONT_FACE_FILE_BYTE_LIMIT-engine.font_file_bytes || len(engine.font_file_order) >= FONT_FILE_COUNT_LIMIT { return 0 }
+	if runa.font_num_faces(data) <= 0 { return 0 }
+	// Runa's face-count helper only reads the TTC header (and reports one face
+	// for any nonempty SFNT candidate). Parse face zero before retaining bytes
+	// so malformed or unsupported files cannot occupy the Runtime registry.
+	probe, probe_err := runa.font_load_face(data, 0, engine.allocator)
+	if probe_err != .None { return 0 }
+	runa.font_destroy(&probe)
+	id := text_engine_allocate_font_file_id(engine)
+	if id == 0 { return 0 }
+	copy_data := make([]u8, len(data), engine.allocator)
+	if copy_data == nil { return 0 }
+	copy(copy_data, data)
+	file := new(Text_Font_File, allocator=engine.allocator)
+	if file == nil {
+		delete(copy_data, engine.allocator)
+		return 0
+	}
+	file^ = Text_Font_File{id=id, data=copy_data, hash=hash}
+	engine.font_files[id] = file
+	append(&engine.font_file_order, id)
+	engine.font_file_bytes += len(copy_data)
+	return id
+}
+
+// text_engine_font_face_load registers a face from an owned file. The parsed
+// Runa Font is allocated at a stable address because Runa's shape cache keys
+// by Font pointer. Repeating the same file/index pair returns the same face ID.
+text_engine_font_face_load :: proc(engine: ^Text_Engine, file_id: Font_File_ID, face_index: int) -> Font_Face_ID {
+	if engine == nil { return 0 }
+	file, file_found := engine.font_files[file_id]
+	if !file_found || file == nil || face_index < 0 || face_index >= runa.font_num_faces(file.data) { return 0 }
+	for id in engine.font_face_order {
+		face, found := engine.font_faces[id]
+		if found && face != nil && face.file == file_id && face.face_index == face_index { return id }
+	}
+	if len(engine.font_face_order) >= FONT_FACE_COUNT_LIMIT { return 0 }
+	font, err := runa.font_load_face(file.data, face_index, engine.allocator)
+	if err != .None { return 0 }
+	id := text_engine_allocate_font_face_id(engine)
+	if id == 0 {
+		runa.font_destroy(&font)
+		return 0
+	}
+	face := new(Text_Font_Face, allocator=engine.allocator)
+	if face == nil {
+		runa.font_destroy(&font)
+		return 0
+	}
+	face^ = Text_Font_Face{
+		id=id,
+		file=file_id,
+		face_index=face_index,
+		font=font,
+		weight_axis=text_engine_weight_axis_for_font(&font),
+	}
+	engine.font_faces[id] = face
+	engine.font_face_ids_by_pointer[rawptr(&face.font)] = id
+	append(&engine.font_face_order, id)
+	return id
+}
+
+text_engine_font_face :: proc(engine: ^Text_Engine, id: Font_Face_ID) -> (face: ^Text_Font_Face, found: bool) {
+	if engine == nil || id == 0 { return }
+	face, found = engine.font_faces[id]
+	return
+}
+
+text_engine_registered_font_file_count :: proc(engine: ^Text_Engine) -> int {
+	if engine == nil { return 0 }
+	return len(engine.font_file_order)
+}
+
+text_engine_registered_font_face_count :: proc(engine: ^Text_Engine) -> int {
+	if engine == nil { return 0 }
+	return len(engine.font_face_order)
 }
 
 text_engine_load_font :: proc(engine: ^Text_Engine, data: []u8) -> bool {
@@ -309,7 +474,51 @@ text_engine_font_for_glyph :: proc(engine: ^Text_Engine, role: Font_Role, source
 text_engine_font_source_for_font :: proc(engine: ^Text_Engine, role: Font_Role, font: ^runa.Font) -> Text_Font_Source {
 	fallback, loaded := text_engine_fallback_font(engine, role)
 	if loaded && font == fallback { return .Fallback }
+	if engine != nil && font != nil {
+		if _, found := engine.font_face_ids_by_pointer[rawptr(font)]; found { return .Fallback }
+	}
 	return .Primary
+}
+
+text_engine_font_face_id_for_font :: proc(engine: ^Text_Engine, role: Font_Role, font: ^runa.Font) -> Font_Face_ID {
+	if engine == nil || font == nil { return 0 }
+	primary, primary_loaded := text_engine_font(engine, role)
+	if primary_loaded && font == primary { return engine.primary_face_ids[role] }
+	italic, italic_loaded := text_engine_italic_font(engine, role, .Primary)
+	if italic_loaded && font == italic { return engine.italic_face_ids[role] }
+	fallback, fallback_loaded := text_engine_fallback_font(engine, role)
+	if fallback_loaded && font == fallback { return engine.fallback_face_ids[role] }
+	if id, found := engine.font_face_ids_by_pointer[rawptr(font)]; found { return id }
+	return 0
+}
+
+text_engine_font_for_face_id :: proc(
+	engine: ^Text_Engine,
+	id: Font_Face_ID,
+) -> (font: ^runa.Font, axis: Font_Weight_Axis, role: Font_Role, source: Text_Font_Source, italic, loaded: bool) {
+	if engine == nil || id == 0 { return }
+	for candidate in ([2]Font_Role{Font_Role.UI, Font_Role.Monospace}) {
+		if id == engine.primary_face_ids[candidate] {
+			font, loaded = text_engine_font(engine, candidate)
+			axis, role, source = text_engine_weight_axis(engine, candidate, .Primary), candidate, .Primary
+			return
+		}
+		if id == engine.italic_face_ids[candidate] {
+			font, loaded = text_engine_italic_font(engine, candidate, .Primary)
+			axis, role, source, italic = text_engine_weight_axis(engine, candidate, .Primary), candidate, .Primary, true
+			return
+		}
+		if id == engine.fallback_face_ids[candidate] {
+			font, loaded = text_engine_fallback_font(engine, candidate)
+			axis, role, source = text_engine_weight_axis(engine, candidate, .Fallback), candidate, .Fallback
+			return
+		}
+	}
+	face, found := text_engine_font_face(engine, id)
+	if found && face != nil {
+		return &face.font, face.weight_axis, .UI, .Fallback, false, true
+	}
+	return
 }
 
 text_engine_weight_axis_for_glyph :: proc(engine: ^Text_Engine, role: Font_Role, source: Text_Font_Source, italic: bool) -> Font_Weight_Axis {
@@ -369,6 +578,7 @@ text_engine_load_font_role :: proc(engine: ^Text_Engine, role: Font_Role, data: 
 		engine.font = font
 		engine.font_weight_axis = weight_axis
 		engine.font_loaded = true
+		engine.primary_face_ids[role] = text_engine_allocate_font_face_id(engine)
 	case .Monospace:
 		if engine.monospace_italic_font_loaded {
 			runa.font_destroy(&engine.monospace_italic_font)
@@ -383,6 +593,7 @@ text_engine_load_font_role :: proc(engine: ^Text_Engine, role: Font_Role, data: 
 		engine.monospace_font = font
 		engine.monospace_font_weight_axis = weight_axis
 		engine.monospace_font_loaded = true
+		engine.primary_face_ids[role] = text_engine_allocate_font_face_id(engine)
 	}
 	engine.font_generation += 1
 	engine.available = true
@@ -411,6 +622,7 @@ text_engine_load_italic_font_role :: proc(engine: ^Text_Engine, role: Font_Role,
 		engine.italic_font = font
 		engine.italic_font_weight_axis = weight_axis
 		engine.italic_font_loaded = true
+		engine.italic_face_ids[role] = text_engine_allocate_font_face_id(engine)
 	case .Monospace:
 		if engine.monospace_italic_font_loaded { runa.font_destroy(&engine.monospace_italic_font) }
 		delete(engine.monospace_italic_font_data, engine.allocator)
@@ -418,6 +630,7 @@ text_engine_load_italic_font_role :: proc(engine: ^Text_Engine, role: Font_Role,
 		engine.monospace_italic_font = font
 		engine.monospace_italic_font_weight_axis = weight_axis
 		engine.monospace_italic_font_loaded = true
+		engine.italic_face_ids[role] = text_engine_allocate_font_face_id(engine)
 	}
 	engine.font_generation += 1
 	engine.available = true
@@ -446,6 +659,7 @@ text_engine_load_fallback_font_role :: proc(engine: ^Text_Engine, role: Font_Rol
 		engine.fallback_font = font
 		engine.fallback_font_weight_axis = weight_axis
 		engine.fallback_font_loaded = true
+		engine.fallback_face_ids[role] = text_engine_allocate_font_face_id(engine)
 	case .Monospace:
 		if engine.monospace_fallback_font_loaded { runa.font_destroy(&engine.monospace_fallback_font) }
 		delete(engine.monospace_fallback_font_data, engine.allocator)
@@ -453,6 +667,7 @@ text_engine_load_fallback_font_role :: proc(engine: ^Text_Engine, role: Font_Rol
 		engine.monospace_fallback_font = font
 		engine.monospace_fallback_font_weight_axis = weight_axis
 		engine.monospace_fallback_font_loaded = true
+		engine.fallback_face_ids[role] = text_engine_allocate_font_face_id(engine)
 	}
 	engine.font_generation += 1
 	engine.available = true
@@ -483,6 +698,26 @@ text_engine_destroy :: proc(engine: ^Text_Engine) {
 	if engine.monospace_fallback_font_loaded {
 		runa.font_destroy(&engine.monospace_fallback_font)
 	}
+	// Runa's shape cache retains Font pointers, so destroy all parsed registry
+	// faces only after destroying the cache. Collection files stay alive until
+	// every face that aliases their bytes has released its parsed tables.
+	for id in engine.font_face_order {
+		if face, found := engine.font_faces[id]; found && face != nil {
+			runa.font_destroy(&face.font)
+			free(face, allocator=engine.allocator)
+		}
+	}
+	for id in engine.font_file_order {
+		if file, found := engine.font_files[id]; found && file != nil {
+			delete(file.data, engine.allocator)
+			free(file, allocator=engine.allocator)
+		}
+	}
+	delete(engine.font_faces)
+	delete(engine.font_face_order)
+	delete(engine.font_face_ids_by_pointer)
+	delete(engine.font_files)
+	delete(engine.font_file_order)
 	delete(engine.font_data, engine.allocator)
 	delete(engine.italic_font_data, engine.allocator)
 	delete(engine.fallback_font_data, engine.allocator)
@@ -493,17 +728,34 @@ text_engine_destroy :: proc(engine: ^Text_Engine) {
 	engine^ = {}
 }
 
-text_engine_glyph :: proc(engine: ^Text_Engine, glyph_id: runa.Glyph_ID, size: f32, subpixel_bucket: u8 = 0, hint: bool = true, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI, font_source := Text_Font_Source.Primary, font_weight: f32 = FONT_WEIGHT_REGULAR, italic := false) -> (slot: runa.Atlas_Slot, drawable, ok: bool) {
+text_engine_glyph :: proc(engine: ^Text_Engine, glyph_id: runa.Glyph_ID, size: f32, subpixel_bucket: u8 = 0, hint: bool = true, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI, font_source := Text_Font_Source.Primary, font_weight: f32 = FONT_WEIGHT_REGULAR, italic := false, face_id: Font_Face_ID = 0) -> (slot: runa.Atlas_Slot, drawable, ok: bool) {
 	font, loaded := text_engine_font_for_glyph(engine, font_role, font_source, italic)
+	weight_axis := text_engine_weight_axis_for_glyph(engine, font_role, font_source, italic)
+	resolved_face_id := text_engine_font_face_id_for_font(engine, font_role, font)
+	resolved_role := font_role
+	resolved_source := font_source
+	resolved_italic := italic
+	if face_id != 0 {
+		resolved_font, resolved_axis, resolved_role_value, resolved_source_value, resolved_italic_value, resolved_loaded := text_engine_font_for_face_id(engine, face_id)
+		font, weight_axis, resolved_role, resolved_source, resolved_italic, loaded = resolved_font, resolved_axis, resolved_role_value, resolved_source_value, resolved_italic_value, resolved_loaded
+		resolved_face_id = face_id
+	}
 	if !loaded || size <= 0 { return }
-	weight := text_engine_resolve_font_weight(engine, font_role, font_source, italic, font_weight)
+	weight := effective_font_weight(font_weight)
+	if weight_axis.available {
+		if weight < weight_axis.min_value { weight = weight_axis.min_value }
+		if weight > weight_axis.max_value { weight = weight_axis.max_value }
+	} else {
+		weight = FONT_WEIGHT_REGULAR
+	}
 	is_color := runa.font_has_color_layers(font, glyph_id)
 	key := Glyph_Resource_Key{
 		font_generation = engine.font_generation,
-		font = font_role,
-		font_source = font_source,
+		font_face = resolved_face_id,
+		font = resolved_role,
+		font_source = resolved_source,
 		font_weight_bits = transmute(u32)weight,
-		italic = italic,
+		italic = resolved_italic,
 		glyph_id = glyph_id,
 		size_bits = transmute(u32)size,
 		subpixel_bucket = subpixel_bucket & 3,
@@ -518,7 +770,7 @@ text_engine_glyph :: proc(engine: ^Text_Engine, glyph_id: runa.Glyph_ID, size: f
 	err: runa.Error
 	previous_temp_allocator := context.temp_allocator
 	context.temp_allocator = scratch_allocator
-	_ = text_engine_apply_font_weight(font, text_engine_weight_axis_for_glyph(engine, font_role, font_source, italic), weight)
+	_ = text_engine_apply_font_weight(font, weight_axis, weight)
 	defer { runa.font_reset_variations(font) }
 	slot, err = runa.raster_glyph(font, glyph_id, size, key.subpixel_bucket, &engine.atlas, allocator=engine.allocator, hint=hint)
 	context.temp_allocator = previous_temp_allocator
@@ -915,6 +1167,7 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 				}
 			}
 			glyph_font_source := text_engine_font_source_for_font(engine, font_role, glyph.font)
+			glyph_face_id := text_engine_font_face_id_for_font(engine, font_role, glyph.font)
 			glyph_italic := text_engine_font_is_italic(engine, font_role, glyph_font_source, glyph.font)
 			glyph_weight = text_engine_resolve_font_weight(engine, font_role, glyph_font_source, glyph_italic, glyph_weight)
 			// Keep the run-level field compatible as a fallback-participation
@@ -926,6 +1179,7 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 			if tab { advance = text_tab_advance(pen_x, glyph.x_advance) }
 			append(&run.glyphs, Text_Glyph{
 				glyph_id=glyph.glyph_id,
+				font_face=glyph_face_id,
 				font_source=glyph_font_source,
 				cluster_start=cluster_start,
 				cluster_end=cluster_end,
