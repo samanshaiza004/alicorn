@@ -497,8 +497,12 @@ Drag_Session :: struct {
 	start_x, start_y: f32,
 	x, y: f32,
 	track_bounds: Rect,
+	track_bounds_is_viewport: bool,
 	tracking: Drag_Tracking_Options,
 	presentation_state: Drag_Presentation_State,
+	detached_anchor_x, detached_anchor_y: f32,
+	detached_preview_translation: [2]f32,
+	detached_anchor_valid: bool,
 	target: Semantic_ID,
 	target_node: Node_ID, // presentation hint only; never the target identity
 	position: Drop_Position,
@@ -525,9 +529,9 @@ Drag_Presentation_State :: enum {
 
 Drag_Tracking_Options :: struct {
 	mode: Drag_Tracking_Mode,
-	// Distance outside the source tab's vertical track needed to detach.
+	// Distance outside the horizontal track rectangle needed to detach.
 	detach_distance: f32,
-	// Distance back inside that track at which the preview reattaches.
+	// Distance back inside the track rectangle at which the preview reattaches.
 	reattach_distance: f32,
 }
 

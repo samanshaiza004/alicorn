@@ -36,9 +36,10 @@ Tab_Bar_Options :: struct {
 	// drag_preview_mode is forwarded to each tab drag source. Source_Subtree
 	// lifts the complete painted tab into an inert runtime overlay.
 	drag_preview_mode: Drag_Preview_Mode,
-	// drag_tracking opts into magnetic horizontal reorder behavior. The preview
-	// stays on its tab track until it crosses detach_distance, then follows both
-	// pointer axes; reattach_distance supplies hysteresis on the way back.
+	// drag_tracking opts into magnetic horizontal reorder behavior. When the
+	// source is inside a horizontal scroll viewport, the preview stays within
+	// that strip until it crosses detach_distance, then follows both pointer
+	// axes; reattach_distance supplies hysteresis on the way back.
 	drag_tracking: Drag_Tracking_Options,
 	presentation:  Tab_Bar_Presentation,
 	appearance:    Tab_Bar_Appearance,

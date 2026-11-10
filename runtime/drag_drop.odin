@@ -9,9 +9,10 @@ DRAG_PREVIEW_MAX_SUBTREE_SPANS :: 2048
 
 // drag_source marks the most recently described node as a local drag source.
 // The application identity must remain meaningful if virtualization removes
-// the node while the drag is in progress. Horizontal_Magnetic keeps its
-// preview and drop targeting on the source's vertical track until the real
-// pointer crosses detach_distance; reattach_distance prevents edge flicker.
+// the node while the drag is in progress. Horizontal_Magnetic bounds the
+// preview and reorder targeting to the nearest horizontal scroll viewport
+// until the real pointer crosses detach_distance; reattach_distance prevents
+// edge flicker. Sources without such a viewport retain vertical-only tracking.
 drag_source :: proc(
 	ui: ^UI,
 	drag_type: Drag_Type,
@@ -283,36 +284,70 @@ append_drag_preview :: proc(rt: ^Runtime) {
 
 drag_preview_translation :: proc(rt: ^Runtime) -> [2]f32 {
 	if rt == nil { return {} }
-	if rt.drag_preview.mode == .Source_Subtree {
-		vertical_delta := rt.drag.y-rt.drag.start_y
-		if rt.drag.tracking.mode == .Horizontal_Magnetic {
-			vertical_delta = drag_preview_track_delta_y(rt)
-		}
-		return [2]f32{rt.drag.x-rt.drag.start_x, vertical_delta}
-	}
-	if rt.drag.tracking.mode == .Horizontal_Magnetic && rt.drag.presentation_state != .Free {
-		preview_y := rt.drag.track_bounds.y+rt.drag.track_bounds.h*0.5
-		return [2]f32{rt.drag.x+DRAG_PREVIEW_POINTER_OFFSET, preview_y+drag_preview_track_delta_y(rt)+DRAG_PREVIEW_POINTER_OFFSET}
-	}
-	return [2]f32{rt.drag.x+DRAG_PREVIEW_POINTER_OFFSET, rt.drag.y+DRAG_PREVIEW_POINTER_OFFSET}
+	return drag_preview_translation_at(rt, rt.drag.x, rt.drag.y, rt.drag.presentation_state)
 }
 
-// Magnetic breakout consumes movement through the strip and the configured
-// outer threshold before the preview starts moving vertically. This makes the
-// transition continuous while preserving a hard horizontal reorder track.
-drag_preview_track_delta_y :: proc(rt: ^Runtime) -> f32 {
-	if rt == nil || rt.drag.tracking.mode != .Horizontal_Magnetic ||
-		rt.drag.presentation_state != .Detached {
-		return 0
+drag_preview_translation_at :: proc(
+	rt: ^Runtime,
+	x, y: f32,
+	state: Drag_Presentation_State,
+) -> [2]f32 {
+	if rt == nil { return {} }
+	if rt.drag.tracking.mode == .Horizontal_Magnetic {
+		if state == .Detached && rt.drag.detached_anchor_valid {
+			return rt.drag.detached_preview_translation +
+				[2]f32{x-rt.drag.detached_anchor_x, y-rt.drag.detached_anchor_y}
+		}
+		if state == .Horizontal_Track {
+			if rt.drag_preview.mode == .Source_Subtree {
+				x_translation := x-rt.drag.start_x
+				if rt.drag.track_bounds_is_viewport {
+					if source, found := rt.nodes[rt.drag.source_node]; found && source != nil {
+						track := rt.drag.track_bounds
+						max_left := maxf(track.x, track.x+track.w-source.bounds.w)
+						left := clampf(source.bounds.x+x_translation, track.x, max_left)
+						x_translation = left-source.bounds.x
+					}
+				}
+				return [2]f32{x_translation, 0}
+			}
+			track := rt.drag.track_bounds
+			preview_x := x+DRAG_PREVIEW_POINTER_OFFSET
+			preview_y := track.y+track.h*0.5+DRAG_PREVIEW_POINTER_OFFSET
+			if rt.drag.track_bounds_is_viewport {
+				max_left := maxf(track.x, track.x+track.w-rt.drag_preview.width)
+				preview_x = clampf(preview_x, track.x, max_left)
+			}
+			return [2]f32{preview_x, preview_y}
+		}
 	}
-	track := rt.drag.track_bounds
-	if rt.drag.y < track.y {
-		return minf(rt.drag.y-(track.y-rt.drag.tracking.detach_distance), 0)
+	if rt.drag_preview.mode == .Source_Subtree {
+		return [2]f32{x-rt.drag.start_x, y-rt.drag.start_y}
 	}
-	if rt.drag.y > track.y+track.h {
-		return maxf(rt.drag.y-(track.y+track.h+rt.drag.tracking.detach_distance), 0)
+	return [2]f32{x+DRAG_PREVIEW_POINTER_OFFSET, y+DRAG_PREVIEW_POINTER_OFFSET}
+}
+
+// Magnetic sources use the nearest horizontal scroll viewport as their finite
+// track. Sources outside a horizontal scroll region retain their original
+// source-rectangle vertical behavior.
+drag_tracking_region_for_source :: proc(rt: ^Runtime, source: Node_ID, fallback: Rect) -> (bounds: Rect, is_viewport: bool) {
+	bounds = fallback
+	if rt == nil { return }
+	current := source
+	for current != 0 {
+		node, found := rt.nodes[current]
+		if !found || node == nil { break }
+		if node.kind == .Scroll_Region && (node.scroll_axes == .Horizontal || node.scroll_axes == .Both) {
+			bounds = node.scroll_viewport_bounds
+			if bounds.w <= 0 || bounds.h <= 0 {
+				bounds = layout_node_finalized_geometry(rt, current).bounds
+			}
+			if bounds.w <= 0 || bounds.h <= 0 { bounds = node.bounds }
+			return bounds, true
+		}
+		current = node.parent
 	}
-	return 0
+	return
 }
 
 drag_preview_pointer_moved :: proc(rt: ^Runtime) {
@@ -484,15 +519,43 @@ drag_refresh_target :: proc(rt: ^Runtime) {
 	drag_update_target(rt, hit, rt.drag.x, rt.drag.y)
 }
 
-drag_tracking_update_state :: proc(rt: ^Runtime, pointer_y: f32) {
+drag_tracking_update_state :: proc(rt: ^Runtime, pointer_x, pointer_y: f32) {
 	if rt == nil || rt.drag.tracking.mode != .Horizontal_Magnetic { return }
 	track := rt.drag.track_bounds
-	distance_outside := maxf(maxf(track.y-pointer_y, pointer_y-(track.y+track.h)), 0)
+	distance_x := f32(0)
+	if rt.drag.track_bounds_is_viewport {
+		distance_x = maxf(maxf(track.x-pointer_x, pointer_x-(track.x+track.w)), 0)
+	}
+	distance_y := maxf(maxf(track.y-pointer_y, pointer_y-(track.y+track.h)), 0)
+	distance_outside := maxf(distance_x, distance_y)
 	if rt.drag.presentation_state == .Detached {
 		if distance_outside <= rt.drag.tracking.reattach_distance {
 			rt.drag.presentation_state = .Horizontal_Track
+			rt.drag.detached_anchor_valid = false
 		}
 	} else if distance_outside >= rt.drag.tracking.detach_distance {
+		anchor_x, anchor_y := pointer_x, pointer_y
+		if distance_x >= rt.drag.tracking.detach_distance {
+			anchor_x = track.x-rt.drag.tracking.detach_distance
+			if pointer_x > track.x+track.w {
+				anchor_x = track.x+track.w+rt.drag.tracking.detach_distance
+			}
+		}
+		if distance_y >= rt.drag.tracking.detach_distance {
+			anchor_y = track.y-rt.drag.tracking.detach_distance
+			if pointer_y > track.y+track.h {
+				anchor_y = track.y+track.h+rt.drag.tracking.detach_distance
+			}
+		}
+		rt.drag.detached_preview_translation = drag_preview_translation_at(
+			rt,
+			anchor_x,
+			anchor_y,
+			.Horizontal_Track,
+		)
+		rt.drag.detached_anchor_x = anchor_x
+		rt.drag.detached_anchor_y = anchor_y
+		rt.drag.detached_anchor_valid = true
 		rt.drag.presentation_state = .Detached
 	}
 }
@@ -597,9 +660,11 @@ drag_process_pointer :: proc(rt: ^Runtime, event: Pointer_Event, hit: Node_ID) -
 				rt.drag.y = event.y
 				if rt.drag.tracking.mode == .Horizontal_Magnetic {
 					rt.drag.presentation_state = .Horizontal_Track
-					drag_tracking_update_state(rt, event.y)
 				}
 				drag_preview_begin(rt)
+				if rt.drag.tracking.mode == .Horizontal_Magnetic {
+					drag_tracking_update_state(rt, event.x, event.y)
+				}
 				drag_update_target(rt, hit, event.x, event.y, false)
 				rt.drag_event = Drag_Event{
 					kind=.Started,
@@ -618,7 +683,7 @@ drag_process_pointer :: proc(rt: ^Runtime, event: Pointer_Event, hit: Node_ID) -
 		if rt.drag.phase == .Dragging {
 			rt.drag.x = event.x
 			rt.drag.y = event.y
-			drag_tracking_update_state(rt, event.y)
+			drag_tracking_update_state(rt, event.x, event.y)
 			drag_update_target(rt, hit, event.x, event.y)
 			drag_preview_pointer_moved(rt)
 			return true
@@ -629,7 +694,7 @@ drag_process_pointer :: proc(rt: ^Runtime, event: Pointer_Event, hit: Node_ID) -
 		} else if rt.drag.phase == .Dragging {
 			rt.drag.x = event.x
 			rt.drag.y = event.y
-			drag_tracking_update_state(rt, event.y)
+			drag_tracking_update_state(rt, event.x, event.y)
 			drag_update_target(rt, hit, event.x, event.y, false)
 			if rt.drag.target != (Semantic_ID{}) && rt.drag.position != .None {
 				rt.drag_event = Drag_Event{

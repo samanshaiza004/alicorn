@@ -623,6 +623,8 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 						if source, source_found := rt.nodes[source_node]; source_found && source != nil {
 							source_bounds = source.bounds
 						}
+						tracking := rt.drag_tracking_options[source_node]
+						track_bounds, track_bounds_is_viewport := drag_tracking_region_for_source(rt, source_node, source_bounds)
 						rt.drag = Drag_Session{
 							phase=.Candidate,
 							drag_type=drag_type,
@@ -632,8 +634,9 @@ process_pointer :: proc(rt: ^Runtime, event: Pointer_Event) -> Node_ID {
 							start_y=event.y,
 							x=event.x,
 							y=event.y,
-							track_bounds=source_bounds,
-							tracking=rt.drag_tracking_options[source_node],
+							track_bounds=track_bounds,
+							track_bounds_is_viewport=track_bounds_is_viewport,
+							tracking=tracking,
 						}
 					}
 				}

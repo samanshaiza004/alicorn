@@ -10,6 +10,39 @@ DRAG_SCROLL_SOURCE :: Semantic_ID{namespace=702, value=1}
 DRAG_SCROLL_TARGET :: Semantic_ID{namespace=702, value=2}
 DRAG_TEST_UI_FONT_DATA :: #load("../assets/fonts/AtkinsonHyperlegibleNext-Variable.ttf")
 
+drag_magnetic_tab_test_build :: proc(rt: ^Runtime) {
+	ui, should_build := begin_frame(rt)
+	if !should_build { return }
+	container_begin_simple(
+		&ui,
+		.Root,
+		label="magnetic-tab-root",
+		key=key_string("magnetic-tab-root"),
+		style=layout_style(.Row, width=640, height=48),
+	)
+	container_begin_simple(
+		&ui,
+		.Container,
+		label="leading-titlebar-space",
+		key=key_string("leading-titlebar-space"),
+		style=layout_style(width=160, height=48),
+	)
+	container_end(&ui)
+	items := tab_bar_test_items()
+	options := tab_bar_test_options()
+	options.drag_tracking = DRAG_TRACKING_HORIZONTAL_MAGNETIC
+	options.drag_preview_mode = .Source_Subtree
+	_ = tab_bar(
+		&ui,
+		key_string("magnetic-tab-test"),
+		items[:],
+		options,
+		layout_style(.Row, width=480, height=options.height, clip=true),
+	)
+	container_end(&ui)
+	end_frame(&ui)
+}
+
 drag_test_build :: proc(
 	rt: ^Runtime,
 	include_source := true,
@@ -91,6 +124,65 @@ test_drag_source_subtree_preview_tracks_pointer_without_full_display_pass :: pro
 	testing.expect(t, rt.semantic_revision == semantic_revision &&
 		len(rt.semantic_entities) == semantic_entity_count && rt.drag.source == DRAG_TEST_SOURCE,
 		"the inert visual copy must not duplicate or mutate the semantic source")
+}
+
+@(test)
+test_horizontal_magnetic_tabs_have_finite_edges_and_continuous_detach :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 640, 120})
+	defer destroy_runtime(&rt)
+	drag_magnetic_tab_test_build(&rt)
+	bar_id, bar_count := tab_bar_test_bar_node(&rt)
+	source, source_count := tab_bar_test_item_node(&rt, tab_bar_test_semantic(1))
+	if bar_count != 1 || source_count != 1 {
+		testing.expect(t, false, "the magnetic fixture should retain a tab inside its scroll viewport")
+		return
+	}
+	bar := rt.nodes[bar_id]
+	track := bar.scroll_viewport_bounds
+	source_bounds := rt.nodes[source].bounds
+	testing.expect(t, track.x >= 150 && track.w > source_bounds.w &&
+		source_bounds.x >= track.x && source_bounds.x+source_bounds.w <= track.x+track.w,
+		"the magnetic region should use the actual tab-bar viewport rather than the source tab rectangle")
+
+	start_x := source_bounds.x+source_bounds.w*0.5
+	start_y := source_bounds.y+source_bounds.h*0.5
+	_ = process_pointer(&rt, Pointer_Event{kind=.Down, x=start_x, y=start_y, button=POINTER_BUTTON_PRIMARY})
+	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=start_x+DRAG_START_THRESHOLD+1, y=start_y})
+	started, started_ok := drag_event_take(&rt)
+	testing.expect(t, started_ok && started.kind == .Started && rt.drag.presentation_state == .Horizontal_Track,
+		"the drag should begin magnetized on the tab strip")
+
+	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=track.x-1, y=start_y})
+	translation := drag_preview_translation(&rt)
+	testing.expect(t, rt.drag.presentation_state == .Horizontal_Track &&
+		source_bounds.x+translation[0] == track.x,
+		"the lifted tab should stop at the strip edge while the pointer is inside the breakout threshold")
+
+	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=track.x-DRAG_TRACKING_HORIZONTAL_MAGNETIC.detach_distance-1, y=start_y})
+	translation = drag_preview_translation(&rt)
+	testing.expect(t, rt.drag.presentation_state == .Detached &&
+		abs(source_bounds.x+translation[0]-(track.x-1)) < 0.01,
+		"crossing the horizontal breakout threshold should unlock only the excess movement without jumping the preview")
+	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=track.x-DRAG_TRACKING_HORIZONTAL_MAGNETIC.detach_distance-5, y=start_y})
+	translation = drag_preview_translation(&rt)
+	testing.expect(t, abs(source_bounds.x+translation[0]-(track.x-5)) < 0.01,
+		"after breakout, the preview should follow additional horizontal movement one-for-one")
+
+	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=track.x-DRAG_TRACKING_HORIZONTAL_MAGNETIC.reattach_distance-1, y=start_y})
+	testing.expect(t, rt.drag.presentation_state == .Detached,
+		"hysteresis should keep the preview detached outside the smaller reattach threshold")
+	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=track.x-DRAG_TRACKING_HORIZONTAL_MAGNETIC.reattach_distance, y=start_y})
+	translation = drag_preview_translation(&rt)
+	testing.expect(t, rt.drag.presentation_state == .Horizontal_Track && source_bounds.x+translation[0] == track.x,
+		"returning inside the reattach threshold should restore the tab to the strip edge")
+
+	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=track.x+track.w*0.5, y=track.y-DRAG_TRACKING_HORIZONTAL_MAGNETIC.detach_distance-1})
+	testing.expect(t, rt.drag.presentation_state == .Detached,
+		"vertical breakout should continue to detach from the bounded tab strip")
+	_ = process_pointer(&rt, Pointer_Event{kind=.Up, x=track.x+track.w*0.5, y=track.y-DRAG_TRACKING_HORIZONTAL_MAGNETIC.detach_distance-1, button=POINTER_BUTTON_PRIMARY})
+	released, released_ok := drag_event_take(&rt)
+	testing.expect(t, released_ok && released.kind == .Cancelled && released.presentation_state == .Detached,
+		"a detached release outside the tab targets should remain eligible for application tear-off")
 }
 
 @(test)
