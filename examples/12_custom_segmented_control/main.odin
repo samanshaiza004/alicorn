@@ -37,13 +37,13 @@ App :: struct {
 app_default :: proc() -> App {
 	custom_style := segmented.style_default()
 	custom_style.instance_accent_role = custom_accent_role()
-	custom_style.track_height = 212
+	custom_style.track_height = 240
 	custom_style.track_radius = 30
 	custom_style.segment_radius = 24
-	custom_style.segment_padding = 12
+	custom_style.segment_padding = 5
 	custom_style.focus_inset = 3
 	custom_style.segment_height = 68
-	custom_style.compact_height = 46
+	custom_style.compact_height = 56
 	custom_style.marker_width = 38
 	custom_style.marker_height = 7
 	custom_style.label_size = 19

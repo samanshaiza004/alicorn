@@ -165,8 +165,9 @@ test_computed_style_inspector_explains_selected_tab_and_alias_chain :: proc(t: ^
 	defer delete(inspection)
 	testing.expect(t, strings.contains(inspection, "tab identity: label=\"#readme\" recipe=tab.document variant=button.tab"),
 		"the inspector should name the document tab and its recipe")
-	testing.expect(t, strings.contains(inspection, "button/tab state: selected=true hovered=false pressed=false disabled=false focused=true"),
-		"the inspector should report selected, hover, and focus state independently")
+	testing.expect(t, strings.contains(inspection,
+		"button/tab state: presentation=Default selected=true hovered=false pressed=false disabled=false focused=true keyboard-focus-visible="),
+		"the inspector should report presentation, selection, hover, press, disabled, focus, and keyboard-focus visibility independently")
 	testing.expect(t, strings.contains(inspection, "focus-mode=keyboard-only"),
 		"the inspector should expose the recipe's focus-modality policy")
 	testing.expect(t, strings.contains(inspection, "computed style: dependencies=paint") &&
@@ -176,6 +177,41 @@ test_computed_style_inspector_explains_selected_tab_and_alias_chain :: proc(t: ^
 		"the inspector should explain the authored token and its resolved alias edge")
 	testing.expect(t, rt.stats.style_resolutions == resolutions_before && rt.stats.style_cache_hits == hits_before,
 		"inspector queries must not count as application style resolutions or cache hits")
+}
+
+@(test)
+test_custom_button_inspector_reports_presentation_and_suppressed_recipe_paint :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 100})
+	defer destroy_runtime(&rt)
+	ui, should_build := begin_frame(&rt)
+	if !should_build { testing.expect(t, false, "the custom-presentation inspector frame should build"); return }
+	container_begin(&ui, .Root, key=key_string("custom-button-inspector-root"),
+		style=layout_style(.Column, width=240, height=100))
+	owner, _ := button_begin(&ui, "Custom accessible name",
+		key=key_string("custom-button-inspector-owner"),
+		style=layout_style(.Column, width=180, height=52),
+		presentation=.Custom)
+	if owner != 0 {
+		text(&ui, "Package-owned visible label", key=key_string("custom-button-inspector-label"),
+			style=layout_style(.Row, height=24))
+		button_end(&ui)
+	}
+	container_end(&ui)
+	end_frame(&ui)
+	node, found := rt.nodes[owner]
+	testing.expect(t, found && node.button_presentation == .Custom,
+		"Custom presentation should remain retained on the Button interaction owner")
+	if found {
+		testing.expect(t, !node.text_run_valid,
+			"Custom presentation should not shape the Button's accessible name as built-in visual text")
+		testing.expect(t, len(node.paint) == 0,
+			"Custom presentation should not emit built-in Button paint")
+	}
+	inspection := inspect(&rt)
+	defer delete(inspection)
+	testing.expect(t, strings.contains(inspection, "button/tab state: presentation=Custom") &&
+		strings.contains(inspection, "button identity: label=\"Custom accessible name\""),
+		"the inspector should identify the custom Button presentation and preserve its accessible name")
 }
 
 @(test)

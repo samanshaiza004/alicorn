@@ -5,6 +5,45 @@ import alicorn "alicorn:runtime"
 import segmented "./segmented"
 import testui "alicorn:testui"
 
+custom_segmented_descendant_with_label :: proc(
+	rt: ^alicorn.Runtime,
+	root: alicorn.Node_ID,
+	wanted: string,
+) -> alicorn.Node_ID {
+	if rt == nil || root == 0 { return 0 }
+	node, found := rt.nodes[root]
+	if !found { return 0 }
+	for child in node.children {
+		child_node, child_found := rt.nodes[child]
+		if !child_found { continue }
+		if child_node.label == wanted { return child }
+		if nested := custom_segmented_descendant_with_label(rt, child, wanted); nested != 0 { return nested }
+	}
+	return 0
+}
+
+custom_segmented_descendant_with_text :: proc(
+	rt: ^alicorn.Runtime,
+	root: alicorn.Node_ID,
+	wanted: string,
+) -> alicorn.Node_ID {
+	if rt == nil || root == 0 { return 0 }
+	node, found := rt.nodes[root]
+	if !found { return 0 }
+	for child in node.children {
+		child_node, child_found := rt.nodes[child]
+		if !child_found { continue }
+		if child_node.kind == .Text && child_node.text == wanted { return child }
+		if nested := custom_segmented_descendant_with_text(rt, child, wanted); nested != 0 { return nested }
+	}
+	return 0
+}
+
+custom_segmented_rect_contains :: proc(outer, inner: alicorn.Rect) -> bool {
+	return inner.x >= outer.x && inner.y >= outer.y &&
+		inner.x+inner.w <= outer.x+outer.w && inner.y+inner.h <= outer.y+outer.h
+}
+
 custom_segmented_test_open :: proc(app: ^App) -> (handle: testui.Test_Handle(App), status: testui.Status) {
 	handle, status = testui.open(
 		app,
@@ -24,6 +63,73 @@ custom_segmented_test_open :: proc(app: ^App) -> (handle: testui.Test_Handle(App
 		},
 	)
 	return
+}
+
+@(test)
+test_custom_segmented_parts_remain_inside_the_hit_surface_in_both_layouts :: proc(t: ^testing.T) {
+	app := app_default()
+	handle, status := custom_segmented_test_open(&app)
+	defer testui.close(&handle)
+	if status != .Ok { testing.expect(t, false, "the component should initialize before checking retained geometry"); return }
+
+	for instance_id in ([2]u64{101, 202}) {
+		for choice in segmented.Choice {
+			semantic, found := alicorn.semantic_node_lookup(handle.runtime, segmented.semantic_id(instance_id, choice))
+			if !found || semantic.visual_node == 0 {
+				testing.expect(t, false, "each visible segment should retain its Button interaction owner")
+				continue
+			}
+			face_id := custom_segmented_descendant_with_label(handle.runtime, semantic.visual_node, "segmented-option-face")
+			label_id := custom_segmented_descendant_with_text(handle.runtime, semantic.visual_node, segmented.choice_label(choice))
+			marker_id := custom_segmented_descendant_with_label(handle.runtime, semantic.visual_node, "segmented-selection-marker")
+			hover_id := custom_segmented_descendant_with_label(handle.runtime, semantic.visual_node, "segmented-hover-cue")
+			face, face_found := handle.runtime.nodes[face_id]
+			label_node, label_found := handle.runtime.nodes[label_id]
+			marker, marker_found := handle.runtime.nodes[marker_id]
+			testing.expect(t, face_found && label_found && marker_found && (choice == .Compare && instance_id == 202 || hover_id != 0),
+				"the face, visual label, selection indicator, and enabled hover cue should remain parts of every custom Button")
+			if face_found && label_found && marker_found {
+				owner := handle.runtime.nodes[semantic.visual_node]
+				testing.expect(t, face.bounds.h > owner.bounds.h*0.8 &&
+					face.bounds.w > owner.bounds.w*0.8 &&
+					custom_segmented_rect_contains(face.bounds, label_node.bounds) &&
+					custom_segmented_rect_contains(face.bounds, marker.bounds),
+					"one full-size face should contain the label and selection marker inside the Button's hit bounds")
+				if hover_id != 0 {
+					hover, hover_found := handle.runtime.nodes[hover_id]
+					testing.expect(t, hover_found && custom_segmented_rect_contains(face.bounds, hover.bounds),
+						"the hover accent should be positioned inside the same segment face")
+				}
+			}
+		}
+	}
+
+	status = testui.resize(&handle, 460, 680)
+	testing.expect(t, status == .Ok, "the compact component layout should be selected after narrowing the window")
+	semantic, found := alicorn.semantic_node_lookup(handle.runtime, segmented.semantic_id(202, .Preview))
+	if found && semantic.visual_node != 0 {
+		face_id := custom_segmented_descendant_with_label(handle.runtime, semantic.visual_node, "segmented-option-face")
+		label_id := custom_segmented_descendant_with_text(handle.runtime, semantic.visual_node, "Preview")
+		face, face_found := handle.runtime.nodes[face_id]
+		label_node, label_found := handle.runtime.nodes[label_id]
+		testing.expect(t, face_found && label_found && custom_segmented_rect_contains(face.bounds, label_node.bounds),
+			"the compact option should keep its label inside the full-width segment surface")
+	} else {
+		testing.expect(t, false, "the compact custom instance should retain its Preview segment")
+	}
+	edit, edit_found := alicorn.semantic_node_lookup(handle.runtime, segmented.semantic_id(202, .Edit))
+	if edit_found && edit.visual_node != 0 && edit.has_bounds {
+		hover_id := custom_segmented_descendant_with_label(handle.runtime, edit.visual_node, "segmented-hover-cue")
+		status = testui.step(&handle, testui.Input{kind=.Pointer, pointer=alicorn.Pointer_Event{
+			kind=.Move,
+			x=edit.bounds.x+edit.bounds.w*0.5,
+			y=edit.bounds.y+edit.bounds.h*0.5,
+		}})
+		testing.expect(t, status == .Ok && hover_id != 0 && alicorn.visual_part_is_visible(handle.runtime, hover_id),
+			"pointer hover should reveal the in-surface accent without changing the segment layout")
+	} else {
+		testing.expect(t, false, "the compact custom instance should retain its editable segment")
+	}
 }
 
 @(test)

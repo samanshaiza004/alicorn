@@ -11,7 +11,7 @@ Run it from any working directory through the repository runner:
 ```
 
 The package owns the track and segment surfaces, shapes, label styling, hover
-cue, keyboard-focus frame, disabled treatment, selection indicator, responsive
+accent, keyboard-focus frame, disabled treatment, selection indicator, responsive
 layout, semantic identities, theme contract, and per-instance overrides. Its
 embedded theme is independent of the process working directory.
 
@@ -28,10 +28,11 @@ The two responsive alternatives bind equivalent choices to the same semantic
 IDs, so focus continuity can be checked while resizing. The moving marker uses
 public `ui.motion`; it retargets from its current presentation and settles
 without continued idle work. Selection remains apparent without relying on
-color alone: it changes the surface, label weight, marker size, and marker
-position. Keyboard focus is an independently themed frame attached with
-`.Owner_Focus_Visible`, so pointer focus does not compete with the selection
-cue. Disabled options also carry an explicit “Unavailable” caption.
+color alone: it changes the surface, label weight, and opacity and position of
+a consistently sized marker. Hover has a separate accent beside the label,
+while keyboard focus is an independently themed frame attached with
+`.Owner_Focus_Visible`. Disabled options use muted labels and an inline
+“Unavailable” caption.
 
 ## Theme and instance contract
 

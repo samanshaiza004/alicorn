@@ -566,6 +566,10 @@ update_paint :: proc(rt: ^Runtime) {
 					}
 					append(&node.paint, paint_icon_command(node.id, icon_bounds, node.clip, node.icon_id, text_color))
 				}
+			} else if node.kind == .Button {
+				// Custom-presentation Buttons retain interaction and semantics but
+				// own no paint. Their described children provide the full visual.
+				style_transition_owner_cancel(rt, node.id)
 			} else if node.kind == .Checkbox {
 				box_size := minf(18, maxf(node.bounds.h-6, 12))
 				box := Rect{node.bounds.x+4, node.bounds.y+(node.bounds.h-box_size)*0.5, box_size, box_size}

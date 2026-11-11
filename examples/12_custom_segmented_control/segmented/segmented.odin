@@ -78,13 +78,13 @@ recipe_default :: proc() -> Recipe {
 
 style_default :: proc() -> Style {
 	return Style{
-		track_height=188,
+		track_height=208,
 		track_radius=20,
 		segment_radius=12,
-		segment_padding=8,
+		segment_padding=4,
 		focus_inset=2,
 		segment_height=58,
-		compact_height=38,
+		compact_height=46,
 		marker_width=24,
 		marker_height=4,
 		label_size=16,
@@ -227,11 +227,13 @@ render_option :: proc(
 			face_role := recipe.idle_role
 			if selected && !disabled { face_role = recipe.selected_role }
 			if disabled { face_role = recipe.disabled_role }
+			face_height := button_height-2*style.focus_inset
+			if face_height < 1 { face_height = 1 }
 			face := alicorn.surface_begin(
 				ctx,
 				alicorn.surface_extension_color_role(face_role),
 				key=ui.key_u64(3),
-				style=ui.layout_style(.Column, width=-1, height=-1, padding=style.segment_padding, gap=3,
+				style=ui.layout_style(.Column, width=-1, height=face_height, padding=style.segment_padding, gap=3,
 					align=.Center, justify=.Center),
 				shape=alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=style.segment_radius},
 				label="segmented-option-face",
@@ -239,55 +241,54 @@ render_option :: proc(
 			if face != 0 {
 				_ = alicorn.visual_part_attach(ctx, face, owner, alicorn.visual_part_core(.Surface))
 
-				// This small hover mark adds feedback without moving the hit target.
-				if !disabled {
-					hover := alicorn.surface_begin(
-						ctx,
-						alicorn.surface_extension_color_role(recipe.hover_role),
-						key=ui.key_u64(4),
-						style=ui.layout_style(.Row, width=6, height=6),
-						shape=alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=3},
-						label="segmented-hover-cue",
-					)
-					if hover != 0 {
-						_ = alicorn.visual_part_attach(ctx, hover, owner, alicorn.visual_part_core(.Overlay), .Owner_Hovered)
-						alicorn.surface_end(ctx)
-					}
-				}
-
 				text_style := alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_MEDIUM, font_size=style.label_size}
 				if selected { text_style.font_weight = alicorn.FONT_WEIGHT_SEMIBOLD }
 				label_color := alicorn.style_color(ctx, .Text)
 				if disabled { label_color = alicorn.style_color(ctx, .Muted_Text) }
-				label_id := ui.text(ctx, label, key=ui.key_u64(5),
-					size=style.label_size, color=label_color, style=ui.layout_style(.Row, height=24),
-					text_style=text_style, decorative=true)
-				if label_id != 0 {
-					_ = alicorn.visual_part_attach(ctx, label_id, owner, alicorn.visual_part_core(.Label))
-				}
-				if disabled {
-					unavailable_id := ui.text(ctx, "Unavailable", key=ui.key_u64(7), size=11,
-						color=alicorn.style_color(ctx, .Muted_Text),
-						style=ui.layout_style(.Row, height=15),
-						text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_MEDIUM}, decorative=true)
-					if unavailable_id != 0 {
-						_ = alicorn.visual_part_attach(ctx, unavailable_id, owner, alicorn.visual_part_core(.Content))
+				label_line_height := style.label_size*1.5
+				if label_line_height < 24 { label_line_height = 24 }
+				if ui.row(ctx, key=ui.key_u64(7), height=label_line_height, gap=8,
+					align=.Center, justify=.Center, label="segmented-option-label-line") {
+					if !disabled {
+						hover := alicorn.surface_begin(
+							ctx,
+							alicorn.surface_extension_color_role(recipe.hover_role),
+							key=ui.key_u64(4),
+							style=ui.layout_style(.Row, width=3, height=16),
+							shape=alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=1.5},
+							label="segmented-hover-cue",
+						)
+						if hover != 0 {
+							_ = alicorn.visual_part_attach(ctx, hover, owner, alicorn.visual_part_core(.Overlay), .Owner_Hovered)
+							alicorn.surface_end(ctx)
+						}
+					}
+					label_id := ui.text(ctx, label, key=ui.key_u64(5),
+						size=style.label_size, color=label_color,
+						style=ui.layout_style(.Row, height=label_line_height),
+						text_style=text_style, decorative=true)
+					if label_id != 0 {
+						_ = alicorn.visual_part_attach(ctx, label_id, owner, alicorn.visual_part_core(.Label))
+					}
+					if disabled {
+						ui.text(ctx, "Unavailable", key=ui.key_u64(8), size=11,
+							color=alicorn.style_color(ctx, .Muted_Text),
+							style=ui.layout_style(.Row, height=label_line_height),
+							text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_MEDIUM}, decorative=true)
 					}
 				}
 
 				marker_role := recipe.accent_role
 				if style.instance_accent_role != 0 { marker_role = style.instance_accent_role }
-				marker_width := style.marker_width*0.56
-				marker_height := style.marker_height*0.7
-				opacity: f64 = 0.2
-				offset_y: f64 = 2
+				marker_width := style.marker_width
+				marker_height := style.marker_height
+				opacity: f64 = 0.18
+				offset_y: f64 = 1
 				if selected && !disabled {
-					marker_width = style.marker_width
-					marker_height = style.marker_height
 					opacity = 1
 					offset_y = 0
 				}
-				if disabled { opacity = 0.12 }
+				if disabled { opacity = 0.08 }
 				marker := alicorn.surface_begin(
 					ctx,
 					alicorn.surface_extension_color_role(marker_role),
