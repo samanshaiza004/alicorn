@@ -15,13 +15,15 @@ IMAGE_MAX_ENCODED_BYTES :: 128 * 1024 * 1024
 IMAGE_MAX_DECODED_BYTES :: 64 * 1024 * 1024
 IMAGE_MAX_DIMENSION :: 16384
 
-// Odin's image decoder has exposed pixel storage as both bytes.Buffer and a
-// pointer to a dynamic byte array across supported compiler releases. Keep
+// Odin's image decoder has exposed pixel storage as bytes.Buffer, a dynamic
+// byte array, and a pointer to one across supported compiler releases. Keep
 // that standard-library representation detail behind this compile-time shim.
 image_decoded_pixels_bytes :: proc(pixels: $T) -> []u8 {
 	when T == bytes.Buffer {
 		buffer := pixels
 		return bytes.buffer_to_bytes(&buffer)
+	} else when T == [dynamic]u8 {
+		return pixels[:]
 	} else when T == ^[dynamic]u8 {
 		return pixels^[:]
 	} else {
