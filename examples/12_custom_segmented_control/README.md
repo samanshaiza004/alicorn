@@ -31,8 +31,9 @@ without continued idle work. Selection remains apparent without relying on
 color alone: it changes the surface, label weight, and opacity and position of
 a consistently sized marker. Hover has a separate accent beside the label,
 while keyboard focus is an independently themed frame attached with
-`.Owner_Focus_Visible`. Disabled options use muted labels and an inline
-“Unavailable” caption.
+`.Owner_Focus_Visible`. Equal label gutters preserve text centering as the hover
+accent appears. Disabled options place a muted “Unavailable” caption below the
+centered label.
 
 ## Theme and instance contract
 

@@ -43,7 +43,7 @@ app_default :: proc() -> App {
 	custom_style.segment_padding = 5
 	custom_style.focus_inset = 3
 	custom_style.segment_height = 68
-	custom_style.compact_height = 56
+	custom_style.compact_height = 68
 	custom_style.marker_width = 38
 	custom_style.marker_height = 7
 	custom_style.label_size = 19

@@ -44,6 +44,12 @@ custom_segmented_rect_contains :: proc(outer, inner: alicorn.Rect) -> bool {
 		inner.x+inner.w <= outer.x+outer.w && inner.y+inner.h <= outer.y+outer.h
 }
 
+custom_segmented_rect_centers_match_x :: proc(a, b: alicorn.Rect) -> bool {
+	delta := (a.x+a.w*0.5) - (b.x+b.w*0.5)
+	if delta < 0 { delta = -delta }
+	return delta <= 1
+}
+
 custom_segmented_test_open :: proc(app: ^App) -> (handle: testui.Test_Handle(App), status: testui.Status) {
 	handle, status = testui.open(
 		app,
@@ -93,8 +99,9 @@ test_custom_segmented_parts_remain_inside_the_hit_surface_in_both_layouts :: pro
 				testing.expect(t, face.bounds.h > owner.bounds.h*0.8 &&
 					face.bounds.w > owner.bounds.w*0.8 &&
 					custom_segmented_rect_contains(face.bounds, label_node.bounds) &&
-					custom_segmented_rect_contains(face.bounds, marker.bounds),
-					"one full-size face should contain the label and selection marker inside the Button's hit bounds")
+					custom_segmented_rect_contains(face.bounds, marker.bounds) &&
+					custom_segmented_rect_centers_match_x(owner.bounds, label_node.bounds),
+					"the label should stay centered on its hit target while the face contains its content")
 				if hover_id != 0 {
 					hover, hover_found := handle.runtime.nodes[hover_id]
 					testing.expect(t, hover_found && custom_segmented_rect_contains(face.bounds, hover.bounds),
@@ -102,6 +109,19 @@ test_custom_segmented_parts_remain_inside_the_hit_surface_in_both_layouts :: pro
 				}
 			}
 		}
+	}
+	wide_compare, wide_compare_found := alicorn.semantic_node_lookup(handle.runtime, segmented.semantic_id(101, .Compare))
+	if wide_compare_found && wide_compare.has_bounds {
+		label_id := custom_segmented_descendant_with_text(handle.runtime, wide_compare.visual_node, "Compare")
+		status = testui.step(&handle, testui.Input{kind=.Pointer, pointer=alicorn.Pointer_Event{
+			kind=.Move,
+			x=wide_compare.bounds.x+wide_compare.bounds.w*0.5,
+			y=wide_compare.bounds.y+wide_compare.bounds.h*0.5,
+		}})
+		label_node, label_found := handle.runtime.nodes[label_id]
+		testing.expect(t, status == .Ok && label_found &&
+			custom_segmented_rect_centers_match_x(wide_compare.bounds, label_node.bounds),
+			"revealing the wide-layout hover accent should not shift its segment label")
 	}
 
 	status = testui.resize(&handle, 460, 680)
@@ -112,8 +132,9 @@ test_custom_segmented_parts_remain_inside_the_hit_surface_in_both_layouts :: pro
 		label_id := custom_segmented_descendant_with_text(handle.runtime, semantic.visual_node, "Preview")
 		face, face_found := handle.runtime.nodes[face_id]
 		label_node, label_found := handle.runtime.nodes[label_id]
-		testing.expect(t, face_found && label_found && custom_segmented_rect_contains(face.bounds, label_node.bounds),
-			"the compact option should keep its label inside the full-width segment surface")
+		testing.expect(t, face_found && label_found && custom_segmented_rect_contains(face.bounds, label_node.bounds) &&
+			custom_segmented_rect_centers_match_x(semantic.bounds, label_node.bounds),
+			"the compact option should keep its label inside the full-width segment and centered on its hit bounds")
 	} else {
 		testing.expect(t, false, "the compact custom instance should retain its Preview segment")
 	}
@@ -125,7 +146,10 @@ test_custom_segmented_parts_remain_inside_the_hit_surface_in_both_layouts :: pro
 			x=edit.bounds.x+edit.bounds.w*0.5,
 			y=edit.bounds.y+edit.bounds.h*0.5,
 		}})
-		testing.expect(t, status == .Ok && hover_id != 0 && alicorn.visual_part_is_visible(handle.runtime, hover_id),
+		label_id := custom_segmented_descendant_with_text(handle.runtime, edit.visual_node, "Edit")
+		label_node, label_found := handle.runtime.nodes[label_id]
+		testing.expect(t, status == .Ok && hover_id != 0 && alicorn.visual_part_is_visible(handle.runtime, hover_id) &&
+			label_found && custom_segmented_rect_centers_match_x(edit.bounds, label_node.bounds),
 			"pointer hover should reveal the in-surface accent without changing the segment layout")
 	} else {
 		testing.expect(t, false, "the compact custom instance should retain its editable segment")

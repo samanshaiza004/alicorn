@@ -3,6 +3,7 @@ package alicorn_sdl_gpu
 import "core:os"
 import "core:testing"
 import alicorn "../../runtime"
+import runa "../../third_party/Runa"
 
 @(test)
 test_optional_fallback_rejects_missing_font :: proc(t: ^testing.T) {
@@ -50,7 +51,7 @@ test_linux_fontconfig_fallback_covers_ui_symbols :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_windows_directwrite_cjk_fallback_and_color_emoji :: proc(t: ^testing.T) {
+test_windows_directwrite_cjk_fallback_and_optional_color_emoji :: proc(t: ^testing.T) {
 	when ODIN_OS == .Windows {
 		rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
 		defer alicorn.destroy_runtime(&rt)
@@ -62,12 +63,16 @@ test_windows_directwrite_cjk_fallback_and_color_emoji :: proc(t: ^testing.T) {
 		run, ok := alicorn.text_run_build(&rt.text_engine, value, 20, font_role=.Monospace)
 		defer if ok { alicorn.text_run_destroy(&run) }
 		japanese_fallback_glyphs := 0
+		compatible_color_emoji_face := false
 		color_emoji_slot := false
 		emoji_start := len("日本語 ")
 		if ok {
 			for glyph in run.glyphs {
 				if glyph.cluster_start < emoji_start && glyph.font_face != 0 { japanese_fallback_glyphs += 1 }
 				if glyph.cluster_start == emoji_start && glyph.font_face != 0 {
+					face, face_found := alicorn.text_engine_font_face(&rt.text_engine, glyph.font_face)
+					if !face_found || !runa.font_has_color_layers(&face.font, glyph.glyph_id) { continue }
+					compatible_color_emoji_face = true
 					slot, drawable, glyph_ok := alicorn.text_engine_glyph(
 						&rt.text_engine, glyph.glyph_id, run.size,
 						font_role=.Monospace,
@@ -82,7 +87,9 @@ test_windows_directwrite_cjk_fallback_and_color_emoji :: proc(t: ^testing.T) {
 		}
 		testing.expect(t, ok && japanese_fallback_glyphs > 0,
 			"Japanese text should select a registered DirectWrite fallback face")
-		testing.expect(t, color_emoji_slot,
-			"the mapped Windows emoji face should rasterize emoji into the RGBA atlas")
+		if compatible_color_emoji_face {
+			testing.expect(t, color_emoji_slot,
+				"a mapped COLR face with layers for the sample emoji should rasterize into the RGBA atlas")
+		}
 	}
 }

@@ -233,7 +233,7 @@ render_option :: proc(
 				ctx,
 				alicorn.surface_extension_color_role(face_role),
 				key=ui.key_u64(3),
-				style=ui.layout_style(.Column, width=-1, height=face_height, padding=style.segment_padding, gap=3,
+				style=ui.layout_style(.Column, width=-1, height=face_height, padding=style.segment_padding, gap=1,
 					align=.Center, justify=.Center),
 				shape=alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=style.segment_radius},
 				label="segmented-option-face",
@@ -247,20 +247,25 @@ render_option :: proc(
 				if disabled { label_color = alicorn.style_color(ctx, .Muted_Text) }
 				label_line_height := style.label_size*1.5
 				if label_line_height < 24 { label_line_height = 24 }
-				if ui.row(ctx, key=ui.key_u64(7), height=label_line_height, gap=8,
+				if ui.row(ctx, key=ui.key_u64(7), width=-1, height=label_line_height,
 					align=.Center, justify=.Center, label="segmented-option-label-line") {
-					if !disabled {
-						hover := alicorn.surface_begin(
-							ctx,
-							alicorn.surface_extension_color_role(recipe.hover_role),
-							key=ui.key_u64(4),
-							style=ui.layout_style(.Row, width=3, height=16),
-							shape=alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=1.5},
-							label="segmented-hover-cue",
-						)
-						if hover != 0 {
-							_ = alicorn.visual_part_attach(ctx, hover, owner, alicorn.visual_part_core(.Overlay), .Owner_Hovered)
-							alicorn.surface_end(ctx)
+					// Equal fixed gutters keep the label centered on the segment
+					// whether the leading hover accent is visible or not.
+					if ui.column(ctx, key=ui.key_u64(8), width=16, height=label_line_height,
+						align=.Center, justify=.Center, label="segmented-leading-gutter") {
+						if !disabled {
+							hover := alicorn.surface_begin(
+								ctx,
+								alicorn.surface_extension_color_role(recipe.hover_role),
+								key=ui.key_u64(4),
+								style=ui.layout_style(.Row, width=3, height=16),
+								shape=alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=1.5},
+								label="segmented-hover-cue",
+							)
+							if hover != 0 {
+								_ = alicorn.visual_part_attach(ctx, hover, owner, alicorn.visual_part_core(.Overlay), .Owner_Hovered)
+								alicorn.surface_end(ctx)
+							}
 						}
 					}
 					label_id := ui.text(ctx, label, key=ui.key_u64(5),
@@ -270,12 +275,14 @@ render_option :: proc(
 					if label_id != 0 {
 						_ = alicorn.visual_part_attach(ctx, label_id, owner, alicorn.visual_part_core(.Label))
 					}
-					if disabled {
-						ui.text(ctx, "Unavailable", key=ui.key_u64(8), size=11,
-							color=alicorn.style_color(ctx, .Muted_Text),
-							style=ui.layout_style(.Row, height=label_line_height),
-							text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_MEDIUM}, decorative=true)
-					}
+					if ui.column(ctx, key=ui.key_u64(9), width=16, height=label_line_height,
+						label="segmented-trailing-gutter") {}
+				}
+				if disabled {
+					ui.text(ctx, "Unavailable", key=ui.key_u64(10), size=11,
+						color=alicorn.style_color(ctx, .Muted_Text),
+						style=ui.layout_style(.Row, height=14),
+						text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_MEDIUM}, decorative=true)
 				}
 
 				marker_role := recipe.accent_role
