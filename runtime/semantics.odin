@@ -1122,7 +1122,8 @@ semantic_description :: proc(
 // or actions. Built-in control semantics are derived first when the node has
 // not yet opted into an explicit semantic role. Empty description is a no-op;
 // state and action sets are unioned, so this helper cannot remove guarantees
-// supplied by the control itself.
+// supplied by the control itself. Press is not appended when the description
+// or its semantic state already marks the control disabled.
 semantic_augment :: proc(
 	ui: ^UI,
 	description := "",
@@ -1142,7 +1143,11 @@ semantic_augment :: proc(
 		if state in states_add { pending.semantic.states = semantic_states_add(pending.semantic.states, state) }
 	}
 	for action in Semantic_Action {
-		if action in actions_add { pending.semantic.actions = semantic_actions_add(pending.semantic.actions, action) }
+		if action not_in actions_add { continue }
+		if action == .Press && (pending.description.disabled || semantic_states_has(pending.semantic.states, .Disabled)) {
+			continue
+		}
+		pending.semantic.actions = semantic_actions_add(pending.semantic.actions, action)
 	}
 	if pending.description.semantic_id.namespace == 0 {
 		pending.description.semantic_id = semantic_visual_id(pending.description.id)

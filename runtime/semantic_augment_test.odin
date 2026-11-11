@@ -22,7 +22,9 @@ test_semantic_augment_preserves_control_contract_and_only_adds_metadata :: proc(
 
 	_, _ = button_begin(&ui, "Disabled action", key_string("disabled"),
 		style=layout_style(width=160, height=32), state=Button_State{disabled=true})
-	augment_disabled := semantic_augment(&ui, description="Unavailable until setup completes.")
+	augment_disabled := semantic_augment(&ui,
+		description="Unavailable until setup completes.",
+		actions_add=semantic_actions_add({}, .Press))
 	bind_disabled := semantic_bind(&ui, Semantic_Augment_Disabled_ID)
 	button_end(&ui)
 	container_end(&ui)
@@ -39,6 +41,7 @@ test_semantic_augment_preserves_control_contract_and_only_adds_metadata :: proc(
 		"a reusable component should add a description/action without replacing built-in role, label, selected state, or Press")
 	testing.expect(t, disabled_found && disabled.role == .Button && disabled.label == "Disabled action" &&
 		disabled.description == "Unavailable until setup completes." &&
-		semantic_states_has(disabled.states, .Disabled) && !semantic_actions_has(disabled.actions, .Press),
-		"augmentation must preserve a disabled Button's state and prevent it from regaining Press")
+		semantic_states_has(disabled.states, .Disabled) && !semantic_actions_has(disabled.actions, .Press) &&
+		!semantic_action_request(&rt, Semantic_Augment_Disabled_ID, .Press),
+		"augmentation must preserve a disabled Button's state, avoid advertising Press, and reject its semantic request")
 }

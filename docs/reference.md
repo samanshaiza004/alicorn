@@ -910,7 +910,9 @@ the most recently described control without replacing its role, name, value,
 existing states, or advertised actions. Built-in defaults are projected first
 when the control has no custom semantic role. State and action sets are
 unioned, so a component can add a spoken description or an extra action without
-reconstructing the Button or losing its disabled/selected contract.
+reconstructing the Button or losing its disabled/selected contract. A requested
+`Press` action is not appended when the described control is disabled or its
+semantic state already includes `Disabled`.
 
 The low-level runtime `text()` description does not create a semantic entity
 by default; call `semantic_static_text(ui)` immediately after it for standalone
