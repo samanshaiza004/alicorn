@@ -7,8 +7,8 @@ the **packages** (`parse`, `shape`, `itemize`, `bidi`, `linebreak`,
 
 This Alicorn vendor copy is based on upstream v1.5.3, commit
 [`5c7ebb6`](https://github.com/BuLEEto/Runa/tree/5c7ebb628100ecb28b6117d735a5bf080939f71e),
-and omits upstream tests, examples, and tools. Alicorn keeps two local
-facade extensions documented under **Alicorn vendor extensions** below.
+and omits upstream tests, examples, and tools. Alicorn keeps local facade
+extensions documented under **Alicorn vendor extensions** below.
 
 ## Stability
 
@@ -49,13 +49,24 @@ font_lookup_glyph  :: proc(f: ^Font, codepoint: rune) -> Glyph_ID
 font_glyph_advance :: proc(f: ^Font, gid: Glyph_ID) -> u16
 font_glyph_outline :: proc(f: ^Font, gid: Glyph_ID, out: ^Outline) -> Error
 font_has_color_layers :: proc(f: ^Font, gid: Glyph_ID) -> bool
+font_has_color_glyphs :: proc(f: ^Font) -> bool
 font_color_layers     :: proc(f: ^Font, gid: Glyph_ID, allocator := context.allocator) -> ([]parse.Colr_Layer, Error)
 font_palette_color    :: proc(f: ^Font, entry_idx: u16) -> [4]u8
+font_color_table_inventory :: proc(data: []u8, face_index := 0, allocator := context.temp_allocator) -> (Font_Color_Table_Inventory, Error)
+font_color_rendering_support :: proc(f: ^Font) -> Font_Color_Rendering_Support
 ```
 
 `font_glyph_outline` reuses the caller's `Outline` so repeated
 calls don't reallocate. The COLRv1 brush-aware path is selected
 automatically inside `raster_glyph`.
+
+`Font_Color_Table_Inventory` reports raw `COLR`/`CPAL`, `sbix`, and
+`CBDT`/`CBLC` table presence, including for TTC faces. This is a format
+inventory, not a promise the renderer can use the face. The parsed-face
+`Font_Color_Rendering_Support` reports COLRv0 layers and the COLRv1 paint
+subset Runa recognizes; `sbix` and `CBDT`/`CBLC` rendering are currently
+false. COLRv1 support is checked per glyph and unsupported paint graphs may
+fall back to available COLRv0 layers or monochrome outlines.
 
 ### Layout
 
@@ -94,9 +105,15 @@ line_destroy     :: proc(l: ^Line, allocator := context.allocator)
 ```
 
 `layout_paragraph` runs the full pipeline:
-1. itemize into (font, script, style) runs (UAX #24 script segmentation);
-   `font_style_spans` must be sorted, non-overlapping, and codepoint-aligned
-   (Alicorn vendor extension)
+1. select one face for each UAX #29 grapheme from `Font_Stack` using cmap
+   coverage for every non-ignorable scalar, then join adjacent compatible
+   clusters into (font, script, style) shaping runs; clusters are never split
+   between faces. If none covers a cluster, the primary face shapes the whole
+   cluster and its glyphs carry unresolved-fallback metadata. This is not a
+   guarantee that a face has a ligature for every emoji sequence. VS15/VS16
+   and Unicode's `Emoji_Presentation` property influence color-face preference.
+   `font_style_spans` are sorted, non-overlapping, and codepoint-aligned
+   (Alicorn vendor extension).
 2. UAX #9 bidi resolve when the text contains any RTL codepoints
 3. shape each run via `shape_text` (GSUB + GPOS, with the Indic /
    Arabic / SEA shaper paths dispatched by script tag)
@@ -249,12 +266,11 @@ or callers that have visually calibrated against pre-v1.1
 unhinted output.
 
 Renders one glyph into the shared atlas at the requested subpixel
-offset. COLRv0 / COLRv1 emoji are auto-detected and rasterized
-through the colour-bitmap path (RGBA pages); mono glyphs land on
-alpha pages. The COLRv1 brush-aware rasterizer (linear / radial /
-sweep gradients + the 28 W3C composite blend modes) is preferred
-over the v0 flat-fill path when the font carries a v1
-BaseGlyphList.
+offset. Supported COLRv0 / COLRv1 emoji are auto-detected and rasterized
+through the colour-bitmap path (RGBA pages); mono glyphs land on alpha pages.
+The COLRv1 brush-aware rasterizer supports the paint formats implemented by
+the brush walker, including linear/radial/sweep gradients and 28 composite
+blend modes. Runa does not decode `sbix` or `CBDT`/`CBLC` bitmap glyph data.
 
 ## Packages
 
@@ -291,7 +307,7 @@ BaseGlyphList.
 | Thai / Lao | ✓ production | Standard GSUB; Thai word-break dictionary |
 | Khmer / Myanmar | ✓ production | Indic pipeline + per-script flags; canonical syllables match HarfBuzz |
 | CJK | ✓ via cmap | No script-specific reordering needed |
-| Colour emoji | ✓ production | COLRv0 + COLRv1 + CBDT + sbix; 28 composite blend modes |
+| Colour emoji | Partial | COLRv0 + supported COLRv1 paint subset; `sbix` and `CBDT`/`CBLC` tables are detected but not rasterized |
 
 ## Examples
 

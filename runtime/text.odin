@@ -85,11 +85,13 @@ Text_Engine :: struct {
 	monospace_italic_font_loaded: bool,
 	cache_initialized:    bool,
 	font_generation:      u64,
+	font_fallback_generation: [2]u64,
 	font_files:           map[Font_File_ID]^Text_Font_File,
 	font_file_order:      [dynamic]Font_File_ID,
 	font_faces:           map[Font_Face_ID]^Text_Font_Face,
 	font_face_order:      [dynamic]Font_Face_ID,
 	font_face_ids_by_pointer: map[rawptr]Font_Face_ID,
+	fallback_faces_by_role: [2]Text_Font_Fallback_List,
 	font_file_bytes:      int,
 	next_font_file_id:    u32,
 	next_font_face_id:    u32,
@@ -110,6 +112,10 @@ Text_Font_Face :: struct {
 	face_index: int,
 	font: runa.Font,
 	weight_axis: Font_Weight_Axis,
+}
+
+Text_Font_Fallback_List :: struct {
+	ids: [dynamic]Font_Face_ID,
 }
 
 Text_Font_Source :: enum u8 {
@@ -263,6 +269,10 @@ new_text_engine :: proc(name := "unconfigured", available := false, allocator :=
 		font_faces=make(map[Font_Face_ID]^Text_Font_Face, allocator=allocator),
 		font_face_order=make([dynamic]Font_Face_ID, 0, 8, allocator),
 		font_face_ids_by_pointer=make(map[rawptr]Font_Face_ID, allocator=allocator),
+	fallback_faces_by_role={
+		Text_Font_Fallback_List{ids=make([dynamic]Font_Face_ID, 0, 4, allocator)},
+		Text_Font_Fallback_List{ids=make([dynamic]Font_Face_ID, 0, 4, allocator)},
+	},
 		next_font_file_id=1,
 		next_font_face_id=1,
 	}
@@ -376,6 +386,47 @@ text_engine_font_face :: proc(engine: ^Text_Engine, id: Font_Face_ID) -> (face: 
 	if engine == nil || id == 0 { return }
 	face, found = engine.font_faces[id]
 	return
+}
+
+text_font_role_index :: proc(role: Font_Role) -> int {
+	return 0 if role == .UI else 1
+}
+
+text_engine_font_face_add_fallback :: proc(engine: ^Text_Engine, role: Font_Role, id: Font_Face_ID) -> bool {
+	if engine == nil || id == 0 { return false }
+	face, found := text_engine_font_face(engine, id)
+	if !found || face == nil { return false }
+	primary, primary_loaded := text_engine_font(engine, role)
+	if primary_loaded && primary == &face.font { return false }
+	fallback, fallback_loaded := text_engine_fallback_font(engine, role)
+	if fallback_loaded && fallback == &face.font { return false }
+	index := text_font_role_index(role)
+	for prior in engine.fallback_faces_by_role[index].ids {
+		if prior == id { return false }
+	}
+	append(&engine.fallback_faces_by_role[index].ids, id)
+	engine.font_fallback_generation[index] += 1
+	if engine.font_fallback_generation[index] == 0 { engine.font_fallback_generation[index] = 1 }
+	return true
+}
+
+text_engine_font_stack :: proc(engine: ^Text_Engine, role: Font_Role, allocator := context.temp_allocator) -> []^runa.Font {
+	primary, loaded := text_engine_font(engine, role)
+	if !loaded { return nil }
+	stack := make([dynamic]^runa.Font, 0, 4, allocator)
+	append(&stack, primary)
+	index := text_font_role_index(role)
+	for id in engine.fallback_faces_by_role[index].ids {
+		face, found := text_engine_font_face(engine, id)
+		if !found || face == nil { continue }
+		append(&stack, &face.font)
+	}
+	if fallback, fallback_loaded := text_engine_fallback_font(engine, role); fallback_loaded {
+		already_present := false
+		for existing in stack { if existing == fallback { already_present = true; break } }
+		if !already_present { append(&stack, fallback) }
+	}
+	return stack[:]
 }
 
 text_engine_registered_font_file_count :: proc(engine: ^Text_Engine) -> int {
@@ -492,6 +543,17 @@ text_engine_font_face_id_for_font :: proc(engine: ^Text_Engine, role: Font_Role,
 	return 0
 }
 
+text_engine_role_weight_axis_for_font :: proc(engine: ^Text_Engine, role: Font_Role, font: ^runa.Font) -> Font_Weight_Axis {
+	if engine != nil && font != nil {
+		if id, found := engine.font_face_ids_by_pointer[rawptr(font)]; found {
+			if face, face_found := text_engine_font_face(engine, id); face_found && face != nil { return face.weight_axis }
+		}
+	}
+	source := text_engine_font_source_for_font(engine, role, font)
+	italic := text_engine_font_is_italic(engine, role, source, font)
+	return text_engine_weight_axis_for_glyph(engine, role, source, italic)
+}
+
 text_engine_font_for_face_id :: proc(
 	engine: ^Text_Engine,
 	id: Font_Face_ID,
@@ -531,6 +593,15 @@ text_engine_weight_axis_for_glyph :: proc(engine: ^Text_Engine, role: Font_Role,
 
 text_engine_resolve_font_weight :: proc(engine: ^Text_Engine, role: Font_Role, source: Text_Font_Source, italic: bool, weight: f32) -> f32 {
 	axis := text_engine_weight_axis_for_glyph(engine, role, source, italic)
+	if !axis.available { return FONT_WEIGHT_REGULAR }
+	resolved := effective_font_weight(weight)
+	if resolved < axis.min_value { resolved = axis.min_value }
+	if resolved > axis.max_value { resolved = axis.max_value }
+	return resolved
+}
+
+text_engine_resolve_font_weight_for_font :: proc(engine: ^Text_Engine, role: Font_Role, font: ^runa.Font, weight: f32) -> f32 {
+	axis := text_engine_role_weight_axis_for_font(engine, role, font)
 	if !axis.available { return FONT_WEIGHT_REGULAR }
 	resolved := effective_font_weight(weight)
 	if resolved < axis.min_value { resolved = axis.min_value }
@@ -716,6 +787,7 @@ text_engine_destroy :: proc(engine: ^Text_Engine) {
 	delete(engine.font_faces)
 	delete(engine.font_face_order)
 	delete(engine.font_face_ids_by_pointer)
+	for &list in engine.fallback_faces_by_role { delete(list.ids) }
 	delete(engine.font_files)
 	delete(engine.font_file_order)
 	delete(engine.font_data, engine.allocator)
@@ -1077,20 +1149,19 @@ text_tab_advance :: proc(line_x, space_advance: f32) -> f32 {
 // layout.
 text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, editable: bool = false, allocator := context.allocator, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI, font_weight: f32 = FONT_WEIGHT_REGULAR, overflow := Text_Overflow.Wrap, text_style_spans: []Text_Style_Span = nil) -> (run: Text_Run, ok: bool) {
 	font_source := Text_Font_Source.Primary
-	font, font_loaded := text_engine_font(engine, font_role)
-	if !font_loaded || size <= 0 { return }
+	font_stack_storage := text_engine_font_stack(engine, font_role, scratch_allocator)
+	if len(font_stack_storage) == 0 || size <= 0 { return }
+	font := font_stack_storage[0]
 	resolved_font_weight := text_engine_resolve_font_weight(engine, font_role, font_source, false, font_weight)
 	_ = text_engine_apply_font_weight(font, text_engine_weight_axis(engine, font_role, font_source), resolved_font_weight)
-	defer { runa.font_reset_variations(font) }
-	fallback_font, fallback_loaded := text_engine_fallback_font(engine, font_role)
-	if fallback_loaded {
-		fallback_weight := text_engine_resolve_font_weight(engine, font_role, .Fallback, false, font_weight)
-		_ = text_engine_apply_font_weight(fallback_font, text_engine_weight_axis(engine, font_role, .Fallback), fallback_weight)
-		defer { runa.font_reset_variations(fallback_font) }
+	for candidate in font_stack_storage[1:] {
+		candidate_weight := text_engine_resolve_font_weight_for_font(engine, font_role, candidate, font_weight)
+		_ = text_engine_apply_font_weight(candidate, text_engine_role_weight_axis_for_font(engine, font_role, candidate), candidate_weight)
 	}
-	font_stack_storage := [2]^runa.Font{font, fallback_font}
-	stack := runa.Font_Stack(font_stack_storage[:1])
-	if fallback_loaded { stack = runa.Font_Stack(font_stack_storage[:2]) }
+	defer {
+		for candidate in font_stack_storage { runa.font_reset_variations(candidate) }
+	}
+	stack := runa.Font_Stack(font_stack_storage)
 	features: []runa.Feature_Setting
 	if editable {
 		// Follow the code-editor convention: keep discretionary ligatures off
@@ -1125,7 +1196,7 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 	run.lines = make([dynamic]Text_Line, 0, 4, allocator)
 	run.size = size
 	run.max_width = max_width
-	run.font_generation = engine.font_generation
+	run.font_generation = text_run_font_generation_key(engine, font_role, false)
 	run.font = font_role
 	run.font_source = font_source
 	run.font_weight = resolved_font_weight
@@ -1138,8 +1209,10 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 	// range; this is more useful for caret/selection geometry than assuming
 	// that every glyph maps one-to-one to a grapheme.
 	cluster_starts := make([dynamic]int, 0, 32, scratch_allocator)
+	run_has_unresolved_fallback := false
 	for line in lines {
 		for glyph in line.glyphs {
+			if glyph.unresolved_fallback { run_has_unresolved_fallback = true }
 			start := int(glyph.cluster)
 			known := false
 			for prior in cluster_starts {
@@ -1169,7 +1242,7 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 			glyph_font_source := text_engine_font_source_for_font(engine, font_role, glyph.font)
 			glyph_face_id := text_engine_font_face_id_for_font(engine, font_role, glyph.font)
 			glyph_italic := text_engine_font_is_italic(engine, font_role, glyph_font_source, glyph.font)
-			glyph_weight = text_engine_resolve_font_weight(engine, font_role, glyph_font_source, glyph_italic, glyph_weight)
+			glyph_weight = text_engine_resolve_font_weight_for_font(engine, font_role, glyph.font, glyph_weight)
 			// Keep the run-level field compatible as a fallback-participation
 			// summary; rasterization uses the source stored on each glyph.
 			if glyph_font_source == .Fallback { run.font_source = .Fallback }
@@ -1231,6 +1304,7 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 		run.lines[len(run.lines)-1].byte_end = len(value)
 	}
 	delete(cluster_starts)
+	run.font_generation = text_run_font_generation_key(engine, font_role, run_has_unresolved_fallback)
 	engine.shape_calls += 1
 	ok = true
 	return
@@ -1396,6 +1470,34 @@ text_run_build_with_overflow :: proc(
 	return run, true
 }
 
+TEXT_RUN_FALLBACK_GENERATION_BITS :: 8
+TEXT_RUN_FALLBACK_GENERATION_MASK :: (u64(1) << TEXT_RUN_FALLBACK_GENERATION_BITS) - 1
+TEXT_RUN_FONT_GENERATION_MASK :: max(u64) >> TEXT_RUN_FALLBACK_GENERATION_BITS
+
+text_run_font_generation_key :: proc(engine: ^Text_Engine, role: Font_Role, unresolved_fallback: bool) -> u64 {
+	if engine == nil { return 0 }
+	primary_generation := engine.font_generation & TEXT_RUN_FONT_GENERATION_MASK
+	key := primary_generation << TEXT_RUN_FALLBACK_GENERATION_BITS
+	if unresolved_fallback {
+		// A Runtime can register at most 32 distinct faces, so the low byte can
+		// encode this bounded fallback epoch plus a nonzero unresolved marker.
+		key |= (engine.font_fallback_generation[text_font_role_index(role)] & TEXT_RUN_FALLBACK_GENERATION_MASK) + 1
+	}
+	return key
+}
+
+text_run_font_generation_matches :: proc(run: ^Text_Run, engine: ^Text_Engine) -> bool {
+	if run == nil || engine == nil { return false }
+	unresolved := run.font_generation & TEXT_RUN_FALLBACK_GENERATION_MASK != 0
+	return run.font_generation == text_run_font_generation_key(engine, run.font, unresolved)
+}
+
+text_run_fallback_refresh_needed :: proc(run: ^Text_Run, engine: ^Text_Engine) -> bool {
+	return run != nil && engine != nil &&
+		run.font_generation & TEXT_RUN_FALLBACK_GENERATION_MASK != 0 &&
+		!text_run_font_generation_matches(run, engine)
+}
+
 // prepare_text_run_node materializes the platform-neutral text product when
 // measure_node supplies the real retained constraints. A node owns this
 // product for its retained lifetime; the native renderer only resolves it to
@@ -1436,7 +1538,8 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1, fo
 		// here with the temporary unconstrained value on every root wake.
 		if !force_unbounded && node.style.width <= 0 && node.text_run_valid &&
 			node.text_run.size == requested_size &&
-			node.text_run.font_generation == rt.text_engine.font_generation &&
+			text_run_font_generation_matches(&node.text_run, &rt.text_engine) &&
+			!text_run_fallback_refresh_needed(&node.text_run, &rt.text_engine) &&
 			node.text_run.font_weight == font_weight &&
 			node.text_run.style_hash == style_hash &&
 			node.text_run.overflow == text_overflow {
@@ -1447,7 +1550,8 @@ prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1, fo
 	}
 	if node.text_run_valid &&
 		node.text_run.size == requested_size &&
-		node.text_run.font_generation == rt.text_engine.font_generation &&
+		text_run_font_generation_matches(&node.text_run, &rt.text_engine) &&
+		!text_run_fallback_refresh_needed(&node.text_run, &rt.text_engine) &&
 		node.text_run.max_width == requested_width &&
 		node.text_run.font_weight == font_weight &&
 		node.text_run.style_hash == style_hash &&
@@ -1864,20 +1968,19 @@ text_run_move_visual :: proc(run: ^Text_Run, position: Text_Position, direction:
 
 text_layout :: proc(engine: ^Text_Engine, value: string, size: f32, max_width: f32 = 0, scratch_allocator := context.temp_allocator, font_role := Font_Role.UI, font_weight: f32 = FONT_WEIGHT_REGULAR) -> (width, height: f32, glyphs: int, ok: bool) {
 	font_source := Text_Font_Source.Primary
-	font, font_loaded := text_engine_font(engine, font_role)
-	if !font_loaded || size <= 0 { return }
+	font_stack_storage := text_engine_font_stack(engine, font_role, scratch_allocator)
+	if len(font_stack_storage) == 0 || size <= 0 { return }
+	font := font_stack_storage[0]
 	resolved_font_weight := text_engine_resolve_font_weight(engine, font_role, font_source, false, font_weight)
 	_ = text_engine_apply_font_weight(font, text_engine_weight_axis(engine, font_role, font_source), resolved_font_weight)
-	defer { runa.font_reset_variations(font) }
-	fallback_font, fallback_loaded := text_engine_fallback_font(engine, font_role)
-	if fallback_loaded {
-		fallback_weight := text_engine_resolve_font_weight(engine, font_role, .Fallback, false, font_weight)
-		_ = text_engine_apply_font_weight(fallback_font, text_engine_weight_axis(engine, font_role, .Fallback), fallback_weight)
-		defer { runa.font_reset_variations(fallback_font) }
+	for candidate in font_stack_storage[1:] {
+		candidate_weight := text_engine_resolve_font_weight_for_font(engine, font_role, candidate, font_weight)
+		_ = text_engine_apply_font_weight(candidate, text_engine_role_weight_axis_for_font(engine, font_role, candidate), candidate_weight)
 	}
-	font_stack_storage := [2]^runa.Font{font, fallback_font}
-	stack := runa.Font_Stack(font_stack_storage[:1])
-	if fallback_loaded { stack = runa.Font_Stack(font_stack_storage[:2]) }
+	defer {
+		for candidate in font_stack_storage { runa.font_reset_variations(candidate) }
+	}
+	stack := runa.Font_Stack(font_stack_storage)
 	opts := runa.Paragraph_Opts{fonts=stack, size=size, direction=.Auto, align=.Start, max_width=max_width}
 	normalized_value, source_spans := text_normalize_controls(value, scratch_allocator)
 	defer { delete(source_spans) }

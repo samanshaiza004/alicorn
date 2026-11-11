@@ -48,3 +48,41 @@ test_linux_fontconfig_fallback_covers_ui_symbols :: proc(t: ^testing.T) {
 			"mixed text should retain primary glyphs while selecting the verified fallback only for missing symbols")
 	}
 }
+
+@(test)
+test_windows_directwrite_cjk_fallback_and_color_emoji :: proc(t: ^testing.T) {
+	when ODIN_OS == .Windows {
+		rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
+		defer alicorn.destroy_runtime(&rt)
+		testing.expect(t, native_load_default_fonts(&rt), "Windows primary font initialization should succeed")
+		testing.expect(t, alicorn.text_engine_registered_font_face_count(&rt.text_engine) > 0,
+			"DirectWrite should register supported system fallback faces")
+
+		value := "日本語 🎉"
+		run, ok := alicorn.text_run_build(&rt.text_engine, value, 20, font_role=.Monospace)
+		defer if ok { alicorn.text_run_destroy(&run) }
+		japanese_fallback_glyphs := 0
+		color_emoji_slot := false
+		emoji_start := len("日本語 ")
+		if ok {
+			for glyph in run.glyphs {
+				if glyph.cluster_start < emoji_start && glyph.font_face != 0 { japanese_fallback_glyphs += 1 }
+				if glyph.cluster_start == emoji_start && glyph.font_face != 0 {
+					slot, drawable, glyph_ok := alicorn.text_engine_glyph(
+						&rt.text_engine, glyph.glyph_id, run.size,
+						font_role=.Monospace,
+						font_source=glyph.font_source,
+						font_weight=glyph.font_weight,
+						italic=glyph.italic,
+						face_id=glyph.font_face,
+					)
+					color_emoji_slot = glyph_ok && drawable && slot.is_color
+				}
+			}
+		}
+		testing.expect(t, ok && japanese_fallback_glyphs > 0,
+			"Japanese text should select a registered DirectWrite fallback face")
+		testing.expect(t, color_emoji_slot,
+			"the mapped Windows emoji face should rasterize emoji into the RGBA atlas")
+	}
+}

@@ -251,6 +251,42 @@ test_glyph_resource_identity_includes_stable_font_face_id :: proc(t: ^testing.T)
 }
 
 @(test)
+test_font_fallback_face_refresh_is_targeted_to_unresolved_runs :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0,0,120,60})
+	defer destroy_runtime(&rt)
+	testing.expect(t, font_load_bytes(&rt, .Monospace, IMAGE_ASSET_TEST_MONO_FONT), "primary font should load")
+	testing.expect(t, font_load_bytes(&rt, .UI, IMAGE_ASSET_TEST_FONT), "UI primary font should load")
+	latin, latin_ok := text_run_build(&rt.text_engine, "plain Latin text", 16, font_role=.Monospace)
+	defer text_run_destroy(&latin)
+	missing, missing_ok := text_run_build(&rt.text_engine, "日本語", 16, font_role=.Monospace)
+	defer text_run_destroy(&missing)
+	ui_missing, ui_missing_ok := text_run_build(&rt.text_engine, "日本語", 16, font_role=.UI)
+	defer text_run_destroy(&ui_missing)
+	testing.expect(t, latin_ok && latin.font_generation & TEXT_RUN_FALLBACK_GENERATION_MASK == 0,
+		"primary-covered Latin text should not depend on future fallback discovery")
+	testing.expect(t, missing_ok && missing.font_generation & TEXT_RUN_FALLBACK_GENERATION_MASK != 0,
+		"text whose grapheme has no loaded face should record unresolved fallback coverage")
+	testing.expect(t, ui_missing_ok && ui_missing.font_generation & TEXT_RUN_FALLBACK_GENERATION_MASK != 0,
+		"unresolved UI text should also track UI-role fallback discovery")
+	file := font_file_load_bytes(&rt, IMAGE_ASSET_TEST_FONT)
+	face := font_face_load(&rt, file, 0)
+	ui_generation := rt.text_engine.font_fallback_generation[text_font_role_index(.UI)]
+	testing.expect(t, face != 0 && font_face_add_fallback(&rt, .UI, face),
+		"a registered face should be addable to the UI role's ordered fallback stack")
+	testing.expect(t, rt.text_engine.font_fallback_generation[text_font_role_index(.UI)] > ui_generation &&
+		!text_run_fallback_refresh_needed(&latin, &rt.text_engine) &&
+		!text_run_fallback_refresh_needed(&missing, &rt.text_engine) &&
+		text_run_fallback_refresh_needed(&ui_missing, &rt.text_engine),
+		"adding a UI fallback should stale only unresolved UI runs, not Latin or monospace runs")
+	testing.expect(t, font_face_add_fallback(&rt, .Monospace, face) &&
+		text_run_fallback_refresh_needed(&missing, &rt.text_engine),
+		"adding a monospace fallback should stale unresolved monospace runs")
+	stack := text_engine_font_stack(&rt.text_engine, .Monospace)
+	testing.expect(t, len(stack) == 2 && stack[1] == &rt.text_engine.font_faces[face].font,
+		"registered fallback faces should participate after the primary role face")
+}
+
+@(test)
 test_worker_decoded_image_adoption_transfers_pixels_once :: proc(t: ^testing.T) {
     encoded := image_asset_test_qoi()
     decoded, err := image_decode_bytes(encoded[:], context.allocator, context.temp_allocator)

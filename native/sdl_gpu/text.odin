@@ -43,6 +43,16 @@ Native_Host_Text_Run :: struct {
 	run:     alicorn.Text_Run,
 }
 
+// Monochrome atlas entries are white masks and need the text paint RGB.
+// Color atlas entries already contain their palette RGB, so use neutral
+// vertex RGB while preserving paint alpha and retained opacity.
+native_text_vertex_color :: proc(color: alicorn.Color, opacity: f32, color_glyph: bool) -> [4]f32 {
+	if color_glyph {
+		return [4]f32{1, 1, 1, color.a*opacity}
+	}
+	return [4]f32{color.r, color.g, color.b, color.a*opacity}
+}
+
 Native_Text_Renderer :: struct {
 	device:         ^sdl3.GPUDevice,
 	swapchain_format: sdl3.GPUTextureFormat,
@@ -773,8 +783,7 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 			} else if span_strategy == .Segment_Tree {
 				glyph_color = native_text_color_for_cluster(paint.spans, winners, glyph.cluster_start, glyph.cluster_end, paint.color)
 			}
-			glyph_color.a *= command.opacity
-			color := [4]f32{glyph_color.r, glyph_color.g, glyph_color.b, glyph_color.a}
+			color := native_text_vertex_color(glyph_color, command.opacity, slot_view.Is_Color)
 			first := sdl3.Uint32(len(renderer.vertices))
 			append(&renderer.vertices,
 				Native_Text_Vertex{[3]f32{x0, y0, 0}, color, [2]f32{u0, v0}},

@@ -39,7 +39,7 @@ text at small scales but cannot:
 - Shape complex scripts (Arabic joining, Devanagari conjuncts, Thai
   clusters, bidi).
 - Break lines per Unicode UAX #14.
-- Render colour emoji (COLRv0 / COLRv1 / CBDT / sbix tables).
+- Render colour emoji using COLRv0 and the supported COLRv1 paint subset.
 - Apply OpenType features (ligatures, GPOS kerning, contextual
   alternates, stylistic sets).
 - Subpixel-position glyphs.
@@ -83,7 +83,7 @@ every possible string is guaranteed identical.
 | Thai / Lao | Standard GSUB plus the Thai word-break dictionary. |
 | Khmer / Myanmar | Indic pipeline; canonical syllables checked, long tail unverified. |
 | CJK | Via cmap; no script-specific reordering needed. |
-| Colour emoji | COLRv0 + COLRv1 + CBDT + sbix, all 28 blend modes. |
+| Colour emoji | COLRv0 + supported COLRv1 paint subset; `sbix` and `CBDT`/`CBLC` are detected but not rasterized. |
 
 The non-shaping layers — bidi, line break, grapheme / word / sentence
 segmentation, normalization — are held to Unicode's own conformance

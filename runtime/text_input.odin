@@ -132,7 +132,7 @@ prepare_text_composition_node :: proc(rt: ^Runtime, node: ^Node) -> bool {
 	defer { if len(value) > 0 { delete(value, rt.persistent_allocator) } }
 	if node.composition_run_valid &&
 		node.composition_run.size == requested_size &&
-		node.composition_run.font_generation == rt.text_engine.font_generation &&
+		text_run_font_generation_matches(&node.composition_run, &rt.text_engine) &&
 		node.composition_run.max_width == max_width &&
 		node.composition_run.font_weight == effective_font_weight(node.text_style.font_weight) &&
 		node.composition_run.value == value {

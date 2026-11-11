@@ -24,7 +24,6 @@ package runa
 // memory grows without bound.
 
 import "core:mem"
-import "core:unicode/utf8"
 
 import "parse"
 import "shape"
@@ -199,35 +198,21 @@ shape_text_cached :: proc(font: ^Font, text: string, size: f32, c: ^Cache, scrip
 // hits do not allocate.
 measure_text_cached :: proc(text: string, opts: Paragraph_Opts, c: ^Cache) -> (width, height: f32) {
 	if len(opts.fonts) == 0 || opts.size <= 0 { return 0, 0 }
-	// For multi-font runs, walk codepoints once to find the picks.
-	// Use the decoder's actual byte advance (not `utf8_byte_len(r)`,
-	// which derives length from the rune VALUE and over-counts for
-	// invalid UTF-8 input — see the same fix in `layout_paragraph`).
-	byte_off := 0
-	cur_font: ^Font
-	run_start := 0
-	for byte_off < len(text) {
-		r, byte_len := utf8.decode_rune_in_string(text[byte_off:])
-		picked := pick_font_for_rune(opts.fonts, r)
-		if picked != cur_font && cur_font != nil {
-			gs := shape_text_cached(cur_font, text[run_start:byte_off], opts.size, c, disable_features = opts.disable_features, features = opts.features)
-			for sg in gs { width += sg.x_advance }
-			run_start = byte_off
-		}
-		cur_font = picked
-		byte_off += byte_len
-	}
-	if cur_font != nil {
-		gs := shape_text_cached(cur_font, text[run_start:byte_off], opts.size, c, disable_features = opts.disable_features, features = opts.features)
-		for sg in gs { width += sg.x_advance }
-	}
-
-	for f in opts.fonts {
-		s := opts.size / f32(f.units_per_em)
-		h := (f.ascent - f.descent + f.line_gap) * s
+	// Reuse the same grapheme selection and script-run boundaries as layout.
+	runs := paragraph_font_runs_make(text, opts, context.temp_allocator)
+	for run in runs {
+		gs := shape_text_cached(run.font, text[run.text_start:run.text_end], opts.size, c,
+			opentype_script_tag(run.script), disable_features = opts.disable_features, features = opts.features)
+		for glyph in gs { width += glyph.x_advance }
+		s := opts.size / f32(run.font.units_per_em)
+		h := (run.font.ascent - run.font.descent + run.font.line_gap) * s
 		if h > height { height = h }
 	}
-	return
+	if len(runs) == 0 {
+		font := opts.fonts[0]
+		s := opts.size / f32(font.units_per_em)
+		height = (font.ascent - font.descent + font.line_gap) * s
+	}	return
 }
 
 // ---- Slot pool + LRU list internals ------------------------------------

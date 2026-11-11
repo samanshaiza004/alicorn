@@ -208,6 +208,24 @@ Font :: struct {
 	_hint_metrics: raster.Hint_Metrics,
 }
 
+// Font_Color_Table_Inventory reports table presence without implying that
+// every advertised color format can be rasterized by the current renderer.
+Font_Color_Table_Inventory :: struct {
+	colr_version: u16,
+	has_colr: bool,
+	has_cpal: bool,
+	has_sbix: bool,
+	has_cbdt: bool,
+	has_cblc: bool,
+}
+
+Font_Color_Rendering_Support :: struct {
+	colrv0: bool,
+	colrv1_subset: bool,
+	sbix: bool,
+	cbdt_cblc: bool,
+}
+
 // Shaped_Glyph is one positioned glyph emitted by `shape_text`. The
 // shape package owns the underlying type; runa re-exports it so
 // consumers don't reach into a sibling package.
@@ -228,6 +246,7 @@ Shaped_Glyph :: shape.Shaped_Glyph
 Paragraph_Glyph :: struct {
 	font:      ^Font,
 	style_span: int, // -1 for the paragraph's default font/variation state.
+	unresolved_fallback: bool, // Run contains a grapheme no stack face fully covered.
 	glyph_id:  Glyph_ID,
 	cluster:   u32,
 	x_advance: f32,
@@ -247,8 +266,10 @@ Line :: struct {
 	baseline: f32,                                // y position of baseline within the line
 }
 
-// Font_Stack is a caller-owned, fallback-ordered list of fonts. The
-// first font that covers each codepoint wins.
+// Font_Stack is a caller-owned, fallback-ordered list of fonts. The first
+// face with cmap coverage for every non-ignorable scalar in an extended
+// grapheme cluster wins. If none covers it, the first face is used for the
+// whole cluster so fallback boundaries do not split combining or emoji text.
 Font_Stack :: distinct []^Font
 
 // Font_Style_Span selects a font face and one optional variation axis over a
@@ -261,6 +282,16 @@ Font_Style_Span :: struct {
 	variation_tag: Axis_Tag,
 	variation_value: f32,
 	variation_set: bool,
+}
+
+@(private)
+Paragraph_Font_Run :: struct {
+	font:       ^Font,
+	text_start: int,
+	text_end:   int,
+	script:     itemize.Script_Code,
+	style_span: int,
+	unresolved_fallback: bool,
 }
 
 // Feature names the three ligature features for the deprecated
@@ -377,74 +408,9 @@ layout_paragraph :: proc(text: string, opts: Paragraph_Opts, cache: ^Cache = nil
 		cp_bidi_levels, cp_byte_offsets_for_bidi = bidi.resolve_levels(text, bd, context.temp_allocator)
 	}
 
-	// Walk codepoints, group into runs of same (font, script). A run
-	// break happens whenever either the picked font or the resolved
-	// script changes. `Common` and `Inherited` codepoints fold into
-	// the preceding run per UAX #24's resolution rules; the
-	// per-codepoint script comes from `itemize.script_of`.
-	Run :: struct {
-		font:        ^Font,
-		text_start:  int,
-		text_end:    int,
-		script:      itemize.Script_Code,
-		style_span: int,
-	}
-	runs := make([dynamic]Run, 0, 4, context.temp_allocator)
-
-	cur_font:    ^Font
-	cur_script:  itemize.Script_Code = itemize.COMMON
-	cur_style_span := -1
-	style_cursor := 0
-	run_start := 0
-	// Walk codepoints via the actual UTF-8 decoder rather than `for r
-	// in text`. The shortcut form was paired with `utf8_byte_len(r)`
-	// which derives the advance from the DECODED rune value — fine
-	// for valid input, but wrong for invalid UTF-8: the iterator
-	// returns `U+FFFD` after consuming 1 raw byte, while
-	// `utf8_byte_len(U+FFFD)` returns 3, so `byte_off` over-counts
-	// and eventually exceeds `len(text)`. The next slice that uses
-	// these offsets goes out of bounds and the runtime traps
-	// (`SIGILL` / "Illegal instruction"). Using the decoder's actual
-	// `size` return value keeps the offsets honest for any byte
-	// sequence the caller might hand us (network data, clipboard,
-	// truncated buffers, etc.).
-	byte_off := 0
-	for byte_off < len(text) {
-		r, byte_len := utf8.decode_rune_in_string(text[byte_off:])
-		for style_cursor < len(opts.font_style_spans) && byte_off >= opts.font_style_spans[style_cursor].end {
-			style_cursor += 1
-		}
-		style_idx := -1
-		if style_cursor < len(opts.font_style_spans) {
-			candidate := opts.font_style_spans[style_cursor]
-			if byte_off >= candidate.start && byte_off < candidate.end { style_idx = style_cursor }
-		}
-		picked := pick_font_for_rune(opts.fonts, r)
-		if style_idx >= 0 && opts.font_style_spans[style_idx].font != nil && font_lookup_glyph(opts.font_style_spans[style_idx].font, r) != 0 {
-			picked = opts.font_style_spans[style_idx].font
-		}
-		raw_script := itemize.script_of(r)
-		// UAX #24 resolution: Common / Inherited fold into the
-		// surrounding run. They only "set" the script if no real
-		// script has appeared yet.
-		next_script := cur_script
-		if raw_script != itemize.COMMON && raw_script != itemize.INHERITED {
-			next_script = raw_script
-		} else if cur_font == nil {
-			next_script = raw_script
-		}
-		if cur_font != nil && (picked != cur_font || next_script != cur_script || style_idx != cur_style_span) {
-			append(&runs, Run{font = cur_font, text_start = run_start, text_end = byte_off, script = cur_script, style_span = cur_style_span})
-			run_start = byte_off
-		}
-		cur_font   = picked
-		cur_script = next_script
-		cur_style_span = style_idx
-		byte_off += byte_len
-	}
-	if cur_font != nil {
-		append(&runs, Run{font = cur_font, text_start = run_start, text_end = byte_off, script = cur_script, style_span = cur_style_span})
-	}
+	// Face selection is cluster-atomic; compatible clusters are joined into
+	// script runs so contextual shaping is preserved.
+	runs := paragraph_font_runs_make(text, opts, context.temp_allocator)
 
 	// Shape each run and concatenate. With a non-nil cache, runs hit
 	// `shape_text_cached` and return the cache-owned glyph slice
@@ -498,6 +464,7 @@ layout_paragraph :: proc(text: string, opts: Paragraph_Opts, cache: ^Cache = nil
 			append(&all_glyphs, Paragraph_Glyph{
 				font      = run.font,
 				style_span = run.style_span,
+				unresolved_fallback = run.unresolved_fallback,
 				glyph_id  = sg.glyph_id,
 				cluster   = absolute_cluster,
 				x_advance = sg.x_advance,
@@ -513,14 +480,15 @@ layout_paragraph :: proc(text: string, opts: Paragraph_Opts, cache: ^Cache = nil
 		}
 	}
 
-	// Include default-stack faces and every actual style-selected run face.
-	// An italic face or variable instance can have different vertical metrics.
+	// An empty paragraph has no selected run, so use the primary face's line
+	// box. Otherwise the selected run faces above already contributed their
+	// metrics; unused fallback faces must not change unrelated line heights.
 	scale_factor :: proc(f: ^Font, size: f32) -> f32 { return size / f32(f.units_per_em) }
-	for f in opts.fonts {
+	if len(runs) == 0 {
+		f := opts.fonts[0]
 		s := scale_factor(f, opts.size)
-		h := (f.ascent - f.descent + f.line_gap) * s
-		if h > max_height { max_height = h }
-		if f.ascent * s > max_baseline { max_baseline = f.ascent * s }
+		max_height = (f.ascent - f.descent + f.line_gap) * s
+		max_baseline = f.ascent * s
 	}
 
 	// Hand wrap_glyphs a slice but free the dynamic-array's backing
@@ -674,7 +642,7 @@ line_destroy :: proc(l: ^Line, allocator := context.allocator) {
 }
 
 // measure_text is the cheap-path measurement procedure — shapes the
-// text with the first covering font in the stack and returns the
+// text with the first cluster-covering font in the stack and returns the
 // pixel-space width + height. No line-wrapping, no allocations beyond
 // `context.temp_allocator`.
 measure_text :: proc(text: string, opts: Paragraph_Opts) -> (width, height: f32) {
@@ -682,50 +650,24 @@ measure_text :: proc(text: string, opts: Paragraph_Opts) -> (width, height: f32)
 
 	tmp := make([dynamic]Shaped_Glyph, 0, 32, context.temp_allocator)
 
-	// Same run-splitting as layout_paragraph, but we don't materialise
-	// glyphs into the caller's allocator. Uses the decoder's actual
-	// byte advance so invalid UTF-8 can't desync `byte_off`.
-	byte_off := 0
-	cur_font: ^Font
-	run_start := 0
-	for byte_off < len(text) {
-		r, byte_len := utf8.decode_rune_in_string(text[byte_off:])
-		picked := pick_font_for_rune(opts.fonts, r)
-		if picked != cur_font && cur_font != nil {
-			clear(&tmp)
-			shape_text(cur_font, text[run_start:byte_off], opts.size, &tmp, disable_features = opts.disable_features, features = opts.features)
-			for sg in tmp { width += sg.x_advance }
-			run_start = byte_off
-		}
-		cur_font = picked
-		byte_off += byte_len
-	}
-	if cur_font != nil {
+	// Measurement and layout must resolve the same faces and script runs.
+	runs := paragraph_font_runs_make(text, opts, context.temp_allocator)
+	for run in runs {
 		clear(&tmp)
-		shape_text(cur_font, text[run_start:byte_off], opts.size, &tmp, disable_features = opts.disable_features, features = opts.features)
-		for sg in tmp { width += sg.x_advance }
+		shape_text(run.font, text[run.text_start:run.text_end], opts.size, &tmp,
+			opentype_script_tag(run.script), disable_features = opts.disable_features, features = opts.features)
+		for glyph in tmp { width += glyph.x_advance }
+		s := opts.size / f32(run.font.units_per_em)
+		run_height := (run.font.ascent - run.font.descent + run.font.line_gap) * s
+		if run_height > height { height = run_height }
 	}
-
-	for f in opts.fonts {
-		s := opts.size / f32(f.units_per_em)
-		h := (f.ascent - f.descent + f.line_gap) * s
-		if h > height { height = h }
+	if len(runs) == 0 {
+		font := opts.fonts[0]
+		height = opts.size / f32(font.units_per_em) * (font.ascent - font.descent + font.line_gap)
 	}
 	return
 }
 
-// pick_font_for_rune returns the first font in `stack` whose cmap
-// covers `r`, or stack[0] as the last-resort fallback (so the caller
-// gets *something* — the .notdef glyph, but never a crash).
-// opentype_script_tag converts a UAX #24 / ISO 15924 Script_Code
-// (title-case, e.g. 'Latn') into the OpenType layout script tag
-// (lowercase, 'latn'). The bytes are the same letters; the case
-// differs.
-//
-// Special cases: Common / Inherited / Unknown all map to 'latn' as
-// a safe fallback — these scripts have no shaper-feature data of
-// their own, and 'latn' is the closest thing to "default rules" in
-// modern OpenType fonts.
 // reorder_visual_in_place applies UAX #9 L2 to a single line's glyph
 // span. Walks levels from highest down to lowest odd, reversing each
 // maximal contiguous span at level ≥ threshold. Pure-LTR lines
@@ -781,6 +723,167 @@ cluster_to_cp_idx_bidi :: proc(cluster: int, offsets: []int) -> int {
 }
 
 @(private)
+paragraph_font_runs_make :: proc(text: string, opts: Paragraph_Opts, allocator := context.temp_allocator) -> [dynamic]Paragraph_Font_Run {
+	runs := make([dynamic]Paragraph_Font_Run, 0, 4, allocator)
+	cur_font: ^Font
+	cur_script: itemize.Script_Code = itemize.COMMON
+	cur_style_span := -1
+	cur_run_unresolved := false
+	style_cursor := 0
+	run_start := 0
+	graphemes := itemize.grapheme_iter_make(text)
+	for {
+		cluster_start, cluster_end, ok := itemize.grapheme_iter_next(&graphemes)
+		if !ok { break }
+		for style_cursor < len(opts.font_style_spans) && cluster_start >= opts.font_style_spans[style_cursor].end {
+			style_cursor += 1
+		}
+		style_idx := -1
+		if style_cursor < len(opts.font_style_spans) {
+			span := opts.font_style_spans[style_cursor]
+			if cluster_start >= span.start && cluster_start < span.end { style_idx = style_cursor }
+		}
+		cluster := text[cluster_start:cluster_end]
+		picked, cluster_covered := pick_font_for_grapheme(opts.fonts, cluster)
+		if style_idx >= 0 {
+			styled_font := opts.font_style_spans[style_idx].font
+			if styled_font != nil && font_covers_grapheme(styled_font, cluster) {
+				picked = styled_font
+				cluster_covered = true
+			}
+		}
+
+		next_script := cur_script
+		cluster_offset := cluster_start
+		for cluster_offset < cluster_end {
+			r, byte_len := utf8.decode_rune_in_string(text[cluster_offset:cluster_end])
+			raw_script := itemize.script_of(r)
+			if raw_script != itemize.COMMON && raw_script != itemize.INHERITED {
+				next_script = raw_script
+			} else if cur_font == nil {
+				next_script = raw_script
+			}
+			cluster_offset += byte_len
+		}
+
+		if cur_font != nil && (picked != cur_font || next_script != cur_script || style_idx != cur_style_span) {
+			append(&runs, Paragraph_Font_Run{
+				font=cur_font,
+				text_start=run_start,
+				text_end=cluster_start,
+				script=cur_script,
+				style_span=cur_style_span,
+				unresolved_fallback=cur_run_unresolved,
+			})
+			run_start = cluster_start
+			cur_run_unresolved = false
+		}
+		cur_font = picked
+		cur_script = next_script
+		cur_style_span = style_idx
+		cur_run_unresolved = cur_run_unresolved || !cluster_covered
+	}
+	if cur_font != nil {
+		append(&runs, Paragraph_Font_Run{
+			font=cur_font,
+			text_start=run_start,
+			text_end=len(text),
+			script=cur_script,
+			style_span=cur_style_span,
+			unresolved_fallback=cur_run_unresolved,
+		})
+	}
+	return runs
+}
+
+@(private)
+pick_font_for_grapheme :: proc(stack: Font_Stack, cluster: string) -> (picked: ^Font, covered: bool) {
+	if len(stack) == 0 { return }
+
+	first_covering: ^Font
+	preferred_color: ^Font
+	preferred_mono: ^Font
+	prefer_color, prefer_mono := false, false
+	base_rune: rune
+	byte_offset := 0
+	for byte_offset < len(cluster) {
+		r, byte_len := utf8.decode_rune_in_string(cluster[byte_offset:])
+		if r == 0xFE0F { prefer_color = true }
+		if r == 0xFE0E { prefer_mono = true }
+		if base_rune == 0 && !font_coverage_ignorable(r) { base_rune = r }
+		byte_offset += byte_len
+	}
+	if !prefer_mono && grapheme_has_default_emoji_presentation(cluster) { prefer_color = true }
+
+	for font in stack {
+		if !font_covers_grapheme(font, cluster) { continue }
+		if first_covering == nil { first_covering = font }
+		if base_rune != 0 {
+			color := font_has_color_layers(font, font_lookup_glyph(font, base_rune)) || font_has_color_glyphs(font)
+			if color && preferred_color == nil { preferred_color = font }
+			if !color && preferred_mono == nil { preferred_mono = font }
+		}
+	}
+	if prefer_color && preferred_color != nil { return preferred_color, true }
+	if prefer_mono && preferred_mono != nil { return preferred_mono, true }
+	if first_covering != nil { return first_covering, true }
+	// Deliberately keep an unsupported grapheme in one face. Splitting it
+	// across faces can break combining behavior, emoji modifiers, and ZWJ
+	// sequences; stack[0] provides Runa's established .notdef last resort.
+	return stack[0], false
+}
+
+@(private)
+font_covers_grapheme :: proc(font: ^Font, cluster: string) -> bool {
+	if font == nil { return false }
+	byte_offset := 0
+	for byte_offset < len(cluster) {
+		r, byte_len := utf8.decode_rune_in_string(cluster[byte_offset:])
+		if !font_coverage_ignorable(r) && font_lookup_glyph(font, r) == 0 { return false }
+		byte_offset += byte_len
+	}
+	return true
+}
+
+@(private)
+font_coverage_ignorable :: proc(r: rune) -> bool {
+	switch {
+	case r == 0x00AD || r == 0x034F || r == 0x061C || r == 0x115F || r == 0x1160 || r == 0x17B4 || r == 0x17B5:
+		return true
+	case r >= 0x180B && r <= 0x180F:
+		return true
+	case r >= 0x200B && r <= 0x200F:
+		return true
+	case r >= 0x202A && r <= 0x202E:
+		return true
+	case r >= 0x2060 && r <= 0x206F:
+		return true
+	case r >= 0xFE00 && r <= 0xFE0F:
+		return true
+	case r == 0xFEFF || (r >= 0xFFF0 && r <= 0xFFF8):
+		return true
+	case r >= 0x1BCA0 && r <= 0x1BCA3:
+		return true
+	case r >= 0x1D173 && r <= 0x1D17A:
+		return true
+	case r >= 0xE0000 && r <= 0xE0FFF:
+		return true
+	}
+	return false
+}
+
+@(private)
+grapheme_has_default_emoji_presentation :: proc(cluster: string) -> bool {
+	byte_offset := 0
+	for byte_offset < len(cluster) {
+		r, byte_len := utf8.decode_rune_in_string(cluster[byte_offset:])
+		if itemize.has_emoji_presentation(r) { return true }
+		byte_offset += byte_len
+	}
+	return false
+}
+
+@(private)
 opentype_script_tag :: proc(s: itemize.Script_Code) -> parse.Tag {
 	switch s {
 	case itemize.COMMON, itemize.INHERITED, itemize.UNKNOWN:
@@ -795,24 +898,6 @@ opentype_script_tag :: proc(s: itemize.Script_Code) -> parse.Tag {
 		out = (out << 8) | u32(b)
 	}
 	return parse.Tag(out)
-}
-
-@(private)
-pick_font_for_rune :: proc(stack: Font_Stack, r: rune) -> ^Font {
-	for f in stack {
-		if font_lookup_glyph(f, r) != 0 { return f }
-	}
-	return stack[0]
-}
-
-@(private)
-utf8_byte_len :: proc(r: rune) -> int {
-	switch {
-	case r < 0x80:    return 1
-	case r < 0x800:   return 2
-	case r < 0x10000: return 3
-	}
-	return 4
 }
 
 // font_load parses a single-font SFNT. The caller retains ownership of
@@ -1118,6 +1203,52 @@ apply_mvar_metrics :: proc(f: ^Font) {
 font_has_color_layers :: proc(f: ^Font, gid: Glyph_ID) -> bool {
 	if !f._has_colr { return false }
 	return parse.colr_is_base(&f._colr, gid)
+}
+
+// font_has_color_glyphs reports whether the face contains a COLR color-glyph
+// map. This helps prefer a color face when an emoji sequence shapes to a
+// ligature instead of the cmap glyph for its first scalar. Actual support is
+// still checked per glyph during rasterization.
+font_has_color_glyphs :: proc(f: ^Font) -> bool {
+	return f != nil && f._has_colr &&
+		(f._colr.num_base_glyph_records > 0 || f._colr.base_glyph_list_off != 0)
+}
+
+// font_color_table_inventory inspects a raw SFNT/TTC face directory, including
+// bitmap-only font faces that font_load_face cannot yet parse. It reports table
+// presence only; `sbix` and `CBDT/CBLC` are currently detected but not decoded.
+font_color_table_inventory :: proc(data: []u8, face_index := 0, allocator := context.temp_allocator) -> (inventory: Font_Color_Table_Inventory, err: Error) {
+	face_offset, face_err := parse.ttc_face_offset(data, face_index)
+	if face_err != .None { return {}, map_parse_err(face_err) }
+	index, index_err := parse.parse_table_index_at(data, face_offset, allocator)
+	if index_err != .None { return {}, map_parse_err(index_err) }
+	defer { parse.table_index_destroy(&index, allocator) }
+	inventory.has_colr = parse.has_table(&index, parse.tag("COLR"))
+	inventory.has_cpal = parse.has_table(&index, parse.tag("CPAL"))
+	inventory.has_sbix = parse.has_table(&index, parse.tag("sbix"))
+	inventory.has_cbdt = parse.has_table(&index, parse.tag("CBDT"))
+	inventory.has_cblc = parse.has_table(&index, parse.tag("CBLC"))
+	if inventory.has_colr {
+		colr, table_err := parse.find_table(&index, data, parse.tag("COLR"))
+		if table_err == .None && len(colr) >= 2 {
+			inventory.colr_version = u16(colr[0])<<8 | u16(colr[1])
+		}
+	}
+	return inventory, .None
+}
+
+// font_color_rendering_support reports which color paths a parsed face can
+// use. COLRv1 support is a subset of Paint formats and must still be checked
+// per glyph by raster_glyph. Bitmap-table presence is separately visible
+// through font_color_table_inventory; Runa does not decode bitmap glyphs.
+font_color_rendering_support :: proc(f: ^Font) -> Font_Color_Rendering_Support {
+	if f == nil || !f._has_colr { return {} }
+	return Font_Color_Rendering_Support{
+		colrv0=f._colr.num_base_glyph_records > 0 && f._colr.num_layer_records > 0,
+		colrv1_subset=f._colr.version >= 1 && f._colr.base_glyph_list_off != 0,
+		sbix=false,
+		cbdt_cblc=false,
+	}
 }
 
 // font_color_layers returns the COLR layer list for `gid`. Caller frees

@@ -22,6 +22,34 @@ patches to Runa:
   non-codepoint boundaries return `Error.Invalid_Table`.
 - Read-only atlas page/slot views and generation-checked dirty snapshots let
   retained GPU uploaders acknowledge only the atlas writes they submit.
+- Font fallback selects one face for each complete UAX #29 grapheme and
+  groups adjacent compatible clusters into script/style runs, preserving
+  contextual shaping such as Arabic joining. If no registered face covers a
+  cluster, the primary face handles the entire cluster rather than splitting
+  it between faces.
+- Font coverage treats default-ignorable controls and variation selectors as
+  non-required cmap entries. Emoji presentation follows the Unicode
+  `Emoji_Presentation` property and explicit VS15/VS16 requests; it prefers a
+  color-layer face only when the cluster's presentation calls for emoji.
+- `font_color_table_inventory` identifies COLR/CPAL, `sbix`, and CBDT/CBLC
+  tables. `font_color_rendering_support` distinguishes COLRv0, the implemented
+  COLRv1 paint subset, and unsupported bitmap color formats.
+- Color atlas glyphs keep their embedded palette RGB in the SDL GPU text path;
+  text paint still controls opacity without tinting the glyph.
+- Windows DirectWrite fallback samples are resolved at startup from local
+  system font files only. Remote/cloud font loaders are skipped to avoid
+  synchronous downloads, and non-unit mapped em scales are not represented.
+
+### Known limitations
+
+- Grapheme fallback is cmap-based, not full sequence-coverage proof. A font may
+  contain the component characters but lack a ligature for a ZWJ emoji
+  sequence; Runa keeps the sequence in one face but does not promise native
+  emoji-sequence presentation for every font.
+- Runa does not decode `sbix` or `CBDT`/`CBLC`. `sbix` on Apple Color Emoji and
+  CBDT/CBLC on common Noto Color Emoji builds are inventory-only; Windows
+  color emoji is supported when DirectWrite supplies a face using Runa's
+  supported COLR paths.
 
 ## 1.5.3 — 2026-10-25
 

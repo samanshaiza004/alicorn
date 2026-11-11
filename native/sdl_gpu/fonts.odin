@@ -62,6 +62,11 @@ native_load_optional_fallback_font :: proc(
 
 native_load_default_fonts :: proc(rt: ^alicorn.Runtime) -> bool {
 	if !alicorn.text_engine_load_default_fonts(rt) { return false }
+	when ODIN_OS == .Windows {
+		// Seed the bounded fallback stacks from DirectWrite's locale-aware
+		// system mappings during startup, never while shaping or editing text.
+		_ = native_load_directwrite_fallback_faces(rt)
+	}
 	// System faces are optional, script-oriented fallbacks; they do not alter
 	// the bundled primary typography for text the default face can render.
 	if !rt.text_engine.fallback_font_loaded && !rt.text_engine.application_fallback_font[.UI] {

@@ -45,8 +45,14 @@ GCB_Range :: struct {
 	cls:        GCB,
 }
 
+@(private="file")
+Emoji_Presentation_Range :: struct {
+	start, end: rune,
+}
+
 @(private="file") g_gcb_ranges:    []GCB_Range
 @(private="file") g_gcb_load_once: sync.Once
+@(private="file") g_emoji_presentation_ranges: []Emoji_Presentation_Range
 
 @(private="file")
 GCB_DATA :: #load("../tools/ucd/GraphemeBreakProperty.txt", string)
@@ -151,10 +157,29 @@ gcb_class :: proc(r: rune) -> GCB {
 	return .Other
 }
 
+// has_emoji_presentation reports Unicode's Emoji_Presentation property.
+// Callers can prefer color emoji for default-emoji scalars without treating
+// every Extended_Pictographic or emoji-capable text symbol as emoji style.
+has_emoji_presentation :: proc(r: rune) -> bool {
+	sync.once_do(&g_gcb_load_once, init_gcb_table)
+	lo, hi := 0, len(g_emoji_presentation_ranges)
+	for lo < hi {
+		mid := (lo + hi) / 2
+		row := g_emoji_presentation_ranges[mid]
+		switch {
+		case r < row.start: hi = mid
+		case r > row.end:   lo = mid + 1
+		case:               return true
+		}
+	}
+	return false
+}
+
 @(private="file")
 init_gcb_table :: proc() {
 	context.allocator = runtime.heap_allocator()
 	tmp := make([dynamic]GCB_Range, 0, 1024)
+	emoji_presentation_tmp := make([dynamic]Emoji_Presentation_Range, 0, 128)
 
 	// Pass 1: GraphemeBreakProperty.txt — the bulk of the classes.
 	gcb_data := GCB_DATA
@@ -198,6 +223,19 @@ init_gcb_table :: proc() {
 		if semi < 0 { continue }
 		cp_part   := strings.trim_space(trimmed[:semi])
 		name_part := strings.trim_space(trimmed[semi + 1:])
+		if name_part == "Emoji_Presentation" {
+			start, end: rune
+			if dot := strings.index(cp_part, ".."); dot >= 0 {
+				s, _ := strconv.parse_u64_of_base(cp_part[:dot], 16)
+				e, _ := strconv.parse_u64_of_base(cp_part[dot + 2:], 16)
+				start = rune(s); end = rune(e)
+			} else {
+				s, _ := strconv.parse_u64_of_base(cp_part, 16)
+				start = rune(s); end = start
+			}
+			append(&emoji_presentation_tmp, Emoji_Presentation_Range{start=start, end=end})
+			continue
+		}
 		if name_part != "Extended_Pictographic" { continue }
 
 		start, end: rune
@@ -214,6 +252,19 @@ init_gcb_table :: proc() {
 
 	sort_gcb_ranges(tmp[:])
 	g_gcb_ranges = tmp[:]
+	sort_emoji_presentation_ranges(emoji_presentation_tmp[:])
+	g_emoji_presentation_ranges = emoji_presentation_tmp[:]
+}
+
+@(private="file")
+sort_emoji_presentation_ranges :: proc(rs: []Emoji_Presentation_Range) {
+	for i in 1..<len(rs) {
+		j := i
+		for j > 0 && rs[j - 1].start > rs[j].start {
+			rs[j - 1], rs[j] = rs[j], rs[j - 1]
+			j -= 1
+		}
+	}
 }
 
 @(private="file")

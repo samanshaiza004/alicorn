@@ -2,6 +2,7 @@
 package alicorn
 
 import "core:mem"
+import "core:bytes"
 import odin_image "core:image"
 import odin_png "core:image/png"
 import odin_qoi "core:image/qoi"
@@ -13,6 +14,20 @@ _ :: odin_qoi
 IMAGE_MAX_ENCODED_BYTES :: 128 * 1024 * 1024
 IMAGE_MAX_DECODED_BYTES :: 64 * 1024 * 1024
 IMAGE_MAX_DIMENSION :: 16384
+
+// Odin's image decoder has exposed pixel storage as both bytes.Buffer and a
+// pointer to a dynamic byte array across supported compiler releases. Keep
+// that standard-library representation detail behind this compile-time shim.
+image_decoded_pixels_bytes :: proc(pixels: $T) -> []u8 {
+	when T == bytes.Buffer {
+		buffer := pixels
+		return bytes.buffer_to_bytes(&buffer)
+	} else when T == ^[dynamic]u8 {
+		return pixels^[:]
+	} else {
+		#panic("unsupported core:image pixel buffer representation")
+	}
+}
 
 image_read_be_u32 :: proc(data: []u8, offset: int) -> (value: u32, ok: bool) {
 	if offset < 0 || offset+4 > len(data) { return 0, false }
@@ -62,12 +77,13 @@ image_decode_bytes :: proc(data: []u8, allocator := context.allocator, scratch_a
 	pixel_count := decoded.width*decoded.height
 	channel_bytes := decoded.depth/8
 	expected_bytes := pixel_count*decoded.channels*channel_bytes
-	if len(decoded.pixels) != expected_bytes { return {}, .Decode_Failed }
+	decoded_pixels := image_decoded_pixels_bytes(decoded.pixels)
+	if len(decoded_pixels) != expected_bytes { return {}, .Decode_Failed }
 	rgba := make([]u8, pixel_count*4, allocator)
 	if rgba == nil && pixel_count > 0 { return {}, .Resource_Limit }
 	if decoded.depth == 8 {
 		for i := 0; i < pixel_count; i += 1 {
-			pixel := decoded.pixels[i*decoded.channels:]
+			pixel := decoded_pixels[i*decoded.channels:]
 		switch decoded.channels {
 		case 1: rgba[i*4+0], rgba[i*4+1], rgba[i*4+2], rgba[i*4+3] = pixel[0], pixel[0], pixel[0], 255
 		case 2: rgba[i*4+0], rgba[i*4+1], rgba[i*4+2], rgba[i*4+3] = pixel[0], pixel[0], pixel[0], pixel[1]
@@ -76,7 +92,7 @@ image_decode_bytes :: proc(data: []u8, allocator := context.allocator, scratch_a
 		}
 		}
 	} else {
-		pixels16 := mem.slice_data_cast([]u16, decoded.pixels[:])
+		pixels16 := mem.slice_data_cast([]u16, decoded_pixels)
 		for i := 0; i < pixel_count; i += 1 {
 			pixel := pixels16[i*decoded.channels:]
 		switch decoded.channels {
@@ -176,9 +192,17 @@ font_file_load_bytes :: proc(rt: ^Runtime, data: []u8) -> Font_File_ID {
 // font_face_load parses one face from a registered font file and returns its
 // stable Runtime-local identity. Face index is zero for a standalone SFNT and
 // selects a specific face for TTC/OTC collections. Registration alone does
-// not change current typography; a later fallback-resolver stage will decide
-// when registered faces participate in shaping.
+// not change current typography.
 font_face_load :: proc(rt: ^Runtime, file: Font_File_ID, face_index: int) -> Font_Face_ID {
 	if rt == nil { return 0 }
 	return text_engine_font_face_load(&rt.text_engine, file, face_index)
+}
+
+// font_face_add_fallback adds an already registered face to the ordered
+// fallback stack for one font role. New faces only re-resolve retained text
+// runs that previously contained a cluster no loaded face could cover.
+font_face_add_fallback :: proc(rt: ^Runtime, role: Font_Role, face: Font_Face_ID) -> bool {
+	if rt == nil || !text_engine_font_face_add_fallback(&rt.text_engine, role, face) { return false }
+	invalidate_root(rt, "application font fallback face added")
+	return true
 }
