@@ -727,6 +727,7 @@ Run_State :: struct($T: typeid) {
 	app: ^T,
 	render: proc(^T, ^UI),
 	render_overlays: proc(^T, ^UI),
+	on_initialize: proc(^T, ^alicorn.Runtime),
 	on_start: proc(^T, Application_Waker),
 	on_wake: proc(^T, Application_Context),
 	on_stop: proc(^T),
@@ -762,6 +763,10 @@ run_application :: proc(run_state: ^Run_State($T), title: string, width, height:
 		alicorn.end_frame(&ctx)
 		return root
 	}
+	initialize :: proc(data: rawptr, rt: ^alicorn.Runtime) {
+		state := cast(^Run_State(T))data
+		state.on_initialize(state.app, rt)
+	}
 	start :: proc(data: rawptr, waker: host.Application_Waker) {
 		state := cast(^Run_State(T))data
 		state.on_start(state.app, waker)
@@ -783,6 +788,7 @@ run_application :: proc(run_state: ^Run_State($T), title: string, width, height:
 		build=build,
 		interaction_update_policy=.Correct_After_Interaction,
 	}
+	if run_state.on_initialize != nil { application.on_initialize = initialize }
 	if run_state.on_start != nil { application.on_start = start }
 	if run_state.on_wake != nil { application.on_wake = woken }
 	if run_state.on_stop != nil { application.on_stop = stop }
@@ -790,7 +796,9 @@ run_application :: proc(run_state: ^Run_State($T), title: string, width, height:
 }
 
 // run borrows state until the synchronous native host returns. Optional hooks
-// run on the application thread: on_start receives the borrowed worker waker;
+// run on the application thread: on_initialize receives the newly created
+// Runtime before the first description (for theme and resource registration);
+// on_start receives the borrowed worker waker;
 // on_wake adopts results and explicitly invalidates through its context;
 // on_stop stops and joins all producers before the host destroys the waker.
 // Rendering uses the same bounded corrective-description policy as host.Run.
@@ -805,10 +813,11 @@ run :: proc(
 	on_wake: proc(^T, Application_Context) = nil,
 	on_stop: proc(^T) = nil,
 	smoke: bool = false,
+	on_initialize: proc(^T, ^alicorn.Runtime) = nil,
 ) {
 	run_state := Run_State(T){
 		app=state, render=render, render_overlays=render_overlays,
-		on_start=on_start, on_wake=on_wake, on_stop=on_stop,
+		on_initialize=on_initialize, on_start=on_start, on_wake=on_wake, on_stop=on_stop,
 	}
 	host.Run(run_application(&run_state, title, width, height), smoke=smoke)
 }

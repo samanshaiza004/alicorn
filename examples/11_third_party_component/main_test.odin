@@ -3,169 +3,227 @@ package main
 import "core:testing"
 import alicorn "alicorn:runtime"
 import mode_rail "./mode_rail"
-import ui "alicorn:ui"
+import testui "alicorn:testui"
 
-third_party_component_test_theme :: proc(rt: ^alicorn.Runtime) -> alicorn.Style_Theme_ID {
+Mode :: mode_rail.Mode
+
+third_party_component_test_app :: proc() -> App {
+	return App{
+		standard=mode_rail.State{selected=.Balanced},
+		attention=mode_rail.State{selected=.Urgent},
+		custom=mode_rail.State{selected=.Balanced, disabled={true, false, false}},
+		recipe=mode_rail.recipe_default(),
+		custom_style=mode_rail.Instance_Overrides{
+			indicator_role=alicorn.style_extension_color_role_id("app.example", "custom_indicator"),
+			container_height=268,
+			container_padding=15,
+			container_corner_radius=22,
+			option_corner_radius=22,
+			option_button_height=46,
+			indicator_width=34,
+			indicator_height=8,
+			indicator_corner_radius=4,
+			label_size=20,
+			detail_size=15,
+		},
+	}
+}
+
+third_party_component_test_open :: proc(app: ^App) -> (handle: testui.Test_Handle(App), status: testui.Status) {
+	handle, status = testui.open(
+		app,
+		width=960,
+		height=1100,
+		initialize=initialize,
+		build_application=build,
+	)
+	return
+}
+
+@(test)
+test_third_party_mode_rail_loads_its_shipped_theme_and_preserves_button_semantics :: proc(t: ^testing.T) {
+	app := third_party_component_test_app()
+	handle, status := third_party_component_test_open(&app)
+	defer testui.close(&handle)
+	testing.expect(t, status == .Ok && !app.theme_error && app.theme_id != 0,
+		"the full production build callback should initialize from the theme JSON embedded beside the component")
+	if status != .Ok { return }
+
+	signal, signal_found := alicorn.style_extension_color(handle.runtime, app.theme_id, app.recipe.signal_role)
+	custom, custom_found := alicorn.style_extension_color(handle.runtime, app.theme_id, app.custom_style.indicator_role)
+	testing.expect(t, signal_found && abs(signal.r-0.05087609) < 0.00001 &&
+		abs(signal.g-0.4769998) < 0.00001 && abs(signal.b-0.67385954) < 0.00001 &&
+		custom_found && abs(custom.r-0.4769998) < 0.00001 &&
+		abs(custom.g-0.19599418) < 0.00001 && abs(custom.b-0.9114075) < 0.00001,
+		"the shipped theme should bind the component's required signal and one-off purple instance roles")
+
+	balanced_id := mode_rail.semantic_id_for_instance(11, .Balanced)
+	balanced, balanced_found := alicorn.semantic_node_lookup(handle.runtime, balanced_id)
+	testing.expect(t, balanced_found && balanced.role == .Button && balanced.label == "Balanced" &&
+		balanced.description == "Steady updates with balanced attention." &&
+		alicorn.semantic_states_has(balanced.states, .Selected) &&
+		alicorn.semantic_actions_has(balanced.actions, .Press),
+		"semantic augmentation should add the description while preserving the built-in Button role, selection, and Press action")
+
+	disabled_id := mode_rail.semantic_id_for_instance(33, .Calm)
+	disabled, disabled_found := alicorn.semantic_node_lookup(handle.runtime, disabled_id)
+	testing.expect(t, disabled_found && alicorn.semantic_states_has(disabled.states, .Disabled) &&
+		!alicorn.semantic_actions_has(disabled.actions, .Press),
+		"a disabled third-party option should retain native disabled state and suppress Press")
+	if disabled_found && disabled.visual_node != 0 {
+		testing.expect(t, !alicorn.focus(handle.runtime, disabled.visual_node),
+			"the disabled option must not enter keyboard focus")
+	}
+}
+
+@(test)
+test_third_party_mode_rail_focus_and_keyboard_activation_survive_adaptive_resize :: proc(t: ^testing.T) {
+	app := third_party_component_test_app()
+	handle, status := third_party_component_test_open(&app)
+	defer testui.close(&handle)
+	testing.expect(t, status == .Ok, "the native application description should open through testui")
+	if status != .Ok { return }
+
+	balanced_id := mode_rail.semantic_id_for_instance(11, .Balanced)
+	balanced, found := alicorn.semantic_node_lookup(handle.runtime, balanced_id)
+	testing.expect(t, found && balanced.visual_node != 0 && alicorn.focus(handle.runtime, balanced.visual_node),
+		"the wide Balanced option should receive keyboard focus")
+	if !found { return }
+	wide_node := balanced.visual_node
+
+	resize_status := testui.resize(&handle, 480, 1100)
+	compact, compact_found := alicorn.semantic_node_lookup(handle.runtime, balanced_id)
+	testing.expect(t, resize_status == .Ok && compact_found && compact.visual_node != 0 && compact.visual_node != wide_node &&
+		alicorn.focused_node(handle.runtime) == compact.visual_node,
+		"the same logical choice should retain focus when the compact presentation replaces the wide one")
+	if resize_status != .Ok { return }
+
+	resize_status = testui.resize(&handle, 960, 1100)
+	wide_again, wide_again_found := alicorn.semantic_node_lookup(handle.runtime, balanced_id)
+	testing.expect(t, resize_status == .Ok && wide_again_found && wide_again.visual_node == wide_node &&
+		alicorn.focused_node(handle.runtime) == wide_node,
+		"returning to the wide presentation should restore the same logical focus identity")
+
+	urgent_id := mode_rail.semantic_id_for_instance(11, .Urgent)
+	urgent, urgent_found := alicorn.semantic_node_lookup(handle.runtime, urgent_id)
+	if urgent_found && urgent.visual_node != 0 {
+		testing.expect(t, alicorn.focus(handle.runtime, urgent.visual_node), "Urgent should accept keyboard focus")
+		key_status := testui.step(&handle, testui.Input{kind=.Key, key=.Space})
+		testing.expect(t, key_status == .Ok && app.standard.selected == .Urgent,
+			"Space should activate the focused option through Alicorn's normal Button keyboard path")
+	}
+}
+
+@(test)
+test_third_party_mode_rail_theme_contract_reports_missing_roles_and_optional_fallbacks :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 400, 240})
+	defer alicorn.destroy_runtime(&rt)
 	recipe := mode_rail.recipe_default()
-	colors := [4]alicorn.Color{
+	roles := [3]alicorn.Style_Extension_Color_Role_ID{
+		recipe.container_role,
+		recipe.option_role,
+		recipe.signal_role,
+	}
+	bindings := [3]alicorn.Style_Extension_Color_Role_Binding{}
+	colors := [3]alicorn.Color{
 		{0.1, 0.1, 0.1, 1},
 		{0.2, 0.2, 0.2, 1},
-		{0.2, 0.7, 0.8, 1},
-		{0.9, 0.5, 0.2, 1},
+		{0.3, 0.4, 0.5, 1},
 	}
-	bindings := [4]alicorn.Style_Extension_Color_Role_Binding{
-		{role=recipe.container_role, token=alicorn.Style_Color_Token_ID(1)},
-		{role=recipe.option_role, token=alicorn.Style_Color_Token_ID(2)},
-		{role=recipe.signal_role, token=alicorn.Style_Color_Token_ID(3)},
-		{role=recipe.attention_role, token=alicorn.Style_Color_Token_ID(4)},
+	for role, index in roles {
+		bindings[index] = alicorn.Style_Extension_Color_Role_Binding{
+			role=role,
+			token=alicorn.Style_Color_Token_ID(index+1),
+		}
 	}
 	theme := alicorn.DEFAULT_STYLE_THEME
 	theme.color_tokens = colors[:]
 	theme.extension_color_roles = bindings[:]
-	return alicorn.style_theme_register(rt, theme)
-}
+	theme_id := alicorn.style_theme_register(&rt, theme)
+	contract := mode_rail.theme_contract_default(
+		recipe,
+		alicorn.style_extension_color_role_id("app.example", "custom_indicator"),
+	)
+	report := mode_rail.theme_contract_check(&rt, theme_id, contract)
+	missing, missing_count := mode_rail.theme_contract_missing_required(contract, report)
+	testing.expect(t, theme_id != 0 && mode_rail.theme_contract_satisfied(report) && missing_count == 0 &&
+		!report.optional_available[0] && !report.optional_available[1],
+		"a theme may omit both optional colors while still satisfying required component roles")
+	fallback_recipe := recipe
+	fallback_recipe.attention_role = 0
+	fallback := mode_rail.option_indicator_role(fallback_recipe, .Attention, true, {})
+	testing.expect(t, fallback == recipe.signal_role,
+		"an omitted optional attention role should use the required signal role")
 
-third_party_component_test_describe :: proc(
-	rt: ^alicorn.Runtime,
-	theme_id: alicorn.Style_Theme_ID,
-	state: ^mode_rail.State,
-	second_state: ^mode_rail.State = nil,
-) {
-	alicorn.invalidate_root(rt, "component test description")
-	ctx, ready := alicorn.begin_frame(rt)
-	if !ready { return }
-	alicorn.container_begin(&ctx, .Root, key="component-test-root",
-		style=ui.layout_style(.Column, width=-1, height=-1))
-	scope := alicorn.style_environment_push(&ctx, alicorn.Style_Environment{theme=theme_id})
-	_ = mode_rail.mode_rail(&ctx, "Test delivery mode", state, mode_rail.recipe_default(), ui.key_u64(91))
-	if second_state != nil {
-		_ = mode_rail.mode_rail(&ctx, "Test incident mode", second_state, mode_rail.recipe_default(),
-			ui.key_u64(92), .Attention)
-	}
-	alicorn.style_environment_pop(&ctx, scope)
-	alicorn.container_end(&ctx)
-	alicorn.end_frame(&ctx)
-}
-
-@(test)
-test_third_party_mode_rail_instances_have_independent_identity_and_actions :: proc(t: ^testing.T) {
-	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 840, 320})
-	defer alicorn.destroy_runtime(&rt)
-	theme_id := third_party_component_test_theme(&rt)
-	first := mode_rail.State{selected=.Calm}
-	second := mode_rail.State{selected=.Balanced}
-	third_party_component_test_describe(&rt, theme_id, &first, &second)
-
-	snapshot := alicorn.semantic_snapshot(&rt)
-	first_group_id := alicorn.Semantic_ID{}
-	second_group_id := alicorn.Semantic_ID{}
-	first_choices_id := alicorn.Semantic_ID{}
-	second_choices_id := alicorn.Semantic_ID{}
-	button_count := 0
-	selected_count := 0
-	urgent_id := alicorn.Semantic_ID{}
-	for node in snapshot.nodes {
-		if node.role == .Group && node.label == "Test delivery mode" { first_group_id = node.id }
-		if node.role == .Group && node.label == "Test incident mode" { second_group_id = node.id }
-		if node.role == .Group && node.label == "Horizontal mode choices" {
-			if node.parent == first_group_id { first_choices_id = node.id }
-			if node.parent == second_group_id { second_choices_id = node.id }
-		}
-		if node.role == .Button {
-			button_count += 1
-			if alicorn.semantic_states_has(node.states, .Selected) { selected_count += 1 }
-			if node.label == "Urgent" && node.parent == first_choices_id { urgent_id = node.id }
-		}
-	}
-	alicorn.semantic_snapshot_destroy(&snapshot)
-	testing.expect(t, alicorn.semantic_id_is_valid(first_group_id) && alicorn.semantic_id_is_valid(second_group_id) &&
-		alicorn.semantic_id_is_valid(first_choices_id) && alicorn.semantic_id_is_valid(second_choices_id) &&
-		first_group_id != second_group_id &&
-		button_count == 6 && selected_count == 2 && urgent_id != (alicorn.Semantic_ID{}),
-		"two third-party instances should retain distinct groups and six accessible choices")
-	testing.expect(t, alicorn.semantic_action_request(&rt, urgent_id, .Press),
-		"the option should accept the same native semantic Press action as a built-in button")
-	third_party_component_test_describe(&rt, theme_id, &first, &second)
-	testing.expect(t, first.selected == .Urgent && second.selected == .Balanced,
-		"activating one instance must update only its application-owned state")
-	// The native host performs this bounded corrective description when a
-	// component adopts an action during build; model that final stable frame.
-	third_party_component_test_describe(&rt, theme_id, &first, &second)
-
-	snapshot = alicorn.semantic_snapshot(&rt)
-	selected_count = 0
-	first_urgent_selected := false
-	second_balanced_selected := false
-	for node in snapshot.nodes {
-		if node.role != .Button || !alicorn.semantic_states_has(node.states, .Selected) { continue }
-		selected_count += 1
-		if node.parent == first_choices_id && node.label == "Urgent" { first_urgent_selected = true }
-		if node.parent == second_choices_id && node.label == "Balanced" { second_balanced_selected = true }
-	}
-	alicorn.semantic_snapshot_destroy(&snapshot)
-	testing.expect(t, selected_count == 2 && first_urgent_selected && second_balanced_selected,
-		"application state changes should publish selected semantics to the correct instance")
+	missing_required_theme := theme
+	missing_required_theme.extension_color_roles = bindings[:2]
+	missing_id := alicorn.style_theme_register(&rt, missing_required_theme)
+	missing_report := mode_rail.theme_contract_check(&rt, missing_id, contract)
+	missing_names, missing_required_count := mode_rail.theme_contract_missing_required(contract, missing_report)
+	testing.expect(t, missing_id != 0 && !mode_rail.theme_contract_satisfied(missing_report) && missing_required_count == 1 &&
+		missing_names[0] == "vendor.acme.mode_rail.signal",
+		"missing required roles should be named explicitly during setup rather than failing silently during rendering")
 }
 
 @(test)
-test_third_party_mode_rail_exposes_one_adaptive_semantic_projection_and_interruptible_motion :: proc(t: ^testing.T) {
-	wide := alicorn.new_runtime(alicorn.Rect{0, 0, 840, 280})
-	defer alicorn.destroy_runtime(&wide)
-	wide_theme := third_party_component_test_theme(&wide)
-	wide_state := mode_rail.State{selected=.Calm}
-	_ = alicorn.motion_clock_set_time(&wide, alicorn.Motion_Time(0))
-	third_party_component_test_describe(&wide, wide_theme, &wide_state)
-	wide_snapshot := alicorn.semantic_snapshot(&wide)
-	wide_layout_found := false
-	wide_stack_found := false
-	wide_options := 0
-	wide_selected := false
-	for node in wide_snapshot.nodes {
-		wide_layout_found = wide_layout_found || node.label == "Horizontal mode choices"
-		wide_stack_found = wide_stack_found || node.label == "Stacked mode choices"
-		for label in mode_rail.OPTION_LABELS {
-			if node.role == .Button && node.label == label {
-				wide_options += 1
-				if label == "Calm" { wide_selected = alicorn.semantic_states_has(node.states, .Selected) }
-			}
-		}
-	}
-	alicorn.semantic_snapshot_destroy(&wide_snapshot)
-	testing.expect(t, wide_layout_found && !wide_stack_found && wide_options == 3 && wide_selected,
-		"the wide branch should expose one accessible choice set with the selected option state")
+test_third_party_mode_rail_retargets_interruptibly_settles_and_snaps_for_reduced_motion :: proc(t: ^testing.T) {
+	app := third_party_component_test_app()
+	handle, status := third_party_component_test_open(&app)
+	defer testui.close(&handle)
+	testing.expect(t, status == .Ok, "the actual app build callback should initialize")
+	if status != .Ok { return }
 
-	// Change the application-owned value twice while the retained markers are
-	// still moving. The second target must be accepted as a new intent without
-	// replacing component state or using a Runtime field.
-	_ = alicorn.motion_tick(&wide, alicorn.Motion_Time(28_000_000))
-	wide_state.selected = .Balanced
-	alicorn.invalidate_root(&wide, "component test retarget one")
-	third_party_component_test_describe(&wide, wide_theme, &wide_state)
-	_ = alicorn.motion_tick(&wide, alicorn.Motion_Time(42_000_000))
-	wide_state.selected = .Urgent
-	alicorn.invalidate_root(&wide, "component test retarget two")
-	third_party_component_test_describe(&wide, wide_theme, &wide_state)
-	activity := alicorn.motion_activity(&wide)
+	activity := alicorn.motion_activity(handle.runtime)
 	testing.expect(t, activity.active_owners > 0,
-		"rapid state changes should leave the selected marker on an active interruptible presentation")
+		"the selected markers should animate when the component is first presented")
 
-	compact := alicorn.new_runtime(alicorn.Rect{0, 0, 430, 280})
-	defer alicorn.destroy_runtime(&compact)
-	compact_theme := third_party_component_test_theme(&compact)
-	compact_state := mode_rail.State{selected=.Balanced}
-	third_party_component_test_describe(&compact, compact_theme, &compact_state)
-	compact_snapshot := alicorn.semantic_snapshot(&compact)
-	compact_layout_found := false
-	compact_wide_found := false
-	compact_options := 0
-	for node in compact_snapshot.nodes {
-		compact_layout_found = compact_layout_found || node.label == "Stacked mode choices"
-		compact_wide_found = compact_wide_found || node.label == "Horizontal mode choices"
-		if node.role == .Button && (node.label == "Calm" || node.label == "Balanced" || node.label == "Urgent") {
-			compact_options += 1
-		}
+	for target in ([3]Mode{Mode.Calm, Mode.Urgent, Mode.Balanced}) {
+		id := mode_rail.semantic_id_for_instance(11, target)
+		option, found := alicorn.semantic_node_lookup(handle.runtime, id)
+		if !found || !option.has_bounds { testing.expect(t, false, "every active wide option should have hit-testable geometry"); continue }
+		status = testui.click_at(&handle, option.bounds.x+option.bounds.w*0.5, option.bounds.y+option.bounds.h*0.5)
+		testing.expect(t, status == .Ok && app.standard.selected == target,
+			"rapid option changes should update app-owned state without replacing the component recipe")
 	}
-	alicorn.semantic_snapshot_destroy(&compact_snapshot)
-	testing.expect(t, compact_layout_found && !compact_wide_found && compact_options == 3,
-		"narrow assigned width should select the compact layout without dropping controls from semantics")
+	activity = alicorn.motion_activity(handle.runtime)
+	testing.expect(t, activity.active_owners > 0,
+		"rapid retargeting should leave visible markers moving from their current presentation")
+
+	status = testui.advance_time(&handle, 1_000_000_000)
+	activity = alicorn.motion_activity(handle.runtime)
+	testing.expect(t, status == .Ok && activity.active_owners == 0 && activity.unestablished_deadlines == 0,
+		"after enough virtual time the component should settle and return to true idle")
+	status = testui.step(&handle, testui.Input{kind=.Time_Advance})
+	activity = alicorn.motion_activity(handle.runtime)
+	testing.expect(t, status == .Ok && activity.active_owners == 0,
+		"re-describing hidden responsive alternatives after settlement must not restart motion or schedule another wake")
+
+	app.test_accessibility = alicorn.Accessibility_Appearance_Preferences{
+		increased_contrast=true,
+		differentiate_without_color=true,
+		reduce_motion=true,
+	}
+	app.test_accessibility_set = true
+	app.test_text_scale = 1.4
+	alicorn.invalidate_root(handle.runtime, "exercise component accessibility appearance")
+	status = testui.step(&handle, testui.Input{kind=.Time_Advance})
+	activity = alicorn.motion_activity(handle.runtime)
+	testing.expect(t, status == .Ok && activity.active_owners == 0,
+		"reduced motion should snap the custom indicators while increased contrast and text scaling remain valid")
+	for mode in Mode {
+		option, found := alicorn.semantic_node_lookup(handle.runtime, mode_rail.semantic_id_for_instance(11, mode))
+		testing.expect(t, found && option.has_bounds && option.bounds.w > 0 && option.bounds.h > 0,
+			"large-text and high-contrast preferences should retain realized, accessible options")
+	}
+
+	custom_calm, custom_calm_found := alicorn.semantic_node_lookup(
+		handle.runtime,
+		mode_rail.semantic_id_for_instance(33, .Calm),
+	)
+	if custom_calm_found && custom_calm.has_bounds {
+		status = testui.click_at(&handle, custom_calm.bounds.x+custom_calm.bounds.w*0.5,
+			custom_calm.bounds.y+custom_calm.bounds.h*0.5)
+		testing.expect(t, status == .Ok && app.custom.selected == .Balanced,
+			"a disabled custom option should remain inoperable after accessibility preference updates")
+	}
 }

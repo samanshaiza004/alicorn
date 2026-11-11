@@ -1117,6 +1117,39 @@ semantic_description :: proc(
 	return true
 }
 
+// semantic_augment adds optional presentation metadata to the most recently
+// described semantic node without replacing its role, label, value, states,
+// or actions. Built-in control semantics are derived first when the node has
+// not yet opted into an explicit semantic role. Empty description is a no-op;
+// state and action sets are unioned, so this helper cannot remove guarantees
+// supplied by the control itself.
+semantic_augment :: proc(
+	ui: ^UI,
+	description := "",
+	states_add := Semantic_States{},
+	actions_add := Semantic_Actions{},
+) -> bool {
+	if ui == nil || ui.runtime == nil || len(ui.runtime.pending) == 0 { return false }
+	last := len(ui.runtime.pending)-1
+	if ui.runtime.pending[last].kind != .Description { return false }
+	pending := &ui.runtime.pending[last]
+	if pending.semantic.role == .None {
+		semantic_description_defaults(&pending.description, &pending.semantic)
+	}
+	if pending.semantic.role == .None { return false }
+	if len(description) > 0 { pending.semantic.description = description }
+	for state in Semantic_State {
+		if state in states_add { pending.semantic.states = semantic_states_add(pending.semantic.states, state) }
+	}
+	for action in Semantic_Action {
+		if action in actions_add { pending.semantic.actions = semantic_actions_add(pending.semantic.actions, action) }
+	}
+	if pending.description.semantic_id.namespace == 0 {
+		pending.description.semantic_id = semantic_visual_id(pending.description.id)
+	}
+	return true
+}
+
 // semantic_static_text opts the immediately preceding text() description into
 // accessibility as standalone informational text. Its source text is exported
 // as the semantic value (the AccessKit Label convention).

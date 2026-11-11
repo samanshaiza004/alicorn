@@ -19,6 +19,10 @@
       "$type": "color",
       "$value": {"colorSpace": "srgb", "components": [0.98, 0.61, 0.26], "alpha": 1}
     },
+    "example.mode_rail.custom_indicator": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.72, 0.48, 0.96], "alpha": 1}
+    },
     "example.window.background": {
       "$type": "color",
       "$value": {"colorSpace": "srgb", "components": [0.07, 0.09, 0.13], "alpha": 1}
@@ -30,6 +34,7 @@
       "vendor.acme.mode_rail.option": {"$type": "color", "$value": "{acme.mode_rail.option}"},
       "vendor.acme.mode_rail.signal": {"$type": "color", "$value": "{acme.mode_rail.signal}"},
       "vendor.acme.mode_rail.attention": {"$type": "color", "$value": "{acme.mode_rail.attention}"},
+      "app.example.custom_indicator": {"$type": "color", "$value": "{example.mode_rail.custom_indicator}"},
       "app.example.window_background": {"$type": "color", "$value": "{example.window.background}"}
     }
   }

@@ -29,6 +29,8 @@ Run_Lifecycle_Test_App :: struct {
 	ready: bool,
 	result, adopted: int,
 	starts, wakes, stops, renders: int,
+	initializations: int,
+	initialized: bool,
 	joined: bool,
 	text: Node_ID,
 }
@@ -76,19 +78,30 @@ run_lifecycle_test_render :: proc(app: ^Run_Lifecycle_Test_App, ctx: ^UI) {
 	app.text = text(ctx, fmt.tprintf("Result: %d", app.adopted))
 }
 
+run_lifecycle_test_initialize :: proc(app: ^Run_Lifecycle_Test_App, _rt: ^alicorn.Runtime) {
+	app.initializations += 1
+	app.initialized = true
+}
+
 @(test)
 test_typed_wake_adopts_result_with_explicit_invalidation_and_returns_to_idle :: proc(t: ^testing.T) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 240, 120})
 	defer alicorn.destroy_runtime(&rt)
 	app := Run_Lifecycle_Test_App{}
 	state := Run_State(Run_Lifecycle_Test_App){app=&app, render=run_lifecycle_test_render,
+		on_initialize=run_lifecycle_test_initialize,
 		on_start=run_lifecycle_test_start, on_wake=run_lifecycle_test_wake, on_stop=run_lifecycle_test_stop}
 	application := run_application(&state, "Async test", 240, 120)
 	queue := Run_Wake_Test_Queue{live=true}
+	testing.expect(t, application.on_initialize != nil,
+		"ui.run should forward its typed initialization callback to the native host")
+	application.on_initialize(application.state, &rt)
+	testing.expect(t, app.initializations == 1 && app.initialized,
+		"initialization should run once on the created Runtime before the first description")
 	application.on_start(application.state, Application_Waker{data=rawptr(&queue), wake=run_test_enqueue_wake})
 	defer application.on_stop(application.state)
 	if app.worker == nil { testing.expect(t, false, "the app-owned worker must start"); return }
-	testing.expect(t, application.build(application.state, &rt, 240, 120, 1) != 0 && app.renders == 1 && app.starts == 1)
+	testing.expect(t, application.build(application.state, &rt, 240, 120, 1) != 0 && app.renders == 1 && app.starts == 1 && app.initialized)
 	application.on_wake(application.state, &rt)
 	testing.expect(t, application.build(application.state, &rt, 240, 120, 1) == 0 && app.renders == 1,
 		"a wake without adopted data must not implicitly invalidate or describe the app")
@@ -133,7 +146,7 @@ test_runner_keeps_optional_hooks_absent_and_preserves_simple_app_policy :: proc(
 	app := Run_Lifecycle_Test_App{}
 	state := Run_State(Run_Lifecycle_Test_App){app=&app, render=run_lifecycle_test_render}
 	application := run_application(&state, "Simple test", 240, 120)
-	testing.expect(t, application.on_start == nil && application.on_wake == nil && application.on_stop == nil && application.on_tick == nil &&
+	testing.expect(t, application.on_initialize == nil && application.on_start == nil && application.on_wake == nil && application.on_stop == nil && application.on_tick == nil &&
 		application.interaction_update_policy == .Correct_After_Interaction,
 		"ordinary ui.run users must retain the existing policy and no polling or synthetic lifecycle callbacks")
 	wake(Application_Waker{})

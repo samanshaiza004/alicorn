@@ -20,7 +20,8 @@ Install Odin and the native prerequisites from
 | 7 | [Appearance](07_simple_appearance/main.odin) | Direct colors, panels, borders, rounded surfaces, and fixed-size boxes |
 | 8 | [Control Gallery](08_control_gallery/main.odin) | Font-independent icons and named icon buttons |
 | 9 | [Retained Motion](09_retained_motion/main.odin) | Native per-window demand scheduling and paint-only analytic translation |
-| 11 | [Third-Party Component](11_third_party_component/main.odin) | An application-owned recipe, extension tokens, adaptive layout, semantics, and interruptible motion |
+| 10 | [Live Theme](10_live_theme/main.odin) | Compiled theme loading, validation, and live replacement |
+| 11 | [Third-Party Component](11_third_party_component/main.odin) | A reusable public-API compound control with a typed theme contract, unusual per-instance styling, adaptive focus identity, accessible Button behavior, and interruptible motion |
 
 Run a lesson from the repository root. The runner resolves Odin and native
 linker dependencies, builds the selected program, and launches it:
@@ -81,13 +82,14 @@ build. Program arguments follow the example name on the shell runner and use
    missed frames. Run `--motion-validation --diagnostics` for an initial
    selection retarget, a bounded smoke exit, and an automatic diagnostics
    capture after the marker has settled.
-11. In `11_third_party_component`, select options quickly in both rails, then
-    resize the window below the wide-layout threshold. The second instance uses
-    the same component recipe with an attention token override. Inspect the
-    accessibility tree: each named rail is a group and each choice is a Button
-    with its selected state and Press action. The component package imports
-    only `alicorn:ui` and `alicorn:runtime`; only the demo app registers the
-    compiled theme through the public native initialization callback.
+11. In `11_third_party_component`, select options quickly, focus **Balanced**,
+    then resize below the wide-layout threshold and back. The third instance
+    keeps the same recipe while using its own purple token, pill geometry, larger
+    labels, and a disabled choice. Inspect the accessibility tree: each named
+    rail is a group and each enabled choice is a Button with selected state and
+    Press action. The component package imports only `alicorn:ui` and
+    `alicorn:runtime`; its theme JSON is embedded by the demo and checked once
+    through a typed required/optional role contract. See its [authoring notes](11_third_party_component/README.md).
 
 ## Build and validation
 

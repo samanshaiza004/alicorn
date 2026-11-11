@@ -47,6 +47,23 @@ describing a frame.
   source spans and parser structures remain compiler-only. These names are
   diagnostic metadata, not runtime lookup keys.
 
+## Third-party component roles
+
+Reusable components should use namespaced extension roles and state their
+theme contract explicitly. Validate required and optional role bindings once
+after registering a theme and again after replacing it; do not resolve role
+names during every frame. A missing required role should name the role and
+leave a visible setup error. A missing optional role should use a documented
+component fallback.
+
+A component may ship a small default theme source beside its package and embed
+it with Odin's `#load`, so consumers do not depend on the process working
+directory. The application can copy those token and role definitions into its
+theme, override token values, and add application-specific roles. Per-instance
+customization should refer to typed roles and explicit component options rather
+than hard-coded colors or recipe forks. See the [third-party Mode Rail
+example](../examples/11_third_party_component/README.md).
+
 ## Accessibility appearance inputs
 
 `Style_Environment.accessibility` carries normalized visual preferences from

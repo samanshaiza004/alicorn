@@ -23,7 +23,10 @@ uses the same Runtime as the detailed API below.
    workers publish results and use the borrowed native waker to wake the window.
 7. **GPU and custom surfaces:** update retained geometry or versioned image
    surfaces for specialized visualizations.
-8. **Runtime, allocator, and diagnostics:** use explicit invalidation,
+8. **Reusable components:** package an adaptive control with namespaced theme
+   roles, a checked theme contract, and semantic augmentation; see the
+   [third-party Mode Rail](../examples/11_third_party_component/README.md).
+9. **Runtime, allocator, and diagnostics:** use explicit invalidation,
    allocation configuration, tracing, and inspection when the application
    needs those controls.
 

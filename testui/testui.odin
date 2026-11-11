@@ -292,6 +292,26 @@ close :: proc(handle: ^Test_Handle($T)) {
 	handle^ = {}
 }
 
+// resize updates the harness viewport and runs the application's normal
+// bounded description cycle. This lets tests exercise adaptive layouts and
+// focus repair through the same full build callback used by a native host.
+resize :: proc(handle: ^Test_Handle($T), width, height: int) -> Status {
+	if handle == nil || handle.runtime == nil { return .Invalid_Application }
+	if width <= 0 || height <= 0 { return .Invalid_Viewport }
+	if handle.viewport_width == width && handle.viewport_height == height { return .Ok }
+	stats_before := alicorn.frame_stats_snapshot(handle.runtime)
+	trace_sequence_before := alicorn.trace_sequence(handle.runtime)
+	semantic_revision_before := alicorn.semantic_revision(handle.runtime)
+	handle.viewport_width = width
+	handle.viewport_height = height
+	handle.runtime.viewport = alicorn.Rect{0, 0, f32(width), f32(height)}
+	alicorn.invalidate_root(handle.runtime, "testui viewport resize")
+	return run_descriptions(handle, .Time_Advance,
+		stats_before=stats_before,
+		trace_sequence_before=trace_sequence_before,
+		semantic_revision_before=semantic_revision_before)
+}
+
 describe_once :: proc(handle: ^Test_Handle($T)) -> bool {
 	rt := handle.runtime
 	if handle.build_application != nil {

@@ -2,6 +2,8 @@ package alicorn
 
 import "core:math"
 import "core:mem"
+import "core:fmt"
+import odin_runtime "base:runtime"
 
 style_environment_changed_domains :: proc(previous, next: Style_Environment) -> Style_Domains {
 	changed: Style_Domains = {}
@@ -860,16 +862,20 @@ style_domains_dirty_stages :: proc(domains: Style_Domains) -> Dirty_Stages {
 // described below the current container. Style scope and layout boundaries
 // are independent; callers can opt a container into layout isolation through
 // its layout_boundary argument.
-style_environment_push :: proc(ui: ^UI, environment: Style_Environment) -> Style_Environment_Scope {
+style_environment_push :: proc(
+	ui: ^UI,
+	environment: Style_Environment,
+	loc := #caller_location,
+) -> Style_Environment_Scope {
 	if ui == nil || ui.runtime == nil { return Style_Environment_Scope{} }
 	rt := ui.runtime
 	resolved, valid := style_environment_resolve(rt.style_environment, environment, rt)
 	if !rt.frame_open || !valid {
-		append_diagnostic(rt, "style environment requires an open description frame and valid theme, density, text scale, accent, and accessibility appearance inputs")
+		style_environment_diagnostic(rt, loc, "requires an open description frame and valid theme, density, text scale, accent, and accessibility appearance inputs")
 		return Style_Environment_Scope{}
 	}
 	if len(rt.stack) == 0 {
-		append_diagnostic(rt, "style environment scope requires a described container boundary")
+		style_environment_diagnostic(rt, loc, "requires a described container boundary")
 		return Style_Environment_Scope{}
 	}
 	boundary := rt.stack[len(rt.stack)-1]
@@ -883,7 +889,7 @@ style_environment_push :: proc(ui: ^UI, environment: Style_Environment) -> Style
 		}
 	}
 	if !boundary_described {
-		append_diagnostic(rt, "style environment boundary must be described in the current frame")
+		style_environment_diagnostic(rt, loc, "boundary must be described in the current frame")
 		return Style_Environment_Scope{}
 	}
 	if node, exists := rt.nodes[boundary]; exists { node.style_scope_boundary = true }
@@ -897,6 +903,15 @@ style_environment_push :: proc(ui: ^UI, environment: Style_Environment) -> Style
 	rt.style_scope_stack[len(rt.style_scope_stack)-1].depth = scope.depth
 	rt.style_environment = resolved
 	return scope
+}
+
+style_environment_diagnostic :: proc(
+	rt: ^Runtime,
+	loc: odin_runtime.Source_Code_Location,
+	message: string,
+) {
+	if rt == nil { return }
+	append_diagnostic(rt, fmt.tprintf("Style environment error at %s:%d:%d: %s", loc.file_path, loc.line, loc.column, message))
 }
 
 style_environment_pop :: proc(ui: ^UI, scope: Style_Environment_Scope) {

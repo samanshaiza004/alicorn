@@ -88,6 +88,7 @@ runner returns. All callbacks execute on the application thread:
 
 | Parameter | Signature | Responsibility |
 | --- | --- | --- |
+| `on_initialize` | `proc(app: ^App, runtime: ^Runtime)` | Register themes and application resources after Runtime creation and before the first description. |
 | `on_start` | `proc(app: ^App, waker: ui.Application_Waker)` | Start app-owned producers, copying the borrowed thread-safe waker if needed. Runs before the initial description. |
 | `on_wake` | `proc(app: ^App, ctx: ui.Application_Context)` | Adopt synchronized results and call `ui.invalidate(ctx, reason)` when a new description is required. |
 | `on_stop` | `proc(app: ^App)` | Stop and join every producer before returning; release shared result storage after joining. |
@@ -903,6 +904,13 @@ and parent relationships. The first composite proof is the Tab Bar: its
 TabList contains semantic Tab items and per-tab close actions; underline,
 dirty marker, hover surface, and other paint-only parts do not become separate
 semantic entities.
+
+`semantic_augment(ui, description, states_add, actions_add)` adds metadata to
+the most recently described control without replacing its role, name, value,
+existing states, or advertised actions. Built-in defaults are projected first
+when the control has no custom semantic role. State and action sets are
+unioned, so a component can add a spoken description or an extra action without
+reconstructing the Button or losing its disabled/selected contract.
 
 The low-level runtime `text()` description does not create a semantic entity
 by default; call `semantic_static_text(ui)` immediately after it for standalone

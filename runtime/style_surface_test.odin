@@ -134,6 +134,20 @@ test_semantic_surface_composes_children_and_resolves_extension_role :: proc(t: ^
 }
 
 @(test)
+test_style_environment_scope_failure_reports_the_call_site :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 120, 80})
+	defer destroy_runtime(&rt)
+	ui, build := begin_frame(&rt)
+	if !build { testing.expect(t, false, "style diagnostic fixture should build"); return }
+	_ = style_environment_push(&ui, Style_Environment{theme=DEFAULT_STYLE_THEME_ID})
+	testing.expect(t, strings.contains(rt.diagnostic, "Style environment error at") &&
+		strings.contains(rt.diagnostic, "style_surface_test.odin:") &&
+		strings.contains(rt.diagnostic, "described container boundary"),
+		"an invalid style scope should point back to the consumer's source location and explain the required boundary")
+	end_frame(&ui)
+}
+
+@(test)
 test_semantic_surface_accepts_direct_fill_and_stroke :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 160, 100})
 	defer destroy_runtime(&rt)
