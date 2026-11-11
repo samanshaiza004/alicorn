@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory=$true)]
-    [ValidateSet('01_hello', '02_form', '03_async_list', '04_custom_surface', '05_inspector', '06_secondary_windows', '07_simple_appearance', '08_control_gallery', '09_retained_motion', '11_third_party_component')]
+    [ValidateSet('01_hello', '02_form', '03_async_list', '04_custom_surface', '05_inspector', '06_secondary_windows', '07_simple_appearance', '08_control_gallery', '09_retained_motion', '11_third_party_component', '12_custom_segmented_control')]
     [string]$Example,
     [string]$Odin,
     [switch]$Speed,
