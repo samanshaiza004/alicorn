@@ -162,7 +162,10 @@ Button; `visual_part_attach` records a typed core or namespaced extension
 identity, owner, and optional owner-state visibility rule in Runtime side
 storage. Any retained owner can own always-visible parts; state-dependent
 visibility is validated against the owner control's supported states, and
-Button recipe inheritance remains Button-specific. The runtime validates
+Button recipe inheritance remains Button-specific. `button_begin` can opt into
+`.Custom` presentation, preserving interaction and accessible identity while
+suppressing Button-owned paint and label measurement. A retained
+`.Owner_Focus_Visible` part follows keyboard focus modality. The runtime validates
 that each part is retained beneath its owner. The sidecar is available to the
 inspector and is deleted when the retained node retires. It does not add a
 second event model or geometry language: layout remains responsible for order,

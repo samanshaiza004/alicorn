@@ -41,7 +41,7 @@ visual_part_attach :: proc(
 			owner_found = true
 		}
 	}
-	if int(visibility) < 0 || visibility > .Owner_Not_Hovered {
+	if int(visibility) < 0 || visibility > .Owner_Focus_Visible {
 		append_diagnostic(rt, "visual-part visibility must be a declared owner-state policy")
 		return false
 	}
@@ -93,6 +93,8 @@ visual_part_owner_supports_visibility :: proc(
 	case .Owner_Selected_Or_Hovered:
 		// Button is currently the only built-in control that exposes a distinct
 		// selected state to visual recipes.
+		return kind == .Button
+	case .Owner_Focus_Visible:
 		return kind == .Button
 	}
 	return false
@@ -168,6 +170,8 @@ visual_part_is_visible :: proc(rt: ^Runtime, node_id: Node_ID) -> bool {
 		return owner.selected || hovered
 	case .Owner_Not_Hovered:
 		return !hovered
+	case .Owner_Focus_Visible:
+		return rt.focused == part.owner && rt.focus_visible && !owner.disabled
 	}
 	return false
 }
@@ -315,6 +319,7 @@ visual_part_visibility_name :: proc(visibility: Visual_Part_Visibility) -> strin
 	case .Owner_Hovered: return "owner-hovered"
 	case .Owner_Selected_Or_Hovered: return "owner-selected-or-hovered"
 	case .Owner_Not_Hovered: return "owner-not-hovered"
+	case .Owner_Focus_Visible: return "owner-focus-visible"
 	}
 	return "invalid"
 }

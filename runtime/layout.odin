@@ -366,7 +366,7 @@ resolve_main_sizes :: proc(
 }
 
 layout_text_constraint :: proc(parent: ^Node, child: ^Node, cross_size: f32) -> f32 {
-	if !node_has_text_product(child.kind) { return 0 }
+	if !node_has_text_product(child.kind, child.button_presentation) { return 0 }
 	constraint: f32 = 0
 	if child.style.width > 0 {
 		constraint = child.style.width
@@ -911,7 +911,7 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		}
 		// A Row grow child's width is not known until the existing allocator
 		// distributes space below. Avoid shaping it with an invented width.
-		if node_has_text_product(child.kind) && !(parent.style.direction == .Row && layout_grow_weight_is_finite_positive(child.style.grow)) {
+		if node_has_text_product(child.kind, child.button_presentation) && !(parent.style.direction == .Row && layout_grow_weight_is_finite_positive(child.style.grow)) {
 			_ = layout_measure_node(rt, child, layout_text_measure_constraints(rt, parent, child, cross_size))
 		}
 	}
@@ -931,7 +931,7 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 			constraints := layout_content_child_constraints(rt, parent, child, parent_constraints, assigned_width=main)
 			_ = layout_measure_node(rt, child, constraints)
 		}
-		if (layout_grow_weight_is_finite_positive(child.style.grow) || child.style.compress_weight > 0) && node_has_text_product(child.kind) {
+		if (layout_grow_weight_is_finite_positive(child.style.grow) || child.style.compress_weight > 0) && node_has_text_product(child.kind, child.button_presentation) {
 			_ = layout_measure_node(rt, child, layout_grow_measure_constraints(rt, parent, child, main, cross_size))
 		}
 	}

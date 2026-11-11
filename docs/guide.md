@@ -294,9 +294,10 @@ interaction owner and describe its retained pieces as ordinary children:
 ```odin
 owner, activated := alicorn.button_begin(
 	&ui,
-	"",
+	"Fix editor layout",
 	key="commit-row",
 	style=alicorn.layout_style(.Row, height=32),
+	presentation=.Custom,
 )
 label_id := alicorn.text(&ui, "4f19c2a  Fix editor layout", key="label")
 _ = alicorn.visual_part_attach(
@@ -309,12 +310,14 @@ alicorn.button_end(&ui)
 if activated { app.selected_commit = commit.id }
 ```
 
-`button_begin` / `button_end` preserve Button focus and activation. Visual-part
-identity adds inspectable owner/state metadata; ordinary retained layout still
-controls ordering, bounds, and clipping. Use visual parts to describe
-presentation, not to create another interaction system. A retained container
-or semantic surface can own always-visible parts; hover/selection visibility
-and Button recipe inheritance remain tied to owners that expose those states.
+`button_begin` / `button_end` preserve Button focus and activation. With
+`presentation=.Custom`, the label remains the accessible name but Alicorn omits
+all Button-owned paint and label measurement. The component supplies its own
+visible focus cue; visual parts tagged `.Owner_Focus_Visible` track keyboard
+focus without rebuilding the description. Visual-part identity adds
+inspectable owner/state metadata; ordinary retained layout still controls
+ordering, bounds, and clipping. Use visual parts to describe presentation, not
+to create another interaction system.
 See [Visual parts under an existing control](reference.md#visual-parts-under-an-existing-control)
 for attachment validation, core roles, namespaced identities, and owner-state
 visibility policies.

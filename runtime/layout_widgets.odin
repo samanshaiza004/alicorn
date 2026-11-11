@@ -411,6 +411,8 @@ button_ex :: proc(ui: ^UI, label: string, source := Source_Site{}, key := "", ex
 // button_begin/button_end preserve the normal Button interaction contract
 // while allowing callers to describe retained visual children under that
 // semantic control. The children use ordinary Alicorn layout and hit testing.
+// Button_Presentation.Custom leaves all paint and intrinsic text measurement
+// to those children while retaining the Button label as its accessible name.
 button_begin :: proc(
 	ui: ^UI,
 	label: string,
@@ -422,6 +424,7 @@ button_begin :: proc(
 	content_style := DEFAULT_BUTTON_CONTENT_STYLE,
 	variant := Button_Variant.Default,
 	focusable := true,
+	presentation := Button_Presentation.Default,
 ) -> (id: Node_ID, activated: bool) {
 	if ui == nil || ui.runtime == nil || !ui.runtime.frame_open { return }
 	resolved_variant := style_button_variant_resolve(ui.runtime, variant)
@@ -443,6 +446,7 @@ button_begin :: proc(
 		text_style=text_style,
 		button_content=content_style,
 		button_variant=resolved_variant,
+		button_presentation=presentation,
 	)
 	if id == 0 { return }
 	append(&ui.runtime.stack, id)

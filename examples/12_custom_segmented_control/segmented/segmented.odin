@@ -3,8 +3,8 @@ package segmented
 // Segmented is a third-party control built only from Alicorn's public
 // interaction, layout, semantic-surface, visual-part, semantic, theme-role,
 // and motion interfaces. The Button owns hit testing, keyboard focus and
-// activation. Its normal paint is covered by the package's retained surfaces;
-// all visible shapes and state cues below belong to this package.
+// activation, while Button_Presentation.Custom leaves all visible pixels to
+// this package.
 
 import alicorn "alicorn:runtime"
 import ui "alicorn:ui"
@@ -78,16 +78,16 @@ recipe_default :: proc() -> Recipe {
 
 style_default :: proc() -> Style {
 	return Style{
-		track_height=226,
+		track_height=188,
 		track_radius=20,
-		segment_radius=14,
-		segment_padding=10,
+		segment_radius=12,
+		segment_padding=8,
 		focus_inset=2,
-		segment_height=60,
-		compact_height=43,
-		marker_width=28,
+		segment_height=58,
+		compact_height=38,
+		marker_width=24,
 		marker_height=4,
-		label_size=17,
+		label_size=16,
 	}
 }
 
@@ -198,7 +198,7 @@ render_option :: proc(
 			style=ui.layout_style(.Column, width=-1, height=button_height, grow=button_grow),
 			state=alicorn.Button_State{selected=selected, disabled=disabled},
 			content_style=alicorn.button_content_style(padding_x=0, padding_y=0),
-			variant=.Quiet,
+			presentation=.Custom,
 		)
 		if owner == 0 {
 			return false
@@ -211,36 +211,27 @@ render_option :: proc(
 			selected = true
 		}
 
-		// Query the public focus owner and draw the component's own focus treatment.
-		// The outer opaque surface also covers the Button recipe's default drawing.
-		focused := alicorn.focused_node(ctx.runtime) == owner && !disabled
-		frame_role := recipe.track_role
-		frame_padding: f32 = 0
-		frame_radius := style.segment_radius
-		if focused {
-			frame_role = recipe.focus_role
-			frame_padding = style.focus_inset
-			frame_radius += style.focus_inset
-		}
+		// This retained frame appears only for keyboard-visible focus. Its inset
+		// remains in layout in every state, so focus never moves the label.
 		frame := alicorn.surface_begin(
 			ctx,
-			alicorn.surface_extension_color_role(frame_role),
+			alicorn.surface_extension_color_role(recipe.focus_role),
 			key=ui.key_u64(2),
-			style=ui.layout_style(.Column, width=-1, height=-1, padding=frame_padding),
-			shape=alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=frame_radius},
+			style=ui.layout_style(.Column, width=-1, height=button_height, padding=style.focus_inset),
+			shape=alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=style.segment_radius+style.focus_inset},
 			label="segmented-focus-frame",
 		)
 		if frame != 0 {
-			_ = alicorn.visual_part_attach(ctx, frame, owner, alicorn.visual_part_core(.Overlay))
+			_ = alicorn.visual_part_attach(ctx, frame, owner, alicorn.visual_part_core(.Focus_Indicator), .Owner_Focus_Visible)
 
 			face_role := recipe.idle_role
 			if selected && !disabled { face_role = recipe.selected_role }
-		if disabled { face_role = recipe.disabled_role }
+			if disabled { face_role = recipe.disabled_role }
 			face := alicorn.surface_begin(
 				ctx,
 				alicorn.surface_extension_color_role(face_role),
 				key=ui.key_u64(3),
-				style=ui.layout_style(.Column, width=-1, height=-1, padding=style.segment_padding, gap=4,
+				style=ui.layout_style(.Column, width=-1, height=-1, padding=style.segment_padding, gap=3,
 					align=.Center, justify=.Center),
 				shape=alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=style.segment_radius},
 				label="segmented-option-face",
@@ -248,15 +239,14 @@ render_option :: proc(
 			if face != 0 {
 				_ = alicorn.visual_part_attach(ctx, face, owner, alicorn.visual_part_core(.Surface))
 
-				// This stable slot appears on hover without changing hit geometry or
-				// rebuilding the application description for pointer motion.
+				// This small hover mark adds feedback without moving the hit target.
 				if !disabled {
 					hover := alicorn.surface_begin(
 						ctx,
 						alicorn.surface_extension_color_role(recipe.hover_role),
 						key=ui.key_u64(4),
-						style=ui.layout_style(.Row, width=7, height=7),
-						shape=alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=3.5},
+						style=ui.layout_style(.Row, width=6, height=6),
+						shape=alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=3},
 						label="segmented-hover-cue",
 					)
 					if hover != 0 {
@@ -274,6 +264,15 @@ render_option :: proc(
 					text_style=text_style, decorative=true)
 				if label_id != 0 {
 					_ = alicorn.visual_part_attach(ctx, label_id, owner, alicorn.visual_part_core(.Label))
+				}
+				if disabled {
+					unavailable_id := ui.text(ctx, "Unavailable", key=ui.key_u64(7), size=11,
+						color=alicorn.style_color(ctx, .Muted_Text),
+						style=ui.layout_style(.Row, height=15),
+						text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_MEDIUM}, decorative=true)
+					if unavailable_id != 0 {
+						_ = alicorn.visual_part_attach(ctx, unavailable_id, owner, alicorn.visual_part_core(.Content))
+					}
 				}
 
 				marker_role := recipe.accent_role
@@ -336,6 +335,8 @@ segmented_control :: proc(
 		return false
 	}
 	changed := false
+	adaptive_height := style.segment_height
+	if compact_height := style.compact_height*3+10; compact_height > adaptive_height { adaptive_height = compact_height }
 	if ui.key_scope(ctx, key) {
 		track := alicorn.surface_begin(
 			ctx,
@@ -356,7 +357,7 @@ segmented_control :: proc(
 		adaptive := alicorn.adaptive_begin(
 			ctx,
 			key=ui.key_u64(3),
-			style=ui.layout_style(.Column, width=-1, height=158),
+			style=ui.layout_style(.Column, width=-1, height=adaptive_height),
 			label="segmented-responsive-presentation",
 		)
 		if adaptive != 0 {
@@ -365,7 +366,7 @@ segmented_control :: proc(
 				key=ui.key_u64(4),
 				name="horizontal segmented choices",
 				minimum_width=recipe.wide_minimum,
-				style=ui.layout_style(.Row, width=-1, height=158, align=.Center, justify=.Center, gap=8),
+				style=ui.layout_style(.Row, width=-1, height=adaptive_height, align=.Center, justify=.Center, gap=8),
 			)
 			if wide != 0 {
 				for choice in Choice {
@@ -379,7 +380,7 @@ segmented_control :: proc(
 				ctx,
 				key=ui.key_u64(5),
 				name="vertical segmented choices",
-				style=ui.layout_style(.Column, width=-1, height=158, gap=5),
+				style=ui.layout_style(.Column, width=-1, height=adaptive_height, gap=5),
 			)
 			if compact != 0 {
 				for choice in Choice {

@@ -602,7 +602,7 @@ layout_measure_node :: proc(
 	rt.stats.measure_nodes_executed += 1
 	reason := measure_cache_reason(state.cache_key, key)
 	record_trace(rt, .Measure, node.id, fmt.tprintf("measure cache miss: %s", reason))
-	if node_has_text_product(node.kind) {
+	if node_has_text_product(node.kind, node.button_presentation) {
 		max_width: f32 = -1
 		if !constraints.width.unbounded_max {
 			max_width = layout_unit_to_f32(constraints.width.max)
@@ -734,7 +734,7 @@ layout_measure_retained_dirty_nodes :: proc(rt: ^Runtime) {
 		for id in rt.order {
 			rt.stats.measure_nodes_examined += 1
 			node, ok := rt.nodes[id]
-			if !ok || node == nil || !node.active || !node_has_text_product(node.kind) { continue }
+			if !ok || node == nil || !node.active || !node_has_text_product(node.kind, node.button_presentation) { continue }
 			layout_measure_mark_dirty(rt, node)
 		}
 	}

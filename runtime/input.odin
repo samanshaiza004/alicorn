@@ -350,8 +350,8 @@ focus :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 	}
 	rt.focused = id
 	record_trace(rt, .Focus, id, "focus owner assigned")
-	invalidate_interaction_paint(rt, previous, "focus lost")
-	invalidate_interaction_paint(rt, id, "focus gained")
+	visual_part_invalidate_dependents(rt, previous, "focus lost")
+	visual_part_invalidate_dependents(rt, id, "focus gained")
 	invalidate_root(rt, "focus owner changed")
 	return true
 }
@@ -360,7 +360,7 @@ focus_indicator_set :: proc(rt: ^Runtime, visible: bool) {
 	if rt == nil || rt.focus_visible == visible { return }
 	rt.focus_visible = visible
 	if focused, found := rt.nodes[rt.focused]; found && focused.kind == .Button {
-		invalidate_interaction_paint(rt, focused.id, "keyboard focus indicator visibility changed")
+		visual_part_invalidate_dependents(rt, focused.id, "keyboard focus indicator visibility changed")
 	}
 }
 

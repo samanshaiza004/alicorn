@@ -222,28 +222,37 @@ compose_subtree :: proc(
 ) {
 	node, ok := rt.nodes[id]
 	if !ok || !node.active || !node.present { return }
-	if !visual_part_is_visible(rt, id) { return }
+	part_visible := visual_part_is_visible(rt, id)
+	// A focus-visible part may be a surface wrapper around the control's
+	// ordinary content. Hide that part's paint when keyboard focus is absent,
+	// but keep its retained children composed and interactive.
+	if !part_visible {
+		part, tagged := rt.visual_parts[id]
+		if !tagged || !part.defined || part.visibility != .Owner_Focus_Visible { return }
+	}
 	presentation := motion_compose_subtree(rt, id, inherited_translation, inherited_opacity)
 	presentation.opacity *= drag_source_opacity(rt, node.id)
 	clip_follow := inherited_clip_follow || presentation.clip_policy == .Follow_Visual
 
 	node.display_index = -1
-	for cached_command in node.paint {
-		command := cached_command
-		command.opacity *= presentation.opacity
-		command.translation[0] += presentation.translation[0]
-		command.translation[1] += presentation.translation[1]
-		if clip_follow {
-			command.clip = rect_intersection(stationary_clip, translated_clip)
-			if paint_command_is_text(command) {
-				command.clip = rect_intersection(command.clip,
-					paint_rect_translate(command.bounds, presentation.translation))
+	if part_visible {
+		for cached_command in node.paint {
+			command := cached_command
+			command.opacity *= presentation.opacity
+			command.translation[0] += presentation.translation[0]
+			command.translation[1] += presentation.translation[1]
+			if clip_follow {
+				command.clip = rect_intersection(stationary_clip, translated_clip)
+				if paint_command_is_text(command) {
+					command.clip = rect_intersection(command.clip,
+						paint_rect_translate(command.bounds, presentation.translation))
+				}
 			}
+			if node.display_index < 0 { node.display_index = len(rt.display_target) }
+			append(&rt.display_target, command)
+			rt.stats.composition_nodes_visited += 1
+			rt.stats.stage_visits[.Composite] += 1
 		}
-		if node.display_index < 0 { node.display_index = len(rt.display_target) }
-		append(&rt.display_target, command)
-		rt.stats.composition_nodes_visited += 1
-		rt.stats.stage_visits[.Composite] += 1
 	}
 	child_stationary_clip := stationary_clip
 	child_translated_clip := translated_clip
@@ -447,7 +456,7 @@ update_paint :: proc(rt: ^Runtime) {
 				if node.icon_id != .None {
 					append(&node.paint, paint_icon_command(node.id, node.bounds, node.clip, node.icon_id, node.color))
 				}
-			} else if node.kind == .Button {
+			} else if node.kind == .Button && node.button_presentation == .Default {
 				padding_x := maxf(node.button_content_style.padding_x, 0)
 				padding_y := maxf(node.button_content_style.padding_y, 0)
 				content_bounds := Rect{

@@ -111,8 +111,9 @@ description_hash :: proc(
 	if d.kind == .Button {
 		h = hash_mix(h, hash_button_content_style(d.button_content_style))
 		h = hash_mix(h, u64(d.button_variant))
+		h = hash_mix(h, u64(d.button_presentation))
 	}
-	if node_has_text_product(d.kind) {
+	if node_has_text_product(d.kind, d.button_presentation) {
 		h = hash_mix(h, u64(transmute(u32)effective_font_weight(d.text_style.font_weight)))
 		h = hash_mix(h, u64(transmute(u32)text_style_requested_size(d.text_style, DEFAULT_STYLE_ENVIRONMENT)))
 		h = hash_mix(h, u64(d.text_style.overflow))
@@ -173,7 +174,10 @@ measure_input_hash_base :: proc(d: Description) -> (u64, bool) {
 	h: u64 = 1469598103934665603
 	h = hash_mix(h, u64(d.kind))
 	#partial switch d.kind {
-	case .Button, .Checkbox, .Slider:
+	case .Button:
+		if d.button_presentation == .Custom { return h, false }
+		h = hash_mix(h, hash_string(d.label))
+	case .Checkbox, .Slider:
 		h = hash_mix(h, hash_string(d.label))
 	case .Text, .Text_Field:
 		h = hash_mix(h, hash_string(d.text))
@@ -199,6 +203,7 @@ measure_input_hash_base :: proc(d: Description) -> (u64, bool) {
 	h = hash_mix(h, u64(transmute(u32)d.style.max_height))
 	if d.kind == .Button {
 		h = hash_mix(h, hash_button_content_style(d.button_content_style))
+		h = hash_mix(h, u64(d.button_presentation))
 	}
 	return h, true
 }
@@ -232,7 +237,7 @@ measure_input_observe :: proc(rt: ^Runtime, id: Node_ID, next_hash: u64) -> bool
 
 layout_hash :: proc(d: Description) -> u64 {
 	style_input := d.style
-	if node_has_text_product(d.kind) {
+	if node_has_text_product(d.kind, d.button_presentation) {
 		// Leaf size constraints belong to retained measurement. A changed
 		// constraint is not itself parent layout invalidation; the measured
 		// output comparison decides whether placement needs another pass. The
@@ -360,8 +365,10 @@ release_node_strings :: proc(node: ^Node, allocator := context.allocator) {
 	node.key, node.label, node.text, node.tooltip_text, node.identity_key, node.last_reason = "", "", "", "", "", ""
 }
 
-node_has_text_product :: proc(kind: Node_Kind) -> bool {
-	return kind == .Text || kind == .Text_Field || kind == .Button || kind == .Checkbox || kind == .Slider
+node_has_text_product :: proc(kind: Node_Kind, button_presentation := Button_Presentation.Default) -> bool {
+	return kind == .Text || kind == .Text_Field ||
+	       (kind == .Button && button_presentation == .Default) ||
+	       kind == .Checkbox || kind == .Slider
 }
 
 semantic_surface_material_inputs_changed :: proc(previous, next: Semantic_Surface_Style) -> bool {
@@ -442,11 +449,11 @@ copy_node_description :: proc(
 	if kind_changed && node.kind == .Text_Field {
 		controlled_text_field_state_clear(rt, node.id)
 	}
-	if node.text_run_valid && (text_changed || typography_changed || font_changed || weight_changed || font_size_changed || overflow_changed || style_spans_changed || kind_changed || !node_has_text_product(d.kind)) {
+	if node.text_run_valid && (text_changed || typography_changed || font_changed || weight_changed || font_size_changed || overflow_changed || style_spans_changed || kind_changed || !node_has_text_product(d.kind, d.button_presentation)) {
 		text_run_destroy(&node.text_run)
 		node.text_run_valid = false
 	}
-	if text_changed || font_changed || kind_changed || !node_has_text_product(d.kind) {
+	if text_changed || font_changed || kind_changed || !node_has_text_product(d.kind, d.button_presentation) {
 		clear_text_composition(node, rt.persistent_allocator)
 	}
 	replace_site(&node.site, d.site, rt.persistent_allocator)
@@ -515,6 +522,7 @@ copy_node_description :: proc(
 	node.adaptive_min_width = d.adaptive_min_width
 	node.button_content_style = d.button_content_style
 	node.button_variant = d.button_variant
+	node.button_presentation = d.button_presentation
 	node.color = d.color
 	node.paint_background = d.paint_background
 	if semantic_surface_style.defined {

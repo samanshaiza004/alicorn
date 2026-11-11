@@ -388,8 +388,9 @@ inspect :: proc(rt: ^Runtime) -> string {
 		if node.kind == .Button {
 			recipe := style_button_recipe(rt, node.style_environment, node.button_variant)
 			hovered := visual_part_owner_hovered(rt, node.id)
-			fmt.sbprintf(&sb, "  button/tab state: selected=%t hovered=%t pressed=%t disabled=%t focused=%t\n",
-				node.selected, hovered, node.pressed, node.disabled, rt.focused == node.id)
+			fmt.sbprintf(&sb, "  button/tab state: presentation=%v selected=%t hovered=%t pressed=%t disabled=%t focused=%t keyboard-focus-visible=%t\n",
+				node.button_presentation, node.selected, hovered, node.pressed, node.disabled,
+				rt.focused == node.id, rt.focused == node.id && rt.focus_visible)
 			resolved := style_button_resolve_retained(rt, node, Button_Visual_State{
 				selected=node.selected,
 				hovered=hovered,

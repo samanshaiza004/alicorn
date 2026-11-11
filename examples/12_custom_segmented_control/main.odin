@@ -37,7 +37,7 @@ App :: struct {
 app_default :: proc() -> App {
 	custom_style := segmented.style_default()
 	custom_style.instance_accent_role = custom_accent_role()
-	custom_style.track_height = 238
+	custom_style.track_height = 212
 	custom_style.track_radius = 30
 	custom_style.segment_radius = 24
 	custom_style.segment_padding = 12
@@ -126,7 +126,7 @@ render_contents :: proc(app: ^App, ctx: ^ui.UI) {
 			accessibility_set=app.accessibility_set,
 		}
 		scope := alicorn.style_environment_push(ctx, environment)
-		if ui.row(ctx, key=ui.key_u64(2), grow=1, gap=18, align=.Center, label="segmented-control-examples") {
+		if ui.row(ctx, key=ui.key_u64(2), gap=18, align=.Center, label="segmented-control-examples") {
 			_ = segmented.segmented_control(ctx, "Workspace view", &app.primary, app.recipe,
 				segmented.style_default(), key=ui.key_u64(10), instance_id=101)
 			_ = segmented.segmented_control(ctx, "Review mode", &app.custom, app.recipe,

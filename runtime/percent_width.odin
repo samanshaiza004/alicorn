@@ -27,10 +27,10 @@ layout_percent_width_register :: proc(ui: ^UI, child: Node_ID, fraction: f32) {
 	}
 }
 
-layout_percent_width_hash :: proc(base: u64, kind: Node_Kind, width: f32) -> u64 {
+layout_percent_width_hash :: proc(base: u64, kind: Node_Kind, width: f32, button_presentation := Button_Presentation.Default) -> u64 {
 	// Text-product width is already represented by its measurement input hash.
 	// Other nodes keep effective width in layout hashing as before.
-	if node_has_text_product(kind) { return base }
+	if node_has_text_product(kind, button_presentation) { return base }
 	return hash_mix(base, u64(transmute(u32)width))
 }
 
@@ -44,7 +44,7 @@ layout_percent_width_pending_hash :: proc(rt: ^Runtime, d: Description, item: Pe
 	base_description := d
 	base_description.style.width = -1
 	base := layout_hash_pending(base_description, item)
-	return layout_percent_width_hash(base, d.kind, d.style.width)
+	return layout_percent_width_hash(base, d.kind, d.style.width, d.button_presentation)
 }
 
 // layout_percent_width_commit_description updates the retained sparse
@@ -137,7 +137,7 @@ layout_percent_width_update_retained :: proc(rt: ^Runtime) {
 		}
 		if child.style.width == resolved_width { continue }
 		child.style.width = resolved_width
-		new_layout_hash := layout_percent_width_hash(dependency.layout_hash_base, child.kind, resolved_width)
+		new_layout_hash := layout_percent_width_hash(dependency.layout_hash_base, child.kind, resolved_width, child.button_presentation)
 		layout_changed := child.layout_hash != new_layout_hash
 		if layout_changed { child.layout_hash = new_layout_hash }
 		measurement_changed := false

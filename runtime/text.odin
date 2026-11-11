@@ -1503,7 +1503,7 @@ text_run_fallback_refresh_needed :: proc(run: ^Text_Run, engine: ^Text_Engine) -
 // product for its retained lifetime; the native renderer only resolves it to
 // physical glyph residency after logical layout.
 prepare_text_run_node :: proc(rt: ^Runtime, node: ^Node, max_width: f32 = -1, force_unbounded := false) -> bool {
-	if !node_has_text_product(node.kind) || !node.active { return false }
+	if !node_has_text_product(node.kind, node.button_presentation) || !node.active { return false }
 	text_value := node.text
 	if node.kind == .Button || node.kind == .Checkbox || node.kind == .Slider { text_value = node.label }
 	text_overflow := node.text_style.overflow

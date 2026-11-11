@@ -376,7 +376,7 @@ grid_desired_child_extent :: proc(rt: ^Runtime, child: ^Node, direction: Layout_
 	if style_extent >= 0 { return clampf(style_extent, layout_axis_minimum(child.style, direction), layout_axis_maximum(child.style, direction)) }
 	if state, ok := rt.measure_states[child.id]; ok && state.cache_key.valid {
 		measured := layout_unit_to_f32(grid_axis_size(state.result.size, direction))
-		if node_has_text_product(child.kind) && child.text_run_valid {
+		if node_has_text_product(child.kind, child.button_presentation) && child.text_run_valid {
 			if direction == .Row {
 				measured = child.text_run.width
 				if child.kind == .Button { measured += 2*maxf(child.button_content_style.padding_x, 0) }

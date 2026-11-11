@@ -85,6 +85,7 @@ Visual_Part_Visibility :: enum {
 	Owner_Hovered,
 	Owner_Selected_Or_Hovered,
 	Owner_Not_Hovered,
+	Owner_Focus_Visible,
 }
 
 // Visual_Part_Style lives in Runtime side storage rather than Node or
@@ -752,6 +753,13 @@ Button_Variant :: enum {
 	Count,
 }
 
+// Button_Presentation selects whether a Button paints its built-in recipe or
+// only supplies the interaction and semantic owner for caller-authored visuals.
+Button_Presentation :: enum u8 {
+	Default,
+	Custom,
+}
+
 BUTTON_VARIANT_COUNT :: int(Button_Variant.Count)
 
 // Style_Transform blends semantic surface/text roles into the current recipe
@@ -1251,6 +1259,7 @@ Description :: struct {
 	adaptive_min_width: f32,
 	button_content_style: Button_Content_Style,
 	button_variant: Button_Variant,
+	button_presentation: Button_Presentation,
 	style:       Layout_Style,
 	grid_row: u16,
 	grid_column: u16,
@@ -1383,6 +1392,7 @@ Node :: struct {
 	style_generations: Style_Generations,
 	button_content_style: Button_Content_Style,
 	button_variant: Button_Variant,
+	button_presentation: Button_Presentation,
 	style:       Layout_Style,
 	grid_configuration_hash: u64,
 	grid_columns: [dynamic]Grid_Track,

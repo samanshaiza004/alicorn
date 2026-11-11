@@ -17,18 +17,21 @@ embedded theme is independent of the process working directory.
 
 Each segment uses public `button_begin` / `button_end` as its interaction
 owner. That retains Alicorn's pointer hit testing, Tab focus, Space/Return
-activation, disabled behavior, and Button accessibility semantics. The normal
-Quiet Button paint is covered by an opaque retained surface inside the Button;
-the package then draws its own label and visual parts. Selection belongs to
-the caller's `Segmented_State`, not to a second widget state or an Alicorn
-internal.
+activation, disabled behavior, and Button accessibility semantics. It opts
+into `presentation=.Custom`, so Alicorn leaves the recipe fill, label,
+selection decoration, and focus paint to the package. The Button label remains
+the accessible name and does not create a hidden text-layout requirement.
+Selection belongs to the caller's `Segmented_State`, not to a second widget
+state or an Alicorn internal.
 
 The two responsive alternatives bind equivalent choices to the same semantic
 IDs, so focus continuity can be checked while resizing. The moving marker uses
 public `ui.motion`; it retargets from its current presentation and settles
 without continued idle work. Selection remains apparent without relying on
 color alone: it changes the surface, label weight, marker size, and marker
-position. Focus is an independently themed frame.
+position. Keyboard focus is an independently themed frame attached with
+`.Owner_Focus_Visible`, so pointer focus does not compete with the selection
+cue. Disabled options also carry an explicit “Unavailable” caption.
 
 ## Theme and instance contract
 
@@ -54,13 +57,10 @@ Windows UIA session.
 
 ## Friction found
 
-The experiment works with public APIs, but `button_begin` couples the reliable
-interaction owner to its default label and focus paint. The package has to pass
-zero content padding and cover that paint with its own full-size surface. That
-is the only notable workaround in this implementation. A future optional
-interaction-only Button presentation would remove redundant hidden paint and
-make fully custom controls simpler; it is not required to build this control
-today.
+The `.Custom` Button presentation and `.Owner_Focus_Visible` visual-part
+condition remove the main paint-ownership workaround from the first version of
+this experiment. The component owns the visible control while Alicorn retains
+the interaction, semantic, and keyboard-modality contracts.
 
 The example deliberately keeps Button semantics rather than claiming radio
 group arrow-key behavior. Adding arrow-key navigation would be a separate

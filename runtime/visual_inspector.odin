@@ -313,6 +313,7 @@ inspector_overlay_node_lines :: proc(inspected: ^Runtime, id: Node_ID, allocator
 		case .Owner_Hovered: state = fmt.tprintf("owner hovered=%t", hovered)
 		case .Owner_Selected_Or_Hovered: state = fmt.tprintf("owner selected=%t hovered=%t", node.selected, hovered)
 		case .Owner_Not_Hovered: state = fmt.tprintf("owner hovered=%t", hovered)
+		case .Owner_Focus_Visible: state = fmt.tprintf("owner focused=%t keyboard-visible=%t", inspected.focused == id, inspected.focus_visible)
 		}
 		append(&lines, fmt.tprintf("visual child: node=%d identity=%s hash=%d owner=%d component=%s visibility=%s (%s) reveal-on-direct-hover=%t visible=%t",
 			child_id, visual_part_role_name(part.identity), visual_part_identity_hash(part.identity), id, node.site.component,

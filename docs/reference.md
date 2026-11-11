@@ -576,6 +576,15 @@ recipe for that intent, resolved against the active palette. Theme registration
 validates transform roles and blend amounts. `Button_State.quiet` remains as a
 compatibility spelling for `.Quiet`; new call sites should use `variant`.
 
+`button_begin` also accepts `presentation=.Custom` for compound controls that
+need Button's hit testing, keyboard focus, disabled behavior, and accessibility
+identity while supplying every visible part themselves. In this mode Alicorn
+does not paint the Button recipe, label, selected marker, icon, or focus outline,
+and the label remains its accessible name without shaping or affecting
+intrinsic layout. Size the owner explicitly and draw its retained children.
+Custom presentations should provide a visible keyboard-focus cue; tag its
+surface with `.Owner_Focus_Visible` so it follows retained keyboard modality.
+
 For example, copy a built-in toolbar recipe, adjust its hover transform, then
 register the containing immutable theme:
 
@@ -658,8 +667,12 @@ Applications can use `visual_part_extension_id(namespace, name)` for stable,
 namespaced parts such as `app.history/ref-badge`; app-specific IDs do not add
 new renderer primitives. All retained owners support always-visible parts.
 Hover policies require a Button, Checkbox, Slider, Text_Field, or pointer-
-interactive custom surface; selected-or-hovered visibility currently requires
-a Button. Button label parts may inherit its resolved recipe color, while
+interactive custom surface; selected-or-hovered and keyboard-focus-visible
+policies currently require a Button. `.Owner_Focus_Visible` is true only while
+its owner has keyboard-visible focus; pointer focus does not show it. Button
+focus-visible parts suppress their own paint while hidden but keep their
+retained children composed, so a themed frame can wrap a custom control's
+content. Label parts may inherit the Button's resolved recipe color, while
 non-Button owners keep the text style declared by their label node. Inspector
 output reports the role, owner, and visibility policy. Keep positioning in
 ordinary layout rather than encoding coordinates in a visual-part identity.
