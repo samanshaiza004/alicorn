@@ -267,11 +267,12 @@ style_inspector_semantic_surface :: proc(sb: ^strings.Builder, rt: ^Runtime, nod
 	material_kind := "unavailable"
 	if material_found { material_kind = style_inspector_material_kind_name(material.kind) }
 	radii := surface_shape_corner_radii(style.shape)
-	fmt.sbprintf(sb, " shape=%s radius=%.2f corner-radii=(%.2f %.2f %.2f %.2f) material=%d(%s) height=%.2f group=%d fill=(%.3f,%.3f,%.3f,%.3f) stroke=(%.3f,%.3f,%.3f,%.3f;%.2f;%v) resolution=retained-cache dependencies=paint,material generations=(paint=%d material=%d)\n",
+	fmt.sbprintf(sb, " shape=%s radius=%.2f corner-radii=(%.2f %.2f %.2f %.2f) material=%d(%s) height=%.2f group=%d fill=(%.3f,%.3f,%.3f,%.3f) gradient=%v end=(%.3f,%.3f,%.3f,%.3f) stroke=(%.3f,%.3f,%.3f,%.3f;%.2f;%v) resolution=retained-cache dependencies=paint,material generations=(paint=%d material=%d)\n",
 		style_inspector_surface_shape_name(style.shape.kind), style.shape.corner_radius,
 		radii.top_left, radii.top_right, radii.bottom_right, radii.bottom_left,
 		u32(style.material), material_kind, style.physical_height, u32(style.material_group),
 		resolved.fill.r, resolved.fill.g, resolved.fill.b, resolved.fill.a,
+		resolved.gradient.axis, resolved.gradient.end.r, resolved.gradient.end.g, resolved.gradient.end.b, resolved.gradient.end.a,
 		resolved.stroke.color.r, resolved.stroke.color.g, resolved.stroke.color.b, resolved.stroke.color.a, resolved.stroke.width, resolved.stroke_placement,
 		computed.generations.paint, computed.generations.material)
 }

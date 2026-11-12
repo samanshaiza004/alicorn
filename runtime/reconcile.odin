@@ -388,6 +388,8 @@ semantic_surface_role_changed :: proc(previous, next: Semantic_Surface_Style) ->
 	if !previous.defined { return false }
 	if previous.fill_override_set != next.fill_override_set ||
 	   !color_equal(previous.fill_override, next.fill_override) ||
+	   previous.gradient.axis != next.gradient.axis ||
+	   previous.gradient.end_role != next.gradient.end_role ||
 	   !color_equal(previous.stroke.color, next.stroke.color) ||
 	   previous.stroke.width != next.stroke.width ||
 	   previous.stroke_placement != next.stroke_placement {

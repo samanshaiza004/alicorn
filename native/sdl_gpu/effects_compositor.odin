@@ -50,6 +50,12 @@ native_effect_hash_command :: proc(hash: u64, draw: alicorn.Paint_Command, rt: ^
 			result = native_effect_hash_f32(result, radii.bottom_left)
 		}
 		result = native_effect_hash_color(result, payload.fill)
+		result = alicorn.hash_mix(result, u64(draw.semantic_surface_gradient))
+		if draw.semantic_surface_gradient {
+			gradient := alicorn.semantic_surface_gradient_for_paint_owner(rt, draw.owner)
+			result = alicorn.hash_mix(result, u64(gradient.axis))
+			result = native_effect_hash_color(result, gradient.end)
+		}
 		result = native_effect_hash_color(result, payload.stroke.color)
 		result = native_effect_hash_f32(result, payload.stroke.width)
 		result = alicorn.hash_mix(result, u64(payload.material))

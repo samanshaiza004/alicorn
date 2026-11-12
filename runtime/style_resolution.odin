@@ -326,9 +326,19 @@ style_semantic_surface_resolve_retained :: proc(
 		resolved_fill, fill_ok := semantic_surface_role_resolve(rt, node.style_environment, style.role)
 		if !fill_ok { return {} }
 		fill = resolved_fill
+	} else {
+		fill = style_accessibility_color(node.style_environment, fill)
+	}
+	gradient := SURFACE_GRADIENT_NONE
+	if style.gradient.axis != .None && !node.style_environment.accessibility.increased_contrast {
+		end, end_ok := semantic_surface_role_resolve(rt, node.style_environment, style.gradient.end_role)
+		if !end_ok { return {} }
+		candidate := Surface_Gradient{axis=style.gradient.axis, end=end}
+		if Surface_Gradient_Is_Valid(fill, candidate) { gradient = candidate }
 	}
 	resolved := Semantic_Surface_Resolved_Style{
 		fill=fill,
+		gradient=gradient,
 		stroke=style.stroke,
 		stroke_placement=style.stroke_placement,
 	}

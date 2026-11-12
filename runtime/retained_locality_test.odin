@@ -51,7 +51,8 @@ retained_locality_describe :: proc(
 
 retained_locality_commands_match :: proc(a, b: Paint_Command) -> bool {
 	if a.owner != b.owner || a.bounds != b.bounds || a.clip != b.clip || a.opacity != b.opacity ||
-		a.translation != b.translation || a.stroke_placement != b.stroke_placement { return false }
+		a.translation != b.translation || a.stroke_placement != b.stroke_placement ||
+		a.semantic_surface_gradient != b.semantic_surface_gradient { return false }
 	a_surface, a_ok := a.payload.(Surface_Paint)
 	b_surface, b_ok := b.payload.(Surface_Paint)
 	return a_ok && b_ok && a_surface == b_surface
@@ -59,7 +60,8 @@ retained_locality_commands_match :: proc(a, b: Paint_Command) -> bool {
 
 retained_locality_finalized_commands_match :: proc(a, b: Paint_Command) -> bool {
 	if a.owner != b.owner || a.bounds != b.bounds || a.clip != b.clip || a.opacity != b.opacity ||
-		a.translation != b.translation || a.stroke_placement != b.stroke_placement { return false }
+		a.translation != b.translation || a.stroke_placement != b.stroke_placement ||
+		a.semantic_surface_gradient != b.semantic_surface_gradient { return false }
 	a_surface, a_surface_ok := a.payload.(Surface_Paint)
 	b_surface, b_surface_ok := b.payload.(Surface_Paint)
 	if a_surface_ok || b_surface_ok { return a_surface_ok && b_surface_ok && a_surface == b_surface }

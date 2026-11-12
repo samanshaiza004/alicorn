@@ -428,3 +428,79 @@ test_corner_radius_only_change_skips_text_measurement_and_layout :: proc(t: ^tes
 		second.bounds == fresh_node.bounds && second.paint[0].bounds == fresh_node.paint[0].bounds,
 		"incremental retained replay should match a fresh runtime built with the same per-corner shape")
 }
+
+@(test)
+test_surface_gradient_resolves_theme_stops_and_invalidates_paint_only :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 160, 100})
+	defer destroy_runtime(&rt)
+	start_role := style_extension_color_role_id("app.gradient", "start")
+	end_role := style_extension_color_role_id("app.gradient", "end")
+	start := Color{0.08, 0.16, 0.28, 0.6}
+	end := Color{0.72, 0.44, 0.20, 0.6}
+	theme := DEFAULT_STYLE_THEME
+	theme.color_tokens = {start, end}
+	theme.extension_color_roles = {
+		Style_Extension_Color_Role_Binding{role=start_role, token=Style_Color_Token_ID(1)},
+		Style_Extension_Color_Role_Binding{role=end_role, token=Style_Color_Token_ID(2)},
+	}
+	theme_id := style_theme_register(&rt, theme)
+	testing.expect(t, theme_id != 0, "both gradient stops should use ordinary namespaced theme color roles")
+	ui, build := begin_frame(&rt)
+	if !build { testing.expect(t, false, "gradient surface fixture should describe its first frame"); return }
+	container_begin(&ui, .Root, key=key_string("gradient-root"), style=layout_style(.Column, width=160, height=100))
+	scope := style_environment_push(&ui, Style_Environment{theme=theme_id})
+	id := surface_begin(&ui, surface_extension_color_role(start_role), key=key_string("gradient-surface"),
+		style=layout_style(width=96, height=48), shape=Surface_Shape{kind=.Rounded_Rectangle, corner_radius=8},
+		gradient=surface_gradient_to(surface_extension_color_role(end_role), .Horizontal))
+	surface_end(&ui)
+	style_environment_pop(&ui, scope)
+	container_end(&ui)
+	end_frame(&ui)
+
+	node := rt.nodes[id]
+	testing.expect(t, len(node.paint) == 1 && node.paint[0].semantic_surface_gradient,
+		"an opted-in semantic surface should mark its retained paint command without expanding its payload")
+	if len(node.paint) == 1 {
+		paint, paint_ok := node.paint[0].payload.(Surface_Paint)
+		resolved := semantic_surface_gradient_for_paint_owner(&rt, id)
+		testing.expect(t, paint_ok && paint.fill == start && resolved.axis == .Horizontal && resolved.end == end,
+			"the start stop should remain the ordinary surface fill and the cached theme role should supply stop two")
+	}
+	first_paint_generation := node.style_generations.paint
+	first_metrics_generation := node.style_generations.metrics
+	first_typography_generation := node.style_generations.typography
+	first_layout_visits := rt.stats.layout_nodes_visited
+
+	contrast_node := node^
+	contrast_node.style_environment.accessibility.increased_contrast = true
+	contrast := style_semantic_surface_resolve_retained(&rt, &contrast_node, rt.semantic_surfaces[id])
+	testing.expect(t, contrast.gradient.axis == .None,
+		"increased contrast should flatten decorative gradients while retaining the first semantic stop and independent focus paint")
+	transparency_node := node^
+	transparency_node.style_environment.accessibility.reduce_transparency = true
+	opaque := style_semantic_surface_resolve_retained(&rt, &transparency_node, rt.semantic_surfaces[id])
+	testing.expect(t, opaque.gradient.axis == .Horizontal && opaque.fill.a == 1 && opaque.gradient.end.a == 1,
+		"Reduce Transparency should preserve the gradient while making both stops opaque")
+
+	changed_theme := theme
+	changed_theme.color_tokens = {start, Color{0.2, 0.6, 0.9, 0.6}}
+	testing.expect(t, style_theme_replace(&rt, theme_id, changed_theme) == .Replaced,
+		"replacing a gradient endpoint token should update the registered theme")
+	updated_node := rt.nodes[id]
+	updated := style_semantic_surface_resolve_retained(&rt, updated_node, rt.semantic_surfaces[id])
+	testing.expect(t, updated.gradient.end == Color{0.2, 0.6, 0.9, 0.6} &&
+		updated_node.style_generations.paint > first_paint_generation,
+		"theme replacement should refresh the cached gradient endpoint and advance Paint")
+	testing.expect(t, updated_node.style_generations.metrics == first_metrics_generation &&
+		updated_node.style_generations.typography == first_typography_generation &&
+		rt.stats.layout_nodes_visited == first_layout_visits,
+		"gradient endpoint changes must not recompute layout, metrics, or typography")
+	testing.expect(t, semantic_surface_gradient_for_paint_owner(&rt, id).end == updated.gradient.end,
+		"the renderer lookup should observe the newly resolved paint-only cache product")
+
+	bad_alpha := Surface_Gradient{axis=.Vertical, end=Color{0.1, 0.2, 0.3, 0.4}}
+	testing.expect(t, !Surface_Gradient_Is_Valid(start, bad_alpha),
+		"different stop alpha must be rejected until a premultiplied shader path exists")
+	testing.expect(t, !Surface_Gradient_Is_Valid(start, Surface_Gradient{axis=Surface_Gradient_Axis(99), end=end}),
+		"unsupported axes must be rejected rather than entering retained paint")
+}

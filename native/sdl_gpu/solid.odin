@@ -216,13 +216,27 @@ native_solid_unclipped_pixel_bounds :: proc(draw: alicorn.Paint_Command, scale_x
 	return alicorn.Rect{f32(x0), f32(y0), f32(x1-x0), f32(y1-y0)}
 }
 
-native_solid_material_for_command :: proc(rt: ^alicorn.Runtime, command: alicorn.Paint_Command) -> (material: alicorn.Style_Material, surface: alicorn.Surface_Paint, shape: alicorn.Surface_Shape, valid: bool) {
+native_solid_material_for_command :: proc(rt: ^alicorn.Runtime, command: alicorn.Paint_Command) -> (
+	material: alicorn.Style_Material,
+	surface: alicorn.Surface_Paint,
+	shape: alicorn.Surface_Shape,
+	gradient: alicorn.Surface_Gradient,
+	valid: bool,
+) {
 	surface, valid = command.payload.(alicorn.Surface_Paint)
 	if !valid { return }
 	shape, valid = alicorn.surface_paint_shape_resolve(rt, command.owner, surface.shape)
 	if !valid { return }
+	if command.semantic_surface_gradient {
+		gradient = alicorn.semantic_surface_gradient_for_paint_owner(rt, command.owner)
+	}
+	if !alicorn.Surface_Gradient_Is_Valid(surface.fill, gradient) {
+		// Low-level paint producers cannot inject invalid colors into the GPU
+		// vertex stream; keep the ordinary solid start-stop appearance.
+		gradient = alicorn.SURFACE_GRADIENT_NONE
+	}
 	if surface.material == alicorn.MATERIAL_FLAT {
-		return alicorn.STYLE_MATERIAL_FLAT, surface, shape, true
+		return alicorn.STYLE_MATERIAL_FLAT, surface, shape, gradient, true
 	}
 	material, valid = alicorn.style_material_resolve(rt, surface.material)
 	if !valid {
@@ -231,7 +245,7 @@ native_solid_material_for_command :: proc(rt: ^alicorn.Runtime, command: alicorn
 		material = alicorn.STYLE_MATERIAL_FLAT
 		valid = true
 	}
-	return material, surface, shape, valid
+	return material, surface, shape, gradient, valid
 }
 
 native_solid_build :: proc(
@@ -245,7 +259,7 @@ native_solid_build :: proc(
 	required_vertices := 0
 	for draw in display {
 		if !alicorn.paint_command_is_surface(draw) { continue }
-		material, surface, shape, valid := native_solid_material_for_command(renderer.runtime, draw)
+		material, surface, shape, _, valid := native_solid_material_for_command(renderer.runtime, draw)
 		if !valid { continue }
 		visible_command := native_solid_visible_command(draw, surface, material, scale_x, scale_y, shape)
 		_, _, _, _, visible := native_solid_pixel_bounds(visible_command, scale_x, scale_y, target_w, target_h)
@@ -261,7 +275,7 @@ native_solid_build :: proc(
 	}
 	for draw, i in display {
 		if !alicorn.paint_command_is_surface(draw) { continue }
-		material, surface, shape, valid := native_solid_material_for_command(renderer.runtime, draw)
+		material, surface, shape, gradient, valid := native_solid_material_for_command(renderer.runtime, draw)
 		if !valid { continue }
 		visible_command := native_solid_visible_command(draw, surface, material, scale_x, scale_y, shape)
 		x0, y0, x1, y1, visible := native_solid_pixel_bounds(visible_command, scale_x, scale_y, target_w, target_h)
@@ -306,7 +320,7 @@ native_solid_build :: proc(
 			stroke.width *= max(scale_x, scale_y)
 			native_solid_append_rounded_material_surface(
 				&renderer.vertices, base, shadow, surface.fill, pixel_material,
-				surface.physical_height, draw.opacity, pixel_shape, stroke, draw.stroke_placement,
+				surface.physical_height, draw.opacity, pixel_shape, stroke, draw.stroke_placement, gradient,
 			)
 			renderer.draws[i] = Native_Solid_Draw{
 				first_vertex=first,
@@ -316,7 +330,7 @@ native_solid_build :: proc(
 			}
 		} else {
 			base := alicorn.Rect{f32(x0), f32(y0), f32(x1-x0), f32(y1-y0)}
-			surface_scissor := surface.stroke.width > 0 ||
+			surface_scissor := gradient.axis != .None || surface.stroke.width > 0 ||
 				(material.kind == .Analytic_Relief && surface.physical_height > 0 &&
 				 material.outer_shadow_radius > 0 && material.outer_shadow_strength > 0)
 			if surface_scissor {
@@ -341,7 +355,7 @@ native_solid_build :: proc(
 			if surface.top_edge_gap[1] > surface.top_edge_gap[0] {
 				gap = {f32(native_pixel_edge(surface.top_edge_gap[0]+draw.translation[0],scale_x)), f32(native_pixel_edge(surface.top_edge_gap[1]+draw.translation[0],scale_x))}
 			}
-			native_solid_append_material_surface(&renderer.vertices, base, shadow, surface.fill, material, surface.physical_height, draw.opacity, stroke, draw.stroke_placement, gap)
+			native_solid_append_material_surface(&renderer.vertices, base, shadow, surface.fill, material, surface.physical_height, draw.opacity, stroke, draw.stroke_placement, gap, gradient)
 			renderer.draws[i] = Native_Solid_Draw{
 				first_vertex=first,
 				vertex_count=sdl3.Uint32(len(renderer.vertices)-int(first)),

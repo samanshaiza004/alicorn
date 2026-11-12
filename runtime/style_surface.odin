@@ -15,6 +15,24 @@ surface_extension_color_role :: proc(role: Style_Extension_Color_Role_ID) -> Sem
 	return role
 }
 
+// Semantic_Surface_Gradient opts a surface into a static two-stop linear fill.
+// The ordinary surface role/direct fill is the start stop; end_role supplies
+// the other endpoint. Equal alpha is required by the existing straight-alpha
+// vertex interpolation path.
+Semantic_Surface_Gradient :: struct {
+	axis: Surface_Gradient_Axis,
+	end_role: Semantic_Surface_Color_Role,
+}
+
+SURFACE_GRADIENT_DISABLED :: Semantic_Surface_Gradient{}
+
+surface_gradient_to :: proc(
+	end_role: Semantic_Surface_Color_Role,
+	axis := Surface_Gradient_Axis.Vertical,
+) -> Semantic_Surface_Gradient {
+	return Semantic_Surface_Gradient{axis=axis, end_role=end_role}
+}
+
 // Semantic_Surface_Style is description metadata for a container-owned
 // surface. It lives in the pending description and Runtime sidecar map rather
 // than Node, preserving the retained-node size budget.
@@ -30,6 +48,7 @@ Semantic_Surface_Style :: struct {
 	physical_height: f32,
 	material_group: Material_Group_ID,
 	backdrop_effect: Backdrop_Effect,
+	gradient: Semantic_Surface_Gradient,
 	// Optional retained visual above this surface. Only an abutting, visible
 	// visual can open the corresponding segment of the top material edge.
 	open_top_edge: Node_ID,
@@ -37,6 +56,7 @@ Semantic_Surface_Style :: struct {
 
 Semantic_Surface_Resolved_Style :: struct {
 	fill: Color,
+	gradient: Surface_Gradient,
 	stroke: Paint_Stroke,
 	stroke_placement: Paint_Stroke_Placement,
 }
@@ -59,6 +79,18 @@ surface_paint_shape_resolve :: proc(rt: ^Runtime, owner: Node_ID, shape: Surface
 	return
 }
 
+// Reads the already-resolved semantic-surface paint product for a retained
+// surface command. The native renderer uses this marker lookup without
+// repeating style resolution or growing every Paint_Command payload.
+semantic_surface_gradient_for_paint_owner :: proc(rt: ^Runtime, owner: Node_ID) -> Surface_Gradient {
+	if rt == nil || owner == 0 { return SURFACE_GRADIENT_NONE }
+	computed, found := rt.computed_styles[owner]
+	if !found || !computed.valid || computed.family != .Semantic_Surface { return SURFACE_GRADIENT_NONE }
+	resolved, valid := computed.payload.(Semantic_Surface_Resolved_Style)
+	if !valid { return SURFACE_GRADIENT_NONE }
+	return resolved.gradient
+}
+
 SURFACE_PHYSICAL_HEIGHT_LIMIT :: 2.0
 
 semantic_surface_role_resolve :: proc(rt: ^Runtime, environment: Style_Environment, role: Semantic_Surface_Color_Role) -> (color: Color, ok: bool) {
@@ -77,6 +109,20 @@ semantic_surface_style_is_valid :: proc(rt: ^Runtime, environment: Style_Environ
 	if style.fill_override_set {
 		if !semantic_surface_color_is_valid(style.fill_override) { return false }
 	} else if _, role_ok := semantic_surface_role_resolve(rt, environment, style.role); !role_ok { return false }
+	if style.gradient.axis != .None {
+		if style.gradient.axis != .Horizontal && style.gradient.axis != .Vertical { return false }
+		start := style.fill_override
+		if !style.fill_override_set {
+			start, _ = semantic_surface_role_resolve(rt, environment, style.role)
+		} else {
+			start = style_accessibility_color(environment, start)
+		}
+		end, end_ok := semantic_surface_role_resolve(rt, environment, style.gradient.end_role)
+		if !end_ok || !semantic_surface_color_is_valid(start) || !semantic_surface_color_is_valid(end) { return false }
+		// Increased contrast flattens the gradient, so only validate the alpha
+		// interpolation contract when the varying fill will actually be used.
+		if !environment.accessibility.increased_contrast && start.a != end.a { return false }
+	}
 	if style.stroke.width != style.stroke.width || style.stroke.width < 0 || style.stroke.width > 4096 { return false }
 	if style.stroke_placement < .Centered || style.stroke_placement >= .Count { return false }
 	if style.stroke.width > 0 && !style_color_is_valid(style.stroke.color) { return false }
@@ -141,6 +187,15 @@ semantic_surface_style_hash :: proc(style: Semantic_Surface_Style) -> u64 {
 	h = hash_mix(h, u64(style.backdrop_effect.kind))
 	h = hash_mix(h, u64(transmute(u32)style.backdrop_effect.sigma))
 	h = hash_mix(h, u64(style.backdrop_effect.fallback))
+	h = hash_mix(h, u64(style.gradient.axis))
+	switch gradient_role in style.gradient.end_role {
+	case Style_Color_Role:
+		h = hash_mix(h, 3)
+		h = hash_mix(h, u64(gradient_role))
+	case Style_Extension_Color_Role_ID:
+		h = hash_mix(h, 4)
+		h = hash_mix(h, u64(gradient_role))
+	}
 	return h
 }
 
@@ -163,6 +218,7 @@ surface_begin :: proc(
 	stroke_placement := Paint_Stroke_Placement.Centered,
 	open_top_edge: Node_ID = 0,
 	backdrop_effect := BACKDROP_NONE,
+	gradient := SURFACE_GRADIENT_DISABLED,
 ) -> Node_ID {
 	if ui == nil || ui.runtime == nil { return 0 }
 	rt := ui.runtime
@@ -179,6 +235,7 @@ surface_begin :: proc(
 		material_group=material_group,
 		open_top_edge=open_top_edge,
 		backdrop_effect=backdrop_effect,
+		gradient=gradient,
 	}
 	if !rt.frame_open || !semantic_surface_style_is_valid(rt, rt.style_environment, semantic_style) {
 		append_diagnostic(rt, "surface_begin requires an open frame, resolvable theme role, supported shape, bounded optical height, and registered material")

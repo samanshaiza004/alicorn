@@ -42,6 +42,9 @@ Paint_Command :: struct {
 	// Kept outside the payload union so this geometry hint occupies existing
 	// alignment padding instead of increasing the retained command size.
 	stroke_placement: Paint_Stroke_Placement,
+	// Semantic surface gradient data stays in the Runtime's computed-style
+	// sidecar; this marker occupies existing alignment padding.
+	semantic_surface_gradient: bool,
 	payload:     Paint_Payload,
 }
 
@@ -207,6 +210,32 @@ MATERIAL_FLAT :: Material_ID(0)
 
 Material_Group_ID :: distinct u32
 MATERIAL_GROUP_NONE :: Material_Group_ID(0)
+
+// Surface gradients are deliberately limited to one axis and two stops. The
+// existing surface fill is stop one; end is stop two. None preserves the
+// ordinary solid-fill path without extra geometry or renderer state.
+Surface_Gradient_Axis :: enum u8 {
+	None,
+	Horizontal,
+	Vertical,
+}
+
+Surface_Gradient :: struct {
+	axis: Surface_Gradient_Axis,
+	end:  Color,
+}
+
+SURFACE_GRADIENT_NONE :: Surface_Gradient{}
+
+Surface_Gradient_Is_Valid :: proc(start: Color, gradient: Surface_Gradient) -> bool {
+	switch gradient.axis {
+	case .None:
+		return true
+	case .Horizontal, .Vertical:
+		return semantic_surface_color_is_valid(start) && semantic_surface_color_is_valid(gradient.end) && start.a == gradient.end.a
+	}
+	return false
+}
 
 Surface_Paint :: struct {
 	shape:           Surface_Paint_Shape,

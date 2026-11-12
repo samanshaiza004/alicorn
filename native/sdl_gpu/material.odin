@@ -212,6 +212,114 @@ native_solid_append_rounded_fill :: proc(
 	native_solid_append_rounded_ring(vertices, bounds, radii, -NATIVE_ROUNDED_ANTIALIAS_FRINGE, 0, transparent, color)
 }
 
+native_solid_gradient_color_at :: proc(
+	start, end: alicorn.Color,
+	axis: alicorn.Surface_Gradient_Axis,
+	bounds: alicorn.Rect,
+	x, y, opacity: f32,
+) -> [4]f32 {
+	t := f32(0)
+	if axis == .Horizontal {
+		t = clamp((x-bounds.x)/bounds.w, 0, 1)
+	} else if axis == .Vertical {
+		t = clamp((y-bounds.y)/bounds.h, 0, 1)
+	}
+	return [4]f32{
+		start.r+(end.r-start.r)*t,
+		start.g+(end.g-start.g)*t,
+		start.b+(end.b-start.b)*t,
+		(start.a+(end.a-start.a)*t)*opacity,
+	}
+}
+
+native_solid_append_gradient_quad :: proc(
+	vertices: ^[dynamic]Native_Text_Vertex,
+	bounds: alicorn.Rect,
+	start: alicorn.Color,
+	gradient: alicorn.Surface_Gradient,
+	opacity: f32,
+) {
+	if bounds.w <= 0 || bounds.h <= 0 || start.a <= 0 { return }
+	if gradient.axis == .None {
+		native_solid_append_quad(vertices, bounds.x, bounds.y, bounds.x+bounds.w, bounds.y+bounds.h,
+			[4]f32{start.r, start.g, start.b, start.a*opacity})
+		return
+	}
+	if !alicorn.Surface_Gradient_Is_Valid(start, gradient) {
+		native_solid_append_quad(vertices, bounds.x, bounds.y, bounds.x+bounds.w, bounds.y+bounds.h,
+			[4]f32{start.r, start.g, start.b, start.a*opacity})
+		return
+	}
+	x0, y0 := bounds.x, bounds.y
+	x1, y1 := bounds.x+bounds.w, bounds.y+bounds.h
+	color00 := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, x0, y0, opacity)
+	color10 := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, x1, y0, opacity)
+	color11 := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, x1, y1, opacity)
+	color01 := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, x0, y1, opacity)
+	uv := [2]f32{0.5, 0.5}
+	append(vertices,
+		Native_Text_Vertex{[3]f32{x0, y0, 0}, color00, uv},
+		Native_Text_Vertex{[3]f32{x1, y0, 0}, color10, uv},
+		Native_Text_Vertex{[3]f32{x1, y1, 0}, color11, uv},
+		Native_Text_Vertex{[3]f32{x0, y0, 0}, color00, uv},
+		Native_Text_Vertex{[3]f32{x1, y1, 0}, color11, uv},
+		Native_Text_Vertex{[3]f32{x0, y1, 0}, color01, uv},
+	)
+}
+
+native_solid_append_rounded_gradient_fill :: proc(
+	vertices: ^[dynamic]Native_Text_Vertex,
+	bounds: alicorn.Rect,
+	radii: alicorn.Surface_Corner_Radii,
+	start: alicorn.Color,
+	gradient: alicorn.Surface_Gradient,
+	opacity: f32,
+) {
+	if bounds.w <= 0 || bounds.h <= 0 || start.a <= 0 { return }
+	contour_radii := alicorn.surface_corner_radii_normalize(radii, bounds.w, bounds.h)
+	if gradient.axis == .None || !alicorn.Surface_Gradient_Is_Valid(start, gradient) {
+		native_solid_append_rounded_fill(vertices, bounds, contour_radii,
+			[4]f32{start.r, start.g, start.b, start.a*opacity})
+		return
+	}
+	center := [2]f32{bounds.x+bounds.w*0.5, bounds.y+bounds.h*0.5}
+	center_color := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, center[0], center[1], opacity)
+	for i in 0..<NATIVE_ROUNDED_CONTOUR_POINTS {
+		next := (i+1) % NATIVE_ROUNDED_CONTOUR_POINTS
+		a, _ := native_solid_rounded_contour_point(bounds, contour_radii, 0, i)
+		b, _ := native_solid_rounded_contour_point(bounds, contour_radii, 0, next)
+		color_a := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, a[0], a[1], opacity)
+		color_b := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, b[0], b[1], opacity)
+		append(vertices,
+			Native_Text_Vertex{[3]f32{center[0], center[1], 0}, center_color, {0.5, 0.5}},
+			Native_Text_Vertex{[3]f32{a[0], a[1], 0}, color_a, {0.5, 0.5}},
+			Native_Text_Vertex{[3]f32{b[0], b[1], 0}, color_b, {0.5, 0.5}},
+		)
+	}
+	// Preserve the existing antialias fringe topology and vertex count while
+	// carrying each contour point's local gradient color through its inner edge.
+	for i in 0..<NATIVE_ROUNDED_CONTOUR_POINTS {
+		next := (i+1) % NATIVE_ROUNDED_CONTOUR_POINTS
+		outer_radii := native_solid_rounded_contour_radii(bounds, contour_radii, -NATIVE_ROUNDED_ANTIALIAS_FRINGE)
+		outer_a, _ := native_solid_rounded_contour_point(bounds, outer_radii, -NATIVE_ROUNDED_ANTIALIAS_FRINGE, i)
+		outer_b, _ := native_solid_rounded_contour_point(bounds, outer_radii, -NATIVE_ROUNDED_ANTIALIAS_FRINGE, next)
+		inner_a, _ := native_solid_rounded_contour_point(bounds, contour_radii, 0, i)
+		inner_b, _ := native_solid_rounded_contour_point(bounds, contour_radii, 0, next)
+		outer_color_a := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, inner_a[0], inner_a[1], opacity)
+		outer_color_b := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, inner_b[0], inner_b[1], opacity)
+		inner_color_a, inner_color_b := outer_color_a, outer_color_b
+		outer_color_a[3], outer_color_b[3] = 0, 0
+		append(vertices,
+			Native_Text_Vertex{[3]f32{outer_a[0], outer_a[1], 0}, outer_color_a, {0.5, 0.5}},
+			Native_Text_Vertex{[3]f32{outer_b[0], outer_b[1], 0}, outer_color_b, {0.5, 0.5}},
+			Native_Text_Vertex{[3]f32{inner_b[0], inner_b[1], 0}, inner_color_b, {0.5, 0.5}},
+			Native_Text_Vertex{[3]f32{outer_a[0], outer_a[1], 0}, outer_color_a, {0.5, 0.5}},
+			Native_Text_Vertex{[3]f32{inner_b[0], inner_b[1], 0}, inner_color_b, {0.5, 0.5}},
+			Native_Text_Vertex{[3]f32{inner_a[0], inner_a[1], 0}, inner_color_a, {0.5, 0.5}},
+		)
+	}
+}
+
 native_solid_append_rounded_material_surface :: proc(
 	vertices: ^[dynamic]Native_Text_Vertex,
 	base, shadow: alicorn.Rect,
@@ -221,6 +329,7 @@ native_solid_append_rounded_material_surface :: proc(
 	shape: alicorn.Surface_Shape,
 	stroke := alicorn.Paint_Stroke{},
 	stroke_placement := alicorn.Paint_Stroke_Placement.Centered,
+	gradient := alicorn.SURFACE_GRADIENT_NONE,
 ) {
 	if base.w <= 0 || base.h <= 0 { return }
 	radii := alicorn.surface_corner_radii_normalize(alicorn.surface_shape_corner_radii(shape), base.w, base.h)
@@ -239,8 +348,7 @@ native_solid_append_rounded_material_surface :: proc(
 		native_solid_append_rounded_fill(vertices, mid, native_solid_corner_radii_adjust(radii, expand*0.5), middle)
 	}
 
-	base_color := [4]f32{fill.r, fill.g, fill.b, fill.a*opacity}
-	native_solid_append_rounded_fill(vertices, base, radii, base_color)
+	native_solid_append_rounded_gradient_fill(vertices, base, radii, fill, gradient, opacity)
 	bevel_width := min(max(material.bevel_width, 0), min(base.w, base.h)*0.5)
 	if material.kind == .Analytic_Relief && physical_height != 0 {
 		if bevel_width > 0 && material.bevel_strength > 0 {
@@ -321,6 +429,7 @@ native_solid_append_rect_stroke :: proc(
 	opacity: f32,
 	stroke_placement := alicorn.Paint_Stroke_Placement.Centered,
 	top_edge_gap := [2]f32{},
+	gradient := alicorn.SURFACE_GRADIENT_NONE,
 ) {
 	if stroke.width <= 0 || base.w <= 0 || base.h <= 0 { return }
 	inside := stroke.width*0.5
@@ -352,13 +461,13 @@ native_solid_append_material_surface :: proc(
 	stroke := alicorn.Paint_Stroke{},
 	stroke_placement := alicorn.Paint_Stroke_Placement.Centered,
 	top_edge_gap := [2]f32{},
+	gradient := alicorn.SURFACE_GRADIENT_NONE,
 ) {
 	if base.w <= 0 || base.h <= 0 { return }
 	if material.kind != .Analytic_Relief || physical_height == 0 {
 		// Keep flat and zero-height surfaces exactly on the original one-quad
 		// path: no shadow/bevel geometry and no intermediate material work.
-		native_solid_append_quad(vertices, base.x, base.y, base.x+base.w, base.y+base.h,
-			[4]f32{fill.r, fill.g, fill.b, fill.a*opacity})
+		native_solid_append_gradient_quad(vertices, base, fill, gradient, opacity)
 		native_solid_append_rect_stroke(vertices, base, stroke, opacity, stroke_placement, top_edge_gap)
 		return
 	}
@@ -378,8 +487,7 @@ native_solid_append_material_surface :: proc(
 		native_solid_append_material_edge(vertices, mid.x, mid.y, mid.x+mid.w, mid.y+mid.h, middle_color)
 	}
 
-	base_color := [4]f32{fill.r, fill.g, fill.b, fill.a*opacity}
-	native_solid_append_quad(vertices, base.x, base.y, base.x+base.w, base.y+base.h, base_color)
+	native_solid_append_gradient_quad(vertices, base, fill, gradient, opacity)
 
 	bevel_width := min(material.bevel_width, min(base.w, base.h)*0.5)
 	if bevel_width > 0 && material.bevel_strength > 0 {

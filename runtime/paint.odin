@@ -428,8 +428,8 @@ update_paint :: proc(rt: ^Runtime) {
 					if semantic_surface_style.backdrop_effect.kind == .Blur {
 						append(&node.paint, paint_backdrop_effect_command(node.id, node.bounds, node.clip, semantic_surface_style.backdrop_effect))
 					}
-					if resolved_surface.fill.a > 0 || resolved_surface.stroke.width > 0 {
-						append(&node.paint, paint_surface_command(
+					if resolved_surface.fill.a > 0 || resolved_surface.gradient.axis != .None || resolved_surface.stroke.width > 0 {
+						surface_command := paint_surface_command(
 							node.id,
 							node.bounds,
 							node.clip,
@@ -441,7 +441,9 @@ update_paint :: proc(rt: ^Runtime) {
 							stroke=resolved_surface.stroke,
 							stroke_placement=resolved_surface.stroke_placement,
 							top_edge_gap=semantic_surface_top_edge_gap(rt, node, semantic_surface_style),
-						))
+						)
+						surface_command.semantic_surface_gradient = resolved_surface.gradient.axis != .None
+						append(&node.paint, surface_command)
 					}
 				} else if node.paint_background {
 					append(&node.paint, paint_surface_command(node.id, node.bounds, node.clip, node.color))
