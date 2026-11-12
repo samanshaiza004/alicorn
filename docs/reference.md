@@ -293,6 +293,7 @@ checker verifies only the mutation scopes the application explicitly reports.
 | `button_content_style` | Set label alignment and padding inside a button. |
 | `Text_Style` | Select weight, overflow behavior, and text presentation options. `font_size` is a logical-unit override; the active text scale still applies. |
 | `Style_Theme` / `style_theme_register` / `style_theme_replace` | Register a typed theme, then replace a non-default runtime theme between frames; changed style domains determine paint, layout, and description invalidation. |
+| `style_theme_replace_prepare` / `style_theme_replace_commit` / `style_theme_replace_abort` | Stage fallible theme snapshots across runtimes before committing each between frames; abort prepared snapshots if any target rejects its candidate. |
 | `Style_Control_State` / `Style_Control_States` | Shared selected, hovered, pressed, and disabled recipe-transform vocabulary. |
 | `style_color` / `style_metric` | Resolve a semantic color or scale an app-owned metric in the active environment. |
 | `Style_Color_Token_ID` / `Style_Length_Token_ID` | Address theme-local typed token arrays without string lookup. |

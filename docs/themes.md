@@ -293,6 +293,24 @@ The Control Gallery demonstrates this flow. From the repository root, run
 the `gallery.accent` color value to see the themed gallery update. Token names,
 bindings, lengths, recipes, and materials are fixed for this initial slice.
 
+### Staging a replacement across runtimes
+
+Applications that apply one appearance to several independent Runtime
+instances can stage each replacement before changing any visible theme. Call
+`style_theme_replace_prepare` for every target Runtime and retain each
+successful `Style_Theme_Prepared_Replacement`. If any preparation is rejected,
+call `style_theme_replace_abort` for the already-prepared snapshots and keep
+the current appearance. Once all preparations succeed or report `Unchanged`,
+commit the prepared snapshots between frames with
+`style_theme_replace_commit`. Preparation performs validation and all required
+snapshot allocations; commit does not allocate. Each Runtime remains owned by
+the application, and must stay alive and between frames through commit/abort.
+
+This gives applications failure-safe staging across runtimes. Separate native
+windows can still present their next frame at different times, so it does not
+promise physically simultaneous display updates. The convenience
+`style_theme_replace` performs prepare and commit for one Runtime.
+
 ## Supported source subset
 
 The first source frontend is strict JSON with a documented DTCG-inspired

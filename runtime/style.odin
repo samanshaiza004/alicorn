@@ -306,8 +306,26 @@ style_accent_color :: proc(accent: Style_Accent) -> Color {
 	}
 }
 
-style_theme_owned_copy :: proc(theme: Style_Theme, allocator: mem.Allocator) -> Style_Theme {
-	registered := theme
+style_theme_slice_copy :: proc($T: typeid, source: []T, allocator: mem.Allocator) -> (result: []T, ok: bool) {
+	if len(source) == 0 { return nil, true }
+	result = make([]T, len(source), allocator=allocator)
+	if result == nil { return nil, false }
+	copy(result, source)
+	return result, true
+}
+
+style_theme_string_copy :: proc(value: string, allocator: mem.Allocator) -> (result: string, ok: bool) {
+	if len(value) == 0 { return "", true }
+	bytes := make([]u8, len(value), allocator=allocator)
+	if bytes == nil { return "", false }
+	copy(bytes, value)
+	return string(bytes), true
+}
+
+// style_theme_owned_copy reports allocation failure and destroys partial
+// snapshots, so a rejected replacement cannot disturb the last-good theme.
+style_theme_owned_copy :: proc(theme: Style_Theme, allocator: mem.Allocator) -> (registered: Style_Theme, ok: bool) {
+	registered = theme
 	// Never retain even an empty borrowed slice header from the caller. Theme
 	// snapshots own every dynamic field for their entire registered lifetime.
 	registered.color_tokens = nil
@@ -318,61 +336,55 @@ style_theme_owned_copy :: proc(theme: Style_Theme, allocator: mem.Allocator) -> 
 	registered.length_token_provenance = nil
 	registered.extension_color_role_provenance = nil
 	registered.extension_length_role_provenance = nil
-	if len(theme.color_tokens) > 0 {
-		registered.color_tokens = make([]Color, len(theme.color_tokens), allocator=allocator)
-		copy(registered.color_tokens, theme.color_tokens)
-	}
-	if len(theme.length_tokens) > 0 {
-		registered.length_tokens = make([]Style_Length, len(theme.length_tokens), allocator=allocator)
-		copy(registered.length_tokens, theme.length_tokens)
-	}
-	if len(theme.extension_color_roles) > 0 {
-		registered.extension_color_roles = make([]Style_Extension_Color_Role_Binding, len(theme.extension_color_roles), allocator=allocator)
-		copy(registered.extension_color_roles, theme.extension_color_roles)
-	}
-	if len(theme.extension_length_roles) > 0 {
-		registered.extension_length_roles = make([]Style_Extension_Length_Role_Binding, len(theme.extension_length_roles), allocator=allocator)
-		copy(registered.extension_length_roles, theme.extension_length_roles)
-	}
+	registered.color_tokens, ok = style_theme_slice_copy(Color, theme.color_tokens, allocator)
+	if !ok { return {}, false }
+	registered.length_tokens, ok = style_theme_slice_copy(Style_Length, theme.length_tokens, allocator)
+	if !ok { style_theme_owned_destroy(&registered, allocator); return {}, false }
+	registered.extension_color_roles, ok = style_theme_slice_copy(Style_Extension_Color_Role_Binding, theme.extension_color_roles, allocator)
+	if !ok { style_theme_owned_destroy(&registered, allocator); return {}, false }
+	registered.extension_length_roles, ok = style_theme_slice_copy(Style_Extension_Length_Role_Binding, theme.extension_length_roles, allocator)
+	if !ok { style_theme_owned_destroy(&registered, allocator); return {}, false }
 	if len(theme.color_token_provenance) > 0 {
 		registered.color_token_provenance = make([]Style_Token_Provenance, len(theme.color_token_provenance), allocator=allocator)
+		if registered.color_token_provenance == nil { style_theme_owned_destroy(&registered, allocator); return {}, false }
 		for source, index in theme.color_token_provenance {
-			registered.color_token_provenance[index] = Style_Token_Provenance{
-				id=source.id,
-				name=owned(source.name, allocator),
-				alias_target=owned(source.alias_target, allocator),
-			}
+			name, name_ok := style_theme_string_copy(source.name, allocator)
+			if !name_ok { style_theme_owned_destroy(&registered, allocator); return {}, false }
+			alias_target, alias_ok := style_theme_string_copy(source.alias_target, allocator)
+			if !alias_ok { delete(name, allocator); style_theme_owned_destroy(&registered, allocator); return {}, false }
+			registered.color_token_provenance[index] = Style_Token_Provenance{id=source.id, name=name, alias_target=alias_target}
 		}
 	}
 	if len(theme.length_token_provenance) > 0 {
 		registered.length_token_provenance = make([]Style_Token_Provenance, len(theme.length_token_provenance), allocator=allocator)
+		if registered.length_token_provenance == nil { style_theme_owned_destroy(&registered, allocator); return {}, false }
 		for source, index in theme.length_token_provenance {
-			registered.length_token_provenance[index] = Style_Token_Provenance{
-				id=source.id,
-				name=owned(source.name, allocator),
-				alias_target=owned(source.alias_target, allocator),
-			}
+			name, name_ok := style_theme_string_copy(source.name, allocator)
+			if !name_ok { style_theme_owned_destroy(&registered, allocator); return {}, false }
+			alias_target, alias_ok := style_theme_string_copy(source.alias_target, allocator)
+			if !alias_ok { delete(name, allocator); style_theme_owned_destroy(&registered, allocator); return {}, false }
+			registered.length_token_provenance[index] = Style_Token_Provenance{id=source.id, name=name, alias_target=alias_target}
 		}
 	}
 	if len(theme.extension_color_role_provenance) > 0 {
 		registered.extension_color_role_provenance = make([]Style_Extension_Color_Role_Provenance, len(theme.extension_color_role_provenance), allocator=allocator)
+		if registered.extension_color_role_provenance == nil { style_theme_owned_destroy(&registered, allocator); return {}, false }
 		for source, index in theme.extension_color_role_provenance {
-			registered.extension_color_role_provenance[index] = Style_Extension_Color_Role_Provenance{
-				role=source.role,
-				name=owned(source.name, allocator),
-			}
+			name, name_ok := style_theme_string_copy(source.name, allocator)
+			if !name_ok { style_theme_owned_destroy(&registered, allocator); return {}, false }
+			registered.extension_color_role_provenance[index] = Style_Extension_Color_Role_Provenance{role=source.role, name=name}
 		}
 	}
 	if len(theme.extension_length_role_provenance) > 0 {
 		registered.extension_length_role_provenance = make([]Style_Extension_Length_Role_Provenance, len(theme.extension_length_role_provenance), allocator=allocator)
+		if registered.extension_length_role_provenance == nil { style_theme_owned_destroy(&registered, allocator); return {}, false }
 		for source, index in theme.extension_length_role_provenance {
-			registered.extension_length_role_provenance[index] = Style_Extension_Length_Role_Provenance{
-				role=source.role,
-				name=owned(source.name, allocator),
-			}
+			name, name_ok := style_theme_string_copy(source.name, allocator)
+			if !name_ok { style_theme_owned_destroy(&registered, allocator); return {}, false }
+			registered.extension_length_role_provenance[index] = Style_Extension_Length_Role_Provenance{role=source.role, name=name}
 		}
 	}
-	return registered
+	return registered, true
 }
 
 style_theme_owned_destroy :: proc(theme: ^Style_Theme, allocator: mem.Allocator) {
@@ -478,7 +490,11 @@ style_theme_register :: proc(rt: ^Runtime, theme: Style_Theme) -> Style_Theme_ID
 		append_diagnostic(rt, "button surface treatment requires a material registered in this Runtime")
 		return 0
 	}
-	registered := style_theme_owned_copy(theme, rt.persistent_allocator)
+	registered, copied := style_theme_owned_copy(theme, rt.persistent_allocator)
+	if !copied {
+		append_diagnostic(rt, "style theme snapshot allocation failed")
+		return 0
+	}
 	append(&rt.style_themes, registered)
 	return Style_Theme_ID(u32(len(rt.style_themes)))
 }
@@ -488,23 +504,76 @@ style_theme_register :: proc(rt: ^Runtime, theme: Style_Theme) -> Style_Theme_ID
 // frames. The candidate is validated and deep-copied before the old snapshot
 // is released. Paint-only replacements repaint retained nodes without a
 // description rebuild or layout; metric replacements invalidate the root so
-// application-authored token-to-layout calculations can be recomputed. This
-// is intended for explicit development tools, not background runtime mutation.
+// application-authored token-to-layout calculations can be recomputed.
 Style_Theme_Replace_Result :: enum u8 { Rejected, Unchanged, Replaced }
 
-style_theme_replace :: proc(rt: ^Runtime, id: Style_Theme_ID, theme: Style_Theme) -> Style_Theme_Replace_Result {
+Style_Theme_Replace_Prepare_Result :: enum u8 { Rejected, Unchanged, Prepared }
+
+// A prepared replacement owns a fully allocated snapshot but has not changed
+// Runtime state yet. Keep its Runtime alive until it is committed or aborted.
+// Applications can prepare all affected Runtime snapshots first, then commit
+// each without further allocation between frames.
+Style_Theme_Prepared_Replacement :: struct {
+	runtime: ^Runtime,
+	id: Style_Theme_ID,
+	replacement: Style_Theme,
+	valid: bool,
+}
+
+style_theme_replace_prepare :: proc(
+	rt: ^Runtime,
+	id: Style_Theme_ID,
+	theme: Style_Theme,
+) -> (prepared: Style_Theme_Prepared_Replacement, result: Style_Theme_Replace_Prepare_Result) {
 	if rt == nil || rt.frame_open || id == 0 || id == DEFAULT_STYLE_THEME_ID || !style_theme_is_valid(theme) ||
-		!style_theme_material_references_valid(rt, theme) { return .Rejected }
+		!style_theme_material_references_valid(rt, theme) { return {}, .Rejected }
 	index := int(u32(id))-1
-	if index < 0 || index >= len(rt.style_themes) { return .Rejected }
+	if index < 0 || index >= len(rt.style_themes) { return {}, .Rejected }
 	previous := rt.style_themes[index]
-	domains := style_theme_change_domains(previous, theme)
-	if domains == {} { return .Unchanged }
+	if style_theme_change_domains(previous, theme) == {} { return {}, .Unchanged }
+	replacement, copied := style_theme_owned_copy(theme, rt.persistent_allocator)
+	if !copied { return {}, .Rejected }
+	return Style_Theme_Prepared_Replacement{runtime=rt, id=id, replacement=replacement, valid=true}, .Prepared
+}
+
+style_theme_replace_abort :: proc(prepared: ^Style_Theme_Prepared_Replacement) {
+	if prepared == nil || !prepared.valid { return }
+	rt := prepared.runtime
+	if rt != nil { style_theme_owned_destroy(&prepared.replacement, rt.persistent_allocator) }
+	prepared^ = {}
+}
+
+// style_theme_replace_commit installs a prepared snapshot without allocating.
+// The owning Runtime must be between frames and must match the Runtime passed
+// to prepare. Abort all other prepared replacements if any preparation fails.
+style_theme_replace_commit :: proc(
+	rt: ^Runtime,
+	prepared: ^Style_Theme_Prepared_Replacement,
+) -> Style_Theme_Replace_Result {
+	if prepared == nil || !prepared.valid { return .Rejected }
+	if rt == nil || rt != prepared.runtime || rt.frame_open || prepared.id == 0 || prepared.id == DEFAULT_STYLE_THEME_ID ||
+		!style_theme_is_valid(prepared.replacement) || !style_theme_material_references_valid(rt, prepared.replacement) {
+		style_theme_replace_abort(prepared)
+		return .Rejected
+	}
+	index := int(u32(prepared.id))-1
+	if index < 0 || index >= len(rt.style_themes) {
+		style_theme_replace_abort(prepared)
+		return .Rejected
+	}
+	previous := rt.style_themes[index]
+	domains := style_theme_change_domains(previous, prepared.replacement)
+	if domains == {} {
+		style_theme_replace_abort(prepared)
+		return .Unchanged
+	}
+	id := prepared.id
 	// Invalidate application code when motion policy changes: declarative motion
 	// requests are reconciled from the next complete description.
-	motion_policy_changed := previous.motion_policy != theme.motion_policy
-	replacement := style_theme_owned_copy(theme, rt.persistent_allocator)
-	rt.style_themes[index] = replacement
+	motion_policy_changed := previous.motion_policy != prepared.replacement.motion_policy
+	rt.style_themes[index] = prepared.replacement
+	prepared.replacement = {}
+	prepared^ = {}
 	style_theme_owned_destroy(&previous, rt.persistent_allocator)
 	for node_id, node in rt.nodes {
 		if node == nil || node.style_environment.theme != id { continue }
@@ -522,6 +591,16 @@ style_theme_replace :: proc(rt: ^Runtime, id: Style_Theme_ID, theme: Style_Theme
 		request_presentation(rt, "live style theme paint changed")
 	}
 	return .Replaced
+}
+
+style_theme_replace :: proc(rt: ^Runtime, id: Style_Theme_ID, theme: Style_Theme) -> Style_Theme_Replace_Result {
+	prepared, preparation := style_theme_replace_prepare(rt, id, theme)
+	switch preparation {
+	case .Rejected: return .Rejected
+	case .Unchanged: return .Unchanged
+	case .Prepared: return style_theme_replace_commit(rt, &prepared)
+	}
+	return .Rejected
 }
 
 // style_theme_motion_policy resolves the optional intent defaults for one
