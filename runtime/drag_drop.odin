@@ -628,6 +628,16 @@ drag_autoscroll_edge :: proc(rt: ^Runtime) -> (region_id: Node_ID, direction, st
 				}
 			}
 		}
+		// A horizontally magnetic drag is visually constrained to its track.
+		// Its raw pointer can sit just outside an adjacent vertical viewport,
+		// inside that viewport's expanded edge-autoscroll zone. Scrolling that
+		// unrelated content while reordering tabs is surprising; horizontal
+		// track autoscroll above remains available, and ordinary vertical
+		// autoscroll resumes once the drag detaches from the track.
+		if rt.drag.tracking.mode == .Horizontal_Magnetic &&
+			rt.drag.presentation_state == .Horizontal_Track {
+			continue
+		}
 		if rt.drag.x < viewport.x || rt.drag.x > viewport.x+viewport.w { continue }
 		top_distance := rt.drag.y-viewport.y
 		bottom_distance := viewport.y+viewport.h-rt.drag.y
