@@ -171,6 +171,25 @@ choice_description :: proc(choice: Choice) -> string {
 	return ""
 }
 
+// segment_corner_radii rounds only the exposed outside edge of each
+// responsive presentation. The middle segment remains square on every side.
+segment_corner_radii :: proc(choice: Choice, compact: bool, radius: f32) -> alicorn.Surface_Corner_Radii {
+	if compact {
+		switch choice {
+		case .Preview: return alicorn.Surface_Corner_Radii{top_left=radius, top_right=radius}
+		case .Edit: return {}
+		case .Compare: return alicorn.Surface_Corner_Radii{bottom_right=radius, bottom_left=radius}
+		}
+	} else {
+		switch choice {
+		case .Preview: return alicorn.Surface_Corner_Radii{top_left=radius, bottom_left=radius}
+		case .Edit: return {}
+		case .Compare: return alicorn.Surface_Corner_Radii{top_right=radius, bottom_right=radius}
+		}
+	}
+	return {}
+}
+
 render_option :: proc(
 	ctx: ^ui.UI,
 	state: ^Segmented_State,
@@ -210,6 +229,8 @@ render_option :: proc(
 			state.selected = choice
 			selected = true
 		}
+		face_radii := segment_corner_radii(choice, compact, style.segment_radius)
+		focus_radii := segment_corner_radii(choice, compact, style.segment_radius+style.focus_inset)
 
 		// This retained frame appears only for keyboard-visible focus. Its inset
 		// remains in layout in every state, so focus never moves the label.
@@ -218,7 +239,7 @@ render_option :: proc(
 			alicorn.surface_extension_color_role(recipe.focus_role),
 			key=ui.key_u64(2),
 			style=ui.layout_style(.Column, width=-1, height=button_height, padding=style.focus_inset),
-			shape=alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=style.segment_radius+style.focus_inset},
+			shape=alicorn.surface_shape_rounded_corners(focus_radii),
 			label="segmented-focus-frame",
 		)
 		if frame != 0 {
@@ -235,7 +256,7 @@ render_option :: proc(
 				key=ui.key_u64(3),
 				style=ui.layout_style(.Column, width=-1, height=face_height, padding=style.segment_padding, gap=1,
 					align=.Center, justify=.Center),
-				shape=alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=style.segment_radius},
+				shape=alicorn.surface_shape_rounded_corners(face_radii),
 				label="segmented-option-face",
 			)
 			if face != 0 {
@@ -374,7 +395,7 @@ segmented_control :: proc(
 				key=ui.key_u64(4),
 				name="horizontal segmented choices",
 				minimum_width=recipe.wide_minimum,
-				style=ui.layout_style(.Row, width=-1, height=adaptive_height, align=.Center, justify=.Center, gap=8),
+				style=ui.layout_style(.Row, width=-1, height=adaptive_height, align=.Center, justify=.Center, gap=0),
 			)
 			if wide != 0 {
 				for choice in Choice {
@@ -388,7 +409,7 @@ segmented_control :: proc(
 				ctx,
 				key=ui.key_u64(5),
 				name="vertical segmented choices",
-				style=ui.layout_style(.Column, width=-1, height=adaptive_height, gap=5),
+				style=ui.layout_style(.Column, width=-1, height=adaptive_height, gap=0),
 			)
 			if compact != 0 {
 				for choice in Choice {

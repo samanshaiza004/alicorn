@@ -1,6 +1,7 @@
 package main
 
 import "core:testing"
+import "core:fmt"
 import alicorn "alicorn:runtime"
 import segmented "./segmented"
 import testui "alicorn:testui"
@@ -153,6 +154,53 @@ test_custom_segmented_parts_remain_inside_the_hit_surface_in_both_layouts :: pro
 			"pointer hover should reveal the in-surface accent without changing the segment layout")
 	} else {
 		testing.expect(t, false, "the compact custom instance should retain its editable segment")
+	}
+}
+
+@(test)
+test_custom_segmented_control_uses_exposed_corner_radii_in_both_orientations :: proc(t: ^testing.T) {
+	app := app_default()
+	handle, status := custom_segmented_test_open(&app)
+	defer testui.close(&handle)
+	if status != .Ok { testing.expect(t, false, "the component should initialize before checking segment shapes"); return }
+
+	for compact in ([2]bool{false, true}) {
+		if compact {
+			status = testui.resize(&handle, 460, 680)
+			testing.expect(t, status == .Ok, "the compact segment layout should be selected before checking its corner shapes")
+			if status != .Ok { return }
+		}
+		for instance_id in ([2]u64{101, 202}) {
+			style := segmented.style_default() if instance_id == 101 else app.custom_style
+			previous_bounds: alicorn.Rect
+			previous_bounds_set := false
+			for choice in segmented.Choice {
+				semantic, found := alicorn.semantic_node_lookup(handle.runtime, segmented.semantic_id(instance_id, choice))
+				if !found || semantic.visual_node == 0 {
+					testing.expect(t, false, "each responsive segment should retain a visible Button owner")
+					continue
+				}
+				face_id := custom_segmented_descendant_with_label(handle.runtime, semantic.visual_node, "segmented-option-face")
+				frame_id := custom_segmented_descendant_with_label(handle.runtime, semantic.visual_node, "segmented-focus-frame")
+				face, face_found := handle.runtime.semantic_surfaces[face_id]
+				frame, frame_found := handle.runtime.semantic_surfaces[frame_id]
+				face_radius := style.segment_radius
+				frame_radius := style.segment_radius+style.focus_inset
+				face_shape := alicorn.surface_shape_rounded_corners(segmented.segment_corner_radii(choice, compact, face_radius))
+				frame_shape := alicorn.surface_shape_rounded_corners(segmented.segment_corner_radii(choice, compact, frame_radius))
+				testing.expect(t, face_found && face.shape == face_shape,
+					fmt.tprintf("instance %d %s face should round only its exposed %s corners", instance_id, "compact" if compact else "wide", segmented.choice_label(choice)))
+				testing.expect(t, frame_found && frame.shape == frame_shape,
+					fmt.tprintf("instance %d %s focus frame should follow the same exposed corners", instance_id, "compact" if compact else "wide"))
+				if previous_bounds_set {
+					joined := abs(previous_bounds.x+previous_bounds.w-semantic.bounds.x) < 1 if !compact else abs(previous_bounds.y+previous_bounds.h-semantic.bounds.y) < 1
+					testing.expect(t, joined,
+						fmt.tprintf("instance %d %s hit surfaces should have no inter-segment layout gap", instance_id, "compact" if compact else "wide"))
+				}
+				previous_bounds = semantic.bounds
+				previous_bounds_set = true
+			}
+		}
 	}
 }
 

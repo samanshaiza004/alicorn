@@ -1,0 +1,25 @@
+Alicorn native material flat-path benchmark; CPU vertex expansion only
+surfaces_per_sample 4096 iterations 80 vertices_per_batch 24576
+sample 1 direct_quad_ns 4932000 flat_material_ns 4942000 direct_ns_per_surface 15.05126953125 flat_ns_per_surface 15.081787109375 vertices 24576 capacity 24576 same_output true
+sample 2 direct_quad_ns 4939000 flat_material_ns 4950000 direct_ns_per_surface 15.0726318359375 flat_ns_per_surface 15.106201171875 vertices 24576 capacity 24576 same_output true
+sample 3 direct_quad_ns 4940000 flat_material_ns 4923000 direct_ns_per_surface 15.07568359375 flat_ns_per_surface 15.0238037109375 vertices 24576 capacity 24576 same_output true
+Alicorn native surface geometry benchmark; 256 surfaces per batch; CPU vertex expansion only
+native_shape_geometry rectangle surfaces 256 vertices_per_surface 6 p50_batch_ns 4000 p95_batch_ns 4000 p50_ns_per_surface 15.625 p95_ns_per_surface 15.625
+native_shape_geometry uniform-rounded surfaces 256 vertices_per_surface 324 p50_batch_ns 1034000 p95_batch_ns 1045000 p50_ns_per_surface 4039.0625 p95_ns_per_surface 4082.03125
+native_shape_geometry per-corner-rounded surfaces 256 vertices_per_surface 324 p50_batch_ns 1033000 p95_batch_ns 1054000 p50_ns_per_surface 4035.15625 p95_ns_per_surface 4117.1875
+material_budget scale 1 height 0 ok true surface_draw_slots 1 vertices 6
+material_budget scale 1 height 0.5 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1 height -0.25 ok true surface_draw_slots 1 vertices 54
+material_budget scale 1 height 1 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1.25 height 0 ok true surface_draw_slots 1 vertices 6
+material_budget scale 1.25 height 0.5 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1.25 height -0.25 ok true surface_draw_slots 1 vertices 54
+material_budget scale 1.25 height 1 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1.5 height 0 ok true surface_draw_slots 1 vertices 6
+material_budget scale 1.5 height 0.5 ok true surface_draw_slots 1 vertices 66
+material_budget scale 1.5 height -0.25 ok true surface_draw_slots 1 vertices 54
+material_budget scale 1.5 height 1 ok true surface_draw_slots 1 vertices 66
+material_budget scale 2 height 0 ok true surface_draw_slots 1 vertices 6
+material_budget scale 2 height 0.5 ok true surface_draw_slots 1 vertices 66
+material_budget scale 2 height -0.25 ok true surface_draw_slots 1 vertices 54
+material_budget scale 2 height 1 ok true surface_draw_slots 1 vertices 66

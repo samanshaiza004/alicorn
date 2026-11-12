@@ -21,17 +21,18 @@ Blend_Validation_Sample :: struct {
 	coverage: f32,
 }
 
-Blend_Validation_Family :: enum { Surface, Geometry, Icon, Image, Text, Mixed }
+Blend_Validation_Family :: enum { Surface, Per_Corner_Surface, Geometry, Icon, Image, Text, Mixed }
 Blend_Validation_Stats :: struct {
 	cases, failed: int,
 	family_cases, family_failed: [Blend_Validation_Family]int,
 }
 
-BLEND_VALIDATION_EXPECTED_CASES :: 156
+BLEND_VALIDATION_EXPECTED_CASES :: 348
 
 blend_validation_expected_family_cases :: proc(family: Blend_Validation_Family) -> int {
 	switch family {
 	case .Surface:  return 48
+	case .Per_Corner_Surface: return 192
 	case .Geometry: return 24
 	case .Icon:     return 24
 	case .Image:    return 24
@@ -190,6 +191,41 @@ blend_validation_check_samples :: proc(name: string, scale: f32, background: sdl
 	return ok
 }
 
+blend_validation_check_per_corner_surface :: proc(
+	mask: int,
+	scale: f32,
+	background: sdl3.FColor,
+	pixels: []u8,
+	color: alicorn.Color,
+) -> bool {
+	left := native_pixel_edge(8, scale)
+	top := native_pixel_edge(8, scale)
+	right := native_pixel_edge(32, scale)
+	bottom := native_pixel_edge(32, scale)
+	points := [4][2]int{{left,top}, {right-1,top}, {right-1,bottom-1}, {left,bottom-1}}
+	bits := [4]int{1,2,4,8}
+	names := [?]string{"per_corner_top_left", "per_corner_top_right", "per_corner_bottom_right", "per_corner_bottom_left"}
+	destination := blend_validation_background(background)
+	ok := true
+	for corner in 0..<4 {
+		expected := destination
+		if (mask & bits[corner]) == 0 {
+			expected = blend_validation_over(destination, color, 0.5)
+		}
+		if !blend_validation_expect(names[corner], scale, background, pixels, points[corner][0], points[corner][1], expected) {
+			fmt.println("blend_per_corner_pattern", "mask", mask, "corner", names[corner])
+			ok = false
+		}
+	}
+	center := native_pixel_edge(20, scale)
+	if !blend_validation_expect("per_corner_center", scale, background, pixels, center, center,
+		blend_validation_over(destination, color, 0.5)) {
+		fmt.println("blend_per_corner_pattern", "mask", mask, "corner", "center")
+		ok = false
+	}
+	return ok
+}
+
 blend_validation_cases :: proc(renderers: ^Blend_Validation_Renderers, rt: ^alicorn.Runtime, target: ^sdl3.GPUTexture, download: ^sdl3.GPUTransferBuffer, pixels: []u8) -> bool {
 	if !alicorn.text_engine_load_font(&rt.text_engine, NATIVE_UI_FONT_DATA) { return false }
 	// Curved glyph retains antialiased texels even when hinted stems align
@@ -250,6 +286,24 @@ blend_validation_cases :: proc(renderers: ^Blend_Validation_Renderers, rt: ^alic
 			if !blend_validation_readback(renderers,target,download,display[:1],scale,background,pixels) { return false }
 			blend_validation_record(&stats,.Surface,blend_validation_expect("rounded_surface_interior",scale,background,pixels,probe,probe,
 				blend_validation_over(destination,geometry_color,0.5)))
+			for mask in 0..<16 {
+				radii := alicorn.Surface_Corner_Radii{
+					top_left=6 if (mask & 1) != 0 else 0,
+					top_right=6 if (mask & 2) != 0 else 0,
+					bottom_right=6 if (mask & 4) != 0 else 0,
+					bottom_left=6 if (mask & 8) != 0 else 0,
+				}
+				shape := alicorn.surface_shape_rounded_corners(radii)
+				rt.semantic_surfaces[1] = alicorn.Semantic_Surface_Style{
+					defined=true,
+					role=alicorn.surface_core_color_role(.Surface),
+					shape=shape,
+				}
+				display[0] = alicorn.paint_surface_command(1,bounds,clip,geometry_color,opacity=0.5,shape=shape)
+				if !blend_validation_readback(renderers,target,download,display[:1],scale,background,pixels) { return false }
+				blend_validation_record(&stats,.Per_Corner_Surface,
+					blend_validation_check_per_corner_surface(mask,scale,background,pixels,geometry_color))
+			}
 			// Over clear the literal answer is (.25,0,.5,.75). Reversal gives
 			// (.5,0,.25,.75), so RGB also locks down retained stream order.
 			display[0] = alicorn.paint_surface_command(1,bounds,clip,alicorn.Color{1,0,0,0.5})
@@ -322,7 +376,7 @@ blend_validation_cases :: proc(renderers: ^Blend_Validation_Renderers, rt: ^alic
 	}
 	fmt.println("blend_gpu_validation", "driver",sdl3.GetGPUDeviceDriver(renderers.solid.device),
 		"target","R8G8B8A8_UNORM","scales","1,1.25,1.5,2","destination_alpha","0,0.4,1",
-		"cases",stats.cases,"expected_cases",BLEND_VALIDATION_EXPECTED_CASES,
+		"per_corner_masks",16,"cases",stats.cases,"expected_cases",BLEND_VALIDATION_EXPECTED_CASES,
 		"case_counts_ok",case_counts_ok,"failed",stats.failed,"rgba_tolerance_bytes",2)
 	return stats.failed == 0 && case_counts_ok
 }

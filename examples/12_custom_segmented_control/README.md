@@ -35,6 +35,14 @@ while keyboard focus is an independently themed frame attached with
 accent appears. Disabled options place a muted “Unavailable” caption below the
 centered label.
 
+The responsive segment rows use zero layout gap. In the wide presentation,
+Preview rounds its left corners, Edit stays square, and Compare rounds its
+right corners. The compact presentation maps the same endpoints to the top and
+bottom. Both the face and its keyboard-focus frame use the public
+`Surface_Corner_Radii` API. The existing focus inset leaves a narrow track
+separator between face fills so focus does not change their layout; it is a
+deliberate shared-edge treatment rather than an overlap or clipping workaround.
+
 ## Theme and instance contract
 
 The component declares seven required extension-color roles. The consuming app

@@ -1,7 +1,9 @@
 package alicorn_sdl_gpu
 
 import "core:testing"
+import "core:fmt"
 import alicorn "../../runtime"
+import "vendor:sdl3"
 
 @(test)
 test_flat_material_stays_one_quad :: proc(t: ^testing.T) {
@@ -240,18 +242,25 @@ test_per_corner_rounding_uses_each_radius_and_keeps_flat_fast_path :: proc(t: ^t
 	}
 	defer delete(renderer.vertices)
 	defer delete(renderer.draws)
-	testing.expect(t, native_solid_build(&renderer, display[:], 1, 1, 100, 80) &&
-		len(renderer.draws) == 1 && renderer.draws[0].vertex_count == NATIVE_ROUNDED_FILL_VERTICES &&
-		renderer.vertices[1].position[0] == 10 && renderer.vertices[1].position[1] == 23 &&
-		abs(renderer.vertices[1].color[3]-0.35) < 0.001 &&
-		renderer.draws[0].has_scissor && renderer.draws[0].scissor.x == 12 && renderer.draws[0].scissor.y == 23 &&
-		renderer.draws[0].scissor.w == 40 && renderer.draws[0].scissor.h == 18,
-		"the SDL solid renderer should resolve compact corner geometry and preserve translucent fill and clipping")
-	testing.expect(t, native_solid_build(&renderer, display[:], 2, 2, 200, 160) &&
-		renderer.vertices[1].position[0] == 20 && renderer.vertices[1].position[1] == 46 &&
-		renderer.draws[0].scissor.x == 24 && renderer.draws[0].scissor.y == 46 &&
-		renderer.draws[0].scissor.w == 80 && renderer.draws[0].scissor.h == 36,
-		"DPI scaling should scale authored corner radii and the matching clip rectangle together")
+	for scale in ([4]f32{1, 1.25, 1.5, 2}) {
+		target_width := sdl3.Uint32(int(100*scale))
+		target_height := sdl3.Uint32(int(80*scale))
+		built := native_solid_build(&renderer, display[:], scale, scale, target_width, target_height)
+		clip_x0 := native_pixel_edge(12, scale)
+		clip_y0 := native_pixel_edge(23, scale)
+		clip_x1 := native_pixel_edge(52, scale)
+		clip_y1 := native_pixel_edge(41, scale)
+		expected_base_x := f32(native_pixel_edge(10, scale))
+		expected_base_y := f32(native_pixel_edge(20, scale))
+		testing.expect(t, built && len(renderer.draws) == 1 && renderer.draws[0].vertex_count == NATIVE_ROUNDED_FILL_VERTICES &&
+			abs(renderer.vertices[1].position[0]-expected_base_x) < 0.001 &&
+			abs(renderer.vertices[1].position[1]-(expected_base_y+3*scale)) < 0.001 &&
+			abs(renderer.vertices[1].color[3]-0.35) < 0.001 &&
+			renderer.draws[0].has_scissor && int(renderer.draws[0].scissor.x) == clip_x0 &&
+			int(renderer.draws[0].scissor.y) == clip_y0 && int(renderer.draws[0].scissor.w) == clip_x1-clip_x0 &&
+			int(renderer.draws[0].scissor.h) == clip_y1-clip_y0,
+			fmt.tprintf("the solid renderer should preserve asymmetric radii, translucent fill, and clipping at %.2f DPI", scale))
+	}
 }
 
 @(test)
