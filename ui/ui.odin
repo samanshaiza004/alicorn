@@ -12,6 +12,7 @@ UI :: alicorn.UI
 Node_ID :: alicorn.Node_ID
 Color :: alicorn.Color
 Paint_Stroke :: alicorn.Paint_Stroke
+Surface_Corner_Radii :: alicorn.Surface_Corner_Radii
 Stroke_Placement :: alicorn.Paint_Stroke_Placement
 Align :: alicorn.Align
 Main_Axis_Distribution :: alicorn.Main_Axis_Distribution
@@ -383,6 +384,7 @@ panel_end :: proc(
 	_material: alicorn.Material_ID,
 	_physical_height: f32,
 	_backdrop_effect: alicorn.Backdrop_Effect,
+	_corner_radii: Surface_Corner_Radii,
 	opened: bool,
 ) {
 	if opened { alicorn.surface_end(ui) }
@@ -393,6 +395,9 @@ panel_end :: proc(
 // width remains subject to the current parent's definiteness rules. Omitted
 // fill uses the active theme's Surface role. backdrop_effect requests an
 // optional bounded effect behind this panel.
+// radius retains the uniform legacy API. A nonzero corner_radii value takes
+// precedence and uses independent top-left, top-right, bottom-right, and
+// bottom-left logical radii.
 @(deferred_in_out=panel_end)
 panel :: proc(
 	ui: ^UI,
@@ -415,9 +420,14 @@ panel :: proc(
 	material: alicorn.Material_ID = alicorn.MATERIAL_FLAT,
 	physical_height: f32 = 0,
 	backdrop_effect: alicorn.Backdrop_Effect = alicorn.BACKDROP_NONE,
+	corner_radii: Surface_Corner_Radii = {},
 ) -> bool {
 	resolved_shape := shape
-	if radius != 0 { resolved_shape = alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=radius} }
+	if !alicorn.surface_corner_radii_is_zero(corner_radii) {
+		resolved_shape = alicorn.surface_shape_rounded_corners(corner_radii)
+	} else if radius != 0 {
+		resolved_shape = alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=radius}
+	}
 	style := alicorn.layout_style(.Column, width=width, height=height, grow=grow, padding=padding, gap=gap, align=align, justify=justify, clip=clip)
 	defaults := alicorn.layout_style(.Column, width=-1, height=alicorn.LAYOUT_SIZE_FIT_CONTENT)
 	resolved_style, valid := resolve_sizing_for_ui(ui, style, sizing, defaults, loc)
@@ -455,11 +465,16 @@ box :: proc(
 	radius: f32 = 0,
 	stroke: Border = {},
 	loc := #caller_location,
+	corner_radii: Surface_Corner_Radii = {},
 ) -> alicorn.Node_ID {
 	resolved_width := size if width < 0 else width
 	resolved_height := size if height < 0 else height
 	shape := alicorn.Surface_Shape{kind=.Rectangle}
-	if radius != 0 { shape = alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=radius} }
+	if !alicorn.surface_corner_radii_is_zero(corner_radii) {
+		shape = alicorn.surface_shape_rounded_corners(corner_radii)
+	} else if radius != 0 {
+		shape = alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=radius}
+	}
 	id := alicorn.surface_begin(
 		ui,
 		alicorn.surface_core_color_role(.Surface),

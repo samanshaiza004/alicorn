@@ -539,10 +539,20 @@ The separate [`theme` compiler contract](themes.md) compiles typed color and
 logical-length tokens, aliases, core roles, and namespaced extension roles.
 This is not a general selector/cascade system. Button, Checkbox, Slider, Text
 Field, and Scrollbar recipes describe semantic color treatment and use retained
-`Computed_Style` caches. Rectangular semantic surfaces can use
-registered flat or analytic-relief materials. General property resolution,
-metric-token dependencies, and richer native surface shapes remain outside the
-current contract.
+`Computed_Style` caches. Semantic surfaces support the flat rectangle fast
+path, a source-compatible uniform `corner_radius`, and independent logical
+top-left, top-right, bottom-right, and bottom-left radii with flat or analytic-
+relief materials. Opposing radii are proportionally reduced together when
+they exceed the resolved bounds. Radius changes invalidate surface paint but
+do not reshape text or rerun layout. General property resolution and
+metric-token dependencies remain outside the current contract.
+
+The ergonomic `ui.panel` and `ui.box` helpers accept `corner_radii` while
+preserving their existing uniform `radius` argument. A nonzero `corner_radii`
+value takes precedence when both are supplied. Existing named
+`Surface_Shape{kind=.Rounded_Rectangle, corner_radius=...}` literals remain
+valid; migrate positional shape literals to
+`surface_shape_uniform_corner_radius(radius)`.
 
 ### Button variants and recipes
 

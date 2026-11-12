@@ -41,6 +41,24 @@ Semantic_Surface_Resolved_Style :: struct {
 	stroke_placement: Paint_Stroke_Placement,
 }
 
+// surface_paint_shape_resolve hydrates the compact Paint_Command shape from
+// the style sidecar associated with its owner. A per-corner payload without a
+// retained owner is invalid; renderers should skip it rather than guess.
+surface_paint_shape_resolve :: proc(rt: ^Runtime, owner: Node_ID, shape: Surface_Paint_Shape) -> (resolved: Surface_Shape, ok: bool) {
+	if shape.kind != .Rounded_Rectangle_Per_Corner {
+		return Surface_Shape{kind=shape.kind, corner_radius=shape.corner_radius}, true
+	}
+	if rt == nil || owner == 0 { return }
+	if style, exists := rt.semantic_surfaces[owner]; exists && style.defined && style.shape.kind == shape.kind {
+		return style.shape, true
+	}
+	if computed, exists := rt.computed_styles[owner]; exists && computed.valid && computed.family == .Button {
+		resolved = computed.payload.(Button_Resolved_Style).shape
+		if resolved.kind == shape.kind { return resolved, true }
+	}
+	return
+}
+
 SURFACE_PHYSICAL_HEIGHT_LIMIT :: 2.0
 
 semantic_surface_role_resolve :: proc(rt: ^Runtime, environment: Style_Environment, role: Semantic_Surface_Color_Role) -> (color: Color, ok: bool) {
@@ -112,6 +130,10 @@ semantic_surface_style_hash :: proc(style: Semantic_Surface_Style) -> u64 {
 	h = hash_mix(h, u64(style.stroke_placement))
 	h = hash_mix(h, u64(style.shape.kind))
 	h = hash_mix(h, u64(transmute(u32)style.shape.corner_radius))
+	h = hash_mix(h, u64(transmute(u32)style.shape.corner_radii.top_left))
+	h = hash_mix(h, u64(transmute(u32)style.shape.corner_radii.top_right))
+	h = hash_mix(h, u64(transmute(u32)style.shape.corner_radii.bottom_right))
+	h = hash_mix(h, u64(transmute(u32)style.shape.corner_radii.bottom_left))
 	h = hash_mix(h, u64(u32(style.material)))
 	h = hash_mix(h, u64(transmute(u32)style.physical_height))
 	h = hash_mix(h, u64(u32(style.material_group)))

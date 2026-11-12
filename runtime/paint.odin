@@ -178,7 +178,7 @@ append_rect_outline_bounds :: proc(node: ^Node, bounds: Rect, color: Color, thic
 }
 
 append_focus_outline :: proc(node: ^Node, color: Color, thickness: f32, shape := Surface_Shape{kind=.Rectangle}) {
-	if shape.kind == .Rounded_Rectangle && shape.corner_radius > 0 {
+	if surface_shape_has_rounded_corners(shape) {
 		append(&node.paint, paint_surface_command(
 			node.id,
 			node.bounds,

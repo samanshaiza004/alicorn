@@ -8,7 +8,7 @@ import alicorn "../../runtime"
 // sign/strength but never the paint command's compositor depth or order.
 NATIVE_MATERIAL_LIGHT_COMPONENT :: 0.70710678118
 NATIVE_ROUNDED_CORNER_SEGMENTS :: 8
-NATIVE_ROUNDED_CONTOUR_POINTS :: 4 * NATIVE_ROUNDED_CORNER_SEGMENTS + 3
+NATIVE_ROUNDED_CONTOUR_POINTS :: 4 * (NATIVE_ROUNDED_CORNER_SEGMENTS + 1)
 NATIVE_ROUNDED_FILL_VERTICES :: NATIVE_ROUNDED_CONTOUR_POINTS * 9
 NATIVE_ROUNDED_RING_VERTICES :: NATIVE_ROUNDED_CONTOUR_POINTS * 6
 NATIVE_ROUNDED_ANTIALIAS_FRINGE :: 0.75
@@ -18,7 +18,8 @@ NATIVE_CONNECTED_TAB_VERTICES :: NATIVE_CONNECTED_TAB_STEPS*18+6
 // Native material effects are expanded into ordinary surface vertices. The
 // flat path remains one quad per Surface_Paint and needs no material geometry.
 native_solid_shape_is_rounded :: proc(shape: alicorn.Surface_Shape) -> bool {
-	return shape.kind == .Rounded_Rectangle && shape.corner_radius > 0 && shape.corner_radius == shape.corner_radius
+	return (shape.kind == .Rounded_Rectangle || shape.kind == .Rounded_Rectangle_Per_Corner) &&
+	       alicorn.surface_shape_has_rounded_corners(shape)
 }
 
 native_solid_material_vertex_count :: proc(
@@ -93,18 +94,34 @@ native_solid_append_connected_tab :: proc(vertices: ^[dynamic]Native_Text_Vertex
 	)
 }
 
-native_solid_rounded_contour_point :: proc(bounds: alicorn.Rect, radius, inset: f32, index: int) -> (point, normal: [2]f32) {
+native_solid_corner_radii_adjust :: proc(radii: alicorn.Surface_Corner_Radii, amount: f32) -> alicorn.Surface_Corner_Radii {
+	adjust := proc(radius, amount: f32) -> f32 { return max(radius+amount, 0) if radius > 0 else 0 }
+	return alicorn.Surface_Corner_Radii{
+		adjust(radii.top_left, amount),
+		adjust(radii.top_right, amount),
+		adjust(radii.bottom_right, amount),
+		adjust(radii.bottom_left, amount),
+	}
+}
+
+native_solid_rounded_contour_radii :: proc(bounds: alicorn.Rect, radii: alicorn.Surface_Corner_Radii, inset: f32) -> alicorn.Surface_Corner_Radii {
+	width, height := max(bounds.w-2*inset, 0), max(bounds.h-2*inset, 0)
+	return alicorn.surface_corner_radii_normalize(native_solid_corner_radii_adjust(radii, -inset), width, height)
+}
+
+native_solid_rounded_contour_point :: proc(bounds: alicorn.Rect, radii: alicorn.Surface_Corner_Radii, inset: f32, index: int) -> (point, normal: [2]f32) {
 	contour_index := index % NATIVE_ROUNDED_CONTOUR_POINTS
 	corner := contour_index / (NATIVE_ROUNDED_CORNER_SEGMENTS + 1)
 	step := contour_index % (NATIVE_ROUNDED_CORNER_SEGMENTS + 1)
 	left, top := bounds.x+inset, bounds.y+inset
 	width, height := max(bounds.w-2*inset, 0), max(bounds.h-2*inset, 0)
-	corner_radius := clamp(radius-inset, 0, min(width, height)*0.5)
+	corner_radii := [4]f32{radii.top_left, radii.top_right, radii.bottom_right, radii.bottom_left}
+	corner_radius := corner_radii[corner]
 	centers := [4][2]f32{
 		{left+corner_radius, top+corner_radius},
-		{left+width-corner_radius, top+corner_radius},
-		{left+width-corner_radius, top+height-corner_radius},
-		{left+corner_radius, top+height-corner_radius},
+		{left+width-corner_radii[1], top+corner_radius},
+		{left+width-corner_radii[2], top+height-corner_radius},
+		{left+corner_radii[3], top+height-corner_radii[3]},
 	}
 	starts := [4]f32{3.141592653589793, 4.71238898038469, 0, 1.5707963267948966}
 	angle := starts[corner] + f32(step)*1.5707963267948966/f32(NATIVE_ROUNDED_CORNER_SEGMENTS)
@@ -116,15 +133,18 @@ native_solid_rounded_contour_point :: proc(bounds: alicorn.Rect, radius, inset: 
 native_solid_append_rounded_ring :: proc(
 	vertices: ^[dynamic]Native_Text_Vertex,
 	bounds: alicorn.Rect,
-	radius, outer_inset, inner_inset: f32,
+	radii: alicorn.Surface_Corner_Radii,
+	outer_inset, inner_inset: f32,
 	outer_color, inner_color: [4]f32,
 ) {
+	outer_radii := native_solid_rounded_contour_radii(bounds, radii, outer_inset)
+	inner_radii := native_solid_rounded_contour_radii(bounds, radii, inner_inset)
 	for i in 0..<NATIVE_ROUNDED_CONTOUR_POINTS {
 		next := (i+1) % NATIVE_ROUNDED_CONTOUR_POINTS
-		outer_a, _ := native_solid_rounded_contour_point(bounds, radius, outer_inset, i)
-		outer_b, _ := native_solid_rounded_contour_point(bounds, radius, outer_inset, next)
-		inner_a, _ := native_solid_rounded_contour_point(bounds, radius, inner_inset, i)
-		inner_b, _ := native_solid_rounded_contour_point(bounds, radius, inner_inset, next)
+		outer_a, _ := native_solid_rounded_contour_point(bounds, outer_radii, outer_inset, i)
+		outer_b, _ := native_solid_rounded_contour_point(bounds, outer_radii, outer_inset, next)
+		inner_a, _ := native_solid_rounded_contour_point(bounds, inner_radii, inner_inset, i)
+		inner_b, _ := native_solid_rounded_contour_point(bounds, inner_radii, inner_inset, next)
 		append(vertices,
 			Native_Text_Vertex{[3]f32{outer_a[0], outer_a[1], 0}, outer_color, {0.5, 0.5}},
 			Native_Text_Vertex{[3]f32{outer_b[0], outer_b[1], 0}, outer_color, {0.5, 0.5}},
@@ -139,17 +159,20 @@ native_solid_append_rounded_ring :: proc(
 native_solid_append_rounded_tinted_ring :: proc(
 	vertices: ^[dynamic]Native_Text_Vertex,
 	bounds: alicorn.Rect,
-	radius, outer_inset, inner_inset: f32,
+	radii: alicorn.Surface_Corner_Radii,
+	outer_inset, inner_inset: f32,
 	fill: alicorn.Color,
 	physical_height: f32,
 	strength, max_amount, opacity: f32,
 ) {
+	outer_radii := native_solid_rounded_contour_radii(bounds, radii, outer_inset)
+	inner_radii := native_solid_rounded_contour_radii(bounds, radii, inner_inset)
 	for i in 0..<NATIVE_ROUNDED_CONTOUR_POINTS {
 		next := (i+1) % NATIVE_ROUNDED_CONTOUR_POINTS
-		outer_a, normal_a := native_solid_rounded_contour_point(bounds, radius, outer_inset, i)
-		outer_b, normal_b := native_solid_rounded_contour_point(bounds, radius, outer_inset, next)
-		inner_a, _ := native_solid_rounded_contour_point(bounds, radius, inner_inset, i)
-		inner_b, _ := native_solid_rounded_contour_point(bounds, radius, inner_inset, next)
+		outer_a, normal_a := native_solid_rounded_contour_point(bounds, outer_radii, outer_inset, i)
+		outer_b, normal_b := native_solid_rounded_contour_point(bounds, outer_radii, outer_inset, next)
+		inner_a, _ := native_solid_rounded_contour_point(bounds, inner_radii, inner_inset, i)
+		inner_b, _ := native_solid_rounded_contour_point(bounds, inner_radii, inner_inset, next)
 		color_a := native_solid_material_edge_tint(fill, physical_height, normal_a[0], normal_a[1], strength, max_amount)
 		color_b := native_solid_material_edge_tint(fill, physical_height, normal_b[0], normal_b[1], strength, max_amount)
 		color_a[3] *= opacity
@@ -168,15 +191,16 @@ native_solid_append_rounded_tinted_ring :: proc(
 native_solid_append_rounded_fill :: proc(
 	vertices: ^[dynamic]Native_Text_Vertex,
 	bounds: alicorn.Rect,
-	radius: f32,
+	radii: alicorn.Surface_Corner_Radii,
 	color: [4]f32,
 ) {
 	if bounds.w <= 0 || bounds.h <= 0 || color[3] <= 0 { return }
 	center := [2]f32{bounds.x+bounds.w*0.5, bounds.y+bounds.h*0.5}
+	contour_radii := native_solid_rounded_contour_radii(bounds, radii, 0)
 	for i in 0..<NATIVE_ROUNDED_CONTOUR_POINTS {
 		next := (i+1) % NATIVE_ROUNDED_CONTOUR_POINTS
-		a, _ := native_solid_rounded_contour_point(bounds, radius, 0, i)
-		b, _ := native_solid_rounded_contour_point(bounds, radius, 0, next)
+		a, _ := native_solid_rounded_contour_point(bounds, contour_radii, 0, i)
+		b, _ := native_solid_rounded_contour_point(bounds, contour_radii, 0, next)
 		append(vertices,
 			Native_Text_Vertex{[3]f32{center[0], center[1], 0}, color, {0.5, 0.5}},
 			Native_Text_Vertex{[3]f32{a[0], a[1], 0}, color, {0.5, 0.5}},
@@ -185,7 +209,7 @@ native_solid_append_rounded_fill :: proc(
 	}
 	transparent := color
 	transparent[3] = 0
-	native_solid_append_rounded_ring(vertices, bounds, radius, -NATIVE_ROUNDED_ANTIALIAS_FRINGE, 0, transparent, color)
+	native_solid_append_rounded_ring(vertices, bounds, radii, -NATIVE_ROUNDED_ANTIALIAS_FRINGE, 0, transparent, color)
 }
 
 native_solid_append_rounded_material_surface :: proc(
@@ -199,33 +223,33 @@ native_solid_append_rounded_material_surface :: proc(
 	stroke_placement := alicorn.Paint_Stroke_Placement.Centered,
 ) {
 	if base.w <= 0 || base.h <= 0 { return }
-	radius := clamp(shape.corner_radius, 0, min(base.w, base.h)*0.5)
+	radii := alicorn.surface_corner_radii_normalize(alicorn.surface_shape_corner_radii(shape), base.w, base.h)
 	height_factor := native_solid_material_height_factor(physical_height)
 	if material.kind == .Analytic_Relief && physical_height > 0 && material.outer_shadow_radius > 0 && material.outer_shadow_strength > 0 {
 		expand := max(material.outer_shadow_radius, 0)
 		outer := [4]f32{0, 0, 0, material.outer_shadow_strength*0.07*height_factor*opacity}
 		middle := [4]f32{0, 0, 0, material.outer_shadow_strength*0.12*height_factor*opacity}
-		native_solid_append_rounded_fill(vertices, shadow, radius+expand, outer)
+		native_solid_append_rounded_fill(vertices, shadow, native_solid_corner_radii_adjust(radii, expand), outer)
 		mid := alicorn.Rect{
 			shadow.x+(base.x-shadow.x)*0.5,
 			shadow.y+(base.y-shadow.y)*0.5,
 			shadow.w-(base.x-shadow.x)*0.5-(shadow.x+shadow.w-base.x-base.w)*0.5,
 			shadow.h-(base.y-shadow.y)*0.5-(shadow.y+shadow.h-base.y-base.h)*0.5,
 		}
-		native_solid_append_rounded_fill(vertices, mid, radius+expand*0.5, middle)
+		native_solid_append_rounded_fill(vertices, mid, native_solid_corner_radii_adjust(radii, expand*0.5), middle)
 	}
 
 	base_color := [4]f32{fill.r, fill.g, fill.b, fill.a*opacity}
-	native_solid_append_rounded_fill(vertices, base, radius, base_color)
+	native_solid_append_rounded_fill(vertices, base, radii, base_color)
 	bevel_width := min(max(material.bevel_width, 0), min(base.w, base.h)*0.5)
 	if material.kind == .Analytic_Relief && physical_height != 0 {
 		if bevel_width > 0 && material.bevel_strength > 0 {
-			native_solid_append_rounded_tinted_ring(vertices, base, radius, 0, bevel_width,
+			native_solid_append_rounded_tinted_ring(vertices, base, radii, 0, bevel_width,
 				fill, physical_height, material.bevel_strength, 0.22, opacity)
 		}
 		if material.inner_shadow_strength > 0 {
 			inner_width := min(max(bevel_width, 1), min(base.w, base.h)*0.5)
-			native_solid_append_rounded_tinted_ring(vertices, base, radius, bevel_width, bevel_width+inner_width,
+			native_solid_append_rounded_tinted_ring(vertices, base, radii, bevel_width, bevel_width+inner_width,
 				fill, physical_height, material.inner_shadow_strength, 0.18, opacity)
 		}
 	}
@@ -242,9 +266,9 @@ native_solid_append_rounded_material_surface :: proc(
 			inside, outside = 0, stroke.width
 		}
 		inside = min(inside, min(base.w, base.h)*0.5)
-		native_solid_append_rounded_ring(vertices, base, radius, -outside-NATIVE_ROUNDED_ANTIALIAS_FRINGE, -outside, transparent_stroke, stroke_color)
-		native_solid_append_rounded_ring(vertices, base, radius, -outside, inside, stroke_color, stroke_color)
-		native_solid_append_rounded_ring(vertices, base, radius, inside, inside+NATIVE_ROUNDED_ANTIALIAS_FRINGE, stroke_color, transparent_stroke)
+		native_solid_append_rounded_ring(vertices, base, radii, -outside-NATIVE_ROUNDED_ANTIALIAS_FRINGE, -outside, transparent_stroke, stroke_color)
+		native_solid_append_rounded_ring(vertices, base, radii, -outside, inside, stroke_color, stroke_color)
+		native_solid_append_rounded_ring(vertices, base, radii, inside, inside+NATIVE_ROUNDED_ANTIALIAS_FRINGE, stroke_color, transparent_stroke)
 	}
 
 }

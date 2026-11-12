@@ -52,7 +52,7 @@ effect_probe_scene :: proc(rt: ^alicorn.Runtime, text: ^Native_Text_Renderer, sh
     if shadow {
         material := alicorn.style_material_register(rt, {.Analytic_Relief,0,0,0,0.7,8})
         append(&commands, alicorn.paint_surface_command(3,{96,56,192,144},clip,{0,0,0,0},
-            shape={.Rounded_Rectangle,10},material=material,physical_height=1))
+        shape=alicorn.surface_shape_uniform_corner_radius(10),material=material,physical_height=1))
     }
     return commands[:]
 }

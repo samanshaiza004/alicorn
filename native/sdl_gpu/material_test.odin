@@ -128,8 +128,8 @@ test_rounded_material_uses_bounded_contours_and_scaled_tangents :: proc(t: ^test
 		&flat_vertices, {10, 20, 60, 32}, {10, 20, 60, 32}, fill,
 		alicorn.STYLE_MATERIAL_FLAT, 0, 1, shape,
 	)
-	testing.expect(t, len(flat_vertices) == NATIVE_ROUNDED_FILL_VERTICES && len(flat_vertices) == 315,
-		"flat rounded surfaces should use a fixed 35-point contour and a one-pixel antialias fringe")
+	testing.expect(t, len(flat_vertices) == NATIVE_ROUNDED_FILL_VERTICES && len(flat_vertices) == 324,
+		"flat rounded surfaces should use a fixed 36-point contour with all four arc endpoints and a one-pixel antialias fringe")
 	if len(flat_vertices) == NATIVE_ROUNDED_FILL_VERTICES {
 		min_x := flat_vertices[0].position[0]
 		max_x := min_x
@@ -152,7 +152,7 @@ test_rounded_material_uses_bounded_contours_and_scaled_tangents :: proc(t: ^test
 		&material_vertices, {10, 20, 60, 32}, {6, 16, 68, 40}, fill,
 		material, 1, 1, shape,
 	)
-	testing.expect(t, expected == 1365 && len(material_vertices) == expected && expected <= 1400,
+	testing.expect(t, expected == 1404 && len(material_vertices) == expected && expected <= 1410,
 		"rounded analytic relief should use a deterministic bounded mesh for fill, two shadows, bevel, and inner contour")
 	if len(material_vertices) == expected {
 		testing.expect(t, material_vertices[expected-1].position[2] == 0,
@@ -164,6 +164,94 @@ test_rounded_material_uses_bounded_contours_and_scaled_tangents :: proc(t: ^test
 		testing.expect(t, native_solid_material_vertex_count(material, 1, scaled) == expected,
 			"DPI changes contour coordinates without changing the published vertex bound")
 	}
+}
+
+@(test)
+test_per_corner_rounding_uses_each_radius_and_keeps_flat_fast_path :: proc(t: ^testing.T) {
+	zero_shape := alicorn.surface_shape_rounded_corners({})
+	shape := alicorn.surface_shape_rounded_corners({top_left=3, top_right=8, bottom_right=13, bottom_left=5})
+	fill := alicorn.Color{0.7, 0.6, 0.5, 1}
+	testing.expect(t, native_solid_material_vertex_count(alicorn.STYLE_MATERIAL_FLAT, 0, zero_shape) == 6 &&
+		native_solid_material_vertex_count(alicorn.STYLE_MATERIAL_FLAT, 0, shape) == NATIVE_ROUNDED_FILL_VERTICES,
+		"zero radii should keep the six-vertex rectangle fast path and any rounded corner should use bounded contour tessellation")
+	for mask in 0..<16 {
+		radii := alicorn.Surface_Corner_Radii{
+			top_left=4 if (mask & 1) != 0 else 0,
+			top_right=4 if (mask & 2) != 0 else 0,
+			bottom_right=4 if (mask & 4) != 0 else 0,
+			bottom_left=4 if (mask & 8) != 0 else 0,
+		}
+		pattern := alicorn.surface_shape_rounded_corners(radii)
+		expected_count := 6 if mask == 0 else NATIVE_ROUNDED_FILL_VERTICES
+		testing.expect(t, native_solid_material_vertex_count(alicorn.STYLE_MATERIAL_FLAT, 0, pattern) == expected_count,
+			"all sixteen zero-or-rounded corner patterns should select a deterministic bounded geometry path")
+	}
+
+	vertices := make([dynamic]Native_Text_Vertex, 0, 1024, allocator=context.temp_allocator)
+	defer delete(vertices)
+	native_solid_append_rounded_material_surface(
+		&vertices, {10, 20, 60, 32}, {10, 20, 60, 32}, alicorn.Color{0.7, 0.6, 0.5, 1},
+		alicorn.STYLE_MATERIAL_FLAT, 0, 1, shape,
+	)
+	point_at := proc(vertices: []Native_Text_Vertex, contour_index: int) -> [2]f32 {
+		vertex_index := contour_index*3-1 if contour_index > 0 else 1
+		return {vertices[vertex_index].position[0], vertices[vertex_index].position[1]}
+	}
+	point_matches := proc(actual, expected: [2]f32) -> bool {
+		return abs(actual[0]-expected[0]) < 0.001 && abs(actual[1]-expected[1]) < 0.001
+	}
+	tl_start, tl_end := point_at(vertices[:], 0), point_at(vertices[:], 8)
+	tr_start, tr_end := point_at(vertices[:], 9), point_at(vertices[:], 17)
+	br_start, br_end := point_at(vertices[:], 18), point_at(vertices[:], 26)
+	bl_start, bl_end := point_at(vertices[:], 27), point_at(vertices[:], 35)
+	testing.expect(t, len(vertices) == NATIVE_ROUNDED_FILL_VERTICES &&
+		point_matches(tl_start, [2]f32{10, 23}) && point_matches(tl_end, [2]f32{13, 20}) &&
+		point_matches(tr_start, [2]f32{62, 20}) && point_matches(tr_end, [2]f32{70, 28}) &&
+		point_matches(br_start, [2]f32{70, 39}) && point_matches(br_end, [2]f32{57, 52}) &&
+		point_matches(bl_start, [2]f32{15, 52}) && point_matches(bl_end, [2]f32{10, 47}),
+		"the fill contour should place each independently authored radius at its own corner")
+
+	stroke := alicorn.Paint_Stroke{color={0.1, 0.8, 0.9, 1}, width=2}
+	material := alicorn.Style_Material{kind=.Analytic_Relief, bevel_width=2, bevel_strength=0.5, inner_shadow_strength=0.3}
+	full_vertices := make([dynamic]Native_Text_Vertex, 0, 2048, allocator=context.temp_allocator)
+	defer delete(full_vertices)
+	expected := native_solid_material_vertex_count(material, 1, shape, stroke)
+	native_solid_append_rounded_material_surface(
+		&full_vertices, {10, 20, 60, 32}, {10, 20, 60, 32}, alicorn.Color{0.7, 0.6, 0.5, 1},
+		material, 1, 1, shape, stroke, .Outside,
+	)
+	testing.expect(t, len(full_vertices) == expected,
+		"per-corner geometry should preserve the bounded vertex count when relief, AA fringe, and outside stroke are combined")
+
+	rt := alicorn.new_runtime({0, 0, 100, 80})
+	defer alicorn.destroy_runtime(&rt)
+	rt.semantic_surfaces[1] = alicorn.Semantic_Surface_Style{
+		defined=true, role=alicorn.surface_core_color_role(.Surface), shape=shape,
+	}
+	display := [1]alicorn.Paint_Command{
+		alicorn.paint_surface_command(1, {10, 20, 60, 32}, {12, 23, 40, 18}, alicorn.Color{0.7, 0.6, 0.5, 0.7},
+			opacity=0.5, shape=shape),
+	}
+	renderer := Native_Solid_Renderer{
+		runtime=&rt,
+		vertices=make([dynamic]Native_Text_Vertex, 0, NATIVE_ROUNDED_FILL_VERTICES, allocator=context.temp_allocator),
+		draws=make([dynamic]Native_Solid_Draw, 0, 1, allocator=context.temp_allocator),
+		vertex_capacity=NATIVE_ROUNDED_FILL_VERTICES,
+	}
+	defer delete(renderer.vertices)
+	defer delete(renderer.draws)
+	testing.expect(t, native_solid_build(&renderer, display[:], 1, 1, 100, 80) &&
+		len(renderer.draws) == 1 && renderer.draws[0].vertex_count == NATIVE_ROUNDED_FILL_VERTICES &&
+		renderer.vertices[1].position[0] == 10 && renderer.vertices[1].position[1] == 23 &&
+		abs(renderer.vertices[1].color[3]-0.35) < 0.001 &&
+		renderer.draws[0].has_scissor && renderer.draws[0].scissor.x == 12 && renderer.draws[0].scissor.y == 23 &&
+		renderer.draws[0].scissor.w == 40 && renderer.draws[0].scissor.h == 18,
+		"the SDL solid renderer should resolve compact corner geometry and preserve translucent fill and clipping")
+	testing.expect(t, native_solid_build(&renderer, display[:], 2, 2, 200, 160) &&
+		renderer.vertices[1].position[0] == 20 && renderer.vertices[1].position[1] == 46 &&
+		renderer.draws[0].scissor.x == 24 && renderer.draws[0].scissor.y == 46 &&
+		renderer.draws[0].scissor.w == 80 && renderer.draws[0].scissor.h == 36,
+		"DPI scaling should scale authored corner radii and the matching clip rectangle together")
 }
 
 @(test)

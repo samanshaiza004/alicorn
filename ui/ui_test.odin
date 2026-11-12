@@ -133,6 +133,13 @@ test_panel_is_one_container_surface_and_box_is_a_leaf :: proc(t: ^testing.T) {
 		text(&ctx, "Card", key="card-label")
 	}
 	box_id := box(&ctx, key="swatch", size=32, fill=red)
+	corner_panel_id: Node_ID
+	corner_panel_radii := Surface_Corner_Radii{top_left=2, top_right=8, bottom_right=4, bottom_left=1}
+	if panel(&ctx, key="corner-card", width=80, height=40, radius=6, corner_radii=corner_panel_radii) {
+		corner_panel_id = rt.stack[len(rt.stack)-1]
+	}
+	corner_box_radii := Surface_Corner_Radii{top_left=1, top_right=3, bottom_right=5, bottom_left=7}
+	corner_box_id := box(&ctx, key="corner-swatch", size=16, corner_radii=corner_box_radii)
 	bad_panel_opened := panel(&ctx, key="bad-panel", radius=-1)
 	testing.expect(t, !bad_panel_opened && len(rt.stack) == 1,
 		"invalid rounded-panel geometry should fail without popping the parent or leaving a scope open")
@@ -140,12 +147,14 @@ test_panel_is_one_container_surface_and_box_is_a_leaf :: proc(t: ^testing.T) {
 	alicorn.end_frame(&ctx)
 	panel_node, panel_found := rt.nodes[panel_id]
 	box_node, box_found := rt.nodes[box_id]
+	corner_panel_node, corner_panel_found := rt.nodes[corner_panel_id]
+	corner_box_node, corner_box_found := rt.nodes[corner_box_id]
 	panel_paint_ok := false
 	if panel_found && len(panel_node.paint) == 1 {
 		paint, ok := panel_node.paint[0].payload.(alicorn.Surface_Paint)
 		panel_paint_ok = ok && paint.fill == rgb(0x505050) && paint.stroke == alicorn.Paint_Stroke{color=blue, width=1} &&
 			panel_node.paint[0].stroke_placement == .Inside &&
-			paint.shape == alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=6}
+			paint.shape == alicorn.surface_paint_shape(alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=6})
 	}
 	panel_style, panel_style_found := rt.semantic_surfaces[panel_id]
 	panel_paint_ok = panel_paint_ok && panel_style_found && panel_style.stroke_placement == .Inside
@@ -153,6 +162,20 @@ test_panel_is_one_container_surface_and_box_is_a_leaf :: proc(t: ^testing.T) {
 		"panel should lower to one ordinary container with a fill, border, and rounded corners")
 	testing.expect(t, box_found && box_node.parent == root_id && box_node.bounds.w == 32 && box_node.bounds.h == 32,
 		"box should be one square leaf node beside the panel, with explicit sizing preserved")
+	corner_panel_ok := false
+	if corner_panel_found && len(corner_panel_node.paint) == 1 {
+		paint, ok := corner_panel_node.paint[0].payload.(alicorn.Surface_Paint)
+		resolved_shape, resolved_ok := alicorn.surface_paint_shape_resolve(&rt, corner_panel_id, paint.shape)
+		corner_panel_ok = ok && resolved_ok && resolved_shape == alicorn.surface_shape_rounded_corners(corner_panel_radii)
+	}
+	corner_box_ok := false
+	if corner_box_found && len(corner_box_node.paint) == 1 {
+		paint, ok := corner_box_node.paint[0].payload.(alicorn.Surface_Paint)
+		resolved_shape, resolved_ok := alicorn.surface_paint_shape_resolve(&rt, corner_box_id, paint.shape)
+		corner_box_ok = ok && resolved_ok && resolved_shape == alicorn.surface_shape_rounded_corners(corner_box_radii)
+	}
+	testing.expect(t, corner_panel_ok && corner_box_ok,
+		"panel and box should retain independent corner radii, with corner_radii taking precedence over legacy radius")
 }
 
 @(test)

@@ -2,6 +2,65 @@ package alicorn
 
 import "core:testing"
 import "core:strings"
+import "core:math"
+
+@(test)
+test_surface_corner_radii_validate_copy_hash_and_normalize :: proc(t: ^testing.T) {
+	authored := Surface_Corner_Radii{top_left=80, top_right=40, bottom_right=40, bottom_left=80}
+	shape := surface_shape_rounded_corners(authored)
+	paint := Surface_Paint{shape=surface_paint_shape(shape)}
+	shape_copy := shape
+	testing.expect(t, surface_shape_is_valid(shape) && paint.shape == surface_paint_shape(shape) &&
+		shape_copy == shape && surface_shape_corner_radii(shape) == authored,
+		"a valid per-corner shape should preserve its exact f32 values in retained style data and compact paint references")
+
+	style := Semantic_Surface_Style{defined=true, shape=shape}
+	changed := style
+	changed.shape.corner_radii.top_left += 1
+	testing.expect(t, semantic_surface_style_hash(changed) != semantic_surface_style_hash(style),
+		"a corner-only edit should change the retained surface style hash")
+	changed = style
+	changed.shape.corner_radii.top_right += 1
+	testing.expect(t, semantic_surface_style_hash(changed) != semantic_surface_style_hash(style),
+		"each authored corner should participate in retained invalidation")
+	changed = style
+	changed.shape.corner_radii.bottom_right += 1
+	testing.expect(t, semantic_surface_style_hash(changed) != semantic_surface_style_hash(style),
+		"the bottom-right radius should participate in retained invalidation")
+	changed = style
+	changed.shape.corner_radii.bottom_left += 1
+	testing.expect(t, semantic_surface_style_hash(changed) != semantic_surface_style_hash(style),
+		"the bottom-left radius should participate in retained invalidation")
+
+	normalized := surface_corner_radii_normalize(authored, 100, 50)
+	testing.expect(t, abs(normalized.top_left-25) < 0.001 &&
+		abs(normalized.top_right-12.5) < 0.001 &&
+		abs(normalized.bottom_right-12.5) < 0.001 &&
+		abs(normalized.bottom_left-25) < 0.001,
+		"all opposing radius constraints should share one proportional normalization factor")
+	testing.expect(t, normalized.top_left+normalized.top_right <= 100.001 &&
+		normalized.top_right+normalized.bottom_right <= 50.001 &&
+		normalized.bottom_right+normalized.bottom_left <= 100.001 &&
+		normalized.bottom_left+normalized.top_left <= 50.001,
+		"normalized corner arcs should not overlap along any side")
+
+	large := surface_corner_radii_normalize(Surface_Corner_Radii{1e30, 1e30, 1e30, 1e30}, 100, 50)
+	testing.expect(t, surface_corner_radii_is_valid(large) && large.top_left == 25 && large.top_right == 25 &&
+		large.bottom_right == 25 && large.bottom_left == 25,
+		"every finite f32 radius should normalize without overflow")
+	testing.expect(t, surface_corner_radii_is_zero(surface_corner_radii_normalize(authored, 0, 50)) &&
+		surface_corner_radii_is_zero(surface_corner_radii_normalize(authored, 100, 0)) &&
+		surface_corner_radii_is_zero(surface_corner_radii_normalize(authored, math.QNAN_F32, 50)),
+		"zero or invalid bounds should resolve to square corners")
+	testing.expect(t, !surface_corner_radii_is_valid(Surface_Corner_Radii{top_left=-1}) &&
+		!surface_corner_radii_is_valid(Surface_Corner_Radii{top_right=math.INF_F32}) &&
+		!surface_shape_is_valid(surface_shape_rounded_corners(Surface_Corner_Radii{bottom_left=math.QNAN_F32})),
+		"negative and non-finite radii should be rejected at the semantic surface boundary")
+	legacy := Surface_Shape{kind=.Rounded_Rectangle, corner_radius=7}
+	legacy_radii := surface_shape_corner_radii(legacy)
+	testing.expect(t, surface_shape_is_valid(legacy) && legacy_radii == Surface_Corner_Radii{7, 7, 7, 7},
+		"the legacy uniform radius should remain valid and resolve to four equal corners")
+}
 
 @(test)
 test_backdrop_is_an_ordered_surface_boundary :: proc(t: ^testing.T) {
@@ -108,7 +167,7 @@ test_semantic_surface_composes_children_and_resolves_extension_role :: proc(t: ^
 		payload, payload_ok := node.paint[0].payload.(Surface_Paint)
 		testing.expect(t, fill_ok && fill == paper,
 			"a namespaced role should resolve through the active theme into the paint fill")
-		testing.expect(t, payload_ok && payload.shape == Surface_Shape{kind=.Rectangle} &&
+		testing.expect(t, payload_ok && payload.shape == surface_paint_shape(Surface_Shape{kind=.Rectangle}) &&
 			payload.material == material_id && payload.physical_height == 1.25 &&
 			payload.material_group == Material_Group_ID(7),
 			"surface paint should carry shape and optical material metadata without affecting layout")
@@ -127,7 +186,7 @@ test_semantic_surface_composes_children_and_resolves_extension_role :: proc(t: ^
 	inspection := inspect(&rt)
 	defer delete(inspection)
 	testing.expect(t, strings.contains(inspection, "semantic surface: role=extension.") &&
-		strings.contains(inspection, "token=1 shape=rectangle radius=0.00 material=1(analytic-relief) height=1.25 group=7") &&
+		strings.contains(inspection, "token=1 shape=rectangle radius=0.00 corner-radii=(0.00 0.00 0.00 0.00) material=1(analytic-relief) height=1.25 group=7") &&
 		strings.contains(inspection, "resolution=retained-cache dependencies=paint,material generations=(paint=") &&
 		node.style_generations.paint > 0 && node.style_generations.material > 0,
 		"inspector should explain extension-role token, optical surface inputs, and paint/material generation context")
@@ -175,8 +234,9 @@ test_semantic_surface_accepts_direct_fill_and_stroke :: proc(t: ^testing.T) {
 		"a direct fill and border should remain one ordinary retained surface node")
 	if found && len(node.paint) == 1 {
 		paint, ok := node.paint[0].payload.(Surface_Paint)
+		resolved_shape, resolved_ok := surface_paint_shape_resolve(&rt, id, paint.shape)
 		testing.expect(t, ok && paint.fill == fill && paint.stroke == Paint_Stroke{color=border, width=1} &&
-			paint.shape == Surface_Shape{kind=.Rounded_Rectangle, corner_radius=6},
+			resolved_ok && resolved_shape == Surface_Shape{kind=.Rounded_Rectangle, corner_radius=6},
 			"resolved direct appearance should preserve fill, stroke, and rounded geometry")
 	}
 	style := rt.semantic_surfaces[id]
@@ -308,4 +368,63 @@ test_semantic_surface_material_input_advances_material_generation :: proc(t: ^te
 		"a material-only surface change should preserve layout and hit geometry")
 	testing.expect(t, rt.stats.layout_nodes_visited == first_layout_visits,
 		"changing only surface material inputs should not visit nodes during layout")
+}
+
+@(test)
+test_corner_radius_only_change_skips_text_measurement_and_layout :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 120, 80})
+	defer destroy_runtime(&rt)
+	describe := proc(rt: ^Runtime, radii: Surface_Corner_Radii) -> Node_ID {
+		invalidate_root(rt, "corner radius only invalidation fixture")
+		ui, build := begin_frame(rt)
+		if !build { return 0 }
+		container_begin(&ui, .Root, key=key_string("corner-radius-root"), style=layout_style(width=120, height=80))
+		id := surface_begin(&ui, surface_core_color_role(.Surface), key=key_string("corner-radius-surface"),
+			style=layout_style(width=96, height=56), shape=surface_shape_rounded_corners(radii))
+		text(&ui, "Retained label", key=key_string("corner-radius-label"))
+		surface_end(&ui)
+		container_end(&ui)
+		end_frame(&ui)
+		return id
+	}
+
+	id := describe(&rt, Surface_Corner_Radii{4, 4, 4, 4})
+	first := rt.nodes[id]
+	shape_requests := rt.stats.text_shape_requests
+	measure_requests := rt.stats.measure_requests
+	layout_visits := rt.stats.layout_nodes_visited
+	paint_visits := rt.stats.paint_nodes_visited
+	first_material_generation := first.style_generations.material
+	_ = describe(&rt, Surface_Corner_Radii{4, 12, 4, 4})
+	second := rt.nodes[id]
+	if len(second.paint) != 1 {
+		testing.expect(t, false, "the updated surface should keep one paint command")
+		return
+	}
+	testing.expect(t, second.style_generations.material > first_material_generation && second.bounds == first.bounds,
+		"an isolated radius change should update retained surface material state without changing its bounds")
+	testing.expect(t, rt.stats.text_shape_requests == shape_requests && rt.stats.measure_requests == measure_requests &&
+		rt.stats.layout_nodes_visited == layout_visits,
+		"a radius-only surface update must not shape text, measure, or run layout")
+	testing.expect(t, rt.stats.paint_nodes_visited > paint_visits && len(second.paint) == 1,
+		"the localized change should rebuild the retained surface paint command")
+	paint, paint_ok := second.paint[0].payload.(Surface_Paint)
+	resolved_shape, resolved_ok := surface_paint_shape_resolve(&rt, id, paint.shape)
+	testing.expect(t, paint_ok && resolved_ok && resolved_shape == surface_shape_rounded_corners(Surface_Corner_Radii{4, 12, 4, 4}),
+		"the renderer-facing compact command should resolve the latest retained corner values, not stale paint data")
+
+	fresh := new_runtime(Rect{0, 0, 120, 80})
+	defer destroy_runtime(&fresh)
+	fresh_id := describe(&fresh, Surface_Corner_Radii{4, 12, 4, 4})
+	fresh_node := fresh.nodes[fresh_id]
+	if len(fresh_node.paint) != 1 {
+		testing.expect(t, false, "a fresh runtime should emit one surface paint command")
+		return
+	}
+	fresh_paint, fresh_paint_ok := fresh_node.paint[0].payload.(Surface_Paint)
+	fresh_shape, fresh_shape_ok := surface_paint_shape_resolve(&fresh, fresh_id, fresh_paint.shape)
+	testing.expect(t, fresh_paint_ok && fresh_shape_ok && resolved_shape == fresh_shape &&
+		semantic_surface_style_hash(rt.semantic_surfaces[id]) == semantic_surface_style_hash(fresh.semantic_surfaces[fresh_id]) &&
+		second.bounds == fresh_node.bounds && second.paint[0].bounds == fresh_node.paint[0].bounds,
+		"incremental retained replay should match a fresh runtime built with the same per-corner shape")
 }

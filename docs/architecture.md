@@ -152,9 +152,11 @@ provenance reports these retained results, including optional compiled token
 names and alias chains. Node retirement and runtime destruction release
 sidecar entries. Token aliases are flattened in runtime values; readable names
 and immediate alias edges are optional runtime diagnostic metadata while
-source locations remain compiler-only. Rectangular semantic surfaces can use
-registered flat or analytic-relief materials; a general cascade and richer
-native shapes remain outside this slice.
+source locations remain compiler-only. Surface geometry supports a flat
+rectangle fast path, source-compatible uniform corner radii, and independent
+four-corner radii normalized against the resolved bounds. Radius changes
+invalidate surface presentation without changing text measurement or layout.
+A general cascade and metric-token dependencies remain outside this slice.
 
 Product-specific presentation composes over retained owners. `button_begin` /
 `button_end` let an application describe ordinary layout children under a
@@ -261,8 +263,9 @@ Paint producers include runtime widgets, retained overlays, and native host
 chrome. They resolve their presentation decisions into a small generic paint
 stream: `Surface_Paint`, `Text_Paint`, and `Geometry_Paint`. Every command carries
 its bounds, clip, opacity, and translation; `owner` identifies the producer
-for diagnostics and transient cleanup, and does not select renderer behavior.
-Translation and opacity affect composition only, never layout or hit testing.
+for diagnostics, transient cleanup, and retained sidecar resolution. It does
+not select widget drawing behavior. Translation and opacity affect composition
+only, never layout or hit testing.
 
 Text and geometry handles are generation-checked references to payloads. Their
 resolvers return shaped text or surface geometry data only; placement, clipping,
@@ -273,7 +276,11 @@ not sort by primitive family or inspect `Node_Kind` to decide how to draw.
 
 Semantic surfaces carry a registered material ID, optical height, and group in
 their generic paint command. The native renderer expands flat or analytic
-rectangular relief into bounded ordinary vertices; optical height never affects
+relief into bounded ordinary vertices, including independent surface corner
+radii. Per-corner values stay in the retained semantic or computed-style
+sidecar; renderers resolve them with `surface_paint_shape_resolve` using the
+command owner. This keeps `Paint_Command` at its 128-byte budget while keeping
+the authored values at full `f32` precision. Optical height never affects
 layout or stacking order. Analytic relief uses a fixed upper-left light and
 scales/reverses edge shading with signed physical height. Flat materials and
 zero-height surfaces emit the same single quad as ordinary solid paint; they

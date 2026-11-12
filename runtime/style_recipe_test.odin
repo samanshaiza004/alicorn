@@ -91,9 +91,10 @@ test_button_recipe_transforms_have_deterministic_order_and_separate_focus :: pro
 	rt := new_runtime(Rect{0, 0, 400, 220})
 	defer destroy_runtime(&rt)
 	theme := DEFAULT_STYLE_THEME
+	toolbar_shape := surface_shape_rounded_corners(Surface_Corner_Radii{top_left=3, top_right=8, bottom_right=2, bottom_left=6})
 	theme.button_recipes.recipes[int(Button_Variant.Toolbar)] = Button_Recipe{
 		defined=true,
-		shape=Surface_Shape{kind=.Rounded_Rectangle, corner_radius=4},
+		shape=toolbar_shape,
 		surface_role=.Surface,
 		text_role=.Text,
 		surface_visible=true,
@@ -109,8 +110,8 @@ test_button_recipe_transforms_have_deterministic_order_and_separate_focus :: pro
 	environment := Style_Environment{theme=theme_id}
 
 	selected := style_button_resolve(&rt, environment, .Toolbar, Button_Visual_State{selected=true})
-	testing.expect(t, selected.shape == Surface_Shape{kind=.Rounded_Rectangle, corner_radius=4},
-		"a button recipe should carry its shape into the resolved paint style")
+	testing.expect(t, selected.shape == toolbar_shape,
+		"a button theme recipe should resolve all four authored corner radii into its paint style")
 	hovered := style_button_resolve(&rt, environment, .Toolbar, Button_Visual_State{selected=true, hovered=true})
 	pressed := style_button_resolve(&rt, environment, .Toolbar, Button_Visual_State{selected=true, hovered=true, pressed=true})
 	all_states := style_button_resolve(&rt, environment, .Toolbar, Button_Visual_State{selected=true, hovered=true, pressed=true, disabled=true})
@@ -181,4 +182,43 @@ test_button_variant_is_retained_and_inspectable :: proc(t: ^testing.T) {
 	defer delete(inspector)
 	testing.expect(t, strings.contains(inspector, "recipe=button.primary") && strings.contains(inspector, "focus overlay=Focus"),
 		"inspector output should expose recipe, state provenance, and independent focus treatment")
+}
+
+@(test)
+test_button_corner_shape_resolves_from_computed_style :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 180, 80})
+	defer destroy_runtime(&rt)
+	radii := Surface_Corner_Radii{top_left=2, top_right=9, bottom_right=5, bottom_left=1}
+	theme := DEFAULT_STYLE_THEME
+	toolbar_recipe := theme.button_recipes.recipes[int(Button_Variant.Toolbar)]
+	toolbar_recipe.shape = surface_shape_rounded_corners(radii)
+	toolbar_recipe.surface_visible = true
+	theme.button_recipes.recipes[int(Button_Variant.Toolbar)] = toolbar_recipe
+	theme_id := style_theme_register(&rt, theme)
+	if theme_id == 0 { testing.expect(t, false, "toolbar corner-radius recipe should register"); return }
+
+	ui, should_build := begin_frame(&rt)
+	if !should_build { testing.expect(t, false, "button corner-radius fixture should build"); return }
+	container_begin(&ui, .Root, key=key_string("button-corner-root"), style=layout_style(width=180, height=80))
+	theme_scope := style_environment_push(&ui, Style_Environment{theme=theme_id})
+	button(&ui, "Corners", key=key_string("button-corners"), variant=.Toolbar, style=layout_style(width=100, height=32))
+	style_environment_pop(&ui, theme_scope)
+	container_end(&ui)
+	end_frame(&ui)
+
+	button_id := style_recipe_test_button(&rt, "Corners")
+	if button_id == 0 { testing.expect(t, false, "the toolbar button should be retained"); return }
+	button_node := rt.nodes[button_id]
+	resolved_paint_shape := false
+	for command in button_node.paint {
+		if surface, ok := command.payload.(Surface_Paint); ok {
+			shape, shape_ok := surface_paint_shape_resolve(&rt, button_id, surface.shape)
+			resolved_paint_shape = shape_ok && shape == surface_shape_rounded_corners(radii)
+			if resolved_paint_shape { break }
+		}
+	}
+	computed, cached := rt.computed_styles[button_id]
+	resolved_style := computed.payload.(Button_Resolved_Style) if cached else Button_Resolved_Style{}
+	testing.expect(t, cached && computed.family == .Button && resolved_paint_shape && resolved_style.shape == surface_shape_rounded_corners(radii),
+		"button paint commands should resolve four corner radii from their current computed style")
 }

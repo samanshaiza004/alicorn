@@ -43,13 +43,15 @@ test_button_relief_preserves_geometry_focus_and_retained_work :: proc(t: ^testin
 	testing.expect(t, rt.stats.measure_requests == measurements && rt.stats.text_shape_requests == shapes && rt.semantic_revision == semantic_revision,
 		"optical changes preserve measurement, shaping and semantic truth")
 	paint, found := node.paint[0].payload.(Surface_Paint)
-	testing.expect(t, found && paint.shape == Surface_Shape{kind=.Rounded_Rectangle, corner_radius=4} &&
+	resolved_shape, shape_ok := surface_paint_shape_resolve(&rt, id, paint.shape)
+	testing.expect(t, found && shape_ok && resolved_shape == Surface_Shape{kind=.Rounded_Rectangle, corner_radius=4} &&
 		paint.material == material && paint.physical_height == 0.5,
 		"rest paint carries the recipe shape through the generic material surface")
 	rounded_focus_found := false
 	for command in node.paint {
 		if focus_paint, ok := command.payload.(Surface_Paint); ok && focus_paint.stroke.width > 0 {
-			rounded_focus_found = focus_paint.shape == Surface_Shape{kind=.Rounded_Rectangle, corner_radius=4}
+			focus_shape, focus_shape_ok := surface_paint_shape_resolve(&rt, id, focus_paint.shape)
+			rounded_focus_found = focus_shape_ok && focus_shape == Surface_Shape{kind=.Rounded_Rectangle, corner_radius=4}
 		}
 	}
 	testing.expect(t, rounded_focus_found, "the independent keyboard focus outline should follow the Button's rounded contour")

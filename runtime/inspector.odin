@@ -97,6 +97,7 @@ style_inspector_surface_shape_name :: proc(kind: Surface_Shape_Kind) -> string {
 	case .Rounded_Rectangle: return "rounded-rectangle"
 	case .Line: return "line"
 	case .Connected_Tab: return "connected-tab-contour"
+	case .Rounded_Rectangle_Per_Corner: return "rounded-rectangle-per-corner"
 	}
 	return "unknown"
 }
@@ -265,8 +266,10 @@ style_inspector_semantic_surface :: proc(sb: ^strings.Builder, rt: ^Runtime, nod
 	material, material_found := style_material_resolve(rt, style.material)
 	material_kind := "unavailable"
 	if material_found { material_kind = style_inspector_material_kind_name(material.kind) }
-	fmt.sbprintf(sb, " shape=%s radius=%.2f material=%d(%s) height=%.2f group=%d fill=(%.3f,%.3f,%.3f,%.3f) stroke=(%.3f,%.3f,%.3f,%.3f;%.2f;%v) resolution=retained-cache dependencies=paint,material generations=(paint=%d material=%d)\n",
+	radii := surface_shape_corner_radii(style.shape)
+	fmt.sbprintf(sb, " shape=%s radius=%.2f corner-radii=(%.2f %.2f %.2f %.2f) material=%d(%s) height=%.2f group=%d fill=(%.3f,%.3f,%.3f,%.3f) stroke=(%.3f,%.3f,%.3f,%.3f;%.2f;%v) resolution=retained-cache dependencies=paint,material generations=(paint=%d material=%d)\n",
 		style_inspector_surface_shape_name(style.shape.kind), style.shape.corner_radius,
+		radii.top_left, radii.top_right, radii.bottom_right, radii.bottom_left,
 		u32(style.material), material_kind, style.physical_height, u32(style.material_group),
 		resolved.fill.r, resolved.fill.g, resolved.fill.b, resolved.fill.a,
 		resolved.stroke.color.r, resolved.stroke.color.g, resolved.stroke.color.b, resolved.stroke.color.a, resolved.stroke.width, resolved.stroke_placement,
@@ -415,8 +418,10 @@ inspect :: proc(rt: ^Runtime) -> string {
 			fmt.sbprintf(&sb, " | focus-mode=%s\n", focus_indicator_mode_name(recipe.focus_indicator_mode))
 			fmt.sbprintf(&sb, " | focus overlay=%v semantic-active overlay=%v\n", recipe.focus_role, recipe.semantic_active_role)
 			if recipe.rest_surface.defined || recipe.pressed_surface.defined || resolved.shape.kind != .Rectangle {
-				fmt.sbprintf(&sb, "  optical surface: shape=%s radius=%.2f material=%d height=%.3f (paint only)\n",
+				radii := surface_shape_corner_radii(resolved.shape)
+				fmt.sbprintf(&sb, "  optical surface: shape=%s radius=%.2f corner-radii=(%.2f %.2f %.2f %.2f) material=%d height=%.3f (paint only)\n",
 					style_inspector_surface_shape_name(resolved.shape.kind), resolved.shape.corner_radius,
+					radii.top_left, radii.top_right, radii.bottom_right, radii.bottom_left,
 					u32(resolved.material), resolved.physical_height)
 			}
 			fmt.sbprintf(&sb, "  computed style: dependencies=")

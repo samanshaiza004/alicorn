@@ -30,8 +30,9 @@ Backdrop_Effect_Paint :: struct {
 }
 
 // Paint_Command is the renderer-facing output of every paint producer:
-// retained widgets, runtime overlays, and host chrome. The owner is diagnostic
-// and transient-maintenance metadata; renderers dispatch only on the payload.
+// retained widgets, runtime overlays, and host chrome. The owner identifies
+// the producer for diagnostics and sidecar resolution; renderers dispatch on
+// the payload and use explicit resolvers for retained geometry.
 Paint_Command :: struct {
 	owner:       Node_ID,
 	bounds:      Rect,
@@ -95,21 +96,99 @@ Surface_Shape_Kind :: enum u8 {
 	// Component-private bounded contour. Public surface_begin callers cannot
 	// author this shape; TabBar owns its decoration and interaction separately.
 	Connected_Tab,
+	Rounded_Rectangle_Per_Corner,
+}
+
+// Surface_Corner_Radii stores logical radii in clockwise order, starting at
+// the top-left corner. Paint normalizes overlapping sums against its bounds.
+Surface_Corner_Radii :: struct {
+	top_left, top_right, bottom_right, bottom_left: f32,
 }
 
 Surface_Shape :: struct {
 	kind:          Surface_Shape_Kind,
 	corner_radius: f32,
+	corner_radii:  Surface_Corner_Radii,
 }
 
-SURFACE_CORNER_RADIUS_MAX :: 1_000_000.0
+surface_shape_rounded_corners :: proc(radii: Surface_Corner_Radii) -> Surface_Shape {
+	return Surface_Shape{kind=.Rounded_Rectangle_Per_Corner, corner_radii=radii}
+}
+
+// surface_shape_uniform_corner_radius is the migration form for positional
+// Surface_Shape literals; named corner_radius literals and UI radius options
+// remain source-compatible.
+surface_shape_uniform_corner_radius :: proc(radius: f32) -> Surface_Shape {
+	return Surface_Shape{kind=.Rounded_Rectangle, corner_radius=radius}
+}
+
+surface_corner_radii_is_zero :: proc(radii: Surface_Corner_Radii) -> bool {
+	return radii.top_left == 0 && radii.top_right == 0 && radii.bottom_right == 0 && radii.bottom_left == 0
+}
+
+surface_corner_radii_is_valid :: proc(radii: Surface_Corner_Radii) -> bool {
+	for radius in ([4]f32{radii.top_left, radii.top_right, radii.bottom_right, radii.bottom_left}) {
+		if !number_is_finite(radius) || radius < 0 { return false }
+	}
+	return true
+}
+
+surface_shape_corner_radii :: proc(shape: Surface_Shape) -> Surface_Corner_Radii {
+	switch shape.kind {
+	case .Rounded_Rectangle:
+		return Surface_Corner_Radii{shape.corner_radius, shape.corner_radius, shape.corner_radius, shape.corner_radius}
+	case .Rounded_Rectangle_Per_Corner:
+		return shape.corner_radii
+	case .Rectangle, .Line, .Connected_Tab:
+		return {}
+	}
+	return {}
+}
+
+surface_corner_radii_normalize :: proc(radii: Surface_Corner_Radii, width, height: f32) -> Surface_Corner_Radii {
+	if !surface_corner_radii_is_valid(radii) || !number_is_finite(width) || !number_is_finite(height) || width <= 0 || height <= 0 {
+		return {}
+	}
+
+	// Reduce every radius by one shared factor so opposing arcs never overlap.
+	// Use f64 for sums so every finite f32 radius remains normalizable.
+	// Applying one factor preserves the authored corner proportions.
+	scale := f64(1)
+	w, h := f64(width), f64(height)
+	top := f64(radii.top_left)+f64(radii.top_right)
+	right := f64(radii.top_right)+f64(radii.bottom_right)
+	bottom := f64(radii.bottom_right)+f64(radii.bottom_left)
+	left := f64(radii.bottom_left)+f64(radii.top_left)
+	if top > w { scale = min(scale, w/top) }
+	if right > h { scale = min(scale, h/right) }
+	if bottom > w { scale = min(scale, w/bottom) }
+	if left > h { scale = min(scale, h/left) }
+	return Surface_Corner_Radii{
+		f32(f64(radii.top_left)*scale),
+		f32(f64(radii.top_right)*scale),
+		f32(f64(radii.bottom_right)*scale),
+		f32(f64(radii.bottom_left)*scale),
+	}
+}
+
+surface_shape_normalized_corner_radii :: proc(shape: Surface_Shape, width, height: f32) -> Surface_Corner_Radii {
+	return surface_corner_radii_normalize(surface_shape_corner_radii(shape), width, height)
+}
+
+surface_shape_has_rounded_corners :: proc(shape: Surface_Shape) -> bool {
+	radii := surface_shape_corner_radii(shape)
+	return radii.top_left > 0 || radii.top_right > 0 || radii.bottom_right > 0 || radii.bottom_left > 0
+}
 
 surface_shape_is_valid :: proc(shape: Surface_Shape) -> bool {
 	switch shape.kind {
 	case .Rectangle:
-		return shape.corner_radius == 0
+		return shape.corner_radius == 0 && surface_corner_radii_is_zero(shape.corner_radii)
 	case .Rounded_Rectangle:
-		return shape.corner_radius == shape.corner_radius && shape.corner_radius >= 0 && shape.corner_radius <= SURFACE_CORNER_RADIUS_MAX
+		return number_is_finite(shape.corner_radius) && shape.corner_radius >= 0 &&
+		       surface_corner_radii_is_zero(shape.corner_radii)
+	case .Rounded_Rectangle_Per_Corner:
+		return shape.corner_radius == 0 && surface_corner_radii_is_valid(shape.corner_radii)
 	case .Line:
 		return false
 	case .Connected_Tab:
@@ -130,7 +209,7 @@ Material_Group_ID :: distinct u32
 MATERIAL_GROUP_NONE :: Material_Group_ID(0)
 
 Surface_Paint :: struct {
-	shape:           Surface_Shape,
+	shape:           Surface_Paint_Shape,
 	fill:            Color,
 	stroke:          Paint_Stroke,
 	material:        Material_ID,
@@ -139,6 +218,18 @@ Surface_Paint :: struct {
 	// Absolute logical X coordinates of an opening in the top optical edge.
 	// A zero interval keeps the ordinary uninterrupted surface treatment.
 	top_edge_gap:    [2]f32,
+}
+
+// Surface_Paint_Shape keeps Paint_Command compact. Uniform radii fit inline;
+// per-corner radii resolve from the retained semantic or computed style keyed
+// by the command owner.
+Surface_Paint_Shape :: struct {
+	kind: Surface_Shape_Kind,
+	corner_radius: f32,
+}
+
+surface_paint_shape :: proc(shape: Surface_Shape) -> Surface_Paint_Shape {
+	return Surface_Paint_Shape{kind=shape.kind, corner_radius=shape.corner_radius}
 }
 
 Text_Run_Source :: enum {
@@ -211,7 +302,7 @@ paint_surface_command :: proc(
 		translation=translation,
 		stroke_placement=stroke_placement,
 		payload=Surface_Paint{
-			shape=shape,
+			shape=surface_paint_shape(shape),
 			fill=color,
 			material=material,
 			physical_height=physical_height,

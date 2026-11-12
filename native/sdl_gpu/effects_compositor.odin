@@ -40,6 +40,15 @@ native_effect_hash_command :: proc(hash: u64, draw: alicorn.Paint_Command, rt: ^
 		result = alicorn.hash_mix(result, 1)
 		result = alicorn.hash_mix(result, u64(payload.shape.kind))
 		result = native_effect_hash_f32(result, payload.shape.corner_radius)
+		resolved_shape, shape_ok := alicorn.surface_paint_shape_resolve(rt, draw.owner, payload.shape)
+		result = alicorn.hash_mix(result, u64(shape_ok))
+		if shape_ok {
+			radii := alicorn.surface_shape_corner_radii(resolved_shape)
+			result = native_effect_hash_f32(result, radii.top_left)
+			result = native_effect_hash_f32(result, radii.top_right)
+			result = native_effect_hash_f32(result, radii.bottom_right)
+			result = native_effect_hash_f32(result, radii.bottom_left)
+		}
 		result = native_effect_hash_color(result, payload.fill)
 		result = native_effect_hash_color(result, payload.stroke.color)
 		result = native_effect_hash_f32(result, payload.stroke.width)

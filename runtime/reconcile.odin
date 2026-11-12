@@ -376,6 +376,7 @@ semantic_surface_material_inputs_changed :: proc(previous, next: Semantic_Surfac
 	if !previous.defined { return false }
 	return previous.shape.kind != next.shape.kind ||
 	       previous.shape.corner_radius != next.shape.corner_radius ||
+	       previous.shape.corner_radii != next.shape.corner_radii ||
 	       previous.material != next.material ||
 	       previous.physical_height != next.physical_height ||
 	       previous.material_group != next.material_group ||
