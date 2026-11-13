@@ -502,3 +502,36 @@ test_optical_height_preserves_surface_order_and_depth :: proc(t: ^testing.T) {
 			"surface height must not change emitted vertex depth or compositor order")
 	}
 }
+
+native_solid_stroked_path_stays_within_bounds :: proc(points: [][2]f32) -> bool {
+	if len(points) < 2 { return false }
+	vertices := make([dynamic]Native_Text_Vertex, 0, 256, allocator=context.temp_allocator)
+	defer delete(vertices)
+	stroke := alicorn.Paint_Stroke{color={1, 1, 1, 1}, width=4}
+	native_solid_append_stroked_path(&vertices, points, stroke, 1)
+	if len(vertices) == 0 { return false }
+	min_x, max_x := points[0][0], points[0][0]
+	min_y, max_y := points[0][1], points[0][1]
+	for point in points {
+		min_x, max_x = min(min_x, point[0]), max(max_x, point[0])
+		min_y, max_y = min(min_y, point[1]), max(max_y, point[1])
+	}
+	margin := stroke.width*0.5 + NATIVE_VECTOR_ANTIALIAS_FRINGE
+	for vertex in vertices {
+		if vertex.position[0] < min_x-margin || vertex.position[0] > max_x+margin ||
+		   vertex.position[1] < min_y-margin || vertex.position[1] > max_y+margin {
+			return false
+		}
+	}
+	return true
+}
+
+@(test)
+test_stroked_path_end_caps_use_last_populated_vertex :: proc(t: ^testing.T) {
+	short_line := [2][2]f32{{100, 40}, {120, 40}}
+	shallow_curve := [4][2]f32{{100, 40}, {106, 42}, {113, 44}, {120, 46}}
+	testing.expect(t, native_solid_stroked_path_stays_within_bounds(short_line[:]),
+		"a short stroked path end cap must use the last populated point, not fixed array capacity")
+	testing.expect(t, native_solid_stroked_path_stays_within_bounds(shallow_curve[:]),
+		"a short curved path end cap must stay within the curve and antialias fringe bounds")
+}

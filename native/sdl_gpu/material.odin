@@ -262,9 +262,9 @@ native_solid_append_stroked_path :: proc(
 	}
 	if last_length > 0.0001 {
 		direction := [2]f32{last_delta[0]/last_length, last_delta[1]/last_length}
-		outer_left := [2]f32{left[len(left)-1][0]+direction[0]*fringe, left[len(left)-1][1]+direction[1]*fringe}
-		outer_right := [2]f32{right[len(right)-1][0]+direction[0]*fringe, right[len(right)-1][1]+direction[1]*fringe}
-	last := len(points)-1
+		last := len(points)-1
+		outer_left := [2]f32{left[last][0]+direction[0]*fringe, left[last][1]+direction[1]*fringe}
+		outer_right := [2]f32{right[last][0]+direction[0]*fringe, right[last][1]+direction[1]*fringe}
 		native_solid_append_triangle(vertices, left[last], outer_right, right[last], color, transparent, color)
 		native_solid_append_triangle(vertices, left[last], outer_left, outer_right, color, transparent, transparent)
 	}
