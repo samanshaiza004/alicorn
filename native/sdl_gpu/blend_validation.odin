@@ -887,8 +887,14 @@ blend_validation_gradient_readbacks :: proc(
 		stroke_pixel_x := int(32*scale)
 		stroke_pixel_y := int(9*scale)
 		stroke := alicorn.Color{0.94, 0.78, 0.12, 1}
+		// The inside stroke is painted over the gradient fill, so the reference
+		// must composite the gradient against the background before the stroke.
+		stroke_t := (f32(stroke_pixel_x)+0.5-8*scale)/(48*scale)
+		gradient_below_stroke := blend_validation_gradient_interpolate(horizontal_start, horizontal_end, stroke_t)
+		under_stroke := blend_validation_over(background_rgba, gradient_below_stroke, horizontal.opacity)
+		expected_stroke := blend_validation_over(under_stroke, stroke, horizontal.opacity)
 		if !blend_validation_expect("surface_gradient_independent_stroke", scale, background, pixels,
-			stroke_pixel_x, stroke_pixel_y, blend_validation_over(background_rgba, stroke, horizontal.opacity)) {
+			stroke_pixel_x, stroke_pixel_y, expected_stroke) {
 			fmt.println("surface_gradient_independent_stroke_failed", "scale", scale)
 			return false
 		}
