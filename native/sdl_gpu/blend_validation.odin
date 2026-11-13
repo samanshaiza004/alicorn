@@ -798,12 +798,8 @@ blend_validation_gradient_gpu_benchmark :: proc(
 	target: ^sdl3.GPUTexture,
 	download: ^sdl3.GPUTransferBuffer,
 	pixels: []u8,
+	horizontal: alicorn.Paint_Command,
 ) -> bool {
-	horizontal, _, fixture_ok := blend_validation_gradient_fixture(rt)
-	if !fixture_ok {
-		fmt.println("surface_gradient_gpu_benchmark_fixture_failed")
-		return false
-	}
 	previous_runtime := renderers.solid.runtime
 	renderers.solid.runtime = rt
 	defer renderers.solid.runtime = previous_runtime
@@ -887,12 +883,8 @@ blend_validation_gradient_readbacks :: proc(
 	target: ^sdl3.GPUTexture,
 	download: ^sdl3.GPUTransferBuffer,
 	pixels: []u8,
+	horizontal, vertical: alicorn.Paint_Command,
 ) -> bool {
-	horizontal, vertical, fixture_ok := blend_validation_gradient_fixture(rt)
-	if !fixture_ok {
-		fmt.println("surface_gradient_gpu_fixture_failed")
-		return false
-	}
 	previous_runtime := renderers.solid.runtime
 	renderers.solid.runtime = rt
 	defer renderers.solid.runtime = previous_runtime
@@ -1046,8 +1038,12 @@ blend_validation_device :: proc() -> bool {
 	pixels := make([]u8, BLEND_VALIDATION_SIZE*BLEND_VALIDATION_SIZE*4)
 	defer delete(pixels)
 	if !blend_validation_cases(&renderers, &rt, target, download, pixels) { return false }
-	if !blend_validation_gradient_readbacks(&renderers, &rt, target, download, pixels) { return false }
-	if !blend_validation_gradient_gpu_benchmark(&renderers, &rt, target, download, pixels) { return false }
+	gradient_horizontal, gradient_vertical, fixture_ok := blend_validation_gradient_fixture(&rt)
+	if !fixture_ok { return false }
+	if !blend_validation_gradient_readbacks(&renderers, &rt, target, download, pixels,
+		gradient_horizontal, gradient_vertical) { return false }
+	if !blend_validation_gradient_gpu_benchmark(&renderers, &rt, target, download, pixels,
+		gradient_horizontal) { return false }
 	if !blend_validation_reference_scenes(&renderers, target, download, pixels) { return false }
 	return blend_validation_motion_clip_case(&renderers, &rt, target, download, pixels)
 }
