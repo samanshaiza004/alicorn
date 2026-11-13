@@ -707,9 +707,15 @@ blend_validation_gradient_fixture :: proc(rt: ^alicorn.Runtime) -> (
 		alicorn.Style_Extension_Color_Role_Binding{role=vertical_end_role, token=alicorn.Style_Color_Token_ID(4)},
 	}
 	theme_id := alicorn.style_theme_register(rt, theme)
-	if theme_id == 0 { return }
+	if theme_id == 0 {
+		fmt.println("surface_gradient_fixture_theme_registration_failed")
+		return
+	}
 	ui, build := alicorn.begin_frame(rt)
-	if !build { return }
+	if !build {
+		fmt.println("surface_gradient_fixture_begin_frame_failed")
+		return
+	}
 	alicorn.container_begin(&ui, .Root, key=alicorn.key_string("gradient-validation-root"),
 		style=alicorn.layout_style(.Column, width=128, height=128, clip=true))
 	scope := alicorn.style_environment_push(&ui, alicorn.Style_Environment{theme=theme_id})
@@ -729,21 +735,34 @@ blend_validation_gradient_fixture :: proc(rt: ^alicorn.Runtime) -> (
 	alicorn.end_frame(&ui)
 	horizontal_node, horizontal_found := rt.nodes[horizontal_id]
 	vertical_node, vertical_found := rt.nodes[vertical_id]
-	if !horizontal_found || !vertical_found || len(horizontal_node.paint) != 1 || len(vertical_node.paint) != 1 { return }
+	if !horizontal_found || !vertical_found || len(horizontal_node.paint) != 1 || len(vertical_node.paint) != 1 {
+		fmt.println("surface_gradient_fixture_nodes_invalid", "horizontal_found", horizontal_found,
+			"vertical_found", vertical_found, "horizontal_paint_count", len(horizontal_node.paint),
+			"vertical_paint_count", len(vertical_node.paint))
+		return
+	}
 	horizontal = horizontal_node.paint[0]
 	horizontal.bounds = {8, 8, 48, 40}
 	horizontal.clip = {20, 8, 36, 40}
 	horizontal.opacity = 0.8
 	horizontal.stroke_placement = .Inside
 	horizontal_surface, horizontal_surface_ok := horizontal.payload.(alicorn.Surface_Paint)
-	if !horizontal_surface_ok { return }
+	if !horizontal_surface_ok {
+		fmt.println("surface_gradient_fixture_horizontal_payload_invalid")
+		return
+	}
 	horizontal_surface.stroke = alicorn.Paint_Stroke{color={0.94, 0.78, 0.12, 1}, width=2}
 	horizontal.payload = horizontal_surface
 	vertical = vertical_node.paint[0]
 	vertical.bounds = {16, 8, 48, 48}
 	vertical.clip = {16, 20, 48, 36}
 	vertical.opacity = 0.75
-	return horizontal, vertical, horizontal.semantic_surface_gradient && vertical.semantic_surface_gradient
+	if !horizontal.semantic_surface_gradient || !vertical.semantic_surface_gradient {
+		fmt.println("surface_gradient_fixture_gradient_semantics_invalid",
+			"horizontal", horizontal.semantic_surface_gradient, "vertical", vertical.semantic_surface_gradient)
+		return
+	}
+	return horizontal, vertical, true
 }
 
 blend_validation_gradient_interpolate :: proc(start, end: alicorn.Color, t: f32) -> alicorn.Color {
@@ -781,7 +800,10 @@ blend_validation_gradient_gpu_benchmark :: proc(
 	pixels: []u8,
 ) -> bool {
 	horizontal, _, fixture_ok := blend_validation_gradient_fixture(rt)
-	if !fixture_ok { return false }
+	if !fixture_ok {
+		fmt.println("surface_gradient_gpu_benchmark_fixture_failed")
+		return false
+	}
 	previous_runtime := renderers.solid.runtime
 	renderers.solid.runtime = rt
 	defer renderers.solid.runtime = previous_runtime
