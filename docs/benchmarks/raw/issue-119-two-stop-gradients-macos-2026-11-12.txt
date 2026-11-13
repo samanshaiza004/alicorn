@@ -1,0 +1,32 @@
+Alicorn surface gradient CPU geometry benchmark
+Host: MacBook Air MacBookAir10,1; Apple M1, 8 CPU cores; 8 GB RAM
+OS: macOS 27.2 (build 26B123)
+Odin: dev-2026-11:9a6991685
+Build: -o:speed
+Method: three fresh processes; each case uses 101 warmed samples, alternating solid-first / gradient-first order
+Scope: CPU vertex expansion only; no layout, upload, GPU execution, or presented frame timing
+Batch: 256 surfaces
+
+Process 1
+native_shape_geometry rectangle fill solid surfaces 256 vertices_per_surface 6 uploaded_bytes 55296 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 3000 p95_batch_ns 3000 p50_ns_per_surface 11.71875 p95_ns_per_surface 11.71875
+native_shape_geometry rectangle fill gradient surfaces 256 vertices_per_surface 6 uploaded_bytes 55296 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 4000 p95_batch_ns 4000 p50_ns_per_surface 15.625 p95_ns_per_surface 15.625
+native_shape_geometry uniform-rounded fill solid surfaces 256 vertices_per_surface 324 uploaded_bytes 2985984 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 771000 p95_batch_ns 958000 p50_ns_per_surface 3011.71875 p95_ns_per_surface 3742.1875
+native_shape_geometry uniform-rounded fill gradient surfaces 256 vertices_per_surface 324 uploaded_bytes 2985984 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 775000 p95_batch_ns 1027000 p50_ns_per_surface 3027.34375 p95_ns_per_surface 4011.71875
+native_shape_geometry per-corner-rounded fill solid surfaces 256 vertices_per_surface 324 uploaded_bytes 2985984 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 749000 p95_batch_ns 829000 p50_ns_per_surface 2925.78125 p95_ns_per_surface 3238.28125
+native_shape_geometry per-corner-rounded fill gradient surfaces 256 vertices_per_surface 324 uploaded_bytes 2985984 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 752000 p95_batch_ns 848000 p50_ns_per_surface 2937.5 p95_ns_per_surface 3312.5
+
+Process 2
+native_shape_geometry rectangle fill solid surfaces 256 vertices_per_surface 6 uploaded_bytes 55296 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 3000 p95_batch_ns 3000 p50_ns_per_surface 11.71875 p95_ns_per_surface 11.71875
+native_shape_geometry rectangle fill gradient surfaces 256 vertices_per_surface 6 uploaded_bytes 55296 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 4000 p95_batch_ns 4000 p50_ns_per_surface 15.625 p95_ns_per_surface 15.625
+native_shape_geometry uniform-rounded fill solid surfaces 256 vertices_per_surface 324 uploaded_bytes 2985984 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 763000 p95_batch_ns 1571000 p50_ns_per_surface 2980.46875 p95_ns_per_surface 6136.71875
+native_shape_geometry uniform-rounded fill gradient surfaces 256 vertices_per_surface 324 uploaded_bytes 2985984 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 772000 p95_batch_ns 1304000 p50_ns_per_surface 3015.625 p95_ns_per_surface 5093.75
+native_shape_geometry per-corner-rounded fill solid surfaces 256 vertices_per_surface 324 uploaded_bytes 2985984 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 750000 p95_batch_ns 797000 p50_ns_per_surface 2929.6875 p95_ns_per_surface 3113.28125
+native_shape_geometry per-corner-rounded fill gradient surfaces 256 vertices_per_surface 324 uploaded_bytes 2985984 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 752000 p95_batch_ns 808000 p50_ns_per_surface 2937.5 p95_ns_per_surface 3156.25
+
+Process 3
+native_shape_geometry rectangle fill solid surfaces 256 vertices_per_surface 6 uploaded_bytes 55296 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 3000 p95_batch_ns 3000 p50_ns_per_surface 11.71875 p95_ns_per_surface 11.71875
+native_shape_geometry rectangle fill gradient surfaces 256 vertices_per_surface 6 uploaded_bytes 55296 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 4000 p95_batch_ns 4000 p50_ns_per_surface 15.625 p95_ns_per_surface 15.625
+native_shape_geometry uniform-rounded fill solid surfaces 256 vertices_per_surface 324 uploaded_bytes 2985984 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 792000 p95_batch_ns 2575000 p50_ns_per_surface 3093.75 p95_ns_per_surface 10058.59375
+native_shape_geometry uniform-rounded fill gradient surfaces 256 vertices_per_surface 324 uploaded_bytes 2985984 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 796000 p95_batch_ns 2237000 p50_ns_per_surface 3109.375 p95_ns_per_surface 8738.28125
+native_shape_geometry per-corner-rounded fill solid surfaces 256 vertices_per_surface 324 uploaded_bytes 2985984 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 752000 p95_batch_ns 1072000 p50_ns_per_surface 2937.5 p95_ns_per_surface 4187.5
+native_shape_geometry per-corner-rounded fill gradient surfaces 256 vertices_per_surface 324 uploaded_bytes 2985984 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 764000 p95_batch_ns 1113000 p50_ns_per_surface 2984.375 p95_ns_per_surface 4347.65625

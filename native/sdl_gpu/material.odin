@@ -217,12 +217,13 @@ native_solid_gradient_color_at :: proc(
 	axis: alicorn.Surface_Gradient_Axis,
 	bounds: alicorn.Rect,
 	x, y, opacity: f32,
+	inverse_extent: f32,
 ) -> [4]f32 {
 	t := f32(0)
 	if axis == .Horizontal {
-		t = clamp((x-bounds.x)/bounds.w, 0, 1)
+		t = clamp((x-bounds.x)*inverse_extent, 0, 1)
 	} else if axis == .Vertical {
-		t = clamp((y-bounds.y)/bounds.h, 0, 1)
+		t = clamp((y-bounds.y)*inverse_extent, 0, 1)
 	}
 	return [4]f32{
 		start.r+(end.r-start.r)*t,
@@ -252,10 +253,12 @@ native_solid_append_gradient_quad :: proc(
 	}
 	x0, y0 := bounds.x, bounds.y
 	x1, y1 := bounds.x+bounds.w, bounds.y+bounds.h
-	color00 := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, x0, y0, opacity)
-	color10 := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, x1, y0, opacity)
-	color11 := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, x1, y1, opacity)
-	color01 := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, x0, y1, opacity)
+	inverse_extent := f32(1)/bounds.w
+	if gradient.axis == .Vertical { inverse_extent = f32(1)/bounds.h }
+	color00 := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, x0, y0, opacity, inverse_extent)
+	color10 := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, x1, y0, opacity, inverse_extent)
+	color11 := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, x1, y1, opacity, inverse_extent)
+	color01 := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, x0, y1, opacity, inverse_extent)
 	uv := [2]f32{0.5, 0.5}
 	append(vertices,
 		Native_Text_Vertex{[3]f32{x0, y0, 0}, color00, uv},
@@ -282,14 +285,16 @@ native_solid_append_rounded_gradient_fill :: proc(
 			[4]f32{start.r, start.g, start.b, start.a*opacity})
 		return
 	}
+	inverse_extent := f32(1)/bounds.w
+	if gradient.axis == .Vertical { inverse_extent = f32(1)/bounds.h }
 	center := [2]f32{bounds.x+bounds.w*0.5, bounds.y+bounds.h*0.5}
-	center_color := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, center[0], center[1], opacity)
+	center_color := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, center[0], center[1], opacity, inverse_extent)
 	for i in 0..<NATIVE_ROUNDED_CONTOUR_POINTS {
 		next := (i+1) % NATIVE_ROUNDED_CONTOUR_POINTS
 		a, _ := native_solid_rounded_contour_point(bounds, contour_radii, 0, i)
 		b, _ := native_solid_rounded_contour_point(bounds, contour_radii, 0, next)
-		color_a := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, a[0], a[1], opacity)
-		color_b := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, b[0], b[1], opacity)
+		color_a := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, a[0], a[1], opacity, inverse_extent)
+		color_b := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, b[0], b[1], opacity, inverse_extent)
 		append(vertices,
 			Native_Text_Vertex{[3]f32{center[0], center[1], 0}, center_color, {0.5, 0.5}},
 			Native_Text_Vertex{[3]f32{a[0], a[1], 0}, color_a, {0.5, 0.5}},
@@ -298,15 +303,15 @@ native_solid_append_rounded_gradient_fill :: proc(
 	}
 	// Preserve the existing antialias fringe topology and vertex count while
 	// carrying each contour point's local gradient color through its inner edge.
+	outer_radii := native_solid_rounded_contour_radii(bounds, contour_radii, -NATIVE_ROUNDED_ANTIALIAS_FRINGE)
 	for i in 0..<NATIVE_ROUNDED_CONTOUR_POINTS {
 		next := (i+1) % NATIVE_ROUNDED_CONTOUR_POINTS
-		outer_radii := native_solid_rounded_contour_radii(bounds, contour_radii, -NATIVE_ROUNDED_ANTIALIAS_FRINGE)
 		outer_a, _ := native_solid_rounded_contour_point(bounds, outer_radii, -NATIVE_ROUNDED_ANTIALIAS_FRINGE, i)
 		outer_b, _ := native_solid_rounded_contour_point(bounds, outer_radii, -NATIVE_ROUNDED_ANTIALIAS_FRINGE, next)
 		inner_a, _ := native_solid_rounded_contour_point(bounds, contour_radii, 0, i)
 		inner_b, _ := native_solid_rounded_contour_point(bounds, contour_radii, 0, next)
-		outer_color_a := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, inner_a[0], inner_a[1], opacity)
-		outer_color_b := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, inner_b[0], inner_b[1], opacity)
+		outer_color_a := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, inner_a[0], inner_a[1], opacity, inverse_extent)
+		outer_color_b := native_solid_gradient_color_at(start, gradient.end, gradient.axis, bounds, inner_b[0], inner_b[1], opacity, inverse_extent)
 		inner_color_a, inner_color_b := outer_color_a, outer_color_b
 		outer_color_a[3], outer_color_b[3] = 0, 0
 		append(vertices,
@@ -348,7 +353,11 @@ native_solid_append_rounded_material_surface :: proc(
 		native_solid_append_rounded_fill(vertices, mid, native_solid_corner_radii_adjust(radii, expand*0.5), middle)
 	}
 
-	native_solid_append_rounded_gradient_fill(vertices, base, radii, fill, gradient, opacity)
+	if gradient.axis == .None {
+		native_solid_append_rounded_fill(vertices, base, radii, [4]f32{fill.r, fill.g, fill.b, fill.a*opacity})
+	} else {
+		native_solid_append_rounded_gradient_fill(vertices, base, radii, fill, gradient, opacity)
+	}
 	bevel_width := min(max(material.bevel_width, 0), min(base.w, base.h)*0.5)
 	if material.kind == .Analytic_Relief && physical_height != 0 {
 		if bevel_width > 0 && material.bevel_strength > 0 {

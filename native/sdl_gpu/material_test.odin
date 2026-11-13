@@ -5,6 +5,81 @@ import "core:fmt"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
+gradient_test_color_near :: proc(a, b: [4]f32) -> bool {
+	for i in 0..<4 {
+		if abs(a[i]-b[i]) > 0.00001 { return false }
+	}
+	return true
+}
+
+@(test)
+test_two_stop_gradient_keeps_rect_geometry_and_interpolates_existing_vertex_colors :: proc(t: ^testing.T) {
+	vertices := make([dynamic]Native_Text_Vertex, 0, 32, allocator=context.temp_allocator)
+	defer delete(vertices)
+	start := alicorn.Color{0.2, 0.4, 0.6, 0.5}
+	end := alicorn.Color{0.8, 0.2, 0.1, 0.5}
+	gradient := alicorn.Surface_Gradient{axis=.Horizontal, end=end}
+	native_solid_append_material_surface(
+		&vertices, {10, 20, 80, 40}, {10, 20, 80, 40}, start,
+		alicorn.STYLE_MATERIAL_FLAT, 0, 0.4, gradient=gradient,
+	)
+	start_vertex := [4]f32{0.2, 0.4, 0.6, 0.2}
+	end_vertex := [4]f32{0.8, 0.2, 0.1, 0.2}
+	testing.expect(t, len(vertices) == 6 && native_solid_material_vertex_count(alicorn.STYLE_MATERIAL_FLAT, 0) == 6,
+		"a rectangular gradient should reuse the solid surface's six-vertex geometry and draw slot")
+	if len(vertices) == 6 {
+		testing.expect(t, gradient_test_color_near(vertices[0].color, start_vertex) &&
+			gradient_test_color_near(vertices[1].color, end_vertex) &&
+			gradient_test_color_near(vertices[2].color, end_vertex) &&
+			gradient_test_color_near(vertices[3].color, start_vertex) &&
+			gradient_test_color_near(vertices[5].color, start_vertex),
+			"horizontal stops should occupy the original left and right bounds and apply command opacity once")
+	}
+	horizontal_midpoint := native_solid_gradient_color_at(start, end, .Horizontal, {10, 20, 80, 40}, 50, 40, 0.4, 1.0/80.0)
+	testing.expect(t, gradient_test_color_near(horizontal_midpoint, [4]f32{0.5, 0.3, 0.35, 0.2}),
+		"horizontal interpolation should use linear-sRGB midpoint channels and shared alpha times opacity")
+
+	clear(&vertices)
+	vertical := alicorn.Surface_Gradient{axis=.Vertical, end=end}
+	native_solid_append_gradient_quad(&vertices, {10, 20, 80, 40}, start, vertical, 0.4)
+	testing.expect(t, len(vertices) == 6 && gradient_test_color_near(vertices[0].color, start_vertex) &&
+		gradient_test_color_near(vertices[2].color, end_vertex),
+		"vertical gradients should place the two stops at the top and bottom edges")
+	vertical_midpoint := native_solid_gradient_color_at(start, end, .Vertical, {10, 20, 80, 40}, 50, 40, 0.4, 1.0/40.0)
+	testing.expect(t, gradient_test_color_near(vertical_midpoint, [4]f32{0.5, 0.3, 0.35, 0.2}),
+		"vertical interpolation should share the same linear-sRGB midpoint contract")
+}
+
+@(test)
+test_rounded_gradient_preserves_contour_antialias_and_solid_stroke :: proc(t: ^testing.T) {
+	vertices := make([dynamic]Native_Text_Vertex, 0, 1024, allocator=context.temp_allocator)
+	defer delete(vertices)
+	shape := alicorn.surface_shape_rounded_corners({top_left=5, top_right=12, bottom_right=8, bottom_left=3})
+	start := alicorn.Color{0.1, 0.2, 0.7, 0.6}
+	end := alicorn.Color{0.7, 0.6, 0.1, 0.6}
+	stroke := alicorn.Paint_Stroke{color={0.9, 0.3, 0.2, 1}, width=2}
+	native_solid_append_rounded_material_surface(
+		&vertices, {10, 20, 80, 40}, {10, 20, 80, 40}, start,
+		alicorn.STYLE_MATERIAL_FLAT, 0, 0.5, shape, stroke, .Inside,
+		alicorn.Surface_Gradient{axis=.Vertical, end=end},
+	)
+	fill_vertices := NATIVE_ROUNDED_FILL_VERTICES
+	expected_total := fill_vertices + NATIVE_ROUNDED_RING_VERTICES*3
+	testing.expect(t, fill_vertices == 324 && len(vertices) == expected_total &&
+		native_solid_material_vertex_count(alicorn.STYLE_MATERIAL_FLAT, 0, shape, stroke) == expected_total,
+		"rounded gradients should preserve the per-corner contour, antialias fringe, and independent stroke geometry budget")
+	if len(vertices) > fill_vertices {
+		stroke_color := [4]f32{0.9, 0.3, 0.2, 0.5}
+		testing.expect(t, gradient_test_color_near(vertices[fill_vertices+2].color, stroke_color),
+			"a surface stroke should remain a separate solid color instead of inheriting gradient stops")
+	}
+
+	clear(&vertices)
+	native_solid_append_gradient_quad(&vertices, {0, 0, 0, 20}, start,
+		alicorn.Surface_Gradient{axis=.Horizontal, end=end}, 1)
+	testing.expect(t, len(vertices) == 0, "zero-area gradients should not emit vertices")
+}
+
 @(test)
 test_flat_material_stays_one_quad :: proc(t: ^testing.T) {
 	vertices := make([dynamic]Native_Text_Vertex, 0, 128, allocator=context.temp_allocator)

@@ -680,6 +680,286 @@ blend_validation_reference_scenes :: proc(
 	return true
 }
 
+blend_validation_gradient_fixture :: proc(rt: ^alicorn.Runtime) -> (
+	horizontal, vertical: alicorn.Paint_Command,
+	ok: bool,
+) {
+	start_role := alicorn.style_extension_color_role_id("app.validation", "gradient_start")
+	end_role := alicorn.style_extension_color_role_id("app.validation", "gradient_end")
+	vertical_start_role := alicorn.style_extension_color_role_id("app.validation", "vertical_start")
+	vertical_end_role := alicorn.style_extension_color_role_id("app.validation", "vertical_end")
+	start := alicorn.Color{0.86, 0.16, 0.08, 0.5}
+	end := alicorn.Color{0.08, 0.34, 0.92, 0.5}
+	vertical_start := alicorn.Color{0.08, 0.74, 0.2, 0.6}
+	vertical_end := alicorn.Color{0.76, 0.12, 0.4, 0.6}
+	theme := alicorn.DEFAULT_STYLE_THEME
+	theme.color_tokens = {start, end, vertical_start, vertical_end}
+	theme.extension_color_roles = {
+		alicorn.Style_Extension_Color_Role_Binding{role=start_role, token=alicorn.Style_Color_Token_ID(1)},
+		alicorn.Style_Extension_Color_Role_Binding{role=end_role, token=alicorn.Style_Color_Token_ID(2)},
+		alicorn.Style_Extension_Color_Role_Binding{role=vertical_start_role, token=alicorn.Style_Color_Token_ID(3)},
+		alicorn.Style_Extension_Color_Role_Binding{role=vertical_end_role, token=alicorn.Style_Color_Token_ID(4)},
+	}
+	theme_id := alicorn.style_theme_register(rt, theme)
+	if theme_id == 0 { return }
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin(&ui, .Root, key=alicorn.key_string("gradient-validation-root"),
+		style=alicorn.layout_style(.Column, width=128, height=128, clip=true))
+	scope := alicorn.style_environment_push(&ui, alicorn.Style_Environment{theme=theme_id})
+	horizontal_id := alicorn.surface_begin(&ui, alicorn.surface_extension_color_role(start_role),
+		key=alicorn.key_string("gradient-validation-horizontal"),
+		style=alicorn.layout_style(width=48, height=40),
+		gradient=alicorn.surface_gradient_to(alicorn.surface_extension_color_role(end_role), .Horizontal))
+	alicorn.surface_end(&ui)
+	vertical_id := alicorn.surface_begin(&ui, alicorn.surface_extension_color_role(vertical_start_role),
+		key=alicorn.key_string("gradient-validation-vertical"),
+		style=alicorn.layout_style(width=48, height=48),
+		shape=alicorn.surface_shape_rounded_corners({top_left=6, top_right=6, bottom_right=6, bottom_left=6}),
+		gradient=alicorn.surface_gradient_to(alicorn.surface_extension_color_role(vertical_end_role), .Vertical))
+	alicorn.surface_end(&ui)
+	alicorn.style_environment_pop(&ui, scope)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	horizontal_node, horizontal_found := rt.nodes[horizontal_id]
+	vertical_node, vertical_found := rt.nodes[vertical_id]
+	if !horizontal_found || !vertical_found || len(horizontal_node.paint) != 1 || len(vertical_node.paint) != 1 { return }
+	horizontal = horizontal_node.paint[0]
+	horizontal.bounds = {8, 8, 48, 40}
+	horizontal.clip = {20, 8, 36, 40}
+	horizontal.opacity = 0.8
+	horizontal.stroke_placement = .Inside
+	horizontal_surface, horizontal_surface_ok := horizontal.payload.(alicorn.Surface_Paint)
+	if !horizontal_surface_ok { return }
+	horizontal_surface.stroke = alicorn.Paint_Stroke{color={0.94, 0.78, 0.12, 1}, width=2}
+	horizontal.payload = horizontal_surface
+	vertical = vertical_node.paint[0]
+	vertical.bounds = {16, 8, 48, 48}
+	vertical.clip = {16, 20, 48, 36}
+	vertical.opacity = 0.75
+	return horizontal, vertical, horizontal.semantic_surface_gradient && vertical.semantic_surface_gradient
+}
+
+blend_validation_gradient_interpolate :: proc(start, end: alicorn.Color, t: f32) -> alicorn.Color {
+	return alicorn.Color{
+		start.r+(end.r-start.r)*t,
+		start.g+(end.g-start.g)*t,
+		start.b+(end.b-start.b)*t,
+		start.a,
+	}
+}
+
+BLEND_GRADIENT_BENCHMARK_SURFACES :: 256
+BLEND_GRADIENT_BENCHMARK_SAMPLES  :: 51
+
+blend_validation_sort_durations :: proc(samples: []i64) {
+	for i in 1..<len(samples) {
+		value := samples[i]
+		j := i
+		for j > 0 && samples[j-1] > value {
+			samples[j] = samples[j-1]
+			j -= 1
+		}
+		samples[j] = value
+	}
+}
+
+// Report synchronous offscreen submission-to-readback latency for identical
+// 256-surface batches. This is a GPU completion round trip, not presented-frame
+// latency; the separate CPU benchmark isolates mesh expansion.
+blend_validation_gradient_gpu_benchmark :: proc(
+	renderers: ^Blend_Validation_Renderers,
+	rt: ^alicorn.Runtime,
+	target: ^sdl3.GPUTexture,
+	download: ^sdl3.GPUTransferBuffer,
+	pixels: []u8,
+) -> bool {
+	horizontal, _, fixture_ok := blend_validation_gradient_fixture(rt)
+	if !fixture_ok { return false }
+	previous_runtime := renderers.solid.runtime
+	renderers.solid.runtime = rt
+	defer renderers.solid.runtime = previous_runtime
+
+	solid := make([dynamic]alicorn.Paint_Command, 0, BLEND_GRADIENT_BENCHMARK_SURFACES, allocator=context.temp_allocator)
+	defer delete(solid)
+	gradient := make([dynamic]alicorn.Paint_Command, 0, BLEND_GRADIENT_BENCHMARK_SURFACES, allocator=context.temp_allocator)
+	defer delete(gradient)
+	for i in 0..<BLEND_GRADIENT_BENCHMARK_SURFACES {
+		bounds := alicorn.Rect{f32(i%16)*4, f32(i/16)*4, 4, 4}
+		solid_command := horizontal
+		solid_command.bounds = bounds
+		solid_command.clip = {0, 0, 64, 64}
+		solid_command.opacity = 1
+		solid_command.semantic_surface_gradient = false
+		gradient_command := solid_command
+		gradient_command.semantic_surface_gradient = true
+		append(&solid, solid_command)
+		append(&gradient, gradient_command)
+	}
+
+	for _ in 0..<3 {
+		if !blend_validation_readback(renderers, target, download, solid[:], 2, {}, pixels) { return false }
+		if !blend_validation_readback(renderers, target, download, gradient[:], 2, {}, pixels) { return false }
+	}
+	solid_samples: [BLEND_GRADIENT_BENCHMARK_SAMPLES]i64
+	gradient_samples: [BLEND_GRADIENT_BENCHMARK_SAMPLES]i64
+	for sample in 0..<BLEND_GRADIENT_BENCHMARK_SAMPLES {
+		first, second := solid[:], gradient[:]
+		if sample%2 != 0 { first, second = gradient[:], solid[:] }
+		started := time.now()
+		if !blend_validation_readback(renderers, target, download, first, 2, {}, pixels) { return false }
+		first_ns := time.duration_nanoseconds(time.since(started))
+		started = time.now()
+		if !blend_validation_readback(renderers, target, download, second, 2, {}, pixels) { return false }
+		second_ns := time.duration_nanoseconds(time.since(started))
+		if sample%2 == 0 {
+			solid_samples[sample] = first_ns
+			gradient_samples[sample] = second_ns
+		} else {
+			gradient_samples[sample] = first_ns
+			solid_samples[sample] = second_ns
+		}
+	}
+	blend_validation_sort_durations(solid_samples[:])
+	blend_validation_sort_durations(gradient_samples[:])
+	p50 := BLEND_GRADIENT_BENCHMARK_SAMPLES/2
+	p95 := (BLEND_GRADIENT_BENCHMARK_SAMPLES*95+99)/100-1
+	bytes_per_batch := BLEND_GRADIENT_BENCHMARK_SURFACES*6*size_of(Native_Text_Vertex)
+	fmt.println("surface_gradient_gpu_roundtrip",
+		"device", sdl3.GetGPUDeviceDriver(renderers.solid.device),
+		"surfaces", BLEND_GRADIENT_BENCHMARK_SURFACES,
+		"solid_draw_calls", BLEND_GRADIENT_BENCHMARK_SURFACES,
+		"gradient_draw_calls", BLEND_GRADIENT_BENCHMARK_SURFACES,
+		"solid_passes", 1, "gradient_passes", 1,
+		"vertices_per_batch", BLEND_GRADIENT_BENCHMARK_SURFACES*6,
+		"uploaded_bytes_per_batch", bytes_per_batch,
+		"samples", BLEND_GRADIENT_BENCHMARK_SAMPLES,
+		"scale", 2,
+		"solid_p50_ns", solid_samples[p50], "solid_p95_ns", solid_samples[p95],
+		"gradient_p50_ns", gradient_samples[p50], "gradient_p95_ns", gradient_samples[p95],
+		"measurement", "offscreen_submit_fence_and_readback_not_presented_frame")
+	return true
+}
+
+blend_validation_gradient_readbacks :: proc(
+	renderers: ^Blend_Validation_Renderers,
+	rt: ^alicorn.Runtime,
+	target: ^sdl3.GPUTexture,
+	download: ^sdl3.GPUTransferBuffer,
+	pixels: []u8,
+) -> bool {
+	horizontal, vertical, fixture_ok := blend_validation_gradient_fixture(rt)
+	if !fixture_ok {
+		fmt.println("surface_gradient_gpu_fixture_failed")
+		return false
+	}
+	previous_runtime := renderers.solid.runtime
+	renderers.solid.runtime = rt
+	defer renderers.solid.runtime = previous_runtime
+	background := sdl3.FColor{0.11, 0.17, 0.23, 1}
+	background_rgba := blend_validation_background(background)
+	horizontal_start := alicorn.Color{0.86, 0.16, 0.08, 0.5}
+	horizontal_end := alicorn.Color{0.08, 0.34, 0.92, 0.5}
+	vertical_start := alicorn.Color{0.08, 0.74, 0.2, 0.6}
+	vertical_end := alicorn.Color{0.76, 0.12, 0.4, 0.6}
+	for scale in ([4]f32{1, 1.25, 1.5, 2}) {
+		horizontal_display := [1]alicorn.Paint_Command{horizontal}
+		if !blend_validation_readback(renderers, target, download, horizontal_display[:], scale, background, pixels) {
+			fmt.println("surface_gradient_horizontal_readback_failed", "scale", scale, "SDL_error", sdl3.GetError())
+			return false
+		}
+		for logical_x in ([2]int{32, 50}) {
+			pixel_x := int(f32(logical_x)*scale)
+			pixel_y := int(28*scale)
+			t := (f32(pixel_x)+0.5-8*scale)/(48*scale)
+			source := blend_validation_gradient_interpolate(horizontal_start, horizontal_end, t)
+			if !blend_validation_expect("surface_gradient_horizontal", scale, background, pixels,
+				pixel_x, pixel_y, blend_validation_over(background_rgba, source, horizontal.opacity)) {
+				fmt.println("surface_gradient_horizontal_sample_failed", "scale", scale, "logical_x", logical_x)
+				return false
+			}
+		}
+		if !blend_validation_expect("surface_gradient_clip", scale, background, pixels,
+			int(18*scale), int(28*scale), background_rgba) {
+			fmt.println("surface_gradient_clip_failed", "scale", scale)
+			return false
+		}
+		stroke_pixel_x := int(32*scale)
+		stroke_pixel_y := int(9*scale)
+		stroke := alicorn.Color{0.94, 0.78, 0.12, 1}
+		if !blend_validation_expect("surface_gradient_independent_stroke", scale, background, pixels,
+			stroke_pixel_x, stroke_pixel_y, blend_validation_over(background_rgba, stroke, horizontal.opacity)) {
+			fmt.println("surface_gradient_independent_stroke_failed", "scale", scale)
+			return false
+		}
+
+		horizontal_unclipped := horizontal
+		horizontal_unclipped.clip = {0, 0, 128, 128}
+		horizontal_unclipped_display := [1]alicorn.Paint_Command{horizontal_unclipped}
+		if !blend_validation_readback(renderers, target, download, horizontal_unclipped_display[:], scale, background, pixels) {
+			fmt.println("surface_gradient_horizontal_unclipped_readback_failed", "scale", scale, "SDL_error", sdl3.GetError())
+			return false
+		}
+		for logical_x in ([3]int{9, 32, 55}) {
+			pixel_x := int(f32(logical_x)*scale)
+			pixel_y := int(28*scale)
+			t := (f32(pixel_x)+0.5-8*scale)/(48*scale)
+			source := blend_validation_gradient_interpolate(horizontal_start, horizontal_end, t)
+			if !blend_validation_expect("surface_gradient_horizontal_stop_and_midpoint", scale, background, pixels,
+				pixel_x, pixel_y, blend_validation_over(background_rgba, source, horizontal.opacity)) {
+				fmt.println("surface_gradient_horizontal_stop_or_midpoint_failed", "scale", scale, "logical_x", logical_x)
+				return false
+			}
+		}
+
+		vertical_display := [1]alicorn.Paint_Command{vertical}
+		if !blend_validation_readback(renderers, target, download, vertical_display[:], scale, background, pixels) {
+			fmt.println("surface_gradient_vertical_readback_failed", "scale", scale, "SDL_error", sdl3.GetError())
+			return false
+		}
+		pixel_x := int(40*scale)
+		pixel_y := int(32*scale)
+		t := (f32(pixel_y)+0.5-8*scale)/(48*scale)
+		source := blend_validation_gradient_interpolate(vertical_start, vertical_end, t)
+		if !blend_validation_expect("surface_gradient_vertical", scale, background, pixels,
+			pixel_x, pixel_y, blend_validation_over(background_rgba, source, vertical.opacity)) {
+			fmt.println("surface_gradient_vertical_sample_failed", "scale", scale)
+			return false
+		}
+		if !blend_validation_expect("surface_gradient_rounded_clip", scale, background, pixels,
+			int(40*scale), int(18*scale), background_rgba) {
+			fmt.println("surface_gradient_rounded_clip_failed", "scale", scale)
+			return false
+		}
+
+		unclipped := vertical
+		unclipped.clip = {0, 0, 128, 128}
+		unclipped_display := [1]alicorn.Paint_Command{unclipped}
+		if !blend_validation_readback(renderers, target, download, unclipped_display[:], scale, background, pixels) {
+			fmt.println("surface_gradient_rounded_readback_failed", "scale", scale, "SDL_error", sdl3.GetError())
+			return false
+		}
+		for logical_y in ([3]int{9, 32, 55}) {
+			pixel_y := int(f32(logical_y)*scale)
+			pixel_x := int(40*scale)
+			t := (f32(pixel_y)+0.5-8*scale)/(48*scale)
+			source := blend_validation_gradient_interpolate(vertical_start, vertical_end, t)
+			if !blend_validation_expect("surface_gradient_vertical_stop_and_midpoint", scale, background, pixels,
+				pixel_x, pixel_y, blend_validation_over(background_rgba, source, vertical.opacity)) {
+				fmt.println("surface_gradient_vertical_stop_or_midpoint_failed", "scale", scale, "logical_y", logical_y)
+				return false
+			}
+		}
+		if !blend_validation_expect("surface_gradient_rounded_corner", scale, background, pixels,
+			int(16*scale), int(8*scale), background_rgba) {
+			fmt.println("surface_gradient_rounded_corner_failed", "scale", scale)
+			return false
+		}
+	}
+	fmt.println("surface_gradient_gpu_readback", "scales", "1,1.25,1.5,2", "horizontal_vertical_stops_midpoints", "PASS", "rounded", "PASS", "stroke", "PASS", "clipping", "PASS", "source_over", "PASS")
+	return true
+}
+
 blend_validation_device :: proc() -> bool {
 	driver: cstring = nil
 	when ODIN_OS == .Darwin { driver = "metal" }
@@ -716,6 +996,8 @@ blend_validation_device :: proc() -> bool {
 	pixels := make([]u8, BLEND_VALIDATION_SIZE*BLEND_VALIDATION_SIZE*4)
 	defer delete(pixels)
 	if !blend_validation_cases(&renderers, &rt, target, download, pixels) { return false }
+	if !blend_validation_gradient_readbacks(&renderers, &rt, target, download, pixels) { return false }
+	if !blend_validation_gradient_gpu_benchmark(&renderers, &rt, target, download, pixels) { return false }
 	if !blend_validation_reference_scenes(&renderers, target, download, pixels) { return false }
 	return blend_validation_motion_clip_case(&renderers, &rt, target, download, pixels)
 }

@@ -229,11 +229,11 @@ native_solid_material_for_command :: proc(rt: ^alicorn.Runtime, command: alicorn
 	if !valid { return }
 	if command.semantic_surface_gradient {
 		gradient = alicorn.semantic_surface_gradient_for_paint_owner(rt, command.owner)
-	}
-	if !alicorn.Surface_Gradient_Is_Valid(surface.fill, gradient) {
-		// Low-level paint producers cannot inject invalid colors into the GPU
-		// vertex stream; keep the ordinary solid start-stop appearance.
-		gradient = alicorn.SURFACE_GRADIENT_NONE
+		if !alicorn.Surface_Gradient_Is_Valid(surface.fill, gradient) {
+			// Low-level paint producers cannot inject invalid colors into the GPU
+			// vertex stream; keep the ordinary solid start-stop appearance.
+			gradient = alicorn.SURFACE_GRADIENT_NONE
+		}
 	}
 	if surface.material == alicorn.MATERIAL_FLAT {
 		return alicorn.STYLE_MATERIAL_FLAT, surface, shape, gradient, true
@@ -355,7 +355,16 @@ native_solid_build :: proc(
 			if surface.top_edge_gap[1] > surface.top_edge_gap[0] {
 				gap = {f32(native_pixel_edge(surface.top_edge_gap[0]+draw.translation[0],scale_x)), f32(native_pixel_edge(surface.top_edge_gap[1]+draw.translation[0],scale_x))}
 			}
-			native_solid_append_material_surface(&renderer.vertices, base, shadow, surface.fill, material, surface.physical_height, draw.opacity, stroke, draw.stroke_placement, gap, gradient)
+			if gradient.axis == .None &&
+			   (material.kind != .Analytic_Relief || surface.physical_height == 0) {
+				// Preserve the legacy solid quad path byte-for-byte for ordinary
+				// surfaces. Only opted-in gradients enter per-vertex interpolation.
+				native_solid_append_quad(&renderer.vertices, base.x, base.y, base.x+base.w, base.y+base.h,
+					[4]f32{surface.fill.r, surface.fill.g, surface.fill.b, surface.fill.a*draw.opacity})
+				native_solid_append_rect_stroke(&renderer.vertices, base, stroke, draw.opacity, draw.stroke_placement, gap)
+			} else {
+				native_solid_append_material_surface(&renderer.vertices, base, shadow, surface.fill, material, surface.physical_height, draw.opacity, stroke, draw.stroke_placement, gap, gradient)
+			}
 			renderer.draws[i] = Native_Solid_Draw{
 				first_vertex=first,
 				vertex_count=sdl3.Uint32(len(renderer.vertices)-int(first)),

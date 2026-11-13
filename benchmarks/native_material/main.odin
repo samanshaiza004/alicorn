@@ -11,6 +11,11 @@ SAMPLES       :: 3
 SHAPE_SURFACE_COUNT :: 256
 SHAPE_SAMPLES       :: 101
 
+BENCHMARK_GRADIENT :: alicorn.Surface_Gradient{
+	axis=.Horizontal,
+	end=alicorn.Color{0.72, 0.56, 0.28, 1},
+}
+
 run_batch :: proc(vertices: ^[dynamic]host.Native_Text_Vertex, material_path: bool) -> (elapsed_ns: i64, checksum: f64) {
 	start := time.now()
 	for _ in 0..<ITERATIONS {
@@ -40,18 +45,27 @@ run_batch :: proc(vertices: ^[dynamic]host.Native_Text_Vertex, material_path: bo
 	return
 }
 
-build_shape_geometry :: proc(vertices: ^[dynamic]host.Native_Text_Vertex, shape: alicorn.Surface_Shape) {
+build_shape_geometry :: proc(
+	vertices: ^[dynamic]host.Native_Text_Vertex,
+	shape: alicorn.Surface_Shape,
+	gradient: bool,
+) {
 	clear(vertices)
 	for i in 0..<SHAPE_SURFACE_COUNT {
 		bounds := alicorn.Rect{f32(i%16)*52, f32(i/16)*30, 48, 24}
-		if !host.native_solid_shape_is_rounded(shape) {
-			host.native_solid_append_quad(vertices, bounds.x, bounds.y, bounds.x+bounds.w, bounds.y+bounds.h,
-				[4]f32{0.3, 0.4, 0.5, 1})
-		} else {
+		fill := alicorn.Color{0.3, 0.4, 0.5, 1}
+		resolved_gradient := alicorn.SURFACE_GRADIENT_NONE
+		if gradient { resolved_gradient = BENCHMARK_GRADIENT }
+		if host.native_solid_shape_is_rounded(shape) {
 			host.native_solid_append_rounded_material_surface(
-				vertices, bounds, bounds, alicorn.Color{0.3, 0.4, 0.5, 1},
-				alicorn.STYLE_MATERIAL_FLAT, 0, 1, shape,
+				vertices, bounds, bounds, fill,
+				alicorn.STYLE_MATERIAL_FLAT, 0, 1, shape, gradient=resolved_gradient,
 			)
+		} else if gradient {
+			host.native_solid_append_gradient_quad(vertices, bounds, fill, resolved_gradient, 1)
+		} else {
+			host.native_solid_append_quad(vertices, bounds.x, bounds.y, bounds.x+bounds.w, bounds.y+bounds.h,
+				[4]f32{fill.r, fill.g, fill.b, fill.a})
 		}
 	}
 }
@@ -68,29 +82,53 @@ sort_durations :: proc(samples: []i64) {
 	}
 }
 
-benchmark_shape_geometry :: proc(name: string, shape: alicorn.Surface_Shape) {
-	vertices := make([dynamic]host.Native_Text_Vertex, 0,
-		SHAPE_SURFACE_COUNT*host.NATIVE_ROUNDED_FILL_VERTICES, allocator=context.temp_allocator)
-	defer delete(vertices)
-	samples := make([dynamic]i64, 0, SHAPE_SAMPLES, allocator=context.temp_allocator)
-	defer delete(samples)
-	for _ in 0..<3 { build_shape_geometry(&vertices, shape) }
-	for _ in 0..<SHAPE_SAMPLES {
-		started := time.now()
-		build_shape_geometry(&vertices, shape)
-		append(&samples, time.duration_nanoseconds(time.since(started)))
-	}
-	sort_durations(samples[:])
+benchmark_shape_geometry_print :: proc(name, fill_kind: string, samples: []i64, vertices_per_surface: int) {
 	p50_index := SHAPE_SAMPLES/2
 	p95_index := (SHAPE_SAMPLES*95+99)/100-1
-	fmt.println("native_shape_geometry", name,
+	fmt.println("native_shape_geometry", name, "fill", fill_kind,
 		"surfaces", SHAPE_SURFACE_COUNT,
-		"vertices_per_surface", len(vertices)/SHAPE_SURFACE_COUNT,
+		"vertices_per_surface", vertices_per_surface,
+		"uploaded_bytes", SHAPE_SURFACE_COUNT*vertices_per_surface*size_of(host.Native_Text_Vertex),
+		"surface_commands", SHAPE_SURFACE_COUNT, "draw_slots", SHAPE_SURFACE_COUNT, "additional_passes", 0,
 		"p50_batch_ns", samples[p50_index],
 		"p95_batch_ns", samples[p95_index],
 		"p50_ns_per_surface", f64(samples[p50_index])/f64(SHAPE_SURFACE_COUNT),
 		"p95_ns_per_surface", f64(samples[p95_index])/f64(SHAPE_SURFACE_COUNT),
 	)
+}
+
+benchmark_shape_geometry :: proc(name: string, shape: alicorn.Surface_Shape) {
+	vertices := make([dynamic]host.Native_Text_Vertex, 0,
+		SHAPE_SURFACE_COUNT*host.NATIVE_ROUNDED_FILL_VERTICES, allocator=context.temp_allocator)
+	defer delete(vertices)
+	solid_samples: [SHAPE_SAMPLES]i64
+	gradient_samples: [SHAPE_SAMPLES]i64
+	for _ in 0..<3 {
+		build_shape_geometry(&vertices, shape, false)
+		build_shape_geometry(&vertices, shape, true)
+	}
+	for sample in 0..<SHAPE_SAMPLES {
+		if sample%2 == 0 {
+			started := time.now()
+			build_shape_geometry(&vertices, shape, false)
+			solid_samples[sample] = time.duration_nanoseconds(time.since(started))
+			started = time.now()
+			build_shape_geometry(&vertices, shape, true)
+			gradient_samples[sample] = time.duration_nanoseconds(time.since(started))
+		} else {
+			started := time.now()
+			build_shape_geometry(&vertices, shape, true)
+			gradient_samples[sample] = time.duration_nanoseconds(time.since(started))
+			started = time.now()
+			build_shape_geometry(&vertices, shape, false)
+			solid_samples[sample] = time.duration_nanoseconds(time.since(started))
+		}
+	}
+	sort_durations(solid_samples[:])
+	sort_durations(gradient_samples[:])
+	vertices_per_surface := len(vertices)/SHAPE_SURFACE_COUNT
+	benchmark_shape_geometry_print(name, "solid", solid_samples[:], vertices_per_surface)
+	benchmark_shape_geometry_print(name, "gradient", gradient_samples[:], vertices_per_surface)
 }
 
 main :: proc() {

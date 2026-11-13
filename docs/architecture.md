@@ -294,6 +294,20 @@ Runtime. Applications author semantic widgets and host integrations; the
 generic paint payload union is an internal renderer boundary, not a replacement
 UI authoring API.
 
+Two-stop horizontal or vertical semantic surface gradients remain in the
+computed-style sidecar as well. Their paint command carries only an opt-in
+marker, so gradient endpoints do not enlarge every retained command. The SDL
+GPU renderer evaluates the field into the existing vertex colors: rectangles
+stay six vertices, rounded surfaces retain their bounded contour and antialias
+fringe, and clipping is applied after the surface-local field is evaluated.
+Gradient strokes remain independent solid colors. Equal stop alpha keeps
+interpolation compatible with the existing straight-alpha source-over path;
+Increased Contrast flattens the fill and Reduce Transparency makes both stops
+opaque. Theme changes invalidate paint only. The surface APIs stay renderer
+neutral, but this prototype currently has native SDL_GPU pixel validation only;
+other renderer implementations must resolve the same semantic surface product
+before they can display the gradient.
+
 The host waits for events when idle. Worker completions can wake it through an
 opaque `Application_Waker`; the UI remains on the window thread. The runtime
 does not create application threads or observe external state.

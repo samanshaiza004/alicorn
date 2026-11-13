@@ -185,6 +185,58 @@ Odin setup API.
 
 ## Semantic surface composition
 
+### Static two-stop gradients
+
+`surface_begin` can opt into a bounded horizontal or vertical linear gradient.
+The ordinary surface role or fill override is the first stop; the optional
+`gradient` names a second core or namespaced extension color role. Both
+endpoints use ordinary theme color tokens. Gradients are static paint: they do
+not add a shader variant, texture, render target, render pass, or motion
+schedule.
+
+```odin
+start_role := alicorn.style_extension_color_role_id("app.editor", "tab.start")
+end_role := alicorn.style_extension_color_role_id("app.editor", "tab.end")
+
+alicorn.surface_begin(
+  &ui,
+  alicorn.surface_extension_color_role(start_role),
+  key="active-tab",
+  style=alicorn.layout_style(width=160, height=44, padding=10),
+  shape=alicorn.surface_shape_rounded_corners({top_left=10, top_right=10, bottom_right=0, bottom_left=0}),
+  gradient=alicorn.surface_gradient_to(
+    alicorn.surface_extension_color_role(end_role),
+    .Horizontal,
+  ),
+)
+alicorn.text(&ui, "Editor")
+alicorn.surface_end(&ui)
+```
+
+Gradient roles must resolve in the active theme when the surface is described;
+otherwise `surface_begin` reports a diagnostic and rejects the surface. The
+native renderer evaluates the color at existing rectangle or rounded-fill
+vertices. A rectangle remains six vertices, and rounded fills retain their
+bounded contour and antialias fringe. Gradient coordinates follow the
+translated, unclipped surface bounds; the existing clip/scissor is applied
+afterward. The stroke remains an independent solid color. If an analytic
+material is also enabled, its existing relief decoration is derived from the
+first stop.
+
+Stop RGB values interpolate linearly in Alicorn's linear-sRGB channel space.
+Both stops must have exactly equal alpha; command opacity multiplies that
+shared alpha once before the existing straight-alpha source-over blend.
+Unequal-alpha gradients are rejected because the current vertex-color path
+does not implement premultiplied interpolation.
+
+Increased Contrast resolves the surface to its first stop as a solid fill.
+Reduce Transparency preserves the gradient while resolving both stops opaque.
+The gradient itself is static, so Reduce Motion does not change it. Gradient
+styles participate in the retained semantic-surface paint cache: changing an
+endpoint token repaints the surface without rerunning measurement or layout.
+Run [example 13](../examples/13_surface_gradients/README.md) for active and
+inactive tab fills and the Pulse meter surface.
+
 ### Optional Button relief (typed setup API)
 
 `Button_Recipe.rest_surface` and `pressed_surface` optionally carry a

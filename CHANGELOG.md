@@ -4,6 +4,14 @@ All notable Alicorn releases are recorded here. The project release notes are
 consolidated in this file; vendored components retain their own upstream
 changelogs.
 
+## [Unreleased]
+
+### Added
+
+- Added opt-in horizontal and vertical two-stop gradients to semantic surfaces.
+  Stops resolve through ordinary core or namespaced theme color roles, share the
+  existing surface vertex-color path, and preserve the solid-fill fast path.
+
 ## [0.2.1] — 2026-11-10
 
 Alicorn remains an experimental native GUI runtime for Odin. This release

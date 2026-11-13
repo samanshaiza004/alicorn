@@ -498,6 +498,38 @@ test_surface_gradient_resolves_theme_stops_and_invalidates_paint_only :: proc(t:
 	testing.expect(t, semantic_surface_gradient_for_paint_owner(&rt, id).end == updated.gradient.end,
 		"the renderer lookup should observe the newly resolved paint-only cache product")
 
+	retained_hash := semantic_surface_style_hash(rt.semantic_surfaces[id])
+	invalidate_root(&rt, "replay gradient surface description")
+	ui, build = begin_frame(&rt)
+	if !build { testing.expect(t, false, "gradient replay frame should describe"); return }
+	container_begin(&ui, .Root, key=key_string("gradient-root"), style=layout_style(.Column, width=160, height=100))
+	replay_scope := style_environment_push(&ui, Style_Environment{theme=theme_id})
+	replay_id := surface_begin(&ui, surface_extension_color_role(start_role), key=key_string("gradient-surface"),
+		style=layout_style(width=96, height=48), shape=Surface_Shape{kind=.Rounded_Rectangle, corner_radius=8},
+		gradient=surface_gradient_to(surface_extension_color_role(end_role), .Horizontal))
+	surface_end(&ui)
+	style_environment_pop(&ui, replay_scope)
+	container_end(&ui)
+	end_frame(&ui)
+	replay_node := rt.nodes[replay_id]
+	testing.expect(t, len(replay_node.paint) == 1 && replay_node.paint[0].semantic_surface_gradient,
+		"retained replay should preserve the gradient marker in its paint command")
+	testing.expect(t, semantic_surface_style_hash(rt.semantic_surfaces[replay_id]) == retained_hash,
+		"retained replay should reproduce the same semantic gradient style")
+	testing.expect(t, semantic_surface_gradient_for_paint_owner(&rt, replay_id).end == updated.gradient.end,
+		"retained replay should resolve the latest endpoint after theme replacement")
+
+	invalidate_root(&rt, "retire gradient surface")
+	ui, build = begin_frame(&rt)
+	if !build { testing.expect(t, false, "gradient retirement frame should describe"); return }
+	container_begin(&ui, .Root, key=key_string("gradient-root"), style=layout_style(.Column, width=160, height=100))
+	container_end(&ui)
+	end_frame(&ui)
+	_, semantic_retained := rt.semantic_surfaces[id]
+	_, cache_retained := rt.computed_styles[id]
+	testing.expect(t, !semantic_retained && !cache_retained && id not_in rt.nodes,
+		"retiring a gradient surface should release its style and endpoint cache with the retained node")
+
 	bad_alpha := Surface_Gradient{axis=.Vertical, end=Color{0.1, 0.2, 0.3, 0.4}}
 	testing.expect(t, !Surface_Gradient_Is_Valid(start, bad_alpha),
 		"different stop alpha must be rejected until a premultiplied shader path exists")
