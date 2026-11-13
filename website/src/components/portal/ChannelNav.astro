@@ -1,0 +1,17 @@
+---
+import { channels } from '../../data/site';
+
+interface Props {
+  current?: string;
+}
+
+const { current } = Astro.props;
+---
+
+<nav class="channel-nav" aria-label="Primary">
+  {channels.map((channel) => (
+    <a href={channel.href} aria-current={current === channel.label ? 'page' : undefined}>
+      {channel.label}
+    </a>
+  ))}
+</nav>

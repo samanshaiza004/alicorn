@@ -1,0 +1,39 @@
+---
+---
+
+<a class="docs-wordmark" href="/" aria-label="Alicorn home">
+  <svg viewBox="0 0 32 32" aria-hidden="true">
+    <path d="M16 2 30 30h-7l-2.6-5.5h-8.8L9 30H2L16 2Zm2.1 17L16 14.6 13.9 19h4.2Z" fill="currentColor" />
+    <circle cx="25" cy="7" r="2.8" fill="#bc7042" />
+  </svg>
+  <span>Alicorn</span>
+  <b>DOCS</b>
+</a>
+
+<style>
+  .docs-wordmark {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    color: var(--sl-color-text);
+    font: 800 1.1rem/1 var(--sl-font);
+    letter-spacing: -0.04em;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .docs-wordmark svg { width: 1.45rem; height: 1.45rem; }
+
+  .docs-wordmark b {
+    padding: 0.22rem 0.38rem;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 3px;
+    color: var(--sl-color-gray-3);
+    font: 700 0.58rem/1 var(--sl-font-mono);
+    letter-spacing: 0.08em;
+  }
+
+  @media (max-width: 50rem) {
+    .docs-wordmark b { display: none; }
+  }
+</style>

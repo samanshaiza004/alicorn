@@ -1,0 +1,26 @@
+---
+import { facts } from '../../data/site';
+---
+
+<section class="status-section section-wrap" aria-label="Project facts and status">
+  <div class="status-panel">
+    <div class="status-heading">
+      <span class="status-light" aria-hidden="true"></span>
+      <p>PROJECT PROFILE</p>
+      <span class="status-label">EARLY / EXPERIMENTAL</span>
+    </div>
+    <div class="status-facts">
+      {facts.map((fact) => (
+        <div class="status-fact">
+          <span>{fact.label}</span>
+          <strong>{fact.value}</strong>
+        </div>
+      ))}
+    </div>
+    <p class="status-caveat">
+      Alicorn's API and platform integration are evolving. Check the current support notes before
+      choosing it for production work.
+      <a href="/docs/project/status">Read the status notes <span aria-hidden="true">→</span></a>
+    </p>
+  </div>
+</section>

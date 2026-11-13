@@ -1,0 +1,19 @@
+---
+import { site } from '../../data/site';
+---
+
+<header class="masthead">
+  <a class="wordmark" href="/" aria-label="Alicorn home">
+    <svg class="brand-mark" viewBox="0 0 44 44" aria-hidden="true">
+      <path d="M22 3 41 40h-9l-3.8-8H15.8L12 40H3L22 3Zm2.8 22-2.8-5.8-2.8 5.8h5.6Z" fill="currentColor" />
+      <circle cx="34.5" cy="9.5" r="4" fill="var(--copper)" />
+    </svg>
+    <span>{site.name}</span>
+  </a>
+  <p class="masthead-note">NATIVE UI / ODIN</p>
+  <nav class="utility-links" aria-label="Utility">
+    <a href={site.repository}>Source <span aria-hidden="true">↗</span></a>
+    <a href={site.issues}>Issues <span aria-hidden="true">↗</span></a>
+    <a class="utility-cta" href="/docs/getting-started/first-app">Start building</a>
+  </nav>
+</header>

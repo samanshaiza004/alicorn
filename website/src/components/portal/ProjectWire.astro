@@ -1,0 +1,42 @@
+---
+---
+
+<section class="runtime-section section-wrap" aria-labelledby="runtime-title">
+  <div class="runtime-intro">
+    <p class="section-kicker">ONE RETAINED RUNTIME</p>
+    <h2 id="runtime-title">Describe the interface.<br />Keep the useful work.</h2>
+    <p>
+      Alicorn does not watch arbitrary application memory. Your code owns state and says when a
+      change needs a new description. The runtime reconciles that description with retained
+      identity and derived UI products.
+    </p>
+    <a class="text-link" href="/docs/concepts/retained-runtime">Read the runtime model <span aria-hidden="true">→</span></a>
+  </div>
+
+  <div class="pipeline" aria-label="Alicorn runtime flow">
+    <article class="pipeline-step">
+      <span class="pipeline-overline">01 / AUTHOR</span>
+      <h3>Odin app</h3>
+      <p>State, control flow, keys, and UI descriptions stay in your program.</p>
+      <span class="pipeline-code">ui.column · ui.text · ui.button</span>
+    </article>
+    <span class="pipeline-arrow" aria-hidden="true">→</span>
+    <article class="pipeline-step pipeline-step--active">
+      <span class="pipeline-overline">02 / RETAIN</span>
+      <h3>Alicorn runtime</h3>
+      <p>Identity, input, semantics, layout, text, and paint are reconciled by change.</p>
+      <span class="pipeline-code">describe → reconcile → present</span>
+    </article>
+    <span class="pipeline-arrow" aria-hidden="true">→</span>
+    <article class="pipeline-step">
+      <span class="pipeline-overline">03 / PRESENT</span>
+      <h3>Native host</h3>
+      <p>The host owns the window, event loop, platform services, and GPU submission.</p>
+      <span class="pipeline-code">SDL3 · SDL_GPU</span>
+    </article>
+  </div>
+
+  <div class="runtime-rule">
+    <span>APP STATE</span><b>→</b><span>EXPLICIT INVALIDATION</span><b>→</b><span>DEPENDENT WORK</span><b>→</b><span>NATIVE FRAME</span>
+  </div>
+</section>

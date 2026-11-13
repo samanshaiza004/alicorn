@@ -1,0 +1,17 @@
+---
+import { footerLinks } from '../../data/site';
+const year = new Date().getFullYear();
+---
+
+<footer class="site-footer">
+  <a class="footer-brand" href="/">
+    <span class="footer-mark" aria-hidden="true">A</span>
+    <span>Alicorn</span>
+  </a>
+  <p class="colophon">
+    © {year} Alicorn contributors. Experimental software under the zlib License.
+  </p>
+  <nav aria-label="Footer">
+    {footerLinks.map((link) => <a href={link.href}>{link.label}</a>)}
+  </nav>
+</footer>

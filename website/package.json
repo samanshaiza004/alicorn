@@ -1,0 +1,24 @@
+{
+  "name": "alicorn-website",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Alicorn — an experimental native GUI runtime for Odin.",
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.41.7",
+    "astro": "^7.2.1",
+    "sharp": "^0.35.3"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "typescript": "^6.0.0"
+  }
+}

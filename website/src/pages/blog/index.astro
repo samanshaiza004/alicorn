@@ -1,0 +1,38 @@
+---
+import PortalLayout from '../../layouts/PortalLayout.astro';
+import { getCollection } from 'astro:content';
+
+const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
+);
+---
+
+<PortalLayout
+  title="Project notes — Alicorn"
+  description="Design notes and development records for Alicorn, an experimental native GUI runtime for Odin."
+>
+  <section class="blog-page page-section">
+    <header class="page-heading">
+      <p class="section-kicker">DESIGN NOTES / DEVELOPMENT</p>
+      <h1>Inside the runtime.</h1>
+      <p>Short explanations of the choices shaping Alicorn and the applications built with it.</p>
+    </header>
+    <section class="blog-list" aria-label="Project notes">
+      {posts.map((post) => (
+        <article class="blog-entry">
+          <div class="blog-entry-meta">
+            <time datetime={post.data.date.toISOString()}>
+              {post.data.date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })}
+            </time>
+            {post.data.tags.map((tag) => <span>{tag}</span>)}
+          </div>
+          <div>
+            <h2><a href={'/blog/' + post.id}>{post.data.title}</a></h2>
+            <p>{post.data.description}</p>
+            <a class="blog-read" href={'/blog/' + post.id}>Read note <span aria-hidden="true">→</span></a>
+          </div>
+        </article>
+      ))}
+    </section>
+  </section>
+</PortalLayout>

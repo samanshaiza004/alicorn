@@ -1,0 +1,46 @@
+---
+import Default from '@astrojs/starlight/components/Footer.astro';
+import { footerLinks } from '../../data/site';
+
+const year = new Date().getFullYear();
+---
+
+<Default {...Astro.props}><slot /></Default>
+
+<div class="alicorn-docs-footer">
+  <nav aria-label="Alicorn site">
+    {footerLinks.map((link) => <a href={link.href}>{link.label}</a>)}
+  </nav>
+  <p>
+    © {year} Alicorn contributors · Experimental software under the zlib License.
+    The repository remains the normative technical reference.
+  </p>
+</div>
+
+<style>
+  .alicorn-docs-footer {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--sl-color-hairline);
+    font-size: 0.78rem;
+  }
+
+  .alicorn-docs-footer nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem 1.2rem;
+    margin-bottom: 0.7rem;
+  }
+
+  .alicorn-docs-footer a {
+    color: var(--sl-color-text-accent);
+    text-decoration: none;
+  }
+
+  .alicorn-docs-footer a:hover { text-decoration: underline; }
+
+  .alicorn-docs-footer p {
+    margin: 0;
+    color: var(--sl-color-gray-3);
+  }
+</style>

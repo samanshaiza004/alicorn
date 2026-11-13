@@ -1,0 +1,86 @@
+---
+import PortalLayout from '../layouts/PortalLayout.astro';
+import { repository } from '../data/site';
+
+const cloneCommand = 'git clone ' + repository + '.git\ncd alicorn';
+---
+
+<PortalLayout
+  title="Build from source — Alicorn"
+  description="Build Alicorn's native starter and explore the Odin GUI runtime from source."
+  channel="BUILD"
+>
+  <section class="build-page page-section">
+    <header class="page-heading">
+      <p class="section-kicker">SOURCE-FIRST PROJECT</p>
+      <h1>Build Alicorn.<br /><span>Then build your app.</span></h1>
+      <p>
+        Alicorn is a GUI runtime and library, not an end-user desktop application. Start from the
+        repository, install the platform prerequisites, and run the native hello example.
+      </p>
+    </header>
+
+    <section class="build-block">
+      <div class="build-block-heading">
+        <span>01</span>
+        <div><h2>Get the source</h2><p>Clone the public repository and enter its root.</p></div>
+      </div>
+      <div class="command-box">
+        <pre><code>git clone {repository}.git
+cd alicorn</code></pre>
+        <button type="button" data-copy={cloneCommand}>Copy</button>
+      </div>
+      <p class="build-note">
+        The repository documents the Odin compiler version and native platform dependencies. Use
+        the complete Odin distribution, including its <code>base</code>, <code>core</code>, and
+        <code>vendor</code> directories.
+      </p>
+      <a class="text-link" href="/docs/getting-started/requirements">Check prerequisites <span aria-hidden="true">→</span></a>
+    </section>
+
+    <section class="build-block">
+      <div class="build-block-heading">
+        <span>02</span>
+        <div><h2>Run the native starter</h2><p>Choose the script for your shell.</p></div>
+      </div>
+      <div class="command-grid">
+        <div class="command-card">
+          <span class="command-label">macOS / Linux</span>
+          <div class="command-box">
+            <pre><code>./tools/native_hello.sh</code></pre>
+            <button type="button" data-copy="./tools/native_hello.sh">Copy</button>
+          </div>
+        </div>
+        <div class="command-card">
+          <span class="command-label">Windows PowerShell</span>
+          <div class="command-box">
+            <pre><code>.\tools\native_hello.ps1</code></pre>
+            <button type="button" data-copy=".\\tools\\native_hello.ps1">Copy</button>
+          </div>
+        </div>
+      </div>
+      <p class="build-note">
+        The starter rebuilds before launch. Its source is <code>examples/01_hello/main.odin</code>;
+        the <a href="/docs/getting-started/first-app">first app guide</a> shows how to change it.
+      </p>
+    </section>
+
+    <section class="build-block build-block--dark">
+      <div class="build-block-heading">
+        <span>03</span>
+        <div><h2>Build a native package</h2><p>Packaging tools are for Alicorn applications you create.</p></div>
+      </div>
+      <p>
+        The repository includes Windows and macOS helpers for producing an unsigned application
+        package with the SDL host. Your application still owns its display name, icon, signing,
+        notarization, installer, and update policy.
+      </p>
+      <a class="text-link" href={repository + '/blob/master/docs/packaging.md'}>Read native packaging <span aria-hidden="true">↗</span></a>
+    </section>
+
+    <p class="build-footnote">
+      There are no Alicorn binary installers on this page. Use the repository's current
+      <a href={repository + '/releases'}>release page</a> for any published artifacts.
+    </p>
+  </section>
+</PortalLayout>

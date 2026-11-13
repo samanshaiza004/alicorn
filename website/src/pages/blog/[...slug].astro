@@ -1,0 +1,29 @@
+---
+import { getCollection, render } from 'astro:content';
+import PortalLayout from '../../layouts/PortalLayout.astro';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog', ({ data }) => !data.draft);
+  return posts.map((post) => ({ params: { slug: post.id }, props: { post } }));
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+---
+
+<PortalLayout title={post.data.title + ' — Alicorn'} description={post.data.description}>
+  <article class="blog-post page-section">
+    <header class="page-heading">
+      <p class="section-kicker">
+        {post.data.tags.join(' / ')} · {post.data.date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })}
+      </p>
+      <h1>{post.data.title}</h1>
+      <p>{post.data.description}</p>
+    </header>
+    <div class="blog-post-body"><Content /></div>
+    <footer class="blog-post-foot">
+      <a href="/blog">← All project notes</a>
+      <a href="/docs/project/status">Current project status <span aria-hidden="true">→</span></a>
+    </footer>
+  </article>
+</PortalLayout>

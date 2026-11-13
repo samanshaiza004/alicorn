@@ -1,0 +1,21 @@
+---
+import { docsLinks, repository } from '../../data/site';
+---
+
+<section class="closing section-wrap" aria-labelledby="closing-title">
+  <div class="closing-copy">
+    <p class="section-kicker">MAKE A WINDOW</p>
+    <h2 id="closing-title">Start with one button.</h2>
+    <p>Build the native starter, change a label, then add only the runtime concepts your application actually needs.</p>
+    <div class="hero-actions">
+      <a class="button button--primary" href="/docs/getting-started/requirements">Get started <span aria-hidden="true">→</span></a>
+      <a class="button button--quiet" href={repository}>Read the source <span aria-hidden="true">↗</span></a>
+    </div>
+  </div>
+
+  <nav class="closing-links" aria-label="Documentation">
+    {docsLinks.map((link, index) => (
+      <a href={link.href}><span>0{index + 1}</span>{link.label}<b aria-hidden="true">↗</b></a>
+    ))}
+  </nav>
+</section>
