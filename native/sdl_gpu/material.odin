@@ -14,6 +14,9 @@ NATIVE_ROUNDED_RING_VERTICES :: NATIVE_ROUNDED_CONTOUR_POINTS * 6
 NATIVE_ROUNDED_ANTIALIAS_FRINGE :: 0.75
 NATIVE_CONNECTED_TAB_STEPS :: 20
 NATIVE_CONNECTED_TAB_VERTICES :: NATIVE_CONNECTED_TAB_STEPS*18+6
+NATIVE_VECTOR_CURVE_MIN_SEGMENTS :: 16
+NATIVE_VECTOR_CURVE_MAX_SEGMENTS :: 96
+NATIVE_VECTOR_ANTIALIAS_FRINGE :: 0.75
 
 // Native material effects are expanded into ordinary surface vertices. The
 // flat path remains one quad per Surface_Paint and needs no material geometry.
@@ -28,8 +31,23 @@ native_solid_material_vertex_count :: proc(
 	shape := alicorn.Surface_Shape{kind=.Rectangle},
 	stroke := alicorn.Paint_Stroke{},
 	top_edge_gap := [2]f32{},
+	bounds := alicorn.Rect{},
+	scale_x: f32 = 1,
+	scale_y: f32 = 1,
+	fill := alicorn.Color{1, 1, 1, 1},
 ) -> int {
 	if shape.kind == .Connected_Tab { return NATIVE_CONNECTED_TAB_VERTICES }
+	if shape.kind == .Circle {
+		segments := native_solid_vector_segments(shape, bounds, scale_x, scale_y)
+		fill_vertices := segments*9 if fill.a > 0 else 0
+		stroke_vertices := segments*18 if stroke.width > 0 else 0
+		return fill_vertices + stroke_vertices
+	}
+	if shape.kind == .Arc || shape.kind == .Cubic_Bezier {
+		segments := native_solid_vector_segments(shape, bounds, scale_x, scale_y)
+		if segments < 2 || stroke.width <= 0 { return 0 }
+		return segments*18+12
+	}
 	if native_solid_shape_is_rounded(shape) {
 		count := NATIVE_ROUNDED_FILL_VERTICES
 		if material.kind == .Analytic_Relief && physical_height != 0 {
@@ -52,6 +70,204 @@ native_solid_material_vertex_count :: proc(
 		if material.inner_shadow_strength > 0 { count += 6 }
 	}
 	return count
+}
+
+// Curved paths use a pixel-sensitive but strictly bounded segment budget.
+// Ordinary rectangles, lines and rounded rectangles never enter this path.
+native_solid_vector_segments :: proc(shape: alicorn.Surface_Shape, bounds: alicorn.Rect, scale_x, scale_y: f32) -> int {
+	maximum_scale := max(scale_x, scale_y)
+	length_pixels: f32
+	#partial switch shape.kind {
+	case .Circle:
+		length_pixels = min(bounds.w, bounds.h)*0.5*maximum_scale*6.2831853
+	case .Arc:
+		length_pixels = shape.arc.radius*min(bounds.w, bounds.h)*abs(shape.arc.sweep_angle)*maximum_scale
+	case .Cubic_Bezier:
+		points := shape.bezier.points
+		for index in 0..<3 {
+			dx := (points[index+1][0]-points[index][0])*bounds.w*scale_x
+			dy := (points[index+1][1]-points[index][1])*bounds.h*scale_y
+			length_pixels += math.sqrt(dx*dx+dy*dy)
+		}
+	case:
+		return 0
+	}
+	if length_pixels <= 0 { return 0 }
+	segments := int(math.ceil(6.2831853*math.sqrt(max(length_pixels, 1))))
+	return clamp(segments, NATIVE_VECTOR_CURVE_MIN_SEGMENTS, NATIVE_VECTOR_CURVE_MAX_SEGMENTS)
+}
+
+native_solid_shape_vertex :: proc(point: [2]f32, color: [4]f32) -> Native_Text_Vertex {
+	return Native_Text_Vertex{[3]f32{point[0], point[1], 0}, color, [2]f32{0.5, 0.5}}
+}
+
+native_solid_append_triangle :: proc(
+	vertices: ^[dynamic]Native_Text_Vertex,
+	a, b, c: [2]f32,
+	color_a, color_b, color_c: [4]f32,
+) {
+	append(vertices,
+		native_solid_shape_vertex(a, color_a),
+		native_solid_shape_vertex(b, color_b),
+		native_solid_shape_vertex(c, color_c),
+	)
+}
+
+native_solid_append_circle_ring :: proc(
+	vertices: ^[dynamic]Native_Text_Vertex,
+	cx, cy, rx, ry, inner_radius, outer_radius: f32,
+	inner_color, outer_color: [4]f32,
+	segments: int,
+) {
+	if segments < 3 || rx <= 0 || ry <= 0 || outer_radius <= inner_radius { return }
+	for index in 0..<segments {
+		a0 := 6.2831853*f32(index)/f32(segments)
+		a1 := 6.2831853*f32(index+1)/f32(segments)
+		inner_a := [2]f32{cx+math.cos(a0)*rx*inner_radius, cy+math.sin(a0)*ry*inner_radius}
+		inner_b := [2]f32{cx+math.cos(a1)*rx*inner_radius, cy+math.sin(a1)*ry*inner_radius}
+		outer_a := [2]f32{cx+math.cos(a0)*rx*outer_radius, cy+math.sin(a0)*ry*outer_radius}
+		outer_b := [2]f32{cx+math.cos(a1)*rx*outer_radius, cy+math.sin(a1)*ry*outer_radius}
+		native_solid_append_triangle(vertices, inner_a, inner_b, outer_b, inner_color, inner_color, outer_color)
+		native_solid_append_triangle(vertices, inner_a, outer_b, outer_a, inner_color, outer_color, outer_color)
+	}
+}
+
+native_solid_append_circle_surface :: proc(
+	vertices: ^[dynamic]Native_Text_Vertex,
+	bounds: alicorn.Rect,
+	fill: alicorn.Color,
+	stroke: alicorn.Paint_Stroke,
+	placement: alicorn.Paint_Stroke_Placement,
+	opacity, scale_x, scale_y: f32,
+	segments: int,
+) {
+	if bounds.w <= 0 || bounds.h <= 0 || segments < 3 { return }
+	cx, cy := bounds.x+bounds.w*0.5, bounds.y+bounds.h*0.5
+	radius := min(bounds.w, bounds.h)*0.5
+	rx, ry := radius*scale_x, radius*scale_y
+	fringe := f32(NATIVE_VECTOR_ANTIALIAS_FRINGE)
+	fill_color := [4]f32{fill.r, fill.g, fill.b, fill.a*opacity}
+	transparent_fill := fill_color
+	transparent_fill[3] = 0
+	if fill.a > 0 {
+		core_scale := max(1-fringe/max(radius*max(scale_x, scale_y), 0.001), 0)
+		pixel_cx, pixel_cy := cx*scale_x, cy*scale_y
+		center := [2]f32{pixel_cx, pixel_cy}
+		for index in 0..<segments {
+			a0 := 6.2831853*f32(index)/f32(segments)
+			a1 := 6.2831853*f32(index+1)/f32(segments)
+			p0 := [2]f32{pixel_cx+math.cos(a0)*rx*core_scale, pixel_cy+math.sin(a0)*ry*core_scale}
+			p1 := [2]f32{pixel_cx+math.cos(a1)*rx*core_scale, pixel_cy+math.sin(a1)*ry*core_scale}
+			native_solid_append_triangle(vertices, center, p0, p1, fill_color, fill_color, fill_color)
+		}
+		inner_scale := core_scale
+		outer_scale := 1+fringe/max(radius*max(scale_x, scale_y), 0.001)
+		native_solid_append_circle_ring(vertices, pixel_cx, pixel_cy, rx, ry,
+			inner_scale, outer_scale, fill_color, transparent_fill, segments)
+	}
+	if stroke.width <= 0 { return }
+	stroke_color := [4]f32{stroke.color.r, stroke.color.g, stroke.color.b, stroke.color.a*opacity}
+	transparent_stroke := stroke_color
+	transparent_stroke[3] = 0
+	width := stroke.width*max(scale_x, scale_y)
+	inner, outer := radius*max(scale_x, scale_y), radius*max(scale_x, scale_y)
+	switch placement {
+	case .Centered:
+		inner -= width*0.5
+		outer += width*0.5
+	case .Inside:
+		inner -= width
+	case .Outside:
+		outer += width
+	case .Count:
+		return
+	case:
+		return
+	}
+	inner = max(inner, 0)
+	nominal_radius := max(radius*max(scale_x, scale_y), 0.001)
+	inner_scale := inner/nominal_radius
+	outer_scale := outer/nominal_radius
+	fringe_scale := fringe/nominal_radius
+	native_solid_append_circle_ring(vertices, cx*scale_x, cy*scale_y, rx, ry,
+		inner_scale, outer_scale, stroke_color, stroke_color, segments)
+	if outer > 0 {
+		native_solid_append_circle_ring(vertices, cx*scale_x, cy*scale_y, rx, ry,
+			outer_scale, outer_scale+fringe_scale, stroke_color, transparent_stroke, segments)
+	}
+	if inner > 0 {
+		native_solid_append_circle_ring(vertices, cx*scale_x, cy*scale_y, rx, ry,
+			max(inner_scale-fringe_scale, 0), inner_scale, transparent_stroke, stroke_color, segments)
+	}
+}
+
+native_solid_append_stroked_path :: proc(
+	vertices: ^[dynamic]Native_Text_Vertex,
+	points: [][2]f32,
+	stroke: alicorn.Paint_Stroke,
+	opacity: f32,
+) {
+	if len(points) < 2 || stroke.width <= 0 { return }
+	half := stroke.width*0.5
+	fringe := f32(NATIVE_VECTOR_ANTIALIAS_FRINGE)
+	color := [4]f32{stroke.color.r, stroke.color.g, stroke.color.b, stroke.color.a*opacity}
+	transparent := color
+	transparent[3] = 0
+	left: [NATIVE_VECTOR_CURVE_MAX_SEGMENTS+1][2]f32
+	right: [NATIVE_VECTOR_CURVE_MAX_SEGMENTS+1][2]f32
+	for index in 0..<len(points) {
+		previous := points[max(index-1, 0)]
+		next := points[min(index+1, len(points)-1)]
+		dx, dy := next[0]-previous[0], next[1]-previous[1]
+		length := math.sqrt(dx*dx+dy*dy)
+		if length <= 0.0001 {
+			dx, dy = next[0]-points[index][0], next[1]-points[index][1]
+			length = math.sqrt(dx*dx+dy*dy)
+		}
+		if length <= 0.0001 {
+			dx, dy = points[index][0]-previous[0], points[index][1]-previous[1]
+			length = math.sqrt(dx*dx+dy*dy)
+		}
+		if length <= 0.0001 { return }
+		normal := [2]f32{-dy/length, dx/length}
+		left[index] = [2]f32{points[index][0]+normal[0]*half, points[index][1]+normal[1]*half}
+		right[index] = [2]f32{points[index][0]-normal[0]*half, points[index][1]-normal[1]*half}
+	}
+	for index in 0..<len(points)-1 {
+		p0, p1 := left[index], left[index+1]
+		q0, q1 := right[index], right[index+1]
+		native_solid_append_triangle(vertices, p0, q0, q1, color, color, color)
+		native_solid_append_triangle(vertices, p0, q1, p1, color, color, color)
+		previous_normal := [2]f32{(p0[0]-q0[0])/(2*half), (p0[1]-q0[1])/(2*half)}
+		next_normal := [2]f32{(p1[0]-q1[0])/(2*half), (p1[1]-q1[1])/(2*half)}
+		outer_p0 := [2]f32{p0[0]+previous_normal[0]*fringe, p0[1]+previous_normal[1]*fringe}
+		outer_p1 := [2]f32{p1[0]+next_normal[0]*fringe, p1[1]+next_normal[1]*fringe}
+		outer_q0 := [2]f32{q0[0]-previous_normal[0]*fringe, q0[1]-previous_normal[1]*fringe}
+		outer_q1 := [2]f32{q1[0]-next_normal[0]*fringe, q1[1]-next_normal[1]*fringe}
+		native_solid_append_triangle(vertices, p0, p1, outer_p1, color, color, transparent)
+		native_solid_append_triangle(vertices, p0, outer_p1, outer_p0, color, transparent, transparent)
+		native_solid_append_triangle(vertices, q0, outer_q1, q1, color, transparent, color)
+		native_solid_append_triangle(vertices, q0, outer_q0, outer_q1, color, transparent, transparent)
+	}
+	first_delta := [2]f32{points[1][0]-points[0][0], points[1][1]-points[0][1]}
+	first_length := math.sqrt(first_delta[0]*first_delta[0]+first_delta[1]*first_delta[1])
+	last_delta := [2]f32{points[len(points)-1][0]-points[len(points)-2][0], points[len(points)-1][1]-points[len(points)-2][1]}
+	last_length := math.sqrt(last_delta[0]*last_delta[0]+last_delta[1]*last_delta[1])
+	if first_length > 0.0001 {
+		direction := [2]f32{first_delta[0]/first_length, first_delta[1]/first_length}
+		outer_left := [2]f32{left[0][0]-direction[0]*fringe, left[0][1]-direction[1]*fringe}
+		outer_right := [2]f32{right[0][0]-direction[0]*fringe, right[0][1]-direction[1]*fringe}
+		native_solid_append_triangle(vertices, left[0], right[0], outer_right, color, color, transparent)
+		native_solid_append_triangle(vertices, left[0], outer_right, outer_left, color, transparent, transparent)
+	}
+	if last_length > 0.0001 {
+		direction := [2]f32{last_delta[0]/last_length, last_delta[1]/last_length}
+		outer_left := [2]f32{left[len(left)-1][0]+direction[0]*fringe, left[len(left)-1][1]+direction[1]*fringe}
+		outer_right := [2]f32{right[len(right)-1][0]+direction[0]*fringe, right[len(right)-1][1]+direction[1]*fringe}
+	last := len(points)-1
+		native_solid_append_triangle(vertices, left[last], outer_right, right[last], color, transparent, color)
+		native_solid_append_triangle(vertices, left[last], outer_left, outer_right, color, transparent, transparent)
+	}
 }
 
 // Bounded component-private contour: two cubic shoulders joined by a flat

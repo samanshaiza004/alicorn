@@ -214,6 +214,12 @@ hit_test :: proc(rt: ^Runtime, x, y: f32, include_reveal_targets := false) -> No
 			if node.kind == .Button || node.kind == .Checkbox || node.kind == .Slider || node.kind == .Text_Field ||
 			   (node.kind == .Custom_Surface && node.surface_interaction == .Pointer) ||
 			   (node.text_input_target && node.focusable) {
+				if shape, exists := rt.pointer_hit_shapes[id]; exists && shape == .Circle {
+					bounds := layout_node_finalized_geometry(rt, id).bounds
+					radius := min(bounds.w, bounds.h)*0.5
+					dx, dy := x-(bounds.x+bounds.w*0.5), y-(bounds.y+bounds.h*0.5)
+					if radius <= 0 || dx*dx+dy*dy > radius*radius { continue }
+				}
 				return id
 			}
 		}

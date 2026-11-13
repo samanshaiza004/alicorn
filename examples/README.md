@@ -24,6 +24,7 @@ Install Odin and the native prerequisites from
 | 11 | [Third-Party Component](11_third_party_component/main.odin) | A reusable public-API compound control with a typed theme contract, unusual per-instance styling, adaptive focus identity, accessible Button behavior, and interruptible motion |
 | 12 | [Custom Segmented Control](12_custom_segmented_control/main.odin) | A third-party control that owns its complete visual presentation while public Button owners provide hit testing, focus, semantics, and activation |
 | 13 | [Surface Gradients](13_surface_gradients/main.odin) | Theme-resolved horizontal and vertical two-stop semantic surface fills with rounded geometry and clipping |
+| 14 | [Shape Primitives](14_shape_primitives/main.odin) | Bounded circle, arc, and cubic Bezier surfaces plus opt-in circular Button hit geometry |
 
 Run a lesson from the repository root. The runner resolves Odin and native
 linker dependencies, builds the selected program, and launches it:
@@ -34,6 +35,7 @@ linker dependencies, builds the selected program, and launches it:
 ./tools/run_example.sh 11_third_party_component
 ./tools/run_example.sh 12_custom_segmented_control
 ./tools/run_example.sh 13_surface_gradients
+./tools/run_example.sh 14_shape_primitives
 ```
 
 ```powershell
@@ -42,6 +44,7 @@ linker dependencies, builds the selected program, and launches it:
 .\tools\run_example.ps1 -Example 11_third_party_component
 .\tools\run_example.ps1 -Example 12_custom_segmented_control
 .\tools\run_example.ps1 -Example 13_surface_gradients
+.\tools\run_example.ps1 -Example 14_shape_primitives
 ```
 
 Use `--odin PATH` on the shell runner or `-Odin PATH` on PowerShell to select
@@ -108,6 +111,10 @@ build. Program arguments follow the example name on the shell runner and use
     extension-color roles bound to theme tokens; resize the window to see the
     rounded surface and gradient field remain clipped as one unit. See the
     [example notes](13_surface_gradients/README.md).
+14. In `14_shape_primitives`, click the Gain knob, use Tab and Space, inspect
+    the output arc, and follow the curved signal cable. The Button keeps its
+    ordinary keyboard/accessibility contract while pointer hits use the
+    inscribed circle. See the [example notes](14_shape_primitives/README.md).
 
 ## Build and validation
 

@@ -268,11 +268,63 @@ Applications can wrap ordinary layout content in a semantic surface without
 calculating paint bounds or constructing renderer commands. A surface resolves
 either a core color role or an app/vendor extension role against the active
 theme scope, then paints its resolved container bounds and clip. This
-high-level helper currently accepts rectangular surfaces only. Rounded and
-other shapes remain in the lower-level paint contract but are rejected here
-until the native renderer can draw them. Registered material and optical
-height describe appearance only; optical height does not affect layout or
-ordering.
+high-level helper supports rectangles, rounded rectangles, circles, open arcs,
+and cubic Bezier strokes. Curved shape coordinates are normalized to the
+surface bounds. Circle fills and strokes, and centered Arc/Bezier strokes,
+lower to bounded CPU tessellation in the existing solid-surface batch. These
+three curved shapes currently require flat paint: no gradient, analytic
+relief, or backdrop effect. Existing rectangular and rounded surfaces retain
+their current material paths; an ordinary rectangle remains the six-vertex
+fast path. Registered material and optical height describe appearance only;
+optical height does not affect layout or ordering.
+
+```odin
+alicorn.surface_begin(
+  &ui,
+  alicorn.surface_extension_color_role(role),
+  key="signal-ring",
+  style=alicorn.layout_style(width=96, height=96),
+  shape=alicorn.surface_shape_circle(),
+)
+alicorn.surface_end(&ui)
+
+alicorn.surface_begin(
+  &ui,
+  alicorn.surface_extension_color_role(role),
+  key="signal-sweep",
+  style=alicorn.layout_style(width=180, height=120),
+  shape=alicorn.surface_shape_arc(2.35, 4.71, radius=0.42),
+  fill=alicorn.Color{0, 0, 0, 0},
+  stroke=alicorn.Paint_Stroke{color=accent, width=4},
+)
+alicorn.surface_end(&ui)
+```
+
+Arc angles are radians in screen coordinates, so positive sweep proceeds
+clockwise. Arc radius is a fraction of the shorter dimension. Cubic Bezier
+control points are four normalized `[0,1]` coordinate pairs. Open paths require
+a centered stroke; their fill is ignored. Tessellation is bounded to 16–96
+segments according to pixel extent. The parent clip remains the clipping
+contract, and source-over alpha is preserved with a subpixel transparent
+fringe. No canvas, SVG parser, shader variant, texture, or render pass is
+introduced.
+
+`button_begin` can separately opt into `pointer_hit_shape=.Circle`. This clips
+pointer targeting to the inscribed circle of the Button's bounds while
+preserving rectangular layout, focus, keyboard activation, and accessibility
+bounds. The default remains rectangular. This is intended for controls such
+as knobs; it does not change child hit testing or add arbitrary path hit
+regions.
+
+Shape colors use normal semantic-surface theme resolution. Core color roles
+receive Alicorn's increased-contrast adjustments, and reduced-transparency
+forces role-derived fills opaque. Extension-role palettes remain the component
+author's responsibility in increased-contrast mode, as with other extension
+surfaces. Explicit stroke colors keep their authored color and alpha; provide
+an opaque, legible stroke when reduced transparency matters. These primitives
+do not animate, so reduced-motion mode schedules no shape-specific work.
+Keyboard focus remains rectangular and accessible; a component should draw a
+theme-resolved focus cue, as the example does.
 
 ```odin
 paper_role := alicorn.style_extension_color_role_id(

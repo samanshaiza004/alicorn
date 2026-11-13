@@ -778,6 +778,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	if rt.percent_width_sidecar_initialized { delete_key(&rt.percent_width_dependencies, id) }
 	gpu_surface_image_layers_destroy(rt, id)
 	delete_key(&rt.semantic_surfaces, id)
+	delete_key(&rt.pointer_hit_shapes, id)
 	delete_key(&rt.surface_top_edge_links, id)
 	delete_key(&rt.visual_parts, id)
 	delete_key(&rt.semantic_tree_orders, id)
@@ -907,6 +908,8 @@ reconcile :: proc(rt: ^Runtime) {
 			style_changes := style_environment_changed_domains_for_node(rt, node, d.style, node.style_environment, next_style_environment)
 			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part,
 				next_style_environment, style_changes)
+			if item.pointer_hit_shape == .Bounds { delete_key(&rt.pointer_hit_shapes, d.id) }
+			else { rt.pointer_hit_shapes[d.id] = item.pointer_hit_shape }
 			grid_tracks_copy_retained(rt, node, item)
 			node.description_hash = description_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
 			node.layout_hash = layout_percent_width_pending_hash(rt, d, item)
@@ -939,6 +942,8 @@ reconcile :: proc(rt: ^Runtime) {
 			composite_changed := Dirty_Stage.Composite in style_stages
 			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part,
 				next_style_environment, style_changes)
+			if item.pointer_hit_shape == .Bounds { delete_key(&rt.pointer_hit_shapes, d.id) }
+			else { rt.pointer_hit_shapes[d.id] = item.pointer_hit_shape }
 			grid_tracks_copy_retained(rt, node, item)
 			if was_selected != node.selected {
 				visual_part_invalidate_dependents(rt, d.id, "visual part owner selection changed")
@@ -1174,6 +1179,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.finalized_geometry)
 	delete(rt.computed_styles)
 	delete(rt.semantic_surfaces)
+	delete(rt.pointer_hit_shapes)
 	delete(rt.surface_top_edge_links)
 	delete(rt.visual_parts)
 	for _, &entity in rt.semantic_entities { semantic_entity_strings_destroy(&entity, rt.persistent_allocator) }

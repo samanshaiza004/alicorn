@@ -630,6 +630,10 @@ and the label remains its accessible name without shaping or affecting
 intrinsic layout. Size the owner explicitly and draw its retained children.
 Custom presentations should provide a visible keyboard-focus cue; tag its
 surface with `.Owner_Focus_Visible` so it follows retained keyboard modality.
+For rotary controls, `button_begin` also accepts `pointer_hit_shape=.Circle`.
+The pointer target becomes the inscribed circle of the Button bounds;
+`.Bounds` preserves rectangular pointer targeting. Focus, keyboard activation,
+layout geometry, and accessibility bounds remain the ordinary Button contract.
 
 For example, copy a built-in toolbar recipe, adjust its hover transform, then
 register the containing immutable theme:

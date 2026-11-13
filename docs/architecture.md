@@ -279,7 +279,9 @@ their generic paint command. The native renderer expands flat or analytic
 relief into bounded ordinary vertices, including independent surface corner
 radii. Per-corner values stay in the retained semantic or computed-style
 sidecar; renderers resolve them with `surface_paint_shape_resolve` using the
-command owner. This keeps `Paint_Command` at its 128-byte budget while keeping
+command owner. Circles, arcs, and cubic Beziers use the same compact command
+and bounded SDL solid-batch tessellation; their normalized path data stays in
+the retained semantic sidecar. This keeps `Paint_Command` at its 128-byte budget while keeping
 the authored values at full `f32` precision. Optical height never affects
 layout or stacking order. Analytic relief uses a fixed upper-left light and
 scales/reverses edge shading with signed physical height. Flat materials and

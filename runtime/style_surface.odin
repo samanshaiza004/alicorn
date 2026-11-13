@@ -65,7 +65,7 @@ Semantic_Surface_Resolved_Style :: struct {
 // the style sidecar associated with its owner. A per-corner payload without a
 // retained owner is invalid; renderers should skip it rather than guess.
 surface_paint_shape_resolve :: proc(rt: ^Runtime, owner: Node_ID, shape: Surface_Paint_Shape) -> (resolved: Surface_Shape, ok: bool) {
-	if shape.kind != .Rounded_Rectangle_Per_Corner {
+	if !surface_shape_uses_retained_geometry(shape.kind) {
 		return Surface_Shape{kind=shape.kind, corner_radius=shape.corner_radius}, true
 	}
 	if rt == nil || owner == 0 { return }
@@ -130,7 +130,14 @@ semantic_surface_style_is_valid :: proc(rt: ^Runtime, environment: Style_Environ
 	if !surface_shape_is_valid(style.shape) { return false }
 	if !backdrop_effect_is_valid(style.backdrop_effect) { return false }
 	_, material_ok := style_material_resolve(rt, style.material)
-	return material_ok
+	if !material_ok { return false }
+	if surface_shape_uses_flat_paint(style.shape.kind) {
+		if style.material != MATERIAL_FLAT || style.physical_height != 0 || style.gradient.axis != .None ||
+		   style.backdrop_effect.kind != .None { return false }
+	}
+	if (style.shape.kind == .Arc || style.shape.kind == .Cubic_Bezier) &&
+	   (style.stroke.width <= 0 || style.stroke_placement != .Centered) { return false }
+	return true
 }
 
 backdrop_effect_is_valid :: proc(effect: Backdrop_Effect) -> bool {
@@ -180,6 +187,14 @@ semantic_surface_style_hash :: proc(style: Semantic_Surface_Style) -> u64 {
 	h = hash_mix(h, u64(transmute(u32)style.shape.corner_radii.top_right))
 	h = hash_mix(h, u64(transmute(u32)style.shape.corner_radii.bottom_right))
 	h = hash_mix(h, u64(transmute(u32)style.shape.corner_radii.bottom_left))
+	for value in style.shape.arc.center { h = hash_mix(h, u64(transmute(u32)value)) }
+	h = hash_mix(h, u64(transmute(u32)style.shape.arc.radius))
+	h = hash_mix(h, u64(transmute(u32)style.shape.arc.start_angle))
+	h = hash_mix(h, u64(transmute(u32)style.shape.arc.sweep_angle))
+	for point in style.shape.bezier.points {
+		h = hash_mix(h, u64(transmute(u32)point[0]))
+		h = hash_mix(h, u64(transmute(u32)point[1]))
+	}
 	h = hash_mix(h, u64(u32(style.material)))
 	h = hash_mix(h, u64(transmute(u32)style.physical_height))
 	h = hash_mix(h, u64(u32(style.material_group)))

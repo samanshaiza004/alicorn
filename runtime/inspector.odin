@@ -98,6 +98,9 @@ style_inspector_surface_shape_name :: proc(kind: Surface_Shape_Kind) -> string {
 	case .Line: return "line"
 	case .Connected_Tab: return "connected-tab-contour"
 	case .Rounded_Rectangle_Per_Corner: return "rounded-rectangle-per-corner"
+	case .Circle: return "circle"
+	case .Arc: return "arc"
+	case .Cubic_Bezier: return "cubic-bezier"
 	}
 	return "unknown"
 }
@@ -267,9 +270,11 @@ style_inspector_semantic_surface :: proc(sb: ^strings.Builder, rt: ^Runtime, nod
 	material_kind := "unavailable"
 	if material_found { material_kind = style_inspector_material_kind_name(material.kind) }
 	radii := surface_shape_corner_radii(style.shape)
-	fmt.sbprintf(sb, " shape=%s radius=%.2f corner-radii=(%.2f %.2f %.2f %.2f) material=%d(%s) height=%.2f group=%d fill=(%.3f,%.3f,%.3f,%.3f) gradient=%v end=(%.3f,%.3f,%.3f,%.3f) stroke=(%.3f,%.3f,%.3f,%.3f;%.2f;%v) resolution=retained-cache dependencies=paint,material generations=(paint=%d material=%d)\n",
+	fmt.sbprintf(sb, " shape=%s radius=%.2f corner-radii=(%.2f %.2f %.2f %.2f) arc=(center=%.3f,%.3f radius=%.3f start=%.3f sweep=%.3f) bezier=%v material=%d(%s) height=%.2f group=%d fill=(%.3f,%.3f,%.3f,%.3f) gradient=%v end=(%.3f,%.3f,%.3f,%.3f) stroke=(%.3f,%.3f,%.3f,%.3f;%.2f;%v) resolution=retained-cache dependencies=paint,material generations=(paint=%d material=%d)\n",
 		style_inspector_surface_shape_name(style.shape.kind), style.shape.corner_radius,
 		radii.top_left, radii.top_right, radii.bottom_right, radii.bottom_left,
+		style.shape.arc.center[0], style.shape.arc.center[1], style.shape.arc.radius,
+		style.shape.arc.start_angle, style.shape.arc.sweep_angle, style.shape.bezier.points,
 		u32(style.material), material_kind, style.physical_height, u32(style.material_group),
 		resolved.fill.r, resolved.fill.g, resolved.fill.b, resolved.fill.a,
 		resolved.gradient.axis, resolved.gradient.end.r, resolved.gradient.end.g, resolved.gradient.end.b, resolved.gradient.end.a,
@@ -374,6 +379,9 @@ inspect :: proc(rt: ^Runtime) -> string {
 				owner_position, owner_dragging)
 		}
 		fmt.sbprintf(&sb, "  description: %s layout: %s paint: %s composite: %s\n", stage_word(dirty_has(node.dirty, .Description)), stage_word(dirty_has(node.dirty, .Layout)), stage_word(dirty_has(node.dirty, .Paint)), stage_word(dirty_has(node.dirty, .Composite)))
+		if hit_shape, custom_hit := rt.pointer_hit_shapes[id]; custom_hit {
+			fmt.sbprintf(&sb, "  pointer hit shape: %v (layout and accessibility bounds remain rectangular)\n", hit_shape)
+		}
 		appearance := node.style_environment.accessibility
 		fmt.sbprintf(&sb,
 			"  style environment: text-scale=%.2f accessibility-appearance=(increased-contrast=%t reduce-motion=%t reduce-transparency=%t differentiate-without-color=%t)\n",

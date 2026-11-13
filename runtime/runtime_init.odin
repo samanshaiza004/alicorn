@@ -58,6 +58,7 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 	rt.finalized_geometry = make(map[Node_ID]Finalized_Geometry, allocator=rt.persistent_allocator)
 	rt.computed_styles = make(map[Node_ID]Computed_Style, allocator=rt.persistent_allocator)
 	rt.semantic_surfaces = make(map[Node_ID]Semantic_Surface_Style, allocator=rt.persistent_allocator)
+	rt.pointer_hit_shapes = make(map[Node_ID]Pointer_Hit_Shape, allocator=rt.persistent_allocator)
 	rt.surface_top_edge_links = make(map[Node_ID]Node_ID, allocator=rt.persistent_allocator)
 	rt.visual_parts = make(map[Node_ID]Visual_Part_Style, allocator=rt.persistent_allocator)
 	rt.semantic_entities = make(map[Semantic_ID]Semantic_Entity, allocator=rt.persistent_allocator)

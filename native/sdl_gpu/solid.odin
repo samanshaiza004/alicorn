@@ -176,6 +176,18 @@ native_solid_visible_command :: proc(
 	if shape.kind == .Rectangle && surface.shape.kind != .Rounded_Rectangle_Per_Corner {
 		shape = alicorn.Surface_Shape{kind=surface.shape.kind, corner_radius=surface.shape.corner_radius}
 	}
+	if shape.kind == .Arc {
+		arc := shape.arc
+		radius := arc.radius*min(draw.bounds.w, draw.bounds.h)
+		left := max(radius-arc.center[0]*draw.bounds.w, 0)
+		top := max(radius-arc.center[1]*draw.bounds.h, 0)
+		right := max(radius-(1-arc.center[0])*draw.bounds.w, 0)
+		bottom := max(radius-(1-arc.center[1])*draw.bounds.h, 0)
+		visible.bounds.x -= left
+		visible.bounds.y -= top
+		visible.bounds.w += left+right
+		visible.bounds.h += top+bottom
+	}
 	maximum_scale := max(scale_x, scale_y)
 	outset_pixels := native_solid_stroke_outside(surface.stroke, draw.stroke_placement) * maximum_scale
 	if material.kind == .Analytic_Relief && surface.physical_height > 0 &&
@@ -187,6 +199,8 @@ native_solid_visible_command :: proc(
 	// paint footprint, including the outer edge of a rounded shadow.
 	if native_solid_shape_is_rounded(shape) {
 		outset_pixels += NATIVE_ROUNDED_ANTIALIAS_FRINGE
+	} else if shape.kind == .Circle || shape.kind == .Arc || shape.kind == .Cubic_Bezier {
+		outset_pixels += NATIVE_VECTOR_ANTIALIAS_FRINGE
 	}
 	if outset_pixels > 0 {
 		visible.bounds.x -= outset_pixels / max(scale_x, 0.001)
@@ -264,7 +278,10 @@ native_solid_build :: proc(
 		visible_command := native_solid_visible_command(draw, surface, material, scale_x, scale_y, shape)
 		_, _, _, _, visible := native_solid_pixel_bounds(visible_command, scale_x, scale_y, target_w, target_h)
 		if visible {
-			required_vertices += native_solid_material_vertex_count(material, surface.physical_height, shape, surface.stroke, surface.top_edge_gap)
+			required_vertices += native_solid_material_vertex_count(
+				material, surface.physical_height, shape, surface.stroke, surface.top_edge_gap,
+				bounds=draw.bounds, scale_x=scale_x, scale_y=scale_y, fill=surface.fill,
+			)
 		}
 	}
 	if required_vertices > cap(renderer.vertices) {
@@ -280,7 +297,10 @@ native_solid_build :: proc(
 		visible_command := native_solid_visible_command(draw, surface, material, scale_x, scale_y, shape)
 		x0, y0, x1, y1, visible := native_solid_pixel_bounds(visible_command, scale_x, scale_y, target_w, target_h)
 		if !visible { continue }
-		needed := native_solid_material_vertex_count(material, surface.physical_height, shape, surface.stroke, surface.top_edge_gap)
+		needed := native_solid_material_vertex_count(
+			material, surface.physical_height, shape, surface.stroke, surface.top_edge_gap,
+			bounds=draw.bounds, scale_x=scale_x, scale_y=scale_y, fill=surface.fill,
+		)
 		if len(renderer.vertices) + needed > renderer.vertex_capacity && !native_vertex_buffer_ensure_capacity(
 			renderer.device, &renderer.vertex_buffer, &renderer.vertex_transfer,
 			&renderer.vertex_capacity, len(renderer.vertices) + needed,
@@ -289,7 +309,60 @@ native_solid_build :: proc(
 		}
 		first := sdl3.Uint32(len(renderer.vertices))
 		rounded := native_solid_shape_is_rounded(shape)
-		if shape.kind == .Connected_Tab {
+		if shape.kind == .Circle {
+			base := native_solid_unclipped_pixel_bounds(draw, scale_x, scale_y)
+			stroke := surface.stroke
+			stroke.width *= max(scale_x, scale_y)
+			segments := native_solid_vector_segments(shape, draw.bounds, scale_x, scale_y)
+			native_solid_append_circle_surface(
+				&renderer.vertices, base, surface.fill, stroke, draw.stroke_placement,
+				draw.opacity, 1, 1, segments,
+			)
+			renderer.draws[i] = Native_Solid_Draw{
+				first_vertex=first,
+				vertex_count=sdl3.Uint32(len(renderer.vertices)-int(first)),
+				scissor=native_solid_pixel_scissor(draw, scale_x, scale_y, target_w, target_h),
+				has_scissor=true,
+			}
+		} else if shape.kind == .Arc || shape.kind == .Cubic_Bezier {
+			segments := native_solid_vector_segments(shape, draw.bounds, scale_x, scale_y)
+			points: [NATIVE_VECTOR_CURVE_MAX_SEGMENTS+1][2]f32
+			point_count := segments+1
+			origin_x := (draw.bounds.x+draw.translation[0])*scale_x
+			origin_y := (draw.bounds.y+draw.translation[1])*scale_y
+			if shape.kind == .Arc {
+				arc := shape.arc
+				center_x := origin_x+arc.center[0]*draw.bounds.w*scale_x
+				center_y := origin_y+arc.center[1]*draw.bounds.h*scale_y
+				radius := arc.radius*min(draw.bounds.w, draw.bounds.h)
+				for point_index in 0..<point_count {
+					parameter := f32(point_index)/f32(segments)
+					angle := arc.start_angle+arc.sweep_angle*parameter
+					points[point_index] = {
+						center_x+math.cos(angle)*radius*scale_x,
+						center_y+math.sin(angle)*radius*scale_y,
+					}
+				}
+			} else {
+				control := shape.bezier.points
+				for point_index in 0..<point_count {
+					t := f32(point_index)/f32(segments)
+					u := 1-t
+					x := control[0][0]*u*u*u + 3*control[1][0]*u*u*t + 3*control[2][0]*u*t*t + control[3][0]*t*t*t
+					y := control[0][1]*u*u*u + 3*control[1][1]*u*u*t + 3*control[2][1]*u*t*t + control[3][1]*t*t*t
+					points[point_index] = {origin_x+x*draw.bounds.w*scale_x, origin_y+y*draw.bounds.h*scale_y}
+				}
+			}
+			stroke := surface.stroke
+			stroke.width *= max(scale_x, scale_y)
+			native_solid_append_stroked_path(&renderer.vertices, points[:point_count], stroke, draw.opacity)
+			renderer.draws[i] = Native_Solid_Draw{
+				first_vertex=first,
+				vertex_count=sdl3.Uint32(len(renderer.vertices)-int(first)),
+				scissor=native_solid_pixel_scissor(draw, scale_x, scale_y, target_w, target_h),
+				has_scissor=true,
+			}
+		} else if shape.kind == .Connected_Tab {
 			base := native_solid_unclipped_pixel_bounds(draw, scale_x, scale_y)
 			native_solid_append_connected_tab(&renderer.vertices, base, surface.fill, draw.opacity, max(scale_x,scale_y))
 			renderer.draws[i] = Native_Solid_Draw{

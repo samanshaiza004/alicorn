@@ -100,6 +100,17 @@ Surface_Shape_Kind :: enum u8 {
 	// author this shape; TabBar owns its decoration and interaction separately.
 	Connected_Tab,
 	Rounded_Rectangle_Per_Corner,
+	Circle,
+	Arc,
+	Cubic_Bezier,
+}
+
+// Pointer_Hit_Shape is an opt-in refinement of an interactive control's
+// rectangular hit bounds. Layout, keyboard focus, and accessibility bounds
+// remain rectangular; Bounds preserves the ordinary rectangular pointer hit.
+Pointer_Hit_Shape :: enum u8 {
+	Bounds,
+	Circle,
 }
 
 // Surface_Corner_Radii stores logical radii in clockwise order, starting at
@@ -108,14 +119,51 @@ Surface_Corner_Radii :: struct {
 	top_left, top_right, bottom_right, bottom_left: f32,
 }
 
+// Surface_Arc uses normalized surface coordinates. Its radius is a fraction
+// of the shorter surface dimension; angles are radians in screen coordinates
+// (positive sweeps clockwise). Arc paint is an open, centered stroke.
+Surface_Arc :: struct {
+	center: [2]f32,
+	radius: f32,
+	start_angle: f32,
+	sweep_angle: f32,
+}
+
+// Surface_Cubic_Bezier stores four control points normalized to the surface
+// bounds. It is an open, centered stroke, tessellated by the active renderer.
+Surface_Cubic_Bezier :: struct {
+	points: [4][2]f32,
+}
+
 Surface_Shape :: struct {
 	kind:          Surface_Shape_Kind,
 	corner_radius: f32,
 	corner_radii:  Surface_Corner_Radii,
+	arc:           Surface_Arc,
+	bezier:        Surface_Cubic_Bezier,
 }
 
 surface_shape_rounded_corners :: proc(radii: Surface_Corner_Radii) -> Surface_Shape {
 	return Surface_Shape{kind=.Rounded_Rectangle_Per_Corner, corner_radii=radii}
+}
+
+surface_shape_circle :: proc() -> Surface_Shape {
+	return Surface_Shape{kind=.Circle}
+}
+
+surface_shape_arc :: proc(
+	start_angle, sweep_angle: f32,
+	radius: f32 = 0.45,
+	center := [2]f32{0.5, 0.5},
+) -> Surface_Shape {
+	return Surface_Shape{
+		kind=.Arc,
+		arc=Surface_Arc{center=center, radius=radius, start_angle=start_angle, sweep_angle=sweep_angle},
+	}
+}
+
+surface_shape_cubic_bezier :: proc(points: [4][2]f32) -> Surface_Shape {
+	return Surface_Shape{kind=.Cubic_Bezier, bezier=Surface_Cubic_Bezier{points=points}}
 }
 
 // surface_shape_uniform_corner_radius is the migration form for positional
@@ -142,7 +190,7 @@ surface_shape_corner_radii :: proc(shape: Surface_Shape) -> Surface_Corner_Radii
 		return Surface_Corner_Radii{shape.corner_radius, shape.corner_radius, shape.corner_radius, shape.corner_radius}
 	case .Rounded_Rectangle_Per_Corner:
 		return shape.corner_radii
-	case .Rectangle, .Line, .Connected_Tab:
+	case .Rectangle, .Line, .Connected_Tab, .Circle, .Arc, .Cubic_Bezier:
 		return {}
 	}
 	return {}
@@ -183,6 +231,14 @@ surface_shape_has_rounded_corners :: proc(shape: Surface_Shape) -> bool {
 	return radii.top_left > 0 || radii.top_right > 0 || radii.bottom_right > 0 || radii.bottom_left > 0
 }
 
+surface_shape_uses_retained_geometry :: proc(kind: Surface_Shape_Kind) -> bool {
+	return kind == .Rounded_Rectangle_Per_Corner || kind == .Arc || kind == .Cubic_Bezier
+}
+
+surface_shape_uses_flat_paint :: proc(kind: Surface_Shape_Kind) -> bool {
+	return kind == .Circle || kind == .Arc || kind == .Cubic_Bezier
+}
+
 surface_shape_is_valid :: proc(shape: Surface_Shape) -> bool {
 	switch shape.kind {
 	case .Rectangle:
@@ -192,6 +248,25 @@ surface_shape_is_valid :: proc(shape: Surface_Shape) -> bool {
 		       surface_corner_radii_is_zero(shape.corner_radii)
 	case .Rounded_Rectangle_Per_Corner:
 		return shape.corner_radius == 0 && surface_corner_radii_is_valid(shape.corner_radii)
+	case .Circle:
+		return shape.corner_radius == 0 && surface_corner_radii_is_zero(shape.corner_radii) &&
+		       shape.arc == {} && shape.bezier == {}
+	case .Arc:
+		arc := shape.arc
+		return shape.corner_radius == 0 && surface_corner_radii_is_zero(shape.corner_radii) &&
+		       shape.bezier == {} &&
+		       number_is_finite(arc.center[0]) && number_is_finite(arc.center[1]) &&
+		       arc.center[0] >= 0 && arc.center[0] <= 1 && arc.center[1] >= 0 && arc.center[1] <= 1 &&
+		       number_is_finite(arc.radius) && arc.radius > 0 && arc.radius <= 0.5 &&
+		       number_is_finite(arc.start_angle) && abs(arc.start_angle) <= 6.2831855 &&
+		       number_is_finite(arc.sweep_angle) && arc.sweep_angle != 0 && abs(arc.sweep_angle) <= 6.2831855
+	case .Cubic_Bezier:
+		if shape.corner_radius != 0 || !surface_corner_radii_is_zero(shape.corner_radii) || shape.arc != {} { return false }
+		for point in shape.bezier.points {
+			if !number_is_finite(point[0]) || !number_is_finite(point[1]) ||
+			   point[0] < 0 || point[0] > 1 || point[1] < 0 || point[1] > 1 { return false }
+		}
+		return true
 	case .Line:
 		return false
 	case .Connected_Tab:

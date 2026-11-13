@@ -425,6 +425,7 @@ button_begin :: proc(
 	variant := Button_Variant.Default,
 	focusable := true,
 	presentation := Button_Presentation.Default,
+	pointer_hit_shape := Pointer_Hit_Shape.Bounds,
 ) -> (id: Node_ID, activated: bool) {
 	if ui == nil || ui.runtime == nil || !ui.runtime.frame_open { return }
 	resolved_variant := style_button_variant_resolve(ui.runtime, variant)
@@ -449,6 +450,15 @@ button_begin :: proc(
 		button_presentation=presentation,
 	)
 	if id == 0 { return }
+	if pointer_hit_shape != .Bounds {
+		last := len(ui.runtime.pending)-1
+		if pointer_hit_shape != .Circle || last < 0 || ui.runtime.pending[last].kind != .Description ||
+		   ui.runtime.pending[last].description.id != id {
+			append_diagnostic(ui.runtime, "button_begin requires a supported pointer hit shape and its current retained description")
+			return 0, false
+		}
+		ui.runtime.pending[last].pointer_hit_shape = pointer_hit_shape
+	}
 	append(&ui.runtime.stack, id)
 	push_identity_scope(ui.runtime, id, "", 0)
 	if !state.disabled { activated = consume_activation(ui.runtime, id) }

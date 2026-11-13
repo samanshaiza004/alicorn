@@ -204,6 +204,12 @@ style_transform_is_valid :: proc(transform: Style_Transform) -> bool {
 style_button_recipe_is_valid :: proc(recipe: Button_Recipe) -> bool {
 	if !recipe.defined { return true }
 	if !surface_shape_is_valid(recipe.shape) { return false }
+	if recipe.shape.kind == .Arc || recipe.shape.kind == .Cubic_Bezier { return false }
+	if surface_shape_uses_flat_paint(recipe.shape.kind) {
+		for treatment in ([?]Button_Surface_Treatment{recipe.rest_surface, recipe.pressed_surface}) {
+			if treatment.defined && (treatment.material != MATERIAL_FLAT || treatment.physical_height != 0) { return false }
+		}
+	}
 	for treatment in ([?]Button_Surface_Treatment{recipe.rest_surface, recipe.pressed_surface}) {
 		if treatment.defined && !(treatment.physical_height >= -SURFACE_PHYSICAL_HEIGHT_LIMIT && treatment.physical_height <= SURFACE_PHYSICAL_HEIGHT_LIMIT) { return false }
 	}
