@@ -21,13 +21,14 @@ Effect_Probe_Timing :: struct { encode_ns, submit_wait_ns: i64, render_passes: i
 // This fixture contains only Surface/Text commands. Count actual populated
 // renderer runs, including clip culling, without adding production telemetry.
 effect_probe_draw_passes :: proc(renderers:^Blend_Validation_Renderers, display:[]alicorn.Paint_Command) -> int {
-    count,index:=0,0
+    count,index,text_command_index:=0,0,0
     for index<len(display) {
         kind,end:=native_paint_run(display,index)
         if kind==.Text {
             for draw in renderers.text.draws {
-                if draw.command_index==index { count+=1; break }
+                if draw.text_command_index==text_command_index { count+=1; break }
             }
+            text_command_index+=1
         } else if kind==.Surface {
             for draw in renderers.solid.draws[index:end] {
                 if draw.vertex_count>0 { count+=1; break }

@@ -141,13 +141,15 @@ draw_display_list :: proc(
 	}
 
 	display_index := 0
+	text_command_index := 0
 	for display_index < len(render_display) {
 		run_kind, run_end := native_paint_run(render_display, display_index)
 		draw := render_display[display_index]
 		if run_kind == .Text {
-			if !native_text_render_command(text_renderer, command, draw, display_index, swapchain, swap_w, swap_h, logical_to_pixel_x, logical_to_pixel_y) {
+			if !native_text_render_command(text_renderer, command, draw, text_command_index, swapchain, swap_w, swap_h, logical_to_pixel_x, logical_to_pixel_y) {
 				return false
 			}
+			text_command_index += 1
 			display_index = run_end
 			continue
 		}

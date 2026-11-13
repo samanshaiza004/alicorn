@@ -31,7 +31,9 @@ Native_Atlas_Page :: struct {
 
 Native_Text_Draw :: struct {
 	first_vertex: sdl3.Uint32,
-	command_index: int,
+	// Text-only order is stable when selection/caret surfaces are inserted into
+	// the surrounding display list.
+	text_command_index: int,
 	run_handle:   alicorn.Text_Run_Handle,
 	page_index:   u16,
 	is_color:     bool,
@@ -287,6 +289,10 @@ native_text_command :: proc(command: alicorn.Paint_Command) -> bool {
 
 native_text_handle_equal :: proc(a, b: alicorn.Text_Run_Handle) -> bool {
 	return a.source == b.source && a.resource == b.resource && a.generation == b.generation
+}
+
+native_text_draw_matches_command :: proc(draw: Native_Text_Draw, text_command_index: int, handle: alicorn.Text_Run_Handle) -> bool {
+	return draw.text_command_index == text_command_index && native_text_handle_equal(draw.run_handle, handle)
 }
 
 native_text_hash_rect :: proc(h: u64, rect: alicorn.Rect) -> u64 {
@@ -657,21 +663,24 @@ native_text_mesh_fingerprint :: proc(renderer: ^Native_Text_Renderer, display: [
 	h = alicorn.hash_mix(h, u64(transmute(u32)scale_x))
 	h = alicorn.hash_mix(h, u64(transmute(u32)scale_y))
 	text_index: u64 = 0
-	for command, command_index in display {
+	for command in display {
 		paint, is_text := native_text_command_payload(command)
 		if !is_text { continue }
 		handle := paint.run
-		run := native_text_run_resolve(renderer, handle)
-		if run == nil { continue }
-		bytes_hashed += u64(len(run.value))
-		// Span hashing makes one count pass and one content pass.
-		bytes_hashed += u64(len(paint.spans) * size_of(alicorn.Text_Paint_Span) * 2)
+		// Count every text command, including a stale generation that currently
+		// cannot resolve. Draw lookup uses this ordinal, so omitting one here
+		// could leave a cache hit with stale command mapping.
 		h = alicorn.hash_mix(h, text_index)
-		h = alicorn.hash_mix(h, u64(command_index))
 		text_index += 1
 		h = alicorn.hash_mix(h, u64(handle.source))
 		h = alicorn.hash_mix(h, handle.resource)
 		h = alicorn.hash_mix(h, handle.generation)
+		run := native_text_run_resolve(renderer, handle)
+		if run == nil { continue }
+		bytes_hashed += u64(len(run.value))
+		// Span hashing makes one count pass and one content pass. Keep this in
+		// text-command order, independent of unrelated display-list commands.
+		bytes_hashed += u64(len(paint.spans) * size_of(alicorn.Text_Paint_Span) * 2)
 		h = native_text_hash_rect(h, command.bounds)
 		h = native_text_hash_rect(h, command.clip)
 		h = alicorn.hash_mix(h, u64(transmute(u32)command.opacity))
@@ -723,8 +732,12 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 	// Reserve once from the shaped glyphs that can plausibly reach a text
 	// command's clip; don't couple CPU allocation to maximum GPU capacity.
 	native_text_reserve_shaped_vertices(renderer, display, scale_x, scale_y)
-	for command, command_index in display {
-		if !native_text_command(command) || !native_text_command_intersects_clip(command) { continue }
+	text_command_index := 0
+	for command in display {
+		if !native_text_command(command) { continue }
+		this_text_command_index := text_command_index
+		text_command_index += 1
+		if !native_text_command_intersects_clip(command) { continue }
 		paint, is_text := native_text_command_payload(command)
 		if !is_text { continue }
 		run := native_text_command_run(renderer, command)
@@ -793,7 +806,7 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 				Native_Text_Vertex{[3]f32{x1, y1, 0}, color, [2]f32{u1, v1}},
 				Native_Text_Vertex{[3]f32{x0, y1, 0}, color, [2]f32{u0, v1}},
 			)
-			append(&renderer.draws, Native_Text_Draw{first, command_index, paint.run, slot_view.Page_Index, slot_view.Is_Color})
+			append(&renderer.draws, Native_Text_Draw{first, this_text_command_index, paint.run, slot_view.Page_Index, slot_view.Is_Color})
 		}
 		if len(winners) > 0 { delete(winners, scratch_allocator) }
 	}
@@ -887,7 +900,7 @@ native_text_render_command :: proc(
 	renderer: ^Native_Text_Renderer,
 	command_buffer: ^sdl3.GPUCommandBuffer,
 	command: alicorn.Paint_Command,
-	display_command_index: int,
+	text_command_index: int,
 	target: ^sdl3.GPUTexture,
 	target_w, target_h: sdl3.Uint32,
 	scale_x, scale_y: f32,
@@ -897,7 +910,7 @@ native_text_render_command :: proc(
 	handle := paint.run
 	has_draw := false
 	for draw in renderer.draws {
-		if draw.command_index == display_command_index && native_text_handle_equal(draw.run_handle, handle) {
+		if native_text_draw_matches_command(draw, text_command_index, handle) {
 			has_draw = true
 			break
 		}
@@ -936,7 +949,7 @@ native_text_render_command :: proc(
 	vertex_binding := sdl3.GPUBufferBinding{buffer=renderer.vertex_buffer, offset=0}
 	sdl3.BindGPUVertexBuffers(pass, 0, &vertex_binding, 1)
 	for draw in renderer.draws {
-		if draw.command_index != display_command_index || !native_text_handle_equal(draw.run_handle, handle) { continue }
+		if !native_text_draw_matches_command(draw, text_command_index, handle) { continue }
 		page := native_text_page(renderer, draw.page_index, draw.is_color)
 		if page == nil || page.texture == nil { continue }
 		binding := sdl3.GPUTextureSamplerBinding{texture=page.texture, sampler=renderer.sampler}

@@ -40,6 +40,10 @@ contains the v0.1.0 and v0.2.0 release history.
 
 ## Active research
 
+- [#169 native mesh locality](research/issue-169-native-mesh-locality.md) —
+  fixes text-mesh invalidation when unrelated selection surfaces move in the
+  paint stream; a broader per-owner GPU buffer cache remains pending matched
+  Scratchpad measurements.
 - [#109 typed sizing research](research/issue-109-completion-plan.md) —
   v0.3.0 follow-up research. v0.2.1 includes only the already merged fixed,
   fit-height, and definite-parent percentage-width work; broader layout
