@@ -75,32 +75,38 @@ blend_validation_readback :: proc(
 ) -> bool {
 	device := renderers.solid.device
 	command := sdl3.AcquireGPUCommandBuffer(device)
-	if command == nil { return false }
+	if command == nil { fmt.println("blend_readback_acquire_command_failed", "SDL_error", sdl3.GetError()); return false }
 	submitted := false
 	defer if !submitted { _ = sdl3.CancelGPUCommandBuffer(command) }
 	clear_target := sdl3.GPUColorTargetInfo{texture=target, clear_color=background, load_op=.CLEAR, store_op=.STORE}
 	pass := sdl3.BeginGPURenderPass(command, &clear_target, 1, nil)
-	if pass == nil { return false }
+	if pass == nil { fmt.println("blend_readback_begin_render_pass_failed", "SDL_error", sdl3.GetError()); return false }
 	sdl3.EndGPURenderPass(pass)
 	if !draw_display_list(command, target, BLEND_VALIDATION_SIZE, BLEND_VALIDATION_SIZE,
-		&renderers.text, &renderers.geometry, &renderers.solid, display, scale, scale, clear_background=false) { return false }
+		&renderers.text, &renderers.geometry, &renderers.solid, display, scale, scale, clear_background=false) {
+		fmt.println("blend_readback_draw_display_list_failed", "commands", len(display), "SDL_error", sdl3.GetError())
+		return false
+	}
 	copy_pass := sdl3.BeginGPUCopyPass(command)
-	if copy_pass == nil { return false }
+	if copy_pass == nil { fmt.println("blend_readback_begin_copy_pass_failed", "SDL_error", sdl3.GetError()); return false }
 	source := sdl3.GPUTextureRegion{texture=target, w=BLEND_VALIDATION_SIZE, h=BLEND_VALIDATION_SIZE, d=1}
 	destination := sdl3.GPUTextureTransferInfo{transfer_buffer=download, pixels_per_row=BLEND_VALIDATION_SIZE, rows_per_layer=BLEND_VALIDATION_SIZE}
 	sdl3.DownloadFromGPUTexture(copy_pass, source, destination)
 	sdl3.EndGPUCopyPass(copy_pass)
 	fence := sdl3.SubmitGPUCommandBufferAndAcquireFence(command)
 	submitted = true
-	if fence == nil { return false }
+	if fence == nil { fmt.println("blend_readback_submit_fence_failed", "SDL_error", sdl3.GetError()); return false }
 	defer sdl3.ReleaseGPUFence(device, fence)
 	native_text_commit_submission(&renderers.text)
 	native_surface_commit_submission(&renderers.geometry)
 	native_solid_commit_submission(&renderers.solid)
 	fences := [1]^sdl3.GPUFence{fence}
-	if !sdl3.WaitForGPUFences(device, true, &fences[0], 1) { return false }
+	if !sdl3.WaitForGPUFences(device, true, &fences[0], 1) {
+		fmt.println("blend_readback_wait_fence_failed", "SDL_error", sdl3.GetError())
+		return false
+	}
 	mapped := sdl3.MapGPUTransferBuffer(device, download, false)
-	if mapped == nil { return false }
+	if mapped == nil { fmt.println("blend_readback_map_transfer_buffer_failed", "SDL_error", sdl3.GetError()); return false }
 	defer sdl3.UnmapGPUTransferBuffer(device, download)
 	copy(pixels, (cast([^]u8)mapped)[:len(pixels)])
 	return true
@@ -797,9 +803,15 @@ blend_validation_gradient_gpu_benchmark :: proc(
 		append(&gradient, gradient_command)
 	}
 
-	for _ in 0..<3 {
-		if !blend_validation_readback(renderers, target, download, solid[:], 2, {}, pixels) { return false }
-		if !blend_validation_readback(renderers, target, download, gradient[:], 2, {}, pixels) { return false }
+	for warmup in 0..<3 {
+		if !blend_validation_readback(renderers, target, download, solid[:], 2, {}, pixels) {
+			fmt.println("surface_gradient_gpu_benchmark_solid_warmup_failed", "iteration", warmup)
+			return false
+		}
+		if !blend_validation_readback(renderers, target, download, gradient[:], 2, {}, pixels) {
+			fmt.println("surface_gradient_gpu_benchmark_gradient_warmup_failed", "iteration", warmup)
+			return false
+		}
 	}
 	solid_samples: [BLEND_GRADIENT_BENCHMARK_SAMPLES]i64
 	gradient_samples: [BLEND_GRADIENT_BENCHMARK_SAMPLES]i64
@@ -807,10 +819,16 @@ blend_validation_gradient_gpu_benchmark :: proc(
 		first, second := solid[:], gradient[:]
 		if sample%2 != 0 { first, second = gradient[:], solid[:] }
 		started := time.now()
-		if !blend_validation_readback(renderers, target, download, first, 2, {}, pixels) { return false }
+		if !blend_validation_readback(renderers, target, download, first, 2, {}, pixels) {
+			fmt.println("surface_gradient_gpu_benchmark_first_sample_failed", "sample", sample, "mode", "gradient_or_solid_alternating")
+			return false
+		}
 		first_ns := time.duration_nanoseconds(time.since(started))
 		started = time.now()
-		if !blend_validation_readback(renderers, target, download, second, 2, {}, pixels) { return false }
+		if !blend_validation_readback(renderers, target, download, second, 2, {}, pixels) {
+			fmt.println("surface_gradient_gpu_benchmark_second_sample_failed", "sample", sample, "mode", "solid_or_gradient_alternating")
+			return false
+		}
 		second_ns := time.duration_nanoseconds(time.since(started))
 		if sample%2 == 0 {
 			solid_samples[sample] = first_ns
