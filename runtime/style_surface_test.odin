@@ -186,7 +186,10 @@ test_semantic_surface_composes_children_and_resolves_extension_role :: proc(t: ^
 	inspection := inspect(&rt)
 	defer delete(inspection)
 	testing.expect(t, strings.contains(inspection, "semantic surface: role=extension.") &&
-		strings.contains(inspection, "token=1 shape=rectangle radius=0.00 corner-radii=(0.00 0.00 0.00 0.00) material=1(analytic-relief) height=1.25 group=7") &&
+		strings.contains(inspection, "token=1 shape=rectangle radius=0.00 corner-radii=(0.00 0.00 0.00 0.00)") &&
+		strings.contains(inspection, "arc=(center=0.000,0.000 radius=0.000 start=0.000 sweep=0.000)") &&
+		strings.contains(inspection, "bezier=[[0, 0], [0, 0], [0, 0], [0, 0]]") &&
+		strings.contains(inspection, "material=1(analytic-relief) height=1.25 group=7") &&
 		strings.contains(inspection, "resolution=retained-cache dependencies=paint,material generations=(paint=") &&
 		node.style_generations.paint > 0 && node.style_generations.material > 0,
 		"inspector should explain extension-role token, optical surface inputs, and paint/material generation context")
