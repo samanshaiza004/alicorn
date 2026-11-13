@@ -1,0 +1,108 @@
+---
+import PortalLayout from '../layouts/PortalLayout.astro';
+import { alikitRepository, repository } from '../data/site';
+
+const description =
+  'AliKit is an optional source-level Odin component library for Alicorn, currently providing a command palette and virtualized tree view.';
+---
+
+<PortalLayout title="AliKit — reusable components for Alicorn" description={description} channel="ALIKIT">
+  <div class="alikit-page page-section">
+    <header class="page-heading alikit-page-heading">
+      <p class="section-kicker">OPTIONAL COMPONENTS FOR ALICORN</p>
+      <h1>AliKit<span> gives apps a head start.</span></h1>
+      <p>
+        A small set of reusable, source-level Odin components built on Alicorn. Bring the parts
+        that fit; keep your application's data, domain rules, and command policy in your own code.
+      </p>
+      <div class="hero-actions">
+        <a class="button button--primary" href={alikitRepository}>Explore AliKit source <span aria-hidden="true">↗</span></a>
+        <a class="button button--quiet" href={repository + '/blob/master/website/src/content/docs/docs/guides/themes-and-components.md'}>Alicorn component model <span aria-hidden="true">↗</span></a>
+      </div>
+    </header>
+
+    <section class="alikit-boundary" aria-labelledby="alikit-boundary-title">
+      <div class="alikit-boundary-heading">
+        <p class="section-kicker">THREE CLEAR OWNERS</p>
+        <h2 id="alikit-boundary-title">Reusable behavior, without taking over your app.</h2>
+      </div>
+      <div class="alikit-owner-grid">
+        <article class="alikit-owner alikit-owner--app">
+          <span>APPLICATION</span>
+          <h3>Owns the meaning</h3>
+          <p>Resources, domain data, ranking, hierarchy, loading, mutations, and what an activated item does.</p>
+        </article>
+        <article class="alikit-owner alikit-owner--kit">
+          <span>ALIKIT</span>
+          <h3>Packages interaction</h3>
+          <p>Reusable filtering, keyboard navigation, focus behavior, accessible rows, and component presentation.</p>
+        </article>
+        <article class="alikit-owner alikit-owner--alicorn">
+          <span>ALICORN</span>
+          <h3>Retains the UI work</h3>
+          <p>Stable identity, input routing, semantics, layout, text, and rendering products across descriptions.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="alikit-catalog" aria-labelledby="alikit-catalog-title">
+      <div class="section-heading">
+        <p class="section-kicker">IN THE PACKAGE TODAY</p>
+        <h2 id="alikit-catalog-title">Two components. Your policies stay yours.</h2>
+      </div>
+
+      <div class="alikit-component-grid">
+        <article class="alikit-component-card">
+          <div class="alikit-component-meta"><code>alikit:command_palette</code><span>MODAL COMMAND ACCESS</span></div>
+          <h3>Command Palette</h3>
+          <p class="alikit-component-lead">Search and navigate a caller-owned list of actions from a keyboard-friendly modal.</p>
+          <dl>
+            <div><dt>Your application</dt><dd>Finds commands, assigns stable IDs, chooses ranking, and dispatches the activated action.</dd></div>
+            <div><dt>AliKit</dt><dd>Handles query filtering, selection, keyboard navigation, virtualized results, semantics, and focus restoration.</dd></div>
+          </dl>
+          <p class="alikit-component-note">Use built-in substring matching for a simple palette, or provide caller-filtered results to keep your own fuzzy search, aliases, and ranking.</p>
+          <a href={alikitRepository + '/blob/main/docs/command-palette.md'}>Read the Command Palette guide <span aria-hidden="true">↗</span></a>
+        </article>
+
+        <article class="alikit-component-card">
+          <div class="alikit-component-meta"><code>alikit:tree_view</code><span>VIRTUALIZED HIERARCHY</span></div>
+          <h3>Tree View</h3>
+          <p class="alikit-component-lead">Present a stable, keyboard-navigable tree from the visible rows your application supplies.</p>
+          <dl>
+            <div><dt>Your application</dt><dd>Owns hierarchy, expansion and loading policy, data mutations, selection policy, and row commands.</dd></div>
+            <div><dt>AliKit</dt><dd>Provides virtualized rows, indentation, stable semantics, focus reveal, navigation, and optional row context-menu targeting.</dd></div>
+          </dl>
+          <p class="alikit-component-note">The app can send a bounded loaded window from a larger logical tree; AliKit reports when navigation needs another range.</p>
+          <a href={alikitRepository + '/blob/main/docs/tree-view.md'}>Read the Tree View guide <span aria-hidden="true">↗</span></a>
+        </article>
+      </div>
+
+      <div class="alikit-model-note">
+        <span class="alikit-model-mark" aria-hidden="true">↳</span>
+        <p><strong>Keep the model if you need it.</strong> <code>palette_model</code> and <code>tree_model</code> expose UI-independent filtering, navigation, stable identity, and window reconciliation for applications that want those rules without the Alicorn presentation.</p>
+      </div>
+    </section>
+
+    <section class="alikit-compatibility" aria-labelledby="alikit-compatibility-title">
+      <div>
+        <p class="section-kicker">SOURCE-LEVEL / EARLY</p>
+        <h2 id="alikit-compatibility-title">Pin the pair together.</h2>
+      </div>
+      <div>
+        <p>
+          AliKit imports Alicorn's public Odin packages. It adds no second UI tree, state store, or
+          application lifecycle. Its API can evolve with Alicorn, so use the exact runtime revision
+          recorded in AliKit's dependency lockfile when you consume it.
+        </p>
+        <p class="alikit-compatibility-note">
+          Built-in palette matching is ASCII case-insensitive; non-ASCII UTF-8 bytes compare
+          exactly. Unicode case folding and fuzzy ranking remain application policy.
+        </p>
+        <div class="hero-actions">
+          <a class="text-link" href={alikitRepository + '/blob/main/README.md'}>Read the project README <span aria-hidden="true">↗</span></a>
+          <a class="text-link" href={alikitRepository + '/blob/main/dependencies.lock.json'}>Check the pinned runtime <span aria-hidden="true">↗</span></a>
+        </div>
+      </div>
+    </section>
+  </div>
+</PortalLayout>

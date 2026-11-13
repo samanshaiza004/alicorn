@@ -1,8 +1,8 @@
 # Alicorn website
 
-Alicorn's website: a product overview, source-build guide, and project
-documentation. It uses Astro for the portal and Starlight for the documentation
-route.
+Alicorn and AliKit's website: an Alicorn runtime overview, an AliKit component
+catalog, a source-build guide, and project documentation. It uses Astro for the
+portal and Starlight for the documentation route.
 
 ## Build locally
 
@@ -30,9 +30,9 @@ not been set in this source yet.
 
 | Path | Contents |
 |---|---|
-| <code>src/pages/</code> | Landing page, source-build information, and project notes. |
+| <code>src/pages/</code> | Alicorn landing page, AliKit overview, source-build information, and project notes. |
 | <code>src/layouts/PortalLayout.astro</code> | Shared page shell, metadata, navigation, and copy behavior. |
-| <code>src/components/portal/</code> | Landing-page sections. |
+| <code>src/components/portal/</code> | Landing-page sections, including the Alicorn/AliKit architecture overview. |
 | <code>src/components/docs/</code> | Starlight title, search, and footer overrides. |
 | <code>src/styles/portal.css</code> | Responsive site design. |
 | <code>src/styles/docs.css</code> | Alicorn palette and typography for Starlight. |

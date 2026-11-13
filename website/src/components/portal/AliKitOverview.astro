@@ -1,0 +1,41 @@
+---
+import { alikitRepository } from '../../data/site';
+---
+
+<section class="alikit-overview section-wrap" aria-labelledby="alikit-overview-title">
+  <div class="alikit-overview-copy">
+    <p class="section-kicker">THE OPTIONAL COMPANION</p>
+    <h2 id="alikit-overview-title">Reusable components.<br />The same retained runtime.</h2>
+    <p>
+      AliKit adds ready-to-adapt application components on top of Alicorn. Your app keeps its data
+      and decisions; AliKit reuses Alicorn for input, focus, semantics, layout, and presentation.
+    </p>
+    <div class="hero-actions">
+      <a class="button button--primary" href="/alikit">Explore AliKit <span aria-hidden="true">→</span></a>
+      <a class="text-link" href={alikitRepository}>Browse source <span aria-hidden="true">↗</span></a>
+    </div>
+  </div>
+
+  <ol class="alikit-layer-stack" aria-label="Application, AliKit, Alicorn, and native host layers">
+    <li class="alikit-layer alikit-layer--app">
+      <span>YOU OWN</span>
+      <strong>Odin application</strong>
+      <small>Data · policy · commands</small>
+    </li>
+    <li class="alikit-layer alikit-layer--kit">
+      <span>OPTIONAL COMPONENTS</span>
+      <strong>AliKit</strong>
+      <small>Command Palette · Tree View</small>
+    </li>
+    <li class="alikit-layer alikit-layer--runtime">
+      <span>RETAINED UI</span>
+      <strong>Alicorn</strong>
+      <small>Identity · input · layout · semantics · rendering</small>
+    </li>
+    <li class="alikit-layer alikit-layer--host">
+      <span>DESKTOP PLATFORM</span>
+      <strong>Native host</strong>
+      <small>SDL3 · SDL_GPU</small>
+    </li>
+  </ol>
+</section>

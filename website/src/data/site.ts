@@ -2,12 +2,13 @@
  * Shared Alicorn facts and links for the portal and documentation chrome.
  */
 export const repository = 'https://github.com/samanshaiza004/alicorn';
+export const alikitRepository = 'https://github.com/samanshaiza004/alicorn-kit';
 
 export const site = {
   name: 'Alicorn',
   tagline: 'Direct to write. Retained to run.',
   description:
-    'Alicorn is an experimental native GUI runtime for Odin. Describe a UI with ordinary code; Alicorn retains identity, interaction, layout, text, and rendering products between updates.',
+    'Alicorn is an experimental native GUI runtime for Odin. AliKit is its optional source-level component library. Both keep application data and policy in your app.',
   repository,
   issues: repository + '/issues',
   releases: repository + '/releases',
@@ -19,6 +20,7 @@ export const channels = [
   { label: 'GET STARTED', href: '/docs/getting-started/first-app' },
   { label: 'RUNTIME MODEL', href: '/docs/concepts/retained-runtime' },
   { label: 'API & EXAMPLES', href: '/docs/reference/api-and-examples' },
+  { label: 'ALIKIT', href: '/alikit' },
   { label: 'BUILD', href: '/downloads' },
 ];
 
@@ -33,6 +35,8 @@ export const facts = [
 export const footerLinks = [
   { label: 'Documentation', href: '/docs' },
   { label: 'Examples', href: '/docs/reference/api-and-examples' },
+  { label: 'AliKit components', href: '/alikit' },
+  { label: 'AliKit source', href: alikitRepository },
   { label: 'Source', href: repository },
   { label: 'Issues', href: repository + '/issues' },
   { label: 'License', href: repository + '/blob/master/LICENSE' },
@@ -43,6 +47,7 @@ export const jumpTargets = [
   { label: 'Runtime model', href: '/docs/concepts/retained-runtime' },
   { label: 'Invalidation and identity', href: '/docs/concepts/invalidation' },
   { label: 'Themes and custom controls', href: '/docs/guides/themes-and-components' },
+  { label: 'AliKit components', href: '/alikit' },
   { label: 'Accessibility status', href: '/docs/guides/accessibility' },
   { label: 'API and examples', href: '/docs/reference/api-and-examples' },
   { label: 'Build and test', href: '/docs/development/build-and-test' },
@@ -54,4 +59,5 @@ export const docsLinks = [
   { label: 'Runtime model', href: '/docs/concepts/retained-runtime' },
   { label: 'Themes and components', href: '/docs/guides/themes-and-components' },
   { label: 'Accessibility', href: '/docs/guides/accessibility' },
+  { label: 'AliKit components', href: '/alikit' },
 ];
