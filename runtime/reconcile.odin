@@ -1161,6 +1161,11 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		if len(state.model_text) > 0 { delete(state.model_text, rt.persistent_allocator) }
 	}
 	delete(rt.controlled_text_fields)
+	delete(rt.interaction_scopes)
+	delete(rt.pending_interaction_scopes)
+	delete(rt.interaction_events)
+	delete(rt.interaction_after_frame)
+	delete(rt.dispatching_after_frame)
 	for _, state in rt.restore_controls { free(state, allocator=rt.persistent_allocator) }
 	delete(rt.restore_controls)
 	delete(rt.measure_states)
@@ -1347,4 +1352,6 @@ end_frame :: proc(ui: ^UI) {
 			ui.runtime.context_menu.panel = 0
 		}
 	}
+	interaction_scopes_publish(ui.runtime)
+	interaction_after_frame_dispatch(ui.runtime)
 }

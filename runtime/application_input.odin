@@ -52,6 +52,37 @@ Application_Text_Input_Proc :: proc(
 	event: Application_Text_Input_Event,
 )
 Application_Pointer_Proc :: proc(state: rawptr, rt: ^Runtime, event: Pointer_Event, target: Node_ID)
+
+// Interaction_Key_Set and Interaction_Pointer_Set describe the input a
+// retained interaction scope wants Alicorn to route to it. Keys and pointers
+// are delivered once to the next application description, where the component
+// still has access to the current application-owned data projection.
+Interaction_Key_Set :: bit_set[Application_Key; u64]
+Interaction_Pointer_Kind :: enum { Primary_Down, Secondary_Down }
+Interaction_Pointer_Set :: bit_set[Interaction_Pointer_Kind; u8]
+
+Interaction_Text_Change_Proc :: proc(state: rawptr, rt: ^Runtime, change: Text_Change) -> bool
+Interaction_After_Frame_Proc :: proc(state: rawptr, rt: ^Runtime)
+
+// Interaction_Scope_Options are registered during a description. The owner
+// should be a stable retained ancestor of the component's focusable nodes.
+// A modal scope receives matching input before focused scopes. A composition
+// yield key remains with the native text host while IME composition is active.
+Interaction_Scope_Options :: struct {
+	keys: Interaction_Key_Set,
+	composition_yield_keys: Interaction_Key_Set,
+	pointers: Interaction_Pointer_Set,
+	modal: bool,
+	on_text_change: Interaction_Text_Change_Proc,
+}
+
+Interaction_Event_Kind :: enum { Key, Pointer }
+Interaction_Event :: struct {
+	kind: Interaction_Event_Kind,
+	key: Application_Key,
+	pointer: Pointer_Event,
+	target: Node_ID,
+}
 Application_Scroll_Capture_Proc :: proc(state: rawptr, rt: ^Runtime, event: Scroll_Event, target: Node_ID) -> bool
 Application_Scroll_Proc :: proc(state: rawptr, rt: ^Runtime, event: Scroll_Event)
 
@@ -104,8 +135,10 @@ application_dispatch_key :: proc(
 	text_input_focused := false,
 	composition_active := false,
 ) -> bool {
-	if rt == nil || callback == nil { return false }
+	if rt == nil { return false }
 	if text_input_focused && !application_key_can_preempt_text_field(key, composition_active) { return false }
+	if interaction_scope_dispatch_key(rt, key, composition_active) { return true }
+	if callback == nil { return false }
 	if !callback(state, rt, key) { return false }
 	reason := "application keyboard command"
 	if text_input_focused { reason = "application handled focused text-field key" }
@@ -270,7 +303,9 @@ application_dispatch_text_change :: proc(
 	change: Text_Change,
 ) {
 	if rt == nil { return }
-	if callback != nil { callback(state, rt, change) }
+	if !interaction_scope_dispatch_text_change(rt, change) && callback != nil {
+		callback(state, rt, change)
+	}
 	owned_change := change
 	text_change_destroy(rt, &owned_change)
 }
@@ -309,8 +344,13 @@ application_dispatch_pointer :: proc(
 	event: Pointer_Event,
 	target: Node_ID,
 ) -> bool {
-	if rt == nil || callback == nil { return false }
-	callback(state, rt, event, target)
+	if rt == nil { return false }
+	handled := interaction_scope_dispatch_pointer(rt, event, target)
+	if !handled && callback != nil {
+		callback(state, rt, event, target)
+		handled = true
+	}
+	if !handled { return false }
 	// Application pointer handlers may mutate app state even when hit testing
 	// intentionally produced no retained target.
 	if event.kind == .Down || event.kind == .Up {

@@ -108,6 +108,41 @@ An optional `smoke=true` uses the host's bounded smoke mode for example tests.
 See [03_async_list](../examples/03_async_list/main.odin) for an app-owned Odin
 thread, mutex-protected completion, typed adoption and explicit shutdown join.
 
+### Scoped component input
+
+Components that need keyboard, pointer, or text input can register a retained
+scope while building, instead of requiring the application to forward each
+native callback. `ui.interaction_scope` associates the handled input with a
+stable retained owner. Matching key and pointer events are delivered once by
+`ui.interaction_event_next` during the next description, so the component reads
+the application's current data projection. A modal scope takes priority over
+focused scopes; otherwise, keyboard input follows the focused node's ancestor
+chain and pointer input follows the hit target's ancestor chain. Native text
+composition keeps priority for keys listed in `composition_yield_keys`.
+
+Text changes can use the scope's typed `on_text_change` callback; return `true`
+only when the component consumed the change. This callback runs during native
+event dispatch, and the change's text is borrowed until it returns. The owner
+state passed to a scope is borrowed by Alicorn while that scope is retained,
+and must remain alive until a later description replaces or removes it.
+
+```odin
+_ = ui.interaction_scope(ctx, list_node, rawptr(app),
+    ui.Interaction_Scope_Options{keys={.Up, .Down, .Escape}})
+if event, found := ui.interaction_event_next(ctx, list_node); found {
+    if event.kind == .Key && event.key == .Down {
+        app.selection += 1
+    }
+}
+```
+
+`ui.after_frame` schedules a one-shot callback after the next completed
+description has reconciled and laid out. Keep its callback state alive until it
+runs. `ui.run` also accepts optional typed `on_key`, `on_text_change`, and
+`on_pointer` callbacks for application-specific input; scoped components do
+not require those callbacks. Use the lower-level `host.Run` loop when custom
+event ordering or native services are needed.
+
 ## Native application host
 
 Import `native/sdl_gpu` as a host package and pass an `Application` to `Run`.

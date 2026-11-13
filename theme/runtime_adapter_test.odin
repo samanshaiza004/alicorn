@@ -4,6 +4,35 @@ import alicorn "../runtime"
 import "core:testing"
 
 @(test)
+test_theme_json_registration_composes_compile_adapt_and_runtime_ownership :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 120, 80})
+	defer alicorn.destroy_runtime(&rt)
+	source := `{"schema":1,"contract":"0.2","extends":"alicorn.base","tokens":{"app.accent":{"$type":"color","$value":{"colorSpace":"srgb","components":[0.1,0.7,0.2],"alpha":1}}},"roles":{"core":{"accent":"{app.accent}"}}}`
+	registered := theme_json_register(&rt, source, "helper-test.json")
+	defer theme_json_register_result_destroy(&registered)
+	testing.expect(t, registered.failure == .None && registered.theme_id != 0,
+		"valid theme JSON should compile, adapt, and register through one helper")
+	if registered.theme_id != 0 {
+		color := alicorn.style_theme_color(&rt, registered.theme_id, .Accent)
+		testing.expect(t, color.g > 0.4 && color.g > color.r && color.g > color.b,
+			"runtime registration should retain the resolved JSON theme after temporary data is destroyed")
+	}
+
+	registered_count := len(rt.style_themes)
+	invalid := theme_json_register(&rt, "{", "invalid-helper-test.json")
+	defer theme_json_register_result_destroy(&invalid)
+	testing.expect(t, invalid.failure == .Compile && len(invalid.output.parsed.diagnostics) > 0,
+		"compile failures should retain their structured source diagnostic")
+	testing.expect(t, len(rt.style_themes) == registered_count,
+		"a failed candidate must not append a partial runtime theme")
+
+	no_runtime := theme_json_register(nil, source)
+	defer theme_json_register_result_destroy(&no_runtime)
+	testing.expect(t, no_runtime.failure == .Invalid_Runtime && no_runtime.theme_id == 0,
+		"a missing runtime should fail explicitly without compiling or registering")
+}
+
+@(test)
 test_theme_runtime_adapter_preserves_typed_bindings_and_owns_its_values :: proc(t: ^testing.T) {
 	source := Theme_Source_Model{
 		metadata=TEST_THEME_METADATA,

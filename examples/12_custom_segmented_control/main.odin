@@ -56,28 +56,16 @@ app_default :: proc() -> App {
 }
 
 initialize_app :: proc(app: ^App, rt: ^alicorn.Runtime) {
-	compiled := theme.theme_compile_json(string(THEME_JSON), THEME_PATH)
-	defer theme.theme_json_compile_output_destroy(&compiled)
-	if !compiled.ok {
-		if len(compiled.parsed.diagnostics) > 0 {
-			diagnostic := compiled.parsed.diagnostics[0]
+	registration := theme.theme_json_register(rt, string(THEME_JSON), THEME_PATH)
+	defer theme.theme_json_register_result_destroy(&registration)
+	app.theme_id = registration.theme_id
+	if app.theme_id == 0 {
+		if registration.failure == .Compile && len(registration.output.parsed.diagnostics) > 0 {
+			diagnostic := registration.output.parsed.diagnostics[0]
 			fmt.println("Theme error", diagnostic.span.line, diagnostic.span.column, diagnostic.message)
 		} else {
-			fmt.println("The embedded segmented-control theme could not be compiled.")
+			fmt.println("The embedded segmented-control theme could not be registered:", registration.failure)
 		}
-		app.theme_error = true
-		return
-	}
-	runtime_theme, adapted := theme.theme_runtime_style_theme(compiled.compiled)
-	if !adapted {
-		fmt.println("The segmented-control theme could not be adapted to Alicorn's style contract.")
-		app.theme_error = true
-		return
-	}
-	defer theme.theme_runtime_style_theme_destroy(&runtime_theme)
-	app.theme_id = alicorn.style_theme_register(rt, runtime_theme)
-	if app.theme_id == 0 {
-		fmt.println("Alicorn rejected the segmented-control theme.")
 		app.theme_error = true
 		return
 	}

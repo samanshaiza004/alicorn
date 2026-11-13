@@ -1936,6 +1936,25 @@ Controlled_Text_Field_State :: struct {
 // struct fields. Applications should treat them as implementation details and
 // use the query and mutation procedures in this package instead. The fields
 // can change between releases without preserving application compatibility.
+@(private)
+Retained_Interaction_Scope :: struct {
+	owner: Node_ID,
+	state: rawptr,
+	options: Interaction_Scope_Options,
+}
+
+@(private)
+Interaction_Event_Record :: struct {
+	owner: Node_ID,
+	event: Interaction_Event,
+}
+
+@(private)
+Retained_After_Frame_Callback :: struct {
+	state: rawptr,
+	callback: Interaction_After_Frame_Proc,
+}
+
 Runtime :: struct {
 	persistent_backing_allocator: mem.Allocator,
 	persistent_allocator:      mem.Allocator,
@@ -1967,6 +1986,13 @@ Runtime :: struct {
 	motion_clock_initialized: bool,
 	motion_clock_source: Motion_Clock_Source,
 	controlled_text_fields: map[Node_ID]Controlled_Text_Field_State,
+	// Interaction scopes are replaced atomically at description boundaries.
+	// Queued input is consumed during the next description with current app data.
+	interaction_scopes: [dynamic]Retained_Interaction_Scope,
+	pending_interaction_scopes: [dynamic]Retained_Interaction_Scope,
+	interaction_events: [dynamic]Interaction_Event_Record,
+	interaction_after_frame: [dynamic]Retained_After_Frame_Callback,
+	dispatching_after_frame: [dynamic]Retained_After_Frame_Callback,
 	measure_states: map[Node_ID]Measure_State,
 	percent_width_dependencies: map[Node_ID]Percent_Width_Dependency,
 	pending_percent_widths: map[Node_ID]Percent_Width_Declaration,

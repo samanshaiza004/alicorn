@@ -2,6 +2,62 @@ package theme
 
 import alicorn "../runtime"
 
+Theme_JSON_Register_Failure :: enum {
+	None,
+	Invalid_Runtime,
+	Compile,
+	Runtime_Adaptation,
+	Runtime_Registration,
+}
+
+// Theme_JSON_Register_Result owns its compiler output so failed registrations
+// retain source-located diagnostics. Destroy it with the same allocator passed
+// to theme_json_register.
+Theme_JSON_Register_Result :: struct {
+	theme_id: alicorn.Style_Theme_ID,
+	failure:  Theme_JSON_Register_Failure,
+	output:   Theme_JSON_Compile_Output,
+}
+
+// theme_json_register is the concise path for installing an authored theme in
+// application initialization. Components using Alicorn's built-in semantic
+// roles need no theme installation; this helper is for applications that load
+// a custom JSON theme and then perform their own component-contract checks.
+theme_json_register :: proc(
+	rt: ^alicorn.Runtime,
+	input: string,
+	path := "<theme>",
+	allocator := context.allocator,
+) -> (result: Theme_JSON_Register_Result) {
+	if rt == nil {
+		result.failure = .Invalid_Runtime
+		return
+	}
+	result.output = theme_compile_json(input, path, allocator)
+	if !result.output.ok {
+		result.failure = .Compile
+		return
+	}
+	runtime_theme, adapted := theme_runtime_style_theme(result.output.compiled, allocator)
+	if !adapted {
+		result.failure = .Runtime_Adaptation
+		return
+	}
+	defer theme_runtime_style_theme_destroy(&runtime_theme, allocator)
+	result.theme_id = alicorn.style_theme_register(rt, runtime_theme)
+	if result.theme_id == 0 { result.failure = .Runtime_Registration }
+	return
+}
+
+theme_json_register_result_destroy :: proc(
+	result: ^Theme_JSON_Register_Result,
+	allocator := context.allocator,
+) {
+	if result == nil { return }
+	theme_json_compile_output_destroy(&result.output, allocator)
+	result^ = Theme_JSON_Register_Result{}
+}
+
 // Theme_Builtin_Base_Source owns only the two model slices it creates; names
 // and spans point at static identifiers. Runtime startup continues to use
 // Alicorn's typed DEFAULT_STYLE_THEME and never invokes a parser.

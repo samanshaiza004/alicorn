@@ -390,7 +390,8 @@ pump_events :: proc(
 		split_owner_before, split_position_before, split_dragging_before, split_before_valid :=
 			native_flight_pointer_split_state(rt, captured_before)
 		captured_split_move := pointer.kind == .Move && captured_before_valid && captured_before_info.kind == .Split_Handle
-		callback_available := application != nil && application.on_pointer != nil
+		callback_available := application != nil &&
+			(application.on_pointer != nil || alicorn.interaction_scope_has_input(rt))
 		callback_called := false
 		callback_blocked_by_context_menu := false
 		callback_blocked_by_drag := false
@@ -513,14 +514,14 @@ pump_events :: proc(
 			}
 			if !runtime_key_handled && event.key.key == sdl3.K_F10 &&
 				native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT) && !event.key.repeat &&
-				application != nil && application.on_key != nil {
-				runtime_key_handled = application.on_key(application.state, rt, .Context_Menu)
-				if runtime_key_handled { alicorn.invalidate_root(rt, "application opened context menu from keyboard") }
+				application != nil && (application.on_key != nil || alicorn.interaction_scope_has_input(rt)) {
+				runtime_key_handled = alicorn.application_dispatch_key(rt, application.state, application.on_key, .Context_Menu)
 			}
 			// Let transient application UI intercept navigation and dismissal
 			// while a text-input owner has focus. Returning false preserves the
 			// normal caret/composition behavior below.
-			if !runtime_key_handled && application != nil && application.on_key != nil {
+			if !runtime_key_handled && application != nil &&
+				(application.on_key != nil || alicorn.interaction_scope_has_input(rt)) {
 				text_input_focused := native_current_text_input_owner(rt, text_input_state) != 0
 				composition_active := false
 				if node, ok := rt.nodes[rt.focused]; ok {

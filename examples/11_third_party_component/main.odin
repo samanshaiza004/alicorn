@@ -30,32 +30,19 @@ App :: struct {
 }
 
 initialize_app :: proc(app: ^App, rt: ^alicorn.Runtime) {
-	compiled := theme.theme_compile_json(string(THEME_JSON), THEME_PATH)
-	defer theme.theme_json_compile_output_destroy(&compiled)
-	if !compiled.ok {
-		if len(compiled.parsed.diagnostics) > 0 {
-			diagnostic := compiled.parsed.diagnostics[0]
+	registration := theme.theme_json_register(rt, string(THEME_JSON), THEME_PATH)
+	defer theme.theme_json_register_result_destroy(&registration)
+	app.theme_id = registration.theme_id
+	if app.theme_id == 0 {
+		if registration.failure == .Compile && len(registration.output.parsed.diagnostics) > 0 {
+			diagnostic := registration.output.parsed.diagnostics[0]
 			fmt.println("Theme error", diagnostic.span.line, diagnostic.span.column, diagnostic.message)
-		} else if len(compiled.compiled.diagnostics) > 0 {
-			diagnostic := compiled.compiled.diagnostics[0]
+		} else if registration.failure == .Compile && len(registration.output.compiled.diagnostics) > 0 {
+			diagnostic := registration.output.compiled.diagnostics[0]
 			fmt.println("Theme rejected", diagnostic.span.line, diagnostic.span.column, diagnostic.code)
 		} else {
-			fmt.println("The embedded component theme could not be compiled.")
+			fmt.println("The embedded component theme could not be registered:", registration.failure)
 		}
-		app.theme_error = true
-		return
-	}
-
-	runtime_theme, adapted := theme.theme_runtime_style_theme(compiled.compiled)
-	if !adapted {
-		fmt.println("The compiled theme could not be adapted to the runtime style contract.")
-		app.theme_error = true
-		return
-	}
-	defer theme.theme_runtime_style_theme_destroy(&runtime_theme)
-	app.theme_id = alicorn.style_theme_register(rt, runtime_theme)
-	if app.theme_id == 0 {
-		fmt.println("The Runtime rejected the third-party component theme.")
 		app.theme_error = true
 		return
 	}

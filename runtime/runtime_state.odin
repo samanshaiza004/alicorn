@@ -526,6 +526,7 @@ begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
 	clear(&rt.motion_intent_request_indices)
 	clear(&rt.scroll_visibility_requests)
 	clear(&rt.semantic_collection_touched)
+	clear(&rt.pending_interaction_scopes)
 	clear(&rt.seen)
 	clear(&rt.identity_scopes)
 	clear(&rt.grid_pending_scopes)

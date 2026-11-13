@@ -716,6 +716,35 @@ virtual_list :: proc(
 // that boundary; the app owns result storage and its synchronization.
 Application_Context :: distinct ^alicorn.Runtime
 Application_Waker :: host.Application_Waker
+Interaction_Scope_Options :: alicorn.Interaction_Scope_Options
+Interaction_Event :: alicorn.Interaction_Event
+Interaction_After_Frame_Proc :: alicorn.Interaction_After_Frame_Proc
+
+// interaction_scope associates input with a retained owner while it is being
+// described. Matching events are consumed by interaction_event_next during a
+// later description, where application-owned data remains current.
+interaction_scope :: proc(
+	ctx: ^UI,
+	owner: Node_ID,
+	state: rawptr,
+	options: Interaction_Scope_Options,
+) -> bool {
+	return ctx != nil && ctx.runtime != nil &&
+		alicorn.interaction_scope_register(ctx.runtime, owner, state, options)
+}
+
+interaction_event_next :: proc(ctx: ^UI, owner: Node_ID) -> (event: Interaction_Event, found: bool) {
+	if ctx == nil || ctx.runtime == nil { return }
+	return alicorn.interaction_event_next(ctx.runtime, owner)
+}
+
+// after_frame schedules a one-shot callback after the next description has
+// reconciled and laid out. Use it for interaction state that depends on the
+// finalized tree, such as restoring focus after dismissing a modal.
+after_frame :: proc(ctx: ^UI, state: rawptr, callback: Interaction_After_Frame_Proc) -> bool {
+	return ctx != nil && ctx.runtime != nil &&
+		alicorn.interaction_after_frame_register(ctx.runtime, state, callback)
+}
 
 // wake is the native host's thread-safe event request. It does not publish or
 // synchronize application data. Stop and join every producer in on_stop before
@@ -746,6 +775,9 @@ Run_State :: struct($T: typeid) {
 	on_start: proc(^T, Application_Waker),
 	on_wake: proc(^T, Application_Context),
 	on_stop: proc(^T),
+	on_key: proc(^T, ^alicorn.Runtime, host.Application_Key) -> bool,
+	on_text_change: proc(^T, ^alicorn.Runtime, alicorn.Text_Change),
+	on_pointer: proc(^T, ^alicorn.Runtime, alicorn.Pointer_Event, Node_ID),
 }
 
 @(private)
@@ -794,6 +826,18 @@ run_application :: proc(run_state: ^Run_State($T), title: string, width, height:
 		state := cast(^Run_State(T))data
 		state.on_stop(state.app)
 	}
+	on_key :: proc(data: rawptr, rt: ^alicorn.Runtime, key: host.Application_Key) -> bool {
+		state := cast(^Run_State(T))data
+		return state.on_key != nil && state.on_key(state.app, rt, key)
+	}
+	on_text_change :: proc(data: rawptr, rt: ^alicorn.Runtime, change: alicorn.Text_Change) {
+		state := cast(^Run_State(T))data
+		if state.on_text_change != nil { state.on_text_change(state.app, rt, change) }
+	}
+	on_pointer :: proc(data: rawptr, rt: ^alicorn.Runtime, event: alicorn.Pointer_Event, target: Node_ID) {
+		state := cast(^Run_State(T))data
+		if state.on_pointer != nil { state.on_pointer(state.app, rt, event, target) }
+	}
 
 	application := host.Application{
 		state=rawptr(run_state),
@@ -807,6 +851,9 @@ run_application :: proc(run_state: ^Run_State($T), title: string, width, height:
 	if run_state.on_start != nil { application.on_start = start }
 	if run_state.on_wake != nil { application.on_wake = woken }
 	if run_state.on_stop != nil { application.on_stop = stop }
+	if run_state.on_key != nil { application.on_key = on_key }
+	if run_state.on_text_change != nil { application.on_text_change = on_text_change }
+	if run_state.on_pointer != nil { application.on_pointer = on_pointer }
 	return application
 }
 
@@ -829,10 +876,14 @@ run :: proc(
 	on_stop: proc(^T) = nil,
 	smoke: bool = false,
 	on_initialize: proc(^T, ^alicorn.Runtime) = nil,
+	on_key: proc(^T, ^alicorn.Runtime, host.Application_Key) -> bool = nil,
+	on_text_change: proc(^T, ^alicorn.Runtime, alicorn.Text_Change) = nil,
+	on_pointer: proc(^T, ^alicorn.Runtime, alicorn.Pointer_Event, Node_ID) = nil,
 ) {
 	run_state := Run_State(T){
 		app=state, render=render, render_overlays=render_overlays,
 		on_initialize=on_initialize, on_start=on_start, on_wake=on_wake, on_stop=on_stop,
+		on_key=on_key, on_text_change=on_text_change, on_pointer=on_pointer,
 	}
 	host.Run(run_application(&run_state, title, width, height), smoke=smoke)
 }

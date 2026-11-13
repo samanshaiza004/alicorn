@@ -339,6 +339,13 @@ only a compatible candidate to the UI thread for adoption. Compilation
 failures and incompatible candidates should leave the last good theme
 untouched. This Control Gallery experiment is not a file watcher.
 
+For a conventional application startup, `theme_json_register` combines JSON
+compilation, runtime adaptation, and immutable theme registration. Its owned
+result retains structured compiler diagnostics and must be released with
+`theme_json_register_result_destroy`, using the same allocator. Components
+using Alicorn's built-in semantic roles need no theme registration; custom
+theme contracts can be checked once after registration.
+
 The Control Gallery demonstrates this flow. From the repository root, run
 `./tools/run_example.sh 08_control_gallery`, edit
 `examples/08_control_gallery/theme.json`, then choose **Reload Theme**. Change
