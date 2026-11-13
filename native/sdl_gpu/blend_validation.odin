@@ -911,8 +911,12 @@ blend_validation_gradient_readbacks :: proc(
 			pixel_y := int(28*scale)
 			t := (f32(pixel_x)+0.5-8*scale)/(48*scale)
 			source := blend_validation_gradient_interpolate(horizontal_start, horizontal_end, t)
+			expected := blend_validation_over(background_rgba, source, horizontal.opacity)
+			if logical_x == 9 || logical_x == 55 {
+				expected = blend_validation_over(expected, stroke, horizontal.opacity)
+			}
 			if !blend_validation_expect("surface_gradient_horizontal_stop_and_midpoint", scale, background, pixels,
-				pixel_x, pixel_y, blend_validation_over(background_rgba, source, horizontal.opacity)) {
+				pixel_x, pixel_y, expected) {
 				fmt.println("surface_gradient_horizontal_stop_or_midpoint_failed", "scale", scale, "logical_x", logical_x)
 				return false
 			}
